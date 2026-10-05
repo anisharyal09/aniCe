@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<resources>
+    <style name="Theme.AniCe" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#F4F3EF</item>
+        <item name="android:colorAccent">#355B70</item>
+    </style>
+</resources>

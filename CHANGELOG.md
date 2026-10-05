@@ -16,4 +16,8 @@ Repository-wide structure, documentation, and development conventions belong her
 - Separate component changelogs and generic ignore rules for generated output, local configuration, and private planning references.
 - GNU GPL version 3 license text and an explicit GPL-3.0-or-later licensing declaration.
 
-No applications, protocol schemas, runtime functionality, or build toolchains have been implemented. No releases exist yet.
+### Changed
+
+- Update repository status and agent context for the Android foundation; its implementation is recorded in the Android changelog.
+
+The Android starting screen and build toolchain now exist. macOS, protocol schemas, device capabilities, shared runtime, and CI remain deferred. No releases exist yet.

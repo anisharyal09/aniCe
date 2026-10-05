@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<resources>
+    <string name="app_name">aniCe</string>
+    <string name="no_devices_paired">No devices paired</string>
+    <string name="pairing_later">Device pairing will be added in a later phase.</string>
+</resources>

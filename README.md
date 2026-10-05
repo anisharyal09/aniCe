@@ -15,9 +15,11 @@ aniCe is a planned local-first ecosystem for Android and macOS. The aim is a set
 
 ## Where things stand
 
-**Phase 0.5 — Repository Initialization.**
+**Phase 1A — Android App Foundation.**
 
-This repository contains the directory scaffold, project context, changelogs, and design guide. No application projects, protocol schemas, build toolchains, dependencies, or runtime functionality have been implemented. There is no app to install or run yet.
+The [Android foundation](apps/android/README.md) contains a single-module Kotlin/Compose app with a native aniCe top bar and a truthful “No devices paired” starting screen. It uses development version `0.0.0-dev`, not a published release. Android 10+ is a provisional engineering baseline.
+
+The macOS application, protocol schemas, pairing, authentication, networking, shared runtime, and CI remain unimplemented. The foundation does not connect devices or expose feature controls.
 
 The design guide covers the full Mac window, menu-bar companion, and Android adaptation. Its sample panels illustrate interface direction; they do not promise implemented features or confirmed platform support.
 
