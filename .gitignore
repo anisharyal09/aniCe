@@ -1,0 +1,47 @@
+# General / OS
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Editor-local metadata
+.idea/
+.vscode/
+
+# Secrets / local configuration (keep example environment files trackable)
+.env
+.env.*
+*.local
+*.local.*
+*.keystore
+*.jks
+!.env.example
+!.env.*.example
+
+# Android / generic build output
+.gradle/
+build/
+out/
+local.properties
+*.iml
+
+# macOS / Xcode generated and user-specific state
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.build/
+
+# Rust
+target/
+
+
+# Private planning and local design references
+for-me/
+for-me.*
+
+
+# optional - will public later after updates or contents ready
+protocol/CHANGELOG.md
