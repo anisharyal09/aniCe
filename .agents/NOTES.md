@@ -2,7 +2,7 @@
 
 Notes are not architectural decisions. Resolve these through concrete requirements and record the resulting decisions in appropriate human documentation.
 
-- Final minimum Android and macOS versions. Android API 29 / Android 10 is the provisional foundation baseline, not a product freeze.
+- Final minimum Android and macOS versions. Android API 29 / Android 10 and macOS 14 are provisional foundation baselines, not product freezes.
 - Exact cryptographic suite.
 - BLE topology.
 - Exact LAN transport.

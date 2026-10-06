@@ -18,6 +18,9 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
-- Update repository status and agent context for the Android foundation; its implementation is recorded in the Android changelog.
+- Extend ignore rules for Kotlin and native Android build caches, Xcode result bundles, archives, and debug-symbol bundles.
+- Update repository status and agent context for the Android and macOS foundations; implementation changes are recorded in their component changelogs.
 
-The Android starting screen and build toolchain now exist. macOS, protocol schemas, device capabilities, shared runtime, and CI remain deferred. No releases exist yet.
+Android uses development version `0.0.0-dev`; macOS uses numeric `0.0.0` to follow Apple's bundle-version conventions. Both identify unreleased foundations, not published releases.
+
+Both native application projects now exist. macOS build and runtime verification remain pending local Xcode setup. Protocol schemas, device capabilities, shared runtime, and CI remain deferred.

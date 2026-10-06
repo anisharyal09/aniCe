@@ -1,7 +1,14 @@
 # macOS changelog
 
-Records macOS application changes and releases independently of Android and the protocol. Repository scaffolding and shared documentation are recorded in the [root changelog](../../CHANGELOG.md).
+Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root changelog](../../CHANGELOG.md).
 
 ## Unreleased
 
-No macOS application project or runtime functionality exists yet. No macOS releases or version numbers have been assigned.
+### Added
+
+- Native SwiftUI application with a resizable, single-instance window and an unpaired starting screen.
+- Menu-bar companion with Open aniCe and Quit actions, plus Dock reopening after the main window closes.
+- System light and dark appearance using the shared aniCe palette.
+- Xcode project, shared aniCe scheme, universal build configuration, and local build and run instructions.
+
+The foundation uses development version `0.0.0` (build `1`) and a provisional macOS 14 minimum.
