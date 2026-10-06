@@ -1,0 +1,466 @@
+{
+  "fixtureVersion": 1,
+  "notice": "PUBLIC TEST-ONLY PRIVATE SCALARS. Never use these keys in an application identity. Signatures are verified, not compared against newly generated signatures.",
+  "valid": [
+    {
+      "name": "p256-scalar-3",
+      "privateScalarHex": "0000000000000000000000000000000000000000000000000000000000000003",
+      "xHex": "5ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c",
+      "yHex": "8734640c4998ff7e374b06ce1a64a2ecd82ab036384fb83d9a79b127a27d5032",
+      "publicKeyHex": "045ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c8734640c4998ff7e374b06ce1a64a2ecd82ab036384fb83d9a79b127a27d5032",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MEYCIQCuDY1viy4R6fcYuWHQ9dgPXP/PkRCcs09beMRF1wp66QIhAJ4i4YCZuSdFGoNCeGUwpMA0HmZWNxXcLBqvkOBL/jdS"
+    },
+    {
+      "name": "p256-scalar-43",
+      "privateScalarHex": "000000000000000000000000000000000000000000000000000000000000002b",
+      "xHex": "986ae2506f1ff104d04230861d8f4b498f4bc4c6d009b30f7544dc129b82d28d",
+      "yHex": "003cccc0a6460e0ae328a4d97d3c7b61d86fc6289c189f2525110c441bb07e97",
+      "publicKeyHex": "04986ae2506f1ff104d04230861d8f4b498f4bc4c6d009b30f7544dc129b82d28d003cccc0a6460e0ae328a4d97d3c7b61d86fc6289c189f2525110c441bb07e97",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        "deviceName": "Mac vector",
+        "platform": "macos",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BJhq4lBvH/EE0EIwhh2PS0mPS8TG0AmzD3VE3BKbgtKNADzMwKZGDgrjKKTZfTx7YdhvxiicGJ8lJREMRBuwfpc=",
+        "fingerprint": "aea24a2f2a2034cc4699c2dea82cca19408be8e534239527aaf87411a23760dd"
+      },
+      "messageBase64": "AAECf4D+/2FuaUNlAGlkZW50aXR5",
+      "signatureBase64": "MEUCIA7M+35mJicMSThYrP/Euh130Rr6L2yBrIhge1Lf+9WTAiEA8xQJTjaJohkoY1oZYRLxsdX7e97xMc/lk9EAIR2X0jY="
+    }
+  ],
+  "invalidIdentities": [
+    {
+      "name": "missing-name",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "unsupported-version",
+      "identity": {
+        "identitySchemaVersion": 2,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "uppercase-uuid",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "non-v4-uuid",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-5333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "empty-name",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "untrimmed-name",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": " Android ",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "long-name",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "unknown-platform",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "linux",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "unknown-algorithm",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "Ed25519",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "unknown-field",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe",
+        "unexpected": true
+      }
+    },
+    {
+      "name": "base64-missing-padding",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "base64-whitespace",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=\n",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "base64-noncanonical-padding-bits",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDJ=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "wrong-public-key-length",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UA==",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "wrong-public-key-prefix",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BV7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "b4851e7fe6587bdb906d4502f508da21972ed0fa2c2d1a7fd873ef3c18aab030"
+      }
+    },
+    {
+      "name": "off-curve-point",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "fingerprint": "59ef1a5a00f35b1a722da56ca70b52a721f33998634d4fa4259301f170f7b6bd"
+      }
+    },
+    {
+      "name": "fingerprint-mismatch",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "uppercase-fingerprint",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264C58FCA553508257B18703781FCD99C22A66186AA74F56E76F9B27CBE"
+      }
+    },
+    {
+      "name": "string-version",
+      "identity": {
+        "identitySchemaVersion": "1",
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "boolean-version",
+      "identity": {
+        "identitySchemaVersion": true,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    },
+    {
+      "name": "numeric-name",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": 123,
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      }
+    }
+  ],
+  "invalidSignatures": [
+    {
+      "name": "modified-message",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "bW9kaWZpZWQgbWVzc2FnZQ==",
+      "signatureBase64": "MEYCIQCuDY1viy4R6fcYuWHQ9dgPXP/PkRCcs09beMRF1wp66QIhAJ4i4YCZuSdFGoNCeGUwpMA0HmZWNxXcLBqvkOBL/jdS"
+    },
+    {
+      "name": "different-public-key",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        "deviceName": "Mac vector",
+        "platform": "macos",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BJhq4lBvH/EE0EIwhh2PS0mPS8TG0AmzD3VE3BKbgtKNADzMwKZGDgrjKKTZfTx7YdhvxiicGJ8lJREMRBuwfpc=",
+        "fingerprint": "aea24a2f2a2034cc4699c2dea82cca19408be8e534239527aaf87411a23760dd"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MEYCIQCuDY1viy4R6fcYuWHQ9dgPXP/PkRCcs09beMRF1wp66QIhAJ4i4YCZuSdFGoNCeGUwpMA0HmZWNxXcLBqvkOBL/jdS"
+    },
+    {
+      "name": "empty-signature",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": ""
+    },
+    {
+      "name": "truncated-signature",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MEYCIQCuDY1viy4R6fcYuWHQ9dgPXP/PkRCcs09beMRF1wp66QIhAJ4i4YCZuSdFGoNCeGUwpMA0HmZWNxXcLBqvkOBL/jc="
+    },
+    {
+      "name": "trailing-byte",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MEYCIQCuDY1viy4R6fcYuWHQ9dgPXP/PkRCcs09beMRF1wp66QIhAJ4i4YCZuSdFGoNCeGUwpMA0HmZWNxXcLBqvkOBL/jdSAA=="
+    },
+    {
+      "name": "nonminimal-sequence-length",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MIFGAiEArg2Nb4suEen3GLlh0PXYD1z/z5EQnLNPW3jERdcKeukCIQCeIuGAmbknRRqDQnhlMKTANB5mVjcV3Cwar5DgS/43Ug=="
+    },
+    {
+      "name": "negative-r",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MAYCAYACAQE="
+    },
+    {
+      "name": "zero-r",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MAYCAQACAQE="
+    },
+    {
+      "name": "zero-s",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MAYCAQECAQA="
+    },
+    {
+      "name": "r-out-of-range",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MCYCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQ=="
+    },
+    {
+      "name": "s-out-of-range",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MCYCAQECIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQ=="
+    },
+    {
+      "name": "nonminimal-r",
+      "identity": {
+        "identitySchemaVersion": 1,
+        "deviceId": "11111111-2222-4333-8444-555555555555",
+        "deviceName": "Android vector",
+        "platform": "android",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+        "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+      },
+      "messageBase64": "YW5pQ2UgaWRlbnRpdHkgaW50ZXJvcGVyYWJpbGl0eSB2ZWN0b3IgMQo=",
+      "signatureBase64": "MEcCIgAArg2Nb4suEen3GLlh0PXYD1z/z5EQnLNPW3jERdcKeukCIQCeIuGAmbknRRqDQnhlMKTANB5mVjcV3Cwar5DgS/43Ug=="
+    }
+  ]
+}

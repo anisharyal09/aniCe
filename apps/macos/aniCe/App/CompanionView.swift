@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 
 struct CompanionView: View {
+    let identity: IdentityViewModel
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
 
@@ -19,6 +20,11 @@ struct CompanionView: View {
                 .frame(maxWidth: .infinity)
 
                 Menu {
+                    Button("This device") {
+                        identity.showingDetails = true
+                        openWindow(id: "main")
+                        NSApp.activate()
+                    }
                     Button("Quit aniCe") { NSApp.terminate(nil) }
                 } label: {
                     Image(systemName: "ellipsis")

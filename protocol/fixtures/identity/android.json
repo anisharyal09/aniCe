@@ -1,0 +1,9 @@
+{
+  "identitySchemaVersion": 1,
+  "deviceId": "11111111-2222-4333-8444-555555555555",
+  "deviceName": "Android vector",
+  "platform": "android",
+  "algorithm": "ECDSA_P256_SHA256",
+  "publicKey": "BF7L5NGmMwpEyPfvlR1L8WXmxrch762phftBZhvG5/1shzRkDEmY/343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI=",
+  "fingerprint": "89896264c58fca553508257b18703781fcd99c22a66186aa74f56e76f9b27cbe"
+}

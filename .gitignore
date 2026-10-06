@@ -50,6 +50,6 @@ for-me.*
 
 
 # optional - will public later after updates or contents ready
-protocol/CHANGELOG.md
 
 .agents/STATE.md
+.agents/CONTEXT.md

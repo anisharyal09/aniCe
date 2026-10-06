@@ -1,0 +1,151 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package io.github.anisharyal09.anice.infrastructure.identity
+
+enum class IdentityErrorKind {
+    STORAGE_UNAVAILABLE,
+    KEY_MISSING,
+    INCONSISTENT,
+    CRYPTO_FAILURE,
+}
+
+/** Storage errors never trigger automatic key replacement. */
+class IdentityException(val kind: IdentityErrorKind, cause: Throwable? = null) : Exception(kind.name, cause)
+
+enum class KeyProtection(val label: String) {
+    STRONGBOX("Hardware protected (StrongBox)"),
+    HARDWARE("Hardware protected"),
+    PLATFORM("Protected by Android Keystore"),
+    UNKNOWN("Protection status unavailable"),
+}
+
+data class IdentitySnapshot(val identity: DeviceIdentity, val protection: KeyProtection)
+data class IdentitySignature(val snapshot: IdentitySnapshot, val signature: ByteArray)
+data class IdentityReference(val alias: String, val identity: DeviceIdentity)
+data class PendingIdentity(val alias: String, val deviceId: String)
+data class IdentityJournal(
+    val active: IdentityReference? = null,
+    val pending: PendingIdentity? = null,
+    val cleanup: List<String> = emptyList(),
+)
+
+interface IdentityMetadataStore {
+    fun read(): IdentityJournal?
+    fun write(journal: IdentityJournal)
+}
+
+interface IdentityKeyStore {
+    fun aliases(): Set<String>
+    fun create(alias: String)
+    fun publicKey(alias: String): ByteArray?
+    fun protection(alias: String): KeyProtection
+    fun sign(alias: String, message: ByteArray): ByteArray
+    fun delete(alias: String)
+}
+
+/** Serializes creation, signing, and two-phase identity replacement. */
+class IdentityService(
+    private val metadata: IdentityMetadataStore,
+    private val keys: IdentityKeyStore,
+    private val deviceName: () -> String,
+    private val aliasPrefix: String = "anice.identity.v1.",
+) {
+    @Synchronized fun getOrCreateIdentity(): IdentitySnapshot {
+        var journal = metadata.read()
+        journal?.let(::validateJournal)
+        if (journal == null) {
+            if (keys.aliases().any { it.startsWith(aliasPrefix) }) throw IdentityException(IdentityErrorKind.INCONSISTENT)
+            journal = IdentityJournal(pending = newPending())
+            metadata.write(journal)
+        }
+        if (journal.active != null) {
+            val snapshot = checkActive(journal.active)
+            // An interrupted reset has not committed: the previous identity remains authoritative.
+            if (journal.pending != null) {
+                journal = journal.copy(pending = null, cleanup = journal.cleanup + journal.pending.alias)
+                metadata.write(journal)
+            }
+            cleanup(journal)
+            return snapshot
+        }
+        if (journal.pending == null) throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        return finishCreation(journal)
+    }
+
+    @Synchronized fun sign(message: ByteArray): IdentitySignature {
+        val snapshot = getOrCreateIdentity()
+        val active = metadata.read()?.active ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        if (active.identity.deviceId != snapshot.identity.deviceId) throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        return IdentitySignature(snapshot, keys.sign(active.alias, message))
+    }
+
+    /** Called only after the UI confirms replacement. */
+    @Synchronized fun resetIdentity(): IdentitySnapshot {
+        val previous = try { metadata.read()?.also(::validateJournal) } catch (error: IdentityException) {
+            if (error.kind != IdentityErrorKind.INCONSISTENT) throw error
+            null
+        }
+        val retired = keys.aliases().filter { it.startsWith(aliasPrefix) }
+        val pending = newPending()
+        val staged = IdentityJournal(previous?.active, pending, retired.filter { it != previous?.active?.alias })
+        metadata.write(staged)
+        return finishCreation(staged)
+    }
+
+    private fun newPending(): PendingIdentity {
+        val id = DeviceIdentity.newId()
+        return PendingIdentity(aliasPrefix + id, id)
+    }
+
+    private fun finishCreation(journal: IdentityJournal): IdentitySnapshot {
+        val pending = journal.pending ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        if (keys.publicKey(pending.alias) == null) keys.create(pending.alias)
+        val bytes = keys.publicKey(pending.alias) ?: throw IdentityException(IdentityErrorKind.KEY_MISSING)
+        val identity = DeviceIdentity(pending.deviceId, DeviceIdentity.displayName(deviceName()), "android",
+            IdentityCrypto.encodeBase64(bytes), IdentityCrypto.fingerprint(bytes)).validate()
+        val reference = IdentityReference(pending.alias, identity)
+        val snapshot = checkActive(reference)
+        val committed = IdentityJournal(active = reference,
+            cleanup = (journal.cleanup + listOfNotNull(journal.active?.alias)).distinct().filter { it != reference.alias })
+        metadata.write(committed)
+        cleanup(committed)
+        return snapshot
+    }
+
+    private fun checkActive(reference: IdentityReference): IdentitySnapshot {
+        try { reference.identity.validate() } catch (error: Exception) { throw IdentityException(IdentityErrorKind.INCONSISTENT, error) }
+        val bytes = keys.publicKey(reference.alias) ?: throw IdentityException(IdentityErrorKind.KEY_MISSING)
+        if (IdentityCrypto.encodeBase64(bytes) != reference.identity.publicKey) throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        val challenge = "aniCe identity self-check v1".toByteArray(Charsets.UTF_8)
+        if (!IdentityCrypto.verify(bytes, challenge, keys.sign(reference.alias, challenge))) {
+            throw IdentityException(IdentityErrorKind.CRYPTO_FAILURE)
+        }
+        return IdentitySnapshot(reference.identity.copy(deviceName = DeviceIdentity.displayName(deviceName())), keys.protection(reference.alias))
+    }
+
+    private fun validateJournal(journal: IdentityJournal) {
+        try {
+            require(journal.active != null || journal.pending != null)
+            journal.active?.let {
+                it.identity.validate()
+                require(it.identity.platform == "android" && it.alias == aliasPrefix + it.identity.deviceId)
+            }
+            journal.pending?.let {
+                require(it.deviceId.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")))
+                require(it.alias == aliasPrefix + it.deviceId && it.alias != journal.active?.alias)
+            }
+            require(journal.cleanup.distinct() == journal.cleanup)
+            require(journal.cleanup.all { it.startsWith(aliasPrefix) && it != journal.active?.alias && it != journal.pending?.alias })
+        } catch (error: Exception) { throw IdentityException(IdentityErrorKind.INCONSISTENT, error) }
+    }
+
+    private fun cleanup(journal: IdentityJournal) {
+        val remaining = journal.cleanup.filter { alias ->
+            if (alias == journal.active?.alias || !alias.startsWith(aliasPrefix)) return@filter true
+            try { keys.delete(alias); false } catch (_: IdentityException) { true }
+        }
+        if (remaining != journal.cleanup) {
+            // Cleanup is retryable. A committed reset must never be rolled back after this point.
+            try { metadata.write(journal.copy(cleanup = remaining)) } catch (_: IdentityException) { }
+        }
+    }
+}

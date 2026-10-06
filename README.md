@@ -1,49 +1,41 @@
 # aniCe
 
-**Your phone and Mac, working together.**
+A local-first companion for Android and macOS, built with Kotlin/Compose and Swift/SwiftUI.
 
-aniCe is a planned local-first ecosystem for Android and macOS. The aim is a set of useful device-to-device capabilities built around lasting trust, shared communication, and interfaces that feel at home on each platform.
+**Current phase: persistent device identity.** Both apps show a local device ID, fingerprint, key-protection status, and confirmed reset. Device discovery, pairing, and communication are not implemented yet.
 
-[Design direction](docs/design/DESIGN.md) · [Changelog](CHANGELOG.md) · [Agent guide](AGENTS.md)
+## Repository structure
 
-## The direction
+```text
+apps/
+  android/              Android app and tests
+  macos/                Mac app, Xcode project, and tests
+protocol/
+  schemas/              Shared public identity contract
+  test-vectors/         Cryptographic verification cases
+  fixtures/             Sample public identities
+scripts/                Identity interchange harness and its tests
+docs/
+  design/               Shared design guide
+  decisions/            Architecture decisions
+  development/          Code organization and verification
+.agents/                Operational coding context
+core/rust/              Reserved; no shared runtime yet
+tests/                  Reserved for system tests
+tools/                  Reserved for developer utilities
+```
 
-- **Local first.** Start with trusted devices communicating locally.
-- **Native on both sides.** Kotlin for Android, Swift for macOS, with one recognizable design vocabulary.
-- **Shared foundations.** Features build on common trust and communication infrastructure.
-- **Room to grow.** Modular capabilities and independent platform versions. Rust enters only when a concrete shared runtime need justifies it.
+## Development
 
-## Where things stand
+- [Android setup and code structure](apps/android/README.md)
+- [macOS setup and code structure](apps/macos/README.md)
+- [Code organization](docs/development/code-organization.md)
+- [Design guide](docs/design/DESIGN.md)
+- [Identity decision](docs/decisions/0001-provisional-device-identity.md) · [Protocol](protocol/README.md)
+- [Verification and pending coverage](docs/development/identity-verification.md)
 
-**Phase 1B — Native App Foundations.**
+Android uses Keystore. The current ad-hoc Mac build uses development Keychain storage; signed Secure Enclave operation remains unverified. Android 10 and macOS 14 are provisional minimums.
 
-The [Android foundation](apps/android/README.md) contains a single-module Kotlin/Compose app with a native aniCe top bar and a truthful “No devices paired” starting screen. It uses development version `0.0.0-dev`, not a published release. Android 10+ is a provisional engineering baseline.
+Changes: [repository](CHANGELOG.md) · [Android](apps/android/CHANGELOG.md) · [macOS](apps/macos/CHANGELOG.md).
 
-The [macOS foundation](apps/macos/README.md) adds a SwiftUI starting window and menu-bar companion, with a provisional macOS 14 minimum. Its build and runtime verification await completion of local Xcode setup.
-
-Protocol schemas, pairing, authentication, networking, shared runtime, and CI remain unimplemented. Neither foundation connects devices yet.
-
-The design guide covers the full Mac window, menu-bar companion, and Android adaptation. Its sample panels illustrate interface direction; they do not promise implemented features or confirmed platform support.
-
-## Repository layout
-
-| Directory | Responsibility |
-| --- | --- |
-| `apps/` | Native Android and macOS applications. |
-| `core/` | Shared runtime logic; `rust/` reserves space until needed. |
-| `protocol/` | Communication contracts: `schemas/` for definitions, `test-vectors/` for verification cases. Formats remain undecided. |
-| `docs/` | Human-facing product and architecture documentation. |
-| `.agents/` | Concise operational context for coding agents. |
-| `tests/` | Cross-platform and system verification. |
-| `tools/` | Repository-local developer utilities. |
-| `scripts/` | Automation glue. |
-
-Empty directories contain `.gitkeep` placeholders so Git can preserve the layout. Remove a placeholder when its directory gains actual tracked content.
-
-## Following changes
-
-The [root changelog](CHANGELOG.md) tracks repository-wide work. Application and protocol changes have their own logs: [Android](apps/android/CHANGELOG.md), [macOS](apps/macos/CHANGELOG.md), and [protocol](protocol/CHANGELOG.md). All are currently unreleased.
-
-## License
-
-aniCe is licensed under the [GNU General Public License](LICENSE), version 3 or, at your option, any later version (**GPL-3.0-or-later**).
+Licensed under [GPL-3.0-or-later](LICENSE).

@@ -1,0 +1,9 @@
+{
+  "identitySchemaVersion": 1,
+  "deviceId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "deviceName": "Mac vector",
+  "platform": "macos",
+  "algorithm": "ECDSA_P256_SHA256",
+  "publicKey": "BJhq4lBvH/EE0EIwhh2PS0mPS8TG0AmzD3VE3BKbgtKNADzMwKZGDgrjKKTZfTx7YdhvxiicGJ8lJREMRBuwfpc=",
+  "fingerprint": "aea24a2f2a2034cc4699c2dea82cca19408be8e534239527aaf87411a23760dd"
+}

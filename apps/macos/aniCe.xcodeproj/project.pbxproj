@@ -1,38 +1,520 @@
 // !$*UTF8*$!
-// SPDX-License-Identifier: GPL-3.0-or-later
 {
 	archiveVersion = 1;
-	classes = {};
+	classes = {
+	};
 	objectVersion = 56;
 	objects = {
-		000000000000000000000064 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AniCeApp.swift; sourceTree = "<group>"; };
-		0000000000000000000000C8 = { isa = PBXBuildFile; fileRef = 000000000000000000000064; };
-		000000000000000000000065 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		0000000000000000000000C9 = { isa = PBXBuildFile; fileRef = 000000000000000000000065; };
-		000000000000000000000066 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
-		0000000000000000000000CA = { isa = PBXBuildFile; fileRef = 000000000000000000000066; };
-		000000000000000000000067 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
-		0000000000000000000000CB = { isa = PBXBuildFile; fileRef = 000000000000000000000067; };
-		000000000000000000000068 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
-		0000000000000000000000CC = { isa = PBXBuildFile; fileRef = 000000000000000000000068; };
-		000000000000000000000069 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AniCePalette.swift; sourceTree = "<group>"; };
-		0000000000000000000000CD = { isa = PBXBuildFile; fileRef = 000000000000000000000069; };
-		00000000000000000000006A = { isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = aniCe.entitlements; sourceTree = "<group>"; };
-		00000000000000000000000A = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = aniCe.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		00000000000000000000000B = { isa = PBXGroup; children = (00000000000000000000000C, 00000000000000000000000D,); sourceTree = "<group>"; };
-		00000000000000000000000C = { isa = PBXGroup; children = (000000000000000000000064, 000000000000000000000065, 000000000000000000000066, 000000000000000000000067, 000000000000000000000068, 000000000000000000000069, 00000000000000000000006A,); path = aniCe; sourceTree = "<group>"; };
-		00000000000000000000000D = { isa = PBXGroup; children = (00000000000000000000000A,); name = Products; sourceTree = "<group>"; };
-		000000000000000000000014 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (0000000000000000000000C8, 0000000000000000000000C9, 0000000000000000000000CA, 0000000000000000000000CB, 0000000000000000000000CC, 0000000000000000000000CD,); runOnlyForDeploymentPostprocessing = 0; };
-		000000000000000000000015 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		000000000000000000000016 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		00000000000000000000001E = { isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000029; buildPhases = (000000000000000000000014, 000000000000000000000015, 000000000000000000000016,); buildRules = (); dependencies = (); name = aniCe; productName = aniCe; productReference = 00000000000000000000000A; productType = "com.apple.product-type.application"; };
-		000000000000000000000001 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; TargetAttributes = { 00000000000000000000001E = { ProvisioningStyle = Manual; }; }; }; buildConfigurationList = 000000000000000000000028; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base,); mainGroup = 00000000000000000000000B; productRefGroup = 00000000000000000000000D; projectDirPath = ""; projectRoot = ""; targets = (00000000000000000000001E,); };
-		000000000000000000000032 = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 6.0; DEBUG_INFORMATION_FORMAT = dwarf; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG"; ONLY_ACTIVE_ARCH = YES; }; name = Debug; };
-		000000000000000000000033 = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx; SWIFT_VERSION = 6.0; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; }; name = Release; };
-		000000000000000000000034 = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = aniCe/aniCe.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = YES; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = aniCe; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities"; MARKETING_VERSION = 0.0.0; CURRENT_PROJECT_VERSION = 1; PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice; PRODUCT_NAME = "$(TARGET_NAME)"; COMBINE_HIDPI_IMAGES = YES; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; }; name = Debug; };
-		000000000000000000000035 = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = aniCe/aniCe.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; ENABLE_APP_SANDBOX = YES; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = aniCe; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities"; MARKETING_VERSION = 0.0.0; CURRENT_PROJECT_VERSION = 1; PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice; PRODUCT_NAME = "$(TARGET_NAME)"; COMBINE_HIDPI_IMAGES = YES; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; }; name = Release; };
-		000000000000000000000028 = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000032, 000000000000000000000033,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		000000000000000000000029 = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000034, 000000000000000000000035,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+
+/* Begin PBXBuildFile section */
+		0000000000000000000000C8 /* AniCeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000064 /* AniCeApp.swift */; };
+		0000000000000000000000C9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000065 /* AppDelegate.swift */; };
+		0000000000000000000000CA /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000066 /* MainWindowView.swift */; };
+		0000000000000000000000CB /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000067 /* EmptyStateView.swift */; };
+		0000000000000000000000CC /* CompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000068 /* CompanionView.swift */; };
+		0000000000000000000000CD /* AniCePalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000069 /* AniCePalette.swift */; };
+		000000000000000000000170 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000070 /* DeviceIdentity.swift */; };
+		000000000000000000000171 /* IdentityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000071 /* IdentityService.swift */; };
+		000000000000000000000172 /* MacIdentityStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000072 /* MacIdentityStorage.swift */; };
+		000000000000000000000173 /* IdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000073 /* IdentityView.swift */; };
+		000000000000000000000174 /* IdentityAssembly.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000074 /* IdentityAssembly.swift */; };
+		000000000000000000000175 /* IdentityViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000075 /* IdentityViewModel.swift */; };
+		000000000000000000000202 /* IdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000201 /* IdentityTests.swift */; };
+		000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		00000000000000000000020A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 00000000000000000000001E;
+			remoteInfo = aniCe;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		00000000000000000000000A /* aniCe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = aniCe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000064 /* AniCeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AniCeApp.swift; sourceTree = "<group>"; };
+		000000000000000000000065 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		000000000000000000000066 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
+		000000000000000000000067 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		000000000000000000000068 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
+		000000000000000000000069 /* AniCePalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AniCePalette.swift; sourceTree = "<group>"; };
+		00000000000000000000006A /* aniCe.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = aniCe.entitlements; sourceTree = "<group>"; };
+		000000000000000000000070 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
+		000000000000000000000071 /* IdentityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityService.swift; sourceTree = "<group>"; };
+		000000000000000000000072 /* MacIdentityStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacIdentityStorage.swift; sourceTree = "<group>"; };
+		000000000000000000000073 /* IdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityView.swift; sourceTree = "<group>"; };
+		000000000000000000000074 /* IdentityAssembly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityAssembly.swift; sourceTree = "<group>"; };
+		000000000000000000000075 /* IdentityViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityViewModel.swift; sourceTree = "<group>"; };
+		000000000000000000000201 /* IdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityTests.swift; sourceTree = "<group>"; };
+		000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/identity-vectors.json"; sourceTree = SOURCE_ROOT; };
+		000000000000000000000205 /* aniCeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = aniCeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		000000000000000000000015 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000209 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		00000000000000000000000B = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000206 /* aniCeTests */,
+				00000000000000000000000C /* aniCe */,
+				00000000000000000000000D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		00000000000000000000000C /* aniCe */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000300 /* App */,
+				000000000000000000000301 /* Infrastructure */,
+				000000000000000000000303 /* Features */,
+				000000000000000000000305 /* UI */,
+				00000000000000000000006A /* aniCe.entitlements */,
+			);
+			path = aniCe;
+			sourceTree = "<group>";
+		};
+		00000000000000000000000D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000205 /* aniCeTests.xctest */,
+				00000000000000000000000A /* aniCe.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		000000000000000000000206 /* aniCeTests */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000201 /* IdentityTests.swift */,
+				000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */,
+			);
+			path = aniCeTests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000300 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000064 /* AniCeApp.swift */,
+				000000000000000000000065 /* AppDelegate.swift */,
+				000000000000000000000066 /* MainWindowView.swift */,
+				000000000000000000000068 /* CompanionView.swift */,
+				000000000000000000000074 /* IdentityAssembly.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		000000000000000000000301 /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000302 /* Identity */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
+		000000000000000000000302 /* Identity */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000070 /* DeviceIdentity.swift */,
+				000000000000000000000071 /* IdentityService.swift */,
+				000000000000000000000072 /* MacIdentityStorage.swift */,
+			);
+			path = Identity;
+			sourceTree = "<group>";
+		};
+		000000000000000000000303 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000304 /* DeviceIdentity */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		000000000000000000000304 /* DeviceIdentity */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000073 /* IdentityView.swift */,
+				000000000000000000000075 /* IdentityViewModel.swift */,
+			);
+			path = DeviceIdentity;
+			sourceTree = "<group>";
+		};
+		000000000000000000000305 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000306 /* Theme */,
+				000000000000000000000307 /* Components */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		000000000000000000000306 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000069 /* AniCePalette.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		000000000000000000000307 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000067 /* EmptyStateView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		00000000000000000000001E /* aniCe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000029 /* Build configuration list for PBXNativeTarget "aniCe" */;
+			buildPhases = (
+				000000000000000000000014 /* Sources */,
+				000000000000000000000015 /* Frameworks */,
+				000000000000000000000016 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = aniCe;
+			productName = aniCe;
+			productReference = 00000000000000000000000A /* aniCe.app */;
+			productType = "com.apple.product-type.application";
+		};
+		00000000000000000000020C /* aniCeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 00000000000000000000020F /* Build configuration list for PBXNativeTarget "aniCeTests" */;
+			buildPhases = (
+				000000000000000000000207 /* Sources */,
+				000000000000000000000209 /* Frameworks */,
+				000000000000000000000208 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				00000000000000000000020B /* PBXTargetDependency */,
+			);
+			name = aniCeTests;
+			productName = aniCeTests;
+			productReference = 000000000000000000000205 /* aniCeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					00000000000000000000001E = {
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 000000000000000000000028 /* Build configuration list for PBXProject "aniCe" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 00000000000000000000000B;
+			productRefGroup = 00000000000000000000000D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				00000000000000000000001E /* aniCe */,
+				00000000000000000000020C /* aniCeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		000000000000000000000016 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000208 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		000000000000000000000014 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000174 /* IdentityAssembly.swift in Sources */,
+				000000000000000000000175 /* IdentityViewModel.swift in Sources */,
+				000000000000000000000170 /* DeviceIdentity.swift in Sources */,
+				000000000000000000000171 /* IdentityService.swift in Sources */,
+				000000000000000000000172 /* MacIdentityStorage.swift in Sources */,
+				000000000000000000000173 /* IdentityView.swift in Sources */,
+				0000000000000000000000C8 /* AniCeApp.swift in Sources */,
+				0000000000000000000000C9 /* AppDelegate.swift in Sources */,
+				0000000000000000000000CA /* MainWindowView.swift in Sources */,
+				0000000000000000000000CB /* EmptyStateView.swift in Sources */,
+				0000000000000000000000CC /* CompanionView.swift in Sources */,
+				0000000000000000000000CD /* AniCePalette.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		000000000000000000000207 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000202 /* IdentityTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		00000000000000000000020B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 00000000000000000000001E /* aniCe */;
+			targetProxy = 00000000000000000000020A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		000000000000000000000032 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		000000000000000000000033 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		000000000000000000000034 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = aniCe/aniCe.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ANICE_DEVELOPMENT_KEYCHAIN";
+			};
+			name = Debug;
+		};
+		000000000000000000000035 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = aniCe/aniCe.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ANICE_DEVELOPMENT_KEYCHAIN";
+			};
+			name = Release;
+		};
+		00000000000000000000020D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/aniCe.app/Contents/MacOS/aniCe";
+			};
+			name = Debug;
+		};
+		00000000000000000000020E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/aniCe.app/Contents/MacOS/aniCe";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		000000000000000000000028 /* Build configuration list for PBXProject "aniCe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000032 /* Debug */,
+				000000000000000000000033 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000029 /* Build configuration list for PBXNativeTarget "aniCe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000034 /* Debug */,
+				000000000000000000000035 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		00000000000000000000020F /* Build configuration list for PBXNativeTarget "aniCeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000000020D /* Debug */,
+				00000000000000000000020E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
 	};
-	rootObject = 000000000000000000000001;
+	rootObject = 000000000000000000000001 /* Project object */;
 }

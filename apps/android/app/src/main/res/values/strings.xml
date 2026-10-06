@@ -4,4 +4,25 @@
     <string name="app_name">aniCe</string>
     <string name="no_devices_paired">No devices paired</string>
     <string name="pairing_later">Device pairing will be added in a later phase.</string>
+    <string name="this_device">This device</string>
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="retry">Retry</string>
+    <string name="android_platform">Android</string>
+    <string name="device_id">Device ID</string>
+    <string name="fingerprint">Fingerprint</string>
+    <string name="identity_description">Your local identity stays the same until you reset it.</string>
+    <string name="fingerprint_description">A public fingerprint of this device’s signing key.</string>
+    <string name="reset_identity_description">Creates a new identity. Once pairing is available, you will need to pair your devices again.</string>
+    <string name="key_protection">Key protection</string>
+    <string name="copy_field">Copy %1$s</string>
+    <string name="copied">Copied</string>
+    <string name="reset_identity">Reset identity</string>
+    <string name="reset_identity_title">Reset this device’s identity?</string>
+    <string name="reset_identity_warning">This creates a new device ID and signing key. Once pairing is available, your other devices will need to pair with this device again.</string>
+    <string name="identity_unavailable">Device identity unavailable</string>
+    <string name="identity_storage_unavailable">Secure storage is unavailable. Unlock your device and try again. Your identity has not been replaced.</string>
+    <string name="identity_key_missing">The saved signing key is missing or unusable. Try again, or reset this device’s identity to create a replacement.</string>
+    <string name="identity_inconsistent">The saved identity could not be read consistently. Try again, or reset it to create a replacement.</string>
+    <string name="identity_crypto_failure">The identity could not complete its signing check. Try again, or reset it to create a replacement.</string>
 </resources>

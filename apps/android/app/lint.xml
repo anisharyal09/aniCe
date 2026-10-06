@@ -11,6 +11,7 @@
         <ignore regexp="A newer version of `compileSdk` than 36 is available: 37" />
         <ignore regexp="A newer version of androidx.core:core-ktx than 1.17.0 is available: 1.19.1" />
         <ignore regexp="A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.10.0 is available: 2.11.0" />
+        <ignore regexp="A newer version of androidx.lifecycle:lifecycle-viewmodel than 2.10.0 is available: 2.11.0" />
         <ignore regexp="A newer version of androidx.activity:activity-compose than 1.12.4 is available: 1.13.0" />
         <ignore regexp="A newer version of androidx.compose:compose-bom than 2026.02.01 is available: 2026.09.00" />
     </issue>

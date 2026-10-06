@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:anice:identity:1",
+  "$comment": "SPDX-License-Identifier: GPL-3.0-or-later. See protocol/README.md for mandatory semantic validation beyond JSON Schema annotations.",
+  "title": "aniCe provisional public device identity",
+  "type": "object",
+  "required": [
+    "identitySchemaVersion",
+    "deviceId",
+    "deviceName",
+    "platform",
+    "algorithm",
+    "publicKey",
+    "fingerprint"
+  ],
+  "properties": {
+    "identitySchemaVersion": { "type": "integer", "const": 1 },
+    "deviceId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "deviceName": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "platform": { "type": "string", "enum": ["android", "macos"] },
+    "algorithm": { "type": "string", "const": "ECDSA_P256_SHA256" },
+    "publicKey": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "minLength": 88,
+      "maxLength": 88,
+      "pattern": "^[A-Za-z0-9+/]{87}=$"
+    },
+    "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "additionalProperties": false
+}

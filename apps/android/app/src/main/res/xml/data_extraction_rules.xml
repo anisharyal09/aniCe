@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- This foundation has no data to migrate; revisit with a specified persistence model. -->
+<!-- Device identity is local to this installation. Metadata also lives in noBackupFilesDir. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="." />

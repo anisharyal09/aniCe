@@ -1,45 +1,61 @@
 # aniCe for macOS
 
-The native Mac client for aniCe, built with SwiftUI.
+Swift 6 and SwiftUI. Phase 2 provides persistent device identity, a main window, and a menu-bar companion. Pairing and device communication are not implemented yet.
 
-The foundation opens to **No devices paired**, with a menu-bar companion for reopening the main window and quitting the app. Both surfaces follow system appearance and the shared aniCe palette. Pairing and device communication are future work.
+## Code structure
 
-## Run in Xcode
-
-1. Open `aniCe.xcodeproj` and complete Xcode's license and first-launch setup if prompted.
-2. Select the **aniCe** scheme and **My Mac** destination.
-3. Click **Run** or press **Command-R**.
-
-Close the window to keep aniCe available in the menu bar. Choose **Open aniCe** or click its Dock icon to reopen it. **Quit aniCe** and the standard **Command-Q** shortcut exit the app.
-
-## Build from the terminal
-
-From this directory, select a full Xcode for this command. If your selected developer directory points to Command Line Tools, the example falls back to Xcode's usual installation location; adjust the fallback if you installed it elsewhere.
-
-```sh
-anice_developer="$(xcode-select -p)"
-if [ ! -d "$anice_developer/Platforms/MacOSX.platform" ]; then
-    anice_developer='/Applications/Xcode.app/Contents/Developer'
-fi
-DEVELOPER_DIR="$anice_developer" xcodebuild \
-    -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
-    -derivedDataPath /tmp/aniCe-DerivedData ONLY_ACTIVE_ARCH=NO build
-open /tmp/aniCe-DerivedData/Build/Products/Debug/aniCe.app
+```text
+aniCe/
+  App/
+    AniCeApp.swift                  App scenes and shared identity model
+    AppDelegate.swift               Window and Dock activation
+    MainWindowView.swift            Main window and details sheet
+    CompanionView.swift             Menu-bar actions
+    IdentityAssembly.swift          Backend and service assembly
+  Features/DeviceIdentity/
+    IdentityView.swift              Details, copying, reset confirmation
+    IdentityViewModel.swift         Presentation state and recovery
+  Infrastructure/Identity/
+    DeviceIdentity.swift            Public identity validation and encoding
+    IdentityService.swift           Actor-isolated lifecycle and signing
+    MacIdentityStorage.swift        Keychain backends and atomic metadata
+  UI/
+    Theme/AniCePalette.swift         Semantic light/dark colors
+    Components/EmptyStateView.swift  Unpaired-state view
+  aniCe.entitlements                Sandbox configuration
+aniCeTests/
+  IdentityTests.swift               Hosted identity and storage tests
+IdentityInterchange/
+  main.swift                        Test-only signature interchange endpoint
+aniCe.xcodeproj/                     Targets, source references, shared scheme
 ```
 
-The build produces an Apple Silicon/Intel app and uses local ad-hoc signing. No Apple developer account is needed. Downloaded or quarantined copies can be subject to Gatekeeper checks; local ad-hoc signing is not distribution signing or notarization.
+The window and companion share one identity model. When adding or moving Swift files, update Xcode target membership and any interchange compiler paths. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
 
-## Development baseline
+## Run and check
 
-- **Platform:** macOS 14 or later, provisionally.
-- **Language:** Swift 6, using Apple frameworks only.
-- **Identity:** `io.github.anisharyal09.anice`, development version `0.0.0` (build `1`).
-- **Sandbox:** enabled, with no network or hardware-access entitlements.
+Open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
 
-## Where to work
+From `apps/macos/`, with Xcode installed at the path below:
 
-`aniCe/` contains the app scenes, application delegate, main window, companion, shared empty state, and semantic palette. `aniCe.xcodeproj` contains the target settings and shared run scheme.
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+    -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
+    -derivedDataPath /tmp/aniCe-DerivedData ONLY_ACTIVE_ARCH=NO build
 
-Follow the [design guide](../../docs/design/DESIGN.md) when extending the interface. Mac changes belong in the local [changelog](CHANGELOG.md).
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+    -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
+    -derivedDataPath /tmp/aniCe-DerivedData -destination 'platform=macOS' test
+```
 
-Licensed under [GNU GPL v3 or later](../../LICENSE) (`GPL-3.0-or-later`).
+App: `/tmp/aniCe-DerivedData/Build/Products/Debug/aniCe.app`. Prefix the test command with `TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS=1` to include isolated Keychain integration tests.
+
+## Development storage
+
+The current ad-hoc build explicitly uses the login Keychain, without hardware isolation. Rebuilds may require renewed authorization. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
+
+The separate signed data-protection/Secure Enclave backend requires real signing and authorized entitlements; native verification is pending. Universal builds support Apple Silicon and Intel. macOS 14 is the provisional minimum; runtime coverage remains pending.
+
+[Code organization](../../docs/development/code-organization.md) · [Design](../../docs/design/DESIGN.md) · [Verification](../../docs/development/identity-verification.md) · [Changelog](CHANGELOG.md)
+
+Licensed under [GPL-3.0-or-later](../../LICENSE).
