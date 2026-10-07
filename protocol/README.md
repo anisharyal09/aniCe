@@ -8,8 +8,9 @@ This directory contains the cross-platform communication contracts, schemas, and
 
 | Contract | Version | Status | Primary Reference | Scope |
 | :--- | :--- | :--- | :--- | :--- |
-| **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Hardware-backed P-256 public identity and fingerprint |
+| **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Protected native P-256 public identity and fingerprint |
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
+| **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
 
 ---
 
@@ -38,7 +39,7 @@ Beyond standard JSON type checks, both platform implementations strictly validat
 - **Display Metadata:** Device names and protection labels are local display metadata and do not confer cryptographic trust by themselves.
 
 ### Cryptographic Signatures
-Cross-platform signature exchange uses native hardware-backed keystores without third-party crypto glue:
+Cross-platform signature exchange uses native protected key stores. Actual hardware protection is reported by each backend:
 - **Algorithm:** P-256 (NIST P-256 / secp256r1) with SHA-256 digest.
 - **Hashing:** Message bytes are passed directly to platform signing APIs (not pre-hashed).
 - **Format:** Strict ASN.1 DER `SEQUENCE(INTEGER r, INTEGER s)`.
@@ -61,20 +62,38 @@ Full specification, timing limits, and validation rules are documented in [`blue
 
 ---
 
-## 3. Directory Layout & Shared Fixtures
+## 3. Pairing & Trust Contract (`v1`)
+
+Full specification, byte framing, cryptographic derivation, and lifetime rules are documented in [`pairing/README.md`](pairing/README.md).
+
+- **Service UUID:** `414E4953-4853-4149-4A49-4C4365090901`
+- **Pairing Write UUID:** `414E4953-4853-4149-4A49-4C4365090903` (Write with response)
+- **Pairing Indicate UUID:** `414E4953-4853-4149-4A49-4C4365090904` (Indicate)
+- **Authentication Modes:**
+  - **QR Code:** P-256 ECDH with 256-bit PSK and SHA-256 identity fingerprint commitment.
+  - **Six-Digit PIN:** OPAQUE PAKE (`opaque-ke 4.0.1`, Ristretto255, TripleDH, Argon2id).
+- **Transport Security:** AES-256-GCM directional encryption, transcript-bound identity proofs, and mutually signed storage receipts.
+
+---
+
+## 4. Directory Layout & Shared Fixtures
 
 ```text
 protocol/
-├── CHANGELOG.md               # Protocol version and contract changelog
-├── README.md                  # This document
+├── CHANGELOG.md                   # Protocol version and contract changelog
+├── README.md                      # This document
 ├── bluetooth/
-│   └── README.md              # BLE discovery wire format & lifecycle
+│   └── README.md                  # BLE discovery wire format & lifecycle
 ├── fixtures/
-│   └── identity/              # Sample valid JSON records (android.json, macos.json)
+│   └── identity/                  # Sample valid JSON records (android.json, macos.json)
+├── pairing/
+│   └── README.md                  # Pairing protocol, framing, cryptography & state machine
 ├── schemas/
-│   └── identity.schema.json   # Canonical JSON Schema for public identity
+│   └── identity.schema.json       # Canonical JSON Schema for public identity
 └── test-vectors/
-    ├── discovery-vectors.json # Positive & negative BLE discovery test vectors
-    ├── identity-vectors.json  # Positive & negative P-256 identity & DER signature vectors
-    └── generate_identity_vectors.py # Deterministic fixture regeneration script
+    ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
+    ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
+    ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
+    ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
+    └── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
 ```

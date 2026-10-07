@@ -43,7 +43,7 @@ fun DiscoveryScreen(model: DiscoveryViewModel) {
     }
     val state = model.state
     Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Find your Mac", style = MaterialTheme.typography.headlineSmall)
+        Text("Nearby compatibility check", style = MaterialTheme.typography.headlineSmall)
         Text("On your Mac, open aniCe and choose Make this Mac discoverable. Then scan here.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth()) {
@@ -78,6 +78,6 @@ fun DiscoveryScreen(model: DiscoveryViewModel) {
                 }
             }
         }
-        Text("Nearby discovery does not identify or trust a device. Pairing will be added separately.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Nearby discovery does not identify or trust a device. Use Find your Mac from the home screen to pair with a QR code or six-digit code.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

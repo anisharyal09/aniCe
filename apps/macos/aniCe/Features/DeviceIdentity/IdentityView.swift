@@ -8,6 +8,7 @@ struct IdentityView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var confirmingReset = false
     @State private var copyFeedback = ""
+    @State private var deviceName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -31,6 +32,15 @@ struct IdentityView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text("macOS").foregroundStyle(AniCePalette.secondaryText(colorScheme))
                             }
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Device name").font(.headline)
+                            TextField("Mac name", text: $deviceName).textFieldStyle(.roundedBorder)
+                            Text("Shown to your phone after authentication. Nearby scans keep names private.")
+                                .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                            Button("Save name") { Task { await model.rename(deviceName) } }
+                                .disabled(model.isWorking || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || deviceName.unicodeScalars.count > 64 || deviceName == local.identity.deviceName)
                         }
                         Text("Your local identity stays the same until you reset it.")
                             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -70,7 +80,7 @@ struct IdentityView: View {
                     if model.local != nil {
                         Divider()
                         Text("Reset identity").font(.headline)
-                        Text("Resetting creates a new identity. Once pairing is available, you will need to pair your devices again.")
+                        Text("Resetting creates a new identity. Existing pairings become invalid; you will need to pair your devices again.")
                             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                         Button("Reset device identity", role: .destructive) { confirmingReset = true }
                             .disabled(model.isWorking || !model.canReset)
@@ -88,10 +98,12 @@ struct IdentityView: View {
             Button("Cancel", role: .cancel) {}
             Button("Reset identity", role: .destructive) { copyFeedback = ""; Task { await model.reset() } }
         } message: {
-            Text("A new device ID and signing key will replace this identity. Once pairing is available, you will need to pair your devices again.")
+            Text("A new device ID and signing key will replace this identity. Existing pairings become invalid; you will need to pair your devices again.")
         }
         .task { if !Self.isTesting { await model.load() } }
         .onChange(of: model.local?.identity.deviceId) { copyFeedback = "" }
+        .onChange(of: model.local?.identity.deviceName) { _, name in deviceName = name ?? "" }
+        .onAppear { deviceName = model.local?.identity.deviceName ?? "" }
     }
 
     static var isTesting: Bool { ProcessInfo.processInfo.environment["ANICE_IDENTITY_TESTING"] == "1" }
@@ -104,7 +116,7 @@ struct IdentityView: View {
                 .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
             if recovery.canReset && !recovery.canRetry {
-                Text("This creates a new device ID and fingerprint. Once pairing is available, you will need to pair your devices again.")
+                Text("This creates a new device ID and fingerprint. Existing pairings become invalid; you will need to pair your devices again.")
                     .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
             }
             ViewThatFits(in: .horizontal) {

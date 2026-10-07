@@ -1,6 +1,6 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Phase 2 provides persistent device identity through Android Keystore. Pairing and authenticated communication are not implemented yet.
+Kotlin, Jetpack Compose, and Material 3. Phase 2 provides persistent device identity through Android Keystore. Phase 4 adds CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Physical acceptance remains pending.
 
 ## Nearby discovery
 
@@ -57,3 +57,9 @@ Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JV
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 Licensed under [GPL-3.0-or-later](../../LICENSE).
+
+## Pairing
+
+Home → Pair your Mac offers QR scanning and six-digit entry. Camera access is requested only for QR scanning; Bluetooth access only after an invitation/code is entered and Start runs. A 15-second QR lookup gathers bounded candidates and checks ephemeral rendezvous IDs; manual mode selects a generic row. Both devices require explicit approval after identity verification. Trusted-device forgetting is local.
+
+`preBuild` invokes the shared Rust build. Install the [native prerequisites](../../core/rust/pairing/README.md); set `ANICE_NDK` if NDK r27d is outside the documented temporary location. Packaged ABIs: arm64-v8a, armeabi-v7a and x86_64, with 16 KiB ELF alignment. No Google Play Services are required.

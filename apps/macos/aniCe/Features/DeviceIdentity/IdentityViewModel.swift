@@ -53,7 +53,7 @@ final class IdentityViewModel {
     var canReset: Bool { local != nil || recovery?.canReset == true }
     var isWorking = false
     var showingDetails = false
-    private let service: IdentityService
+    let service: IdentityService
 
     private var hasAttemptedLoad = false
 
@@ -78,6 +78,14 @@ final class IdentityViewModel {
         defer { isWorking = false }
         do { local = try await service.reset(); recovery = nil }
         catch { report(error) }
+    }
+
+    func rename(_ name: String) async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        do { local = try await service.rename(name); recovery = nil }
+        catch { recovery = IdentityRecovery(error: error as? IdentityError) }
     }
 
     private func report(_ error: Error) {

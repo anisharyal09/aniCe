@@ -55,7 +55,7 @@ enum KeyProtection: String, Codable, Sendable {
 
 /// The public identity contract of a macOS aniCe installation.
 ///
-/// Shared during discovery and pairing. Does not contain any private key material.
+/// Shared during authenticated pairing. Discovery exchanges no identity material.
 struct DeviceIdentity: Codable, Equatable, Sendable {
     let identitySchemaVersion: Int
     let deviceId: String

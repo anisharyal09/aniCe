@@ -1,6 +1,6 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI. Phase 2 provides persistent device identity, a main window, and a menu-bar companion. Pairing and authenticated communication are not implemented yet.
+Swift 6 and SwiftUI. Phase 2 provides persistent device identity, a main window, and a menu-bar companion. Phase 4 adds QR/PIN pairing, authenticated identity proofs, mutual approval, and local peer trust. Physical acceptance and security review remain pending.
 
 ## Nearby discovery
 
@@ -24,6 +24,8 @@ aniCe/
     IdentityService.swift           Actor-isolated lifecycle and signing
     MacIdentityStorage.swift        Keychain backends and atomic metadata
   Infrastructure/Bluetooth/        Peripheral adapter, codec, timed session
+  Infrastructure/Pairing/          Bootstrap engine, native crypto, trust journal, PAKE ABI
+  Features/Pairing/                Shared pairing model, QR/PIN and trusted-device view
   Features/Discovery/              Shared discovery model and view
   UI/
     Theme/AniCePalette.swift         Semantic light/dark colors
@@ -40,7 +42,7 @@ The window and companion share one identity model. When adding or moving Swift f
 
 ## Run and check
 
-Open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). Then open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
 
 From `apps/macos/`, with Xcode installed at the path below:
 
@@ -65,3 +67,5 @@ The separate signed data-protection/Secure Enclave backend requires real signing
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 Licensed under [GPL-3.0-or-later](../../LICENSE).
+
+Signing diagnostics log only operation counts under `identity-signing`; repeated UI prompts still require physical observation.

@@ -171,15 +171,17 @@ class IdentityServiceTest {
     @Test fun everyCreationAndResetStorageBoundaryRecoversCommittedIdentity() {
         // Fail both before and after each storage operation. A write which committed
         // before its error must still remain the source of truth on restart.
-        for (reset in listOf(false, true)) for (after in listOf(false, true)) for (boundary in 1..24) {
+        fun scenario(reset: Boolean, after: Boolean, boundary: Int?): Int {
             val metadata = MemoryMetadata()
             val keys = MemoryKeys()
             fun normal() = IdentityService(metadata, keys, { "Pixel" })
             if (reset) normal().getOrCreateIdentity()
             var operations = 0
             var enabled = true
+            var triggered = false
             fun <T> operation(body: () -> T): T {
                 val fails = enabled && ++operations == boundary
+                if (fails) triggered = true
                 if (fails && !after) throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE)
                 val result = body()
                 if (fails && after) throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE)
@@ -200,12 +202,20 @@ class IdentityServiceTest {
             val service = IdentityService(faultMetadata, faultKeys, { "Pixel" })
             try { if (reset) service.resetIdentity() else service.getOrCreateIdentity() }
             catch (error: IdentityException) { assertEquals(IdentityErrorKind.STORAGE_UNAVAILABLE, error.kind) }
+            if (boundary != null) assertTrue("Fault boundary was not exercised: $boundary", triggered)
+            val measured = operations
             val committed = metadata.value?.active?.identity?.deviceId ?: metadata.value?.pending?.deviceId
             enabled = false
             val recovered = normal().getOrCreateIdentity()
             if (committed != null) assertEquals("reset=$reset, after=$after, boundary=$boundary", committed, recovered.identity.deviceId)
             assertEquals(1, keys.values.size)
             assertNull(metadata.value?.pending)
+            return measured
+        }
+        for (reset in listOf(false, true)) {
+            val boundaries = scenario(reset, false, null)
+            assertTrue(boundaries > 0)
+            for (after in listOf(false, true)) for (boundary in 1..boundaries) scenario(reset, after, boundary)
         }
     }
 }

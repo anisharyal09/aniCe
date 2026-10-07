@@ -20,6 +20,15 @@ enum AniCePalette {
     static func secondaryText(_ scheme: ColorScheme) -> Color {
         color(light: 0x626E76, dark: 0xADB8BF, scheme: scheme)
     }
+    static func secondarySurface(_ scheme: ColorScheme) -> Color {
+        color(light: 0xEAEAE4, dark: 0x20272D, scheme: scheme)
+    }
+    static func separator(_ scheme: ColorScheme) -> Color {
+        color(light: 0xDCE0DF, dark: 0x3C4850, scheme: scheme)
+    }
+    static func error(_ scheme: ColorScheme) -> Color {
+        color(light: 0xA13D38, dark: 0xE8AAA4, scheme: scheme)
+    }
 
     private static func color(light: UInt32, dark: UInt32, scheme: ColorScheme) -> Color {
         let hex = scheme == .dark ? dark : light

@@ -10,7 +10,7 @@ struct EmptyStateView: View {
                 .font(.title2)
                 .fontWeight(.medium)
                 .foregroundStyle(AniCePalette.primaryText(colorScheme))
-            Text("Device pairing will be added in a later phase.")
+            Text("Pair a nearby Android device using a QR code or six-digit code.")
                 .font(.body)
                 .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         }

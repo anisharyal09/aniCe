@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CryptoKit
 import Foundation
+import os
 import LocalAuthentication
 import Security
 
@@ -145,7 +146,11 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
         return try publicKey(key, tag: tag)
     }
 
+    private static let signingRequests = OSAllocatedUnfairLock(initialState: 0)
+    private static let signingLogger = Logger(subsystem: "io.github.anisharyal09.anice", category: "identity-signing")
     func sign(tag: String, message: Data) throws -> Data {
+        let count = Self.signingRequests.withLock { $0 += 1; return $0 }
+        Self.signingLogger.debug("Private signing request \(count, privacy: .public)")
         guard let key = try keyReference(tag: tag) else { throw IdentityError.inconsistentStorage }
         var error: Unmanaged<CFError>?
         guard let signature = SecKeyCreateSignature(key, .ecdsaSignatureMessageX962SHA256, message as CFData, &error)

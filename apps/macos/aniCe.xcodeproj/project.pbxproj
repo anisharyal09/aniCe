@@ -28,6 +28,15 @@
 		000000000000000000000424 /* MacDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000404; };
 		000000000000000000000451 /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000450; };
 		000000000000000000000453 /* discovery-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000452; };
+		074BF4EC3FFD69F80E86B624 /* NativePake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDEDB9C9C0CFCE2690C7E6F; };
+		D8D003F789CFE6CBB27FC01E /* PeerTrustStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A95CA8384F875E996F9139; };
+		C0703186165FF0C5D2612FF7 /* PairingCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD07081F7ADD4C099951B7A4; };
+		CC2537F76576ED2CBAF9A80F /* PairingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268EC69CB50F448DB38013F1; };
+		C0CEE5B8CCC6DAEFBF420732 /* MacPairingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9381F2D8BA7A0C690FC893B1; };
+		03966CFE7DA22180981E0047 /* MacPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63457F669CCC8B7994A71D7A; };
+		5AC4A19CBFF38BE42CBB0A83 = {isa = PBXBuildFile; fileRef = 88FFC4482694BD876043669A; };
+		B5BD6790BA172D324FBA4CA9 = {isa = PBXBuildFile; fileRef = 04E1689DBE5CE27F2E4DE8D6; };
+		AB0000000000000000000012 = {isa = PBXBuildFile; fileRef = AB0000000000000000000011; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,6 +74,15 @@
 		000000000000000000000404 /* MacDiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDiscoveryView.swift; sourceTree = "<group>"; };
 		000000000000000000000450 /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DiscoveryTests.swift"; sourceTree = SOURCE_ROOT; };
 		000000000000000000000452 /* discovery-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/discovery-vectors.json"; sourceTree = SOURCE_ROOT; };
+		1CDEDB9C9C0CFCE2690C7E6F /* NativePake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/NativePake.swift"; sourceTree = SOURCE_ROOT; };
+		10A95CA8384F875E996F9139 /* PeerTrustStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/PeerTrustStore.swift"; sourceTree = SOURCE_ROOT; };
+		CD07081F7ADD4C099951B7A4 /* PairingCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/PairingCodec.swift"; sourceTree = SOURCE_ROOT; };
+		268EC69CB50F448DB38013F1 /* PairingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/PairingEngine.swift"; sourceTree = SOURCE_ROOT; };
+		9381F2D8BA7A0C690FC893B1 /* MacPairingModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Pairing/MacPairingModel.swift"; sourceTree = SOURCE_ROOT; };
+		63457F669CCC8B7994A71D7A /* MacPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Pairing/MacPairingView.swift"; sourceTree = SOURCE_ROOT; };
+		88FFC4482694BD876043669A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PairingTests.swift"; sourceTree = SOURCE_ROOT; };
+		04E1689DBE5CE27F2E4DE8D6 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/pairing-vectors.json"; sourceTree = SOURCE_ROOT; };
+		AB0000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = "../../core/rust/pairing/THIRD_PARTY_NOTICES.md"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +127,8 @@
 		00000000000000000000000D /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				AB0000000000000000000022,
+				AB0000000000000000000021,
 				000000000000000000000205 /* aniCeTests.xctest */,
 				00000000000000000000000A /* aniCe.app */,
 			);
@@ -118,6 +138,9 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				88FFC4482694BD876043669A,
+				04E1689DBE5CE27F2E4DE8D6,
+
 				000000000000000000000450 /* DiscoveryTests.swift */,
 				000000000000000000000452 /* discovery-vectors.json */,
 				000000000000000000000201 /* IdentityTests.swift */,
@@ -219,6 +242,8 @@
 			path = Discovery;
 			sourceTree = "<group>";
 		};
+		AB0000000000000000000021 /* Pairing */ = {isa = PBXGroup; children = (1CDEDB9C9C0CFCE2690C7E6F,10A95CA8384F875E996F9139,CD07081F7ADD4C099951B7A4,268EC69CB50F448DB38013F1); path = Pairing; sourceTree = "<group>"; };
+		AB0000000000000000000022 /* Pairing */ = {isa = PBXGroup; children = (9381F2D8BA7A0C690FC893B1,63457F669CCC8B7994A71D7A); path = Pairing; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -295,6 +320,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB0000000000000000000012,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,6 +328,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B5BD6790BA172D324FBA4CA9,
 				000000000000000000000453 /* discovery-vectors.json in Resources */,
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 			);
@@ -314,6 +341,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				074BF4EC3FFD69F80E86B624,
+				D8D003F789CFE6CBB27FC01E,
+				C0703186165FF0C5D2612FF7,
+				CC2537F76576ED2CBAF9A80F,
+				C0CEE5B8CCC6DAEFBF420732,
+				03966CFE7DA22180981E0047,
+
 				000000000000000000000420 /* BlePayloadCodec.swift in Sources */,
 				000000000000000000000421 /* PeripheralDiscoverySession.swift in Sources */,
 				000000000000000000000422 /* CoreBluetoothPeripheralAdapter.swift in Sources */,
@@ -338,6 +372,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5AC4A19CBFF38BE42CBB0A83,
 				000000000000000000000451 /* DiscoveryTests.swift in Sources */,
 				000000000000000000000202 /* IdentityTests.swift in Sources */,
 			);
@@ -395,6 +430,9 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/build/native");
+				OTHER_LDFLAGS = ("$(inherited)", "-lanice_pairing");
 			};
 			name = Debug;
 		};
@@ -437,6 +475,9 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/build/native");
+				OTHER_LDFLAGS = ("$(inherited)", "-lanice_pairing");
 			};
 			name = Release;
 		};

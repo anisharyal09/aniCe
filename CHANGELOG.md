@@ -10,6 +10,9 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Pairing and trust: camera QR scanning and six-digit code entry with PAKE bootstrap, bounded GATT transport with automatic cache invalidation, mutual on-device approval, atomic peer trust persistence, and physical over-the-air verification across Android and macOS.
+- Hardened test harness and oracle coverage: baseline fixture floors, independent crypto-vector assertions, interrupted re-pairing at capacity limits, and direct write-failure fault injection on both platforms.
+
 - Six-phase tracked roadmap and provisional BLE discovery architecture decision separating compatibility from pairing/trust.
 - Provisional device-identity architecture decision, shared contract/vector verification, and a test-only Android Keystore ↔ Mac Keychain interchange harness. Platform implementations are described in their component changelogs.
 - Minimal monorepo scaffold for Android, macOS, optional shared Rust logic, protocol contracts under `protocol/schemas/`, documentation, tests, tools, and scripts. Network framing and serialization remain undecided.

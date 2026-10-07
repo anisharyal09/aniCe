@@ -78,6 +78,7 @@ class IdentityStorageTest {
         val context = InstrumentationRegistry.getInstrumentation().context
         val vectors = JSONObject(context.assets.open("identity-vectors.json").bufferedReader().use { it.readText() })
         val valid = vectors.getJSONArray("valid")
+        assertTrue("Identity positive fixture inventory was reduced", valid.length() >= 2)
         for (i in 0 until valid.length()) {
             val vector = valid.getJSONObject(i)
             val identity = DeviceIdentity.fromJson(vector.getJSONObject("identity"))
@@ -85,6 +86,7 @@ class IdentityStorageTest {
                 IdentityCrypto.decodeBase64(vector.getString("messageBase64")), IdentityCrypto.decodeBase64(vector.getString("signatureBase64"))))
         }
         val invalid = vectors.getJSONArray("invalidSignatures")
+        assertTrue("Signature negative fixture inventory was reduced", invalid.length() >= 12)
         for (i in 0 until invalid.length()) {
             val vector = invalid.getJSONObject(i)
             val identity = DeviceIdentity.fromJson(vector.getJSONObject("identity"))

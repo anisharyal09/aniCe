@@ -23,11 +23,15 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(DeviceIdentity.fingerprint(key.publicKey.x963Representation), identity.fingerprint)
             XCTAssertTrue(identity.verify(message: message, signature: try key.signature(for: message).derRepresentation))
         }
-        for vector in try XCTUnwrap(root["invalidIdentities"] as? [[String: Any]]) {
+        let invalidIdentities = try XCTUnwrap(root["invalidIdentities"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(invalidIdentities.count, 21, "Fixture inventory was reduced")
+        for vector in invalidIdentities {
             XCTAssertThrowsError(try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: try XCTUnwrap(vector["identity"]))),
                                  String(describing: vector["name"]))
         }
-        for vector in try XCTUnwrap(root["invalidSignatures"] as? [[String: Any]]) {
+        let invalidSignatures = try XCTUnwrap(root["invalidSignatures"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(invalidSignatures.count, 12, "Fixture inventory was reduced")
+        for vector in invalidSignatures {
             let identity = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: try XCTUnwrap(vector["identity"])))
             let message = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(vector["messageBase64"] as? String)))
             let signature = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(vector["signatureBase64"] as? String)))
@@ -80,11 +84,16 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
     }
 
     func testInitialCreationRecoversEveryInterruptedOperation() async throws {
+        let baseline = MemoryIdentityStorage()
+        _ = try await service(baseline).loadOrCreate()
+        let boundaries = baseline.operationCount
+        XCTAssertGreaterThan(boundaries, 0)
         for after in [false, true] {
-            for index in 1...9 {
+            for index in 1...boundaries {
                 let storage = MemoryIdentityStorage()
                 storage.configureFailure(operation: index, after: after)
                 do { _ = try await service(storage).loadOrCreate() } catch {}
+                XCTAssertTrue(storage.failureTriggered, "Fault boundary was not exercised: \(index)")
                 let durableID = storage.record?.active?.identity.deviceId ?? storage.record?.pending?.deviceId
                 storage.clearFailure()
                 let recovered = try await service(storage).loadOrCreate()
@@ -95,12 +104,19 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
     }
 
     func testResetRecoversEveryInterruptedOperation() async throws {
+        let baseline = MemoryIdentityStorage()
+        _ = try await service(baseline).loadOrCreate()
+        baseline.clearFailure()
+        _ = try await service(baseline).reset()
+        let boundaries = baseline.operationCount
+        XCTAssertGreaterThan(boundaries, 0)
         for after in [false, true] {
-            for index in 1...11 {
+            for index in 1...boundaries {
                 let storage = MemoryIdentityStorage()
                 let original = try await service(storage).loadOrCreate()
                 storage.configureFailure(operation: index, after: after)
                 do { _ = try await service(storage).reset() } catch {}
+                XCTAssertTrue(storage.failureTriggered, "Fault boundary was not exercised: \(index)")
                 let committed = try XCTUnwrap(storage.record?.active?.identity)
                 storage.clearFailure()
                 let recovered = try await service(storage).loadOrCreate()
@@ -288,17 +304,19 @@ private final class MemoryIdentityStorage: IdentityStorage, @unchecked Sendable 
     var keys: [String: P256.Signing.PrivateKey] = [:]
     var corruptSignatures = false
     private(set) var signingCount = 0
-    private var operationCount = 0
+    private(set) var operationCount = 0
+    private(set) var failureTriggered = false
     private var failingOperation: Int?
     private var failAfter = false
 
     func configureFailure(operation: Int, after: Bool) {
-        operationCount = 0; failingOperation = operation; failAfter = after
+        operationCount = 0; failureTriggered = false; failingOperation = operation; failAfter = after
     }
     func clearFailure() { failingOperation = nil; operationCount = 0 }
     private func operation<T>(_ body: () throws -> T) throws -> T {
         operationCount += 1
         let fails = operationCount == failingOperation
+        if fails { failureTriggered = true }
         if fails && !failAfter { throw IdentityError.storageUnavailable("injected") }
         let result = try body()
         if fails && failAfter { throw IdentityError.storageUnavailable("injected after operation") }

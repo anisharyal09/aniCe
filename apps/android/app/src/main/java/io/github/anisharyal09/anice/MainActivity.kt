@@ -12,8 +12,10 @@ import io.github.anisharyal09.anice.app.AppRoot
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
+import io.github.anisharyal09.anice.features.pairing.PairingViewModel
 
 class MainActivity : ComponentActivity() {
+    private lateinit var pairing: PairingViewModel
     private lateinit var discovery: DiscoveryViewModel
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,14 +26,18 @@ class MainActivity : ComponentActivity() {
         val identity = ViewModelProvider(this, factory)[DeviceIdentityViewModel::class.java]
         val discoveryFactory = viewModelFactory { initializer { DiscoveryViewModel(application) } }
         discovery = ViewModelProvider(this, discoveryFactory)[DiscoveryViewModel::class.java]
-        setContent { AniCeTheme { AppRoot(identity, discovery) } }
+        val pairingFactory = viewModelFactory { initializer { PairingViewModel(application) } }
+        pairing = ViewModelProvider(this, pairingFactory)[PairingViewModel::class.java]
+        setContent { AniCeTheme { AppRoot(identity, discovery, pairing) } }
     }
     override fun onStart() {
         super.onStart()
         if (::discovery.isInitialized) discovery.foreground()
+        if (::pairing.isInitialized) pairing.foreground()
     }
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations && ::discovery.isInitialized) discovery.background()
+        if (!isChangingConfigurations && ::pairing.isInitialized) pairing.background()
     }
 }

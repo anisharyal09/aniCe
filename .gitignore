@@ -6,6 +6,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+__pycache__/
+*.pyc
 
 # Editor-local metadata
 .idea/
@@ -50,7 +52,10 @@ for-me/
 for-me.*
 
 
-# optional - will public later after updates or contents ready
+!.agents/RULES.md
 
-.agents/STATE.md
-.agents/CONTEXT.md
+
+# will public later after updates or contents ready
+
+.agents/*
+docs/AUDITS

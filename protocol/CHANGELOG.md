@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Provisional pairing v1: compact QR identity commitment, native QR bootstrap, OPAQUE manual mode, bounded GATT framing with stable attribute layout (ADR 0004), encrypted identity proof/consent and signed storage receipts. Discovery assignments and payload are preserved.
+
 - Fixed public aniCe BLE service/characteristic UUIDs, version 1 20-byte discovery payload with optional flags and rotating nonce, and shared positive/negative vectors.
 
 - Added provisional public identity schema version 1, with canonical P-256 public keys, SHA-256 fingerprints, and native DER signature interoperability.

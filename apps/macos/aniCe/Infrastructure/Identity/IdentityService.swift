@@ -91,6 +91,24 @@ actor IdentityService {
         return try finish(record, checkSigning: checkSigning && validatedTag != record.active?.keyTag)
     }
 
+    /// Public access does not add a preliminary signing operation to pairing.
+    func publicIdentity() throws -> DeviceIdentity { try loadIdentity(checkSigning: false).identity }
+
+    /// Updates public display metadata without replacing the device ID or signing key.
+    func rename(_ name: String) throws -> LocalIdentity {
+        let current = try loadIdentity(checkSigning: false)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.unicodeScalars.count <= 64,
+              var record = try storage.loadRecord(), let active = record.active else {
+            throw IdentityError.invalidPublicIdentity
+        }
+        let renamed = try DeviceIdentity(deviceId: current.identity.deviceId, deviceName: trimmed,
+                                         publicKey: Data(base64Encoded: current.identity.publicKey)!)
+        record.active = StoredIdentity(identity: renamed, keyTag: active.keyTag, protection: active.protection)
+        try storage.saveRecord(record)
+        return try loadIdentity(checkSigning: false)
+    }
+
     func sign(message: Data) throws -> SignedIdentityPayload {
         // The requested signature itself proves access and key consistency below.
         // Avoid a second private-key operation solely for a preliminary self-check.

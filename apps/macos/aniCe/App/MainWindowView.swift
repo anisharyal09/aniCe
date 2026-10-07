@@ -6,19 +6,47 @@ struct MainWindowView: View {
     let delegate: AppDelegate
     @Bindable var identity: IdentityViewModel
     let discovery: MacDiscoveryModel
+    let pairing: MacPairingModel
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
+
+    private var deviceHeader: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "laptopcomputer")
+                .font(.title2)
+                .foregroundStyle(AniCePalette.accent(colorScheme))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(identity.local?.identity.deviceName ?? "This Mac")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(AniCePalette.primaryText(colorScheme))
+                Text("macOS • " + (identity.local?.identity.groupedFingerprint.prefix(19) ?? ""))
+                    .font(.caption)
+                    .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
+            Spacer()
+            Button("Edit name…") { identity.showingDetails = true }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(16)
+        .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 12))
+    }
 
     var body: some View {
         GeometryReader { geometry in
             ScrollView(.vertical) {
-                VStack(spacing: 24) {
-                    EmptyStateView()
-                    MacDiscoveryView(model: discovery)
+                VStack(alignment: .leading, spacing: 20) {
+                    deviceHeader
+                    MacPairingView(model: pairing)
+                    if !pairing.active {
+                        DisclosureGroup("Nearby discovery compatibility check") {
+                            MacDiscoveryView(model: discovery).padding(.top, 8)
+                        }
+                    }
                 }
-                    .padding(32)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: geometry.size.height)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .topLeading)
             }
         }
         .frame(minWidth: 480, minHeight: 320)
@@ -28,7 +56,11 @@ struct MainWindowView: View {
             Button("This device", systemImage: "info.circle") { identity.showingDetails = true }
         }
         .sheet(isPresented: $identity.showingDetails) { IdentityView(model: identity) }
-        .task { if !IdentityView.isTesting { await identity.load() } }
+        .task { if !IdentityView.isTesting { await identity.load(); if identity.local != nil { await pairing.refresh() } } }
+        .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
+        .onChange(of: identity.local?.identity.deviceName) { old, new in
+            if old != nil, old != new, pairing.active { pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.") }
+        }
         .onAppear {
             let action = openWindow
             delegate.reopenMainWindow = {

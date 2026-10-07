@@ -5,12 +5,16 @@ import SwiftUI
 struct CompanionView: View {
     let identity: IdentityViewModel
     let discovery: MacDiscoveryModel
+    let pairing: MacPairingModel
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 24) {
-            MacDiscoveryView(model: discovery)
+            if pairing.active {
+                Text(pairing.status)
+                Button("Stop pairing") { pairing.cancel() }
+            } else { MacDiscoveryView(model: discovery) }
             HStack(spacing: 12) {
                 Button("Open aniCe") {
                     openWindow(id: "main")

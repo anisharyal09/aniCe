@@ -44,6 +44,7 @@ class InstrumentationGateTests(unittest.TestCase):
 class IndependentVerifierTests(unittest.TestCase):
     def test_shared_signatures_pass_and_altered_messages_fail(self):
         vectors = json.loads((harness.ROOT / "protocol/test-vectors/identity-vectors.json").read_text())
+        self.assertGreaterEqual(len(vectors["valid"]), 2, "Identity fixture inventory was reduced")
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             bundle_path = output / "vector.json"

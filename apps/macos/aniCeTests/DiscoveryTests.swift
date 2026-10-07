@@ -12,14 +12,18 @@ final class DiscoveryTests: XCTestCase, @unchecked Sendable {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "discovery-vectors", withExtension: "json"))
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         XCTAssertEqual(root["fixtureVersion"] as? Int, 1)
-        for vector in try XCTUnwrap(root["valid"] as? [[String: Any]]) {
+        let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(valid.count, 3, "Fixture inventory was reduced")
+        for vector in valid {
             let bytes = hex(try XCTUnwrap(vector["payloadHex"] as? String))
             let payload = try BlePayloadCodec.decode(bytes)
             XCTAssertEqual(Int(payload.flags), vector["flags"] as? Int)
             XCTAssertEqual(payload.nonce, hex(try XCTUnwrap(vector["nonceHex"] as? String)))
             XCTAssertEqual(try BlePayloadCodec.encode(nonce: payload.nonce, flags: payload.flags), bytes)
         }
-        for vector in try XCTUnwrap(root["invalid"] as? [[String: Any]]) {
+        let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(invalid.count, 6, "Fixture inventory was reduced")
+        for vector in invalid {
             XCTAssertThrowsError(try BlePayloadCodec.decode(hex(try XCTUnwrap(vector["payloadHex"] as? String))))
         }
         XCTAssertThrowsError(try BlePayloadCodec.encode(nonce: Data(count: 15)))

@@ -13,13 +13,13 @@
     <string name="fingerprint">Fingerprint</string>
     <string name="identity_description">Your local identity stays the same until you reset it.</string>
     <string name="fingerprint_description">A public fingerprint of this device’s signing key.</string>
-    <string name="reset_identity_description">Creates a new identity. Once pairing is available, you will need to pair your devices again.</string>
+    <string name="reset_identity_description">Creates a new identity. Existing pairings become invalid; you will need to pair your devices again.</string>
     <string name="key_protection">Key protection</string>
     <string name="copy_field">Copy %1$s</string>
     <string name="copied">Copied</string>
     <string name="reset_identity">Reset identity</string>
     <string name="reset_identity_title">Reset this device’s identity?</string>
-    <string name="reset_identity_warning">This creates a new device ID and signing key. Once pairing is available, your other devices will need to pair with this device again.</string>
+    <string name="reset_identity_warning">This creates a new device ID and signing key. Existing pairings become invalid; your other devices will need to pair with this device again.</string>
     <string name="identity_unavailable">Device identity unavailable</string>
     <string name="identity_storage_unavailable">Secure storage is unavailable. Unlock your device and try again. Your identity has not been replaced.</string>
     <string name="identity_key_missing">The saved signing key is missing or unusable. Try again, or reset this device’s identity to create a replacement.</string>

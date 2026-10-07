@@ -3,7 +3,7 @@
 Before making changes:
 
 1. Read `.agents/CONTEXT.md`.
-2. Read `.agents/RULES.md`.
+2. Read `.agents/RULES.md` and `.agents/RULES2.md`*.
 3. Read `.agents/STATE.md`.
 4. Read `.agents/NOTES.md` where relevant.
 5. Inspect applicable human documentation, protocol definitions, and existing code before introducing changes.

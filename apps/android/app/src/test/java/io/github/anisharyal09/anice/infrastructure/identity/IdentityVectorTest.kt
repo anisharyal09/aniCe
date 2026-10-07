@@ -14,6 +14,7 @@ class IdentityVectorTest {
         .bufferedReader().use { it.readText() })
     @Test fun sharedPositiveVectors() {
         val valid = vectors().getJSONArray("valid")
+        assertTrue("Fixture inventory was reduced: valid", valid.length() >= 2)
         for (index in 0 until valid.length()) {
             val vector = valid.getJSONObject(index)
             val identity = DeviceIdentity.fromJson(vector.getJSONObject("identity"))
@@ -27,6 +28,7 @@ class IdentityVectorTest {
     }
     @Test fun rejectsInvalidIdentities() {
         val invalid = vectors().getJSONArray("invalidIdentities")
+        assertTrue("Fixture inventory was reduced: invalidIdentities", invalid.length() >= 21)
         for (index in 0 until invalid.length()) {
             val vector = invalid.getJSONObject(index)
             try { DeviceIdentity.fromJson(vector.getJSONObject("identity")); fail(vector.getString("name")) }
@@ -35,6 +37,7 @@ class IdentityVectorTest {
     }
     @Test fun rejectsInvalidSignatures() {
         val invalid = vectors().getJSONArray("invalidSignatures")
+        assertTrue("Fixture inventory was reduced: invalidSignatures", invalid.length() >= 12)
         for (index in 0 until invalid.length()) {
             val vector = invalid.getJSONObject(index)
             val identity = DeviceIdentity.fromJson(vector.getJSONObject("identity"))

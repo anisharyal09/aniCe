@@ -12,6 +12,7 @@ class DiscoveryTests {
         val fixture = JSONObject(resource.bufferedReader().use { it.readText() })
         assertEquals(1, fixture.getInt("fixtureVersion"))
         val valid = fixture.getJSONArray("valid")
+        assertTrue("Discovery positive fixture inventory was reduced", valid.length() >= 3)
         for (i in 0 until valid.length()) {
             val vector = valid.getJSONObject(i)
             val bytes = hex(vector.getString("payloadHex"))
@@ -21,6 +22,7 @@ class DiscoveryTests {
             assertArrayEquals(bytes, BlePayloadCodec.encode(payload.nonce, payload.flags))
         }
         val invalid = fixture.getJSONArray("invalid")
+        assertTrue("Discovery negative fixture inventory was reduced", invalid.length() >= 6)
         for (i in 0 until invalid.length()) {
             val vector = invalid.getJSONObject(i)
             val error = assertThrows(IllegalArgumentException::class.java) { BlePayloadCodec.decode(hex(vector.getString("payloadHex"))) }

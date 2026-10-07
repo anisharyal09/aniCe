@@ -22,13 +22,32 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    sourceSets.getByName("main").jniLibs.srcDir("build/native")
+    sourceSets.getByName("main").assets.srcDir("build/pairing-notices")
     sourceSets.getByName("test").resources.directories.add("../../../protocol/test-vectors")
     sourceSets.getByName("androidTest").assets.directories.add("../../../protocol/test-vectors")
 }
 kotlin {
     compilerOptions { jvmTarget = JvmTarget.JVM_17 }
 }
+val buildPairingNative by tasks.registering(Exec::class) {
+    workingDir(rootProject.projectDir.parentFile.parentFile)
+    commandLine("python3", "scripts/build-pairing-native.py", "android")
+    inputs.dir("../../../core/rust/pairing/src")
+    inputs.file("../../../core/rust/pairing/Cargo.lock")
+    inputs.file("../../../core/rust/pairing/THIRD_PARTY_NOTICES.md")
+    inputs.file("../../../scripts/build-pairing-native.py")
+    outputs.dir("build/native")
+    outputs.dir("build/pairing-notices")
+    doLast { copy { from("../../../core/rust/pairing/THIRD_PARTY_NOTICES.md"); into("build/pairing-notices") } }
+}
+tasks.named("preBuild") { dependsOn(buildPairingNative) }
 dependencies {
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.camera:camera-camera2:1.5.3")
+    implementation("androidx.camera:camera-lifecycle:1.5.3")
+    implementation("androidx.camera:camera-view:1.5.3")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel:2.10.0")
