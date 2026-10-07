@@ -29,6 +29,7 @@ Thumbs.db
 build/
 out/
 local.properties
+gradle-daemon-jvm.properties
 *.iml
 
 # macOS / Xcode generated and user-specific state

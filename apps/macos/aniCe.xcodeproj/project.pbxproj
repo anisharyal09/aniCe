@@ -21,6 +21,13 @@
 		000000000000000000000175 /* IdentityViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000075 /* IdentityViewModel.swift */; };
 		000000000000000000000202 /* IdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000201 /* IdentityTests.swift */; };
 		000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */; };
+		000000000000000000000420 /* BlePayloadCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000400; };
+		000000000000000000000421 /* PeripheralDiscoverySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000401; };
+		000000000000000000000422 /* CoreBluetoothPeripheralAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000402; };
+		000000000000000000000423 /* MacDiscoveryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000403; };
+		000000000000000000000424 /* MacDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000404; };
+		000000000000000000000451 /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000450; };
+		000000000000000000000453 /* discovery-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000452; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +58,13 @@
 		000000000000000000000201 /* IdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityTests.swift; sourceTree = "<group>"; };
 		000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/identity-vectors.json"; sourceTree = SOURCE_ROOT; };
 		000000000000000000000205 /* aniCeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = aniCeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000400 /* BlePayloadCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlePayloadCodec.swift; sourceTree = "<group>"; };
+		000000000000000000000401 /* PeripheralDiscoverySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeripheralDiscoverySession.swift; sourceTree = "<group>"; };
+		000000000000000000000402 /* CoreBluetoothPeripheralAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBluetoothPeripheralAdapter.swift; sourceTree = "<group>"; };
+		000000000000000000000403 /* MacDiscoveryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDiscoveryModel.swift; sourceTree = "<group>"; };
+		000000000000000000000404 /* MacDiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDiscoveryView.swift; sourceTree = "<group>"; };
+		000000000000000000000450 /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DiscoveryTests.swift"; sourceTree = SOURCE_ROOT; };
+		000000000000000000000452 /* discovery-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/discovery-vectors.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +118,8 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				000000000000000000000450 /* DiscoveryTests.swift */,
+				000000000000000000000452 /* discovery-vectors.json */,
 				000000000000000000000201 /* IdentityTests.swift */,
 				000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */,
 			);
@@ -126,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000302 /* Identity */,
+				000000000000000000000460 /* Bluetooth */,
 			);
 			path = Infrastructure;
 			sourceTree = "<group>";
@@ -144,6 +161,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000304 /* DeviceIdentity */,
+				000000000000000000000461 /* Discovery */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -180,6 +198,25 @@
 				000000000000000000000067 /* EmptyStateView.swift */,
 			);
 			path = Components;
+			sourceTree = "<group>";
+		};
+		000000000000000000000460 /* Bluetooth */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000400 /* BlePayloadCodec.swift */,
+				000000000000000000000401 /* PeripheralDiscoverySession.swift */,
+				000000000000000000000402 /* CoreBluetoothPeripheralAdapter.swift */,
+			);
+			path = Bluetooth;
+			sourceTree = "<group>";
+		};
+		000000000000000000000461 /* Discovery */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000403 /* MacDiscoveryModel.swift */,
+				000000000000000000000404 /* MacDiscoveryView.swift */,
+			);
+			path = Discovery;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -265,6 +302,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				000000000000000000000453 /* discovery-vectors.json in Resources */,
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -276,6 +314,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				000000000000000000000420 /* BlePayloadCodec.swift in Sources */,
+				000000000000000000000421 /* PeripheralDiscoverySession.swift in Sources */,
+				000000000000000000000422 /* CoreBluetoothPeripheralAdapter.swift in Sources */,
+				000000000000000000000423 /* MacDiscoveryModel.swift in Sources */,
+				000000000000000000000424 /* MacDiscoveryView.swift in Sources */,
 				000000000000000000000174 /* IdentityAssembly.swift in Sources */,
 				000000000000000000000175 /* IdentityViewModel.swift in Sources */,
 				000000000000000000000170 /* DeviceIdentity.swift in Sources */,
@@ -295,6 +338,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				000000000000000000000451 /* DiscoveryTests.swift in Sources */,
 				000000000000000000000202 /* IdentityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -409,6 +453,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -434,6 +479,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

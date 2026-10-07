@@ -1,6 +1,10 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Phase 2 provides persistent device identity through Android Keystore. Pairing and device communication are not implemented yet.
+Kotlin, Jetpack Compose, and Material 3. Phase 2 provides persistent device identity through Android Keystore. Pairing and authenticated communication are not implemented yet.
+
+## Nearby discovery
+
+Android finds nearby aniCe candidates using a service-filtered foreground scan, validates a read-only GATT payload, then disconnects. Discovery does not pair or trust devices.
 
 ## Code structure
 
@@ -19,6 +23,8 @@ app/
         DeviceIdentity.kt           Public identity validation and encoding
         IdentityService.kt          Identity lifecycle and signing
         AndroidIdentityStorage.kt   Keystore and atomic metadata
+      features/discovery/          Nearby screen and lifecycle ViewModel
+      infrastructure/bluetooth/    Scan/GATT adapter, codec, coordinator
       ui/theme/
         Theme.kt                    Semantic Material palette
     res/                            Strings, icons, themes, backup rules
@@ -48,6 +54,6 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
 Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. The minimum remains provisional. Key protection is reported from the actual device, not assumed.
 
-[Code organization](../../docs/development/code-organization.md) · [Design](../../docs/design/DESIGN.md) · [Verification](../../docs/development/identity-verification.md) · [Changelog](CHANGELOG.md)
+[Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 Licensed under [GPL-3.0-or-later](../../LICENSE).

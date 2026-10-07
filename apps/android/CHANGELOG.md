@@ -13,6 +13,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Foreground, service-filtered nearby BLE discovery with on-demand permissions, generic temporary candidates, bounded GATT validation/cleanup, cancellation and recovery, and shared-vector/lifecycle tests. Physical acceptance remains pending.
+
 - Persistent P-256 device identity with Android Keystore signing, actual protection reporting, and backup-excluded metadata.
 - A native “This device” screen with copy actions, explicit identity reset, and recoverable storage errors.
 - Journaled identity replacement, shared interoperability vectors, JVM behavior tests, and Android Keystore instrumented tests.

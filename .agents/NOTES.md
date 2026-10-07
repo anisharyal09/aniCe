@@ -4,7 +4,7 @@ Notes are not architectural decisions. Resolve these through concrete requiremen
 
 - Final minimum Android and macOS versions. Android API 29 / Android 10 and macOS 14 are provisional foundation baselines, not product freezes.
 - Full pairing/session cryptographic suite. Local identity provisionally selects P-256 ECDSA/SHA-256 and DER signatures; see the identity ADR. Authenticated key exchange, encryption, replay protection, and rotation remain open.
-- BLE topology.
+- BLE beyond Phase 3. Initial topology is provisionally Mac peripheral / Android central; see `docs/decisions/0002-provisional-ble-discovery.md`.
 - Exact LAN transport.
 - Network serialization/framing and model-generation approach. Phase 2 public identity uses JSON Schema; it does not decide the network protocol.
 - Signed Mac data-protection Keychain/Secure Enclave verification and eventual development-to-distribution identity migration. Current ad-hoc builds explicitly use the development Keychain backend; never silently change backend or identity after a storage/signing error.

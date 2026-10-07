@@ -10,7 +10,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
-- Native app code map and organization standard covering app shells, feature presentation, shared infrastructure, tests, and a scoped migration before BLE.
+- Six-phase tracked roadmap and provisional BLE discovery architecture decision separating compatibility from pairing/trust.
 - Provisional device-identity architecture decision, shared contract/vector verification, and a test-only Android Keystore ↔ Mac Keychain interchange harness. Platform implementations are described in their component changelogs.
 - Minimal monorepo scaffold for Android, macOS, optional shared Rust logic, protocol contracts under `protocol/schemas/`, documentation, tests, tools, and scripts. Network framing and serialization remain undecided.
 - Root README and agent context describing project direction, current repository state, unresolved decisions, and navigation to design and change history.
@@ -20,7 +20,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
-- Simplify root and app READMEs with concise structure trees and links to detailed design, architecture, and verification documentation.
+- Simplify root and app READMEs with concise structure trees and direct links to design, roadmap, and protocol documentation.
 - Correct Mac development Keychain export-policy handling and document explicit recovery for older development identities.
 - Organize Phase 2 native code into app shells, feature presentation, and identity infrastructure; update code maps and verification paths.
 - Harden the identity interchange harness against skipped tests and stale success artifacts, with native negative controls, independent OpenSSL verification, and adversarial runner checks.

@@ -4,12 +4,13 @@ import SwiftUI
 
 struct CompanionView: View {
     let identity: IdentityViewModel
+    let discovery: MacDiscoveryModel
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 24) {
-            EmptyStateView()
+            MacDiscoveryView(model: discovery)
             HStack(spacing: 12) {
                 Button("Open aniCe") {
                     openWindow(id: "main")

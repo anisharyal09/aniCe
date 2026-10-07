@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -39,16 +40,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
+import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(identity: DeviceIdentityViewModel) {
+fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel) {
     var details by rememberSaveable { mutableStateOf(false) }
+    var nearby by rememberSaveable { mutableStateOf(false) }
     val snackbars = remember { SnackbarHostState() }
-    BackHandler(details) { details = false }
+    BackHandler(details || nearby) {
+        if (nearby) { discovery.cancel(); nearby = false }
+        else details = false
+    }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -56,10 +63,12 @@ fun AppRoot(identity: DeviceIdentityViewModel) {
             TopAppBar(
                 title = { Text(stringResource(if (details) R.string.this_device else R.string.app_name)) },
                 navigationIcon = {
-                    if (details) TextButton(onClick = { details = false }) { Text(stringResource(R.string.back)) }
+                    if (details || nearby) TextButton(onClick = {
+                        discovery.cancel(); details = false; nearby = false
+                    }) { Text(stringResource(R.string.back)) }
                 },
                 actions = {
-                    if (!details) TextButton(onClick = { details = true }) { Text(stringResource(R.string.this_device)) }
+                    if (!details) TextButton(onClick = { discovery.cancel(); nearby = false; details = true }) { Text(stringResource(R.string.this_device)) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -72,22 +81,24 @@ fun AppRoot(identity: DeviceIdentityViewModel) {
         // Consume Scaffold's padding once so child screens do not apply safe insets again.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
         AnimatedContent(
-            targetState = details,
+            targetState = if (details) 1 else if (nearby) 2 else 0,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
             label = "screen_transition",
             modifier = content.fillMaxSize(),
-        ) { isDetails ->
-            if (isDetails) {
+        ) { screen ->
+            if (screen == 1) {
                 DeviceIdentityScreen(identity.state, snackbars, identity::retry, identity::reset)
+            } else if (screen == 2) {
+                DiscoveryScreen(discovery)
             } else {
-                NoDevicesScreen()
+                NoDevicesScreen(onFind = { nearby = true })
             }
         }
     }
 }
 
 @Composable
-private fun NoDevicesScreen(modifier: Modifier = Modifier) {
+private fun NoDevicesScreen(onFind: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         contentAlignment = Alignment.Center,
@@ -99,6 +110,8 @@ private fun NoDevicesScreen(modifier: Modifier = Modifier) {
         ) {
             Text(stringResource(R.string.no_devices_paired), style = MaterialTheme.typography.headlineSmall,
                 textAlign = TextAlign.Center)
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onFind) { Text("Find your Mac") }
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.pairing_later), style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)

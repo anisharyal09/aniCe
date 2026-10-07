@@ -1,14 +1,24 @@
-# Shared Identity Protocol & Contract
+# Shared Communication Contracts
 
-This directory defines the shared Phase 2 public device identity schema and cross-platform verification fixtures for **aniCe**.
-
-Architecture and storage rationale are documented in [ADR 0001: Provisional Device Identity](../docs/decisions/0001-provisional-device-identity.md).
+This directory contains the cross-platform communication contracts, schemas, and shared verification fixtures for **aniCe**.
 
 ---
 
-## 1. Public Identity Schema (`v1`)
+## Active Contracts
 
-The canonical schema is defined in [`schemas/identity.schema.json`](schemas/identity.schema.json). Unknown properties are strictly rejected.
+| Contract | Version | Status | Primary Reference | Scope |
+| :--- | :--- | :--- | :--- | :--- |
+| **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Hardware-backed P-256 public identity and fingerprint |
+| **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
+
+---
+
+## 1. Device Identity Contract (`v1`)
+
+Architecture and storage rationale are documented in [ADR 0001: Provisional Device Identity](../docs/decisions/0001-provisional-device-identity.md).
+
+### Public Identity Schema
+The canonical JSON Schema is defined in [`schemas/identity.schema.json`](schemas/identity.schema.json). Unknown properties are strictly rejected.
 
 | Field | Type | Description & Validation Constraints |
 | :--- | :--- | :--- |
@@ -27,12 +37,8 @@ Beyond standard JSON type checks, both platform implementations strictly validat
 - **Fingerprint Verification:** Recomputed SHA-256 hash must match the `fingerprint` field exactly.
 - **Display Metadata:** Device names and protection labels are local display metadata and do not confer cryptographic trust by themselves.
 
----
-
-## 2. Cryptographic Signatures
-
+### Cryptographic Signatures
 Cross-platform signature exchange uses native hardware-backed keystores without third-party crypto glue:
-
 - **Algorithm:** P-256 (NIST P-256 / secp256r1) with SHA-256 digest.
 - **Hashing:** Message bytes are passed directly to platform signing APIs (not pre-hashed).
 - **Format:** Strict ASN.1 DER `SEQUENCE(INTEGER r, INTEGER s)`.
@@ -44,25 +50,31 @@ Cross-platform signature exchange uses native hardware-backed keystores without 
 
 ---
 
-## 3. Fixtures & Test Vectors
+## 2. BLE Discovery Contract (`v1`)
 
-| Path | Purpose |
-| :--- | :--- |
-| [`schemas/identity.schema.json`](schemas/identity.schema.json) | JSON Schema definition for public identity records. |
-| [`fixtures/identity/`](fixtures/identity/) | Sample valid public identity payloads for Android and macOS. |
-| [`test-vectors/identity-vectors.json`](test-vectors/identity-vectors.json) | Shared vector suite containing valid cases, invalid identity variations, and invalid DER signatures. |
+Full specification, timing limits, and validation rules are documented in [`bluetooth/README.md`](bluetooth/README.md).
 
-### Test Interchange Bundle Format
-Ephemeral cross-platform verification between native test suites uses this payload format:
+- **Service UUID:** `414E4953-4853-4149-4A49-4C4365090901`
+- **Discovery Characteristic UUID:** `414E4953-4853-4149-4A49-4C4365090902` (Read-only)
+- **Payload:** Exactly 20 bytes (`version` [2B] + `optional capability flags` [2B] + `nonce` [16B]).
+- **Role:** Compatibility probe only. Establishes no trust, exchanges no public identity, and requests no pairing.
 
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `identity` | object | Complete public identity record matching schema v1. |
-| `messageBase64` | string | Standard Base64 of raw test message bytes. |
-| `signatureBase64` | string | Standard Base64 of ASN.1 DER signature bytes. |
+---
 
-### Regenerating Vectors
-Test vector signatures can be deterministically refreshed using OpenSSL:
-```sh
-python3 protocol/test-vectors/generate_identity_vectors.py --output protocol/test-vectors/identity-vectors.json
+## 3. Directory Layout & Shared Fixtures
+
+```text
+protocol/
+├── CHANGELOG.md               # Protocol version and contract changelog
+├── README.md                  # This document
+├── bluetooth/
+│   └── README.md              # BLE discovery wire format & lifecycle
+├── fixtures/
+│   └── identity/              # Sample valid JSON records (android.json, macos.json)
+├── schemas/
+│   └── identity.schema.json   # Canonical JSON Schema for public identity
+└── test-vectors/
+    ├── discovery-vectors.json # Positive & negative BLE discovery test vectors
+    ├── identity-vectors.json  # Positive & negative P-256 identity & DER signature vectors
+    └── generate_identity_vectors.py # Deterministic fixture regeneration script
 ```

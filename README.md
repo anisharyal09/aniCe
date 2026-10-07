@@ -2,7 +2,7 @@
 
 A local-first companion for Android and macOS, built with Kotlin/Compose and Swift/SwiftUI.
 
-**Current phase: persistent device identity.** Both apps show a local device ID, fingerprint, key-protection status, and confirmed reset. Device discovery, pairing, and communication are not implemented yet.
+**Current phase: nearby BLE discovery (physical acceptance pending).** Mac can advertise a bounded discovery window; Android scans, reads the discovery protocol, and disconnects. Discovery is unauthenticated and creates no trust. Persistent local identity remains available; pairing, secure sessions, and synchronization are later phases.
 
 ## Repository structure
 
@@ -11,6 +11,7 @@ apps/
   android/              Android app and tests
   macos/                Mac app, Xcode project, and tests
 protocol/
+  bluetooth/            BLE discovery contract
   schemas/              Shared public identity contract
   test-vectors/         Cryptographic verification cases
   fixtures/             Sample public identities
@@ -27,12 +28,9 @@ tools/                  Reserved for developer utilities
 
 ## Development
 
-- [Android setup and code structure](apps/android/README.md)
-- [macOS setup and code structure](apps/macos/README.md)
-- [Code organization](docs/development/code-organization.md)
-- [Design guide](docs/design/DESIGN.md)
-- [Identity decision](docs/decisions/0001-provisional-device-identity.md) · [Protocol](protocol/README.md)
-- [Verification and pending coverage](docs/development/identity-verification.md)
+- [Roadmap](docs/ROADMAP.md) · [Design guide](docs/design/DESIGN.md) · [Protocol](protocol/README.md)
+- [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md)
+- [Architecture decisions](docs/decisions/0001-provisional-device-identity.md) (ADR [0001](docs/decisions/0001-provisional-device-identity.md), [0002](docs/decisions/0002-provisional-ble-discovery.md))
 
 Android uses Keystore. The current ad-hoc Mac build uses development Keychain storage; signed Secure Enclave operation remains unverified. Android 10 and macOS 14 are provisional minimums.
 

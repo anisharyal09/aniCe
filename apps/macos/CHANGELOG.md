@@ -16,6 +16,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Explicit bounded BLE peripheral discovery shared by window and companion, read-only rotating nonce payload, sandbox/usage configuration, sleep/Quit cleanup, and deterministic discovery tests. Physical acceptance remains pending.
+
 - Persistent P-256 identity with immutable Keychain generations, atomic reset/recovery, typed errors, and signing snapshots. Current ad-hoc builds explicitly select development Keychain; a separate signed data-protection/Secure Enclave backend awaits native verification.
 - Full-window “This device” details, ID/fingerprint copying, protection status, confirmed reset, and a companion shortcut to the same sheet.
 - Shared-vector, concurrency, interruption-recovery, and isolated Keychain tests, plus disposable native signature interchange.

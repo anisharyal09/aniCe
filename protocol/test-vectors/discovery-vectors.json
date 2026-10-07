@@ -1,0 +1,58 @@
+{
+  "fixtureVersion": 1,
+  "valid": [
+    {
+      "name": "version-one",
+      "payloadHex": "00010000000102030405060708090a0b0c0d0e0f",
+      "version": 1,
+      "flags": 0,
+      "nonceHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    {
+      "name": "optional-flags",
+      "payloadHex": "0001a501000102030405060708090a0b0c0d0e0f",
+      "version": 1,
+      "flags": 42241,
+      "nonceHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    {
+      "name": "zero-nonce",
+      "payloadHex": "0001000000000000000000000000000000000000",
+      "version": 1,
+      "flags": 0,
+      "nonceHex": "00000000000000000000000000000000"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "payloadHex": "",
+      "reason": "length"
+    },
+    {
+      "name": "truncated",
+      "payloadHex": "00010000000102030405060708090a0b0c0d0e",
+      "reason": "length"
+    },
+    {
+      "name": "oversized",
+      "payloadHex": "00010000000102030405060708090a0b0c0d0e0f00",
+      "reason": "length"
+    },
+    {
+      "name": "version-zero",
+      "payloadHex": "00000000000102030405060708090a0b0c0d0e0f",
+      "reason": "version"
+    },
+    {
+      "name": "version-two",
+      "payloadHex": "00020000000102030405060708090a0b0c0d0e0f",
+      "reason": "version"
+    },
+    {
+      "name": "little-endian-version",
+      "payloadHex": "01000000000102030405060708090a0b0c0d0e0f",
+      "reason": "version"
+    }
+  ]
+}

@@ -5,13 +5,17 @@ import SwiftUI
 struct MainWindowView: View {
     let delegate: AppDelegate
     @Bindable var identity: IdentityViewModel
+    let discovery: MacDiscoveryModel
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { geometry in
             ScrollView(.vertical) {
-                EmptyStateView()
+                VStack(spacing: 24) {
+                    EmptyStateView()
+                    MacDiscoveryView(model: discovery)
+                }
                     .padding(32)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: geometry.size.height)

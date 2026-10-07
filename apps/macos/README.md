@@ -1,6 +1,10 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI. Phase 2 provides persistent device identity, a main window, and a menu-bar companion. Pairing and device communication are not implemented yet.
+Swift 6 and SwiftUI. Phase 2 provides persistent device identity, a main window, and a menu-bar companion. Pairing and authenticated communication are not implemented yet.
+
+## Nearby discovery
+
+Mac advertises only the public aniCe service UUID and generic name for 120 seconds, with a rotating GATT discovery nonce. Discovery does not pair or trust devices.
 
 ## Code structure
 
@@ -19,6 +23,8 @@ aniCe/
     DeviceIdentity.swift            Public identity validation and encoding
     IdentityService.swift           Actor-isolated lifecycle and signing
     MacIdentityStorage.swift        Keychain backends and atomic metadata
+  Infrastructure/Bluetooth/        Peripheral adapter, codec, timed session
+  Features/Discovery/              Shared discovery model and view
   UI/
     Theme/AniCePalette.swift         Semantic light/dark colors
     Components/EmptyStateView.swift  Unpaired-state view
@@ -56,6 +62,6 @@ The current ad-hoc build explicitly uses the login Keychain, without hardware is
 
 The separate signed data-protection/Secure Enclave backend requires real signing and authorized entitlements; native verification is pending. Universal builds support Apple Silicon and Intel. macOS 14 is the provisional minimum; runtime coverage remains pending.
 
-[Code organization](../../docs/development/code-organization.md) · [Design](../../docs/design/DESIGN.md) · [Verification](../../docs/development/identity-verification.md) · [Changelog](CHANGELOG.md)
+[Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 Licensed under [GPL-3.0-or-later](../../LICENSE).
