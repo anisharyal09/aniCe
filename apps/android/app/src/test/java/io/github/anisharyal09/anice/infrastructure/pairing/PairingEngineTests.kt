@@ -68,6 +68,15 @@ class PairingEngineTests {
 
   @Test
   fun fullQRConsentPersistenceReceiptsAndAtomicFailure() {
+    qrExchange(false)
+  }
+
+  @Test
+  fun macCancellationClearsChannelAndCreatesNoTrust() {
+    qrExchange(true)
+  }
+
+  private fun qrExchange(cancel: Boolean) {
     val memory = Memory()
     val store = PeerTrustStore(memory)
     val identity = IdentityService(Metadata(), Keys(), { "Android test" })
@@ -163,6 +172,19 @@ class PairingEngineTests {
                 signature(signing, PairingCodec.proof(h, clientBytes, macBytes, 2)),
             )))
     assertTrue(events.contains("approval"))
+    if (cancel) {
+      engine.receive(server.seal(PairingCodec.message(14)))
+      assertEquals("cancelled", events.last())
+      assertFalse(events.contains("paired"))
+      assertTrue(store.list(local.fingerprint).isEmpty())
+      assertTrue(PeerTrustStore(memory).list(local.fingerprint).isEmpty())
+      try {
+        engine.receive(server.seal(PairingCodec.message(12)))
+        fail("Cancelled channel accepted peer approval")
+      } catch (_: Exception) {}
+      engine.close()
+      return
+    }
     engine.approve()
     assertArrayEquals(PairingCodec.message(12), server.open(sent.removeAt(0)))
     assertTrue(store.list(local.fingerprint).isEmpty())

@@ -183,7 +183,8 @@ class PairingEngine(
                     }
                     14 -> {
                         PairingCodec.unpack(plain, 14, 0)
-                        throw PairingException()
+                        close()
+                        event("cancelled", null)
                     }
                     else -> throw PairingException()
                 }

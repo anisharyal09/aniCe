@@ -157,7 +157,13 @@ extension PairingTests {
   func testFullPINPairingRequiresBothConsentAndSignedReceipt() async throws {
     try await fullPairing(.pin)
   }
-  private func fullPairing(_ method: PairingMethod) async throws {
+  func testQRDeclineSendsEncryptedCancellationWithoutTrust() async throws {
+    try await fullPairing(.qr, decline: true)
+  }
+  func testPINDeclineSendsEncryptedCancellationWithoutTrust() async throws {
+    try await fullPairing(.pin, decline: true)
+  }
+  private func fullPairing(_ method: PairingMethod, decline: Bool = false) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "anice-pairing-test-" + UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -239,6 +245,25 @@ extension PairingTests {
     XCTAssertTrue(store.list(localFingerprint: mac.fingerprint).isEmpty)
     try await engine.receive(client.seal(PairingCodec.message(12)))
     XCTAssertTrue(store.list(localFingerprint: mac.fingerprint).isEmpty)
+    if decline {
+      await bus.take().forEach { _ in XCTFail("Trust traffic sent before mutual approval") }
+      try await engine.decline()
+      let cancelled = await bus.take()
+      XCTAssertEqual(cancelled.count, 1)
+      XCTAssertEqual(try client.open(try XCTUnwrap(cancelled.first)), PairingCodec.message(14))
+      let clearedQR = await engine.qr
+      let clearedPIN = await engine.pin
+      XCTAssertNil(clearedQR)
+      XCTAssertNil(clearedPIN)
+      XCTAssertTrue(store.list(localFingerprint: mac.fingerprint).isEmpty)
+      let reopened = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+      XCTAssertTrue(reopened.list(localFingerprint: mac.fingerprint).isEmpty)
+      do {
+        try await engine.approve()
+        XCTFail("Declined channel still accepted approval")
+      } catch {}
+      return
+    }
     try await engine.approve()
     let receipts = await bus.take()
     XCTAssertEqual(receipts.count, 2)
@@ -268,6 +293,8 @@ extension PairingTests {
   var pairingDisconnect: (() -> Void)?
   var output: [Data] = []
   var events: ((PeripheralEvent) -> Void)?
+  var holdDrain = false
+  var draining = false
   func begin(
     event: @escaping (PeripheralEvent) -> Void, read: @escaping (Bool, Int) -> DiscoveryRead
   ) {
@@ -278,10 +305,77 @@ extension PairingTests {
   func advertise() { events?(.advertising) }
   func stop() { events = nil }
   func sendPairing(_ message: Data) throws { output.append(message) }
+  func drainPairing() async {
+    draining = true
+    while holdDrain { try? await Task.sleep(for: .milliseconds(10)) }
+  }
   func retirePairingConnection() { output.removeAll() }
 }
 
 extension PairingTests {
+  @MainActor func testMacDeclineWaitsForTransportThenStopsAndAllowsFreshInvitation() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "anice-decline-test-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "test.")
+    let radio = PairingRadioFake()
+    let model = MacPairingModel(identity: identity, discovery: MacDiscoveryModel(adapter: radio), makeStore: { store })
+    defer { radio.holdDrain = false; model.cancel() }
+    model.start(.qr)
+    try await waitFor { model.phase == "starting" || model.phase == "invitation" }
+    model.tick()
+    let qr = try PairingQR.decode(try XCTUnwrap(model.qrText))
+    XCTAssertTrue(radio.pairingWrite?(PairingCodec.message(1)) == true)
+    try await waitFor { radio.output.count == 1 }
+    let invitation = try PairingCodec.unpack(radio.output.removeFirst(), type: 2, count: 3)
+    let key = P256.KeyAgreement.PrivateKey()
+    let nonce = Data(repeating: 3, count: 32)
+    let publicKey = key.publicKey.x963Representation
+    XCTAssertTrue(radio.pairingWrite?(PairingCodec.message(3, [Data([1]), qr.rendezvous, nonce, publicKey])) == true)
+    try await waitFor { radio.output.count == 1 }
+    let hello = try PairingCodec.unpack(radio.output.removeFirst(), type: 4, count: 3)
+    let transcript = PairingCodec.fields([Data("aniCe pairing v1".utf8), Data([1]), qr.rendezvous, nonce, invitation[2], publicKey, hello[1]])
+    let hash = PairingCodec.hash(transcript)
+    let shared = try key.sharedSecretFromKeyAgreement(with: P256.KeyAgreement.PublicKey(x963Representation: hello[1]))
+    let bootstrap = shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: qr.secret, sharedInfo: PairingCodec.fields([Data("aniCe qr bootstrap v1".utf8), hash]), outputByteCount: 32).withUnsafeBytes { Data($0) }
+    let channel = PairingChannel(key: bootstrap, transcript: transcript, server: false)
+    XCTAssertTrue(radio.pairingWrite?(PairingCodec.message(5, [PairingCodec.mac(PairingCodec.derive(bootstrap, "client-auth", hash), transcript)])) == true)
+    try await waitFor { radio.output.count == 2 }
+    XCTAssertEqual(try PairingCodec.unpack(radio.output.removeFirst(), type: 6, count: 1)[0], channel.confirm())
+    let macBytes = try PairingCodec.unpack(channel.open(radio.output.removeFirst()), type: 10, count: 1)[0]
+    let signing = P256.Signing.PrivateKey()
+    let android = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: "Android test", publicKey: signing.publicKey.x963Representation)
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: PairingCodec.identityBytes(android)) as? [String: Any])
+    json["platform"] = "android"
+    let androidBytes = try JSONSerialization.data(withJSONObject: json)
+    XCTAssertTrue(radio.pairingWrite?(try channel.seal(PairingCodec.message(10, [androidBytes]))) == true)
+    try await waitFor { radio.output.count == 1 }
+    _ = try channel.open(radio.output.removeFirst())
+    let proof = try signing.signature(for: PairingCodec.proof(hash, androidBytes, macBytes, 1)).derRepresentation
+    XCTAssertTrue(radio.pairingWrite?(try channel.seal(PairingCodec.message(11, [proof]))) == true)
+    try await waitFor { model.phase == "approval" }
+    radio.holdDrain = true
+    model.decline()
+    try await waitFor { radio.draining }
+    XCTAssertEqual(model.phase, "cancelling")
+    model.tick()
+    XCTAssertEqual(model.remaining, 0)
+    radio.pairingDisconnect?()
+    XCTAssertEqual(model.phase, "cancelling")
+    XCTAssertEqual(try channel.open(try XCTUnwrap(radio.output.first)), PairingCodec.message(14))
+    radio.holdDrain = false
+    try await waitFor { !model.active }
+    XCTAssertEqual(model.phase, "idle")
+    XCTAssertNil(model.qrText)
+    XCTAssertNil(radio.pairingWrite)
+    let mac = try DeviceIdentity.decode(macBytes)
+    XCTAssertTrue(store.list(localFingerprint: mac.fingerprint).isEmpty)
+    model.start(.qr)
+    try await waitFor { model.phase == "starting" || model.phase == "invitation" }
+    XCTAssertNotEqual(model.qrText, qr.text)
+  }
+
   @MainActor private func waitFor(_ check: () -> Bool) async throws {
     for _ in 0..<100 {
       if check() { return }

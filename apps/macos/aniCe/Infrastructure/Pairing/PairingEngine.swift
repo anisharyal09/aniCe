@@ -279,6 +279,13 @@ actor PairingEngine {
     if attempts >= 5 { throw PairingFailure.authentication }
   }
 
+  /// Notify the authenticated peer before discarding the channel needed to encrypt cancellation.
+  func decline() async throws {
+    defer { close() }
+    guard proofVerified, let channel else { throw PairingFailure.authentication }
+    await send(try channel.seal(PairingCodec.message(14)))
+  }
+
   /// Closes the pairing engine, wiping all secrets and releasing PAKE handles.
   func close() {
     let secretSize = qr?.secret.count ?? 0

@@ -7,6 +7,7 @@ import os
   var pairingWrite: ((Data) -> Bool)? { get set }
   var pairingDisconnect: (() -> Void)? { get set }
   func sendPairing(_ message: Data) throws
+  func drainPairing() async
   func retirePairingConnection()
 }
 
@@ -96,6 +97,14 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
         return
       }
       queue.removeFirst()
+    }
+  }
+  /// Give backpressured cancellation frames a bounded chance to reach Core Bluetooth.
+  /// An empty queue means submission, not proof of delivery to the remote application.
+  func drainPairing() async {
+    let deadline = ProcessInfo.processInfo.systemUptime + 2
+    while !queue.isEmpty, central != nil, ProcessInfo.processInfo.systemUptime < deadline {
+      do { try await Task.sleep(for: .milliseconds(20)) } catch { return }
     }
   }
   func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {

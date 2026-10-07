@@ -8,6 +8,10 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ## Unreleased
 
+### Fixed
+
+- Mac pairing Decline now sends authenticated cancellation before Bluetooth cleanup; Android reports cancellation and stops waiting.
+
 ### Added
 
 - Pairing and trust: camera QR scanning and six-digit code entry with PAKE bootstrap, bounded GATT transport with automatic cache invalidation, mutual on-device approval, atomic peer trust persistence, and physical over-the-air verification across Android and macOS.

@@ -151,7 +151,7 @@ struct MacPairingView: View {
           HStack(spacing: 12) {
             Button("Pair with this device", action: model.approve)
               .buttonStyle(.borderedProminent)
-            Button("Decline") { model.cancel() }
+            Button("Decline", action: model.decline)
               .buttonStyle(.bordered)
           }
           .padding(.top, 4)
@@ -163,13 +163,13 @@ struct MacPairingView: View {
     }
 
     if model.phase == "preparing" || model.phase == "starting"
-      || model.phase == "authenticating" || model.phase == "saving"
+      || model.phase == "authenticating" || model.phase == "saving" || model.phase == "cancelling"
     {
       ProgressView().accessibilityLabel(model.status)
         .padding(.vertical, 4)
     }
 
-    if model.phase != "approval" {
+    if model.phase != "approval" && model.phase != "cancelling" {
       Button("Cancel invitation") { model.cancel() }
         .buttonStyle(.bordered)
         .controlSize(.small)

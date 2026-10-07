@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## Unreleased
 
+### Fixed
+
+- Send encrypted cancellation on pairing Decline, with bounded transport draining before invitation cleanup and QR/PIN regression coverage.
+
 ### Added
 
 - Pairing: QR and six-digit code invitations with PAKE bootstrap, stable three-characteristic GATT peripheral adapter, mutual approval, atomic peer trust store, dedicated pairing and trusted-devices panels, and persistent window device header.

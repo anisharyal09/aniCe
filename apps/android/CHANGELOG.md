@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## Unreleased
 
+### Fixed
+
+- End pairing promptly on authenticated Mac cancellation, clear temporary channel state, and show a cancellation recovery message.
+
 ### Added
 
 - Pairing: CameraX QR scanning and six-digit code entry with PAKE bootstrap, bounded GATT transport with automatic cache invalidation, mutual approval, atomic peer trust persistence, and local forgetting.

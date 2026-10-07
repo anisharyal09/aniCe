@@ -78,6 +78,7 @@ import Observation
         }
         discovery.adapter.pairingDisconnect = { [weak self] in
           guard let self, self.active, self.generation == op else { return }
+          guard self.phase != "cancelling" else { return }
           if self.phase == "paired" {
             self.cancel(message: self.status)
             return
@@ -127,7 +128,7 @@ import Observation
     do { try discovery.adapter.sendPairing(data) } catch { fail() }
   }
   private func enqueue(_ data: Data, operation: Int) {
-    guard let engine else { return }
+    guard phase != "cancelling", let engine else { return }
     let previous = work
     work = Task {
       await previous?.value
@@ -156,7 +157,7 @@ import Observation
     }
   }
   private func event(_ state: String, peer: DeviceIdentity?, operation: Int) {
-    guard active, generation == operation else { return }
+    guard active, generation == operation, phase != "cancelling" else { return }
     self.peer = peer
     phase = state
     switch state {
@@ -196,8 +197,28 @@ import Observation
       do { try await engine.approve() } catch { self.fail() }
     }
   }
+  func decline() {
+    guard active, phase == "approval", let engine else { return }
+    phase = "cancelling"
+    status = "Declining pairing…"
+    remaining = 0
+    deadline = nil
+    timer?.invalidate()
+    timer = nil
+    let op = generation
+    let previous = work
+    work = Task {
+      await previous?.value
+      guard self.active, self.generation == op else { return }
+      try? await engine.decline()
+      guard self.generation == op else { return }
+      await self.discovery.adapter.drainPairing()
+      guard self.generation == op else { return }
+      self.cancel(message: "Pairing declined. Start a fresh invitation when ready.")
+    }
+  }
   func tick() {
-    guard active else { return }
+    guard active, phase != "cancelling" else { return }
     discovery.session.tick()
     remaining = discovery.session.remainingSeconds
     if phase == "starting" {

@@ -376,6 +376,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         peer = p
         phase = state
         when (state) {
+            "cancelled" -> {
+                fail("Pairing was cancelled on your Mac. Start again when ready.")
+            }
             "authenticating" -> {
                 status = "Authenticating your Mac…"
                 deadline = SystemClock.elapsedRealtime() + 30000
