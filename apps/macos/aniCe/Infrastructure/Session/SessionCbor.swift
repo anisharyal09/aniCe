@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Foundation
+
+enum SessionFailure: String, Error, Sendable {
+  case malformed, unsupportedProfile, untrustedPeer, authentication, state, cancelled, expired
+}
+
+indirect enum SessionCBOR: Equatable, Sendable {
+  case integer(Int64)
+  case bytes(Data)
+  case text(String)
+  case array([SessionCBOR])
+  case map([Entry])
+  case bool(Bool)
+  struct Entry: Equatable, Sendable {
+    let key: SessionCBOR
+    let value: SessionCBOR
+    init(_ key: SessionCBOR, _ value: SessionCBOR) {
+      self.key = key
+      self.value = value
+    }
+  }
+  func bytes(_ size: Int? = nil) throws -> Data {
+    guard case .bytes(let data) = self, size == nil || data.count == size else {
+      throw SessionFailure.malformed
+    }
+    return data
+  }
+}
+
+enum SessionCbor {
+  static let maxBytes = 4096
+  private static let maxItems = 512
+  private static let maxDepth = 8
+
+  static func sequence(_ values: SessionCBOR...) throws -> Data { try encodeValues(values) }
+  static func encode(_ value: SessionCBOR) throws -> Data { try encodeValues([value]) }
+
+  private static func encodeValues(_ values: [SessionCBOR]) throws -> Data {
+    var out = Data()
+    var items = 0
+    func head(_ major: UInt8, _ n: UInt64) {
+      let width = n < 24 ? 0 : n <= 255 ? 1 : n <= 65535 ? 2 : n <= 0xffff_ffff ? 4 : 8
+      out.append(
+        (major << 5)
+          | (width == 0 ? UInt8(n) : width == 1 ? 24 : width == 2 ? 25 : width == 4 ? 26 : 27))
+      if width > 0 {
+        for i in stride(from: width - 1, through: 0, by: -1) {
+          out.append(UInt8(truncatingIfNeeded: n >> (i * 8)))
+        }
+      }
+    }
+    func write(_ value: SessionCBOR, _ depth: Int) throws {
+      items += 1
+      guard depth <= maxDepth, items <= maxItems else { throw SessionFailure.malformed }
+      switch value {
+      case .integer(let n): head(n >= 0 ? 0 : 1, n >= 0 ? UInt64(n) : UInt64(-(n + 1)))
+      case .bytes(let data):
+        guard data.count <= maxBytes else { throw SessionFailure.malformed }
+        head(2, UInt64(data.count))
+        out.append(data)
+      case .text(let text):
+        let data = Data(text.utf8)
+        guard data.count <= maxBytes else { throw SessionFailure.malformed }
+        head(3, UInt64(data.count))
+        out.append(data)
+      case .array(let array):
+        guard array.count <= maxItems else { throw SessionFailure.malformed }
+        head(4, UInt64(array.count))
+        for v in array { try write(v, depth + 1) }
+      case .map(let map):
+        guard map.count <= maxItems / 2 else { throw SessionFailure.malformed }
+        for pair in map {
+          switch pair.key {
+          case .array, .map: throw SessionFailure.malformed
+          default: break
+          }
+        }
+        let sorted = try map.map { (try encode($0.key), $0) }.sorted { less($0.0, $1.0) }
+        for i in sorted.indices.dropFirst() {
+          guard sorted[i - 1].0 != sorted[i].0 else { throw SessionFailure.malformed }
+        }
+        head(5, UInt64(sorted.count))
+        for pair in sorted {
+          try write(pair.1.key, depth + 1)
+          try write(pair.1.value, depth + 1)
+        }
+      case .bool(let b): out.append(b ? 0xf5 : 0xf4)
+      }
+      guard out.count <= maxBytes else { throw SessionFailure.malformed }
+    }
+    for v in values { try write(v, 0) }
+    return out
+  }
+  static func decode(_ data: Data) throws -> SessionCBOR {
+    let values = try decodeSequence(data)
+    guard values.count == 1 else { throw SessionFailure.malformed }
+    return values[0]
+  }
+  static func decodeSequence(_ data: Data) throws -> [SessionCBOR] {
+    guard data.count <= maxBytes else { throw SessionFailure.malformed }
+    let data = Data(data)
+    var offset = 0
+    var items = 0
+    func byte() throws -> UInt8 {
+      guard offset < data.count else { throw SessionFailure.malformed }
+      defer { offset += 1 }
+      return data[offset]
+    }
+    func length(_ extra: UInt8) throws -> UInt64 {
+      if extra < 24 { return UInt64(extra) }
+      let width: Int
+      switch extra {
+      case 24: width = 1
+      case 25: width = 2
+      case 26: width = 4
+      case 27: width = 8
+      default: throw SessionFailure.malformed
+      }
+      var n: UInt64 = 0
+      for _ in 0..<width { n = (n << 8) | UInt64(try byte()) }
+      let floor: UInt64 = width == 1 ? 24 : width == 2 ? 256 : width == 4 ? 65536 : 0x1_0000_0000
+      guard n >= floor, n <= UInt64(Int64.max) else { throw SessionFailure.malformed }
+      return n
+    }
+    func read(_ depth: Int) throws -> SessionCBOR {
+      items += 1
+      guard depth <= maxDepth, items <= maxItems else { throw SessionFailure.malformed }
+      let first = try byte()
+      let major = first >> 5
+      let extra = first & 31
+      if major == 7 {
+        switch extra {
+        case 20: return .bool(false)
+        case 21: return .bool(true)
+        default: throw SessionFailure.malformed
+        }
+      }
+      let n = try length(extra)
+      switch major {
+      case 0: return .integer(Int64(n))
+      case 1: return .integer(-1 - Int64(n))
+      case 2, 3:
+        guard n <= maxBytes, n <= data.count - offset else { throw SessionFailure.malformed }
+        let bytes = data.subdata(in: offset..<(offset + Int(n)))
+        offset += Int(n)
+        if major == 2 { return .bytes(bytes) }
+        guard let text = String(data: bytes, encoding: .utf8) else {
+          throw SessionFailure.malformed
+        }
+        return .text(text)
+      case 4:
+        guard n <= maxItems else { throw SessionFailure.malformed }
+        return .array(try (0..<Int(n)).map { _ in try read(depth + 1) })
+      case 5:
+        guard n <= maxItems / 2 else { throw SessionFailure.malformed }
+        var previous: Data?
+        var pairs: [SessionCBOR.Entry] = []
+        for _ in 0..<Int(n) {
+          let start = offset
+          let key = try read(depth + 1)
+          switch key {
+          case .array, .map: throw SessionFailure.malformed
+          default: break
+          }
+          let encoded = data.subdata(in: start..<offset)
+          if let previous { guard less(previous, encoded) else { throw SessionFailure.malformed } }
+          previous = encoded
+          pairs.append(.init(key, try read(depth + 1)))
+        }
+        return .map(pairs)
+      default: throw SessionFailure.malformed
+      }
+    }
+    var values: [SessionCBOR] = []
+    while offset < data.count { values.append(try read(0)) }
+    return values
+  }
+  private static func less(_ a: Data, _ b: Data) -> Bool {
+    a.count != b.count ? a.count < b.count : a.lexicographicallyPrecedes(b)
+  }
+}

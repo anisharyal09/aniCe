@@ -1,6 +1,8 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Phase 2 provides persistent device identity through Android Keystore. Phase 4 adds CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Physical acceptance remains pending.
+Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. User manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending. See local [verification status](../../docs/A&V/VERIFICATION_STATUS.md).
+
+Native EDHOC method-0/suite-5 session feasibility is implemented without a new runtime dependency. Session record, BLE and UI integration await API 29/macOS 14 runtime evidence; see local [session verification](../../docs/A&V/SESSION_VERIFICATION.md).
 
 ## Nearby discovery
 
@@ -25,6 +27,7 @@ app/
         AndroidIdentityStorage.kt   Keystore and atomic metadata
       features/discovery/          Nearby screen and lifecycle ViewModel
       infrastructure/bluetooth/    Scan/GATT adapter, codec, coordinator
+      infrastructure/session/     EDHOC engine, bounded CBOR, native crypto/DER adapters
       ui/theme/
         Theme.kt                    Semantic Material palette
     res/                            Strings, icons, themes, backup rules

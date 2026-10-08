@@ -6,9 +6,13 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Show pairing completion and saved trust without future-phase placeholder text.
 - End pairing promptly on authenticated Mac cancellation, clear temporary channel state, and show a cancellation recovery message.
 
 ### Added
+
+- Session conformance checks at CBOR item/depth bounds and ES256 scalar-order boundaries.
+- Native EDHOC method-0/suite-5 handshake engine with active-trust pinning, bounded deterministic CBOR, DER/COSE signature conversion, cancellation guards, and native-provider/Keystore verification tests. Session transport is not enabled.
 
 - Pairing: CameraX QR scanning and six-digit code entry with PAKE bootstrap, bounded GATT transport with automatic cache invalidation, mutual approval, atomic peer trust persistence, and local forgetting.
 - Test hardening: baseline fixture inventory floors, independent ECDH/client-MAC checks, pending re-pair recovery at capacity limits, and measured identity fault-injection boundaries.

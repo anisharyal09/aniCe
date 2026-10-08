@@ -1,0 +1,19 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Restricted aniCe RFC 9528 method-0/suite-5 application profile.
+connection-id = bstr .size 8
+fingerprint = bstr .size 32
+coordinate = bstr .size 32
+signature = bstr .size 64
+device-id = tstr .size 36 ; canonical UUID-v4 checked semantically
+cose-key = {1: 2, 3: -7, -1: 1, -2: coordinate, -3: coordinate}
+credential = {2: device-id, 8: {1: cose-key}}
+id-credential = {4: fingerprint}
+message-1 = (0, 5, coordinate, connection-id)
+message-2 = (bstr .size 141)
+plaintext-2 = (connection-id, fingerprint, signature)
+message-3 = (bstr .size 116)
+plaintext-3 = (fingerprint, signature)
+message-4 = (bstr .size 16)
+edhoc-error = (1, tstr .size (0..64) // 2, 5 // 3, true)
+export-context = ["aniCe session", 1, bstr, bstr, 1 / 2, "key" / "iv"] /
+                 ["aniCe session", 1, bstr, bstr, 0, "session-id"]

@@ -73,7 +73,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             { success, reason ->
                 if (readyToFinish && success) {
                     phase = "paired"
-                    status = "Paired on this phone. Secure sessions will be added in Phase 5."
+                    status = "Pairing complete. Device saved as trusted."
                     retireEngine()
                     refresh()
                 } else if (busy) failLink(reason)
@@ -110,7 +110,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                     if (phase == "cleanup" && readyToFinish) {
                         transport.close()
                         phase = "paired"
-                        status = "Paired on this phone. Secure sessions will be added in Phase 5."
+                        status = "Pairing complete. Device saved as trusted."
                         retireEngine()
                         refresh()
                     } else if (phase == "scan" && transport.scanEndFailure != null) {

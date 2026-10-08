@@ -1,6 +1,8 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI. Phase 2 provides persistent device identity, a main window, and a menu-bar companion. Phase 4 adds QR/PIN pairing, authenticated identity proofs, mutual approval, and local peer trust. Physical acceptance and security review remain pending.
+Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. User manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending. See local [verification status](../../docs/A&V/VERIFICATION_STATUS.md).
+
+Native EDHOC method-0/suite-5 session feasibility is implemented with CryptoKit/Security. Session record, BLE and UI integration await API 29/macOS 14 runtime evidence; see local [session verification](../../docs/A&V/SESSION_VERIFICATION.md).
 
 ## Nearby discovery
 
@@ -25,6 +27,7 @@ aniCe/
     MacIdentityStorage.swift        Keychain backends and atomic metadata
   Infrastructure/Bluetooth/        Peripheral adapter, codec, timed session
   Infrastructure/Pairing/          Bootstrap engine, native crypto, trust journal, PAKE ABI
+  Infrastructure/Session/          EDHOC actor, bounded CBOR, native crypto/DER adapters
   Features/Pairing/                Shared pairing model, QR/PIN and trusted-device view
   Features/Discovery/              Shared discovery model and view
   UI/
@@ -35,6 +38,8 @@ aniCeTests/
   IdentityTests.swift               Hosted identity and storage tests
 IdentityInterchange/
   main.swift                        Test-only signature interchange endpoint
+SessionInterchange/
+  main.swift                        Test-only protected-key EDHOC interchange endpoint
 aniCe.xcodeproj/                     Targets, source references, shared scheme
 ```
 

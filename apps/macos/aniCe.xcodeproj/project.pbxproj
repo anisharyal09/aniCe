@@ -37,6 +37,12 @@
 		5AC4A19CBFF38BE42CBB0A83 = {isa = PBXBuildFile; fileRef = 88FFC4482694BD876043669A; };
 		B5BD6790BA172D324FBA4CA9 = {isa = PBXBuildFile; fileRef = 04E1689DBE5CE27F2E4DE8D6; };
 		AB0000000000000000000012 = {isa = PBXBuildFile; fileRef = AB0000000000000000000011; };
+		029C036682850A719BF3B73E /* SessionCbor.swift */ = {isa = PBXBuildFile; fileRef = A86925D0FAED5AE1246512FB; };
+		FCD0A6A722F1CA9B89AC6AC9 /* SessionCrypto.swift */ = {isa = PBXBuildFile; fileRef = BEF837DC52D1A22954F8A0CC; };
+		3D14CC61C42C890B4C09AA5E /* SessionHandshakeEngine.swift */ = {isa = PBXBuildFile; fileRef = DD2F0B3395D712E249CA4061; };
+		FAA584EDF2DE5163EB1443FE /* SessionTests.swift */ = {isa = PBXBuildFile; fileRef = 543555DA645C37CC884E3341; };
+		2E55CC0A81ADFCE6FE8B1B1D /* session-vectors.json */ = {isa = PBXBuildFile; fileRef = 1C2BA8C8461E82EE4511F509; };
+		AD60B788888304BB99EB56FE /* rfc9529-components.json */ = {isa = PBXBuildFile; fileRef = 827ECA8094D4F1E9A92668B4; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,6 +89,12 @@
 		88FFC4482694BD876043669A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PairingTests.swift"; sourceTree = SOURCE_ROOT; };
 		04E1689DBE5CE27F2E4DE8D6 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/pairing-vectors.json"; sourceTree = SOURCE_ROOT; };
 		AB0000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = "../../core/rust/pairing/THIRD_PARTY_NOTICES.md"; sourceTree = SOURCE_ROOT; };
+		A86925D0FAED5AE1246512FB /* SessionCbor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Session/SessionCbor.swift"; sourceTree = SOURCE_ROOT; };
+		BEF837DC52D1A22954F8A0CC /* SessionCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Session/SessionCrypto.swift"; sourceTree = SOURCE_ROOT; };
+		DD2F0B3395D712E249CA4061 /* SessionHandshakeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Session/SessionHandshakeEngine.swift"; sourceTree = SOURCE_ROOT; };
+		543555DA645C37CC884E3341 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/SessionTests.swift"; sourceTree = SOURCE_ROOT; };
+		1C2BA8C8461E82EE4511F509 /* session-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/session-vectors.json"; sourceTree = SOURCE_ROOT; };
+		827ECA8094D4F1E9A92668B4 /* rfc9529-components.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/rfc9529-components.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -138,6 +150,9 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				827ECA8094D4F1E9A92668B4 /* rfc9529-components.json */,
+				1C2BA8C8461E82EE4511F509 /* session-vectors.json */,
+				543555DA645C37CC884E3341 /* SessionTests.swift */,
 				88FFC4482694BD876043669A,
 				04E1689DBE5CE27F2E4DE8D6,
 
@@ -164,6 +179,9 @@
 		000000000000000000000301 /* Infrastructure */ = {
 			isa = PBXGroup;
 			children = (
+				DD2F0B3395D712E249CA4061 /* SessionHandshakeEngine.swift */,
+				BEF837DC52D1A22954F8A0CC /* SessionCrypto.swift */,
+				A86925D0FAED5AE1246512FB /* SessionCbor.swift */,
 				000000000000000000000302 /* Identity */,
 				000000000000000000000460 /* Bluetooth */,
 			);
@@ -328,6 +346,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD60B788888304BB99EB56FE /* rfc9529-components.json */,
+				2E55CC0A81ADFCE6FE8B1B1D /* session-vectors.json */,
 				B5BD6790BA172D324FBA4CA9,
 				000000000000000000000453 /* discovery-vectors.json in Resources */,
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
@@ -341,6 +361,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3D14CC61C42C890B4C09AA5E /* SessionHandshakeEngine.swift */,
+				FCD0A6A722F1CA9B89AC6AC9 /* SessionCrypto.swift */,
+				029C036682850A719BF3B73E /* SessionCbor.swift */,
 				074BF4EC3FFD69F80E86B624,
 				D8D003F789CFE6CBB27FC01E,
 				C0703186165FF0C5D2612FF7,
@@ -372,6 +395,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FAA584EDF2DE5163EB1443FE /* SessionTests.swift */,
 				5AC4A19CBFF38BE42CBB0A83,
 				000000000000000000000451 /* DiscoveryTests.swift in Sources */,
 				000000000000000000000202 /* IdentityTests.swift in Sources */,

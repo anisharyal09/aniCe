@@ -58,4 +58,6 @@ for-me.*
 # will public later after updates or contents ready
 
 .agents/*
-docs/AUDITS
+
+# audits / verification
+docs/A&V  

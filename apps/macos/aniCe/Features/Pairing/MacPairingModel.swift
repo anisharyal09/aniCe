@@ -172,7 +172,7 @@ import Observation
       status = "Saving trust and confirming peer storage…"
     case "paired":
       deadline = ProcessInfo.processInfo.systemUptime + 2
-      status = "Paired on this Mac. Secure sessions will be added in Phase 5."
+      status = "Pairing complete. Device saved as trusted."
       qrText = nil
       qrImage = nil
       pin = nil
