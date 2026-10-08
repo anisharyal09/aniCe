@@ -8,6 +8,23 @@ import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetad
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 
 class AniCeApplication : Application() {
+    @Volatile
+    private var sharedTrust: io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustStore? =
+        null
+    var trustStore: io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustStore
+        get() =
+            synchronized(this) {
+                sharedTrust
+                    ?: io.github.anisharyal09.anice.infrastructure.pairing
+                        .PeerTrustStore(java.io.File(noBackupFilesDir, "trusted_peers.json"))
+                        .also { sharedTrust = it }
+            }
+        set(value) {
+            synchronized(this) { sharedTrust = value }
+        }
+
     // Share one service across activity recreation so identity operations stay serialized.
-    val identityService by lazy { IdentityService(AndroidIdentityMetadata(this), AndroidIdentityKeys(), { Build.MODEL }) }
+    val identityService by lazy {
+        IdentityService(AndroidIdentityMetadata(this), AndroidIdentityKeys(), { Build.MODEL })
+    }
 }

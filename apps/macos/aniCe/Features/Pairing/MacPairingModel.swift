@@ -4,6 +4,8 @@ import CoreImage.CIFilterBuiltins
 import Observation
 
 @Observable @MainActor final class MacPairingModel {
+  var trustRemoved: () -> Void = {}
+  var beforePairing: () -> Void = {}
   var status = "Choose how to pair your Android device."
   var phase = "idle"
   var active = false
@@ -12,6 +14,10 @@ import Observation
   var pin: String?
   var peer: DeviceIdentity?
   var peers: [PeerTrustRecord] = []
+  // Presentation only; session admission resolves trust directly from the store.
+  var hasTrustedAndroid: Bool {
+    peers.contains { $0.active && $0.peer.platform == "android" }
+  }
   var trustRecoveryNeeded = false
   var remaining = 0
   private let identity: IdentityService
@@ -42,6 +48,7 @@ import Observation
       ) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } })
   }
   func start(_ method: PairingMethod) {
+    beforePairing()
     cancel()
     active = true
     phase = "preparing"
@@ -310,6 +317,7 @@ import Observation
         let restored = try await Task.detached { try PeerTrustStore.recover() }.value
         guard operation == generation else { return }
         store = restored
+        trustRemoved()
         peers = []
         trustRecoveryNeeded = false
         status =
@@ -317,9 +325,19 @@ import Observation
       } catch { status = "Could not recover local trust. Try again." }
     }
   }
+  func sessionStore() async throws -> PeerTrustStore {
+    if let store { return store }
+    let factory = makeStore
+    let loaded = try await Task.detached { try factory() }.value
+    // Another caller may have completed while the load was suspended.
+    if let store { return store }
+    store = loaded
+    return loaded
+  }
   func forget(_ id: String) {
     do {
       try store?.remove(id)
+      trustRemoved()
       peers.removeAll { $0.id == id }
     } catch { status = "Could not remove local trust. Try again." }
   }

@@ -59,6 +59,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     val busy
         get() = phase !in listOf("idle", "failed", "paired")
 
+    var beforePairing: () -> Unit = {}
+    var trustRemoved: () -> Unit = {}
     private var foreground = false
     private var overall = 0L
     private var deadline = 0L
@@ -262,6 +264,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             phase = "failed"
             return
         }
+        beforePairing()
         val op = generation
         phase = "preparing"
         status = "Preparing pairing…"
@@ -269,11 +272,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         readyToFinish = false
         worker.execute {
             try {
-                val trust =
-                    store
-                        ?: PeerTrustStore(File(app.noBackupFilesDir, "trusted_peers.json")).also {
-                            store = it
-                        }
+                val trust = store ?: app.trustStore.also { store = it }
                 val created =
                     PairingEngine(
                         method,
@@ -471,11 +470,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         worker.execute {
             try {
                 val local = app.identityService.getOrCreateIdentity().identity
-                val trust =
-                    store
-                        ?: PeerTrustStore(File(app.noBackupFilesDir, "trusted_peers.json")).also {
-                            store = it
-                        }
+                val trust = store ?: app.trustStore.also { store = it }
                 val list = trust.list(local.fingerprint)
                 handler.post { if (generation == op) peers = list }
             } catch (error: Exception) {
@@ -498,9 +493,11 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         worker.execute {
             try {
                 store = PeerTrustStore.recover(File(app.noBackupFilesDir, "trusted_peers.json"))
+                app.trustStore = requireNotNull(store)
                 handler.post {
                     if (op == generation) {
                         recovery = ""
+                        trustRemoved()
                         peers = emptyList()
                         status =
                             "Local trust was reset. Pair your devices again. The unreadable file was preserved."
@@ -518,6 +515,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         worker.execute {
             try {
                 store?.remove(id)
+                handler.post { trustRemoved() }
                 refresh()
             } catch (_: Exception) {
                 handler.post { status = "Could not remove local trust. Try again." }

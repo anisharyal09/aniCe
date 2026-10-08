@@ -223,13 +223,46 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
         let original = try await identityService.loadOrCreate()
         XCTAssertEqual(storage.signingCount, 1, "Creation checks the key before commit only")
         _ = try await identityService.loadOrCreate()
-        XCTAssertEqual(storage.signingCount, 2, "A later load still checks key usability")
+        XCTAssertEqual(storage.signingCount, 1, "Public reload must not request private-key signing")
         let message = Data("Requested operation".utf8)
         let signed = try await identityService.sign(message: message)
-        XCTAssertEqual(storage.signingCount, 3, "Signing must not also perform a preliminary signature")
+        XCTAssertEqual(storage.signingCount, 2, "Signing must not also perform a preliminary signature")
         XCTAssertTrue(original.identity.verify(message: message, signature: signed.signature))
         _ = try await identityService.reset()
-        XCTAssertEqual(storage.signingCount, 4, "Reset checks its replacement before commit only")
+        XCTAssertEqual(storage.signingCount, 3, "Reset checks its replacement before commit only")
+    }
+
+    func testPublicReloadDoesNotSignAndActualDenialPreservesIdentity() async throws {
+        let storage = MemoryIdentityStorage()
+        let initial = try await service(storage).loadOrCreate()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let journal = try encoder.encode(storage.record)
+        let tags = Set(storage.keys.keys)
+        storage.denySigning = true
+        let restarted = service(storage)
+        for _ in 0..<3 {
+            let loaded = try await restarted.loadOrCreate()
+            XCTAssertEqual(loaded.identity, initial.identity)
+        }
+        XCTAssertEqual(storage.signingCount, 1, "Reload is public-key validation, not a signing probe")
+        do {
+            _ = try await restarted.sign(message: Data("request".utf8))
+            XCTFail("Signing denial must propagate")
+        } catch let error as IdentityError { XCTAssertEqual(error, .accessDenied) }
+        XCTAssertEqual(try encoder.encode(storage.record), journal)
+        XCTAssertEqual(Set(storage.keys.keys), tags)
+        storage.denySigning = false
+        storage.corruptSignatures = true
+        do {
+            _ = try await restarted.sign(message: Data("request".utf8))
+            XCTFail("A malformed signature must not be returned")
+        } catch let error as IdentityError { XCTAssertEqual(error, .inconsistentStorage) }
+        XCTAssertEqual(try encoder.encode(storage.record), journal)
+        XCTAssertEqual(Set(storage.keys.keys), tags)
+        storage.corruptSignatures = false
+        let recovered = try await restarted.sign(message: Data("request".utf8))
+        XCTAssertTrue(initial.identity.verify(message: Data("request".utf8), signature: recovered.signature))
     }
 
     @MainActor
@@ -303,6 +336,7 @@ private final class MemoryIdentityStorage: IdentityStorage, @unchecked Sendable 
     var record: IdentityRecord?
     var keys: [String: P256.Signing.PrivateKey] = [:]
     var corruptSignatures = false
+    var denySigning = false
     private(set) var signingCount = 0
     private(set) var operationCount = 0
     private(set) var failureTriggered = false
@@ -338,6 +372,7 @@ private final class MemoryIdentityStorage: IdentityStorage, @unchecked Sendable 
     func sign(tag: String, message: Data) throws -> Data {
         try operation {
             signingCount += 1
+            if denySigning { throw IdentityError.accessDenied }
             guard let key = keys[tag] else { throw IdentityError.keyMissing }
             return corruptSignatures ? Data([0]) : try key.signature(for: message).derRepresentation
         }

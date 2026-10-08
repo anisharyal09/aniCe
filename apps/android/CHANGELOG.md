@@ -4,33 +4,28 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## Unreleased
 
-### Fixed
-
-- Show pairing completion and saved trust without future-phase placeholder text.
-- End pairing promptly on authenticated Mac cancellation, clear temporary channel state, and show a cancellation recovery message.
-
 ### Added
 
-- Session conformance checks at CBOR item/depth bounds and ES256 scalar-order boundaries.
-- Native EDHOC method-0/suite-5 handshake engine with active-trust pinning, bounded deterministic CBOR, DER/COSE signature conversion, cancellation guards, and native-provider/Keystore verification tests. Session transport is not enabled.
-
+- Trusted Mac Connect/Disconnect/Retry controls, native AES-GCM record channel and EDHOC/BLE ordering owner, foreground cleanup and shared v1/v2 GATT transport with bounded queues and submission deadlines.
+- Native EDHOC method 0 / suite 5 handshake engine with active-trust pinning, bounded deterministic CBOR, DER/COSE signature conversion, and cancellation guards.
 - Pairing: CameraX QR scanning and six-digit code entry with PAKE bootstrap, bounded GATT transport with automatic cache invalidation, mutual approval, atomic peer trust persistence, and local forgetting.
-- Test hardening: baseline fixture inventory floors, independent ECDH/client-MAC checks, pending re-pair recovery at capacity limits, and measured identity fault-injection boundaries.
-- Foreground, service-filtered nearby BLE discovery with on-demand permissions, generic temporary candidates, bounded GATT validation/cleanup, cancellation and recovery, and shared-vector/lifecycle tests. Physical acceptance remains pending.
+- Foreground service-filtered nearby BLE discovery with on-demand permissions and bounded candidate validation.
+- Persistent P-256 device identity with Android Keystore signing, actual protection reporting, and backup-excluded metadata.
+- Initial Android app with aniCe top bar, device list home, and system light/dark theme using the shared palette.
 
 ### Changed
 
-- Simplify the app README around its source structure and run/check commands; add concise ownership and threading comments at app entry points.
-- Extract the app shell and device-identity screen/state from MainActivity, retain state in a lifecycle ViewModel, and group identity infrastructure/tests with explicit imports. Storage identifiers and public contracts are preserved.
-- Require interchange tests to reject altered messages, malformed signatures, and wrong keys, and confirm isolated test cleanup.
-- Refine “This device” with a clear device heading, grouped identity details, readable fingerprint, and a separate reset section.
+- Replace centered connection home with a minimal device list, contextual actions and native management menus.
+- Display eight-hex-digit fingerprint prefix instead of placeholder text; complete semantic color tokens using DESIGN.md palette.
+- Document session security and lifecycle invariants inline: trust revalidation, nonce ownership, readiness, bounded fragmentation, submission semantics and best-effort secret cleanup.
+- Record native GATT write status and session mode in transport diagnostics without recording payloads or keys.
+- Extract app shell and device-identity screen/state from MainActivity into lifecycle ViewModels.
 
-- Persistent P-256 device identity with Android Keystore signing, actual protection reporting, and backup-excluded metadata.
-- A native “This device” screen with copy actions, explicit identity reset, and recoverable storage errors.
-- Journaled identity replacement, shared interoperability vectors, JVM behavior tests, and Android Keystore instrumented tests.
-- Initial Android app with an aniCe top bar and “No devices paired” starting screen.
-- System light and dark themes using the shared aniCe palette.
-- Edge-to-edge layout with safe window insets, wrapping text, and scrollable content.
-- Single-module Kotlin/Compose project, Gradle wrapper, and local build and run instructions.
+### Fixed
+
+- Distinguish authenticated Mac closure and idle/lifetime limits from trust failure; serialize session health checks with incoming close processing.
+- Show pairing completion and saved trust without placeholder text.
+- End pairing promptly on authenticated Mac cancellation, clear temporary channel state, and show cancellation recovery message.
 
 The foundation uses development version `0.0.0-dev` (code `1`), targets Android 16 (API 36), and has a provisional Android 10 (API 29) minimum.
+

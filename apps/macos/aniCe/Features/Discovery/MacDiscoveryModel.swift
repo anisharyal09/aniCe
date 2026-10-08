@@ -4,6 +4,7 @@ import Observation
 
 @Observable @MainActor
 final class MacDiscoveryModel {
+  var beforeStart: () -> Void = {}
   let adapter: any PairingPeripheralAdapter
   let session: PeripheralDiscoverySession
   @ObservationIgnored private var timer: Timer?
@@ -24,6 +25,7 @@ final class MacDiscoveryModel {
       ) { [weak self] _ in MainActor.assumeIsolated { self?.stop() } })
   }
   func start() {
+    beforeStart()
     timer?.invalidate()
     session.start()
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in

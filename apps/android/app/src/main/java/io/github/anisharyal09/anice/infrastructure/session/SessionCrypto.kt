@@ -58,6 +58,7 @@ object SessionCrypto {
     return output
   }
 
+  // Only immutable device ID/key fields bind trust; display names do not enter the transcript.
   fun credential(identity: DeviceIdentity): Cbor {
     identity.validate()
     val point = IdentityCrypto.decodeBase64(identity.publicKey)
@@ -180,6 +181,7 @@ private constructor(private var privateKey: PrivateKey?, val publicX: ByteArray)
   }
 }
 
+/** Converts strict minimal DER to/from fixed-width COSE ES256, enforcing 1 <= r,s < n. */
 object SessionSignature {
   private val order =
     BigInteger("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 16)

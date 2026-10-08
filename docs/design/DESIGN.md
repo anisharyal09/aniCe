@@ -16,18 +16,18 @@ The palette uses warm neutral surfaces and a restrained **slate-blue** accent. C
 
 | Semantic role | Light | Dark |
 | --- | --- | --- |
-| Background | `#F4F3EF` | `#191E22` |
-| Content surface | `#FFFDF9` | `#242B31` |
-| Sidebar / secondary surface | `#EAEAE4` | `#20272D` |
-| Primary text | `#262F35` | `#EDF0F1` |
-| Secondary text | `#626E76` | `#ADB8BF` |
-| Separator / outline | `#DCE0DF` | `#3C4850` |
-| Primary action / selection ink | `#355B70` | `#A7C5D6` |
-| Text on primary action | `#FFFFFF` | `#152D3B` |
-| Selected / subtle accent surface | `#DDE8ED` | `#30434E` |
-| Success ink | `#466A50` | `#A1C6A9` |
-| Warning ink | `#825523` | `#DCB27C` |
-| Error ink | `#A13D38` | `#E8AAA4` |
+| Background | ![#F4F3EF](swatches/F4F3EF.svg) `#F4F3EF` | ![#191E22](swatches/191E22.svg) `#191E22` |
+| Content surface | ![#FFFDF9](swatches/FFFDF9.svg) `#FFFDF9` | ![#242B31](swatches/242B31.svg) `#242B31` |
+| Sidebar / secondary surface | ![#EAEAE4](swatches/EAEAE4.svg) `#EAEAE4` | ![#20272D](swatches/20272D.svg) `#20272D` |
+| Primary text | ![#262F35](swatches/262F35.svg) `#262F35` | ![#EDF0F1](swatches/EDF0F1.svg) `#EDF0F1` |
+| Secondary text | ![#626E76](swatches/626E76.svg) `#626E76` | ![#ADB8BF](swatches/ADB8BF.svg) `#ADB8BF` |
+| Separator / outline | ![#DCE0DF](swatches/DCE0DF.svg) `#DCE0DF` | ![#3C4850](swatches/3C4850.svg) `#3C4850` |
+| Primary action / selection ink | ![#355B70](swatches/355B70.svg) `#355B70` | ![#A7C5D6](swatches/A7C5D6.svg) `#A7C5D6` |
+| Text on primary action | ![#FFFFFF](swatches/FFFFFF.svg) `#FFFFFF` | ![#152D3B](swatches/152D3B.svg) `#152D3B` |
+| Selected / subtle accent surface | ![#DDE8ED](swatches/DDE8ED.svg) `#DDE8ED` | ![#30434E](swatches/30434E.svg) `#30434E` |
+| Success ink | ![#466A50](swatches/466A50.svg) `#466A50` | ![#A1C6A9](swatches/A1C6A9.svg) `#A1C6A9` |
+| Warning ink | ![#825523](swatches/825523.svg) `#825523` | ![#DCB27C](swatches/DCB27C.svg) `#DCB27C` |
+| Error ink | ![#A13D38](swatches/A13D38.svg) `#A13D38` | ![#E8AAA4](swatches/E8AAA4.svg) `#E8AAA4` |
 
 Use semantic names in implementation and map them into native color roles. The success, warning, and error colors above are text/icon colors on neutral surfaces, not untested button fills. Brand accent is separate from connection success. Pair state color with text or a meaningful symbol.
 
@@ -42,6 +42,8 @@ Use semantic names in implementation and map them into native color roles. The s
 - Require at least 4.5:1 contrast for ordinary text and 3:1 for large text and meaningful control graphics. Preserve visible native focus indicators and screen-reader labels; color must never be the only state signal.
 
 ## Full Mac window
+
+Without a trusted Android device, show pairing actions and omit the trusted-session connection section, empty trusted-device panel, and discovery compatibility disclosure. The companion directs pairing to the main window. Keep active connection controls visible until the operation ends; cached presentation records do not authorize session admission.
 
 Use a familiar resizable window with a toolbar and sidebar. Sidebar destinations select pages; the selected device scopes the content. Keep these two concepts visually distinct.
 
@@ -88,6 +90,10 @@ Use native pickers, sheets, switches, and dialogs. Honor system Back, predictive
 Plan for edge-to-edge rendering. Android 15 enforces it for apps targeting API 35 on Android 15 devices ([behavior changes](https://developer.android.com/about/versions/15/behavior-changes-15)). In Compose, protect top-bar, bottom-navigation, and other interactive content using `WindowInsets.safeDrawing` or the corresponding Material component inset handling ([Compose cutout guidance](https://developer.android.com/develop/ui/compose/system/cutouts)). Apply and consume insets once rather than doubling Scaffold and child padding. Test cutouts, gesture navigation, three-button navigation, and the on-screen keyboard; backgrounds may extend behind system bars while controls remain safe.
 
 Every interactive target is at least 48 × 48 dp ([Android accessibility guidance](https://developer.android.com/guide/topics/ui/accessibility/views/apps-views)). Leave enough separation between controls. The drawn icon can remain smaller than its hit region. The static aniCe palette is the starting identity; optional Android Dynamic Color is a later explicit design choice, not an automatic replacement of this baseline.
+
+The implemented connection home starts below the app bar as a flat device list. Each entry shows the full device name, one connection line with an eight-hex-digit fingerprint prefix and Connect, Cancel, Retry or Disconnect. Names wrap without ellipsis. Use spacing and alignment to group the entry; separate multiple devices with a quiet divider. Do not add a bordered card, repeated security copy or a stack of full-width setup actions to this list. Keep it scrollable and bound content width to 640 dp.
+
+Device management and the separate discovery check live in the Manage menu. A secured device's More menu contains Send connection check; feedback stays beside that device. Connection-window instructions appear only when disconnected. The prefix identifies a list entry; full credential matching remains the authentication boundary. Mac shows a shared optional allowed-phone menu when multiple trusted Android devices exist, freezes a chosen target while allowing connections, and does not gate the Allow connections button on asynchronously loaded display records, and makes the entire discovery disclosure label toggle its content. Preserve system typography, including the user's font and scaling preferences. Idle expiry, peer closure and trust failure must have distinct messages; normal session endings are disconnected states.
 
 ## Live activities
 

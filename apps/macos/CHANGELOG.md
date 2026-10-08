@@ -4,28 +4,29 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## Unreleased
 
-### Fixed
-
-- Show pairing completion and saved trust without future-phase placeholder text.
-- Send encrypted cancellation on pairing Decline, with bounded transport draining before invitation cleanup and QR/PIN regression coverage.
-
 ### Added
 
-- Session conformance checks at CBOR item/depth bounds and ES256 scalar-order boundaries.
-- Actor-isolated EDHOC method-0/suite-5 handshake engine, pinned CCS credentials, strict CBOR/signature codecs, shared conformance tests, and a disposable Keychain interchange helper. Session transport is not enabled.
+- Allow connections and session controls shared by window and companion, native AES-GCM record actor, admission failure/window limits, advertising-independent established traffic and sleep/Quit cleanup.
+- Actor-isolated EDHOC method 0 / suite 5 handshake engine, pinned CCS credentials, strict CBOR/signature codecs, and shared conformance tests.
+- Pairing: QR and six-digit code invitations with PAKE bootstrap, stable three-characteristic GATT peripheral adapter, mutual approval, atomic peer trust store, dedicated pairing and trusted-devices panels.
+- Explicit bounded BLE peripheral discovery shared by window and companion, read-only rotating nonce payload, sandbox/usage configuration, and sleep/Quit cleanup.
+- Persistent P-256 identity with immutable Keychain generations, atomic reset/recovery, typed errors, and signing snapshots.
+- Native SwiftUI application with resizable single-instance window, menu-bar companion, and system light/dark appearance using the shared palette.
 
-- Pairing: QR and six-digit code invitations with PAKE bootstrap, stable three-characteristic GATT peripheral adapter, mutual approval, atomic peer trust store, dedicated pairing and trusted-devices panels, and persistent window device header.
-- Test hardening: baseline fixture inventory floors, independent crypto-vector assertions, pending re-pair recovery at capacity limits, and direct write-failure rollback fault injection.
+### Changed
 
-- Explicit bounded BLE peripheral discovery shared by window and companion, read-only rotating nonce payload, sandbox/usage configuration, sleep/Quit cleanup, and deterministic discovery tests. Physical acceptance remains pending.
+- Document session security and lifecycle invariants inline: trust revalidation, nonce ownership, readiness, bounded fragmentation, submission semantics and best-effort secret cleanup.
+- Load existing public identity state without a startup signing challenge; retain creation/reset checks and verification of requested signatures.
+- Merge secured state and authenticated-device feedback into one status line in window and companion.
 
-- Persistent P-256 identity with immutable Keychain generations, atomic reset/recovery, typed errors, and signing snapshots. Current ad-hoc builds explicitly select development Keychain; a separate signed data-protection/Secure Enclave backend awaits native verification.
-- Full-window “This device” details, ID/fingerprint copying, protection status, confirmed reset, and a companion shortcut to the same sheet.
-- Shared-vector, concurrency, interruption-recovery, and isolated Keychain tests, plus disposable native signature interchange.
+### Fixed
 
-- Native SwiftUI application with a resizable, single-instance window and an unpaired starting screen.
-- Menu-bar companion with Open aniCe and Quit actions, plus Dock reopening after the main window closes.
-- System light and dark appearance using the shared aniCe palette.
-- Xcode project, shared aniCe scheme, universal build configuration, and local build and run instructions.
+- Allow fresh session admission on retained Core Bluetooth indication subscriptions during an explicit window while preserving exclusive admission.
+- Show pairing actions on an unpaired Mac; hide unavailable connection controls in window and companion while retaining active-operation controls.
+- Declare finite session-task ownership explicitly while retaining weak transport/channel callbacks, resolving Swift nested-capture diagnostics.
+- Retain session termination reason and distinguish idle/lifetime limits, authenticated peer closure and trust failure.
+- Show pairing completion and saved trust without placeholder text.
+- Send encrypted cancellation on pairing Decline with bounded transport draining before invitation cleanup.
 
 The foundation uses development version `0.0.0` (build `1`) and a provisional macOS 14 minimum.
+

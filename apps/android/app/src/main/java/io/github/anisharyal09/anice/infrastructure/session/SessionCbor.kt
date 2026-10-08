@@ -107,6 +107,7 @@ object SessionCbor {
         is Cbor.Map -> {
           if (value.value.size > MAX_ITEMS / 2) fail()
           if (value.value.any { it.first is Cbor.Map || it.first is Cbor.Array }) fail()
+          // Sort encoded keys deterministically; duplicate encodings cannot bind different values.
           val sorted =
             value.value
               .map { Triple(encode(it.first), it.first, it.second) }

@@ -15,7 +15,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionTests {
-  private fun root(name: String = "session-vectors.json"): JSONObject =
+  internal fun root(name: String = "session-vectors.json"): JSONObject =
     JSONObject(
       requireNotNull(javaClass.classLoader!!.getResourceAsStream("session/$name"))
         .bufferedReader()
@@ -38,7 +38,7 @@ class SessionTests {
       .validate()
   }
 
-  private fun engine(
+  internal fun engine(
     v: JSONObject,
     server: Boolean,
     trusted: (() -> List<DeviceIdentity>)? = null,

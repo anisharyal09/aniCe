@@ -2,7 +2,7 @@
 
 This directory contains the cross-platform communication contracts, schemas, and shared verification fixtures for **aniCe**.
 
-Contracts define required behavior. User manual acceptance remains pending; agent-run automated/native evidence is recorded in local [verification status](../docs/A&V/VERIFICATION_STATUS.md).
+Contracts define required behavior. User manual acceptance remains pending; automated unit tests and independent test vectors validate wire implementations.
 
 ---
 
@@ -13,7 +13,7 @@ Contracts define required behavior. User manual acceptance remains pending; agen
 | **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Protected native P-256 public identity and fingerprint |
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
-| **Trusted-device sessions** | `1` | Native feasibility; integration gated | [`session/README.md`](session/README.md) | EDHOC method-0/suite-5 authentication with pinned credentials |
+| **Trusted-device sessions** | `1` | Implemented; acceptance pending | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
 
 ---
 
@@ -94,7 +94,7 @@ protocol/
 ├── schemas/
 │   └── identity.schema.json       # Canonical JSON Schema for public identity
 ├── session/
-│   ├── README.md                  # EDHOC profile and gated application/BLE contract
+│   ├── README.md                  # EDHOC, encrypted records and BLE session contract
 │   └── session.cddl               # Restricted deterministic CCS/EDHOC definitions
 └── test-vectors/
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors

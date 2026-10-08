@@ -55,13 +55,13 @@ actor IdentityService {
         self.tagPrefix = tagPrefix
     }
 
-    /// Loads the existing local identity or initializes a new one on first run.
+    /// Loads public identity state without a private signing operation for an existing key.
+    /// New keys still prove signing access before their active-record commit.
     func loadOrCreate() throws -> LocalIdentity {
-        try loadIdentity(checkSigning: true)
+        try loadIdentity()
     }
 
-    private func loadIdentity(checkSigning: Bool) throws -> LocalIdentity {
-        var validatedTag: String?
+    private func loadIdentity() throws -> LocalIdentity {
         var record: IdentityRecord
         if let saved = try storage.loadRecord() {
             record = saved
@@ -82,21 +82,20 @@ actor IdentityService {
                 // A first creation has a durable UUID/tag before key generation.
                 let key = try storage.key(tag: pending.keyTag) ?? storage.createKey(tag: pending.keyTag)
                 record.active = try storedIdentity(pending, key: key)
-                validatedTag = pending.keyTag
                 record.pending = nil
                 try storage.saveRecord(record)
             }
         }
 
-        return try finish(record, checkSigning: checkSigning && validatedTag != record.active?.keyTag)
+        return try finish(record)
     }
 
     /// Public access does not add a preliminary signing operation to pairing.
-    func publicIdentity() throws -> DeviceIdentity { try loadIdentity(checkSigning: false).identity }
+    func publicIdentity() throws -> DeviceIdentity { try loadIdentity().identity }
 
     /// Updates public display metadata without replacing the device ID or signing key.
     func rename(_ name: String) throws -> LocalIdentity {
-        let current = try loadIdentity(checkSigning: false)
+        let current = try loadIdentity()
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.unicodeScalars.count <= 64,
               var record = try storage.loadRecord(), let active = record.active else {
@@ -106,13 +105,13 @@ actor IdentityService {
                                          publicKey: Data(base64Encoded: current.identity.publicKey)!)
         record.active = StoredIdentity(identity: renamed, keyTag: active.keyTag, protection: active.protection)
         try storage.saveRecord(record)
-        return try loadIdentity(checkSigning: false)
+        return try loadIdentity()
     }
 
     func sign(message: Data) throws -> SignedIdentityPayload {
         // The requested signature itself proves access and key consistency below.
         // Avoid a second private-key operation solely for a preliminary self-check.
-        let local = try loadIdentity(checkSigning: false)
+        let local = try loadIdentity()
         guard let record = try storage.loadRecord(), let active = record.active,
               active.identity == local.identity else { throw IdentityError.inconsistentStorage }
         let signature = try storage.sign(tag: active.keyTag, message: message)
@@ -139,7 +138,7 @@ actor IdentityService {
         // This atomic record update is the only identity-switch commit point.
         try storage.saveRecord(record)
         // The replacement already passed its signing check before the commit.
-        return try finish(record, checkSigning: false)
+        return try finish(record)
     }
 
     private func newPending() -> PendingIdentity {
@@ -171,12 +170,11 @@ actor IdentityService {
         }
     }
 
-    private func finish(_ source: IdentityRecord, checkSigning: Bool) throws -> LocalIdentity {
+    private func finish(_ source: IdentityRecord) throws -> LocalIdentity {
         guard let active = source.active else { throw IdentityError.inconsistentStorage }
         guard let key = try storage.key(tag: active.keyTag) else { throw IdentityError.keyMissing }
         guard key.bytes.base64EncodedString() == active.identity.publicKey,
               key.protection == active.protection else { throw IdentityError.inconsistentStorage }
-        if checkSigning { try checkSigningKey(active.identity, tag: active.keyTag) }
         var record = source
         var remaining: [String] = []
         for tag in record.retired {

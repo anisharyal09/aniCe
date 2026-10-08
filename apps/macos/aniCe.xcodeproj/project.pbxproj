@@ -21,28 +21,35 @@
 		000000000000000000000175 /* IdentityViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000075 /* IdentityViewModel.swift */; };
 		000000000000000000000202 /* IdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000201 /* IdentityTests.swift */; };
 		000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */; };
-		000000000000000000000420 /* BlePayloadCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000400; };
-		000000000000000000000421 /* PeripheralDiscoverySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000401; };
-		000000000000000000000422 /* CoreBluetoothPeripheralAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000402; };
-		000000000000000000000423 /* MacDiscoveryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000403; };
-		000000000000000000000424 /* MacDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000404; };
-		000000000000000000000451 /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000450; };
-		000000000000000000000453 /* discovery-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000452; };
-		074BF4EC3FFD69F80E86B624 /* NativePake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDEDB9C9C0CFCE2690C7E6F; };
-		D8D003F789CFE6CBB27FC01E /* PeerTrustStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A95CA8384F875E996F9139; };
-		C0703186165FF0C5D2612FF7 /* PairingCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD07081F7ADD4C099951B7A4; };
-		CC2537F76576ED2CBAF9A80F /* PairingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268EC69CB50F448DB38013F1; };
-		C0CEE5B8CCC6DAEFBF420732 /* MacPairingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9381F2D8BA7A0C690FC893B1; };
-		03966CFE7DA22180981E0047 /* MacPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63457F669CCC8B7994A71D7A; };
-		5AC4A19CBFF38BE42CBB0A83 = {isa = PBXBuildFile; fileRef = 88FFC4482694BD876043669A; };
-		B5BD6790BA172D324FBA4CA9 = {isa = PBXBuildFile; fileRef = 04E1689DBE5CE27F2E4DE8D6; };
-		AB0000000000000000000012 = {isa = PBXBuildFile; fileRef = AB0000000000000000000011; };
-		029C036682850A719BF3B73E /* SessionCbor.swift */ = {isa = PBXBuildFile; fileRef = A86925D0FAED5AE1246512FB; };
-		FCD0A6A722F1CA9B89AC6AC9 /* SessionCrypto.swift */ = {isa = PBXBuildFile; fileRef = BEF837DC52D1A22954F8A0CC; };
-		3D14CC61C42C890B4C09AA5E /* SessionHandshakeEngine.swift */ = {isa = PBXBuildFile; fileRef = DD2F0B3395D712E249CA4061; };
-		FAA584EDF2DE5163EB1443FE /* SessionTests.swift */ = {isa = PBXBuildFile; fileRef = 543555DA645C37CC884E3341; };
-		2E55CC0A81ADFCE6FE8B1B1D /* session-vectors.json */ = {isa = PBXBuildFile; fileRef = 1C2BA8C8461E82EE4511F509; };
-		AD60B788888304BB99EB56FE /* rfc9529-components.json */ = {isa = PBXBuildFile; fileRef = 827ECA8094D4F1E9A92668B4; };
+		000000000000000000000420 /* BlePayloadCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000400 /* BlePayloadCodec.swift */; };
+		000000000000000000000421 /* PeripheralDiscoverySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000401 /* PeripheralDiscoverySession.swift */; };
+		000000000000000000000422 /* CoreBluetoothPeripheralAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000402 /* CoreBluetoothPeripheralAdapter.swift */; };
+		000000000000000000000423 /* MacDiscoveryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000403 /* MacDiscoveryModel.swift */; };
+		000000000000000000000424 /* MacDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000404 /* MacDiscoveryView.swift */; };
+		000000000000000000000451 /* aniCeTests/DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000450 /* aniCeTests/DiscoveryTests.swift */; };
+		000000000000000000000453 /* ../../protocol/test-vectors/discovery-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000452 /* ../../protocol/test-vectors/discovery-vectors.json */; };
+		029C036682850A719BF3B73E /* aniCe/Infrastructure/Session/SessionCbor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A86925D0FAED5AE1246512FB /* aniCe/Infrastructure/Session/SessionCbor.swift */; };
+		03966CFE7DA22180981E0047 /* aniCe/Features/Pairing/MacPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63457F669CCC8B7994A71D7A /* aniCe/Features/Pairing/MacPairingView.swift */; };
+		074BF4EC3FFD69F80E86B624 /* aniCe/Infrastructure/Pairing/NativePake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDEDB9C9C0CFCE2690C7E6F /* aniCe/Infrastructure/Pairing/NativePake.swift */; };
+		2E55CC0A81ADFCE6FE8B1B1D /* ../../protocol/test-vectors/session/session-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C2BA8C8461E82EE4511F509 /* ../../protocol/test-vectors/session/session-vectors.json */; };
+		3D14CC61C42C890B4C09AA5E /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2F0B3395D712E249CA4061 /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift */; };
+		5AC4A19CBFF38BE42CBB0A83 /* aniCeTests/PairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88FFC4482694BD876043669A /* aniCeTests/PairingTests.swift */; };
+		64CF98FCB6E025D6CD950B4D /* aniCe/Infrastructure/Bluetooth/GattFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */; };
+		69F359DA287CA610D9F61501 /* aniCe/Infrastructure/Session/SecureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01577895150EC286ABAA62F2 /* aniCe/Infrastructure/Session/SecureSession.swift */; };
+		90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */; };
+		AB0000000000000000000012 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md in Resources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000011 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md */; };
+		AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */ = {isa = PBXBuildFile; fileRef = 827ECA8094D4F1E9A92668B4 /* ../../protocol/test-vectors/session/rfc9529-components.json */; };
+		B5BD6790BA172D324FBA4CA9 /* ../../protocol/test-vectors/pairing-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 04E1689DBE5CE27F2E4DE8D6 /* ../../protocol/test-vectors/pairing-vectors.json */; };
+		C0703186165FF0C5D2612FF7 /* aniCe/Infrastructure/Pairing/PairingCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */; };
+		C0CEE5B8CCC6DAEFBF420732 /* aniCe/Features/Pairing/MacPairingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9381F2D8BA7A0C690FC893B1 /* aniCe/Features/Pairing/MacPairingModel.swift */; };
+		CC2537F76576ED2CBAF9A80F /* aniCe/Infrastructure/Pairing/PairingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */; };
+		D8D003F789CFE6CBB27FC01E /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A95CA8384F875E996F9139 /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift */; };
+		E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FAD41BE08DB04EA6CA9505 /* aniCeTests/SessionChannelTests.swift */; };
+		F943A3689758A079688E15F8 /* aniCe/Features/Session/MacSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */; };
+		FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */; };
+		FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */; };
+		FCD0A6A722F1CA9B89AC6AC9 /* aniCe/Infrastructure/Session/SessionCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF837DC52D1A22954F8A0CC /* aniCe/Infrastructure/Session/SessionCrypto.swift */; };
+		FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,23 +85,30 @@
 		000000000000000000000402 /* CoreBluetoothPeripheralAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBluetoothPeripheralAdapter.swift; sourceTree = "<group>"; };
 		000000000000000000000403 /* MacDiscoveryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDiscoveryModel.swift; sourceTree = "<group>"; };
 		000000000000000000000404 /* MacDiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDiscoveryView.swift; sourceTree = "<group>"; };
-		000000000000000000000450 /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DiscoveryTests.swift"; sourceTree = SOURCE_ROOT; };
-		000000000000000000000452 /* discovery-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/discovery-vectors.json"; sourceTree = SOURCE_ROOT; };
-		1CDEDB9C9C0CFCE2690C7E6F /* NativePake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/NativePake.swift"; sourceTree = SOURCE_ROOT; };
-		10A95CA8384F875E996F9139 /* PeerTrustStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/PeerTrustStore.swift"; sourceTree = SOURCE_ROOT; };
-		CD07081F7ADD4C099951B7A4 /* PairingCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/PairingCodec.swift"; sourceTree = SOURCE_ROOT; };
-		268EC69CB50F448DB38013F1 /* PairingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Pairing/PairingEngine.swift"; sourceTree = SOURCE_ROOT; };
-		9381F2D8BA7A0C690FC893B1 /* MacPairingModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Pairing/MacPairingModel.swift"; sourceTree = SOURCE_ROOT; };
-		63457F669CCC8B7994A71D7A /* MacPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Pairing/MacPairingView.swift"; sourceTree = SOURCE_ROOT; };
-		88FFC4482694BD876043669A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PairingTests.swift"; sourceTree = SOURCE_ROOT; };
-		04E1689DBE5CE27F2E4DE8D6 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/pairing-vectors.json"; sourceTree = SOURCE_ROOT; };
-		AB0000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = "../../core/rust/pairing/THIRD_PARTY_NOTICES.md"; sourceTree = SOURCE_ROOT; };
-		A86925D0FAED5AE1246512FB /* SessionCbor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Session/SessionCbor.swift"; sourceTree = SOURCE_ROOT; };
-		BEF837DC52D1A22954F8A0CC /* SessionCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Session/SessionCrypto.swift"; sourceTree = SOURCE_ROOT; };
-		DD2F0B3395D712E249CA4061 /* SessionHandshakeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Session/SessionHandshakeEngine.swift"; sourceTree = SOURCE_ROOT; };
-		543555DA645C37CC884E3341 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/SessionTests.swift"; sourceTree = SOURCE_ROOT; };
-		1C2BA8C8461E82EE4511F509 /* session-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/session-vectors.json"; sourceTree = SOURCE_ROOT; };
-		827ECA8094D4F1E9A92668B4 /* rfc9529-components.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/rfc9529-components.json"; sourceTree = SOURCE_ROOT; };
+		000000000000000000000450 /* aniCeTests/DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/DiscoveryTests.swift; sourceTree = SOURCE_ROOT; };
+		000000000000000000000452 /* ../../protocol/test-vectors/discovery-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/discovery-vectors.json"; sourceTree = SOURCE_ROOT; };
+		01577895150EC286ABAA62F2 /* aniCe/Infrastructure/Session/SecureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SecureSession.swift; sourceTree = SOURCE_ROOT; };
+		01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionConnection.swift; sourceTree = SOURCE_ROOT; };
+		04E1689DBE5CE27F2E4DE8D6 /* ../../protocol/test-vectors/pairing-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/pairing-vectors.json"; sourceTree = SOURCE_ROOT; };
+		0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/record-vectors.json"; sourceTree = SOURCE_ROOT; };
+		10A95CA8384F875E996F9139 /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PeerTrustStore.swift; sourceTree = SOURCE_ROOT; };
+		1C2BA8C8461E82EE4511F509 /* ../../protocol/test-vectors/session/session-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/session-vectors.json"; sourceTree = SOURCE_ROOT; };
+		1CDEDB9C9C0CFCE2690C7E6F /* aniCe/Infrastructure/Pairing/NativePake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/NativePake.swift; sourceTree = SOURCE_ROOT; };
+		238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Bluetooth/GattFraming.swift; sourceTree = SOURCE_ROOT; };
+		268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingEngine.swift; sourceTree = SOURCE_ROOT; };
+		543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/SessionTests.swift; sourceTree = SOURCE_ROOT; };
+		556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Session/MacSessionModel.swift; sourceTree = SOURCE_ROOT; };
+		63457F669CCC8B7994A71D7A /* aniCe/Features/Pairing/MacPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacPairingView.swift; sourceTree = SOURCE_ROOT; };
+		827ECA8094D4F1E9A92668B4 /* ../../protocol/test-vectors/session/rfc9529-components.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/rfc9529-components.json"; sourceTree = SOURCE_ROOT; };
+		88FFC4482694BD876043669A /* aniCeTests/PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/PairingTests.swift; sourceTree = SOURCE_ROOT; };
+		9381F2D8BA7A0C690FC893B1 /* aniCe/Features/Pairing/MacPairingModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacPairingModel.swift; sourceTree = SOURCE_ROOT; };
+		A0FAD41BE08DB04EA6CA9505 /* aniCeTests/SessionChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/SessionChannelTests.swift; sourceTree = SOURCE_ROOT; };
+		A86925D0FAED5AE1246512FB /* aniCe/Infrastructure/Session/SessionCbor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionCbor.swift; sourceTree = SOURCE_ROOT; };
+		AB0000000000000000000011 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = ../../core/rust/pairing/THIRD_PARTY_NOTICES.md; sourceTree = SOURCE_ROOT; };
+		BEF837DC52D1A22954F8A0CC /* aniCe/Infrastructure/Session/SessionCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionCrypto.swift; sourceTree = SOURCE_ROOT; };
+		CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingCodec.swift; sourceTree = SOURCE_ROOT; };
+		DD2F0B3395D712E249CA4061 /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionHandshakeEngine.swift; sourceTree = SOURCE_ROOT; };
+		E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Session/MacSessionView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +135,7 @@
 				000000000000000000000206 /* aniCeTests */,
 				00000000000000000000000C /* aniCe */,
 				00000000000000000000000D /* Products */,
+				1D4966303077FEE2006A4BAE /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -139,8 +154,8 @@
 		00000000000000000000000D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AB0000000000000000000022,
-				AB0000000000000000000021,
+				AB0000000000000000000022 /* Pairing */,
+				AB0000000000000000000021 /* Pairing */,
 				000000000000000000000205 /* aniCeTests.xctest */,
 				00000000000000000000000A /* aniCe.app */,
 			);
@@ -150,14 +165,15 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
-				827ECA8094D4F1E9A92668B4 /* rfc9529-components.json */,
-				1C2BA8C8461E82EE4511F509 /* session-vectors.json */,
-				543555DA645C37CC884E3341 /* SessionTests.swift */,
-				88FFC4482694BD876043669A,
-				04E1689DBE5CE27F2E4DE8D6,
-
-				000000000000000000000450 /* DiscoveryTests.swift */,
-				000000000000000000000452 /* discovery-vectors.json */,
+				0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */,
+				A0FAD41BE08DB04EA6CA9505 /* aniCeTests/SessionChannelTests.swift */,
+				827ECA8094D4F1E9A92668B4 /* ../../protocol/test-vectors/session/rfc9529-components.json */,
+				1C2BA8C8461E82EE4511F509 /* ../../protocol/test-vectors/session/session-vectors.json */,
+				543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */,
+				88FFC4482694BD876043669A /* aniCeTests/PairingTests.swift */,
+				04E1689DBE5CE27F2E4DE8D6 /* ../../protocol/test-vectors/pairing-vectors.json */,
+				000000000000000000000450 /* aniCeTests/DiscoveryTests.swift */,
+				000000000000000000000452 /* ../../protocol/test-vectors/discovery-vectors.json */,
 				000000000000000000000201 /* IdentityTests.swift */,
 				000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */,
 			);
@@ -179,9 +195,14 @@
 		000000000000000000000301 /* Infrastructure */ = {
 			isa = PBXGroup;
 			children = (
-				DD2F0B3395D712E249CA4061 /* SessionHandshakeEngine.swift */,
-				BEF837DC52D1A22954F8A0CC /* SessionCrypto.swift */,
-				A86925D0FAED5AE1246512FB /* SessionCbor.swift */,
+				E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */,
+				556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */,
+				238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */,
+				01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */,
+				01577895150EC286ABAA62F2 /* aniCe/Infrastructure/Session/SecureSession.swift */,
+				DD2F0B3395D712E249CA4061 /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift */,
+				BEF837DC52D1A22954F8A0CC /* aniCe/Infrastructure/Session/SessionCrypto.swift */,
+				A86925D0FAED5AE1246512FB /* aniCe/Infrastructure/Session/SessionCbor.swift */,
 				000000000000000000000302 /* Identity */,
 				000000000000000000000460 /* Bluetooth */,
 			);
@@ -260,8 +281,34 @@
 			path = Discovery;
 			sourceTree = "<group>";
 		};
-		AB0000000000000000000021 /* Pairing */ = {isa = PBXGroup; children = (1CDEDB9C9C0CFCE2690C7E6F,10A95CA8384F875E996F9139,CD07081F7ADD4C099951B7A4,268EC69CB50F448DB38013F1); path = Pairing; sourceTree = "<group>"; };
-		AB0000000000000000000022 /* Pairing */ = {isa = PBXGroup; children = (9381F2D8BA7A0C690FC893B1,63457F669CCC8B7994A71D7A); path = Pairing; sourceTree = "<group>"; };
+		1D4966303077FEE2006A4BAE /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				AB0000000000000000000011 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		AB0000000000000000000021 /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				1CDEDB9C9C0CFCE2690C7E6F /* aniCe/Infrastructure/Pairing/NativePake.swift */,
+				10A95CA8384F875E996F9139 /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift */,
+				CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */,
+				268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
+		AB0000000000000000000022 /* Pairing */ = {
+			isa = PBXGroup;
+			children = (
+				9381F2D8BA7A0C690FC893B1 /* aniCe/Features/Pairing/MacPairingModel.swift */,
+				63457F669CCC8B7994A71D7A /* aniCe/Features/Pairing/MacPairingView.swift */,
+			);
+			path = Pairing;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -338,7 +385,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB0000000000000000000012,
+				AB0000000000000000000012 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -346,10 +393,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AD60B788888304BB99EB56FE /* rfc9529-components.json */,
-				2E55CC0A81ADFCE6FE8B1B1D /* session-vectors.json */,
-				B5BD6790BA172D324FBA4CA9,
-				000000000000000000000453 /* discovery-vectors.json in Resources */,
+				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
+				AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */,
+				2E55CC0A81ADFCE6FE8B1B1D /* ../../protocol/test-vectors/session/session-vectors.json in Resources */,
+				B5BD6790BA172D324FBA4CA9 /* ../../protocol/test-vectors/pairing-vectors.json in Resources */,
+				000000000000000000000453 /* ../../protocol/test-vectors/discovery-vectors.json in Resources */,
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -361,16 +409,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3D14CC61C42C890B4C09AA5E /* SessionHandshakeEngine.swift */,
-				FCD0A6A722F1CA9B89AC6AC9 /* SessionCrypto.swift */,
-				029C036682850A719BF3B73E /* SessionCbor.swift */,
-				074BF4EC3FFD69F80E86B624,
-				D8D003F789CFE6CBB27FC01E,
-				C0703186165FF0C5D2612FF7,
-				CC2537F76576ED2CBAF9A80F,
-				C0CEE5B8CCC6DAEFBF420732,
-				03966CFE7DA22180981E0047,
-
+				FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */,
+				F943A3689758A079688E15F8 /* aniCe/Features/Session/MacSessionModel.swift in Sources */,
+				64CF98FCB6E025D6CD950B4D /* aniCe/Infrastructure/Bluetooth/GattFraming.swift in Sources */,
+				FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */,
+				69F359DA287CA610D9F61501 /* aniCe/Infrastructure/Session/SecureSession.swift in Sources */,
+				3D14CC61C42C890B4C09AA5E /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift in Sources */,
+				FCD0A6A722F1CA9B89AC6AC9 /* aniCe/Infrastructure/Session/SessionCrypto.swift in Sources */,
+				029C036682850A719BF3B73E /* aniCe/Infrastructure/Session/SessionCbor.swift in Sources */,
+				074BF4EC3FFD69F80E86B624 /* aniCe/Infrastructure/Pairing/NativePake.swift in Sources */,
+				D8D003F789CFE6CBB27FC01E /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift in Sources */,
+				C0703186165FF0C5D2612FF7 /* aniCe/Infrastructure/Pairing/PairingCodec.swift in Sources */,
+				CC2537F76576ED2CBAF9A80F /* aniCe/Infrastructure/Pairing/PairingEngine.swift in Sources */,
+				C0CEE5B8CCC6DAEFBF420732 /* aniCe/Features/Pairing/MacPairingModel.swift in Sources */,
+				03966CFE7DA22180981E0047 /* aniCe/Features/Pairing/MacPairingView.swift in Sources */,
 				000000000000000000000420 /* BlePayloadCodec.swift in Sources */,
 				000000000000000000000421 /* PeripheralDiscoverySession.swift in Sources */,
 				000000000000000000000422 /* CoreBluetoothPeripheralAdapter.swift in Sources */,
@@ -395,9 +447,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FAA584EDF2DE5163EB1443FE /* SessionTests.swift */,
-				5AC4A19CBFF38BE42CBB0A83,
-				000000000000000000000451 /* DiscoveryTests.swift in Sources */,
+				E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */,
+				FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */,
+				5AC4A19CBFF38BE42CBB0A83 /* aniCeTests/PairingTests.swift in Sources */,
+				000000000000000000000451 /* aniCeTests/DiscoveryTests.swift in Sources */,
 				000000000000000000000202 /* IdentityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -448,15 +501,21 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build/native",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lanice_pairing",
+				);
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
-				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
-				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/build/native");
-				OTHER_LDFLAGS = ("$(inherited)", "-lanice_pairing");
 			};
 			name = Debug;
 		};
@@ -494,14 +553,20 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build/native",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lanice_pairing",
+				);
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
-				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
-				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/build/native");
-				OTHER_LDFLAGS = ("$(inherited)", "-lanice_pairing");
 			};
 			name = Release;
 		};
@@ -510,6 +575,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = aniCe/aniCe.entitlements;
 				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -518,8 +584,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -536,6 +602,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = aniCe/aniCe.entitlements;
 				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -544,8 +611,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

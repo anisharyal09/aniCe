@@ -42,6 +42,7 @@ final class SessionTests: XCTestCase, @unchecked Sendable {
     trusted: (@Sendable () async throws -> [DeviceIdentity])? = nil,
     current: (@Sendable () async throws -> DeviceIdentity)? = nil,
     signer: (@Sendable (Data) async throws -> SignedIdentityPayload)? = nil,
+    selected: DeviceIdentity? = nil,
     now: @escaping @Sendable () -> TimeInterval = { 0 }
   ) throws -> SessionHandshakeEngine {
     let local = try identity(row, server ? "responder" : "initiator")
@@ -55,7 +56,7 @@ final class SessionTests: XCTestCase, @unchecked Sendable {
       signer: signer ?? { message in
         XCTAssertEqual(message, input)
         return SignedIdentityPayload(identity: local, signature: signature)
-      }, selectedPeer: server ? nil : peer,
+      }, selectedPeer: selected ?? (server ? nil : peer),
       ephemeral: P256.KeyAgreement.PrivateKey(rawRepresentation: b(row, server ? "y" : "x")),
       connectionId: b(row, server ? "cr" : "ci"), now: now)
   }
@@ -250,6 +251,43 @@ final class SessionTests: XCTestCase, @unchecked Sendable {
     _ = try await replay.initiate()
     _ = try await replay.authenticateResponder(b(v, "message2"))
     try await reject(.state) { _ = try await replay.authenticateResponder(self.b(v, "message2")) }
+  }
+  func testResponderSelectionRejectsOtherTrustedPeersAndAmbiguity() async throws {
+    let rows = try XCTUnwrap(root()["valid"] as? [[String: Any]])
+    XCTAssertGreaterThanOrEqual(rows.count, 3)
+    let v = rows[0]
+    let selected = try identity(v, "initiator")
+    let other = try identity(rows[1], "initiator")
+    XCTAssertNotEqual(selected.fingerprint, other.fingerprint)
+    let accepted = try engine(v, server: true, selected: selected)
+    _ = try await accepted.respond(b(v, "message1"))
+    _ = try await accepted.authenticateInitiator(b(v, "message3"))
+    let authenticated = try await accepted.authenticatedPeer()
+    XCTAssertEqual(authenticated.deviceId, selected.deviceId)
+    XCTAssertEqual(authenticated.fingerprint, selected.fingerprint)
+    let acceptedStage = await accepted.stage
+    XCTAssertEqual(acceptedStage, .complete)
+    await accepted.close()
+    try await reject(.cancelled) { _ = try await accepted.authenticatedPeer() }
+    let wrong = try engine(v, server: true, trusted: { [selected, other] }, selected: other)
+    _ = try await wrong.respond(b(v, "message1"))
+    try await reject(.untrustedPeer) {
+      _ = try await wrong.authenticateInitiator(self.b(v, "message3"))
+    }
+    let wrongStage = await wrong.stage
+    XCTAssertEqual(wrongStage, .closed)
+    let ambiguous = try engine(
+      v, server: true, trusted: { [selected, selected] }, selected: selected)
+    _ = try await ambiguous.respond(b(v, "message1"))
+    try await reject(.untrustedPeer) {
+      _ = try await ambiguous.authenticateInitiator(self.b(v, "message3"))
+    }
+    let revokedTrust = SessionTestState(peers: [selected])
+    let revoked = try engine(v, server: true, trusted: { revokedTrust.peers() }, selected: selected)
+    _ = try await revoked.respond(b(v, "message1"))
+    _ = try await revoked.authenticateInitiator(b(v, "message3"))
+    revokedTrust.setPeers([])
+    try await reject(.untrustedPeer) { try await revoked.checkDeadline() }
   }
   func testCancellationDuringSigning() async throws {
     let v = try XCTUnwrap((root()["valid"] as? [[String: Any]])?.first)

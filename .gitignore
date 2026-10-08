@@ -59,5 +59,8 @@ for-me.*
 
 .agents/*
 
-# audits / verification
+# audits & verification
 docs/A&V  
+
+# testings
+docs/testing

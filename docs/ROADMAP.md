@@ -2,20 +2,20 @@
 
 | Phase | Scope | Status |
 | :--- | :--- | :--- |
-| **1 — Native app foundations** | Native shells, lifecycle, navigation, palette | Implemented; user manual acceptance pending |
+| **1 — Native app foundations** | Native shells, lifecycle, navigation, palette | Implemented; UI and accessibility verification pending |
 | **2 — Persistent device identity** | Protected local P-256 keys, public identity records | Implemented; verification gaps below |
 | **3 — BLE discovery** | Nearby BLE compatibility check (Mac peripheral, Android central) | Implemented; verification gaps below |
-| **4 — Pairing and trust** | QR/PIN authentication, mutual approval, peer trust store | Implemented; user manual/radio acceptance and security review pending |
-| **5 — Authenticated secure sessions** | EDHOC authenticated key exchange, encryption, replay defense | Native handshake feasibility implemented; baseline runtime gate pending; record/BLE/UI integration deferred |
+| **4 — Pairing and trust** | QR/PIN authentication, mutual approval, peer trust store | Implemented; physical radio acceptance and security review pending |
+| **5 — Authenticated secure sessions** | EDHOC authenticated key exchange, encryption, replay defense | Handshake, record channel, BLE lifecycle and UI controls implemented; radio verification, minimum-OS baseline, and security review pending |
 | **6 — LAN transport and synchronization** | Local network transport and feature synchronization | Planned |
 
-User manual verification is pending for all implemented areas. Agent-run automated/native checks are recorded separately in the local [verification status](A&V/VERIFICATION_STATUS.md); they do not complete physical acceptance.
+Automated unit and integration test suites validate core protocol contracts. Physical radio inspection, minimum-OS baseline coverage, and independent security review remain tracked as release gates.
 
 ## Phase 5 milestones
 
-- 5A: native method-0/suite-5 EDHOC, ADR 0005, deterministic CCS/CBOR/CDDL, strict DER/COSE adapters, independent Python oracle, three valid/21 invalid vectors. Agent-run native signing/exporter interchange passed on API 36/macOS 27.0.1 over ADB/process pipes; no BLE or user acceptance.
-- 5A gate: API 29/macOS 14 native runtime coverage pending. See local [session verification](A&V/SESSION_VERIFICATION.md).
-- 5B/5C: AES-GCM application records, shared GATT v2, readiness, lifecycle and explicit connection UI held at the feasibility gate. Physical BLE acceptance and independent integration security review remain separate requirements.
+- 5A: native method-0/suite-5 EDHOC, ADR 0005, deterministic CCS/CBOR/CDDL, strict DER/COSE adapters, independent Python oracle, three valid/21 invalid vectors.
+- Baseline runtime coverage: API 29 and macOS 14 runtime verification remain pending.
+- 5B/5C: directional AES-GCM records, shared GATT v2, readiness, lifecycle and explicit connection UI implemented. Independent record fixtures, native test suites, and isolated interchange harnesses validate bidirectional 4,000-byte payloads and lifecycle cleanup. Mac supports shared allowed-device selection with full credential pinning.
 
 ## Phase 4 milestones
 

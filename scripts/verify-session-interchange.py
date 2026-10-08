@@ -110,7 +110,13 @@ def main():
             mac.stdin.write(json.dumps(m3) + "\n"); mac.stdin.flush()
             final = receive(mac)
             publish("message4.json", {"message4Hex": final["message4Hex"]})
+            for inbound, outbound in [("ready", "readyAck"), ("clientData", "serverData")]:
+                mac.stdin.write(json.dumps(wait_file(adb, remote, inbound + ".json")) + "\n"); mac.stdin.flush()
+                publish(outbound + ".json", receive(mac))
+            mac.stdin.write(json.dumps(wait_file(adb, remote, "close.json")) + "\n"); mac.stdin.flush()
             result = wait_file(adb, remote, "result.json")
+            if result.get("recordAgreement") is not True or result.get("bidirectionalBytes") != 4000:
+                raise AssertionError("Native record/readiness agreement failed")
             if result["exportDigestHex"] != final["exportDigestHex"] or result["stage"] != "COMPLETE":
                 raise AssertionError("Native EDHOC exporter agreement failed")
             publish("ack.json", {"received": True})
@@ -126,6 +132,7 @@ def main():
         sdk = command(adb, "shell", "getprop", "ro.build.version.sdk").strip()
         report = {"nativeProviderTests": 2, "exporterAgreement": True, "isolatedCleanup": True,
                   "androidApi": sdk, "bleVerified": False, "run": run,
+                  "recordAgreement": True, "readinessVerified": True, "bidirectionalBytes": 4000,
                   "evidenceKind": "automated-native-interchange",
                   "manualAcceptance": "pending", "macStorageBackend": "developmentKeychain"}
     finally:

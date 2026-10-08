@@ -10,13 +10,16 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.anisharyal09.anice.app.AppRoot
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
-import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import io.github.anisharyal09.anice.features.pairing.PairingViewModel
+import io.github.anisharyal09.anice.features.session.SessionViewModel
+import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 
 class MainActivity : ComponentActivity() {
+    private lateinit var session: SessionViewModel
     private lateinit var pairing: PairingViewModel
     private lateinit var discovery: DiscoveryViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -28,16 +31,39 @@ class MainActivity : ComponentActivity() {
         discovery = ViewModelProvider(this, discoveryFactory)[DiscoveryViewModel::class.java]
         val pairingFactory = viewModelFactory { initializer { PairingViewModel(application) } }
         pairing = ViewModelProvider(this, pairingFactory)[PairingViewModel::class.java]
-        setContent { AniCeTheme { AppRoot(identity, discovery, pairing) } }
+        val sessionFactory = viewModelFactory { initializer { SessionViewModel(application) } }
+        session = ViewModelProvider(this, sessionFactory)[SessionViewModel::class.java]
+        session.beforeConnect = {
+            pairing.cancel()
+            discovery.cancel()
+        }
+        pairing.beforePairing = {
+            session.cancel()
+            discovery.cancel()
+        }
+        pairing.trustRemoved = { session.cancel() }
+        discovery.beforeStart = {
+            session.cancel()
+            pairing.cancel()
+        }
+        identity.onIdentityReset = {
+            session.cancel()
+            pairing.cancel()
+        }
+        setContent { AniCeTheme { AppRoot(identity, discovery, pairing, session) } }
     }
+
     override fun onStart() {
         super.onStart()
         if (::discovery.isInitialized) discovery.foreground()
         if (::pairing.isInitialized) pairing.foreground()
+        if (::session.isInitialized) session.foreground()
     }
+
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations && ::discovery.isInitialized) discovery.background()
         if (!isChangingConfigurations && ::pairing.isInitialized) pairing.background()
+        if (!isChangingConfigurations && ::session.isInitialized) session.background()
     }
 }

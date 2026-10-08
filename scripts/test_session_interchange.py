@@ -99,10 +99,11 @@ class SessionEvidenceTests(unittest.TestCase):
                 stack.enter_context(patch.object(harness, "command", side_effect=command))
                 stack.enter_context(patch.object(harness, "receive", side_effect=[
                     {"identity": {}}, {"message2Hex": "00"},
-                    {"message4Hex": "00", "exportDigestHex": "test"}, {"cleanup": True}]))
+                    {"message4Hex": "00", "exportDigestHex": "test"}, {"readyAckHex":"00"}, {"serverDataHex":"00"}, {"cleanup": True}]))
                 stack.enter_context(patch.object(harness, "wait_file", side_effect=[
                     {"directory": remote}, {"message1Hex": "00"}, {"message3Hex": "00"},
-                    {"stage": "COMPLETE", "exportDigestHex": "test"}]))
+                    {"readyHex":"00"},{"clientDataHex":"00"},{"closeHex":"00"},
+                    {"stage": "COMPLETE", "exportDigestHex": "test", "recordAgreement":True,"bidirectionalBytes":4000}]))
                 stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                 if fail_cleanup:
                     with self.assertRaisesRegex(RuntimeError, "Injected exchange-file cleanup failure"):

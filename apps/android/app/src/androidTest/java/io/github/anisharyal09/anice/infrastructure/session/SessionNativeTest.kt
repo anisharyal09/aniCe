@@ -89,6 +89,62 @@ class SessionNativeTest {
       c.close()
       s.close()
     }
+    val records =
+      JSONObject(
+        context.assets.open("session/record-vectors.json").bufferedReader().use { it.readText() }
+      )
+    val positive = records.getJSONArray("valid")
+    val negative = records.getJSONArray("invalid")
+    assertTrue(positive.length() >= 3)
+    assertTrue(negative.length() >= 15)
+    repeat(positive.length()) { index ->
+      val row = positive.getJSONObject(index)
+      val kind = RecordKind.entries.first { it.wire == row.getInt("kind") }
+      val sequence = row.getString("sequence").toULong()
+      val actual =
+        SessionRecordCodec.seal(
+          bytes(row, "key"),
+          bytes(row, "iv"),
+          bytes(row, "session"),
+          row.getInt("direction"),
+          kind,
+          sequence,
+          bytes(row, "plain"),
+        )
+      assertArrayEquals(bytes(row, "record"), actual)
+      assertArrayEquals(
+        bytes(row, "plain"),
+        SessionRecordCodec.open(
+            bytes(row, "key"),
+            bytes(row, "iv"),
+            bytes(row, "session"),
+            row.getInt("direction"),
+            sequence,
+            actual,
+          )
+          .second,
+      )
+    }
+    repeat(negative.length()) { index ->
+      val row = negative.getJSONObject(index)
+      try {
+        SessionRecordCodec.open(
+          bytes(row, "key"),
+          bytes(row, "iv"),
+          bytes(row, "session"),
+          row.getInt("direction"),
+          row.getString("sequence").toULong(),
+          bytes(row, "record"),
+        )
+        fail("Invalid native record accepted")
+      } catch (e: SessionException) {
+        assertEquals(
+          if (row.getString("reason") == "malformed") SessionFailure.MALFORMED
+          else SessionFailure.AUTHENTICATION,
+          e.reason,
+        )
+      }
+    }
     val v = valid.getJSONObject(0)
     repeat(invalid.length()) { i ->
       val row = invalid.getJSONObject(i)
@@ -159,6 +215,7 @@ class SessionNativeTest {
       check(temp.renameTo(file))
     }
     var engine: SessionHandshakeEngine? = null
+    var channel: SecureSession? = null
     try {
       publish("bootstrap.json", JSONObject().put("directory", directory.absolutePath))
       val peer = DeviceIdentity.fromJson(awaitFile("server.json").getJSONObject("identity"))
@@ -184,14 +241,38 @@ class SessionNativeTest {
       c.confirmResponder(bytes(awaitFile("message4.json"), "message4"))
       val contextBytes = "aniCe session interchange v1".toByteArray(Charsets.UTF_8)
       val digest = SessionCrypto.hash(c.export(contextBytes, 32))
+      var outgoing = byteArrayOf()
+      val ch = SecureSession.fromHandshake(c, false, { true }, { outgoing = it })
+      channel = ch
+      ch.send(RecordKind.READY)
+      publish("ready.json", JSONObject().put("readyHex", text(outgoing)))
+      assertEquals(
+        RecordKind.READY_ACK,
+        ch.receive(bytes(awaitFile("readyAck.json"), "readyAck")).first,
+      )
+      assertEquals(ChannelStage.SECURED, ch.stage)
+      val payload = ByteArray(4000) { it.toByte() }
+      ch.send(RecordKind.DATA, payload)
+      publish("clientData.json", JSONObject().put("clientDataHex", text(outgoing)))
+      val received = ch.receive(bytes(awaitFile("serverData.json"), "serverData"))
+      assertEquals(RecordKind.DATA, received.first)
+      assertArrayEquals(payload.reversedArray(), received.second)
+      ch.send(RecordKind.CLOSE)
+      publish("close.json", JSONObject().put("closeHex", text(outgoing)))
+      assertEquals(ChannelStage.CLOSED, ch.stage)
       assertEquals(local, identity.getOrCreateIdentity().identity)
       publish(
         "result.json",
-        JSONObject().put("exportDigestHex", text(digest)).put("stage", c.stage.name),
+        JSONObject()
+          .put("exportDigestHex", text(digest))
+          .put("stage", c.stage.name)
+          .put("recordAgreement", true)
+          .put("bidirectionalBytes", 4000),
       )
       // Confirm the harness received the result before deleting disposable exchange files.
       awaitFile("ack.json")
     } finally {
+      channel?.close()
       engine?.close()
       keys.aliases().filter { it.startsWith(namespace) }.forEach(keys::delete)
       AtomicFile(File(context.noBackupFilesDir, metadataName)).delete()

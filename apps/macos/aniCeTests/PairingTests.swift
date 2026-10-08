@@ -318,10 +318,15 @@ extension PairingTests {
       "anice-decline-test-" + UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
-    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "test.")
+    let identity = IdentityService(
+      storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "test.")
     let radio = PairingRadioFake()
-    let model = MacPairingModel(identity: identity, discovery: MacDiscoveryModel(adapter: radio), makeStore: { store })
-    defer { radio.holdDrain = false; model.cancel() }
+    let model = MacPairingModel(
+      identity: identity, discovery: MacDiscoveryModel(adapter: radio), makeStore: { store })
+    defer {
+      radio.holdDrain = false
+      model.cancel()
+    }
     model.start(.qr)
     try await waitFor { model.phase == "starting" || model.phase == "invitation" }
     model.tick()
@@ -332,27 +337,48 @@ extension PairingTests {
     let key = P256.KeyAgreement.PrivateKey()
     let nonce = Data(repeating: 3, count: 32)
     let publicKey = key.publicKey.x963Representation
-    XCTAssertTrue(radio.pairingWrite?(PairingCodec.message(3, [Data([1]), qr.rendezvous, nonce, publicKey])) == true)
+    XCTAssertTrue(
+      radio.pairingWrite?(PairingCodec.message(3, [Data([1]), qr.rendezvous, nonce, publicKey]))
+        == true)
     try await waitFor { radio.output.count == 1 }
     let hello = try PairingCodec.unpack(radio.output.removeFirst(), type: 4, count: 3)
-    let transcript = PairingCodec.fields([Data("aniCe pairing v1".utf8), Data([1]), qr.rendezvous, nonce, invitation[2], publicKey, hello[1]])
+    let transcript = PairingCodec.fields([
+      Data("aniCe pairing v1".utf8), Data([1]), qr.rendezvous, nonce, invitation[2], publicKey,
+      hello[1],
+    ])
     let hash = PairingCodec.hash(transcript)
-    let shared = try key.sharedSecretFromKeyAgreement(with: P256.KeyAgreement.PublicKey(x963Representation: hello[1]))
-    let bootstrap = shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: qr.secret, sharedInfo: PairingCodec.fields([Data("aniCe qr bootstrap v1".utf8), hash]), outputByteCount: 32).withUnsafeBytes { Data($0) }
+    let shared = try key.sharedSecretFromKeyAgreement(
+      with: P256.KeyAgreement.PublicKey(x963Representation: hello[1]))
+    let bootstrap = shared.hkdfDerivedSymmetricKey(
+      using: SHA256.self, salt: qr.secret,
+      sharedInfo: PairingCodec.fields([Data("aniCe qr bootstrap v1".utf8), hash]),
+      outputByteCount: 32
+    ).withUnsafeBytes { Data($0) }
     let channel = PairingChannel(key: bootstrap, transcript: transcript, server: false)
-    XCTAssertTrue(radio.pairingWrite?(PairingCodec.message(5, [PairingCodec.mac(PairingCodec.derive(bootstrap, "client-auth", hash), transcript)])) == true)
+    XCTAssertTrue(
+      radio.pairingWrite?(
+        PairingCodec.message(
+          5, [PairingCodec.mac(PairingCodec.derive(bootstrap, "client-auth", hash), transcript)]))
+        == true)
     try await waitFor { radio.output.count == 2 }
-    XCTAssertEqual(try PairingCodec.unpack(radio.output.removeFirst(), type: 6, count: 1)[0], channel.confirm())
-    let macBytes = try PairingCodec.unpack(channel.open(radio.output.removeFirst()), type: 10, count: 1)[0]
+    XCTAssertEqual(
+      try PairingCodec.unpack(radio.output.removeFirst(), type: 6, count: 1)[0], channel.confirm())
+    let macBytes = try PairingCodec.unpack(
+      channel.open(radio.output.removeFirst()), type: 10, count: 1)[0]
     let signing = P256.Signing.PrivateKey()
-    let android = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: "Android test", publicKey: signing.publicKey.x963Representation)
-    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: PairingCodec.identityBytes(android)) as? [String: Any])
+    let android = try DeviceIdentity(
+      deviceId: UUID().uuidString.lowercased(), deviceName: "Android test",
+      publicKey: signing.publicKey.x963Representation)
+    var json = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: PairingCodec.identityBytes(android)) as? [String: Any])
     json["platform"] = "android"
     let androidBytes = try JSONSerialization.data(withJSONObject: json)
-    XCTAssertTrue(radio.pairingWrite?(try channel.seal(PairingCodec.message(10, [androidBytes]))) == true)
+    XCTAssertTrue(
+      radio.pairingWrite?(try channel.seal(PairingCodec.message(10, [androidBytes]))) == true)
     try await waitFor { radio.output.count == 1 }
     _ = try channel.open(radio.output.removeFirst())
-    let proof = try signing.signature(for: PairingCodec.proof(hash, androidBytes, macBytes, 1)).derRepresentation
+    let proof = try signing.signature(for: PairingCodec.proof(hash, androidBytes, macBytes, 1))
+      .derRepresentation
     XCTAssertTrue(radio.pairingWrite?(try channel.seal(PairingCodec.message(11, [proof]))) == true)
     try await waitFor { model.phase == "approval" }
     radio.holdDrain = true
@@ -478,7 +504,8 @@ extension PairingTests {
       "anice-rollback-test-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer {
-      try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: directory.path)
       try? FileManager.default.removeItem(at: directory)
     }
     let file = directory.appendingPathComponent("trust.json")
@@ -641,5 +668,209 @@ extension PairingTests {
     gate.resetRadio()
     XCTAssertFalse(gate.complete())
     XCTAssertFalse(gate.isConfirmed)
+  }
+}
+
+@MainActor private final class SessionRadioFake: SessionPeripheralAdapter {
+  var pairingWrite: ((Data) -> Bool)?
+  var pairingDisconnect: (() -> Void)?
+  var sessionWrite: ((Data) -> Bool)?
+  var sessionDisconnect: (() -> Void)?
+  var sessionAdmitted: (() -> Bool)?
+  var event: ((PeripheralEvent) -> Void)?
+  var started = false
+  var resumes = 0
+  var stopped = 0
+  var retirement = 0
+  func begin(
+    event: @escaping (PeripheralEvent) -> Void, read: @escaping (Bool, Int) -> DiscoveryRead
+  ) {
+    self.event = event
+    started = true
+    event(.available)
+  }
+  func publish() { event?(.published) }
+  func advertise() { event?(.advertising) }
+  func stop() {
+    stopped += 1
+    event = nil
+  }
+  func sendPairing(_ message: Data) throws { throw PairingFailure.transport }
+  func drainPairing() async {}
+  func retirePairingConnection() { retirement += 1 }
+  func sessionCapacity(_ bytes: Int) -> Bool { true }
+  var sent: [Data] = []
+  var failReadyAck = false
+  func sendSession(_ message: Data) async throws {
+    if failReadyAck, message.first == 6 { throw SessionFailure.authentication }
+    sent.append(message)
+  }
+  func resumeSessionAdvertising() { resumes += 1 }
+  func tickSessionTransport() throws {}
+}
+@MainActor final class SessionLifecycleTests: XCTestCase {
+  func testProductionModelReadinessAndAuthenticatedPeerFeedback() async throws {
+    try await exerciseProductionModel(failReadyAck: false)
+  }
+  func testProductionModelReadinessFailurePreservesIdentityAndTrust() async throws {
+    try await exerciseProductionModel(failReadyAck: true)
+  }
+  private func exerciseProductionModel(failReadyAck: Bool) async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("trust.json")
+    let trust = try PeerTrustStore(url: url)
+    let memory = PairingMemoryIdentity()
+    let service = IdentityService(
+      storage: memory, deviceName: "Mac test", tagPrefix: "session.test.")
+    let mac = try await service.publicIdentity()
+    let key = P256.Signing.PrivateKey()
+    let android = try DeviceIdentity.decode(
+      JSONSerialization.data(withJSONObject: [
+        "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+        "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone test",
+        "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+        "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation),
+      ]))
+    let hash = Data(repeating: 7, count: 32)
+    try trust.prepare(
+      PeerTrustRecord(
+        peer: android, localFingerprint: mac.fingerprint,
+        method: .qr, pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(
+      peerID: android.deviceId, hash: hash,
+      receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let savedIdentity = try encoder.encode(memory.record)
+    let savedTrust = try Data(contentsOf: url)
+    let radio = SessionRadioFake()
+    radio.failReadyAck = failReadyAck
+    let model = MacSessionModel(identity: service, adapter: radio, store: { trust })
+    defer { model.cancel() }
+    model.allow()
+    try await waitFor { radio.started }
+    XCTAssertTrue(radio.sessionAdmitted?() ?? false)
+    XCTAssertFalse(radio.sessionAdmitted?() ?? true)
+    let client = try SessionHandshakeEngine(
+      local: android, responder: false,
+      trusted: { [mac] }, currentIdentity: { android },
+      signer: {
+        SignedIdentityPayload(
+          identity: android, signature: try key.signature(for: $0).derRepresentation)
+      }, selectedPeer: mac)
+    let message1 = try await client.initiate()
+    XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(1, message1)) ?? false)
+    try await waitFor { !radio.sent.isEmpty }
+    let message2 = try SessionEnvelope.decode(radio.sent.removeFirst())
+    XCTAssertEqual(message2.0, 2)
+    let message3 = try await client.authenticateResponder(message2.1)
+    XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(3, message3)) ?? false)
+    try await waitFor { !radio.sent.isEmpty }
+    let message4 = try SessionEnvelope.decode(radio.sent.removeFirst())
+    XCTAssertEqual(message4.0, 4)
+    try await client.confirmResponder(message4.1)
+    XCTAssertEqual(model.state, "Connecting")
+    XCTAssertEqual(model.receivedChecks, 0)
+    let records = PairingBus()
+    let channel = try await SecureSession.fromHandshake(
+      client, responder: false,
+      capacity: { _ in true }, submit: { await records.send($0) })
+    try await channel.send(.ready)
+    let readyRecords = await records.take()
+    let ready = try XCTUnwrap(readyRecords.first)
+    XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, ready)) ?? false)
+    if failReadyAck {
+      try await waitFor { model.state == "Failed" }
+      XCTAssertTrue(radio.sent.isEmpty)
+      XCTAssertEqual(model.receivedChecks, 0)
+      let stage = await channel.stage
+      XCTAssertEqual(stage, .readySent)
+    } else {
+      try await waitFor { model.state == "Secured" }
+      XCTAssertTrue(model.status.contains(android.deviceName))
+      let ack = try SessionEnvelope.decode(try XCTUnwrap(radio.sent.first))
+      XCTAssertEqual(ack.0, 6)
+      _ = try await channel.receive(ack.1)
+      try await channel.send(.data, plaintext: Data("aniCe connection check".utf8))
+      let dataRecords = await records.take()
+      let data = try XCTUnwrap(dataRecords.first)
+      XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, data)) ?? false)
+      try await waitFor { model.receivedChecks == 1 }
+      model.checkConnection()
+      try await waitFor { radio.sent.count == 2 }
+      let response = try SessionEnvelope.decode(radio.sent[1])
+      let received = try await channel.receive(response.1)
+      XCTAssertEqual(received.0, .data)
+      XCTAssertEqual(received.1, Data("aniCe connection check".utf8))
+    }
+    XCTAssertEqual(try encoder.encode(memory.record), savedIdentity)
+    XCTAssertEqual(try Data(contentsOf: url), savedTrust)
+    await channel.close()
+    await client.close()
+  }
+  private func waitFor(_ condition: () -> Bool) async throws {
+    for _ in 0..<2000 {
+      if condition() { return }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    XCTFail("Production model transition did not complete")
+    throw SessionFailure.expired
+  }
+  func testExpiryCancellationStaleCallbacksAndDurableState() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("trust.json")
+    let trust = try PeerTrustStore(url: url)
+    let memory = PairingMemoryIdentity()
+    let identity = IdentityService(
+      storage: memory, deviceName: "Mac test", tagPrefix: "session.test.")
+    _ = try await identity.publicIdentity()
+    let identityEncoder = JSONEncoder()
+    identityEncoder.outputFormatting = [.sortedKeys]
+    let savedIdentity = try identityEncoder.encode(memory.record)
+    let savedTrust = try Data(contentsOf: url)
+    let radio = SessionRadioFake()
+    var clock: TimeInterval = 0
+    let model = MacSessionModel(
+      identity: identity, adapter: radio, store: { trust }, now: { clock })
+    model.allow()
+    for _ in 0..<200 {
+      if radio.started { break }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    XCTAssertTrue(radio.started)
+    XCTAssertTrue(model.allowing)
+    let staleAdmission = radio.sessionAdmitted
+    let staleEvent = radio.event
+    clock = 120
+    model.tick()
+    XCTAssertFalse(model.allowing)
+    XCTAssertEqual(model.state, "Disconnected")
+    XCTAssertFalse(staleAdmission?() ?? true)
+    staleEvent?(.advertising)
+    XCTAssertFalse(model.allowing)
+    XCTAssertEqual(try Data(contentsOf: url), savedTrust)
+    XCTAssertEqual(try identityEncoder.encode(memory.record), savedIdentity)
+    clock = 200
+    radio.started = false
+    model.allow()
+    for _ in 0..<200 {
+      if radio.started { break }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    XCTAssertTrue(radio.sessionAdmitted?() ?? false)
+    XCTAssertFalse(radio.sessionAdmitted?() ?? true)
+    clock = 230
+    model.tick()
+    XCTAssertEqual(model.state, "Failed")
+    XCTAssertTrue(model.allowing)
+    XCTAssertEqual(radio.resumes, 1)
+    XCTAssertGreaterThan(radio.retirement, 0)
+    model.cancel()
+    XCTAssertNil(radio.sessionWrite)
+    XCTAssertNil(radio.sessionAdmitted)
+    XCTAssertEqual(try Data(contentsOf: url), savedTrust)
+    XCTAssertEqual(try identityEncoder.encode(memory.record), savedIdentity)
   }
 }

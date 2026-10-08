@@ -14,6 +14,7 @@ enum SessionCrypto {
       pseudoRandomKey: SymmetricKey(data: prk), info: info, outputByteCount: length
     ).withUnsafeBytes { Data($0) }
   }
+  // Only immutable device ID/key fields bind trust; display names do not enter the transcript.
   static func credential(_ identity: DeviceIdentity) throws -> SessionCBOR {
     try identity.validate()
     guard let point = Data(base64Encoded: identity.publicKey) else {
@@ -75,6 +76,7 @@ enum SessionCrypto {
   }
 }
 
+/// Converts strict minimal DER to/from fixed-width COSE ES256, enforcing 1 <= r,s < n.
 enum SessionSignature {
   private static let order = Data([
     0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,

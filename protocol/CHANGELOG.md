@@ -6,12 +6,10 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
-- Trusted-device session profile v1 with EDHOC method 0/suite 5, mandatory message 4, deterministic CCS credential references, CDDL and independent positive/negative vectors. Exporter, record and BLE contracts are specified for gated integration; existing discovery/pairing wire contracts are unchanged.
+- Independent AES-GCM positive and negative record test vectors covering directional sequence bounds and lifetime limits.
+- Shared session v2 GATT framing with 9-byte header (`messageId`, `totalLength`, `offset`) and logical payload discrimination.
+- Trusted-device session profile v1: EDHOC method 0 / suite 5, mandatory message 4, deterministic CCS credentials, CDDL, and positive/negative handshake vectors.
+- Provisional pairing v1: compact QR identity commitment, PAKE manual bootstrap, bounded GATT framing with stable attribute layout (ADR 0004), encrypted identity proof, and signed storage receipts.
+- Fixed public aniCe BLE service/characteristic UUIDs and version 1 20-byte discovery payload with rotating nonce.
+- Public device identity schema version 1: canonical P-256 public keys, SHA-256 fingerprints, and native DER signature interoperability.
 
-- Provisional pairing v1: compact QR identity commitment, native QR bootstrap, OPAQUE manual mode, bounded GATT framing with stable attribute layout (ADR 0004), encrypted identity proof/consent and signed storage receipts. Discovery assignments and payload are preserved.
-
-- Fixed public aniCe BLE service/characteristic UUIDs, version 1 20-byte discovery payload with optional flags and rotating nonce, and shared positive/negative vectors.
-
-- Added provisional public identity schema version 1, with canonical P-256 public keys, SHA-256 fingerprints, and native DER signature interoperability.
-- Added shared positive/negative identity and signature fixtures, public test-only key scalars, and a reproducible fixture generator using OpenSSL.
-- Documented runtime semantic validation and the test-only interchange bundle. Network serialization, framing, generated models, and a transport protocol version remain undecided; no protocol release has been assigned.

@@ -28,6 +28,11 @@ func hex(_ value: Any?) throws -> Data {
 }
 func text(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
 
+actor InterchangeMailbox {
+  private var bytes = Data()
+  func put(_ value: Data) { bytes = value }
+  func take() -> Data { bytes }
+}
 let namespace = "io.github.anisharyal09.anice.tests.session." + UUID().uuidString.lowercased()
 let directory = FileManager.default.temporaryDirectory.appendingPathComponent(namespace)
 let storage = MacIdentityStorage(
@@ -60,6 +65,22 @@ do {
   let digest = try await SessionCrypto.hash(
     engine.export(context: Data("aniCe session interchange v1".utf8), length: 32))
   try emit(["message4Hex": text(m4), "exportDigestHex": text(digest)])
+  let mailbox = InterchangeMailbox()
+  let channel = try await SecureSession.fromHandshake(
+    engine, responder: true, capacity: { _ in true }, submit: { await mailbox.put($0) })
+  let ready = try await channel.receive(hex(input()["readyHex"]))
+  guard ready.0 == .ready else { throw SessionFailure.state }
+  try await channel.send(.readyAck)
+  try emit(["readyAckHex": text(await mailbox.take())])
+  let payload = try await channel.receive(hex(input()["clientDataHex"]))
+  let expected = Data((0..<4000).map { UInt8(truncatingIfNeeded: $0) })
+  guard payload.0 == .data, payload.1 == expected, await channel.stage == .secured else {
+    throw SessionFailure.authentication
+  }
+  try await channel.send(.data, plaintext: Data(expected.reversed()))
+  try emit(["serverDataHex": text(await mailbox.take())])
+  let closing = try await channel.receive(hex(input()["closeHex"]))
+  guard closing.0 == .close, await channel.stage == .closed else { throw SessionFailure.state }
   let after = try await identity.publicIdentity()
   guard after == local else { throw SessionFailure.state }
   await engine.close()

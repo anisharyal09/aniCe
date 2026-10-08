@@ -10,7 +10,9 @@ struct MacPairingView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
       pairingPanel
-      trustedDevicesPanel
+      if !model.peers.isEmpty || model.trustRecoveryNeeded {
+        trustedDevicesPanel
+      }
     }
     .alert("Reset local trust?", isPresented: $resettingTrust) {
       Button("Cancel", role: .cancel) {}
@@ -29,7 +31,7 @@ struct MacPairingView: View {
         forgetID = nil
       }
     } message: {
-      Text("This removes trust on this Mac. Pair again to reconnect in a future secure session.")
+      Text("This removes trust on this Mac. Pair again to reconnect.")
     }
   }
 
@@ -110,8 +112,12 @@ struct MacPairingView: View {
             Text(String(char))
               .font(.system(size: 26, weight: .semibold, design: .monospaced))
               .frame(width: 38, height: 46)
-              .background(AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8))
-              .overlay(RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(scheme), lineWidth: 1))
+              .background(
+                AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8)
+              )
+              .overlay(
+                RoundedRectangle(cornerRadius: 8).stroke(
+                  AniCePalette.separator(scheme), lineWidth: 1))
             if index == 2 {
               Spacer().frame(width: 8)
             }
@@ -220,7 +226,8 @@ struct MacPairingView: View {
               .controlSize(.small)
             }
             .padding(12)
-            .background(AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8))
+            .background(
+              AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8))
           }
         }
       }

@@ -2,9 +2,9 @@
 
 A local-first companion for Android and macOS, built with Kotlin/Compose and Swift/SwiftUI.
 
-**Current phase: native secure-session feasibility (minimum-OS runtime gate pending).** Native EDHOC engines authenticate existing trusted peers; record/BLE/UI integration awaits API 29/macOS 14 verification. QR/PIN pairing and mutual trust approval remain available. Discovery remains unauthenticated; synchronization is planned.
+**Current phase: trusted-device secure sessions (verification pending).** Native EDHOC authenticates trusted peers and derives replay-protected AES-GCM records over BLE. Mac opens Allow connections; Android selects a trusted Mac and taps Connect. QR/PIN pairing and mutual trust approval remain available. Discovery remains unauthenticated; synchronization is planned.
 
-User manual verification is pending for all implemented features. Agent-run automated and native checks are recorded separately in local [verification status](docs/A&V/VERIFICATION_STATUS.md).
+Automated and native unit/integration tests validate core contracts; physical BLE acceptance, minimum-OS coverage, and independent security review remain pending.
 
 ## Repository structure
 
@@ -15,7 +15,7 @@ apps/
 protocol/
   bluetooth/            BLE discovery contract
   pairing/              Authenticated bootstrap and control-pipe contract
-  session/              Native EDHOC profile and gated record/BLE contract
+  session/              EDHOC, encrypted records and BLE session contract
   schemas/              Shared public identity contract
   test-vectors/         Cryptographic verification cases
   fixtures/             Sample public identities
@@ -34,7 +34,6 @@ tools/                  Reserved for developer utilities
 - [Roadmap](docs/ROADMAP.md) · [Design guide](docs/design/DESIGN.md) · [Protocol](protocol/README.md)
 - [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md)
 - [Architecture decisions](docs/decisions/0001-provisional-device-identity.md) (ADR [0001](docs/decisions/0001-provisional-device-identity.md), [0002](docs/decisions/0002-provisional-ble-discovery.md), [0003](docs/decisions/0003-provisional-pairing-and-trust.md), [0004](docs/decisions/0004-stable-ble-attribute-layout.md), [0005](docs/decisions/0005-edhoc-secure-sessions.md))
-- Local [session verification and pending gates](docs/A&V/SESSION_VERIFICATION.md)
 
 Android uses Keystore. The current ad-hoc Mac build uses development Keychain storage; signed Secure Enclave operation remains unverified. Android 10 and macOS 14 are provisional minimums.
 

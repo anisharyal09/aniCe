@@ -11,6 +11,17 @@ import os
   func retirePairingConnection()
 }
 
+enum PeripheralMode { case idle, discovery, pairing, trustedSession }
+@MainActor protocol SessionPeripheralAdapter: PairingPeripheralAdapter {
+  var sessionWrite: ((Data) -> Bool)? { get set }
+  var sessionDisconnect: (() -> Void)? { get set }
+  var sessionAdmitted: (() -> Bool)? { get set }
+  func sessionCapacity(_ bytes: Int) -> Bool
+  func sendSession(_ message: Data) async throws
+  func resumeSessionAdvertising()
+  func tickSessionTransport() throws
+}
+
 /// Serialize advertising across windows because callbacks carry no application token.
 struct AdvertisingGate {
   private(set) var generation = 0
@@ -55,7 +66,7 @@ struct AdvertisingGate {
 }
 
 @MainActor
-final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
+final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   @preconcurrency CBPeripheralManagerDelegate
 {
   private var manager: CBPeripheralManager?
@@ -69,6 +80,13 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
   private var event: ((PeripheralEvent) -> Void)?
   private var read: ((Bool, Int) -> DiscoveryRead)?
 
+  private(set) var mode: PeripheralMode = .idle
+  var sessionWrite: ((Data) -> Bool)?
+  var sessionDisconnect: (() -> Void)?
+  var sessionAdmitted: (() -> Bool)?
+  private var channelGeneration = 0
+  private var sessionReceived = GattReassembler(version: 2)
+  private var queueBudget = GattQueueBudget()
   var pairingWrite: ((Data) -> Bool)?
   var pairingDisconnect: (() -> Void)?
   private var incoming: CBMutableCharacteristic?
@@ -76,27 +94,80 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
   private var central: CBCentral?
   private var retiredCentrals = Set<UUID>()
   private var blockImplicitSubscriptions = false
-  private var queue: [Data] = []
+  private struct PendingFragment {
+    let bytes: Data
+    let logicalSize: Int
+  }
+  private var queue: [PendingFragment] = []
   private var sendID: UInt64 = 0
   private var received = PairingReassembler()
   private var trafficBudget = 0
   func sendPairing(_ message: Data) throws {
     guard advertising.isConfirmed, pairingWrite != nil, let central, outgoing != nil,
-      trafficBudget + message.count <= 32768
+      trafficBudget + message.count <= 32768, queueBudget.canReserve(message.count)
     else { throw PairingFailure.transport }
-    queue += try PairingReassembler.fragments(
+    let frames = try PairingReassembler.fragments(
       message, id: sendID, capacity: central.maximumUpdateValueLength)
+    try append(frames, message.count)
     sendID += 1
     trafficBudget += message.count
     flush()
   }
+  private func append(_ frames: [Data], _ size: Int) throws {
+    try queueBudget.reserve(size)
+    queue += frames.enumerated().map {
+      PendingFragment(bytes: $0.element, logicalSize: $0.offset == frames.count - 1 ? size : 0)
+    }
+  }
+  func sessionCapacity(_ bytes: Int) -> Bool {
+    mode == .trustedSession && sessionWrite != nil && central != nil
+      && queueBudget.canReserve(bytes)
+  }
+  // An empty queue proves Core Bluetooth accepted submission, not remote delivery.
+  func sendSession(_ message: Data) async throws {
+    guard sessionCapacity(message.count), let central else { throw SessionBackpressure() }
+    let op = channelGeneration
+    try append(
+      try GattReassembler.fragments(
+        message, id: sendID, capacity: central.maximumUpdateValueLength, version: 2), message.count)
+    sendID += 1
+    flush()
+    let deadline = ProcessInfo.processInfo.systemUptime + 10
+    while !queue.isEmpty {
+      guard op == channelGeneration, self.central != nil else { throw SessionFailure.cancelled }
+      guard ProcessInfo.processInfo.systemUptime < deadline else {
+        retirePairingConnection()
+        throw SessionFailure.expired
+      }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    guard op == channelGeneration else { throw SessionFailure.cancelled }
+  }
+  func tickSessionTransport() throws { try sessionReceived.tick() }
+  func resumeSessionAdvertising() {
+    guard mode == .trustedSession, central == nil else { return }
+    advertising.begin()
+    advertise()
+  }
+  private func disconnected() {
+    if mode == .trustedSession { sessionDisconnect?() } else { pairingDisconnect?() }
+  }
+  // Stop advertising after admission; established writes use the candidate, not advertising state.
+  private func admit(_ candidate: CBCentral) -> Bool {
+    guard mode == .trustedSession else { return true }
+    guard advertising.isConfirmed, sessionAdmitted?() == true else { return false }
+    advertising.stop()
+    manager?.stopAdvertising()
+    return true
+  }
   private func flush() {
     guard let manager, let central, let outgoing else { return }
     while let value = queue.first {
-      guard manager.updateValue(value, for: outgoing, onSubscribedCentrals: [central]) else {
+      guard manager.updateValue(value.bytes, for: outgoing, onSubscribedCentrals: [central]) else {
         return
       }
-      queue.removeFirst()
+      let completed = queue.removeFirst()
+      if completed.logicalSize > 0 { queueBudget.release(completed.logicalSize) }
     }
   }
   /// Give backpressured cancellation frames a bounded chance to reach Core Bluetooth.
@@ -115,13 +186,17 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
     _ peripheral: CBPeripheralManager, central: CBCentral,
     didSubscribeTo characteristic: CBCharacteristic
   ) {
-    guard peripheral === manager, advertising.isConfirmed, pairingWrite != nil,
+    guard peripheral === manager, advertising.isConfirmed,
+      pairingWrite != nil || sessionWrite != nil,
       characteristic.uuid == outgoing?.uuid
     else { return }
     retiredCentrals.remove(central.identifier)
     guard self.central == nil else { return }
+    guard admit(central) else { return }
     self.central = central
     queue.removeAll()
+    queueBudget.clear()
+    sessionReceived = GattReassembler(version: 2)
     sendID = 0
     trafficBudget = 0
     received = PairingReassembler()
@@ -133,27 +208,38 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
     guard peripheral === manager else { return }
     retiredCentrals.remove(central.identifier)
     guard self.central?.identifier == central.identifier else { return }
-    self.central = nil
-    queue.removeAll()
-    received = PairingReassembler()
-    pairingDisconnect?()
+    resetPairingChannel()
+    disconnected()
   }
   func peripheralManager(
     _ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]
   ) {
     guard let first = requests.first else { return }
-    guard peripheral === manager, advertising.isConfirmed, pairingWrite != nil else {
+    guard peripheral === manager,
+      mode == .trustedSession
+        ? sessionWrite != nil : advertising.isConfirmed && pairingWrite != nil
+    else {
       peripheral.respond(to: first, withResult: .writeNotPermitted)
       return
     }
-    if central == nil, !blockImplicitSubscriptions,
-      !retiredCentrals.contains(first.central.identifier),
-      outgoing?.subscribedCentrals?.contains(where: { $0.identifier == first.central.identifier })
-        == true
-    {
-      // A Core Bluetooth subscription can outlive advertising. A new live invitation
-      // may reuse it, but a channel retired for invalid traffic must subscribe afresh.
+    if GattCandidateAdmission.mayReuseSubscription(
+      hasCandidate: central != nil, advertising: advertising.isConfirmed,
+      subscribed: outgoing?.subscribedCentrals?.contains(where: {
+        $0.identifier == first.central.identifier
+      }) == true,
+      retired: retiredCentrals.contains(first.central.identifier),
+      blocked: blockImplicitSubscriptions
+    ) {
+      // Core Bluetooth may retain a subscription without another didSubscribe callback.
+      // An explicit new window may admit it, but EDHOC and readiness must run afresh.
+      // Invalid candidates remain blocked within the window until they subscribe again.
+      if mode == .trustedSession, !admit(first.central) {
+        peripheral.respond(to: first, withResult: .writeNotPermitted)
+        return
+      }
+      Self.logger.info("candidate_admission reused_subscription=true")
       central = first.central
+      sessionReceived = GattReassembler(version: 2)
       sendID = 0
       trafficBudget = 0
       received = PairingReassembler()
@@ -164,7 +250,11 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
           request.offset == 0,
           request.central.identifier == central?.identifier, let value = request.value
         else { throw PairingFailure.transport }
-        if let message = try received.receive(value) {
+        if mode == .trustedSession {
+          if let message = try sessionReceived.receive(value) {
+            guard sessionWrite?(message) == true else { throw SessionFailure.state }
+          }
+        } else if let message = try received.receive(value) {
           guard trafficBudget + message.count <= 32768 else { throw PairingFailure.transport }
           trafficBudget += message.count
           guard pairingWrite?(message) == true else { throw PairingFailure.expired }
@@ -176,7 +266,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
       // A malformed unauthenticated frame must not stop the invitation.
       if first.central.identifier == central?.identifier {
         retirePairingConnection()
-        pairingDisconnect?()
+        disconnected()
       }
     }
   }
@@ -194,8 +284,11 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
     resetPairingChannel()
   }
   private func resetPairingChannel() {
+    channelGeneration += 1
     central = nil
     queue.removeAll()
+    queueBudget.clear()
+    sessionReceived = GattReassembler(version: 2)
     received = PairingReassembler()
     sendID = 0
     trafficBudget = 0
@@ -204,6 +297,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
   func begin(
     event: @escaping (PeripheralEvent) -> Void, read: @escaping (Bool, Int) -> DiscoveryRead
   ) {
+    mode = sessionWrite != nil ? .trustedSession : pairingWrite != nil ? .pairing : .discovery
     advertising.begin()
     self.event = event
     self.read = read
@@ -237,6 +331,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
       outgoing = nil
       advertising.resetRadio()
       retirePairingConnection()
+      disconnected()
       if peripheral.state == .poweredOff || peripheral.state == .resetting
         || peripheral.state == .unauthorized || peripheral.state == .unsupported
       {
@@ -343,6 +438,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, PairingPeripheralAdapter,
     }
   }
   func stop() {
+    mode = .idle
     let incompleteStartup = publishing || advertising.hasPendingRequest
     advertising.stop()
     event = nil

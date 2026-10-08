@@ -102,47 +102,34 @@ object PairingCodec {
 }
 
 class PairingReassembler {
-    private var id = 0L
-    private var total = 0
-    private var buffer = byteArrayOf()
+    private val framing = io.github.anisharyal09.anice.infrastructure.bluetooth.GattReassembler(1)
     private var budget = 0
 
-    fun receive(f: ByteArray): ByteArray? {
-        require(f.size > 7 && f[0] == 1.toByte())
-        val mid = PairingCodec.integer(f.copyOfRange(1, 3))
-        val size = PairingCodec.integer(f.copyOfRange(3, 5)).toInt()
-        val offset = PairingCodec.integer(f.copyOfRange(5, 7)).toInt()
-        require(
-            id <= 65535 &&
-                mid == id &&
-                size in 1..4096 &&
-                offset == buffer.size &&
-                (buffer.isEmpty() || total == size) &&
-                f.size - 7 <= size - offset
-        )
-        total = size
-        buffer += f.copyOfRange(7, f.size)
-        if (buffer.size != total) return null
-        budget += total
-        require(budget <= 32768)
-        val out = buffer
-        buffer = byteArrayOf()
-        total = 0
-        id++
-        return out
+    fun receive(fragment: ByteArray): ByteArray? {
+        try {
+            val result = framing.receive(fragment)
+            if (result != null) {
+                budget += result.size
+                require(budget <= 32768)
+            }
+            return result
+        } catch (e: io.github.anisharyal09.anice.infrastructure.session.SessionException) {
+            throw IllegalArgumentException(e)
+        }
     }
 
     companion object {
-        fun fragments(data: ByteArray, id: Long, capacity: Int): List<ByteArray> {
-            require(data.size in 1..4096 && id in 0..65535 && capacity >= 8)
-            return (data.indices step (capacity - 7)).map { offset ->
-                byteArrayOf(1) +
-                    PairingCodec.number(id, 2) +
-                    PairingCodec.number(data.size.toLong(), 2) +
-                    PairingCodec.number(offset.toLong(), 2) +
-                    data.copyOfRange(offset, minOf(data.size, offset + capacity - 7))
+        fun fragments(data: ByteArray, id: Long, capacity: Int): List<ByteArray> =
+            try {
+                io.github.anisharyal09.anice.infrastructure.bluetooth.GattReassembler.fragments(
+                    data,
+                    id,
+                    capacity,
+                    1,
+                )
+            } catch (e: io.github.anisharyal09.anice.infrastructure.session.SessionException) {
+                throw IllegalArgumentException(e)
             }
-        }
     }
 }
 

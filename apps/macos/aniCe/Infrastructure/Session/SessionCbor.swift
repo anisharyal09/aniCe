@@ -76,6 +76,7 @@ enum SessionCbor {
           default: break
           }
         }
+        // Sort encoded keys deterministically; duplicate encodings cannot bind different values.
         let sorted = try map.map { (try encode($0.key), $0) }.sorted { less($0.0, $1.0) }
         for i in sorted.indices.dropFirst() {
           guard sorted[i - 1].0 != sorted[i].0 else { throw SessionFailure.malformed }

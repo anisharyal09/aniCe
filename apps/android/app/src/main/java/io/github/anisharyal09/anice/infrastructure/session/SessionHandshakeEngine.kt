@@ -62,6 +62,7 @@ internal constructor(
     if (stage == HandshakeStage.CLOSED) throw SessionException(SessionFailure.CANCELLED)
     if (stage != HandshakeStage.COMPLETE && now() - started >= 30_000)
       throw SessionException(SessionFailure.EXPIRED)
+    // Revalidate current identity and pinned trust even after handshake completion.
     if (!same(currentIdentity(), local)) throw SessionException(SessionFailure.CANCELLED)
     peer?.let {
       if (!same(resolve(SessionCrypto.kid(it)), it))
@@ -70,6 +71,7 @@ internal constructor(
   }
 
   private fun resolve(kid: ByteArray): DeviceIdentity {
+    // Resolve against all trusted peers before applying selection; ambiguity must fail.
     val matches =
       trusted()
         .filter { it.platform == if (responder) "android" else "macos" }
@@ -106,6 +108,7 @@ internal constructor(
 
   private suspend fun proof(input: ByteArray): ByteArray {
     val op = generation.get()
+    // Protected signing may prompt or suspend; reject reset/cancelled results before use.
     val signed = signer(input)
     if (op != generation.get() || !same(signed.identity, local))
       throw SessionException(SessionFailure.CANCELLED)
@@ -335,6 +338,16 @@ internal constructor(
   suspend fun export(context: ByteArray, length: Int): ByteArray =
     operate(HandshakeStage.COMPLETE) { SessionCrypto.kdf(prkExporter, 32768, context, length) }
 
+  // Canonical credentials are returned in wire-role order, independent of the local role.
+  suspend fun bindings(): Pair<ByteArray, ByteArray> =
+    operate(HandshakeStage.COMPLETE) {
+      val remote = requireNotNull(peer)
+      val initiator = if (responder) remote else local
+      val server = if (responder) local else remote
+      SessionCbor.encode(SessionCrypto.credential(initiator)) to
+        SessionCbor.encode(SessionCrypto.credential(server))
+    }
+
   suspend fun receiveError(message: ByteArray): Nothing =
     withContext(Dispatchers.IO) {
       mutex.withLock {
@@ -361,8 +374,13 @@ internal constructor(
       }
     }
 
+  fun invalidate() {
+    generation.incrementAndGet()
+    stage = HandshakeStage.CLOSED
+  }
+
   suspend fun close() {
-    generation.incrementAndGet() // Invalidates a suspended signer before waiting for serialization.
+    invalidate() // Invalidates a suspended signer before waiting for serialization.
     mutex.withLock { retire() }
   }
 

@@ -20,15 +20,21 @@ data class DeviceIdentityUiState(
     val isWorking: Boolean = false,
 ) {
     val canReset: Boolean
-        get() = snapshot != null || failure == IdentityErrorKind.KEY_MISSING ||
-            failure == IdentityErrorKind.INCONSISTENT || failure == IdentityErrorKind.CRYPTO_FAILURE
+        get() =
+            snapshot != null ||
+                failure == IdentityErrorKind.KEY_MISSING ||
+                failure == IdentityErrorKind.INCONSISTENT ||
+                failure == IdentityErrorKind.CRYPTO_FAILURE
 }
 
 class DeviceIdentityViewModel(private val service: IdentityService) : ViewModel() {
+    var onIdentityReset: () -> Unit = {}
     var state by mutableStateOf(DeviceIdentityUiState())
         private set
 
-    init { retry() }
+    init {
+        retry()
+    }
 
     fun retry() = update(reset = false)
 
@@ -40,15 +46,18 @@ class DeviceIdentityViewModel(private val service: IdentityService) : ViewModel(
         if (state.isWorking) return
         state = DeviceIdentityUiState(isWorking = true)
         viewModelScope.launch {
-            state = try {
-                // Keystore and disk access must not block the UI thread.
-                val snapshot = withContext(Dispatchers.IO) {
-                    if (reset) service.resetIdentity() else service.getOrCreateIdentity()
+            state =
+                try {
+                    // Keystore and disk access must not block the UI thread.
+                    val snapshot =
+                        withContext(Dispatchers.IO) {
+                            if (reset) service.resetIdentity() else service.getOrCreateIdentity()
+                        }
+                    if (reset) onIdentityReset()
+                    DeviceIdentityUiState(snapshot = snapshot)
+                } catch (error: IdentityException) {
+                    DeviceIdentityUiState(failure = error.kind)
                 }
-                DeviceIdentityUiState(snapshot = snapshot)
-            } catch (error: IdentityException) {
-                DeviceIdentityUiState(failure = error.kind)
-            }
         }
     }
 }

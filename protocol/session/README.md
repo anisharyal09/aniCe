@@ -1,6 +1,6 @@
 # aniCe trusted-device session profile v1
 
-Status: native handshake feasibility implemented; application records and BLE binding specified for gated integration.
+Status: native handshake, AES-GCM records, BLE binding and explicit connection controls implemented. Minimum-OS runtime, physical radio/user acceptance, signed Mac hardware protection and independent integration review remain pending.
 
 ## Authentication profile
 
@@ -79,13 +79,15 @@ The engines permit a single operation. Repeated/unexpected messages terminate th
 
 ## Errors and privacy
 
+Local session owners additionally retain readiness/idle/lifetime/record-limit expiry causes and authenticated peer closure for presentation. These diagnostics do not alter wire payloads or the failure categories below.
+
 Typed local failures: `malformed`, `unsupportedProfile`, `untrustedPeer`, `authentication`, `state`, `cancelled`, `expired`. Native identity/storage/provider errors retain their original typed failure and retire the handshake.
 
 Accepted EDHOC error sequences: `(1, tstr <= 64 UTF-8 bytes)`, `(2, 5)`, `(3, true)`. Error code zero, unknown codes and extra data are rejected. Received errors are fatal with no suite retry. Outgoing generic error is `(1, "Handshake failed")`; callers do not emit credential identifiers in errors. During an established application session, handshake envelopes/errors are invalid.
 
 Credentials are protected against passive handshake observation. This is not anonymity: an active initiator can obtain responder credential information, and radio identifiers, lengths and timing remain observable. No stable identity appears in discovery or advertising. No handshake/application key is persisted or logged. Buffer overwrite and object release are best effort on Swift/JVM.
 
-## Exporter and record profile — integration pending
+## Exporter and record profile
 
 Exporter label `32768` is private-use. Context bytes are deterministic CBOR:
 
@@ -96,16 +98,22 @@ purpose = "key" (32 bytes), "iv" (12 bytes), "session-id" (32 bytes)
 output = KDF(PRK_exporter, 32768, context, outputLength)
 ```
 
-Planned AES-256-GCM record: `version:u8=1 | kind:u8 | sequence:u64BE | ciphertextLength:u32BE | ciphertext | tag:16B`. Kind: `1 ready`, `2 readyAck`, `3 data`, `4 close`. Control plaintexts are empty. Data plaintext is at most 4,000 bytes. Length excludes the tag. AAD is `header14 || sessionID32 || direction1`; nonce is `IVBase12 XOR (00000000 || sequence64BE)`.
+AES-256-GCM record: `version:u8=1 | kind:u8 | sequence:u64BE | ciphertextLength:u32BE | ciphertext | tag:16B`. Kind: `1 ready`, `2 readyAck`, `3 data`, `4 close`. Control plaintexts are empty. Data plaintext is at most 4,000 bytes. Length excludes the tag. AAD is `header14 || sessionID32 || direction1`; nonce is `IVBase12 XOR (00000000 || sequence64BE)`.
 
 Directional counters start at zero. Receive only the exact next value and advance after authentication. Reserve/burn send sequence before encryption; failure after reservation closes the session. Do not reseal or roll back. Ready/readyAck consume the initial sequences. Initiator readiness requires verified readyAck; responder readiness requires verified ready and successful readyAck submission. Ten-second readiness, 120-second idle, one-hour age and `2^20` records per direction are hard bounds. Limits close the session; no in-place key update.
 
-## BLE binding — integration pending
+## BLE binding
 
 The published service and three characteristic UUIDs remain as in pairing v1. Session v2 fragmentation header is `version:u8=2 | messageId:u32BE | totalLength:u16BE | offset:u16BE`. IDs start at zero per direction and increment per logical message, never wrap. Fragments are contiguous; logical length is 1..4096. MTU 23 gives 11 payload bytes per fragment. Reassembly deadline is ten seconds from first fragment, without extension.
 
 Each logical payload is `kind:u8 || payload`; kinds `1..4` carry unmodified EDHOC messages, `5` EDHOC error, `6` application record. Mode determines accepted fragmentation version; never sniff a fragment into another mode. One candidate, one receive buffer and at most eight queued logical messages/32 KiB are allowed. Backpressure is returned before sequence reservation. Queue budget includes sealed records/envelopes retained until submission completes.
 
-Mac admission window: 120 seconds, five failed candidates maximum. Android scan: 15 seconds. Candidate admission stops advertising; connection traffic must not depend on advertising confirmation afterward. A failed candidate may resume advertising within the original window. Exclusive idle/discovery/pairing/session modes share one owner. Teardown is bounded to two seconds; Mac retires application access when Core Bluetooth cannot force disconnection.
+Mac admission window: 120 seconds, five failed candidates maximum. With multiple trusted Android devices, the shared window/companion menu optionally chooses one allowed Android; otherwise the default accepts any active trusted Android. Presentation-list availability must not gate opening a window. Its target is frozen when Allow connections starts. Selection matches the decrypted credential against the complete active trust journal and pins device ID, fingerprint and public key; duplicate credential matches remain fatal. A BLE subscription is only a candidate: it exposes no authenticated identity. Other centrals cannot join an admitted candidate. A wrong selected peer consumes a failed attempt; it cannot become Secured. Android is the central/initiator and Mac the peripheral/responder; Android-to-Android sessions are outside this profile. Android scan: 15 seconds. A retained indication subscription may admit a candidate on its first write within an explicit advertised window when the slot is empty and it is not retired/blocked. This does not resume a session: fresh EDHOC/readiness are required. Candidate admission stops advertising; connection traffic must not depend on advertising confirmation afterward. A failed candidate may resume advertising within the original window. Exclusive idle/discovery/pairing/session modes share one owner. Teardown is bounded to two seconds; Mac retires application access when Core Bluetooth cannot force disconnection.
+
+## Application diagnostic
+
+The current connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). It is accepted only after readiness; receipt updates the local connection status. There is no automatic echo, persistence, background sending or feature synchronization. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
+
+Baseline minimum-OS runtime coverage (API 29 and macOS 14) and independent security review remain tracked as outstanding release gates.
 
 References: [RFC 9528](https://www.rfc-editor.org/rfc/rfc9528.html), [RFC 9529](https://www.rfc-editor.org/rfc/rfc9529.html), [ADR 0005](../../docs/decisions/0005-edhoc-secure-sessions.md).

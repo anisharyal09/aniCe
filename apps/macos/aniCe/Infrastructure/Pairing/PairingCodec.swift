@@ -159,43 +159,22 @@ enum PairingCodec {
 
 /// Fragmentation and reassembly handler for GATT MTU boundaries.
 struct PairingReassembler {
-  private var id: UInt64 = 0
-  private var total = 0
-  private var buffer = Data()
+  private var framing = GattReassembler(version: 1)
   private var budget = 0
-
-  /// Receives a chunk fragment and returns complete reassembled payload when finished.
   mutating func receive(_ fragment: Data) throws -> Data? {
-    guard fragment.count > 7, fragment.first == 1 else { throw PairingFailure.malformed }
-    let mid = PairingCodec.integer(fragment.subdata(in: 1..<3))
-    let length = Int(PairingCodec.integer(fragment.subdata(in: 3..<5)))
-    let offset = Int(PairingCodec.integer(fragment.subdata(in: 5..<7)))
-    guard id <= 65535, mid == id, length > 0, length <= 4096, offset == buffer.count,
-      buffer.isEmpty || total == length, fragment.count - 7 <= length - offset
-    else { throw PairingFailure.malformed }
-    total = length
-    buffer.append(fragment.dropFirst(7))
-    guard buffer.count == total else { return nil }
-    budget += total
-    guard budget <= 32768 else { throw PairingFailure.malformed }
-    let result = buffer
-    buffer.removeAll()
-    total = 0
-    id += 1
-    return result
+    do {
+      let result = try framing.receive(fragment)
+      if let result {
+        budget += result.count
+        guard budget <= 32768 else { throw PairingFailure.malformed }
+      }
+      return result
+    } catch is SessionFailure { throw PairingFailure.malformed }
   }
-
-  /// Splits a complete logical message into 7-byte framed fragments for the given ATT MTU capacity.
   static func fragments(_ data: Data, id: UInt64, capacity: Int) throws -> [Data] {
-    guard (1...4096).contains(data.count), id <= 65535, capacity >= 8 else {
-      throw PairingFailure.malformed
-    }
-    return stride(from: 0, to: data.count, by: capacity - 7).map { offset in
-      Data([1]) + PairingCodec.number(id, bytes: 2)
-        + PairingCodec.number(UInt64(data.count), bytes: 2)
-        + PairingCodec.number(UInt64(offset), bytes: 2)
-        + data.subdata(in: offset..<min(data.count, offset + capacity - 7))
-    }
+    do {
+      return try GattReassembler.fragments(data, id: id, capacity: capacity, version: 1)
+    } catch is SessionFailure { throw PairingFailure.malformed }
   }
 }
 

@@ -6,20 +6,11 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -36,11 +27,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
@@ -48,6 +36,8 @@ import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import io.github.anisharyal09.anice.features.pairing.PairingScreen
 import io.github.anisharyal09.anice.features.pairing.PairingViewModel
+import io.github.anisharyal09.anice.features.session.SessionPanel
+import io.github.anisharyal09.anice.features.session.SessionViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +45,7 @@ fun AppRoot(
     identity: DeviceIdentityViewModel,
     discovery: DiscoveryViewModel,
     pairing: PairingViewModel,
+    session: SessionViewModel,
 ) {
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {
         if (identity.state.snapshot != null) pairing.refresh()
@@ -132,52 +123,19 @@ fun AppRoot(
             } else if (screen == 2) {
                 DiscoveryScreen(discovery)
             } else {
-                NoDevicesScreen(
-                    onFind = { pairingScreen = true },
-                    onPair = { pairingScreen = true },
-                    onCheck = { nearby = true },
-                    trusted = pairing.peers.isNotEmpty(),
+                HomeScreen(
+                    hasTrustedDevices = pairing.peers.isNotEmpty(),
+                    onPair = {
+                        session.cancel()
+                        pairingScreen = true
+                    },
+                    onCheck = {
+                        session.cancel()
+                        nearby = true
+                    },
+                    sessions = { SessionPanel(session, pairing.peers) },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun NoDevicesScreen(
-    onFind: () -> Unit,
-    onPair: () -> Unit,
-    onCheck: () -> Unit,
-    trusted: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                if (trusted) "Your trusted devices" else stringResource(R.string.no_devices_paired),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = onFind) { Text("Find your Mac") }
-            if (trusted) {
-                TextButton(onClick = onPair) { Text("Manage trusted devices") }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "Pair a nearby Mac using a QR code or six-digit code.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            TextButton(onClick = onCheck) { Text("Check nearby discovery") }
         }
     }
 }

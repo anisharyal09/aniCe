@@ -37,6 +37,12 @@ actor SessionHandshakeEngine {
     now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
   ) throws {
     try local.validate()
+    if let selectedPeer {
+      try selectedPeer.validate()
+      guard selectedPeer.platform == (responder ? "android" : "macos") else {
+        throw SessionFailure.state
+      }
+    }
     guard local.platform == (responder ? "macos" : "android"),
       responder || selectedPeer?.platform == "macos"
     else { throw SessionFailure.state }
@@ -70,6 +76,7 @@ actor SessionHandshakeEngine {
   private func check(_ op: Int) async throws {
     try ensure(op)
     guard stage == .complete || now() - started < 30 else { throw SessionFailure.expired }
+    // Revalidate current identity and pinned trust even after handshake completion.
     let identity = try await currentIdentity()
     try ensure(op)
     guard same(identity, local) else { throw SessionFailure.cancelled }
@@ -86,8 +93,10 @@ actor SessionHandshakeEngine {
     }
     guard matches.count == 1 else { throw SessionFailure.untrustedPeer }
     let result = matches[0]
-    if !responder {
-      guard let selectedPeer, same(result, selectedPeer) else { throw SessionFailure.untrustedPeer }
+    // Resolve against the complete active journal first so duplicate credentials cannot be hidden
+    // by the UI selection. A selected responder target is checked only after identity decryption.
+    if let selectedPeer {
+      guard same(result, selectedPeer) else { throw SessionFailure.untrustedPeer }
     }
     return result
   }
@@ -114,6 +123,7 @@ actor SessionHandshakeEngine {
     return values
   }
   private func proof(_ input: Data, _ op: Int) async throws -> Data {
+    // Protected signing may prompt or suspend; reject reset/cancelled results before use.
     let signed = try await signer(input)
     try ensure(op)
     guard same(signed.identity, local) else { throw SessionFailure.cancelled }
@@ -181,6 +191,7 @@ actor SessionHandshakeEngine {
       let plaintext = try SessionCbor.sequence(
         .bytes(connectionId), .bytes(SessionCrypto.kid(local)), .bytes(signature))
       var stream = try derive(0, th, plaintext.count)
+      // EDHOC message 2 uses its specified XOR keystream; AEAD starts with message 3.
       let ciphertext = Data(zip(plaintext, stream).map { $0 ^ $1 })
       stream.resetBytes(in: 0..<stream.count)
       th = try SessionCrypto.hash(
@@ -267,6 +278,22 @@ actor SessionHandshakeEngine {
   func export(context: Data, length: Int) async throws -> Data {
     try await run(.complete) { _ in try SessionCrypto.kdf(prkExporter, 32768, context, length) }
   }
+  func authenticatedPeer() async throws -> DeviceIdentity {
+    try await run(.complete) { _ in
+      guard let peer else { throw SessionFailure.state }
+      return peer
+    }
+  }
+  // Canonical credentials are returned in wire-role order, independent of the local role.
+  func bindings() async throws -> (Data, Data) {
+    try await run(.complete) { _ in
+      guard let peer else { throw SessionFailure.state }
+      return (
+        try SessionCbor.encode(SessionCrypto.credential(responder ? peer : local)),
+        try SessionCbor.encode(SessionCrypto.credential(responder ? local : peer))
+      )
+    }
+  }
   func receiveError(_ message: Data) throws {
     defer { close() }
     guard stage != .complete, stage != .closed else { throw SessionFailure.state }
@@ -292,7 +319,9 @@ actor SessionHandshakeEngine {
     th = Data()
     message1 = Data()
   }
-  static func responder(identity: IdentityService, trust: PeerTrustStore) async throws
+  static func responder(
+    identity: IdentityService, trust: PeerTrustStore, selectedPeer: DeviceIdentity? = nil
+  ) async throws
     -> SessionHandshakeEngine
   {
     let local = try await identity.publicIdentity()
@@ -300,7 +329,7 @@ actor SessionHandshakeEngine {
       local: local, responder: true,
       trusted: { trust.list(localFingerprint: local.fingerprint).map(\.peer) },
       currentIdentity: { try await identity.publicIdentity() },
-      signer: { try await identity.sign(message: $0) })
+      signer: { try await identity.sign(message: $0) }, selectedPeer: selectedPeer)
   }
 }
 
