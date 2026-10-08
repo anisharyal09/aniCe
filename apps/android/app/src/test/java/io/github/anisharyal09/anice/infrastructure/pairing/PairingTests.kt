@@ -112,6 +112,16 @@ class PairingTests {
     reject { PairingCodec.unpack(PairingCodec.message(12, byteArrayOf(1)), 12, 0) }
   }
 
+  @Test
+  fun pairingUuidsMatchCanonicalLayout() {
+    val writeUuid = java.util.UUID.fromString(PairingCodec.WRITE_UUID)
+    val indicateUuid = java.util.UUID.fromString(PairingCodec.INDICATE_UUID)
+    assertEquals("414e4953-4843-654a-494c-534149303903", writeUuid.toString().lowercase())
+    assertEquals("414e4953-4843-654a-494c-534149303904", indicateUuid.toString().lowercase())
+    assertEquals("414E4953-4843-654A-494C-534149303903", PairingCodec.WRITE_UUID)
+    assertEquals("414E4953-4843-654A-494C-534149303904", PairingCodec.INDICATE_UUID)
+  }
+
   private fun reject(body: () -> Unit) {
     try {
       body()

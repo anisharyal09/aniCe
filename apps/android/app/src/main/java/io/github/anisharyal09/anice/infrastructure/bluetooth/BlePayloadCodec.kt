@@ -2,8 +2,8 @@
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 object BlePayloadCodec {
-    const val SERVICE_UUID = "414E4953-4853-4149-4A49-4C4365090901"
-    const val CHARACTERISTIC_UUID = "414E4953-4853-4149-4A49-4C4365090902"
+    const val SERVICE_UUID = "414E4953-4843-654A-494C-534149303901"
+    const val CHARACTERISTIC_UUID = "414E4953-4843-654A-494C-534149303902"
     data class Payload(val flags: Int, val nonce: ByteArray)
     fun decode(bytes: ByteArray): Payload {
         require(bytes.size == 20) { "length" }

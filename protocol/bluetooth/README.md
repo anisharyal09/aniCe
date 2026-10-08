@@ -4,8 +4,8 @@ This public protocol identifies compatibility, not identity or trust. Mac is the
 
 | Assignment | Fixed UUID |
 | --- | --- |
-| Primary service | `414E4953-4853-4149-4A49-4C4365090901` |
-| Read-only discovery characteristic | `414E4953-4853-4149-4A49-4C4365090902` |
+| Primary service | `414E4953-4843-654A-494C-534149303901` |
+| Read-only discovery characteristic | `414E4953-4843-654A-494C-534149303902` |
 
 The app advertisement supplies only the service UUID and generic name `aniCe`. Name presence is not required. No manufacturer/service data, identity, fingerprint, device name, hardware address, or nonce is supplied.
 

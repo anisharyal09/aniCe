@@ -22,6 +22,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Update Bluetooth Low Energy GATT service and characteristic UUIDs.
 - Add shared Mac allowed-device selector with credential pinning, full-label discovery disclosure, and compact Android fingerprint identifiers.
 - Simplify Android connection presentation to a flat device list and native contextual menus; clarify session feedback on idle limits, peer closure, and trust failure.
 - Avoid private signing probes when loading an existing Mac identity; retain certificate-free local build defaults.

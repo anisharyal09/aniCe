@@ -53,8 +53,8 @@ struct PairingQR {
 
 /// Wire serialization, framing, and cryptographic helper routines.
 enum PairingCodec {
-  static let writeUUID = "414E4953-4853-4149-4A49-4C4365090903"
-  static let indicateUUID = "414E4953-4853-4149-4A49-4C4365090904"
+  static let writeUUID = "414E4953-4843-654A-494C-534149303903"
+  static let indicateUUID = "414E4953-4843-654A-494C-534149303904"
 
   /// Encodes an unsigned integer as big-endian bytes of fixed width.
   static func number(_ value: UInt64, bytes: Int) -> Data {

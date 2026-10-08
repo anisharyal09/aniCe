@@ -58,8 +58,8 @@ Cross-platform signature exchange uses native protected key stores. Actual hardw
 
 Full specification, timing limits, and validation rules are documented in [`bluetooth/README.md`](bluetooth/README.md).
 
-- **Service UUID:** `414E4953-4853-4149-4A49-4C4365090901`
-- **Discovery Characteristic UUID:** `414E4953-4853-4149-4A49-4C4365090902` (Read-only)
+- **Service UUID:** `414E4953-4843-654A-494C-534149303901`
+- **Discovery Characteristic UUID:** `414E4953-4843-654A-494C-534149303902` (Read-only)
 - **Payload:** Exactly 20 bytes (`version` [2B] + `optional capability flags` [2B] + `nonce` [16B]).
 - **Role:** Compatibility probe only. Establishes no trust, exchanges no public identity, and requests no pairing.
 
@@ -69,9 +69,9 @@ Full specification, timing limits, and validation rules are documented in [`blue
 
 Full specification, byte framing, cryptographic derivation, and lifetime rules are documented in [`pairing/README.md`](pairing/README.md).
 
-- **Service UUID:** `414E4953-4853-4149-4A49-4C4365090901`
-- **Pairing Write UUID:** `414E4953-4853-4149-4A49-4C4365090903` (Write with response)
-- **Pairing Indicate UUID:** `414E4953-4853-4149-4A49-4C4365090904` (Indicate)
+- **Service UUID:** `414E4953-4843-654A-494C-534149303901`
+- **Pairing Write UUID:** `414E4953-4843-654A-494C-534149303903` (Write with response)
+- **Pairing Indicate UUID:** `414E4953-4843-654A-494C-534149303904` (Indicate)
 - **Authentication Modes:**
   - **QR Code:** P-256 ECDH with 256-bit PSK and SHA-256 identity fingerprint commitment.
   - **Six-Digit PIN:** OPAQUE PAKE (`opaque-ke 4.0.1`, Ristretto255, TripleDH, Argon2id).

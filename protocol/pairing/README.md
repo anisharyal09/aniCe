@@ -14,10 +14,10 @@ The Mac peripheral exposes a fixed three-characteristic GATT service from initia
 
 | Attribute | UUID | Type / Properties | Access Rules |
 | :--- | :--- | :--- | :--- |
-| **Primary Service** | `414E4953-4853-4149-4A49-4C4365090901` | Service | Publicly advertised |
-| **Discovery** | `414E4953-4853-4149-4A49-4C4365090902` | Read | Available only during active discovery |
-| **Pairing Write** | `414E4953-4853-4149-4A49-4C4365090903` | Write with response | Requires active invitation; writes rejected otherwise |
-| **Pairing Indicate** | `414E4953-4853-4149-4A49-4C4365090904` | Indicate | Requires active invitation; indications sent only to active subscriber |
+| **Primary Service** | `414E4953-4843-654A-494C-534149303901` | Service | Publicly advertised |
+| **Discovery** | `414E4953-4843-654A-494C-534149303902` | Read | Available only during active discovery |
+| **Pairing Write** | `414E4953-4843-654A-494C-534149303903` | Write with response | Requires active invitation; writes rejected otherwise |
+| **Pairing Indicate** | `414E4953-4843-654A-494C-534149303904` | Indicate | Requires active invitation; indications sent only to active subscriber |
 
 ---
 

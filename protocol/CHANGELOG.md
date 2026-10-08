@@ -13,3 +13,7 @@ Records shared communication-contract changes, compatibility implications, and p
 - Fixed public aniCe BLE service/characteristic UUIDs and version 1 20-byte discovery payload with rotating nonce.
 - Public device identity schema version 1: canonical P-256 public keys, SHA-256 fingerprints, and native DER signature interoperability.
 
+### Changed
+
+- Update BLE GATT primary service and characteristic UUIDs.
+

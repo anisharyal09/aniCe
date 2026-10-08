@@ -39,8 +39,8 @@ data class PairingQR(val rendezvous: ByteArray, val secret: ByteArray, val finge
 }
 
 object PairingCodec {
-    const val WRITE_UUID = "414E4953-4853-4149-4A49-4C4365090903"
-    const val INDICATE_UUID = "414E4953-4853-4149-4A49-4C4365090904"
+    const val WRITE_UUID = "414E4953-4843-654A-494C-534149303903"
+    const val INDICATE_UUID = "414E4953-4843-654A-494C-534149303904"
 
     fun number(n: Long, size: Int): ByteArray =
         ByteArray(size) { (n ushr ((size - it - 1) * 8)).toByte() }

@@ -7,17 +7,17 @@ Status: accepted for implementation; radio and hardware acceptance pending.
 When an Android central connects to a macOS peripheral across alternating discovery and pairing operations, Android's Bluetooth stack (`BluetoothGatt`) caches remote GATT attribute tables in memory, indexed by Bluetooth address.
 
 In earlier implementations:
-1. The macOS peripheral dynamically mutated its attribute table between discovery (exposing only characteristic `0902`) and pairing (exposing `0902`, `0903`, `0904`).
+1. The macOS peripheral dynamically mutated its attribute table between discovery (exposing only characteristic `303902`) and pairing (exposing `303902`, `303903`, `303904`).
 2. The peripheral database was cleared and rebuilt upon each advertising stop and start.
-3. Consequently, an Android device that previously performed discovery retained an in-memory attribute table containing only `0902`. Upon connecting for pairing, Android's `discoverServices()` resolved against its local cache in milliseconds without over-the-air queries, reporting zero pairing characteristics and terminating setup.
+3. Consequently, an Android device that previously performed discovery retained an in-memory attribute table containing only `303902`. Upon connecting for pairing, Android's `discoverServices()` resolved against its local cache in milliseconds without over-the-air queries, reporting zero pairing characteristics and terminating setup.
 
 ## Decisions
 
 ### 1. Stable Peripheral Attribute Layout
-- From initial peripheral manager startup, macOS publishes a single fixed primary GATT service (`414E4953-4853-4149-4A49-4C4365090901`) containing all three characteristics:
-  - `0902`: Read (discovery compatibility probe)
-  - `0903`: Write with response (pairing/session incoming control pipe)
-  - `0904`: Indicate (pairing/session outgoing reply pipe)
+- From initial peripheral manager startup, macOS publishes a single fixed primary GATT service (`414E4953-4843-654A-494C-534149303901`) containing all three characteristics:
+  - `303902`: Read (discovery compatibility probe)
+  - `303903`: Write with response (pairing/session incoming control pipe)
+  - `303904`: Indicate (pairing/session outgoing reply pipe)
 - This attribute profile remains registered across discovery, pairing, trusted-session, and idle windows.
 - Stopping discovery or pairing stops BLE advertising and clears application session callbacks, while preserving the published GATT database.
 - Attribute access is gated at the application layer: reads fail outside an active discovery window, and pairing writes/indications are rejected without an explicit active invitation.

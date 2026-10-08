@@ -4,8 +4,8 @@ import Foundation
 enum DiscoveryState: String { case idle, permissionNeeded, bluetoothOff, discovering, found, connecting, ready, failed }
 
 enum BlePayloadCodec {
-    static let serviceUUID = "414E4953-4853-4149-4A49-4C4365090901"
-    static let characteristicUUID = "414E4953-4853-4149-4A49-4C4365090902"
+    static let serviceUUID = "414E4953-4843-654A-494C-534149303901"
+    static let characteristicUUID = "414E4953-4843-654A-494C-534149303902"
     struct Payload: Equatable { let flags: UInt16; let nonce: Data }
     enum Failure: Error { case length, version }
     static func decode(_ data: Data) throws -> Payload {

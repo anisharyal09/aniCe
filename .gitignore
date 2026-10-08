@@ -50,6 +50,8 @@ target/
 # Private planning and local design references
 for-me/
 for-me.*
+docs/plans/
+docs/plans
 
 
 !.agents/RULES.md

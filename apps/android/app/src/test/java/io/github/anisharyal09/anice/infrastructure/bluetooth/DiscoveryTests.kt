@@ -7,6 +7,16 @@ import org.junit.Test
 
 class DiscoveryTests {
     private fun hex(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+    @Test fun discoveryUuidsMatchCanonicalLayout() {
+        val serviceUuid = java.util.UUID.fromString(BlePayloadCodec.SERVICE_UUID)
+        val charUuid = java.util.UUID.fromString(BlePayloadCodec.CHARACTERISTIC_UUID)
+        assertEquals("414e4953-4843-654a-494c-534149303901", serviceUuid.toString().lowercase())
+        assertEquals("414e4953-4843-654a-494c-534149303902", charUuid.toString().lowercase())
+        assertEquals("414E4953-4843-654A-494C-534149303901", BlePayloadCodec.SERVICE_UUID)
+        assertEquals("414E4953-4843-654A-494C-534149303902", BlePayloadCodec.CHARACTERISTIC_UUID)
+    }
+
     @Test fun sharedVectors() {
         val resource = checkNotNull(javaClass.classLoader?.getResourceAsStream("discovery-vectors.json"))
         val fixture = JSONObject(resource.bufferedReader().use { it.readText() })
