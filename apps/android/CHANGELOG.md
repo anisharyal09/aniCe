@@ -32,6 +32,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Retire controller state and transport on authenticated Mac closure, manual disconnect and renewal requiring manual reconnection; explicitly qualify cleanup inside coroutine receivers and publish terminal feedback before retry observation.
+- Restore companion ownership on same-instance rebind without presence replay and reject stale unbound callbacks.
 - Read private Cargo, Rustup and NDK paths during native pairing builds; preserve explicit environment overrides.
 - Cancel retired Resume results and lookup failures before they can overwrite Stop or newer setup.
 - Scope automatic connection settings, reset and checks to the displayed Mac; retire the previous association on explicit replacement.

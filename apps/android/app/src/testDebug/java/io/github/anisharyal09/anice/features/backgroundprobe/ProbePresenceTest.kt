@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies companion binding, stale callbacks and combined radio presence boundaries.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import org.junit.Assert.*
@@ -23,6 +24,7 @@ class ProbePresenceTest {
   }
   @Test fun duplicateEventsAndAdvertisingLossDoNotRetireConnectedOwnership() {
     val presence = ProbePresence()
+    presence.bind()
     assertTrue(presence.event(1, true))
     assertTrue(presence.event(1, true)) // Resuming observation may repeat a cached presence event.
     assertTrue(presence.event(2, true))
@@ -34,6 +36,9 @@ class ProbePresenceTest {
     assertTrue(presence.event(1, true))
     presence.clear()
     assertFalse(presence.present)
+    assertFalse(presence.event(1, true)) // A queued callback cannot restore an unbound service.
+    presence.bind()
+    assertTrue(presence.present) // Rebind restores unknown facts without requiring a replay.
     assertTrue(presence.event(1, true))
     presence.retire()
     assertFalse(presence.event(1, true))

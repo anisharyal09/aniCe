@@ -14,7 +14,7 @@ Automated unit and integration test suites validate core protocol contracts. Phy
 ## Phase 5 milestones
 
 - 5A: native method-0/suite-5 EDHOC, ADR 0005, deterministic CCS/CBOR/CDDL, strict DER/COSE adapters, independent Python oracle, three valid/21 invalid vectors.
-- Background connections: shared ownership, companion-owned nearby retry, Mac automatic availability, encrypted liveness and coordinated fresh-session renewal implemented. One automatic switch per device; Disconnect pauses recovery. Android Release ownership remains gated pending current-build physical range/process/address/endurance acceptance. Foreground-service fallback and reboot recovery remain deferred. [Implementation boundary](BACKGROUND_CONNECTIONS.md).
+- Background connections: shared ownership, companion-owned nearby retry, Mac automatic availability, encrypted liveness and coordinated fresh-session renewal implemented. One automatic switch per device; Disconnect pauses recovery on that device. Authenticated peer closure preserves eligible nearby recovery on the other device. Android Release ownership remains gated pending current-build physical range/process/address/endurance acceptance. Foreground-service fallback and reboot recovery remain deferred. [Implementation boundary](BACKGROUND_CONNECTIONS.md).
 - Baseline runtime coverage: API 29 and macOS 14 runtime verification remain pending.
 - 5B/5C: directional AES-GCM records, shared GATT v2, readiness, lifecycle and explicit connection UI implemented. Independent record fixtures, native test suites, and isolated interchange harnesses validate bidirectional 4,000-byte payloads and lifecycle cleanup. Mac supports shared allowed-device selection with full credential pinning.
 

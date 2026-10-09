@@ -17,7 +17,7 @@ Notification-free support remains gated: `companion_probe_supported` is false in
 | 33–35 | Address observation; callbacks matched by association ID |
 | 36 | Association-ID requests; separate BLE advertisement and Bluetooth-connection events |
 
-The nonexported setup activity and service live in main sources. The service requires `android.permission.BIND_COMPANION_DEVICE_SERVICE`; the build gate controls its enabled state. Native service creation restores ownership after process replacement even when CDM omits the previous presence callback. Duplicate events reacquire a resumed lease; unbind/destruction releases it. Every attempt revalidates the native association and pinned trust. On API 36, advertisement loss alone does not retire a transport while Bluetooth presence remains active. Association addresses are normalized to uppercase for `BluetoothAdapter`; temporary addresses are never trust credentials.
+The nonexported setup activity and service live in main sources. The service requires `android.permission.BIND_COMPANION_DEVICE_SERVICE`; the build gate controls its enabled state. Native service creation and same-instance `onRebind` restore ownership even when CDM omits cached presence callbacks. `onUnbind` requests rebind notification and clears the lease; callbacks delivered while unbound cannot restore it. Destruction permanently retires that instance. Duplicate events reacquire a resumed lease. Every attempt revalidates the native association and pinned trust. On API 36, advertisement loss alone does not retire a transport while Bluetooth presence remains active. Association addresses are normalized to uppercase for `BluetoothAdapter`; temporary addresses are never trust credentials.
 
 ## Android policy
 
@@ -31,6 +31,7 @@ A live service lease serializes attempts. Transient failures retry after 2, 5, 1
 | --- | --- |
 | Presence appears / duplicate callback | Acquire the system lease; start or retain one pinned attempt |
 | Service disappearance/unbind | Cancel attempts/retries; retire session; wait for presence |
+| System rebind of the same service | Restore unknown presence facts and restart only enabled, unpaused, trusted setup |
 | Transient disconnect or missed PONG | Retire old operation; bounded retry only while owned and permitted |
 | Disconnect | Persist pause before teardown; stop retries/access; retain association and native observation |
 | Switch off | Save automatic off and paused atomically; stop observation/access |
@@ -41,6 +42,8 @@ A live service lease serializes attempts. Transient failures retry after 2, 5, 1
 | Reset connection setup | Invalidate chooser jobs, release keys/access, remove only its association |
 
 Stop invalidates chooser/setup/session generations before disk or suspended crypto work. Resume reserves its generation before association/trust validation; retired results and failures become cancellation, so callers cannot re-enable or pause a newer setup. A failed preference write cannot retain live application access. Pause retains observation but runs no connection/retry work; disabling stops observation. Restored system bindings treat an omitted presence source as unknown until its callback or native unbind, rather than inventing an absence. Restored configuration requires the original local identity and an active matching peer. OS rebinding can recover a process; force-stop has no automatic-recovery promise. Reboot recovery is not enabled.
+
+An authenticated Mac CLOSE retires Android's operation generation, releases its channel and GATT transport, and publishes disconnected state with terminal feedback. Nearby retry remains eligible only with enabled, unpaused policy and native ownership. Coroutine cleanup explicitly targets `SessionController`; cancelling its worker alone leaves stale presentation and transport ownership.
 
 ## Mac policy
 
@@ -58,5 +61,14 @@ Automatic renewal starts at 55 minutes or `2^20 − 1024` records in either dire
 
 Hard bounds remain: ten-second readiness, 120-second idle, one-hour age, `2^20` records/direction, 4,000-byte plaintext, 4,096-byte logical messages and eight queued messages/32 KiB. All deadlines are monotonic; Android elapsed realtime includes sleep. OS suspension may miss a deadline and disconnect. Owned mutable secrets are overwritten and key objects released; JVM/Swift zeroization is best effort.
 
-References: [Android background BLE](https://developer.android.com/develop/connectivity/bluetooth/ble/background), [CompanionDeviceService](https://developer.android.com/reference/android/companion/CompanionDeviceService), [Secure session profile](../protocol/session/README.md).
+## Reconnect acceptance
 
+1. Establish an automatic connection with the phone locked. Mac Disconnect pauses admission; verify Android leaves Secured after authenticated CLOSE and Mac remains unavailable while paused.
+2. Re-enable Mac Connect automatically with the phone untouched. Allow the existing retry backoff, capped at 60 seconds, plus connection/authentication time. Verify fresh EDHOC/readiness without opening the phone app, toggling Bluetooth or sending diagnostic checks.
+3. Repeat with the phone removed from Recents. Pause/disable Android automatic setup and verify Mac availability cannot restart a stopped phone policy.
+
+`ProbePresenceTest` covers unbound/stale events and missing-fact recovery. `CompanionBindingTest` injects same-instance framework callbacks on an unconfigured installation; it checks rebind, invalid intents, destroyed-instance retirement and unchanged identity/trust journals/preferences. Callback injection does not establish actual CDM/radio recovery.
+
+`PhysicalSessionNavigationTest.authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery` requires `physicalMacClose=<selected Mac device ID>` and existing automatic setup. It observes authenticated CLOSE, requires controller retirement within two seconds, then requires a distinct secured channel with negotiated controls after Mac automatic availability is re-enabled. Identity/trust bytes must remain unchanged.
+
+References: [Android background BLE](https://developer.android.com/develop/connectivity/bluetooth/ble/background), [CompanionDeviceService](https://developer.android.com/reference/android/companion/CompanionDeviceService), [Secure session profile](../protocol/session/README.md).

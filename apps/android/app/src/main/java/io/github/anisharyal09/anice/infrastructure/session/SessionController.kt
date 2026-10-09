@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns serialized BLE sessions, native background leases and observable connection state.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import android.Manifest
@@ -259,8 +260,7 @@ class SessionController(application: Application) {
                     if (op == operation) renewalReason = engine.renewalReason
                     if (op == operation) publishProgress()
                     if (op == operation && renewalReason != null && !automaticAttempt) {
-                      cancel()
-                      status = "This session needs a fresh connection. Connect again."
+                      this@SessionController.cancel("This session needs a fresh connection. Connect again.")
                     }
                   } catch (e: CancellationException) {
                     throw e
@@ -282,8 +282,8 @@ class SessionController(application: Application) {
             inputBytes -= bytes.size
             inputCount--
             if (engine.isClosed) {
-              cancel()
-              status = "Your Mac ended the connection."
+              // CoroutineScope.cancel(String) only stops this worker; retire the controller and publish state.
+              this@SessionController.cancel("Your Mac ended the connection.")
               break
             }
           }
@@ -326,11 +326,11 @@ class SessionController(application: Application) {
           engine?.disconnect()
         } catch (_: Exception) {}
       }
-      if (op == operation) cancel()
+      if (op == operation) this@SessionController.cancel()
     }
   }
 
-  fun cancel() {
+  fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++
     controlSupport = null
@@ -349,7 +349,8 @@ class SessionController(application: Application) {
     old?.retire()
     scope.launch(Dispatchers.IO) { old?.close() }
     state = ConnectionState.DISCONNECTED
-    status = "Open Allow connections on your Mac to reconnect."
+    // Publish terminal feedback with state; a resumed retry may immediately replace both.
+    status = message
     publishProgress()
   }
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies shared Android session ownership and authenticated teardown against a physical Mac.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -14,9 +15,57 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Opt-in radio regression: requires an existing trusted Mac with Allow connections open. */
+/** Opt-in physical BLE regressions; each method requires its runner argument and Mac setup. */
 @RunWith(AndroidJUnit4::class)
 class PhysicalSessionNavigationTest {
+  @Test fun authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery() = runBlocking {
+    val peerId = InstrumentationRegistry.getArguments().getString("physicalMacClose")
+    assumeTrue("Supply physicalMacClose with automatic setup and a physical Mac", peerId != null)
+    val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
+    val controller = app.sessionController
+    val policy = CompanionProbe.get(app)
+    val identityFile = File(app.noBackupFilesDir, "identity-v1.json")
+    val trustFile = File(app.noBackupFilesDir, "trusted_peers.json")
+    val beforeIdentity = identityFile.readBytes()
+    val beforeTrust = trustFile.readBytes()
+    // Observe the actual encrypted channel; no synthetic presence or peer-close state is injected.
+    val field = controller.javaClass.getDeclaredField("connection").apply { isAccessible = true }
+    try {
+      withTimeout(90000) {
+        while (withContext(Dispatchers.Main) {
+          controller.state != ConnectionState.SECURED || controller.controlSupport != true
+        }) delay(50)
+      }
+      val old = withContext(Dispatchers.Main) {
+        assertTrue(policy.armed)
+        assertEquals(peerId, policy.peerId)
+        assertTrue(controller.hasCompanionOwner)
+        field.get(controller) as io.github.anisharyal09.anice.infrastructure.session.SessionConnection
+      }
+      android.util.Log.i("aniCe-close-test", "secured; disconnect Mac now")
+      withTimeout(60000) { while (!old.closedByPeer) delay(20) }
+      withTimeout(2000) {
+        while (withContext(Dispatchers.Main) { controller.state == ConnectionState.SECURED }) delay(20)
+      }
+      withContext(Dispatchers.Main) {
+        assertTrue(old.isClosed)
+        assertNotSame(old, field.get(controller))
+        assertNotEquals(ConnectionState.SECURED, controller.progress.value.state)
+        assertTrue(policy.armed) // Remote Disconnect does not pause Android's recovery policy.
+      }
+      android.util.Log.i("aniCe-close-test", "close retired; enable Mac automatic now")
+      withTimeout(90000) {
+        while (withContext(Dispatchers.Main) {
+          controller.state != ConnectionState.SECURED || controller.controlSupport != true
+        }) delay(50)
+      }
+      withContext(Dispatchers.Main) { assertNotSame(old, field.get(controller)) }
+    } finally {
+      assertArrayEquals(beforeIdentity, identityFile.readBytes())
+      assertArrayEquals(beforeTrust, trustFile.readBytes())
+    }
+  }
+
   /** Instruments a real OS-owned lease; the runner does not establish process-death recovery. */
   @Test fun automaticOwnerSurvivesRecentsRemovalAndQuietKeepalive() = runBlocking {
     val peerId = InstrumentationRegistry.getArguments().getString("physicalAutomatic")

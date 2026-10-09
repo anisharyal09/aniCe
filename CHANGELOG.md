@@ -39,6 +39,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Fixed
 
+- Retire Android session state and transport after authenticated Mac Disconnect instead of cancelling only its coroutine worker.
+- Restore automatic BLE ownership on same-instance Android companion service rebind and reject callbacks after unbind.
 - Resolve native pairing tool paths from private project configuration for IDE builds without shell overrides.
 - Prevent stopped background setup from restarting through delayed validation; preserve newer radio modes and scope device settings to their selected relationship.
 - Restore native Android background ownership after pause/process rebinding and remove presentation-dependent retry observation.

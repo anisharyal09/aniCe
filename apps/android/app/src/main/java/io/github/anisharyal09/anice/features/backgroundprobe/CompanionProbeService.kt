@@ -18,12 +18,14 @@ class CompanionProbeService : CompanionDeviceService() {
   private val probe get() = CompanionProbe.get(this)
   override fun onCreate() {
     super.onCreate()
-    // Only CDM creates this service in aniCe; rebinding after process death may omit presence replay.
-    // The native binding owns execution, while every attempt still validates association and pinned trust.
+    restoreBinding()
+  }
+  private fun restoreBinding() {
+    // CDM can rebind a surviving instance without replaying its cached presence callbacks.
     presence.bind()
     if (Build.VERSION.SDK_INT < 36) presence.event(2, false) // Older APIs expose only BLE presence.
     association = "${probe.associationId}/${probe.address}"
-    probe.appeared(this)
+    if (presence.present) probe.appeared(this)
   }
   override fun onDeviceAppeared(address: String) {
     if (Build.VERSION.SDK_INT < 33 && address == probe.address) changed(1, true)
@@ -49,6 +51,8 @@ class CompanionProbeService : CompanionDeviceService() {
     }
   }
   private fun changed(source: Int, appeared: Boolean) {
+    // Queued callbacks after unbind cannot claim a new association or recreate its lease.
+    if (!presence.bound) return
     val current = "${probe.associationId}/${probe.address}"
     if (association != current) {
       presence.bind()
@@ -63,7 +67,11 @@ class CompanionProbeService : CompanionDeviceService() {
     probe.disappeared(this)
     // The platform can bind this same service instance again; clear sources without permanently retiring it.
     presence.clear()
-    return super.onUnbind(intent)
+    return intent.action == SERVICE_INTERFACE
+  }
+  override fun onRebind(intent: Intent) {
+    super.onRebind(intent)
+    if (intent.action == SERVICE_INTERFACE) restoreBinding()
   }
   override fun onDestroy() {
     presence.retire()
