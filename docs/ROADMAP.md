@@ -14,6 +14,7 @@ Automated unit and integration test suites validate core protocol contracts. Phy
 ## Phase 5 milestones
 
 - 5A: native method-0/suite-5 EDHOC, ADR 0005, deterministic CCS/CBOR/CDDL, strict DER/COSE adapters, independent Python oracle, three valid/21 invalid vectors.
+- Background connections: debug-only companion association probe and application-scoped session controller implemented. Physical test-screen navigation and locked-screen operation validated; long-duration endurance and recovery remain pending physical verification. Production automatic connection, keepalive/renewal, reboot recovery, and foreground-service fallback remain unimplemented. [Feasibility boundary](BACKGROUND_CONNECTIONS.md).
 - Baseline runtime coverage: API 29 and macOS 14 runtime verification remain pending.
 - 5B/5C: directional AES-GCM records, shared GATT v2, readiness, lifecycle and explicit connection UI implemented. Independent record fixtures, native test suites, and isolated interchange harnesses validate bidirectional 4,000-byte payloads and lifecycle cleanup. Mac supports shared allowed-device selection with full credential pinning.
 

@@ -168,6 +168,15 @@ class AndroidGattTransport(
     )
   }
 
+  /** An associated address selects a transport candidate; EDHOC still authenticates its pinned key. */
+  fun startCandidate(device: BluetoothDevice) {
+    close()
+    closedCallback = false
+    closing = false
+    locating = false
+    connect(device)
+  }
+
   fun select(row: Long) {
     val device = candidates.values.firstOrNull { it.first == row }?.second ?: return
     stopScan()

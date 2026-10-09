@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -44,6 +46,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>) {
           },
           onDisconnect = model::disconnect,
           onCheck = model::checkConnection,
+          probePeerId = record.peer.deviceId,
         )
       }
       if (index < peers.lastIndex)
@@ -62,7 +65,15 @@ fun DeviceSessionCard(
   onConnect: () -> Unit,
   onDisconnect: () -> Unit,
   onCheck: () -> Unit,
+  probePeerId: String? = null,
 ) {
+  val context = LocalContext.current
+  // The component exists only in debug APKs; release builds expose no experimental setup.
+  val probeIntent = remember(probePeerId) {
+    Intent().setClassName(context, "io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbeActivity")
+      .putExtra("peer", probePeerId)
+  }
+  val hasProbe = probePeerId != null && context.packageManager.resolveActivity(probeIntent, 0) != null
   var menu by remember { mutableStateOf(false) }
   val statusColor =
     when (state) {
@@ -123,6 +134,10 @@ fun DeviceSessionCard(
             Text("More")
           }
           DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (hasProbe) DropdownMenuItem(text = { Text("Background connection test") }, onClick = {
+              menu = false
+              context.startActivity(probeIntent)
+            })
             DropdownMenuItem(
               text = { Text("Send connection check") },
               onClick = {

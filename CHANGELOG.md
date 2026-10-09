@@ -10,6 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Debug-only Android companion-device feasibility experiment with shared session ownership and native lifecycle checks.
+
 - Trusted-device BLE session integration with encrypted readiness, replay-protected directional AES-GCM records, lifecycle cleanup, shared GATT framing and explicit connection controls.
 - Independent Python conformance oracle for record framing and test vectors covering directional AES-GCM traffic.
 - Strict native-session instrumentation checks and adversarial runner/cleanup tests with automated verification metadata.

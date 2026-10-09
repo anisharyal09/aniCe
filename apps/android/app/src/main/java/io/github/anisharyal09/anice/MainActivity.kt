@@ -57,13 +57,13 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         if (::discovery.isInitialized) discovery.foreground()
         if (::pairing.isInitialized) pairing.foreground()
-        if (::session.isInitialized) session.foreground()
+        if (::session.isInitialized) session.foreground(this)
     }
 
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations && ::discovery.isInitialized) discovery.background()
         if (!isChangingConfigurations && ::pairing.isInitialized) pairing.background()
-        if (!isChangingConfigurations && ::session.isInitialized) session.background()
+        if (::session.isInitialized) session.background(this, isChangingConfigurations)
     }
 }

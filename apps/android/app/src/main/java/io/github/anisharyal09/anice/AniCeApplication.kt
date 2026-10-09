@@ -8,6 +8,11 @@ import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetad
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 
 class AniCeApplication : Application() {
+    // UI and system-bound probe share one transport/operation owner; sessions never enter durable storage.
+    val sessionController by lazy {
+        io.github.anisharyal09.anice.infrastructure.session.SessionController(this)
+    }
+
     @Volatile
     private var sharedTrust: io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustStore? =
         null

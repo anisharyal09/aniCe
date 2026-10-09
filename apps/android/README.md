@@ -2,7 +2,7 @@
 
 Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Comprehensive manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness and connection controls are implemented. Over-the-air BLE radio inspection, minimum-OS baseline coverage, and independent security review remain pending.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness and connection controls are implemented. Physical API 36 verification confirms authenticated BLE, connection retention across test-screen navigation, and locked-screen operation. Long-duration endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
 
 ## Nearby discovery
 
@@ -14,7 +14,7 @@ Android finds nearby aniCe candidates using a service-filtered foreground scan, 
 app/
   src/main/
     java/io/github/anisharyal09/anice/
-      AniCeApplication.kt           Application-scoped identity service
+      AniCeApplication.kt           Shared identity, trust and session owners
       MainActivity.kt               Activity entry point and UI host
       app/
         AppRoot.kt                  Navigation and safe insets
@@ -26,6 +26,7 @@ app/
         IdentityService.kt          Identity lifecycle and signing
         AndroidIdentityStorage.kt   Keystore and atomic metadata
       features/discovery/          Nearby screen and lifecycle ViewModel
+      features/session/            Thin session ViewModel and connection UI
       infrastructure/bluetooth/    Scan/GATT adapter, codec, coordinator
       infrastructure/session/     EDHOC, records, ordering owner, native codecs
       ui/theme/
@@ -34,13 +35,16 @@ app/
     AndroidManifest.xml             Application declarations
   src/test/                         JVM validation and lifecycle tests
   src/androidTest/                  Native Keystore and interchange tests
+  src/debug/                        Companion probe UI/service and declarations
+  src/testDebug/                    Probe presence-state unit test
+  src/androidTestDebug/             Native probe checks and opt-in radio test
   build.gradle.kts                  App configuration and dependencies
 gradle/wrapper/                     Gradle wrapper configuration
 build.gradle.kts                    Build plugins
 settings.gradle.kts                 Modules and repositories
 ```
 
-Kotlin uses the standard `src/main/java/` source root. Tests mirror the identity infrastructure package. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
+Kotlin uses the standard `src/main/java/` source root. Tests mirror the native infrastructure and feature packages. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
 
 ## Run and check
 
@@ -70,3 +74,7 @@ Home → Pair your Mac offers QR scanning and six-digit entry. Camera access is 
 ## Secure sessions
 
 Mac selects an allowed Android (or Any trusted Android) and opens **Allow connections**; Android selects a trusted Mac on Home and taps **Connect**. Both show **Secured** after encrypted readiness. Android identifies each entry with eight fingerprint hex digits; Mac admits one candidate at a time and pins a selected Android’s complete credential. **Send connection check** tests the live path in either direction; Disconnect and Retry require a fresh handshake. LAN and feature synchronization remain deferred.
+
+## Background connection experiment
+
+Debug builds expose **More → Background connection test** for a secured trusted Mac. Opening or leaving the screen preserves the manual connection while an app activity stays visible; **Start setup** explicitly disconnects it for association. Background retention requires ownership by the system-bound companion service. Manual connections without that lease still close on backgrounding or screen lock. Release builds exclude the probe and companion permissions. Production automatic connection, service fallback, reboot recovery, keepalive and renewal are unimplemented. [Implementation boundary and physical test steps](../../docs/BACKGROUND_CONNECTIONS.md).
