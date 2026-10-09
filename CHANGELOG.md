@@ -10,6 +10,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Architecture overview (`ARCHITECTURE.md`) documenting shared identity, mutual trust bootstrap, secure session profiles, and independent native BLE/LAN transport ownership.
 - Independent authenticated LAN sessions alongside BLE, with explicit transport controls, pinned same-peer ownership and bounded native TCP framing.
 
 - Automatic nearby BLE recovery, shared Mac availability and coordinated fresh-session renewal; notification-free Android Release ownership remains gated by physical acceptance.
@@ -29,6 +30,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Simplify the README around a device-focused introduction with Android/macOS as initial platforms; move the architecture overview to root ARCHITECTURE.md and correct identity protection, transport ownership, renewal and platform baseline descriptions.
+- Update repository structure trees, documentation links, and active contracts across root, Android, macOS, and protocol READMEs.
 - Reduce secured BLE maintenance frequency while retaining per-operation trust and deadline checks; remove redundant Android identity signing during ordinary reads.
 - Add concise purpose headers across source, configuration and design assets; replace conversational documentation attribution with technical verification facts.
 - Update Bluetooth Low Energy GATT service and characteristic UUIDs.

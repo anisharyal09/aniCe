@@ -21,5 +21,6 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Update active contracts table, add trusted-device sessions and LAN binding sections, and update directory layout with LAN specifications and test vectors in README.
 - Clarify manual verification boundaries and add purpose summaries to oracle regression modules and dependency configuration.
 - Update BLE GATT primary service and characteristic UUIDs.

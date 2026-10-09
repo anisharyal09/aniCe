@@ -14,6 +14,7 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
 | **Trusted-device sessions** | `1` | Implemented; acceptance pending | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
+| **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 
 ---
 
@@ -79,7 +80,29 @@ Full specification, byte framing, cryptographic derivation, and lifetime rules a
 
 ---
 
-## 4. Directory Layout & Shared Fixtures
+## 4. Trusted-Device Sessions Contract (`v1`)
+
+Full specification, record framing, CBOR definitions, and keepalive controls are documented in [`session/README.md`](session/README.md).
+
+- **Handshake:** RFC 9528 EDHOC method 0, cipher suite 5 (P-256, SHA-256, ChaCha20-Poly1305), mandatory message 4.
+- **Application Records:** AES-256-GCM, directional 64-bit sequence counters, 4,000-byte plaintext limit.
+- **Liveness & Renewal:** Encrypted HELLO/ACK, PING/PONG keepalive, and coordinated session renewal before lifetime or sequence limits.
+- **BLE Transport:** Session v2 fragmentation header, 10-second reassembly deadline, 32 KiB queue limit.
+
+---
+
+## 5. LAN Binding Contract (`v1`)
+
+Full specification, DNS-SD locator rules, and TCP stream framing are documented in [`lan/README.md`](lan/README.md).
+
+- **Discovery:** `_anice._tcp` DNS-SD service registration with anonymous instance name (`aniCe-<UUID>`) and `v=1` TXT record.
+- **Stream Framing:** 5-byte header (`version:u8=1`, `length:u32BE`) preceding logical session envelope (2–4096 bytes).
+- **Transport Security:** Independent fresh EDHOC session and directional AES-GCM records over TCP.
+- **Coexistence:** Shared peer reservation permits concurrent BLE and LAN sessions only to the same pinned peer.
+
+---
+
+## 6. Directory Layout & Shared Fixtures
 
 ```text
 protocol/
@@ -89,6 +112,8 @@ protocol/
 │   └── README.md                  # BLE discovery wire format & lifecycle
 ├── fixtures/
 │   └── identity/                  # Sample valid JSON records (android.json, macos.json)
+├── lan/
+│   └── README.md                  # Local network stream framing and mDNS discovery contract
 ├── pairing/
 │   └── README.md                  # Pairing protocol, framing, cryptography & state machine
 ├── schemas/
@@ -101,6 +126,9 @@ protocol/
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
     ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
     ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
+    ├── lan/
+    │   ├── lan-vectors.json       # Positive & negative TCP stream envelope framing vectors
+    │   └── generate_lan_vectors.py # Independent Python oracle and fixture generator
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
     └── session/
@@ -111,7 +139,3 @@ protocol/
         ├── requirements.txt      # Pinned independent Python crypto/CBOR oracle dependencies
         └── *.py                  # Fixture generation and independent oracle regressions
 ```
-
-## LAN binding
-
-[LAN v1](lan/README.md) defines anonymous DNS-SD locators and bounded TCP envelope framing. `test-vectors/lan/lan-vectors.json` is a comment-free shared framing fixture consumed by Android and Mac tests; `generate_lan_vectors.py` independently encodes and checks its inventory with Python struct.

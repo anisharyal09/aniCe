@@ -24,6 +24,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Update Android code structure tree, test inventory, and manual LAN documentation in README.
 - Load existing identity state without a signing challenge; retain creation/reset proof and validate the active journal binding and requested signature before return.
 - Run secured-session maintenance once per second while retaining 200 ms authentication/readiness checks and native companion recovery.
 - Add file-purpose summaries to Android sources, tests, resources, manifest and build configuration.

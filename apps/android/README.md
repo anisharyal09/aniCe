@@ -2,7 +2,7 @@
 
 Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Comprehensive manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Physical API 36 verification covers authenticated BLE, settings navigation, Pause/Resume and 190 seconds of quiet secured traffic after Recents removal. Locked-screen endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations. Physical API 36 verification covers authenticated BLE and LAN sockets, settings navigation, Pause/Resume and 190 seconds of quiet secured traffic after Recents removal. Locked-screen endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
 
 Automatic nearby recovery uses an OS-bound companion lease and one device setting. Release ownership remains disabled pending physical companion acceptance; Debug API 31+ exercises it. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records policy and hardware gates.
 
@@ -20,24 +20,28 @@ app/
       MainActivity.kt               Activity entry point and UI host
       app/
         AppRoot.kt                  Navigation and safe insets
+        HomeScreen.kt               Device list and contextual actions
       features/deviceidentity/
         DeviceIdentityScreen.kt     Details, copying, reset confirmation
         DeviceIdentityViewModel.kt  Presentation state and async requests
+      features/discovery/           Nearby screen and lifecycle ViewModel
+      features/pairing/             Camera scanning, PIN entry, approval UI
+      features/session/             Session ViewModel, panels and connection feedback
+      features/backgroundprobe/     Native companion setup/service and automatic policy
       infrastructure/identity/
         DeviceIdentity.kt           Public identity validation and encoding
         IdentityService.kt          Identity lifecycle and signing
         AndroidIdentityStorage.kt   Keystore and atomic metadata
-      features/discovery/          Nearby screen and lifecycle ViewModel
-      features/session/            Thin session ViewModel and connection UI
-      features/backgroundprobe/    Native companion setup/service and automatic policy
-      infrastructure/bluetooth/    Scan/GATT adapter, codec, coordinator
-      infrastructure/session/     EDHOC, records, ordering owner, native codecs
+      infrastructure/bluetooth/     Scan/GATT adapter, codec, coordinator
+      infrastructure/lan/           NSD discovery, TCP transport, stream framing, resolution lane
+      infrastructure/pairing/       Native PAKE JNI, pairing codec, engine, trust store
+      infrastructure/session/       EDHOC, records, ordering owner, envelope, peer reservation
       ui/theme/
         Theme.kt                    Semantic Material palette
     res/                            Strings, icons, themes, backup rules
     AndroidManifest.xml             Application declarations
-  src/test/                         JVM validation and lifecycle tests
-  src/androidTest/                  Native Keystore and interchange tests
+  src/test/                         JVM validation, pairing, session, and LAN unit tests
+  src/androidTest/                  Native Keystore, session, LAN, and ownership tests
   src/debug/                        API 31+ companion ownership build gate
   src/testDebug/                    Probe presence-state unit test
   src/androidTestDebug/             Native probe checks and opt-in radio test

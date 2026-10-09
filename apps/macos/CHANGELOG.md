@@ -22,6 +22,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Update macOS code structure tree, test inventory, and manual LAN documentation in README.
 - Switch the single session-maintenance timer to one second after readiness, restoring 200 ms admission checks and invalidating retired timers.
 - Document source/configuration responsibilities and session invariants inline: trust revalidation, nonce ownership, readiness, bounded fragmentation, submission semantics and best-effort secret cleanup.
 - Load existing public identity state without a startup signing challenge; retain creation/reset checks and verification of requested signatures.

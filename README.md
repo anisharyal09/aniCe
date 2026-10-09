@@ -1,44 +1,57 @@
 # aniCe
 
-A local-first companion for Android and macOS, built with Kotlin/Compose and Swift/SwiftUI.
+A native, local-first continuity bridge, starting with Android and macOS. Connects your phone and Mac directly over Bluetooth Low Energy and local-network TCP, using authenticated, encrypted sessions — no cloud accounts, external relays or telemetry.
 
-**Current phase: trusted-device secure sessions (verification pending).** Native EDHOC authenticates trusted peers and derives replay-protected AES-GCM records over BLE. Mac opens Allow connections; Android selects a trusted Mac and taps Connect. QR/PIN pairing and mutual trust approval remain available. Discovery remains unauthenticated; synchronization is planned.
+The goal is to bring the continuity of native single-vendor ecosystems (like Apple or Samsung) to Android and Mac setups, with room for other platforms. Built on standard cryptographic primitives, documented protocols and local transports.
 
-Automated and native unit/integration tests validate core contracts; physical BLE acceptance, minimum-OS coverage, and independent security review remain pending.
+The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. Physical acceptance and independent security review remain pending. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.
 
-## Repository structure
+---
+
+## Repository Structure
 
 ```text
+ARCHITECTURE.md         Shared identity, trust, sessions and transport ownership
 apps/
-  android/              Android app and tests
-  macos/                Mac app, Xcode project, and tests
+  android/              Android app and tests (Kotlin, Jetpack Compose, Material 3)
+  macos/                Mac app, Xcode project, and tests (Swift 6, SwiftUI, AppKit)
 protocol/
-  bluetooth/            BLE discovery contract
-  pairing/              Authenticated bootstrap and control-pipe contract
-  session/              EDHOC, encrypted records and BLE session contract
-  schemas/              Shared public identity contract
-  test-vectors/         Cryptographic verification cases
+  bluetooth/            BLE discovery contract (unauthenticated 20-byte probe)
+  lan/                  Local network stream framing and mDNS discovery contract
+  pairing/              Authenticated bootstrap and control-pipe contract (QR & OPAQUE PIN)
+  session/              EDHOC, encrypted records, controls and session envelopes
+  schemas/              Shared public identity contract (JSON Schema v1)
+  test-vectors/         Cryptographic verification cases (identity, pairing, session, LAN)
   fixtures/             Sample public identities
-scripts/                Identity/session interchange and native pairing builds
+scripts/                Identity/session/LAN interchange and native pairing builds
 docs/
   design/               Shared design guide
-  decisions/            Architecture decisions
+  decisions/            Architecture decisions (ADRs 0001–0006)
+  BACKGROUND_CONNECTIONS.md Background BLE lifecycle and gates
+  LAN_CONNECTIONS.md    Independent authenticated LAN connections
+  ROADMAP.md            Phased milestone status and verification gates
 .agents/                Operational coding context
-core/rust/              Pinned ephemeral OPAQUE bridge
+core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 tests/                  Reserved for system tests
 tools/                  Reserved for developer utilities
 ```
 
-## Development
+---
 
-- [Roadmap](docs/ROADMAP.md) · [Design guide](docs/design/DESIGN.md) · [Protocol](protocol/README.md)
-- [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md)
-- [Architecture decisions](docs/decisions/0001-provisional-device-identity.md) (ADR [0001](docs/decisions/0001-provisional-device-identity.md), [0002](docs/decisions/0002-provisional-ble-discovery.md), [0003](docs/decisions/0003-provisional-pairing-and-trust.md), [0004](docs/decisions/0004-stable-ble-attribute-layout.md), [0005](docs/decisions/0005-edhoc-secure-sessions.md))
+## Development & Architecture Decisions
 
-Android uses Keystore. The current ad-hoc Mac build uses development Keychain storage; signed Secure Enclave operation remains unverified. Android 10 and macOS 14 are provisional minimums.
+- **Architecture Overview:** [Identity, trust, sessions and transports](ARCHITECTURE.md)
+- **Architecture Decisions:** ADR [0001](docs/decisions/0001-provisional-device-identity.md) (Device Identity) · [0002](docs/decisions/0002-provisional-ble-discovery.md) (BLE Discovery) · [0003](docs/decisions/0003-provisional-pairing-and-trust.md) (Pairing & Trust) · [0004](docs/decisions/0004-stable-ble-attribute-layout.md) (GATT Layout) · [0005](docs/decisions/0005-edhoc-secure-sessions.md) (EDHOC Secure Sessions) · [0006](docs/decisions/0006-independent-lan-sessions.md) (Independent LAN Sessions)
+- **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
+- **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
+- **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md)
 
-Changes: [repository](CHANGELOG.md) · [Android](apps/android/CHANGELOG.md) · [macOS](apps/macos/CHANGELOG.md).
+Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. API 29/macOS 14 runtime acceptance remains pending. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
+
+---
+
+## License & Changelogs
 
 Licensed under [GPL-3.0-or-later](LICENSE).
 
-Pairing setup: [native toolchain](core/rust/pairing/README.md).
+Changelogs: [Repository](CHANGELOG.md) · [Android](apps/android/CHANGELOG.md) · [macOS](apps/macos/CHANGELOG.md) · [Protocol](protocol/CHANGELOG.md).

@@ -2,7 +2,7 @@
 
 Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Comprehensive manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness and negotiated encrypted keepalive are implemented. Current-build background radio endurance, minimum-OS baseline coverage, and independent security review remain pending. Manual Allow connections retains its 120-second admission window.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Current-build background radio endurance, minimum-OS baseline coverage, and independent security review remain pending. Manual Allow connections retains its 120-second admission window.
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records acceptance gates.
 
@@ -23,26 +23,35 @@ aniCe/
   Features/DeviceIdentity/
     IdentityView.swift              Details, copying, reset confirmation
     IdentityViewModel.swift         Presentation state and recovery
+  Features/Discovery/              Shared discovery model and view
+  Features/Pairing/                Shared pairing model, QR/PIN and trusted-device view
+  Features/Session/                Shared session model and view
   Infrastructure/Identity/
     DeviceIdentity.swift            Public identity validation and encoding
     IdentityService.swift           Actor-isolated lifecycle and signing
     MacIdentityStorage.swift        Keychain backends and atomic metadata
   Infrastructure/Bluetooth/        Peripheral adapter, codec, timed session
+  Infrastructure/LAN/              Bonjour listener, TCP transport, stream framing
   Infrastructure/Pairing/          Bootstrap engine, native crypto, trust journal, PAKE ABI
-  Infrastructure/Session/          EDHOC, record and ordering actors, native codecs
-  Features/Pairing/                Shared pairing model, QR/PIN and trusted-device view
-  Features/Discovery/              Shared discovery model and view
+  Infrastructure/Session/          EDHOC, records, ordering actors, envelope, peer reservation
   UI/
     Theme/AniCePalette.swift         Semantic light/dark colors
     Components/EmptyStateView.swift  Unpaired-state view
-  aniCe.entitlements                Sandbox configuration
+  Info.plist                       Bonjour declarations and local-network usage description
+  aniCe.entitlements                Sandbox client/server and hardware entitlements
 aniCeTests/
-  IdentityTests.swift               Hosted identity and storage tests
+  DiscoveryTests.swift             Discovery payload and timeout tests
+  IdentityTests.swift              Hosted identity and storage tests
+  LanTests.swift                   Stream framing, keepalive options and exclusion tests
+  PairingTests.swift               Hosted pairing and PAKE engine tests
+  SessionChannelTests.swift        Application record channel and limit tests
+  SessionTests.swift               EDHOC handshake, control and renewal tests
 IdentityInterchange/
   main.swift                        Test-only signature interchange endpoint
 SessionInterchange/
   main.swift                        Test-only protected-key EDHOC interchange endpoint
-aniCe.xcodeproj/                     Targets, source references, shared scheme
+  TcpInterchange.swift              Test-only native TCP interchange endpoint
+aniCe.xcodeproj/                    Targets, source references, shared scheme
 ```
 
 The window and companion share identity, connection state and the allowed-device selection. Allow connections freezes one selected Android credential or accepts any trusted Android, with only one admitted candidate at a time. The authenticated phone name is shown after readiness. The full nearby-discovery label toggles its content. When adding or moving Swift files, update Xcode target membership and any interchange compiler paths. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
