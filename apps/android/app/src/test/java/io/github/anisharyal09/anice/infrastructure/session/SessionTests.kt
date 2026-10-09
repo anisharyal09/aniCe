@@ -85,6 +85,7 @@ class SessionTests {
       }, if (server) null else peer)
     }
     val messages = mutableListOf<ByteArray>(); val exports = mutableListOf<ByteArray>()
+    val keys = mutableListOf<ByteArray>(); val ivs = mutableListOf<ByteArray>()
     repeat(3) {
       val c = fresh(false); val s = fresh(true)
       try {
@@ -96,11 +97,27 @@ class SessionTests {
         assertArrayEquals(exported, s.export(context, 32))
         assertTrue(messages.none { it.contentEquals(m1) }); assertTrue(exports.none { it.contentEquals(exported) })
         messages.add(m1); exports.add(exported)
+        keys.add(c.export(b(row, "exportContext-key-1"), 32))
+        ivs.add(c.export(b(row, "exportContext-iv-1"), 12))
       } finally { c.close(); s.close() }
       try { c.export(byteArrayOf(), 32); fail("Retired exporter remained accessible") }
       catch (error: SessionException) { assertEquals(SessionFailure.CANCELLED, error.reason) }
     }
     assertEquals(3, exports.size)
+    repeat(3) { index ->
+      val record = SessionRecordCodec.seal(keys[index], ivs[index], exports[index], 1,
+        RecordKind.DATA, 0uL, byteArrayOf(42))
+      assertArrayEquals(byteArrayOf(42), SessionRecordCodec.open(keys[index], ivs[index],
+        exports[index], 1, 0uL, record).second)
+      repeat(3) { other ->
+        if (other != index) {
+          assertFalse(keys[index].contentEquals(keys[other]))
+          try { SessionRecordCodec.open(keys[other], ivs[other], exports[other], 1, 0uL, record)
+            fail("Record crossed session keys") }
+          catch (error: SessionException) { assertEquals(SessionFailure.AUTHENTICATION, error.reason) }
+        }
+      }
+    }
   }
 
   private fun reason(text: String) =

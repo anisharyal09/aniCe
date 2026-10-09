@@ -111,3 +111,7 @@ protocol/
         ├── requirements.txt      # Pinned independent Python crypto/CBOR oracle dependencies
         └── *.py                  # Fixture generation and independent oracle regressions
 ```
+
+## LAN binding
+
+[LAN v1](lan/README.md) defines anonymous DNS-SD locators and bounded TCP envelope framing. `test-vectors/lan/lan-vectors.json` is a comment-free shared framing fixture consumed by Android and Mac tests; `generate_lan_vectors.py` independently encodes and checks its inventory with Python struct.

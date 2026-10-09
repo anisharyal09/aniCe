@@ -143,6 +143,11 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
           while (locator in retry.exclusions(SystemClock.elapsedRealtime())) delay(1000)
           ensureActive()
           if (!armed || owner !== service || suspended) return@launch
+          while (!app.sessionPeers.permits(peer)) {
+            status = "Waiting for the other device connection to end."
+            app.sessionPeers.changes.first { app.sessionPeers.permits(peer) }
+            ensureActive()
+          }
           if (!controller.adoptAutomatic(peer)) controller.connect(peer, adapter.getRemoteDevice(locator), automatic = true)
           var authenticated = false
           controller.progress.first {

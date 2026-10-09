@@ -79,4 +79,4 @@ Signing diagnostics log only operation counts under `identity-signing`; repeated
 
 ## Secure sessions
 
-Mac opens **Allow connections**; Android selects a trusted Mac on Home and taps **Connect**. Both show **Secured** after encrypted readiness. **Send connection check** tests the live path in either direction; Disconnect and Retry require a fresh handshake. LAN and feature synchronization remain deferred.
+Mac opens **Allow connections**; Android selects a trusted Mac on Home and taps **Connect**. Both show **Secured** after encrypted readiness. **Send connection check** tests the live path in either direction; Disconnect and Retry require a fresh handshake. **Connection details** adds independent manual LAN controls; several trusted phones require an explicit selection. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). Feature synchronization remains deferred.

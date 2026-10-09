@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Assembles shared identity, trust and independent transport owners for the Android process.
 package io.github.anisharyal09.anice
 
 import android.app.Application
@@ -8,6 +9,8 @@ import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetad
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 
 class AniCeApplication : Application() {
+    val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
+    val lanSessionController by lazy { io.github.anisharyal09.anice.infrastructure.lan.LanSessionController(this) }
     // UI and system-bound probe share one transport/operation owner; sessions never enter durable storage.
     val sessionController by lazy {
         io.github.anisharyal09.anice.infrastructure.session.SessionController(this)

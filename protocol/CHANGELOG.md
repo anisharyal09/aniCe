@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Versioned LAN TCP envelope binding and independent framing fixtures; existing EDHOC and encrypted-record formats remain unchanged.
+
 - Coordinated RENEWAL_REQUEST behavior, 55-minute/record-margin thresholds and old-session retirement before fresh EDHOC.
 
 - Bounded deterministic CBOR application controls in DATA kind 3/envelope 6, authoritative CDDL, and eight valid/26 invalid independent cbor2 fixtures.

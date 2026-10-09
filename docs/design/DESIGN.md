@@ -172,3 +172,7 @@ Review meaningful UI changes in both themes, compact/expanded widths, large text
 - [Design skills by Emil Kowalski](https://github.com/emilkowalski/skills): supplemental Apple-style interaction and design-engineering guidance. Native platform rules take precedence over its web implementation examples.
 
 The ignored local self prototyped images (designed by anisharyal09) under `for-me/` were used as design references. They are not runtime dependencies and do not need to be published with aniCe. This guide captures the project-specific rules; the upstream links remain accessible to contributors.
+
+## Transport connection details
+
+The existing device entry opens Connection details with separate Bluetooth and Local network status, feedback, received-check counters and explicit connection/check/disconnect actions. Device-level Disconnect closes both; transport-specific Disconnect closes only its channel. Mac window and companion share the same LAN state. Android LAN requires a started presentation and is independent of the automatic Bluetooth preference. Use the existing palette, native sheets, focus handling and safe insets. Do not label either channel Secured before its encrypted readiness completes.

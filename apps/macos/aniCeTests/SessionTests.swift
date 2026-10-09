@@ -78,7 +78,7 @@ final class SessionTests: XCTestCase, @unchecked Sendable {
           SignedIdentityPayload(identity: local, signature: try key.signature(for: $0).derRepresentation)
         }, selectedPeer: server ? nil : peer)
     }
-    var messages = [Data](), exports = [Data]()
+    var messages = [Data](), exports = [Data](), keys = [Data](), ivs = [Data]()
     for _ in 0..<3 {
       let c = try fresh(false), s = try fresh(true)
       let m1 = try await c.initiate(), m2 = try await s.respond(m1)
@@ -90,10 +90,25 @@ final class SessionTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(exported, remote)
       XCTAssertFalse(messages.contains(m1)); XCTAssertFalse(exports.contains(exported))
       messages.append(m1); exports.append(exported)
+      keys.append(try await c.export(context: b(row, "exportContext-key-1"), length: 32))
+      ivs.append(try await c.export(context: b(row, "exportContext-iv-1"), length: 12))
       await c.close(); await s.close()
       try await reject(.cancelled) { _ = try await c.export(context: Data(), length: 32) }
     }
     XCTAssertEqual(exports.count, 3)
+    for index in 0..<3 {
+      let record = try SessionRecordCodec.seal(key: keys[index], iv: ivs[index], id: exports[index],
+        direction: 1, kind: .data, sequence: 0, plaintext: Data([42]))
+      XCTAssertEqual(try SessionRecordCodec.open(key: keys[index], iv: ivs[index], id: exports[index],
+        direction: 1, expected: 0, record: record).1, Data([42]))
+      for other in 0..<3 where other != index {
+        XCTAssertNotEqual(keys[index], keys[other])
+        XCTAssertThrowsError(try SessionRecordCodec.open(key: keys[other], iv: ivs[other],
+          id: exports[other], direction: 1, expected: 0, record: record)) {
+          XCTAssertEqual($0 as? SessionFailure, .authentication)
+        }
+      }
+    }
   }
   func testCompleteOracleHandshakesAndExporter() async throws {
     let fixtures = try root()

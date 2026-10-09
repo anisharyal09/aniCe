@@ -21,6 +21,8 @@ import Observation
   var beforeAllow: () -> Void = {}
   private let now: () -> TimeInterval
   private let wait: (TimeInterval) async throws -> Void
+  private let peers: SessionPeerReservation
+  private(set) var authenticatedPeer: DeviceIdentity?
   private let identity: IdentityService
   private let adapter: any SessionPeripheralAdapter
   private let store: @MainActor () async throws -> PeerTrustStore
@@ -45,8 +47,10 @@ import Observation
     store: @escaping @MainActor () async throws -> PeerTrustStore,
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
     preferences: UserDefaults? = nil,
+    peers: SessionPeerReservation? = nil,
     wait: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
   ) {
+    self.peers = peers ?? SessionPeerReservation()
     self.now = now
     self.identity = identity
     self.adapter = adapter
@@ -151,6 +155,7 @@ import Observation
           guard previous == local.fingerprint else { throw SessionFailure.untrustedPeer }
         }
         if automatic { preferences?.set(local.fingerprint, forKey: "session.local") }
+        target = target ?? self.peers.peer
         if let target {
           let matches = trust.list(localFingerprint: local.fingerprint).filter {
             $0.peer.deviceId == target.deviceId && $0.peer.fingerprint == target.fingerprint
@@ -159,6 +164,12 @@ import Observation
           guard matches.count == 1 else { throw SessionFailure.untrustedPeer }
         }
         guard op == generation else { return }
+        guard self.peers.acquire("ble", peer: target, local: local.fingerprint) else {
+          cancel()
+          status = "Waiting for the other device connection to end."
+          if automatic { reopen(after: 2) }
+          return
+        }
         installCallbacks(op, target: target)
         startupDeadline = now() + 10
         adapter.begin(
@@ -299,6 +310,8 @@ import Observation
     do {
       let peer = try await connection.authenticatedPeer()
       guard op == generation, candidate == attempt else { return }
+      guard peers.authenticate("ble", peer: peer) else { throw SessionFailure.untrustedPeer }
+      authenticatedPeer = peer
       handshakeDeadline = nil
       state = "Secured"
       status = "Secured with \(peer.deviceName) · \(peer.fingerprint.prefix(8))."
@@ -505,6 +518,8 @@ import Observation
     let old = connection
     connection = nil
     work = nil
+    authenticatedPeer = nil
+    peers.release("ble")
     Task { await old?.close() }
     state = "Disconnected"
     status = "Disconnected. Allow connections to reconnect."

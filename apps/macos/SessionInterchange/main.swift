@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Runs isolated protected-key session interchange over process pipes or native TCP.
 import CryptoKit
 import Foundation
 
@@ -33,6 +34,20 @@ actor InterchangeMailbox {
   func put(_ value: Data) { bytes = value }
   func take() -> Data { bytes }
 }
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--cleanup" {
+  let target = CommandLine.arguments[2]
+  let prefix = "io.github.anisharyal09.anice.tests.session."
+  guard target.hasPrefix(prefix), UUID(uuidString: String(target.dropFirst(prefix.count))) != nil else { exit(2) }
+  do {
+    let disposable = MacIdentityStorage(namespace: target, backend: .developmentKeychain,
+      recordURL: FileManager.default.temporaryDirectory.appendingPathComponent(target).appendingPathComponent("identity.json"))
+    for tag in try disposable.keyTags() { try disposable.deleteKey(tag: tag) }
+    guard try disposable.keyTags().isEmpty else { throw SessionFailure.state }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(target)
+    if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+    exit(0)
+  } catch { exit(2) }
+}
 let namespace = "io.github.anisharyal09.anice.tests.session." + UUID().uuidString.lowercased()
 let directory = FileManager.default.temporaryDirectory.appendingPathComponent(namespace)
 let storage = MacIdentityStorage(
@@ -48,6 +63,12 @@ func cleanup() throws {
   }
 }
 do {
+  if CommandLine.arguments.contains("--tcp") {
+    try await tcpInterchange(identity: identity)
+    try cleanup()
+    try emit(["cleanup": true, "tcp": true, "bidirectionalBytes": 4000])
+    exit(0)
+  }
   let local = try await identity.publicIdentity()
   let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(local))
   try emit(["identity": object])

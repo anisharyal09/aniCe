@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package io.github.anisharyal09.anice.infrastructure.session
 
-import io.github.anisharyal09.anice.infrastructure.bluetooth.SessionEnvelope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 

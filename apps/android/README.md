@@ -76,7 +76,7 @@ Home → Pair your Mac offers QR scanning and six-digit entry. Camera access is 
 
 ## Secure sessions
 
-Mac selects an allowed Android (or Any trusted Android) and opens **Allow connections**; Android selects a trusted Mac on Home and taps **Connect**. Both show **Secured** after encrypted readiness. Android identifies each entry with eight fingerprint hex digits; Mac admits one candidate at a time and pins a selected Android’s complete credential. **Send connection check** tests the live path in either direction; Disconnect and Retry require a fresh handshake. LAN and feature synchronization remain deferred.
+Mac selects an allowed Android (or Any trusted Android) and opens **Allow connections**; Android selects a trusted Mac on Home and taps **Connect**. Both show **Secured** after encrypted readiness. Android identifies each entry with eight fingerprint hex digits; Mac admits one candidate at a time and pins a selected Android’s complete credential. **Send connection check** tests the live path in either direction; Disconnect and Retry require a fresh handshake. **Connection details** adds independent manual LAN controls for the same trusted peer. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). Feature synchronization remains deferred.
 
 ## Background connection experiment
 

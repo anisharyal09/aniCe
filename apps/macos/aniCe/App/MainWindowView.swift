@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents identity, pairing and shared Bluetooth/LAN connection details in the main window.
 import AppKit
 import SwiftUI
 
@@ -8,6 +9,7 @@ struct MainWindowView: View {
   let discovery: MacDiscoveryModel
   let pairing: MacPairingModel
   let session: MacSessionModel
+  let lan: MacLanSessionModel
   @Environment(\.openWindow) private var openWindow
   @Environment(\.colorScheme) private var colorScheme
 
@@ -40,8 +42,8 @@ struct MainWindowView: View {
       ScrollView(.vertical) {
         VStack(alignment: .leading, spacing: 20) {
           deviceHeader
-          if session.allowing || pairing.hasTrustedAndroid {
-            MacSessionView(peers: pairing.peers, model: session)
+          if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
+            MacSessionView(peers: pairing.peers, model: session, lan: lan)
           }
           MacPairingView(model: pairing)
           if pairing.hasTrustedAndroid && !pairing.active && !session.allowing {

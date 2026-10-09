@@ -138,6 +138,7 @@ class SessionController(application: Application) {
       .toTypedArray()
 
   fun request(peer: DeviceIdentity) {
+    if (!app.sessionPeers.permits(peer)) return
     selected = peer
     if (missingPermissions().isNotEmpty()) {
       awaitingPermissions = true
@@ -159,6 +160,7 @@ class SessionController(application: Application) {
   @SuppressLint("MissingPermission")
   fun connect(peer: DeviceIdentity, candidate: BluetoothDevice? = null, automatic: Boolean = false) {
     if (!foreground && companionOwner == null) return
+    if (!app.sessionPeers.permits(peer)) return
     cancel()
     lastFailure = null
     automaticAttempt = automatic
@@ -195,6 +197,12 @@ class SessionController(application: Application) {
     worker =
       scope.launch {
         try {
+          val local = withContext(Dispatchers.IO) { app.identityService.getOrCreateIdentity().identity }
+          ensureActive()
+          if (!app.sessionPeers.acquire(this@SessionController, peer, local.fingerprint)) {
+            fail("Another transport is connected to a different device.")
+            return@launch
+          }
           val trust = withContext(Dispatchers.IO) { app.trustStore }
           if (candidate == null) transport.startScan(qr = true) else transport.startCandidate(candidate)
           withTimeout(30000) { readySignal?.await() }
@@ -348,6 +356,7 @@ class SessionController(application: Application) {
     val old = connection
     connection = null
     old?.retire()
+    app.sessionPeers.release(this)
     scope.launch(Dispatchers.IO) { old?.close() }
     state = ConnectionState.DISCONNECTED
     // Publish terminal feedback with state; a resumed retry may immediately replace both.

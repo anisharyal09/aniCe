@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Shared manual Bonjour/TCP admission, encrypted LAN connection checks, same-peer reservations and sandbox network declarations.
+
 - Shared automatic nearby admission with five-failure cooldown, persisted allowed-phone policy, paused Disconnect and sleep/wake restoration.
 - Coordinated encrypted renewal requests before session lifetime or record limits.
 
@@ -26,6 +28,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Merge secured state and authenticated-device feedback into one status line in window and companion.
 
 ### Fixed
+
+- LAN TCP enables bounded native keepalives and retransmission timeout so an unreachable phone is detected before the authenticated idle limit.
 
 - Keep delayed pairing cleanup from replacing a newer pairing or discovery radio owner with automatic session admission.
 - Allow fresh session admission on retained Core Bluetooth indication subscriptions during an explicit window while preserving exclusive admission.

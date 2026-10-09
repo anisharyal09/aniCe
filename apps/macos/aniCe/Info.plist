@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Declares Bonjour service access for the sandboxed application and its hosted tests. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>NSBonjourServices</key><array><string>_anice._tcp</string></array>
+<key>NSLocalNetworkUsageDescription</key><string>aniCe uses your local network to connect securely to your paired devices.</string>
+</dict></plist>

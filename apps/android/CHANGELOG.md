@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Foreground LAN sessions with Wi-Fi-bound sockets, scoped IPv6, bounded NSD resolution and independent Bluetooth/local-network controls.
+
 - Companion-owned nearby retry with bounded backoff, pinned saved setup, a device-level automatic connection switch and Disconnect pause. Release service ownership remains disabled pending physical acceptance.
 - Coordinated fresh EDHOC renewal before lifetime/record limits, with encrypted backpressure, Stop and key-reuse regressions.
 
@@ -33,6 +35,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Extract app shell and device-identity screen/state from MainActivity into lifecycle ViewModels.
 
 ### Fixed
+
+- LAN network-change and Disconnect callbacks retire their owner instead of cancelling only the callback coroutine; stale callbacks cannot close a newer attempt.
 
 - Retire controller state and transport on authenticated Mac closure, manual disconnect and renewal requiring manual reconnection; explicitly qualify cleanup inside coroutine receivers and publish terminal feedback before retry observation.
 - Restore companion ownership on same-instance rebind without presence replay and reject stale unbound callbacks.

@@ -7,7 +7,7 @@
 | **3 — BLE discovery** | Nearby BLE compatibility check (Mac peripheral, Android central) | Implemented; verification gaps below |
 | **4 — Pairing and trust** | QR/PIN authentication, mutual approval, peer trust store | Implemented; physical radio acceptance and security review pending |
 | **5 — Authenticated secure sessions** | EDHOC authenticated key exchange, encryption, replay defense | Handshake, record channel, BLE lifecycle and UI controls implemented; radio verification, minimum-OS baseline, and security review pending |
-| **6 — LAN transport and synchronization** | Local network transport and feature synchronization | Planned |
+| **6 — LAN transport and synchronization** | Local network transport and feature synchronization | Manual authenticated TCP implemented; native IPv4/scoped IPv6 interchange verified; packaged-app/coexistence/minimum-OS acceptance pending; synchronization deferred |
 
 Automated unit and integration test suites validate core protocol contracts. Physical radio inspection, minimum-OS baseline coverage, and independent security review remain tracked as release gates.
 
@@ -27,3 +27,7 @@ Automated unit and integration test suites validate core protocol contracts. Phy
 - 4D: OPAQUE six-digit pairing via Rust PAKE bridge, trusted-device management (renaming, forgetting).
 
 Signed Mac Secure Enclave verification, discovery/pairing manual radio acceptance, minimum-OS runtime coverage and independent integration security review remain pending. Earlier debugging observations do not establish completed acceptance.
+
+## LAN transport increment
+
+Manual LAN discovery, native TCP framing, fresh EDHOC/readiness, independent liveness and transport controls coexist with BLE for one pinned peer. Android owns LAN only while a presentation is started; Mac shares one explicit listener/session across its window and companion. Legacy NSD serialization and scoped IPv6 binding are enforced. [Implementation and acceptance](LAN_CONNECTIONS.md) · [Wire contract](../protocol/lan/README.md).

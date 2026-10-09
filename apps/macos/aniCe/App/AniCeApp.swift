@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Assembles shared trust, peer reservations and native Bluetooth/LAN owners for both scenes.
 import SwiftUI
 
 @main
@@ -9,6 +10,7 @@ struct AniCeApp: App {
   @State private var discovery: MacDiscoveryModel
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
+  @State private var lan: MacLanSessionModel
 
   init() {
     let identity = IdentityAssembly.makeModel()
@@ -17,11 +19,16 @@ struct AniCeApp: App {
     _identity = State(initialValue: identity)
     _discovery = State(initialValue: discovery)
     let pairing = MacPairingModel(identity: identity.service, discovery: discovery)
+    let peers = SessionPeerReservation()
+    let lan = MacLanSessionModel(identity: identity.service, peers: peers, store: { try await pairing.sessionStore() })
+    _lan = State(initialValue: lan)
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
-      preferences: .standard)
+      preferences: .standard, peers: peers)
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    pairing.trustRemoved = { session.retireTrust(); lan.cancel() }
     identity.onIdentityReset = {
+      lan.cancel()
       session.retireTrust()
       pairing.cancel()
     }
@@ -58,13 +65,13 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session)
+        session: session, lan: lan)
     }
     .defaultSize(width: 800, height: 560)
     .windowResizability(.contentMinSize)
 
     MenuBarExtra("aniCe", systemImage: "laptopcomputer.and.iphone") {
-      CompanionView(identity: identity, discovery: discovery, pairing: pairing, session: session)
+      CompanionView(identity: identity, discovery: discovery, pairing: pairing, session: session, lan: lan)
     }
     .menuBarExtraStyle(.window)
   }

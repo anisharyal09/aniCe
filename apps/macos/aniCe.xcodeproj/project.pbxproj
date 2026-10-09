@@ -52,6 +52,13 @@
 		FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */; };
 		AC0100000000000000000001 /* aniCe/Infrastructure/Session/SessionControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */; };
 		AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */; };
+		48948FCB77CE94C9E7D3009B /* aniCe/Infrastructure/Session/SessionEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4605C695A3D013BD14C1E85 /* aniCe/Infrastructure/Session/SessionEnvelope.swift */; };
+		6A3F087AAB1C657A3EE6E68A /* aniCe/Infrastructure/Session/SessionPeerReservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763B24FA2DE4267D36DCA182 /* aniCe/Infrastructure/Session/SessionPeerReservation.swift */; };
+		E97ABB3514DECEED19618D8E /* aniCe/Infrastructure/LAN/LanFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE218729CE483AA40F7B152 /* aniCe/Infrastructure/LAN/LanFraming.swift */; };
+		19F0E754132EF9E4CE17FACF /* aniCe/Infrastructure/LAN/LanTcpTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */; };
+		A391955247C39A54B8DAE439 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */; };
+		FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */; };
+		20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -113,6 +120,13 @@
 		E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Session/MacSessionView.swift; sourceTree = SOURCE_ROOT; };
 		AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionControl.swift; sourceTree = SOURCE_ROOT; };
 		AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/control-vectors.json"; sourceTree = SOURCE_ROOT; };
+		B4605C695A3D013BD14C1E85 /* aniCe/Infrastructure/Session/SessionEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionEnvelope.swift; sourceTree = SOURCE_ROOT; };
+		763B24FA2DE4267D36DCA182 /* aniCe/Infrastructure/Session/SessionPeerReservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionPeerReservation.swift; sourceTree = SOURCE_ROOT; };
+		8CE218729CE483AA40F7B152 /* aniCe/Infrastructure/LAN/LanFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/LanFraming.swift; sourceTree = SOURCE_ROOT; };
+		CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/LanTcpTransport.swift; sourceTree = SOURCE_ROOT; };
+		088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/MacLanSessionModel.swift; sourceTree = SOURCE_ROOT; };
+		CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/LanTests.swift"; sourceTree = SOURCE_ROOT; };
+		C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-vectors.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -290,6 +304,13 @@
 		1D4966303077FEE2006A4BAE /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
+				C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */,
+				CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */,
+				088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */,
+				CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */,
+				8CE218729CE483AA40F7B152 /* aniCe/Infrastructure/LAN/LanFraming.swift */,
+				763B24FA2DE4267D36DCA182 /* aniCe/Infrastructure/Session/SessionPeerReservation.swift */,
+				B4605C695A3D013BD14C1E85 /* aniCe/Infrastructure/Session/SessionEnvelope.swift */,
 				AB0000000000000000000011 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md */,
 			);
 			name = "Recovered References";
@@ -399,6 +420,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */,
 				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
 				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
 				AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */,
@@ -416,6 +438,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A391955247C39A54B8DAE439 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift in Sources */,
+				19F0E754132EF9E4CE17FACF /* aniCe/Infrastructure/LAN/LanTcpTransport.swift in Sources */,
+				E97ABB3514DECEED19618D8E /* aniCe/Infrastructure/LAN/LanFraming.swift in Sources */,
+				6A3F087AAB1C657A3EE6E68A /* aniCe/Infrastructure/Session/SessionPeerReservation.swift in Sources */,
+				48948FCB77CE94C9E7D3009B /* aniCe/Infrastructure/Session/SessionEnvelope.swift in Sources */,
 				FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */,
 				F943A3689758A079688E15F8 /* aniCe/Features/Session/MacSessionModel.swift in Sources */,
 				64CF98FCB6E025D6CD950B4D /* aniCe/Infrastructure/Bluetooth/GattFraming.swift in Sources */,
@@ -455,6 +482,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */,
 				E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */,
 				FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */,
 				5AC4A19CBFF38BE42CBB0A83 /* aniCeTests/PairingTests.swift in Sources */,
@@ -591,6 +619,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = aniCe/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";
@@ -618,6 +647,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = aniCe/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "aniCe uses Bluetooth to let your nearby Android device discover this Mac.";

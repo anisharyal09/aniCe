@@ -10,6 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Independent authenticated LAN sessions alongside BLE, with explicit transport controls, pinned same-peer ownership and bounded native TCP framing.
+
 - Automatic nearby BLE recovery, shared Mac availability and coordinated fresh-session renewal; notification-free Android Release ownership remains gated by physical acceptance.
 
 - Negotiated encrypted BLE keepalive with legacy manual fallback and independent application-control conformance fixtures.
@@ -39,6 +41,8 @@ Repository-wide structure, documentation, and development conventions belong her
 - Refine local device details on both platforms using the shared design tokens.
 
 ### Fixed
+
+- Retire Android LAN ownership on network changes and Disconnect; configure bounded Mac TCP peer-loss detection while preserving foreground-only LAN lifetime.
 
 - Retire Android session state and transport after authenticated Mac Disconnect instead of cancelling only its coroutine worker.
 - Restore automatic BLE ownership on same-instance Android companion service rebind and reject callbacks after unbind.
