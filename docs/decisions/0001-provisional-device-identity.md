@@ -31,6 +31,7 @@ We establish a provisional local device identity foundation adhering to the foll
    - Key aliases are immutable (Android: `anice.identity.v1.<uuid>`; Mac: the selected backend namespace plus a generation UUID). Aliases are never renamed.
    - Key creation and reset follow a two-phase journal (`pending` $\to$ validate $\to$ atomic commit to `active` $\to$ `cleanup` retired alias).
    - Identity is never silently regenerated on transient storage failure. Transient failures surface typed `IdentityException` / `IdentityError` states in the interface.
+   - Existing-identity reads validate journal structure, the stored public-key binding and protection status without a private signing challenge. Creation/reset sign and verify before committing the active record. Requested signatures are verified against the loaded public key before return; the reread journal must retain the same active binding. Public reads still access native protected storage.
 
 ## Consequences
 

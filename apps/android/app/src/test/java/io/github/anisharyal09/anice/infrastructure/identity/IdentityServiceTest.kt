@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies identity signing boundaries and atomic journal recovery under storage and key faults.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 import java.security.KeyPair
@@ -21,7 +22,9 @@ class IdentityServiceTest {
         var readError: IdentityErrorKind? = null
         var failWrite = false
         var failCommit = false
+        var beforeRead: (() -> Unit)? = null
         override fun read(): IdentityJournal? {
+            beforeRead?.invoke()
             readError?.let { throw IdentityException(it) }; return value
         }
         override fun write(journal: IdentityJournal) {
@@ -33,6 +36,9 @@ class IdentityServiceTest {
         val values = mutableMapOf<String, KeyPair>()
         var unavailable = false
         var failDelete = false
+        var signCalls = 0
+        var signError: IdentityErrorKind? = null
+        var signatureOverride: ByteArray? = null
         private fun check() { if (unavailable) throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE) }
         override fun aliases(): Set<String> { check(); return values.keys.toSet() }
         override fun create(alias: String) {
@@ -45,6 +51,9 @@ class IdentityServiceTest {
         override fun protection(alias: String): KeyProtection = KeyProtection.PLATFORM
         override fun sign(alias: String, message: ByteArray): ByteArray {
             check()
+            signCalls++
+            signError?.let { throw IdentityException(it) }
+            signatureOverride?.let { return it }
             val pair = values[alias] ?: throw IdentityException(IdentityErrorKind.KEY_MISSING)
             return Signature.getInstance("SHA256withECDSA").run { initSign(pair.private); update(message); sign() }
         }
@@ -64,6 +73,110 @@ class IdentityServiceTest {
         val signature = service().sign(data)
         assertEquals(original, signature.snapshot)
         assertTrue(IdentityCrypto.verify(IdentityCrypto.decodeBase64(original.identity.publicKey), data, signature.signature))
+    }
+    @Test fun publicReadsDoNotSignAndCreationResetAndRequestsEachSignOnce() {
+        val original = service().getOrCreateIdentity()
+        assertEquals(1, keys.signCalls)
+        repeat(10) { assertEquals(original, service().getOrCreateIdentity()) }
+        assertEquals(1, keys.signCalls)
+        val data = byteArrayOf(1, 2, 3)
+        val signed = service().sign(data)
+        assertEquals(2, keys.signCalls)
+        assertTrue(IdentityCrypto.verify(IdentityCrypto.decodeBase64(original.identity.publicKey), data, signed.signature))
+        val replacement = service().resetIdentity()
+        assertEquals(3, keys.signCalls)
+        assertNotEquals(original.identity.fingerprint, replacement.identity.fingerprint)
+        assertEquals(replacement, service().getOrCreateIdentity())
+        assertEquals(3, keys.signCalls)
+    }
+    @Test fun requestedSigningFaultsPreserveActiveJournalAndKeys() {
+        val original = service().getOrCreateIdentity()
+        val journal = metadata.value
+        val inventory = keys.values.toMap()
+        val message = byteArrayOf(1, 2, 3)
+        fun signature(pair: KeyPair, data: ByteArray) = Signature.getInstance("SHA256withECDSA").run {
+            initSign(pair.private); update(data); sign()
+        }
+        val foreign = KeyPairGenerator.getInstance("EC").run {
+            initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
+        }
+        val invalid = listOf(byteArrayOf(), byteArrayOf(0x30, 0),
+            signature(inventory.values.single(), byteArrayOf(9)), signature(foreign, message))
+        assertEquals(4, invalid.size)
+        for (bytes in invalid) {
+            keys.signatureOverride = bytes
+            val before = keys.signCalls
+            expectError(IdentityErrorKind.CRYPTO_FAILURE) { service().sign(message) }
+            assertEquals(before + 1, keys.signCalls)
+            assertEquals(journal, metadata.value)
+            assertEquals(inventory, keys.values)
+            assertEquals(original, service().getOrCreateIdentity())
+            assertEquals(before + 1, keys.signCalls)
+        }
+        keys.signatureOverride = null
+        for (kind in listOf(IdentityErrorKind.STORAGE_UNAVAILABLE, IdentityErrorKind.KEY_MISSING)) {
+            keys.signError = kind
+            val before = keys.signCalls
+            expectError(kind) { service().sign(message) }
+            assertEquals(before + 1, keys.signCalls)
+            assertEquals(journal, metadata.value)
+            assertEquals(inventory, keys.values)
+            assertEquals(original, service().getOrCreateIdentity())
+        }
+    }
+    @Test fun creationAndResetCannotCommitWithoutValidSigningProof() {
+        for (reset in listOf(false, true)) for (denied in listOf(false, true)) {
+            val metadata = MemoryMetadata()
+            val keys = MemoryKeys()
+            val service = IdentityService(metadata, keys, { "Pixel" })
+            val original = if (reset) service.getOrCreateIdentity() else null
+            val active = metadata.value?.active
+            val before = keys.signCalls
+            if (denied) keys.signError = IdentityErrorKind.STORAGE_UNAVAILABLE
+            else keys.signatureOverride = byteArrayOf(0x30, 0)
+            expectError(if (denied) IdentityErrorKind.STORAGE_UNAVAILABLE else IdentityErrorKind.CRYPTO_FAILURE) {
+                if (reset) service.resetIdentity() else service.getOrCreateIdentity()
+            }
+            assertEquals(before + 1, keys.signCalls)
+            assertEquals(active, metadata.value?.active)
+            assertTrue(metadata.value?.pending != null)
+            active?.let { assertTrue(keys.values.containsKey(it.alias)) }
+            keys.signError = null
+            keys.signatureOverride = null
+            val recovered = service.getOrCreateIdentity()
+            if (original != null) assertEquals(original, recovered)
+            assertEquals(1, keys.values.size)
+            assertNull(metadata.value?.pending)
+        }
+    }
+    @Test fun changedJournalBetweenLoadAndSigningNeverUsesUnvalidatedBinding() {
+        val original = service().getOrCreateIdentity()
+        val journal = metadata.value!!
+        val active = journal.active!!
+        val foreign = KeyPairGenerator.getInstance("EC").run {
+            initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
+        }
+        val bytes = IdentityCrypto.exportPublicKey(foreign.public)
+        val replacement = active.identity.copy(publicKey = IdentityCrypto.encodeBase64(bytes),
+            fingerprint = IdentityCrypto.fingerprint(bytes)).validate()
+        val alterations = listOf(journal.copy(active = active.copy(identity = replacement)),
+            journal.copy(active = active.copy(alias = "foreign.key")),
+            journal.copy(active = active.copy(identity = active.identity.copy(platform = "macos"))))
+        assertEquals(3, alterations.size)
+        val inventory = keys.values.toMap()
+        for (altered in alterations) {
+            var reads = 0
+            metadata.beforeRead = { if (++reads == 2) metadata.value = altered }
+            val before = keys.signCalls
+            expectError(IdentityErrorKind.INCONSISTENT) { service().sign(byteArrayOf(1)) }
+            assertEquals(2, reads)
+            assertEquals(before, keys.signCalls)
+            assertEquals(altered, metadata.value)
+            assertEquals(inventory, keys.values)
+            metadata.beforeRead = null
+            metadata.value = journal
+            assertEquals(original, service().getOrCreateIdentity())
+        }
     }
     @Test fun concurrentInitializationCreatesOneIdentity() {
         val service = service()

@@ -61,6 +61,14 @@ Automatic renewal starts at 55 minutes or `2^20 − 1024` records in either dire
 
 Hard bounds remain: ten-second readiness, 120-second idle, one-hour age, `2^20` records/direction, 4,000-byte plaintext, 4,096-byte logical messages and eight queued messages/32 KiB. All deadlines are monotonic; Android elapsed realtime includes sleep. OS suspension may miss a deadline and disconnect. Owned mutable secrets are overwritten and key objects released; JVM/Swift zeroization is best effort.
 
+## Idle maintenance
+
+Android and Mac session owners maintain admission/authentication/readiness at 200 ms intervals and secured sessions at one-second intervals. Mac invalidates the prior timer when changing cadence or retiring the owner, and restores fast maintenance on admission. Callbacks retain operation-generation checks. Presence observation, retry backoff and transport submission/teardown deadlines use their existing mechanisms.
+
+Maintenance continues to validate live identity and trust; application operations independently enforce trust, record age, idle/readiness bounds and counters. A maintenance callback can notice an idle failure after its deadline, or later after OS suspension, but cannot extend record access. Existing Android identity reads validate the public binding and protection without a signing challenge; creation/reset still prove signing access before commit, and actual signatures are verified. Native Keystore/Keychain reads remain.
+
+Performance comparisons separate the original build, the Android identity correction and the maintenance correction. Each stage uses three five-minute connected idle intervals after two minutes of warmup, matching build type, charging and display state. Process CPU-time deltas divided by monotonic elapsed time express CPU as a percentage of one core. Record process continuity, transport interruptions, memory and available wakeup evidence. Disconnects invalidate an interval and remain reported failures. Debug/USB measurements establish relative workload changes; battery use and production background performance require separate measurements. Android Release companion ownership remains disabled.
+
 ## Reconnect acceptance
 
 1. Establish an automatic connection with the phone locked. Mac Disconnect pauses admission; verify Android leaves Secured after authenticated CLOSE and Mac remains unavailable while paused.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies pairing contracts, durable trust and exclusive BLE ownership across native lifecycle faults.
 import CryptoKit
 import Foundation
 import XCTest
@@ -798,6 +799,11 @@ extension PairingTests {
     defer { model.cancel() }
     model.allow()
     try await waitFor { radio.started }
+    func maintenanceTimer() throws -> Timer {
+      try XCTUnwrap(Mirror(reflecting: model).children.first { $0.label == "_timer" }?.value as? Timer)
+    }
+    let setupTimer = try maintenanceTimer()
+    XCTAssertEqual(setupTimer.timeInterval, 0.2)
     XCTAssertTrue(radio.sessionAdmitted?() ?? false)
     XCTAssertFalse(radio.sessionAdmitted?() ?? true)
     let client = try SessionHandshakeEngine(
@@ -830,12 +836,18 @@ extension PairingTests {
     XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, ready)) ?? false)
     if failReadyAck {
       try await waitFor { model.state == "Failed" }
+      XCTAssertEqual(try maintenanceTimer().timeInterval, 0.2)
+      XCTAssertFalse(setupTimer.isValid)
       XCTAssertTrue(radio.sent.isEmpty)
       XCTAssertEqual(model.receivedChecks, 0)
       let stage = await channel.stage
       XCTAssertEqual(stage, .readySent)
     } else {
       try await waitFor { model.state == "Secured" }
+      let securedTimer = try maintenanceTimer()
+      XCTAssertEqual(securedTimer.timeInterval, 1)
+      XCTAssertFalse(setupTimer.isValid)
+      XCTAssertTrue(securedTimer.isValid)
       XCTAssertTrue(model.status.contains(android.deviceName))
       let ack = try SessionEnvelope.decode(try XCTUnwrap(radio.sent.first))
       XCTAssertEqual(ack.0, 6)
@@ -851,6 +863,13 @@ extension PairingTests {
       let received = try await channel.receive(response.1)
       XCTAssertEqual(received.0, .data)
       XCTAssertEqual(received.1, Data("aniCe connection check".utf8))
+      model.cancel()
+      XCTAssertFalse(securedTimer.isValid)
+      radio.started = false
+      model.allow()
+      try await waitFor { radio.started }
+      XCTAssertEqual(try maintenanceTimer().timeInterval, 0.2)
+      XCTAssertEqual(model.state, "Disconnected")
     }
     XCTAssertEqual(try encoder.encode(memory.record), savedIdentity)
     XCTAssertEqual(try Data(contentsOf: url), savedTrust)

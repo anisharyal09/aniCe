@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns trusted BLE admission, session lifecycle and automatic availability for both Mac surfaces.
 import AppKit
 import Foundation
 import Observation
@@ -197,11 +198,7 @@ import Observation
             else { return .unavailable }
             return .value(data)
           })
-        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-          MainActor.assumeIsolated { self?.tick() }
-        }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        startMaintenance(0.2)
       } catch {
         if op == generation {
           automatic = false
@@ -305,6 +302,8 @@ import Observation
       handshakeDeadline = nil
       state = "Secured"
       status = "Secured with \(peer.deviceName) · \(peer.fingerprint.prefix(8))."
+      // Per-operation validation keeps hard deadlines independent of the slower idle maintenance.
+      startMaintenance(1)
     } catch {
       if op == generation, candidate == attempt {
         failCandidate("The authenticated device is no longer available. Retry from Android.")
@@ -316,6 +315,19 @@ import Observation
     else { return }
     receivedChecks += 1
     status = "Secured. Connection check received."
+  }
+  private func startMaintenance(_ interval: TimeInterval) {
+    guard allowing else { return }
+    timer?.invalidate()
+    let op = generation
+    let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, op == self.generation else { return }
+        self.tick()
+      }
+    }
+    self.timer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
   func tick() {
     guard allowing else { return }
@@ -421,6 +433,7 @@ import Observation
       } else { failWindow(reason) }
     } else {
       connection = nil
+      startMaintenance(0.2)
       let op = generation, candidate = attempt
       work = Task { [weak self] in
         await old?.close()

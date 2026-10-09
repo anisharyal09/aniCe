@@ -27,6 +27,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Reduce secured BLE maintenance frequency while retaining per-operation trust and deadline checks; remove redundant Android identity signing during ordinary reads.
 - Add concise purpose headers across source, configuration and design assets; replace conversational documentation attribution with technical verification facts.
 - Update Bluetooth Low Energy GATT service and characteristic UUIDs.
 - Add shared Mac allowed-device selector with credential pinning, full-label discovery disclosure, and compact Android fingerprint identifiers.

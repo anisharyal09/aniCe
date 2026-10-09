@@ -22,6 +22,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Load existing identity state without a signing challenge; retain creation/reset proof and validate the active journal binding and requested signature before return.
+- Run secured-session maintenance once per second while retaining 200 ms authentication/readiness checks and native companion recovery.
 - Add file-purpose summaries to Android sources, tests, resources, manifest and build configuration.
 - Document shared session controller architecture, companion device lifecycle boundaries, and native API paths in docs/BACKGROUND_CONNECTIONS.md.
 - Replace centered connection home with a minimal device list, contextual actions and native management menus.

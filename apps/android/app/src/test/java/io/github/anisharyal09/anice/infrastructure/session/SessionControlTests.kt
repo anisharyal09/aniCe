@@ -126,6 +126,25 @@ class SessionControlTests {
       } finally { client.close(); server.close() }
     }
   }
+  @Test fun delayedMaintenanceDoesNotMoveCompatibilityOrPongDeadlines() {
+    val legacy = SessionLiveness(false)
+    legacy.start(0)
+    val hello = requireNotNull(legacy.pending)
+    legacy.issuing(hello, 0); legacy.submitted(hello, 0)
+    reject(SessionFailure.STATE) { legacy.receive(SessionControl(ControlKind.HELLO_ACK), 10500) }
+    legacy.poll(11000)
+    assertEquals(false, legacy.support)
+    assertNull(legacy.pending)
+    val client = pair().first
+    client.poll(60500)
+    val ping = requireNotNull(client.pending)
+    assertEquals(SessionControl(ControlKind.PING, 0), ping)
+    client.issuing(ping, 60500); client.submitted(ping, 60500)
+    client.activity(81000)
+    // No maintenance ran at expiry; receive must still reject a late authenticated response.
+    reject(SessionFailure.CONTROL_TIMEOUT) { client.receive(SessionControl(ControlKind.PONG, 0), 81000) }
+    reject(SessionFailure.CONTROL_TIMEOUT) { client.poll(81000) }
+  }
   @Test fun encryptedRenewalBackpressureFailureAndStop() = runBlocking {
     val helper = SessionTests()
     val fixture = helper.root().getJSONArray("valid").getJSONObject(0)

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Serializes protected identity signing and atomic creation, replacement and recovery.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 enum class IdentityErrorKind {
@@ -58,7 +59,7 @@ class IdentityService(
             metadata.write(journal)
         }
         if (journal.active != null) {
-            val snapshot = checkActive(journal.active)
+            val snapshot = checkActive(journal.active, verifySigning = false)
             // An interrupted reset has not committed: the previous identity remains authoritative.
             if (journal.pending != null) {
                 journal = journal.copy(pending = null, cleanup = journal.cleanup + journal.pending.alias)
@@ -73,9 +74,18 @@ class IdentityService(
 
     @Synchronized fun sign(message: ByteArray): IdentitySignature {
         val snapshot = getOrCreateIdentity()
-        val active = metadata.read()?.active ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
-        if (active.identity.deviceId != snapshot.identity.deviceId) throw IdentityException(IdentityErrorKind.INCONSISTENT)
-        return IdentitySignature(snapshot, keys.sign(active.alias, message))
+        val journal = metadata.read()?.also(::validateJournal) ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        val active = journal.active ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        if (active.alias != aliasPrefix + snapshot.identity.deviceId ||
+            active.identity.deviceId != snapshot.identity.deviceId ||
+            active.identity.publicKey != snapshot.identity.publicKey ||
+            active.identity.fingerprint != snapshot.identity.fingerprint) throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        // Verify the requested signature itself; an extra self-check would double private-key work.
+        val signature = keys.sign(active.alias, message)
+        if (!IdentityCrypto.verify(IdentityCrypto.decodeBase64(snapshot.identity.publicKey), message, signature)) {
+            throw IdentityException(IdentityErrorKind.CRYPTO_FAILURE)
+        }
+        return IdentitySignature(snapshot, signature)
     }
 
     /** Called only after the UI confirms replacement. */
@@ -103,7 +113,8 @@ class IdentityService(
         val identity = DeviceIdentity(pending.deviceId, DeviceIdentity.displayName(deviceName()), "android",
             IdentityCrypto.encodeBase64(bytes), IdentityCrypto.fingerprint(bytes)).validate()
         val reference = IdentityReference(pending.alias, identity)
-        val snapshot = checkActive(reference)
+        // A pending key must prove signing access before the journal can make it authoritative.
+        val snapshot = checkActive(reference, verifySigning = true)
         val committed = IdentityJournal(active = reference,
             cleanup = (journal.cleanup + listOfNotNull(journal.active?.alias)).distinct().filter { it != reference.alias })
         metadata.write(committed)
@@ -111,13 +122,15 @@ class IdentityService(
         return snapshot
     }
 
-    private fun checkActive(reference: IdentityReference): IdentitySnapshot {
+    private fun checkActive(reference: IdentityReference, verifySigning: Boolean): IdentitySnapshot {
         try { reference.identity.validate() } catch (error: Exception) { throw IdentityException(IdentityErrorKind.INCONSISTENT, error) }
         val bytes = keys.publicKey(reference.alias) ?: throw IdentityException(IdentityErrorKind.KEY_MISSING)
         if (IdentityCrypto.encodeBase64(bytes) != reference.identity.publicKey) throw IdentityException(IdentityErrorKind.INCONSISTENT)
-        val challenge = "aniCe identity self-check v1".toByteArray(Charsets.UTF_8)
-        if (!IdentityCrypto.verify(bytes, challenge, keys.sign(reference.alias, challenge))) {
-            throw IdentityException(IdentityErrorKind.CRYPTO_FAILURE)
+        if (verifySigning) {
+            val challenge = "aniCe identity self-check v1".toByteArray(Charsets.UTF_8)
+            if (!IdentityCrypto.verify(bytes, challenge, keys.sign(reference.alias, challenge))) {
+                throw IdentityException(IdentityErrorKind.CRYPTO_FAILURE)
+            }
         }
         return IdentitySnapshot(reference.identity.copy(deviceName = DeviceIdentity.displayName(deviceName())), keys.protection(reference.alias))
     }

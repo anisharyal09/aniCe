@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies record authentication, nonce consumption and channel retirement under transport and deadline faults.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import io.github.anisharyal09.anice.infrastructure.bluetooth.*
@@ -350,6 +351,41 @@ class SessionChannelTests {
       assertEquals(ChannelStage.CLOSED, ch.stage)
     }
   }
+  @Test fun operationsRejectExpiredOrRevokedSessionsWithoutMaintenance() = runBlocking {
+    val fixture = vectors().getJSONArray("valid").getJSONObject(0)
+    val ack = SessionRecordCodec.seal(b(fixture, "key"), b(fixture, "iv"), b(fixture, "session"),
+      2, RecordKind.READY_ACK, 0uL, byteArrayOf())
+    val inbound = SessionRecordCodec.seal(b(fixture, "key"), b(fixture, "iv"), b(fixture, "session"),
+      2, RecordKind.DATA, 1uL, byteArrayOf(7))
+    for (fault in listOf("idle", "lifetime", "revoked")) for (receive in listOf(false, true)) {
+      var now = 0L
+      var revoked = false
+      var submissions = 0
+      val ch = channel(now = { now }, validate = {
+        if (revoked) throw SessionException(SessionFailure.UNTRUSTED_PEER)
+      }, submit = { submissions++ })
+      ch.send(RecordKind.READY); ch.receive(ack)
+      when (fault) {
+        "idle" -> now = 120500
+        "lifetime" -> {
+          for (time in 100000L..3500000L step 100000L) { now = time; ch.send(RecordKind.DATA) }
+          now = 3600500
+        }
+        "revoked" -> revoked = true
+      }
+      val sent = ch.sent
+      val received = ch.received
+      val before = submissions
+      rejects(if (revoked) SessionFailure.UNTRUSTED_PEER else SessionFailure.EXPIRED) {
+        if (receive) ch.receive(inbound) else ch.send(RecordKind.DATA, byteArrayOf(9))
+      }
+      assertEquals(sent, ch.sent)
+      assertEquals(received, ch.received)
+      assertEquals(before, submissions)
+      assertEquals(ChannelStage.CLOSED, ch.stage)
+      if (!revoked) assertEquals(if (fault == "idle") SessionExpiry.IDLE else SessionExpiry.LIFETIME, ch.expiration)
+    }
+  }
 
   @Test
   fun submissionFailureAtEveryHandshakeAndReadinessTransition() = runBlocking {
@@ -428,6 +464,10 @@ class SessionChannelTests {
     timed.receive(frames[0])
     now = 10000
     rejects(SessionFailure.EXPIRED) { timed.tick() }
+    val delayed = GattReassembler(2) { now }
+    delayed.receive(frames[0])
+    now = 20500
+    rejects(SessionFailure.EXPIRED) { delayed.receive(frames[1]) }
     rejects(SessionFailure.MALFORMED) { GattReassembler.fragments(data, 0x100000000L, 20, 2) }
     assertTrue(GattReassembler.fragments(byteArrayOf(1), 0xffffffffL, 20, 2).isNotEmpty())
     rejects(SessionFailure.MALFORMED) { SessionEnvelope.decode(byteArrayOf(9, 0)) }

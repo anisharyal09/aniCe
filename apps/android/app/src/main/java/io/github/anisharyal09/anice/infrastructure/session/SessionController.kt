@@ -244,7 +244,8 @@ class SessionController(application: Application) {
           var checking = false
           launch {
             while (isActive && op == operation) {
-              delay(200)
+              // Readiness keeps fast maintenance; secured records enforce deadlines on every operation.
+              delay(if (state == ConnectionState.SECURED) 1000L else 200L)
               transport.tick()
               if (engine.timedOut()) {
                 fail("Secure connection timed out. Retry.")

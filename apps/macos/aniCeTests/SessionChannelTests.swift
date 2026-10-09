@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies encrypted records, control deadlines and nonce ownership against fixtures and lifecycle faults.
 import Foundation
 import XCTest
 
@@ -199,6 +200,28 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(reason, .lifetime); XCTAssertTrue(closed)
       await c.close(); await s.close()
     }
+  }
+  func testDelayedMaintenanceDoesNotMoveCompatibilityOrPongDeadlines() throws {
+    var legacy = SessionLiveness(responder: false)
+    try legacy.start(0)
+    let hello = try XCTUnwrap(legacy.pending)
+    try legacy.issuing(hello, 0); legacy.submitted(hello, 0)
+    XCTAssertThrowsError(try legacy.receive(SessionControl(kind: .helloAck), 10500)) {
+      XCTAssertEqual($0 as? SessionFailure, .state)
+    }
+    try legacy.poll(11000)
+    XCTAssertEqual(legacy.support, false); XCTAssertNil(legacy.pending)
+    var client = try controlPair().0
+    try client.poll(60500)
+    let ping = try XCTUnwrap(client.pending)
+    XCTAssertEqual(ping, SessionControl(kind: .ping, value: 0))
+    try client.issuing(ping, 60500); client.submitted(ping, 60500)
+    client.activity(81000)
+    // Receive enforces the original deadline even when OS scheduling omitted maintenance.
+    XCTAssertThrowsError(try client.receive(SessionControl(kind: .pong, value: 0), 81000)) {
+      XCTAssertEqual($0 as? SessionFailure, .controlTimeout)
+    }
+    XCTAssertThrowsError(try client.poll(81000)) { XCTAssertEqual($0 as? SessionFailure, .controlTimeout) }
   }
   func testRenewalMarginsAndEncryptedRetirementRaces() async throws {
     let threshold = (UInt64(1) << 20) - 1024
@@ -607,6 +630,42 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       await s.close()
     }
   }
+  func testOperationsRejectExpiredOrRevokedSessionsWithoutMaintenance() async throws {
+    let fixture = try XCTUnwrap((helper.root("record-vectors")["valid"] as? [[String: Any]])?.first)
+    let ack = try SessionRecordCodec.seal(key: b(fixture, "key"), iv: b(fixture, "iv"),
+      id: b(fixture, "session"), direction: 2, kind: .readyAck, sequence: 0, plaintext: Data())
+    let inbound = try SessionRecordCodec.seal(key: b(fixture, "key"), iv: b(fixture, "iv"),
+      id: b(fixture, "session"), direction: 2, kind: .data, sequence: 1, plaintext: Data([7]))
+    for fault in ["idle", "lifetime", "revoked"] { for receive in [false, true] {
+      let clock = ChannelClock(), output = ChannelMailbox()
+      let ch = try channel(now: { clock.read() }, validate: {
+        if fault == "revoked" && clock.read() > 0 { throw SessionFailure.untrustedPeer }
+      }, submit: { await output.append($0) })
+      try await ch.send(.ready); _ = try await ch.receive(ack)
+      switch fault {
+      case "idle": clock.set(120.5)
+      case "lifetime":
+        for time in stride(from: 100, through: 3500, by: 100) {
+          clock.set(Double(time)); try await ch.send(.data)
+        }
+        clock.set(3600.5)
+      default: clock.set(0.5)
+      }
+      let sent = await ch.sent, received = await ch.received, submissions = await output.messages.count
+      try await reject(fault == "revoked" ? .untrustedPeer : .expired) {
+        if receive { _ = try await ch.receive(inbound) }
+        else { try await ch.send(.data, plaintext: Data([9])) }
+      }
+      let afterSent = await ch.sent, afterReceived = await ch.received
+      let afterSubmissions = await output.messages.count, stage = await ch.stage
+      XCTAssertEqual(sent, afterSent); XCTAssertEqual(received, afterReceived)
+      XCTAssertEqual(submissions, afterSubmissions); XCTAssertEqual(stage, .closed)
+      if fault != "revoked" {
+        let reason = await ch.expiration
+        XCTAssertEqual(reason, fault == "idle" ? .idle : .lifetime)
+      }
+    } }
+  }
   func testCloseDuringSuspendedSubmissionCannotReviveChannel() async throws {
     let gate = ChannelSubmissionGate()
     let ch = try channel(submit: { _ in await gate.pause() })
@@ -699,6 +758,10 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     _ = try timed.receive(frames[0])
     clock.set(10)
     try await reject(.expired) { try timed.tick() }
+    var delayed = GattReassembler(version: 2, now: { clock.read() })
+    _ = try delayed.receive(frames[0])
+    clock.set(20.5)
+    try await reject(.expired) { _ = try delayed.receive(frames[1]) }
     try await reject(.malformed) {
       _ = try GattReassembler.fragments(data, id: UInt64(UInt32.max) + 1, capacity: 20, version: 2)
     }
