@@ -5,14 +5,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProbePresenceTest {
+  @Test fun restoredBindingWaitsForMissingFactsAndUnbindRetiresUnknownPresence() {
+    val presence = ProbePresence()
+    presence.bind()
+    assertTrue(presence.present)
+    assertTrue(presence.event(2, false)) // BLE may still be nearby without its cached callback.
+    assertFalse(presence.event(1, false))
+    assertTrue(presence.event(1, true))
+    presence.clear()
+    assertFalse(presence.present)
+    presence.bind()
+    assertTrue(presence.event(1, false)) // Rebinding can omit Bluetooth's cached fact instead.
+    presence.retire()
+    presence.bind()
+    assertFalse(presence.present)
+    assertFalse(presence.event(2, true))
+  }
   @Test fun duplicateEventsAndAdvertisingLossDoNotRetireConnectedOwnership() {
     val presence = ProbePresence()
     assertTrue(presence.event(1, true))
-    assertFalse(presence.event(1, true))
-    assertFalse(presence.event(2, true))
-    assertFalse(presence.event(1, false))
+    assertTrue(presence.event(1, true)) // Resuming observation may repeat a cached presence event.
+    assertTrue(presence.event(2, true))
+    assertTrue(presence.event(1, false))
     assertTrue(presence.present)
-    assertTrue(presence.event(2, false))
+    assertFalse(presence.event(2, false))
     assertFalse(presence.present)
     assertFalse(presence.event(2, false))
     assertTrue(presence.event(1, true))

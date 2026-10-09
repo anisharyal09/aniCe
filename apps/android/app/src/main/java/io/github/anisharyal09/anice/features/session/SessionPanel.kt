@@ -21,6 +21,7 @@ import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
 fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>) {
+  val nearby = io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(LocalContext.current)
   val permissions =
     rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
       model.permissionReturned()
@@ -30,12 +31,15 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>) {
     peers.forEachIndexed { index, record ->
       key(record.peer.deviceId) {
         val selected = model.selected?.deviceId == record.peer.deviceId
+        val waiting = nearby.armed && nearby.peerId == record.peer.deviceId &&
+          (!selected || model.state == ConnectionState.FAILED || model.state == ConnectionState.DISCONNECTED)
         DeviceSessionCard(
           name = record.peer.deviceName,
           fingerprint = record.peer.fingerprint,
-          state = if (selected) model.state else ConnectionState.DISCONNECTED,
+          state = if (selected && !waiting) model.state else ConnectionState.DISCONNECTED,
           status =
-            if (selected) model.status
+            if (waiting) nearby.status.takeUnless { it == "Waiting nearby." }.orEmpty()
+            else if (selected) model.status
             else if (active) "Disconnect your current Mac to connect to this one."
             else "Open Allow connections on your Mac, then connect here.",
           canConnect = !active,
@@ -47,6 +51,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>) {
           onDisconnect = model::disconnect,
           onCheck = model::checkConnection,
           probePeerId = record.peer.deviceId,
+          automaticWaiting = waiting,
         )
       }
       if (index < peers.lastIndex)
@@ -66,14 +71,16 @@ fun DeviceSessionCard(
   onDisconnect: () -> Unit,
   onCheck: () -> Unit,
   probePeerId: String? = null,
+  automaticWaiting: Boolean = false,
 ) {
   val context = LocalContext.current
-  // The component exists only in debug APKs; release builds expose no experimental setup.
+  // Device settings expose availability truth; a gated owner cannot start background work.
   val probeIntent = remember(probePeerId) {
     Intent().setClassName(context, "io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbeActivity")
       .putExtra("peer", probePeerId)
   }
   val hasProbe = probePeerId != null && context.packageManager.resolveActivity(probeIntent, 0) != null
+  val label = if (automaticWaiting) "Waiting nearby" else stateLabel(state)
   var menu by remember { mutableStateOf(false) }
   val statusColor =
     when (state) {
@@ -93,10 +100,10 @@ fun DeviceSessionCard(
     )
     // This prefix is a visual identifier; authentication uses the complete pinned credential.
     Text(
-      stateLabel(state) + " · " + fingerprint.take(8).chunked(4).joinToString(" "),
+      label + " · " + fingerprint.take(8).chunked(4).joinToString(" "),
       modifier =
         Modifier.semantics {
-          contentDescription = "${stateLabel(state)}. Fingerprint ${fingerprint.take(8)}"
+          contentDescription = "$label. Fingerprint ${fingerprint.take(8)}"
         },
       style = MaterialTheme.typography.bodyMedium,
       color = statusColor,
@@ -115,7 +122,7 @@ fun DeviceSessionCard(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) {
+      if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING || automaticWaiting) {
         TextButton(onClick = onDisconnect, modifier = Modifier.heightIn(min = 48.dp)) {
           Text(if (state == ConnectionState.CONNECTING) "Cancel" else "Disconnect")
         }
@@ -128,17 +135,17 @@ fun DeviceSessionCard(
           Text(if (state == ConnectionState.FAILED) "Retry" else "Connect")
         }
       }
-      if (state == ConnectionState.SECURED)
+      if (state == ConnectionState.SECURED || hasProbe)
         Box {
           TextButton(onClick = { menu = true }, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("More")
           }
           DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            if (hasProbe) DropdownMenuItem(text = { Text("Background connection test") }, onClick = {
+            if (hasProbe) DropdownMenuItem(text = { Text("Connection settings") }, onClick = {
               menu = false
               context.startActivity(probeIntent)
             })
-            DropdownMenuItem(
+            if (state == ConnectionState.SECURED) DropdownMenuItem(
               text = { Text("Send connection check") },
               onClick = {
                 menu = false

@@ -63,6 +63,206 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       XCTFail("Expected \(reason)")
     } catch let error as SessionFailure { XCTAssertEqual(error, reason) }
   }
+  func testIndependentControlFixturesAndDispatcherBounds() throws {
+    let root = try helper.root("control-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
+    XCTAssertGreaterThanOrEqual(valid.count, 3)
+    XCTAssertGreaterThanOrEqual(invalid.count, 15)
+    for row in valid {
+      let kind = try XCTUnwrap(ControlKind(rawValue: XCTUnwrap(row["type"] as? Int64)))
+      let expected = SessionControl(kind: kind, value: try XCTUnwrap(row["value"] as? Int64))
+      let bytes = try b(row, "payload")
+      XCTAssertEqual(try expected.encode(), bytes)
+      XCTAssertEqual(try SessionControl.decode(bytes), expected)
+      XCTAssertEqual(try SessionControl.application(bytes), expected)
+    }
+    for row in invalid {
+      let reason = try XCTUnwrap(SessionFailure(rawValue: XCTUnwrap(row["reason"] as? String)))
+      XCTAssertThrowsError(try SessionControl.decode(b(row, "payload"))) {
+        XCTAssertEqual($0 as? SessionFailure, reason)
+      }
+    }
+    XCTAssertNil(try SessionControl.application(Data("aniCe connection check".utf8)))
+    XCTAssertNil(try SessionControl.application(SessionCbor.encode(.array([.text("other")]))))
+    XCTAssertThrowsError(try SessionControl.application(Data([0x84]))) {
+      XCTAssertEqual($0 as? SessionFailure, .malformed)
+    }
+    XCTAssertThrowsError(try SessionControl(kind: .ping, value: -1).encode()) {
+      XCTAssertEqual($0 as? SessionFailure, .malformed)
+    }
+  }
+  private func controlPair(_ initialID: Int64 = 0) throws -> (SessionLiveness, SessionLiveness) {
+    var c = SessionLiveness(responder: false, nextId: initialID)
+    var s = SessionLiveness(responder: true)
+    try c.start(0); try s.start(0)
+    let hello = try XCTUnwrap(c.pending)
+    try c.issuing(hello, 0); c.submitted(hello, 0); try s.receive(hello, 0)
+    let ack = try XCTUnwrap(s.pending)
+    try s.issuing(ack, 0); s.submitted(ack, 0); try c.receive(ack, 0)
+    return (c, s)
+  }
+  func testControlOrderingDeadlinesAndUnsignedBoundaries() throws {
+    var (c, s) = try controlPair()
+    XCTAssertEqual(c.support, true); XCTAssertEqual(s.support, true)
+    try c.poll(59999); XCTAssertNil(c.pending)
+    try c.poll(60000)
+    let ping = try XCTUnwrap(c.pending)
+    XCTAssertEqual(ping, SessionControl(kind: .ping, value: 0))
+    try c.poll(60001); XCTAssertEqual(c.pending, ping)
+    try c.issuing(ping, 60001); c.submitted(ping, 60001)
+    try c.poll(70000); XCTAssertNil(c.pending)
+    XCTAssertThrowsError(try c.receive(SessionControl(kind: .pong, value: 1), 70000)) {
+      XCTAssertEqual($0 as? SessionFailure, .state)
+    }
+    try s.receive(ping, 70000)
+    let pong = try XCTUnwrap(s.pending)
+    try s.issuing(pong, 70000); s.submitted(pong, 70000); try c.receive(pong, 70000)
+    XCTAssertThrowsError(try c.receive(pong, 70001)) { XCTAssertEqual($0 as? SessionFailure, .state) }
+    XCTAssertThrowsError(try s.receive(ping, 70001)) { XCTAssertEqual($0 as? SessionFailure, .state) }
+    XCTAssertThrowsError(try s.receive(SessionControl(kind: .renewalRequest), 70001)) {
+      XCTAssertEqual($0 as? SessionFailure, .state)
+    }
+    try c.poll(130001); XCTAssertEqual(c.pending, SessionControl(kind: .ping, value: 1))
+    var lost = try controlPair().0
+    try lost.poll(60000)
+    let waiting = try XCTUnwrap(lost.pending)
+    try lost.issuing(waiting, 60000); lost.submitted(waiting, 60000)
+    lost.activity(79999) // Authenticated data cannot satisfy an outstanding PING.
+    XCTAssertThrowsError(try lost.receive(SessionControl(kind: .pong, value: 0), 80000)) {
+      XCTAssertEqual($0 as? SessionFailure, .controlTimeout)
+    }
+    XCTAssertThrowsError(try lost.poll(80000)) { XCTAssertEqual($0 as? SessionFailure, .controlTimeout) }
+    var max = try controlPair(0xffffffff).0
+    try max.poll(60000)
+    let final = try XCTUnwrap(max.pending)
+    try max.issuing(final, 60000); max.submitted(final, 60000)
+    try max.receive(SessionControl(kind: .pong, value: 0xffffffff), 60000)
+    XCTAssertThrowsError(try max.poll(120000)) { XCTAssertEqual($0 as? SessionFailure, .controlTimeout) }
+    var legacy = SessionLiveness(responder: false)
+    try legacy.start(0)
+    XCTAssertThrowsError(try legacy.receive(SessionControl(kind: .helloAck), 0)) {
+      XCTAssertEqual($0 as? SessionFailure, .state)
+    }
+    try legacy.poll(10000); XCTAssertEqual(legacy.support, false); XCTAssertNil(legacy.pending)
+    XCTAssertThrowsError(try legacy.receive(SessionControl(kind: .helloAck), 10000)) {
+      XCTAssertEqual($0 as? SessionFailure, .state)
+    }
+  }
+  func testEncryptedControlsBackpressureLegacyFallbackAndHardLifetime() async throws {
+    let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    for serverControls in [true, false] {
+      let clock = ChannelClock()
+      let outI = ChannelMailbox(), outR = ChannelMailbox()
+      let c = SessionConnection(
+        handshake: try helper.engine(v, server: false), responder: false,
+        capacity: { _ in clock.read() != 60 }, submit: { await outI.append($0) },
+        data: { await outI.record($0) }, secured: { await outI.secure() }, controls: true,
+        now: { Int64(clock.read() * 1000) })
+      let s = SessionConnection(
+        handshake: try helper.engine(v, server: true), responder: true, capacity: { _ in true },
+        submit: { await outR.append($0) }, data: { await outR.record($0) },
+        secured: { await outR.secure() }, controls: serverControls,
+        now: { Int64(clock.read() * 1000) })
+      func pump() async throws {
+        for _ in 0..<32 {
+          let hasI = await !outI.messages.isEmpty, hasR = await !outR.messages.isEmpty
+          if !hasI && !hasR { return }
+          if hasI { try await s.receive(outI.take()) }
+          if await !outR.messages.isEmpty { try await c.receive(outR.take()) }
+        }
+        XCTFail("Unbounded control exchange")
+      }
+      try await c.start(); try await pump()
+      if serverControls {
+        let clientSupport = await c.controlSupport, serverSupport = await s.controlSupport
+        XCTAssertEqual(clientSupport, true); XCTAssertEqual(serverSupport, true)
+        clock.set(60); try await c.tick()
+        let blocked = await outI.messages
+        XCTAssertTrue(blocked.isEmpty)
+        clock.set(61); try await c.tick(); try await pump()
+        clock.set(121); try await c.tick(); try await pump()
+        let internalData = await outR.data
+        XCTAssertTrue(internalData.isEmpty)
+      } else {
+        clock.set(10); try await c.tick()
+        let support = await c.controlSupport
+        XCTAssertEqual(support, false)
+      }
+      let before = await outR.data.count
+      try await c.sendData(Data("aniCe connection check".utf8)); try await pump()
+      let after = await outR.data.count
+      XCTAssertEqual(after, before + 1)
+      clock.set(3600)
+      try await reject(.expired) { try await c.tick() }
+      let reason = await c.expiration, closed = await c.isClosed
+      XCTAssertEqual(reason, .lifetime); XCTAssertTrue(closed)
+      await c.close(); await s.close()
+    }
+  }
+  func testRenewalMarginsAndEncryptedRetirementRaces() async throws {
+    let threshold = (UInt64(1) << 20) - 1024
+    XCTAssertNil(SecureSession.renewalReason(age: 3299.999, sent: threshold - 1, received: threshold - 1))
+    XCTAssertEqual(SecureSession.renewalReason(age: 3300, sent: 0, received: 0), 1)
+    XCTAssertEqual(SecureSession.renewalReason(age: 0, sent: threshold, received: 0), 2)
+    XCTAssertEqual(SecureSession.renewalReason(age: 0, sent: 0, received: threshold), 2)
+    var (lc, ls) = try controlPair()
+    try lc.requestRenewal(2); try ls.requestRenewal(1); try ls.poll(1)
+    let request = try XCTUnwrap(ls.pending)
+    try lc.receive(request, 1); try lc.receive(request, 2)
+    XCTAssertEqual(lc.renewalReason, 2)
+    try ls.issuing(request, 2); ls.submitted(request, 2); try ls.poll(3)
+    XCTAssertNil(ls.pending)
+    let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    for fault in ["none", "submission", "stop"] {
+      let clock = ChannelClock(), outI = ChannelMailbox(), outR = ChannelMailbox()
+      let c = SessionConnection(handshake: try helper.engine(v, server: false), responder: false,
+        capacity: { _ in true }, submit: { await outI.append($0) }, data: { await outI.record($0) },
+        secured: {}, controls: true, now: { Int64(clock.read() * 1000) }, renew: true)
+      let s = SessionConnection(handshake: try helper.engine(v, server: true), responder: true,
+        capacity: { _ in clock.read() != 3300 }, submit: {
+          if fault == "submission" && clock.read() > 3300 { throw SessionFailure.authentication }
+          await outR.append($0)
+        }, data: { await outR.record($0) }, secured: {}, controls: true,
+        now: { Int64(clock.read() * 1000) }, renew: true)
+      func pump() async throws {
+        for _ in 0..<32 {
+          let hasI = await !outI.messages.isEmpty, hasR = await !outR.messages.isEmpty
+          if !hasI && !hasR { return }
+          if hasI { try await s.receive(outI.take()) }
+          if await !outR.messages.isEmpty { try await c.receive(outR.take()) }
+        }
+        XCTFail("Unbounded renewal exchange")
+      }
+      try await c.start(); try await pump()
+      for minute in 1...54 { clock.set(Double(minute * 60)); try await c.tick(); try await pump() }
+      clock.set(3300); try await s.tick()
+      let blocked = await outR.messages
+      XCTAssertTrue(blocked.isEmpty)
+      do { try await s.sendData(Data([1])); XCTFail("Application escaped renewal") }
+      catch is SessionBackpressure {}
+      clock.set(3301)
+      if fault == "stop" {
+        await s.close()
+        try await reject(.cancelled) { try await s.tick() }
+        let queued = await outR.messages; XCTAssertTrue(queued.isEmpty)
+      } else if fault == "submission" {
+        try await reject(.authentication) { try await s.tick() }
+        let closed = await s.isClosed; XCTAssertTrue(closed)
+      } else {
+        try await c.tick(); try await s.tick(); try await pump()
+        let reason = await c.renewalReason; XCTAssertEqual(reason, 1)
+        do { try await c.sendData(Data([1])); XCTFail("Application escaped renewal") }
+        catch is SessionBackpressure {}
+        try await c.disconnect(); try await pump()
+        let closedC = await c.isClosed, closedS = await s.isClosed
+        XCTAssertTrue(closedC); XCTAssertTrue(closedS)
+      }
+      let deliveredI = await outI.data, deliveredR = await outR.data
+      XCTAssertTrue(deliveredI.isEmpty); XCTAssertTrue(deliveredR.isEmpty)
+      await c.close(); await s.close()
+    }
+  }
   func testIndependentRecordsUnsignedCountersAndAllNegatives() async throws {
     let root = try helper.root("record-vectors")
     let rows = try XCTUnwrap(root["valid"] as? [[String: Any]])
@@ -92,6 +292,63 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
           expected: XCTUnwrap(UInt64(XCTUnwrap(v["sequence"] as? String))),
           record: self.b(v, "record"))
       }
+    }
+  }
+  func testEncryptedControlFailuresRetireWithoutApplicationDelivery() async throws {
+    let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    let faults = ["wrongPong", "missingPong", "malformed", "submission", "retirement"]
+    XCTAssertEqual(faults.count, 5)
+    for fault in faults {
+      let clock = ChannelClock(), gate = ChannelSubmissionGate()
+      let outI = ChannelMailbox(), outR = ChannelMailbox()
+      let c = SessionConnection(
+        handshake: try helper.engine(v, server: false), responder: false, capacity: { _ in true },
+        submit: {
+          if clock.read() >= 60 && fault == "submission" { throw SessionFailure.authentication }
+          if clock.read() >= 60 && fault == "retirement" { await gate.pause() }
+          await outI.append($0)
+        }, data: { await outI.record($0) }, secured: {}, controls: true,
+        now: { Int64(clock.read() * 1000) })
+      let s = SessionConnection(
+        handshake: try helper.engine(v, server: true), responder: true, capacity: { _ in true },
+        submit: { await outR.append($0) }, data: { await outR.record($0) }, secured: {},
+        controls: true, now: { Int64(clock.read() * 1000) })
+      func pump() async throws {
+        for _ in 0..<32 {
+          let hasI = await !outI.messages.isEmpty, hasR = await !outR.messages.isEmpty
+          if !hasI && !hasR { return }
+          if hasI { try await s.receive(outI.take()) }
+          if await !outR.messages.isEmpty { try await c.receive(outR.take()) }
+        }
+        XCTFail("Unbounded control exchange")
+      }
+      try await c.start(); try await pump()
+      switch fault {
+      case "wrongPong":
+        try await s.sendData(SessionControl(kind: .pong, value: 7).encode())
+        try await reject(.state) { try await c.receive(outR.take()) }
+      case "malformed":
+        try await s.sendData(Data([0x84]))
+        try await reject(.malformed) { try await c.receive(outR.take()) }
+      case "missingPong":
+        clock.set(60); try await c.tick(); try await s.receive(outI.take())
+        clock.set(80)
+        try await reject(.controlTimeout) { try await c.tick() }
+      case "retirement":
+        clock.set(60)
+        let pending = Task { try await c.tick() }
+        for _ in 0..<100 where await !gate.entered { try await Task.sleep(for: .milliseconds(1)) }
+        let entered = await gate.entered
+        XCTAssertTrue(entered)
+        await c.close(); await gate.release()
+        try await reject(.cancelled) { try await pending.value }
+      default:
+        clock.set(60)
+        try await reject(.authentication) { try await c.tick() }
+      }
+      let closed = await c.isClosed, i = await outI.data, r = await outR.data
+      XCTAssertTrue(closed); XCTAssertTrue(i.isEmpty); XCTAssertTrue(r.isEmpty)
+      await c.close(); await s.close()
     }
   }
   func testCodecRejectsInvalidMaterialAndSealBounds() async throws {

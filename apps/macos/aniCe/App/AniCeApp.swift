@@ -18,20 +18,40 @@ struct AniCeApp: App {
     _discovery = State(initialValue: discovery)
     let pairing = MacPairingModel(identity: identity.service, discovery: discovery)
     let session = MacSessionModel(
-      identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() })
-    session.beforeAllow = {
-      pairing.cancel()
-      discovery.stop()
-    }
-    pairing.beforePairing = { session.cancel() }
-    pairing.trustRemoved = { session.cancel() }
-    discovery.beforeStart = { session.cancel() }
+      identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
+      preferences: .standard)
+    Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
     identity.onIdentityReset = {
-      session.cancel()
+      session.retireTrust()
       pairing.cancel()
     }
     _pairing = State(initialValue: pairing)
     _session = State(initialValue: session)
+    session.restoreAutomatic()
+  }
+
+  /// One shared radio owner; completed cleanup must not take the radio from a newer exclusive mode.
+  @MainActor static func configureSessionLifecycle(
+    session: MacSessionModel, pairing: MacPairingModel, discovery: MacDiscoveryModel
+  ) {
+    session.beforeAllow = {
+      pairing.cancel()
+      discovery.stop()
+    }
+    pairing.beforePairing = { session.suspendAutomatic() }
+    pairing.afterPairing = { [weak session, weak pairing, weak discovery] in
+      guard pairing?.active == false, discovery?.session.active == false else { return }
+      session?.resumeAutomatic()
+    }
+    pairing.trustRemoved = { session.retireTrust() }
+    discovery.beforeStart = { session.suspendAutomatic() }
+    discovery.afterStop = { [weak session, weak pairing, weak discovery] in
+      // Defer until a shared-radio mode change finishes installing its new owner.
+      Task { @MainActor in
+        guard pairing?.active == false, discovery?.session.active == false else { return }
+        session?.resumeAutomatic()
+      }
+    }
   }
 
   var body: some Scene {

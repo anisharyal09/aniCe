@@ -6,6 +6,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Companion-owned nearby retry with bounded backoff, pinned saved setup, a device-level automatic connection switch and Disconnect pause. Release service ownership remains disabled pending physical acceptance.
+- Coordinated fresh EDHOC renewal before lifetime/record limits, with encrypted backpressure, Stop and key-reuse regressions.
+
+- HELLO/ACK compatibility and encrypted PING/PONG in the shared session controller; legacy peers retain manual operation and unsupported background probes stop.
+- Adversarial control tests for malformed encodings, ordering, deadlines, backpressure, transport failure and hard session lifetime.
 - Debug-only system companion association/presence probe with pinned EDHOC authentication, bounded event diagnostics, explicit cleanup and API 31–36 dispatch.
 
 - Trusted Mac Connect/Disconnect/Retry controls, native AES-GCM record channel and EDHOC/BLE ordering owner, foreground cleanup and shared v1/v2 GATT transport with bounded queues and submission deadlines.
@@ -17,6 +22,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Add file-purpose summaries to Android sources, tests, resources, manifest and build configuration.
 - Document shared session controller architecture, companion device lifecycle boundaries, and native API paths in docs/BACKGROUND_CONNECTIONS.md.
 - Replace centered connection home with a minimal device list, contextual actions and native management menus.
 - Display eight-hex-digit fingerprint prefix instead of placeholder text; complete semantic color tokens using DESIGN.md palette.
@@ -26,6 +32,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Read private Cargo, Rustup and NDK paths during native pairing builds; preserve explicit environment overrides.
+- Cancel retired Resume results and lookup failures before they can overwrite Stop or newer setup.
+- Scope automatic connection settings, reset and checks to the displayed Mac; retire the previous association on explicit replacement.
+- Restore native companion ownership after pause/process rebinding and observe background session/radio changes independently of Compose presentation.
 - Preserve authenticated connections when opening or leaving the background-test screen; track both activity lifecycles and disconnect only through explicit setup.
 - Normalize companion association addresses for native Bluetooth lookup and identify failed setup stages; collapse test diagnostics behind an explicit disclosure.
 - Distinguish authenticated Mac closure and idle/lifetime limits from trust failure; serialize session health checks with incoming close processing.

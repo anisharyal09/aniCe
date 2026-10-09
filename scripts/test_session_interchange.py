@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Adversarial session-runner checks; no device or user acceptance required."""
+"""Adversarial checks for session-runner completion, evidence and cleanup gates."""
 import importlib.util
 import contextlib
 import io
@@ -70,7 +70,7 @@ class SessionInstrumentationGateTests(unittest.TestCase):
 
 
 class SessionEvidenceTests(unittest.TestCase):
-    def exchange(self, fail_cleanup):
+    def exchange(self, fail_cleanup, control_agreement=True, renewal_agreement=True):
         run = "00000000-0000-4000-8000-000000000001"
         remote = f"/storage/emulated/0/Android/data/io.github.anisharyal09.anice/files/session-interchange-{run}"
         cleanup_reached = False
@@ -99,20 +99,28 @@ class SessionEvidenceTests(unittest.TestCase):
                 stack.enter_context(patch.object(harness, "command", side_effect=command))
                 stack.enter_context(patch.object(harness, "receive", side_effect=[
                     {"identity": {}}, {"message2Hex": "00"},
-                    {"message4Hex": "00", "exportDigestHex": "test"}, {"readyAckHex":"00"}, {"serverDataHex":"00"}, {"cleanup": True}]))
+                    {"message4Hex": "00", "exportDigestHex": "test"}, {"readyAckHex":"00"},
+                    {"helloReplyHex":"00"}, {"pingReplyHex":"00"}, {"serverDataHex":"00"}, {"cleanup": True}]))
                 stack.enter_context(patch.object(harness, "wait_file", side_effect=[
                     {"directory": remote}, {"message1Hex": "00"}, {"message3Hex": "00"},
-                    {"readyHex":"00"},{"clientDataHex":"00"},{"closeHex":"00"},
-                    {"stage": "COMPLETE", "exportDigestHex": "test", "recordAgreement":True,"bidirectionalBytes":4000}]))
+                    {"readyHex":"00"},{"helloHex":"00"},{"pingHex":"00"},{"clientDataHex":"00"},{"closeHex":"00"},
+                    {"stage": "COMPLETE", "exportDigestHex": "test", "recordAgreement":True,
+                     "controlAgreement":control_agreement,"renewalAgreement":renewal_agreement,"bidirectionalBytes":4000}]))
                 stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                 if fail_cleanup:
                     with self.assertRaisesRegex(RuntimeError, "Injected exchange-file cleanup failure"):
+                        harness.main()
+                elif not renewal_agreement:
+                    with self.assertRaisesRegex(AssertionError, "Native record/readiness agreement failed"):
+                        harness.main()
+                elif not control_agreement:
+                    with self.assertRaisesRegex(AssertionError, "Native HELLO/PING control agreement failed"):
                         harness.main()
                 else:
                     harness.main()
             self.assertTrue(cleanup_reached, "Cleanup fault boundary was not reached")
             outputs = list(Path(directory).glob("*/result.json"))
-            if fail_cleanup:
+            if fail_cleanup or not control_agreement or not renewal_agreement:
                 self.assertEqual(outputs, [], "A failed run left a durable success report")
             else:
                 self.assertEqual(len(outputs), 1)
@@ -120,12 +128,19 @@ class SessionEvidenceTests(unittest.TestCase):
                 self.assertEqual(report["manualAcceptance"], "pending")
                 self.assertEqual(report["evidenceKind"], "automated-native-interchange")
                 self.assertFalse(report["bleVerified"])
+                self.assertTrue(report["controlAgreement"])
 
     def test_cleanup_failure_does_not_persist_success(self):
         self.exchange(fail_cleanup=True)
 
     def test_success_report_distinguishes_manual_acceptance(self):
         self.exchange(fail_cleanup=False)
+
+    def test_missing_renewal_agreement_does_not_persist_success(self):
+        self.exchange(fail_cleanup=False, renewal_agreement=False)
+
+    def test_missing_control_agreement_does_not_persist_success(self):
+        self.exchange(fail_cleanup=False, control_agreement=False)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Bounded GATT reassembly and MTU fragmentation for pairing (v1) and session (v2) wire messages.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 import io.github.anisharyal09.anice.infrastructure.session.*

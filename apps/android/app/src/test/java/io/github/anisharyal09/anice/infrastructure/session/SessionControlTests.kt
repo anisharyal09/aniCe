@@ -1,0 +1,235 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Tests control oracle fixtures, compatibility, ping ordering and encrypted renewal failures.
+package io.github.anisharyal09.anice.infrastructure.session
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Test
+
+class SessionControlTests {
+  private fun reject(reason: SessionFailure, action: () -> Unit) {
+    try { action(); fail("Expected $reason") }
+    catch (error: SessionException) { assertEquals(reason, error.reason) }
+  }
+  private fun pair(initialId: Long = 0): Pair<SessionLiveness, SessionLiveness> {
+    val client = SessionLiveness(false, initialId)
+    val server = SessionLiveness(true)
+    client.start(0); server.start(0)
+    val hello = requireNotNull(client.pending)
+    client.issuing(hello, 0); client.submitted(hello, 0); server.receive(hello, 0)
+    val ack = requireNotNull(server.pending)
+    server.issuing(ack, 0); server.submitted(ack, 0); client.receive(ack, 0)
+    return client to server
+  }
+  @Test fun independentControlFixturesAndDispatcherBounds() {
+    val fixtures = SessionTests().root("control-vectors.json")
+    val valid = fixtures.getJSONArray("valid")
+    val invalid = fixtures.getJSONArray("invalid")
+    assertTrue(valid.length() >= 3); assertTrue(invalid.length() >= 15)
+    fun bytes(hex: String) = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    repeat(valid.length()) {
+      val row = valid.getJSONObject(it)
+      val expected = SessionControl(ControlKind.entries.single { kind -> kind.wire == row.getInt("type") }, row.getLong("value"))
+      val encoded = bytes(row.getString("payloadHex"))
+      assertArrayEquals(encoded, expected.encode())
+      assertEquals(expected, SessionControl.decode(encoded))
+      assertEquals(expected, SessionControl.application(encoded))
+    }
+    repeat(invalid.length()) {
+      val row = invalid.getJSONObject(it)
+      reject(if (row.getString("reason") == "unsupportedProfile") SessionFailure.UNSUPPORTED_PROFILE else SessionFailure.MALFORMED) {
+        SessionControl.decode(bytes(row.getString("payloadHex")))
+      }
+    }
+    assertNull(SessionControl.application("aniCe connection check".toByteArray()))
+    assertNull(SessionControl.application(SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("other"))))))
+    reject(SessionFailure.MALFORMED) { SessionControl.application(byteArrayOf(0x84.toByte())) }
+    reject(SessionFailure.MALFORMED) { SessionControl(ControlKind.PING, -1).encode() }
+  }
+  @Test fun livenessOrderingDeadlinesAndUnsignedBoundaries() {
+    val (c, s) = pair()
+    assertEquals(true, c.support); assertEquals(true, s.support)
+    c.poll(59999); assertNull(c.pending)
+    c.poll(60000)
+    val ping = requireNotNull(c.pending)
+    assertEquals(SessionControl(ControlKind.PING, 0), ping)
+    c.poll(60001); assertEquals(ping, c.pending)
+    c.issuing(ping, 60001); c.submitted(ping, 60001)
+    c.poll(70000); assertNull(c.pending)
+    reject(SessionFailure.STATE) { c.receive(SessionControl(ControlKind.PONG, 1), 70000) }
+    s.receive(ping, 70000)
+    val pong = requireNotNull(s.pending)
+    s.issuing(pong, 70000); s.submitted(pong, 70000); c.receive(pong, 70000)
+    reject(SessionFailure.STATE) { c.receive(pong, 70001) }
+    reject(SessionFailure.STATE) { s.receive(ping, 70001) }
+    reject(SessionFailure.STATE) { s.receive(SessionControl(ControlKind.RENEWAL_REQUEST), 70001) }
+    c.poll(130001); assertEquals(SessionControl(ControlKind.PING, 1), c.pending)
+    val lost = pair().first
+    lost.poll(60000); val pending = requireNotNull(lost.pending)
+    lost.issuing(pending, 60000); lost.submitted(pending, 60000)
+    lost.activity(79999) // Unrelated authenticated traffic cannot satisfy an outstanding ping.
+    reject(SessionFailure.CONTROL_TIMEOUT) { lost.receive(SessionControl(ControlKind.PONG, 0), 80000) }
+    reject(SessionFailure.CONTROL_TIMEOUT) { lost.poll(80000) }
+    val max = pair(0xffffffffL).first
+    max.poll(60000); val final = requireNotNull(max.pending)
+    max.issuing(final, 60000); max.submitted(final, 60000)
+    max.receive(SessionControl(ControlKind.PONG, 0xffffffffL), 60000)
+    reject(SessionFailure.CONTROL_TIMEOUT) { max.poll(120000) }
+    val legacy = SessionLiveness(false)
+    legacy.start(0)
+    reject(SessionFailure.STATE) { legacy.receive(SessionControl(ControlKind.HELLO_ACK), 0) }
+    legacy.poll(10000); assertEquals(false, legacy.support); assertNull(legacy.pending)
+    reject(SessionFailure.STATE) { legacy.receive(SessionControl(ControlKind.HELLO_ACK), 10000) }
+  }
+
+  @Test fun encryptedControlsBackpressureLegacyFallbackAndHardLifetime() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    for (serverControls in listOf(true, false)) {
+      var clock = 0L
+      var writable = true
+      val outboundI = java.util.ArrayDeque<ByteArray>()
+      val outboundR = java.util.ArrayDeque<ByteArray>()
+      val delivered = mutableListOf<ByteArray>()
+      val client = SessionConnection(helper.engine(fixture, false), false, { writable }, { outboundI.add(it) }, {}, {}, true, { clock })
+      val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outboundR.add(it) }, { delivered.add(it) }, {}, serverControls, { clock })
+      suspend fun pump() {
+        var count = 0
+        while (outboundI.isNotEmpty() || outboundR.isNotEmpty()) {
+          check(++count <= 32) { "Unbounded control exchange" }
+          if (outboundI.isNotEmpty()) server.receive(outboundI.removeFirst())
+          if (outboundR.isNotEmpty()) client.receive(outboundR.removeFirst())
+        }
+      }
+      try {
+        client.start(); pump()
+        if (serverControls) {
+          assertEquals(true, client.controlSupport); assertEquals(true, server.controlSupport)
+          assertTrue(delivered.isEmpty())
+          clock = 60000; writable = false; client.tick()
+          assertTrue(outboundI.isEmpty())
+          writable = true; clock = 61000; client.tick(); pump()
+          assertTrue(delivered.isEmpty())
+          clock = 121000; client.tick(); pump() // Quiet connection exceeds the former idle cutoff.
+        } else {
+          clock = 10000; client.tick()
+          assertEquals(false, client.controlSupport)
+          delivered.clear() // Legacy dispatch receives HELLO as ordinary data and ignores it in the app.
+        }
+        client.sendData("aniCe connection check".toByteArray()); pump()
+        assertEquals(1, delivered.size)
+        clock = 3600000
+        try { client.tick(); fail("Keepalive extended the hard lifetime") }
+        catch (error: SessionException) { assertEquals(SessionFailure.EXPIRED, error.reason) }
+        assertEquals(SessionExpiry.LIFETIME, client.expiration)
+        assertTrue(client.isClosed)
+      } finally { client.close(); server.close() }
+    }
+  }
+  @Test fun encryptedRenewalBackpressureFailureAndStop() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    for (fault in listOf("none", "submission", "stop")) {
+      var clock = 0L
+      var writable = true
+      val outI = java.util.ArrayDeque<ByteArray>()
+      val outR = java.util.ArrayDeque<ByteArray>()
+      var delivered = 0
+      val client = SessionConnection(helper.engine(fixture, false), false, { true }, { outI.add(it) },
+        { delivered++ }, {}, true, { clock }, true)
+      val server = SessionConnection(helper.engine(fixture, true), true, { writable }, {
+        if (clock >= 3300000 && fault == "submission") throw SessionException(SessionFailure.AUTHENTICATION)
+        outR.add(it)
+      }, { delivered++ }, {}, true, { clock }, true)
+      suspend fun pump() {
+        var count = 0
+        while (outI.isNotEmpty() || outR.isNotEmpty()) {
+          assertTrue(++count <= 32)
+          if (outI.isNotEmpty()) server.receive(outI.removeFirst())
+          if (outR.isNotEmpty()) client.receive(outR.removeFirst())
+        }
+      }
+      try {
+        client.start(); pump()
+        repeat(54) { clock = (it + 1) * 60000L; client.tick(); pump() }
+        clock = 3300000; writable = false; server.tick()
+        assertTrue(outR.isEmpty()) // Preflight retains one logical renewal, without consuming a nonce.
+        try { server.sendData(byteArrayOf(1)); fail("Application escaped renewal") }
+        catch (_: SessionBackpressure) {}
+        if (fault == "stop") {
+          server.close(); writable = true
+          try { server.tick(); fail("Retired renewal submitted") }
+          catch (error: SessionException) { assertEquals(SessionFailure.CANCELLED, error.reason) }
+          assertTrue(outR.isEmpty())
+        } else {
+          writable = true
+          if (fault == "submission") {
+            try { server.tick(); fail("Renewal submission failure accepted") }
+            catch (error: SessionException) { assertEquals(SessionFailure.AUTHENTICATION, error.reason) }
+            assertTrue(server.isClosed)
+          } else {
+            client.tick(); assertEquals(1L, client.renewalReason)
+            server.tick(); pump(); assertEquals(1L, client.renewalReason)
+            try { client.sendData(byteArrayOf(1)); fail("Application escaped renewal") }
+            catch (_: SessionBackpressure) {}
+            client.disconnect(); pump()
+            assertTrue(client.isClosed); assertTrue(server.isClosed)
+          }
+        }
+        assertEquals(0, delivered)
+      } finally { client.close(); server.close() }
+    }
+  }
+  @Test fun encryptedControlFailuresRetireWithoutApplicationDelivery() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    val cases = listOf("wrongPong", "missingPong", "malformed", "submission")
+    assertEquals(4, cases.size)
+    for (fault in cases) {
+      var clock = 0L
+      var rejectSubmission = false
+      val outI = java.util.ArrayDeque<ByteArray>()
+      val outR = java.util.ArrayDeque<ByteArray>()
+      var delivered = 0
+      val client = SessionConnection(helper.engine(fixture, false), false, { true }, {
+        if (rejectSubmission) throw SessionException(SessionFailure.AUTHENTICATION)
+        outI.add(it)
+      }, { delivered++ }, {}, true, { clock })
+      val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outR.add(it) },
+        { delivered++ }, {}, true, { clock })
+      suspend fun pump() {
+        var count = 0
+        while (outI.isNotEmpty() || outR.isNotEmpty()) {
+          check(++count <= 32)
+          if (outI.isNotEmpty()) server.receive(outI.removeFirst())
+          if (outR.isNotEmpty()) client.receive(outR.removeFirst())
+        }
+      }
+      try {
+        client.start(); pump()
+        val expected = when (fault) {
+          "wrongPong" -> {
+            server.sendData(SessionControl(ControlKind.PONG, 7).encode())
+            SessionFailure.STATE
+          }
+          "malformed" -> {
+            server.sendData(byteArrayOf(0x84.toByte()))
+            SessionFailure.MALFORMED
+          }
+          "missingPong" -> {
+            clock = 60000; client.tick(); server.receive(outI.removeFirst())
+            outR.clear(); clock = 80000
+            SessionFailure.CONTROL_TIMEOUT
+          }
+          else -> { clock = 60000; rejectSubmission = true; SessionFailure.AUTHENTICATION }
+        }
+        try {
+          if (outR.isNotEmpty()) client.receive(outR.removeFirst()) else client.tick()
+          fail("Accepted $fault")
+        } catch (error: SessionException) { assertEquals(expected, error.reason) }
+        assertTrue(client.isClosed)
+        assertEquals(0, delivered)
+      } finally { client.close(); server.close() }
+    }
+  }
+}

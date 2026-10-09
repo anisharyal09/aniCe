@@ -6,6 +6,10 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Coordinated RENEWAL_REQUEST behavior, 55-minute/record-margin thresholds and old-session retirement before fresh EDHOC.
+
+- Bounded deterministic CBOR application controls in DATA kind 3/envelope 6, authoritative CDDL, and eight valid/26 invalid independent cbor2 fixtures.
+- HELLO/ACK compatibility, one outstanding PING/PONG and monotonic liveness deadlines.
 - Independent AES-GCM positive and negative record test vectors covering directional sequence bounds and lifetime limits.
 - Shared session v2 GATT framing with 9-byte header (`messageId`, `totalLength`, `offset`) and logical payload discrimination.
 - Trusted-device session profile v1: EDHOC method 0 / suite 5, mandatory message 4, deterministic CCS credentials, CDDL, and positive/negative handshake vectors.
@@ -15,5 +19,5 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Clarify manual verification boundaries and add purpose summaries to oracle regression modules and dependency configuration.
 - Update BLE GATT primary service and characteristic UUIDs.
-

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Transfers system companion binding and presence callbacks to the shared connection owner.
 @file:Suppress("DEPRECATION", "OVERRIDE_DEPRECATION") // Android 12–15 deliver the older presence callbacks.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
@@ -13,7 +14,17 @@ import androidx.annotation.RequiresApi
 @RequiresApi(31)
 class CompanionProbeService : CompanionDeviceService() {
   private val presence = ProbePresence()
+  private var association: String? = null
   private val probe get() = CompanionProbe.get(this)
+  override fun onCreate() {
+    super.onCreate()
+    // Only CDM creates this service in aniCe; rebinding after process death may omit presence replay.
+    // The native binding owns execution, while every attempt still validates association and pinned trust.
+    presence.bind()
+    if (Build.VERSION.SDK_INT < 36) presence.event(2, false) // Older APIs expose only BLE presence.
+    association = "${probe.associationId}/${probe.address}"
+    probe.appeared(this)
+  }
   override fun onDeviceAppeared(address: String) {
     if (Build.VERSION.SDK_INT < 33 && address == probe.address) changed(1, true)
   }
@@ -38,10 +49,15 @@ class CompanionProbeService : CompanionDeviceService() {
     }
   }
   private fun changed(source: Int, appeared: Boolean) {
-    if (!probe.armed) return
-    if (presence.event(source, appeared)) {
-      if (presence.present) probe.appeared(this) else probe.disappeared(this)
+    val current = "${probe.associationId}/${probe.address}"
+    if (association != current) {
+      presence.bind()
+      if (Build.VERSION.SDK_INT < 36) presence.event(2, false)
+      association = current
     }
+    // Duplicate native presence must reacquire a resumed policy's lease; the manager coalesces work.
+    // Track facts even while paused so resume cannot depend on an OS callback being replayed.
+    if (presence.event(source, appeared)) probe.appeared(this) else probe.disappeared(this)
   }
   override fun onUnbind(intent: Intent): Boolean {
     probe.disappeared(this)

@@ -37,6 +37,7 @@ val buildPairingNative by tasks.registering(Exec::class) {
     inputs.file("../../../core/rust/pairing/Cargo.lock")
     inputs.file("../../../core/rust/pairing/THIRD_PARTY_NOTICES.md")
     inputs.file("../../../scripts/build-pairing-native.py")
+    inputs.file(rootProject.file("local.properties")).optional()
     outputs.dir("build/native")
     outputs.dir("build/pairing-notices")
     doLast { copy { from("../../../core/rust/pairing/THIRD_PARTY_NOTICES.md"); into("build/pairing-notices") } }

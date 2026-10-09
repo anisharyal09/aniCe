@@ -54,12 +54,12 @@ docs/plans/
 docs/plans
 
 
-!.agents/RULES.md
 
 
 # will public later after updates or contents ready
 
 .agents/*
+!.agents/RULES.md
 
 # audits & verification
 docs/A&V  

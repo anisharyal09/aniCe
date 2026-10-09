@@ -1,6 +1,6 @@
 # aniCe trusted-device session profile v1
 
-Status: native handshake, AES-GCM records, BLE binding and explicit connection controls implemented. Minimum-OS runtime, physical radio/user acceptance, signed Mac hardware protection and independent integration review remain pending.
+Status: native handshake, AES-GCM records, BLE binding, explicit connections and negotiated keepalive implemented. Minimum-OS runtime, comprehensive physical radio acceptance, signed Mac hardware protection and independent integration review remain pending.
 
 ## Authentication profile
 
@@ -81,7 +81,7 @@ The engines permit a single operation. Repeated/unexpected messages terminate th
 
 Local session owners additionally retain readiness/idle/lifetime/record-limit expiry causes and authenticated peer closure for presentation. These diagnostics do not alter wire payloads or the failure categories below.
 
-Typed local failures: `malformed`, `unsupportedProfile`, `untrustedPeer`, `authentication`, `state`, `cancelled`, `expired`. Native identity/storage/provider errors retain their original typed failure and retire the handshake.
+Typed local failures: `malformed`, `unsupportedProfile`, `untrustedPeer`, `authentication`, `state`, `cancelled`, `expired`, `controlTimeout`. Native identity/storage/provider errors retain their original typed failure and retire the handshake.
 
 Accepted EDHOC error sequences: `(1, tstr <= 64 UTF-8 bytes)`, `(2, 5)`, `(3, true)`. Error code zero, unknown codes and extra data are rejected. Received errors are fatal with no suite retry. Outgoing generic error is `(1, "Handshake failed")`; callers do not emit credential identifiers in errors. During an established application session, handshake envelopes/errors are invalid.
 
@@ -98,7 +98,7 @@ purpose = "key" (32 bytes), "iv" (12 bytes), "session-id" (32 bytes)
 output = KDF(PRK_exporter, 32768, context, outputLength)
 ```
 
-AES-256-GCM record: `version:u8=1 | kind:u8 | sequence:u64BE | ciphertextLength:u32BE | ciphertext | tag:16B`. Kind: `1 ready`, `2 readyAck`, `3 data`, `4 close`. Control plaintexts are empty. Data plaintext is at most 4,000 bytes. Length excludes the tag. AAD is `header14 || sessionID32 || direction1`; nonce is `IVBase12 XOR (00000000 || sequence64BE)`.
+AES-256-GCM record: `version:u8=1 | kind:u8 | sequence:u64BE | ciphertextLength:u32BE | ciphertext | tag:16B`. Kind: `1 ready`, `2 readyAck`, `3 data`, `4 close`. Ready, readyAck and close plaintexts are empty. Data plaintext is at most 4,000 bytes. Length excludes the tag. AAD is `header14 || sessionID32 || direction1`; nonce is `IVBase12 XOR (00000000 || sequence64BE)`.
 
 Directional counters start at zero. Receive only the exact next value and advance after authentication. Reserve/burn send sequence before encryption; failure after reservation closes the session. Do not reseal or roll back. Ready/readyAck consume the initial sequences. Initiator readiness requires verified readyAck; responder readiness requires verified ready and successful readyAck submission. Ten-second readiness, 120-second idle, one-hour age and `2^20` records per direction are hard bounds. Limits close the session; no in-place key update.
 
@@ -110,9 +110,39 @@ Each logical payload is `kind:u8 || payload`; kinds `1..4` carry unmodified EDHO
 
 Mac admission window: 120 seconds, five failed candidates maximum. With multiple trusted Android devices, the shared window/companion menu optionally chooses one allowed Android; otherwise the default accepts any active trusted Android. Presentation-list availability must not gate opening a window. Its target is frozen when Allow connections starts. Selection matches the decrypted credential against the complete active trust journal and pins device ID, fingerprint and public key; duplicate credential matches remain fatal. A BLE subscription is only a candidate: it exposes no authenticated identity. Other centrals cannot join an admitted candidate. A wrong selected peer consumes a failed attempt; it cannot become Secured. Android is the central/initiator and Mac the peripheral/responder; Android-to-Android sessions are outside this profile. Android scan: 15 seconds. A retained indication subscription may admit a candidate on its first write within an explicit advertised window when the slot is empty and it is not retired/blocked. This does not resume a session: fresh EDHOC/readiness are required. Candidate admission stops advertising; connection traffic must not depend on advertising confirmation afterward. A failed candidate may resume advertising within the original window. Exclusive idle/discovery/pairing/session modes share one owner. Teardown is bounded to two seconds; Mac retires application access when Core Bluetooth cannot force disconnection.
 
+## Application controls and liveness
+
+[control.cddl](control.cddl) defines deterministic CBOR controls inside existing DATA kind `3`, envelope discriminator `6`. The plaintext is at most 128 bytes:
+
+`["aniCe control", 1, type, payload]`
+
+| Type | Sender | Exact payload | Runtime behavior |
+| --- | --- | --- | --- |
+| 1 HELLO | Android | `{"version": 1}` | Sent once after verified readyAck |
+| 2 HELLO_ACK | Mac | `{"version": 1}` | Reply after readiness and valid HELLO |
+| 3 PING | Android | `{"requestId": uint32}` | Sent after 60 seconds without authenticated channel activity |
+| 4 PONG | Mac | `{"requestId": uint32}` | Reply matching the outstanding PING |
+| 5 RENEWAL_REQUEST | Mac | `{"reason": 1 / 2}` | One request when lifetime or record margin is reached |
+
+HELLO compatibility expires ten seconds after readiness. Missing HELLO/ACK marks the peer unsupported and stops negotiation; manual DATA remains usable with the original hard limits. Android's companion automatic owner pauses on unsupported compatibility; it cannot keep a background lease indefinitely for a legacy peer. A late ACK or unexpected control closes the session with `state`. The responder enables liveness when it submits ACK; submission does not prove peer receipt.
+
+Only Android initiates PING. IDs start at zero per fresh session, increment as unsigned 32-bit values, and never wrap. There is one outstanding PING and one pending logical control. PONG must match before its 20-second deadline; wrong, duplicate or unsolicited replies close with `state`, late/missing replies with `controlTimeout`. Other authenticated traffic resets activity but cannot satisfy an outstanding PING. These timers use monotonic clocks; Android's owner supplies `SystemClock.elapsedRealtime()` so deep sleep counts toward deadlines and record age. OS suspension may miss a deadline and close the connection. Mac sleep retires its session.
+
+Queue capacity is checked before sealing. Pre-seal backpressure retains one pending control; it does not consume a record sequence. PONG timing starts at the first accepted submission attempt. Encryption/post-seal transport failures close the session under existing nonce-burn rules. Keepalive traffic consumes ordinary directional counters and maintains channel activity; it cannot extend one-hour lifetime, `2^20` record limits, or readiness deadlines. Control timers use no periodic wake alarms; reconnect and admission policies belong to native session owners.
+
+CBOR arrays reserve the application dispatcher framing: they must decode deterministically without trailing bytes. Arrays beginning with the control tag require exact four-item/one-key shapes; extra keys, wrong types, nonminimal/indefinite encodings, unsupported versions/types and invalid values are fatal. Valid arrays with other tags and non-array payloads continue through the existing dispatcher. RENEWAL_REQUEST is accepted only by Android after compatibility. Reason `1` denotes lifetime and `2` record-limit renewal. Repeated requests coalesce with a local renewal; a Mac receiving the request closes with `state`.
+
+Independent cbor2 fixtures contain eight valid and 26 invalid encodings in [control-vectors.json](../test-vectors/session/control-vectors.json). Regenerate or verify with `generate_control_vectors.py [--check]` using the pinned session oracle requirements. Native tests exercise authenticated controls, legacy fallback, queue saturation, timeout/order failures and hard lifetime enforcement with injected monotonic clocks. Native interchange additionally exchanges encrypted HELLO/ACK, PING/PONG and RENEWAL_REQUEST; it does not exercise BLE or OS background scheduling.
+
+## Coordinated renewal
+
+Automatic owners initiate renewal at 55 minutes of record-channel age or when either directional counter reaches `2^20 − 1024`. Mac submits one RENEWAL_REQUEST; Android initiates every new handshake. A manual Android owner receiving the request retires its session and exposes explicit Connect. Manual sessions otherwise retain their hard limits.
+
+A renewal flag blocks new application submissions before sealing. One pending Mac request observes ordinary queue backpressure and nonce burn rules. Android coalesces local/remote thresholds, submits encrypted close within two seconds, retires transport and keys, then revalidates its automatic policy, trust and OS ownership before fresh EDHOC/readiness. A close-submission failure still retires the old channel; bounded recovery may reconnect. Stop/Disconnect invalidates generations and pauses policy before suspended cleanup can finish. Sessions do not overlap or reuse keys, IV bases, counters, connection IDs or ephemeral keys. Hard one-hour/`2^20` limits are unchanged.
+
 ## Application diagnostic
 
-The current connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). It is accepted only after readiness; receipt updates the local connection status. There is no automatic echo, persistence, background sending or feature synchronization. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
+The connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). It is accepted only after readiness; receipt updates the local connection status. This diagnostic has no automatic echo or persistence; keepalive controls are consumed separately and do not increment received-check counters. Feature synchronization remains deferred. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
 
 Baseline minimum-OS runtime coverage (API 29 and macOS 14) and independent security review remain tracked as outstanding release gates.
 

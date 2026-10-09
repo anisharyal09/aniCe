@@ -1,0 +1,7 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Deterministic CBOR carried inside DATA kind 3, session envelope 6; maximum 128 bytes.
+control = ["aniCe control", 1, 1, {"version": 1}] /
+          ["aniCe control", 1, 2, {"version": 1}] /
+          ["aniCe control", 1, 3, {"requestId": uint .le 4294967295}] /
+          ["aniCe control", 1, 4, {"requestId": uint .le 4294967295}] /
+          ["aniCe control", 1, 5, {"reason": 1 / 2}]

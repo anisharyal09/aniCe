@@ -27,7 +27,7 @@ In earlier implementations:
   The Android central invokes the hidden `BluetoothGatt.refresh()` method via reflection upon connection setup and whenever service discovery returns an incomplete profile layout. This flushes Android's internal attribute cache and forces fresh over-the-air service enumeration.
 - **Handling Non-SDK Interface Restrictions:**
   Per [Android Compatibility Restrictions on Non-SDK Interfaces](https://developer.android.com/guide/app-compatibility/restrictions-non-sdk-interfaces), reflective access to internal framework methods is subject to platform restrictions. The reflective call is defensively caught (`catch (Throwable)`). If reflection fails or is blocked by system policy, the client proceeds with public discovery APIs.
-- **User-Actionable Recovery:**
+- **Actionable Recovery:**
   If pairing characteristics remain absent after bounded rediscovery (with 300 ms callback backoff), the transport reports a specific failure with a direct shortcut to system Bluetooth Settings (`PairingTransportRecovery.bluetoothSettings`). Toggling Bluetooth cycles the system Bluetooth daemon, resetting the OS-level attribute cache cleanly without requiring device resets or OS-level pairing.
 
 ### 3. Diagnostics and Channel Isolation

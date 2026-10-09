@@ -13,7 +13,14 @@ class SessionConnection(
   private val submit: suspend (ByteArray) -> Unit,
   private val data: suspend (ByteArray) -> Unit,
   private val secured: suspend () -> Unit,
+  controls: Boolean = false,
+  private val now: () -> Long = { System.nanoTime() / 1_000_000 },
+  @Volatile private var renew: Boolean = false,
 ) {
+  private val liveness = if (controls) SessionLiveness(responder) else null
+  val controlSupport get() = liveness?.support
+  val renewalReason get() = if (responder) null else liveness?.renewalReason
+  fun enableRenewal() { if (!closed) renew = true }
   private val ownership = Any()
   private val operation = Mutex()
   @Volatile private var closed = false
@@ -26,9 +33,9 @@ class SessionConnection(
   var expiration: SessionExpiry? = null
     private set
 
-  @Volatile private var deadline = System.nanoTime() / 1_000_000 + 30000
+  @Volatile private var deadline = now() + 30000
 
-  fun timedOut() = deadline != 0L && System.nanoTime() / 1_000_000 >= deadline
+  fun timedOut() = deadline != 0L && now() >= deadline
 
   private var expected = if (responder) 1 else 2
   val isClosed
@@ -54,6 +61,8 @@ class SessionConnection(
         if (kind == 6) {
           val ch = channel ?: throw SessionException(SessionFailure.STATE)
           val result = ch.receive(payload)
+          requireOpen()
+          liveness?.activity(now())
           // Application access begins only after encrypted readiness confirms the exported keys.
           when (result.first) {
             // Responder readiness follows transport submission, which does not prove peer delivery.
@@ -61,17 +70,25 @@ class SessionConnection(
               ch.send(RecordKind.READY_ACK)
               deadline = 0
               secured()
+              requireOpen()
+              liveness?.start(now())
             }
             RecordKind.READY_ACK -> {
               deadline = 0
               secured()
+              requireOpen()
+              liveness?.start(now())
             }
-            RecordKind.DATA -> data(result.second)
+            RecordKind.DATA -> {
+              val control = if (liveness != null) SessionControl.application(result.second) else null
+              if (control != null) liveness!!.receive(control, now()) else data(result.second)
+            }
             RecordKind.CLOSE -> {
               closedByPeer = true
               close()
             }
           }
+          if (!closed) flushControl()
         } else {
           if (channel != null || kind != expected) throw SessionException(SessionFailure.STATE)
           when (kind) {
@@ -103,13 +120,14 @@ class SessionConnection(
 
   private suspend fun makeChannel() {
     requireOpen()
-    deadline = System.nanoTime() / 1_000_000 + 10000
+    deadline = now() + 10000
     val created =
       SecureSession.fromHandshake(
         handshake,
         responder,
         capacity,
         { submit(SessionEnvelope.encode(6, it)) },
+        now,
       )
     // Exporting can suspend; never publish keys created after synchronous retirement.
     synchronized(ownership) {
@@ -132,9 +150,11 @@ class SessionConnection(
 
   suspend fun sendData(bytes: ByteArray) = applicationOperation {
     requireOpen()
+    if (liveness?.renewalReason != null) throw SessionBackpressure()
     val ch = channel ?: throw SessionException(SessionFailure.STATE)
     try {
       ch.send(RecordKind.DATA, bytes)
+      liveness?.activity(now())
     } catch (e: SessionBackpressure) {
       throw e
     } catch (e: Exception) {
@@ -148,11 +168,29 @@ class SessionConnection(
       requireOpen()
       try {
         channel?.tick() ?: handshake.checkDeadline()
+        if (renew) channel?.renewalReason()?.let { liveness?.requestRenewal(it) }
+        liveness?.poll(now())
+        flushControl()
       } catch (e: Exception) {
         close()
         throw e
       }
     }
+
+  private suspend fun flushControl() {
+    val message = liveness?.pending ?: return
+    val ch = channel ?: return
+    val bytes = message.encode()
+    // Queue refusal is recoverable only before sealing; retain one logical control for a later tick.
+    if (!capacity(bytes.size + 31)) return
+    requireOpen()
+    liveness.issuing(message, now())
+    try {
+      ch.send(RecordKind.DATA, bytes)
+      requireOpen()
+      liveness.submitted(message, now())
+    } catch (_: SessionBackpressure) { /* No sequence consumed; the pending control remains bounded. */ }
+  }
 
   suspend fun disconnect() {
     try {

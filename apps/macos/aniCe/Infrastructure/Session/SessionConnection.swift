@@ -17,12 +17,22 @@ actor SessionConnection {
   private var closed = false
   var isClosed: Bool { closed }
   private var processing = false
+  private var sendingControl = false
+  private var liveness: SessionLiveness?
+  private let now: @Sendable () -> Int64
+  private var renew: Bool
+  var controlSupport: Bool? { liveness?.support }
+  var renewalReason: Int64? { responder ? nil : liveness?.renewalReason }
+  func enableRenewal() { if !closed { renew = true } }
   init(
     handshake: SessionHandshakeEngine, responder: Bool,
     capacity: @escaping @Sendable (Int) async -> Bool,
     submit: @escaping @Sendable (Data) async throws -> Void,
     data: @escaping @Sendable (Data) async -> Void,
-    secured: @escaping @Sendable () async -> Void
+    secured: @escaping @Sendable () async -> Void,
+    controls: Bool = false,
+    now: @escaping @Sendable () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) },
+    renew: Bool = false
   ) {
     self.handshake = handshake
     self.responder = responder
@@ -30,6 +40,9 @@ actor SessionConnection {
     self.submit = submit
     self.data = data
     self.secured = secured
+    self.now = now
+    self.renew = renew
+    liveness = controls ? SessionLiveness(responder: responder) : nil
     expected = responder ? 1 : 2
   }
   private func ensure(_ op: Int) throws {
@@ -62,6 +75,7 @@ actor SessionConnection {
         guard let channel else { throw SessionFailure.state }
         let result = try await channel.receive(payload)
         try ensure(op)
+        liveness?.activity(now())
         switch result.0 {
         // Secured means application keys were confirmed, not merely that EDHOC completed.
         // Responder readiness follows transport submission, which does not prove peer delivery.
@@ -69,12 +83,21 @@ actor SessionConnection {
           try await channel.send(.readyAck)
           try ensure(op)
           await secured()
-        case .readyAck: await secured()
-        case .data: await data(result.1)
+          try ensure(op)
+          try liveness?.start(now())
+        case .readyAck:
+          await secured()
+          try ensure(op)
+          try liveness?.start(now())
+        case .data:
+          if liveness != nil, let control = try SessionControl.application(result.1) {
+            try liveness?.receive(control, now())
+          } else { await data(result.1) }
         case .close:
           closedByPeer = true
           await close()
         }
+        if !closed { try await flushControl(op) }
       } else {
         guard channel == nil, kind == expected else { throw SessionFailure.state }
         switch kind {
@@ -104,9 +127,11 @@ actor SessionConnection {
   }
   private func makeChannel(_ op: Int) async throws {
     // Exporting can suspend; close the newly created channel if ownership was retired meanwhile.
+    let clock = now
     let ch = try await SecureSession.fromHandshake(
       handshake, responder: responder, capacity: capacity,
-      submit: { [submit] record in try await submit(SessionEnvelope.encode(6, record)) })
+      submit: { [submit] record in try await submit(SessionEnvelope.encode(6, record)) },
+      now: { Double(clock()) / 1000 })
     do {
       try ensure(op)
       channel = ch
@@ -126,9 +151,11 @@ actor SessionConnection {
     let op = generation
     do {
       try ensure(op)
+      if liveness?.renewalReason != nil { throw SessionBackpressure() }
       guard let channel else { throw SessionFailure.state }
       try await channel.send(.data, plaintext: bytes)
       try ensure(op)
+      liveness?.activity(now())
     } catch is SessionBackpressure { throw SessionBackpressure() } catch {
       await close()
       throw error
@@ -142,10 +169,31 @@ actor SessionConnection {
       try ensure(op)
       if let channel { try await channel.tick() } else { try await handshake.checkDeadline() }
       try ensure(op)
+      if renew, let reason = await channel?.renewalReason() {
+        try ensure(op)
+        try liveness?.requestRenewal(reason)
+      }
+      try liveness?.poll(now())
+      try await flushControl(op)
     } catch {
       await close()
       throw error
     }
+  }
+  private func flushControl(_ op: Int) async throws {
+    guard !sendingControl, let message = liveness?.pending, let channel else { return }
+    sendingControl = true
+    defer { if op == generation { sendingControl = false } }
+    let bytes = try message.encode()
+    guard await capacity(bytes.count + 31) else { return }
+    try ensure(op)
+    // Actor reentrancy may deliver the response before submit returns; issue before awaiting it.
+    try liveness?.issuing(message, now())
+    do {
+      try await channel.send(.data, plaintext: bytes)
+      try ensure(op)
+      liveness?.submitted(message, now())
+    } catch is SessionBackpressure { /* No nonce consumed; retain the single pending control. */ }
   }
   func disconnect() async throws {
     do { if let channel, await channel.stage == .secured { try await channel.send(.close) } } catch
@@ -159,6 +207,7 @@ actor SessionConnection {
     closed = true
     generation += 1
     processing = false
+    sendingControl = false
     let old = channel
     channel = nil
     if expiration == nil { expiration = await old?.expiration }

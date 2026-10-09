@@ -14,11 +14,12 @@ class SessionNoticeTests {
         sessionNotice(SessionFailure.EXPIRED, SessionExpiry.IDLE, false, true),
         sessionNotice(SessionFailure.EXPIRED, SessionExpiry.LIFETIME, false, true),
         sessionNotice(SessionFailure.EXPIRED, SessionExpiry.RECORD_LIMIT, false, true),
+        sessionNotice(SessionFailure.CONTROL_TIMEOUT, null, false, true),
         sessionNotice(SessionFailure.CANCELLED, null, true, true),
         sessionNotice(SessionFailure.STATE, null, true, true),
         sessionNotice(null, null, true, true),
       )
-    assertTrue(cases.size >= 6)
+    assertTrue(cases.size >= 7)
     cases.forEach {
       assertEquals(ConnectionState.DISCONNECTED, it.state)
       assertFalse(it.text.contains("trust", ignoreCase = true))

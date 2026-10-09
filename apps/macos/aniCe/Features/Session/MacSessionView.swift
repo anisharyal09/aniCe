@@ -18,10 +18,13 @@ struct MacSessionView: View {
       HStack {
         Text("Trusted-device connection").font(.headline)
         Spacer()
-        if model.allowing, model.state != "Secured", model.remaining > 0 {
+        if model.allowing, !model.automatic, model.state != "Secured", model.remaining > 0 {
           Text("\(model.remaining)s").font(.caption.monospacedDigit())
         }
       }
+      Toggle("Connect automatically", isOn: Binding(
+        get: { model.automatic }, set: { model.setAutomatic($0) }))
+        .disabled(androidPeers.isEmpty)
       // A single phone needs no selector. Cached presentation records never gate admission.
       if androidPeers.count > 1 || model.selectedPeer != nil {
         Menu(model.selectedPeer.map { "Allow: \($0.deviceName)" } ?? "Choose allowed phone…") {
@@ -49,7 +52,7 @@ struct MacSessionView: View {
         if model.state == "Secured" {
           Button("Send connection check", action: model.checkConnection).buttonStyle(.bordered)
         }
-      } else {
+      } else if !model.automatic {
         Button(
           model.state == "Failed" ? "Retry allowing connections" : "Allow connections",
           action: model.allow

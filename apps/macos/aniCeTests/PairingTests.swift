@@ -708,7 +708,55 @@ extension PairingTests {
   func resumeSessionAdvertising() { resumes += 1 }
   func tickSessionTransport() throws {}
 }
+@MainActor private final class SessionRecoveryWait {
+  var delays = [TimeInterval]()
+  var continuation: CheckedContinuation<Void, Never>?
+  func pause(_ delay: TimeInterval) async {
+    delays.append(delay)
+    await withCheckedContinuation { continuation = $0 }
+  }
+  func release() { continuation?.resume(); continuation = nil }
+}
 @MainActor final class SessionLifecycleTests: XCTestCase {
+  func testLatePairingCleanupRespectsDiscoveryPairingAndStop() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("trust.json")
+    let trust = try PeerTrustStore(url: url), memory = PairingMemoryIdentity()
+    let service = IdentityService(storage: memory, deviceName: "Mac test", tagPrefix: "radio.test.")
+    _ = try await service.publicIdentity()
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+    let savedIdentity = try encoder.encode(memory.record), savedTrust = try Data(contentsOf: url)
+    let radio = SessionRadioFake(), discovery = MacDiscoveryModel(adapter: radio)
+    let pairing = MacPairingModel(identity: service, discovery: discovery, makeStore: { trust })
+    let session = MacSessionModel(identity: service, adapter: radio, store: { trust })
+    AniCeApp.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    defer {
+      session.quit(); pairing.cancel(); discovery.stop()
+      session.beforeAllow = {}; pairing.beforePairing = {}; pairing.trustRemoved = {}; discovery.beforeStart = {}
+    }
+    session.setAutomatic(true)
+    pairing.start(.qr)
+    let lateCleanup = pairing.afterPairing
+    lateCleanup()
+    XCTAssertTrue(pairing.active); XCTAssertFalse(session.allowing)
+    pairing.cancel()
+    discovery.start()
+    XCTAssertTrue(discovery.session.active)
+    let stopped = radio.stopped
+    lateCleanup() // Deliver the old completion after discovery has acquired the shared radio.
+    XCTAssertTrue(discovery.session.active); XCTAssertFalse(session.allowing)
+    XCTAssertEqual(radio.stopped, stopped)
+    discovery.stop()
+    lateCleanup() // Positive control: idle radio still restores enabled automatic availability.
+    XCTAssertTrue(session.allowing)
+    session.disconnect()
+    lateCleanup()
+    XCTAssertFalse(session.allowing); XCTAssertFalse(session.automatic)
+    XCTAssertEqual(try Data(contentsOf: url), savedTrust)
+    XCTAssertEqual(try encoder.encode(memory.record), savedIdentity)
+  }
+
   func testProductionModelReadinessAndAuthenticatedPeerFeedback() async throws {
     try await exerciseProductionModel(failReadyAck: false)
   }
@@ -817,6 +865,82 @@ extension PairingTests {
     XCTFail("Production model transition did not complete")
     throw SessionFailure.expired
   }
+  func testAutomaticAdmissionCooldownPauseSleepAndTrustBinding() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("trust.json")
+    let trust = try PeerTrustStore(url: url)
+    let memory = PairingMemoryIdentity()
+    let service = IdentityService(storage: memory, deviceName: "Mac test", tagPrefix: "auto.test.")
+    let mac = try await service.publicIdentity(), key = P256.Signing.PrivateKey()
+    let android = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone test",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation),
+    ]))
+    let hash = Data(repeating: 9, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: android, localFingerprint: mac.fingerprint,
+      method: .qr, pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: android.deviceId, hash: hash,
+      receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let savedTrust = try Data(contentsOf: url)
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+    let savedIdentity = try encoder.encode(memory.record)
+    let suite = "anice.auto.test.\(UUID().uuidString)"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let radio = SessionRadioFake(), cooldown = SessionRecoveryWait()
+    var clock: TimeInterval = 0
+    let model = MacSessionModel(identity: service, adapter: radio, store: { trust }, now: { clock },
+      preferences: preferences, wait: { await cooldown.pause($0) })
+    defer { model.cancel(); cooldown.release() }
+    XCTAssertFalse(model.automatic)
+    model.selectedPeer = android
+    model.setAutomatic(true)
+    try await waitFor { radio.started }
+    let stale = radio.sessionAdmitted
+    clock = 120; radio.started = false; model.tick()
+    try await waitFor { radio.started }
+    XCTAssertFalse(stale?() ?? true)
+    XCTAssertTrue(model.automatic)
+    for index in 1...5 {
+      XCTAssertTrue(radio.sessionAdmitted?() ?? false)
+      XCTAssertFalse(radio.sessionAdmitted?() ?? true)
+      XCTAssertTrue(radio.sessionWrite?(Data([0])) ?? false)
+      if index < 5 { try await waitFor { radio.resumes == index } }
+      else { try await waitFor { !cooldown.delays.isEmpty } }
+    }
+    XCTAssertEqual(cooldown.delays, [120])
+    model.allow() // A pending admission cooldown cannot be bypassed by a manual command.
+    XCTAssertFalse(model.allowing)
+    XCTAssertNil(radio.sessionAdmitted)
+    // Stop wins even if the timer continuation is already queued for delivery.
+    model.disconnect(); radio.started = false; cooldown.release()
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertFalse(radio.started); XCTAssertFalse(model.automatic)
+    XCTAssertTrue(preferences.bool(forKey: "session.paused"))
+    model.restoreAutomatic(); XCTAssertFalse(model.automatic)
+    model.setAutomatic(true); try await waitFor { radio.started }
+    let beforeSleep = radio.sessionAdmitted
+    model.sleep(); XCTAssertFalse(model.allowing)
+    XCTAssertFalse(beforeSleep?() ?? true)
+    radio.started = false; model.wake(); try await waitFor { radio.started }
+    model.suspendAutomatic(); XCTAssertFalse(model.allowing)
+    radio.started = false; model.resumeAutomatic(); try await waitFor { radio.started }
+    model.setAutomatic(false); radio.started = false
+    model.resumeAutomatic(); XCTAssertFalse(radio.started)
+    // Restored policy must not bind a remembered peer to a different local identity.
+    preferences.set(true, forKey: "session.automatic")
+    preferences.set(false, forKey: "session.paused")
+    preferences.set("changed", forKey: "session.local")
+    model.restoreAutomatic()
+    try await waitFor { model.state == "Failed" }
+    XCTAssertFalse(radio.started); XCTAssertFalse(model.automatic)
+    XCTAssertEqual(try Data(contentsOf: url), savedTrust)
+    XCTAssertEqual(try encoder.encode(memory.record), savedIdentity)
+    model.quit(); model.wake(); XCTAssertFalse(model.allowing)
+  }
   func testExpiryCancellationStaleCallbacksAndDurableState() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -865,7 +989,7 @@ extension PairingTests {
     model.tick()
     XCTAssertEqual(model.state, "Failed")
     XCTAssertTrue(model.allowing)
-    XCTAssertEqual(radio.resumes, 1)
+    try await waitFor { radio.resumes == 1 }
     XCTAssertGreaterThan(radio.retirement, 0)
     model.cancel()
     XCTAssertNil(radio.sessionWrite)

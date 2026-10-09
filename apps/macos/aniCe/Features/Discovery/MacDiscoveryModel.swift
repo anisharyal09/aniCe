@@ -5,6 +5,7 @@ import Observation
 @Observable @MainActor
 final class MacDiscoveryModel {
   var beforeStart: () -> Void = {}
+  var afterStop: () -> Void = {}
   let adapter: any PairingPeripheralAdapter
   let session: PeripheralDiscoverySession
   @ObservationIgnored private var timer: Timer?
@@ -35,6 +36,7 @@ final class MacDiscoveryModel {
         if !self.session.active {
           self.timer?.invalidate()
           self.timer = nil
+          self.afterStop()
         }
       }
     }
@@ -42,9 +44,11 @@ final class MacDiscoveryModel {
     RunLoop.main.add(timer, forMode: .common)
   }
   func stop() {
+    let wasActive = session.active
     timer?.invalidate()
     timer = nil
     session.stop()
+    if wasActive { afterStop() }
   }
   func openSettings() {
     let target =

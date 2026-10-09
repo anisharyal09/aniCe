@@ -38,15 +38,21 @@ class MainActivity : ComponentActivity() {
             discovery.cancel()
         }
         pairing.beforePairing = {
+            io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this).suspend()
             session.cancel()
             discovery.cancel()
         }
-        pairing.trustRemoved = { session.cancel() }
+        pairing.trustRemoved = {
+            io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this).stop("Trust changed. Set up automatic connection again.")
+            session.cancel()
+        }
         discovery.beforeStart = {
+            io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this).suspend()
             session.cancel()
             pairing.cancel()
         }
         identity.onIdentityReset = {
+            io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this).stop("Identity changed. Set up automatic connection again.")
             session.cancel()
             pairing.cancel()
         }

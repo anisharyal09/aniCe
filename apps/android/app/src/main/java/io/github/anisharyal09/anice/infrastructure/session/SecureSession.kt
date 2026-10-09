@@ -177,6 +177,9 @@ internal constructor(
   internal val received
     get() = receiveSequence.value
 
+  internal fun renewalReason(): Long? = renewalReason(now() - started, sent, received)
+
+
   @Volatile
   var stage = ChannelStage.WAITING
     private set
@@ -355,11 +358,18 @@ internal constructor(
     }
 
   companion object {
+    // Leave 1,024 records and five minutes for retirement; these margins never extend hard limits.
+    internal fun renewalReason(age: Long, sent: ULong, received: ULong): Long? = when {
+      age >= 55 * 60_000L -> 1
+      sent >= (1uL shl 20) - 1024u || received >= (1uL shl 20) - 1024u -> 2
+      else -> null
+    }
     suspend fun fromHandshake(
       handshake: SessionHandshakeEngine,
       responder: Boolean,
       capacity: suspend (Int) -> Boolean,
       submit: suspend (ByteArray) -> Unit,
+      now: () -> Long = { System.nanoTime() / 1_000_000 },
     ): SecureSession {
       // Binding order is initiator/responder on both peers; purpose/direction separate exports.
       val bindings = handshake.bindings()
@@ -398,6 +408,7 @@ internal constructor(
           { handshake.checkDeadline() },
           capacity,
           submit,
+          now,
         )
       } catch (e: Exception) {
         material.forEach { it.fill(0) }

@@ -2,7 +2,7 @@
 
 This directory contains the cross-platform communication contracts, schemas, and shared verification fixtures for **aniCe**.
 
-Contracts define required behavior. User manual acceptance remains pending; automated unit tests and independent test vectors validate wire implementations.
+Contracts define required behavior. Comprehensive manual acceptance remains pending; automated unit tests and independent test vectors validate wire implementations.
 
 ---
 
@@ -95,12 +95,19 @@ protocol/
 │   └── identity.schema.json       # Canonical JSON Schema for public identity
 ├── session/
 │   ├── README.md                  # EDHOC, encrypted records and BLE session contract
-│   └── session.cddl               # Restricted deterministic CCS/EDHOC definitions
+│   ├── session.cddl               # Restricted deterministic CCS/EDHOC definitions
+│   └── control.cddl               # Bounded CBOR compatibility, liveness and renewal controls
 └── test-vectors/
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
     ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
     ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
-    └── session/                  # Full suite-5 traces, RFC components and Python oracle
+    └── session/
+        ├── session-vectors.json  # Complete method-0/suite-5 traces and invalid handshakes
+        ├── record-vectors.json   # AES-GCM records, nonce/counter boundaries and tampering cases
+        ├── control-vectors.json  # Valid/invalid compatibility, ping and renewal controls
+        ├── rfc9529-components.json # Published suite-0 derivations used for common components
+        ├── requirements.txt      # Pinned independent Python crypto/CBOR oracle dependencies
+        └── *.py                  # Fixture generation and independent oracle regressions
 ```

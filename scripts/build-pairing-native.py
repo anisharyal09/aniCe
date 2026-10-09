@@ -5,10 +5,20 @@ import argparse, os, pathlib, shutil, subprocess
 root = pathlib.Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(); p.add_argument('platform', choices=['macos','android']); args=p.parse_args()
 env=os.environ.copy()
+# Studio does not inherit shell-only tool paths; use its private project configuration as a fallback.
+properties = root/'apps/android/local.properties'
+local = {}
+if properties.exists():
+    for line in properties.read_text().splitlines():
+        if '=' in line and not line.lstrip().startswith(('#', '!')):
+            key, value = line.split('=', 1)
+            local[key.strip()] = value.strip().replace('\\', '')
+for name, key in [('CARGO_HOME', 'cargo.home'), ('RUSTUP_HOME', 'rustup.home')]:
+    if name not in env and local.get(key): env[name] = local[key]
 cargo_path = pathlib.Path(env.get('CARGO_HOME', str(pathlib.Path.home()/'.cargo')))/'bin/cargo'
 cargo = str(cargo_path) if cargo_path.exists() else shutil.which('cargo')
 if not cargo:
-    raise SystemExit('Rust toolchain not found. Install Rust >=1.90 and the targets in core/rust/pairing/README.md, or set CARGO_HOME/RUSTUP_HOME explicitly.')
+    raise SystemExit('Rust toolchain not found. Install the prerequisites in core/rust/pairing/README.md, or set cargo.home/rustup.home in apps/android/local.properties.')
 manifest=root/'core/rust/pairing/Cargo.toml'; target=root/'core/rust/pairing/target'
 def build(triple): subprocess.run([cargo,'build','--locked','--release','--manifest-path',str(manifest),'--target',triple],env=env,check=True)
 if args.platform=='macos':
@@ -17,13 +27,9 @@ if args.platform=='macos':
     subprocess.run(['lipo','-create',*[str(target/t/'release/libanice_pairing.a') for t in ['aarch64-apple-darwin','x86_64-apple-darwin']],'-output',str(out/'libanice_pairing.a')],check=True)
 else:
     sdk = env.get('ANDROID_HOME') or env.get('ANDROID_SDK_ROOT')
-    if not sdk:
-        properties = root/'apps/android/local.properties'
-        if properties.exists():
-            for line in properties.read_text().splitlines():
-                if line.startswith('sdk.dir='): sdk = line.split('=', 1)[1].replace('\\', '')
+    sdk = sdk or local.get('sdk.dir')
     sdk = sdk or str(pathlib.Path.home()/'Library/Android/sdk')
-    ndk=pathlib.Path(env.get('ANICE_NDK') or env.get('ANDROID_NDK_HOME') or str(pathlib.Path(sdk)/'ndk/27.3.13750724'))
+    ndk=pathlib.Path(env.get('ANICE_NDK') or env.get('ANDROID_NDK_HOME') or local.get('ndk.dir') or str(pathlib.Path(sdk)/'ndk/27.3.13750724'))
     tool=ndk/'toolchains/llvm/prebuilt/darwin-x86_64/bin'
     if not tool.exists(): raise SystemExit('Set ANICE_NDK to an installed Android NDK r27d (27.3.13750724).')
     env['RUSTFLAGS']=env.get('RUSTFLAGS','')+' -C link-arg=-Wl,-z,max-page-size=16384'

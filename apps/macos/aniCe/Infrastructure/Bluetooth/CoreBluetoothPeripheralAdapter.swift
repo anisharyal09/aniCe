@@ -1,5 +1,5 @@
-@preconcurrency import CoreBluetooth
 // SPDX-License-Identifier: GPL-3.0-or-later
+@preconcurrency import CoreBluetooth
 import Foundation
 import os
 
@@ -155,7 +155,11 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   // Stop advertising after admission; established writes use the candidate, not advertising state.
   private func admit(_ candidate: CBCentral) -> Bool {
     guard mode == .trustedSession else { return true }
-    guard advertising.isConfirmed, sessionAdmitted?() == true else { return false }
+    guard advertising.isConfirmed, sessionAdmitted?() == true else {
+      Self.logger.info("candidate_admission accepted=false advertising=\(self.advertising.isConfirmed)")
+      return false
+    }
+    Self.logger.info("candidate_admission accepted=true")
     advertising.stop()
     manager?.stopAdvertising()
     return true
@@ -186,6 +190,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     _ peripheral: CBPeripheralManager, central: CBCentral,
     didSubscribeTo characteristic: CBCharacteristic
   ) {
+    Self.logger.info("subscription mode_session=\(self.mode == .trustedSession) advertising=\(self.advertising.isConfirmed)")
     guard peripheral === manager, advertising.isConfirmed,
       pairingWrite != nil || sessionWrite != nil,
       characteristic.uuid == outgoing?.uuid
@@ -219,6 +224,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       mode == .trustedSession
         ? sessionWrite != nil : advertising.isConfirmed && pairingWrite != nil
     else {
+      Self.logger.info("session_write permission_rejected=true mode_session=\(self.mode == .trustedSession)")
       peripheral.respond(to: first, withResult: .writeNotPermitted)
       return
     }
@@ -262,6 +268,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       }
       peripheral.respond(to: first, withResult: .success)
     } catch {
+      Self.logger.info("session_write rejected=true candidate_match=\(first.central.identifier == self.central?.identifier) version2=\(first.value?.first == 2)")
       peripheral.respond(to: first, withResult: .unlikelyError)
       // A malformed unauthenticated frame must not stop the invitation.
       if first.central.identifier == central?.identifier {
@@ -332,8 +339,8 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       advertising.resetRadio()
       retirePairingConnection()
       disconnected()
-      if peripheral.state == .poweredOff || peripheral.state == .resetting
-        || peripheral.state == .unauthorized || peripheral.state == .unsupported
+      // Keep the state observer through radio-off/reset so automatic availability can recover.
+      if peripheral.state == .unauthorized || peripheral.state == .unsupported
       {
         peripheral.delegate = nil
         manager = nil

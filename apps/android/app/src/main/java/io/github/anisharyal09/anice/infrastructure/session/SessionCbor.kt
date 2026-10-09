@@ -13,6 +13,7 @@ enum class SessionFailure {
   STATE,
   CANCELLED,
   EXPIRED,
+  CONTROL_TIMEOUT,
 }
 
 class SessionException(val reason: SessionFailure) : Exception(reason.name)

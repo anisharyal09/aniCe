@@ -37,6 +37,8 @@ internal fun sessionNotice(
     }
   if (failure == SessionFailure.CANCELLED)
     return SessionNotice(ConnectionState.DISCONNECTED, "The session ended. Connect again.")
+  if (failure == SessionFailure.CONTROL_TIMEOUT)
+    return SessionNotice(ConnectionState.DISCONNECTED, "Your Mac stopped responding. Connect again.")
   if (failure == SessionFailure.UNTRUSTED_PEER)
     return SessionNotice(
       ConnectionState.FAILED,

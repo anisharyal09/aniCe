@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents device-scoped automatic connection settings and the native association chooser.
 @file:Suppress("DEPRECATION") // API 31/32 association results use EXTRA_DEVICE.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
@@ -22,18 +23,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import io.github.anisharyal09.anice.AniCeApplication
+import android.content.pm.ApplicationInfo
 import io.github.anisharyal09.anice.infrastructure.bluetooth.BlePayloadCodec
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import java.util.UUID
 import kotlinx.coroutines.*
 
-/** Debug activity for testing companion device association and background presence. */
+/** Presentation scope only; association and pinned active trust are revalidated before connection. */
+internal fun hasConnectionSetup(peer: DeviceIdentity?, selectedId: String?, selectedFingerprint: String?) =
+  peer != null && peer.deviceId == selectedId && peer.fingerprint == selectedFingerprint
+
+/** Native device-scoped setup; the system chooser grants ownership, never peer authentication. */
 class CompanionProbeActivity : ComponentActivity() {
   private val probe get() = CompanionProbe.get(this)
   private var peer: DeviceIdentity? by mutableStateOf(null)
   private var notice by mutableStateOf("")
-  private var setup = false
+  private var setup by mutableStateOf(false)
   // Activity callbacks and suspended probe setup have separate generations; Stop invalidates both.
   private var generation = 0
   private var probeToken = 0
@@ -44,13 +50,17 @@ class CompanionProbeActivity : ComponentActivity() {
     enableEdgeToEdge()
     lifecycleScope.launch {
       try { peer = probe.trustedPeer(requireNotNull(intent.getStringExtra("peer"))) }
-      catch (_: Exception) { notice = "Select an active trusted Mac from Home before starting this test." }
+      catch (_: Exception) { notice = "Select a trusted Mac from Home before configuring connections." }
     }
     setContent {
       val controller = (application as AniCeApplication).sessionController
+      val configured = hasConnectionSetup(peer, probe.peerId, probe.fingerprint)
+      val connected = controller.state == io.github.anisharyal09.anice.infrastructure.session.ConnectionState.SECURED &&
+        hasConnectionSetup(peer, controller.selected?.deviceId, controller.selected?.fingerprint)
+      val policyStatus = probe.status
       var showEvents by remember { mutableStateOf(false) }
       val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        notice = if (result.values.all { it }) "Permission granted. Tap Associate Mac." else "Bluetooth access is required; manual connections remain available."
+        notice = if (result.values.all { it }) "Permission granted. Enable automatic connection." else "Bluetooth access is required; manual connections remain available."
       }
       val association = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         // API 31/32 returns the device here; API 33+ supplies the association through the manager callback.
@@ -62,25 +72,37 @@ class CompanionProbeActivity : ComponentActivity() {
         } else if (result.resultCode != RESULT_OK) { setup = false; notice = "Association cancelled." }
       }
       AniCeTheme {
-        Scaffold(topBar = { TopAppBar(title = { Text("Background test") }, navigationIcon = {
+        Scaffold(topBar = { TopAppBar(title = { Text("Connection settings") }, navigationIcon = {
           TextButton(onClick = { finish() }) { Text("Back") }
         }) }, contentWindowInsets = WindowInsets.safeDrawing) { padding ->
           Column(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()
             .verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(peer?.deviceName ?: "Trusted Mac", style = MaterialTheme.typography.titleLarge)
-            val manualConnected = controller.state == io.github.anisharyal09.anice.infrastructure.session.ConnectionState.SECURED && !controller.hasCompanionOwner
-            Text(if (manualConnected) "Your current connection stays active. Start setup will disconnect it to associate your Mac." else "On Mac, reopen Allow connections. Tap Associate Mac below, then select it in Android's dialog.")
-            Text("After connection succeeds, try locking the phone or leaving this screen. No ongoing notification is added; the two-minute idle limit still applies.", style = MaterialTheme.typography.bodySmall)
-            if (!probe.available) Text("Companion presence is unavailable here. Continue using manual connections.")
-            Text(notice.ifBlank { if (manualConnected) controller.status.ifBlank { "Manual connection active." } else probe.status }, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              Button(enabled = peer != null && probe.available && !probe.armed && !setup, onClick = {
-                if (manualConnected) {
-                  // Discovery needs the Mac to advertise again; make the disruptive transition explicit.
+            Text("Reconnect to this Mac when nearby. Turn on Connect automatically on your Mac too.",
+              style = MaterialTheme.typography.bodyMedium)
+            if (!configured && connected)
+              Text("First-time setup reconnects through the system association.", style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+              Text("Connect automatically", Modifier.weight(1f))
+              Switch(checked = configured && probe.armed, enabled = peer != null && probe.available && !setup, onCheckedChange = { enabled ->
+                // Recheck at action time: another settings activity may have changed the selected Mac.
+                if (!enabled) {
+                  if (hasConnectionSetup(peer, probe.peerId, probe.fingerprint)) { generation++; probe.disable(); notice = "" }
+                }
+                else if (controller.missingPermissions().isNotEmpty()) permissions.launch(controller.missingPermissions())
+                else if (hasConnectionSetup(peer, probe.peerId, probe.fingerprint) && probe.address != null) {
+                  setup = true
+                  val op = ++generation
+                  lifecycleScope.launch {
+                    try { probe.resume(); if (op == generation) notice = "" }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { if (op == generation) notice = "Device setup is unavailable. Reset setup, then try again." }
+                    finally { if (op == generation) setup = false }
+                  }
+                } else {
+                  // Only one Mac owns automatic setup; explicit replacement retires its old association.
+                  if (probe.peerId != null || probe.address != null) probe.stop("Connection setup changed.")
                   controller.cancel()
-                  notice = "Now reopen Allow connections on Mac, then tap Associate Mac."
-                } else if (controller.missingPermissions().isNotEmpty()) permissions.launch(controller.missingPermissions())
-                else {
                   setup = true; notice = "Choose your Mac in the system dialog."
                   val op = ++generation
                   probeToken = probe.beginSetup()
@@ -110,16 +132,30 @@ class CompanionProbeActivity : ComponentActivity() {
                     else manager.associate(request, callback, Handler(Looper.getMainLooper()))
                   } catch (_: Exception) { setup = false; notice = "Association is unavailable. Manual connections remain available." }
                 }
-              }) { Text(if (manualConnected) "Start setup" else "Associate Mac") }
-              TextButton(onClick = { generation++; setup = false; probe.stop(); notice = "" }) { Text("Stop test") }
+              })
             }
-            if (controller.state == io.github.anisharyal09.anice.infrastructure.session.ConnectionState.SECURED) {
+            if (!probe.available) Text("Automatic connection is awaiting compatibility verification for this build. Manual Connect remains available.",
+              style = MaterialTheme.typography.bodySmall)
+            Text(notice.ifBlank {
+              if (configured) policyStatus
+              else if (probe.peerId != null) "Enabling this Mac replaces the other Mac's automatic connection setup."
+              else "Automatic connection is off for this Mac."
+            }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (setup) TextButton(onClick = {
+              generation++; setup = false
+              if (probe.peerId == null || hasConnectionSetup(peer, probe.peerId, probe.fingerprint)) probe.stop()
+              notice = "Setup cancelled."
+            }) { Text("Cancel setup") }
+            if (configured && probe.address != null) TextButton(onClick = {
+              if (hasConnectionSetup(peer, probe.peerId, probe.fingerprint)) { generation++; setup = false; probe.stop(); notice = "" }
+            }) { Text("Reset connection setup") }
+            if (connected) {
               TextButton(onClick = controller::checkConnection) { Text("Send connection check") }
             }
-            TextButton(onClick = { showEvents = !showEvents }) {
-              Text(if (showEvents) "Hide test events" else "Show test events")
+            if (configured && applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) TextButton(onClick = { showEvents = !showEvents }) {
+              Text(if (showEvents) "Hide diagnostics" else "Show diagnostics")
             }
-            if (showEvents) Text(probe.events.ifBlank { "No events yet." }, style = MaterialTheme.typography.bodySmall)
+            if (configured && showEvents) Text(probe.events.ifBlank { "No events yet." }, style = MaterialTheme.typography.bodySmall)
           }
         }
       }
@@ -144,9 +180,9 @@ class CompanionProbeActivity : ComponentActivity() {
         probe.arm(target, address, id, probeToken)
         if (op == generation) notice = ""
       } catch (error: CancellationException) { throw error }
-      catch (_: Exception) { notice = "Could not observe this association. Stop and retry; manual connections remain available." }
+      catch (_: Exception) { if (op == generation) notice = "Could not observe this association. Reset setup and retry; manual connections remain available." }
       finally {
-        setup = false
+        if (op == generation) setup = false
         // A destroyed chooser cannot leave an untracked association authorizing later work.
         if (!probe.armed || op != generation) {
           val manager = getSystemService(CompanionDeviceManager::class.java)

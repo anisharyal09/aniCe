@@ -24,13 +24,13 @@ We establish a provisional local device identity foundation adhering to the foll
    - Schema versioning: Explicitly labeled `"identitySchemaVersion": 1` in `protocol/schemas/identity.schema.json`, independent of future transport or capability versions.
 
 3. **Platform Protected Storage:**
-   - **Android:** Android Keystore (`AndroidKeyStore` provider). Keys are generated without user authentication / biometric prompts (`setUserAuthenticationRequired(false)`) to permit background and proximity reconnection without UI interruption. Metadata is stored atomically under `context.noBackupFilesDir` to prevent cloud backup duplication.
+   - **Android:** Android Keystore (`AndroidKeyStore` provider). Keys are generated without interactive authentication or biometric prompts (`setUserAuthenticationRequired(false)`) to permit background and proximity reconnection without UI interruption. Metadata is stored atomically under `context.noBackupFilesDir` to prevent cloud backup duplication.
    - **macOS:** Security framework `SecKey` references. Current builds explicitly select a development login Keychain backend with atomic public metadata in the app container. It provides neither hardware isolation nor a guarantee against Keychain migration. The separate signed backend uses data-protection Keychain, synchronization disabled, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, and Secure Enclave when available. Its native verification requires configured signing and entitlements. Application code never exports or serializes private keys; software-backed storage is not a claim that key bytes never enter system memory.
 
 4. **Lifecycle & Atomic Reset:**
    - Key aliases are immutable (Android: `anice.identity.v1.<uuid>`; Mac: the selected backend namespace plus a generation UUID). Aliases are never renamed.
    - Key creation and reset follow a two-phase journal (`pending` $\to$ validate $\to$ atomic commit to `active` $\to$ `cleanup` retired alias).
-   - Identity is never silently regenerated on transient storage failure. Transient failures surface typed `IdentityException` / `IdentityError` states to the user.
+   - Identity is never silently regenerated on transient storage failure. Transient failures surface typed `IdentityException` / `IdentityError` states in the interface.
 
 ## Consequences
 

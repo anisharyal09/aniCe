@@ -2,7 +2,9 @@
 
 Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Comprehensive manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness and connection controls are implemented. Physical API 36 verification confirms authenticated BLE, connection retention across test-screen navigation, and locked-screen operation. Long-duration endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Physical API 36 verification covers authenticated BLE, settings navigation, Pause/Resume and 190 seconds of quiet secured traffic after Recents removal. Locked-screen endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
+
+Automatic nearby recovery uses an OS-bound companion lease and one device setting. Release ownership remains disabled pending physical companion acceptance; Debug API 31+ exercises it. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records policy and hardware gates.
 
 ## Nearby discovery
 
@@ -27,6 +29,7 @@ app/
         AndroidIdentityStorage.kt   Keystore and atomic metadata
       features/discovery/          Nearby screen and lifecycle ViewModel
       features/session/            Thin session ViewModel and connection UI
+      features/backgroundprobe/    Native companion setup/service and automatic policy
       infrastructure/bluetooth/    Scan/GATT adapter, codec, coordinator
       infrastructure/session/     EDHOC, records, ordering owner, native codecs
       ui/theme/
@@ -35,7 +38,7 @@ app/
     AndroidManifest.xml             Application declarations
   src/test/                         JVM validation and lifecycle tests
   src/androidTest/                  Native Keystore and interchange tests
-  src/debug/                        Companion probe UI/service and declarations
+  src/debug/                        API 31+ companion ownership build gate
   src/testDebug/                    Probe presence-state unit test
   src/androidTestDebug/             Native probe checks and opt-in radio test
   build.gradle.kts                  App configuration and dependencies
@@ -69,7 +72,7 @@ Licensed under [GPL-3.0-or-later](../../LICENSE).
 
 Home → Pair your Mac offers QR scanning and six-digit entry. Camera access is requested only for QR scanning; Bluetooth access only after an invitation/code is entered and Start runs. A 15-second QR lookup gathers bounded candidates and checks ephemeral rendezvous IDs; manual mode selects a generic row. Both devices require explicit approval after identity verification. Trusted-device forgetting is local.
 
-`preBuild` invokes the shared Rust build. Install the [native prerequisites](../../core/rust/pairing/README.md); set `ANICE_NDK` if NDK r27d is outside the documented temporary location. Packaged ABIs: arm64-v8a, armeabi-v7a and x86_64, with 16 KiB ELF alignment. No Google Play Services are required.
+`preBuild` invokes the shared Rust build. Install the [native prerequisites](../../core/rust/pairing/README.md). For Android Studio, custom installations can be configured with `cargo.home`, `rustup.home` and `ndk.dir` in ignored `local.properties`; explicit environment variables take precedence. Packaged ABIs: arm64-v8a, armeabi-v7a and x86_64, with 16 KiB ELF alignment. No Google Play Services are required.
 
 ## Secure sessions
 
@@ -77,4 +80,4 @@ Mac selects an allowed Android (or Any trusted Android) and opens **Allow connec
 
 ## Background connection experiment
 
-Debug builds expose **More → Background connection test** for a secured trusted Mac. Opening or leaving the screen preserves the manual connection while an app activity stays visible; **Start setup** explicitly disconnects it for association. Background retention requires ownership by the system-bound companion service. Manual connections without that lease still close on backgrounding or screen lock. Release builds exclude the probe and companion permissions. Production automatic connection, service fallback, reboot recovery, keepalive and renewal are unimplemented. [Implementation boundary and physical test steps](../../docs/BACKGROUND_CONNECTIONS.md).
+Device settings expose **More → Connection settings → Connect automatically**. First setup reconnects through the native companion association; opening the settings screen preserves a manual connection while an activity remains visible. Only a system-bound companion service owns background operation. Debug API 31+ enables the feasibility path; Release keeps service ownership disabled pending physical acceptance. Nearby retries and fresh-session renewal are implemented; foreground-service fallback and reboot recovery remain deferred. [Policy and physical test steps](../../docs/BACKGROUND_CONNECTIONS.md).

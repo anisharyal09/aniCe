@@ -10,8 +10,16 @@ import Observation
   var allowing = false
   var remaining = 0
   var receivedChecks = 0
+  private(set) var automatic = false
+  private var suspended = false
+  private var sleeping = false
+  private var quitting = false
+  private var restart: Task<Void, Never>?
+  private var cooldownUntil: TimeInterval?
+  private let preferences: UserDefaults?
   var beforeAllow: () -> Void = {}
   private let now: () -> TimeInterval
+  private let wait: (TimeInterval) async throws -> Void
   private let identity: IdentityService
   private let adapter: any SessionPeripheralAdapter
   private let store: @MainActor () async throws -> PeerTrustStore
@@ -34,22 +42,86 @@ import Observation
   init(
     identity: IdentityService, adapter: any SessionPeripheralAdapter,
     store: @escaping @MainActor () async throws -> PeerTrustStore,
-    now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    preferences: UserDefaults? = nil,
+    wait: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
   ) {
     self.now = now
     self.identity = identity
     self.adapter = adapter
     self.store = store
+    self.preferences = preferences
+    self.wait = wait
     observers.append(
       NSWorkspace.shared.notificationCenter.addObserver(
         forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
-      ) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } })
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.sleep() } })
+    observers.append(
+      NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.wake() } })
     observers.append(
       NotificationCenter.default.addObserver(
         forName: NSApplication.willTerminateNotification, object: nil, queue: .main
-      ) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } })
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.quit() } })
+  }
+  func restoreAutomatic() {
+    guard preferences?.bool(forKey: "session.automatic") == true,
+      preferences?.bool(forKey: "session.paused") != true else { return }
+    automatic = true
+    allow()
+  }
+  func setAutomatic(_ enabled: Bool) {
+    cooldownUntil = nil
+    automatic = enabled
+    preferences?.set(enabled, forKey: "session.automatic")
+    preferences?.set(false, forKey: "session.paused")
+    preferences?.set(selectedPeer?.deviceId, forKey: "session.target")
+    preferences?.set(selectedPeer?.fingerprint, forKey: "session.fingerprint")
+    preferences?.removeObject(forKey: "session.local") // Explicit setup binds the current identity anew.
+    if enabled {
+      suspended = false
+      if allowing {
+        let current = connection
+        Task { await current?.enableRenewal() }
+      } else { allow() }
+    } else { cancel() }
+  }
+  func suspendAutomatic() { suspended = true; cancel() }
+  func resumeAutomatic() {
+    suspended = false
+    if automatic && !sleeping && !quitting && !allowing {
+      if let until = cooldownUntil, now() < until { reopen(after: until - now()) }
+      else { allow() }
+    }
+  }
+  func sleep() { sleeping = true; cancel() }
+  func wake() { sleeping = false; resumeAutomatic() }
+  func quit() { quitting = true; cancel() }
+  func retireTrust() {
+    automatic = false
+    preferences?.set(true, forKey: "session.paused")
+    cancel()
+  }
+  private func reopen(after delay: TimeInterval = 0) {
+    let old = connection
+    cancel()
+    guard automatic, !suspended, !sleeping, !quitting else { return }
+    let op = generation
+    let wait = wait
+    status = delay > 0 ? "Waiting before allowing nearby connections." : "Waiting nearby."
+    restart = Task { [weak self] in
+      // Close keys before opening the next candidate slot; fresh sessions never overlap.
+      await old?.close()
+      if delay > 0 { try? await wait(delay) }
+      guard let self, !Task.isCancelled, op == self.generation, self.automatic,
+        !self.suspended, !self.sleeping, !self.quitting else { return }
+      self.allow()
+    }
   }
   func allow() {
+    if automatic && (suspended || sleeping || quitting) { return }
+    if automatic, let until = cooldownUntil, now() < until { return }
     cancel()
     beforeAllow()
     allowing = true
@@ -65,6 +137,19 @@ import Observation
       do {
         let local = try await identity.publicIdentity()
         let trust = try await store()
+        let peers = trust.list(localFingerprint: local.fingerprint).filter { $0.peer.platform == "android" }
+        if automatic && peers.isEmpty { throw SessionFailure.untrustedPeer }
+        var target = target
+        if automatic, let saved = preferences?.string(forKey: "session.target") {
+          let matches = peers.filter { $0.peer.deviceId == saved && $0.peer.fingerprint == preferences?.string(forKey: "session.fingerprint") }
+          guard matches.count == 1 else { throw SessionFailure.untrustedPeer }
+          target = matches[0].peer
+          selectedPeer = target
+        }
+        if automatic, let previous = preferences?.string(forKey: "session.local") {
+          guard previous == local.fingerprint else { throw SessionFailure.untrustedPeer }
+        }
+        if automatic { preferences?.set(local.fingerprint, forKey: "session.local") }
         if let target {
           let matches = trust.list(localFingerprint: local.fingerprint).filter {
             $0.peer.deviceId == target.deviceId && $0.peer.fingerprint == target.fingerprint
@@ -90,10 +175,15 @@ import Observation
               self.startupDeadline = nil
               self.admission.open(self.now())
               if !self.admitted && self.failures == 0 {
-                self.status =
+                self.status = self.automatic ? "Waiting nearby." :
                   target.map { "Waiting for \($0.deviceName). On that phone, tap Connect." }
                   ?? "Waiting for one trusted Android. On your phone, tap Connect."
               }
+            case .off, .resetting:
+              if self.automatic {
+                self.startupDeadline = nil
+                self.status = "Waiting for Bluetooth."
+              } else { self.failWindow("Turn on Bluetooth, then retry.") }
             default:
               self.failWindow(
                 "Bluetooth became unavailable. Check permissions and Bluetooth, then retry.")
@@ -114,6 +204,8 @@ import Observation
         RunLoop.main.add(timer, forMode: .common)
       } catch {
         if op == generation {
+          automatic = false
+          preferences?.set(true, forKey: "session.paused")
           failWindow("Trusted devices or identity access are unavailable. Check access and retry.")
         }
       }
@@ -147,7 +239,8 @@ import Observation
               try await self.submit(bytes, op, candidate)
             },
             data: { [weak self] bytes in await self?.received(bytes, op, candidate) },
-            secured: { [weak self] in await self?.secured(op, candidate) })
+            secured: { [weak self] in await self?.secured(op, candidate) }, controls: true,
+            renew: self.automatic)
         } catch {
           if op == self.generation, candidate == self.attempt {
             self.failCandidate("Authentication could not start. Retry from Android.")
@@ -177,8 +270,8 @@ import Observation
           self.inputCount -= 1
           self.inputBytes -= bytes.count
           if await engine.isClosed {
-            self.cancel()
-            self.status = "Disconnected by your Android device."
+            if self.automatic { self.reopen() }
+            else { self.cancel(); self.status = "Disconnected by your Android device." }
           }
         } catch {
           if op == self.generation, candidate == self.attempt {
@@ -237,6 +330,10 @@ import Observation
       return
     }
     if !admitted, let windowDeadline, now >= windowDeadline {
+      if automatic {
+        reopen()
+        return
+      }
       cancel()
       status = "Connection window expired. Choose Allow connections to reopen it."
       return
@@ -262,6 +359,20 @@ import Observation
     }
   }
   private func finish(_ error: Error, expiration: SessionExpiry?, peerClosed: Bool) {
+    if automatic {
+      if state != "Secured" {
+        failCandidate("That connection could not authenticate. Waiting for a trusted device.")
+      } else if error as? SessionFailure == .untrustedPeer {
+        retireTrust()
+        status = "Trust changed. Check your paired devices before enabling automatic connections."
+      } else { reopen(after: 2) }
+      return
+    }
+    if let failure = error as? SessionFailure, failure == .controlTimeout {
+      cancel()
+      status = "Your Android device stopped responding. Allow connections to reconnect."
+      return
+    }
     if peerClosed {
       cancel()
       status = "Your Android device ended the session."
@@ -300,12 +411,23 @@ import Observation
     inputCount = 0
     adapter.retirePairingConnection()
     let old = connection
-    connection = nil
     work = nil
-    Task { await old?.close() }
-    state = "Failed"
-    status = reason
-    if wasSecured || !canResume { failWindow(reason) } else { adapter.resumeSessionAdvertising() }
+    state = automatic ? "Disconnected" : "Failed"
+    status = automatic ? "Waiting nearby." : reason
+    if wasSecured || !canResume {
+      if automatic {
+        if !wasSecured && failures >= 5 { cooldownUntil = now() + 120 }
+        reopen(after: wasSecured ? 2 : failures >= 5 ? 120 : 0)
+      } else { failWindow(reason) }
+    } else {
+      connection = nil
+      let op = generation, candidate = attempt
+      work = Task { [weak self] in
+        await old?.close()
+        guard let self, op == self.generation, candidate == self.attempt, self.allowing else { return }
+        self.adapter.resumeSessionAdvertising()
+      }
+    }
   }
   private func failWindow(_ reason: String) {
     cancel()
@@ -329,6 +451,9 @@ import Observation
     }
   }
   func disconnect() {
+    // Stop outranks renewal/recovery; persist the pause before any suspended close.
+    automatic = false
+    preferences?.set(true, forKey: "session.paused")
     guard let connection else {
       cancel()
       return
@@ -347,6 +472,8 @@ import Observation
   func cancel() {
     // Invalidate callbacks and suspended signing before retiring transport/key ownership.
     generation += 1
+    restart?.cancel()
+    restart = nil
     attempt += 1
     allowing = false
     admission.clear()

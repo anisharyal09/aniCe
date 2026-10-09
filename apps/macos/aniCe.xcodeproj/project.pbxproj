@@ -50,6 +50,8 @@
 		FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */; };
 		FCD0A6A722F1CA9B89AC6AC9 /* aniCe/Infrastructure/Session/SessionCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF837DC52D1A22954F8A0CC /* aniCe/Infrastructure/Session/SessionCrypto.swift */; };
 		FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */; };
+		AC0100000000000000000001 /* aniCe/Infrastructure/Session/SessionControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */; };
+		AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -109,6 +111,8 @@
 		CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingCodec.swift; sourceTree = SOURCE_ROOT; };
 		DD2F0B3395D712E249CA4061 /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionHandshakeEngine.swift; sourceTree = SOURCE_ROOT; };
 		E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Session/MacSessionView.swift; sourceTree = SOURCE_ROOT; };
+		AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionControl.swift; sourceTree = SOURCE_ROOT; };
+		AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/control-vectors.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,6 +169,7 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */,
 				0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */,
 				A0FAD41BE08DB04EA6CA9505 /* aniCeTests/SessionChannelTests.swift */,
 				827ECA8094D4F1E9A92668B4 /* ../../protocol/test-vectors/session/rfc9529-components.json */,
@@ -198,6 +203,7 @@
 				E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */,
 				556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */,
 				238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */,
+				AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */,
 				01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */,
 				01577895150EC286ABAA62F2 /* aniCe/Infrastructure/Session/SecureSession.swift */,
 				DD2F0B3395D712E249CA4061 /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift */,
@@ -393,6 +399,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
 				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
 				AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */,
 				2E55CC0A81ADFCE6FE8B1B1D /* ../../protocol/test-vectors/session/session-vectors.json in Resources */,
@@ -412,6 +419,7 @@
 				FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */,
 				F943A3689758A079688E15F8 /* aniCe/Features/Session/MacSessionModel.swift in Sources */,
 				64CF98FCB6E025D6CD950B4D /* aniCe/Infrastructure/Bluetooth/GattFraming.swift in Sources */,
+				AC0100000000000000000001 /* aniCe/Infrastructure/Session/SessionControl.swift in Sources */,
 				FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */,
 				69F359DA287CA610D9F61501 /* aniCe/Infrastructure/Session/SecureSession.swift in Sources */,
 				3D14CC61C42C890B4C09AA5E /* aniCe/Infrastructure/Session/SessionHandshakeEngine.swift in Sources */,

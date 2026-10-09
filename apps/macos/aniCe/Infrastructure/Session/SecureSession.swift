@@ -101,6 +101,15 @@ actor SecureSession {
   private var receiveSequence = RecordSequence()
   var sent: UInt64 { sendSequence.value }
   var received: UInt64 { receiveSequence.value }
+  func renewalReason() -> Int64? {
+    Self.renewalReason(age: now() - started, sent: sent, received: received)
+  }
+  // Renewal margins reserve time/records for close; hard channel bounds remain unchanged.
+  static func renewalReason(age: TimeInterval, sent: UInt64, received: UInt64) -> Int64? {
+    if age >= 55 * 60 { return 1 }
+    if sent >= (1 << 20) - 1024 || received >= (1 << 20) - 1024 { return 2 }
+    return nil
+  }
   private(set) var stage: ChannelStage = .waiting
   init(
     responder: Bool, sendKey: Data, receiveKey: Data, sendIV: Data, receiveIV: Data,
@@ -263,7 +272,8 @@ actor SecureSession {
   static func fromHandshake(
     _ handshake: SessionHandshakeEngine, responder: Bool,
     capacity: @escaping @Sendable (Int) async -> Bool,
-    submit: @escaping @Sendable (Data) async throws -> Void
+    submit: @escaping @Sendable (Data) async throws -> Void,
+    now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
   ) async throws -> SecureSession {
     // Binding order is initiator/responder on both peers; purpose/direction separate exports.
     let bindings = try await handshake.bindings()
@@ -287,7 +297,7 @@ actor SecureSession {
       return try SecureSession(
         responder: responder, sendKey: material[0], receiveKey: material[1], sendIV: material[2],
         receiveIV: material[3], sessionID: material[4],
-        validate: { try await handshake.checkDeadline() }, capacity: capacity, submit: submit)
+        validate: { try await handshake.checkDeadline() }, capacity: capacity, submit: submit, now: now)
     } catch {
       for i in material.indices { material[i].resetBytes(in: 0..<material[i].count) }
       throw error

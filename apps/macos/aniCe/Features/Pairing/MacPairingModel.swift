@@ -6,6 +6,7 @@ import Observation
 @Observable @MainActor final class MacPairingModel {
   var trustRemoved: () -> Void = {}
   var beforePairing: () -> Void = {}
+  var afterPairing: () -> Void = {}
   var status = "Choose how to pair your Android device."
   var phase = "idle"
   var active = false
@@ -253,6 +254,7 @@ import Observation
     }
   }
   func cancel(message: String = "Pairing stopped. Start a fresh invitation when ready.") {
+    let wasActive = active
     generation += 1
     active = false
     timer?.invalidate()
@@ -275,6 +277,7 @@ import Observation
     work = Task {
       await previous?.value
       await old?.close()
+      if wasActive && !self.active { self.afterPairing() }
     }
   }
   private func fail(

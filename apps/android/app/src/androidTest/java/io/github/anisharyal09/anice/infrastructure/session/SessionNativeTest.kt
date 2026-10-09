@@ -146,6 +146,25 @@ class SessionNativeTest {
       }
     }
     val v = valid.getJSONObject(0)
+    val controls = JSONObject(context.assets.open("session/control-vectors.json").bufferedReader().use { it.readText() })
+    val controlValid = controls.getJSONArray("valid")
+    val controlInvalid = controls.getJSONArray("invalid")
+    assertTrue(controlValid.length() >= 3); assertTrue(controlInvalid.length() >= 15)
+    repeat(controlValid.length()) {
+      val row = controlValid.getJSONObject(it)
+      val expected = SessionControl(ControlKind.entries.single { kind -> kind.wire == row.getInt("type") }, row.getLong("value"))
+      assertArrayEquals(bytes(row, "payload"), expected.encode())
+      assertEquals(expected, SessionControl.decode(bytes(row, "payload")))
+    }
+    repeat(controlInvalid.length()) {
+      val row = controlInvalid.getJSONObject(it)
+      try {
+        SessionControl.decode(bytes(row, "payload"))
+        fail("Accepted ${row.getString("name")}")
+      } catch (error: SessionException) {
+        assertEquals(if (row.getString("reason") == "malformed") SessionFailure.MALFORMED else SessionFailure.UNSUPPORTED_PROFILE, error.reason)
+      }
+    }
     repeat(invalid.length()) { i ->
       val row = invalid.getJSONObject(i)
       val stage = row.getInt("stage")
@@ -251,12 +270,28 @@ class SessionNativeTest {
         ch.receive(bytes(awaitFile("readyAck.json"), "readyAck")).first,
       )
       assertEquals(ChannelStage.SECURED, ch.stage)
+      // Controls use the same native AES-GCM counters as application data, after readiness.
+      for ((request, reply, value) in listOf(
+        Triple(ControlKind.HELLO, ControlKind.HELLO_ACK, 1L),
+        Triple(ControlKind.PING, ControlKind.PONG, 0L),
+      )) {
+        val name = if (request == ControlKind.HELLO) "hello" else "ping"
+        ch.send(RecordKind.DATA, SessionControl(request, value).encode())
+        publish("$name.json", JSONObject().put(name + "Hex", text(outgoing)))
+        val response = ch.receive(bytes(awaitFile("$name-reply.json"), name + "Reply"))
+        assertEquals(RecordKind.DATA, response.first)
+        assertEquals(SessionControl(reply, value), SessionControl.decode(response.second))
+      }
       val payload = ByteArray(4000) { it.toByte() }
       ch.send(RecordKind.DATA, payload)
       publish("clientData.json", JSONObject().put("clientDataHex", text(outgoing)))
-      val received = ch.receive(bytes(awaitFile("serverData.json"), "serverData"))
+      val serverData = awaitFile("serverData.json")
+      val received = ch.receive(bytes(serverData, "serverData"))
       assertEquals(RecordKind.DATA, received.first)
       assertArrayEquals(payload.reversedArray(), received.second)
+      val renewal = ch.receive(bytes(serverData, "renewal"))
+      assertEquals(RecordKind.DATA, renewal.first)
+      assertEquals(SessionControl(ControlKind.RENEWAL_REQUEST, 1), SessionControl.decode(renewal.second))
       ch.send(RecordKind.CLOSE)
       publish("close.json", JSONObject().put("closeHex", text(outgoing)))
       assertEquals(ChannelStage.CLOSED, ch.stage)
@@ -267,6 +302,8 @@ class SessionNativeTest {
           .put("exportDigestHex", text(digest))
           .put("stage", c.stage.name)
           .put("recordAgreement", true)
+          .put("controlAgreement", true)
+          .put("renewalAgreement", true)
           .put("bidirectionalBytes", 4000),
       )
       // Confirm the harness received the result before deleting disposable exchange files.

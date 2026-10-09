@@ -50,7 +50,7 @@ Maximum logical message size: **4,096 bytes**.
 | :---: | :--- | :--- | :--- |
 | `10` | `identity` | `identityJSON` | Public device identity JSON string ($\le 2048$ bytes) |
 | `11` | `proof` | `signatureDER` | ASN.1 DER signature proving ownership of private identity key |
-| `12` | `approve` | *(none)* | Explicit user consent confirmation |
+| `12` | `approve` | *(none)* | Explicit local approval confirmation |
 | `13` | `receipt` | `receiptDER` | ASN.1 DER signature confirming durable local trust storage |
 | `14` | `cancel` | *(none)* | Explicit pairing cancellation by either peer |
 
@@ -132,7 +132,7 @@ All inner messages (types 10–14) are encrypted using AES-256-GCM under directi
 1. **Identity Proof:** Proves possession of the long-term P-256 identity key:
    $$\text{ProofBytes} = \text{fields}(\text{"aniCe identity proof v1"}, H, \text{clientIdentityJSON}, \text{serverIdentityJSON}, \text{role}_{1})$$
    Signed with the device's persistent P-256 private key (`SHA256withECDSA`, ASN.1 DER format).
-2. **Mutual Consent:** Both users approve the verified peer identity on their physical screens.
+2. **Mutual Consent:** The verified peer identity requires explicit approval on both devices' physical screens.
 3. **Signed Storage Receipt:** Confirms the peer identity was committed to local storage:
    $$\text{ReceiptBytes} = \text{fields}(\text{"aniCe trust stored v1"}, \text{SHA256}(\text{ProofBytes without role}), \text{role}_{1})$$
    Signed with the local P-256 private key and transmitted to the peer.
@@ -146,7 +146,7 @@ All inner messages (types 10–14) are encrypted using AES-256-GCM under directi
 | **Invitation Window** | 120 seconds | Invitation revoked; GATT characteristics close |
 | **Android Scan Window** | 15 seconds | Bounded candidate search ends |
 | **Authentication Phase** | 30 seconds | Channel aborted; retry attempt consumed |
-| **User Approval Phase** | 60 seconds (bounded by invitation) | Prompt dismissed; handshake aborted |
+| **Approval Phase** | 60 seconds (bounded by invitation) | Prompt dismissed; handshake aborted |
 | **Receipt Exchange** | 10 seconds | Abort pending trust commit |
 | **GATT Teardown** | $\le 2$ seconds | Channel resources cleaned up |
 | **Max Authentication Attempts** | 5 attempts | Invitation permanently invalidates after 5 failures |

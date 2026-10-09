@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
@@ -53,6 +54,10 @@ fun AppRoot(
     var pairingScreen by rememberSaveable { mutableStateOf(false) }
     var details by rememberSaveable { mutableStateOf(false) }
     var nearby by rememberSaveable { mutableStateOf(false) }
+    val nearbyOwner = io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(LocalContext.current)
+    LaunchedEffect(pairingScreen, nearby) {
+        if (pairingScreen || nearby) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
+    }
     val snackbars = remember { SnackbarHostState() }
     BackHandler(details || nearby || pairingScreen) {
         if (pairingScreen) {

@@ -66,6 +66,35 @@ final class SessionTests: XCTestCase, @unchecked Sendable {
       XCTFail("Expected \(expected)")
     } catch let error as SessionFailure { XCTAssertEqual(error, expected) }
   }
+  func testFreshReconnectNeverReusesHandshakeOrExporter() async throws {
+    let row = try XCTUnwrap((root()["valid"] as? [[String: Any]])?.first)
+    let i = try identity(row, "initiator"), r = try identity(row, "responder")
+    func fresh(_ server: Bool) throws -> SessionHandshakeEngine {
+      let local = server ? r : i, peer = server ? i : r
+      let key = try P256.Signing.PrivateKey(rawRepresentation:
+        b(XCTUnwrap(row[server ? "responder" : "initiator"] as? [String: Any]), "private"))
+      return try SessionHandshakeEngine(local: local, responder: server, trusted: { [peer] },
+        currentIdentity: { local }, signer: {
+          SignedIdentityPayload(identity: local, signature: try key.signature(for: $0).derRepresentation)
+        }, selectedPeer: server ? nil : peer)
+    }
+    var messages = [Data](), exports = [Data]()
+    for _ in 0..<3 {
+      let c = try fresh(false), s = try fresh(true)
+      let m1 = try await c.initiate(), m2 = try await s.respond(m1)
+      let m3 = try await c.authenticateResponder(m2), m4 = try await s.authenticateInitiator(m3)
+      try await c.confirmResponder(m4)
+      let context = try b(row, "exportContext-session-id-0")
+      let exported = try await c.export(context: context, length: 32)
+      let remote = try await s.export(context: context, length: 32)
+      XCTAssertEqual(exported, remote)
+      XCTAssertFalse(messages.contains(m1)); XCTAssertFalse(exports.contains(exported))
+      messages.append(m1); exports.append(exported)
+      await c.close(); await s.close()
+      try await reject(.cancelled) { _ = try await c.export(context: Data(), length: 32) }
+    }
+    XCTAssertEqual(exports.count, 3)
+  }
   func testCompleteOracleHandshakesAndExporter() async throws {
     let fixtures = try root()
     let rows = try XCTUnwrap(fixtures["valid"] as? [[String: Any]])

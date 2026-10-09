@@ -2,7 +2,9 @@
 
 Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Comprehensive manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness and connection controls are implemented. Over-the-air BLE radio inspection, minimum-OS baseline coverage, and independent security review remain pending.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness and negotiated encrypted keepalive are implemented. Current-build background radio endurance, minimum-OS baseline coverage, and independent security review remain pending. Manual Allow connections retains its 120-second admission window.
+
+Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records acceptance gates.
 
 ## Nearby discovery
 

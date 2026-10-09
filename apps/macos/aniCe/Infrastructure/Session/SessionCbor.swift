@@ -2,7 +2,7 @@
 import Foundation
 
 enum SessionFailure: String, Error, Sendable {
-  case malformed, unsupportedProfile, untrustedPeer, authentication, state, cancelled, expired
+  case malformed, unsupportedProfile, untrustedPeer, authentication, state, cancelled, expired, controlTimeout
 }
 
 indirect enum SessionCBOR: Equatable, Sendable {

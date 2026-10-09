@@ -72,13 +72,26 @@ do {
   guard ready.0 == .ready else { throw SessionFailure.state }
   try await channel.send(.readyAck)
   try emit(["readyAckHex": text(await mailbox.take())])
+  // Verify control bytes inside the existing authenticated directional record channel.
+  for (name, request, reply, value): (String, ControlKind, ControlKind, Int64) in [
+    ("hello", .hello, .helloAck, 1), ("ping", .ping, .pong, 0),
+  ] {
+    let incoming = try await channel.receive(hex(input()[name + "Hex"]))
+    guard incoming.0 == .data,
+      try SessionControl.decode(incoming.1) == SessionControl(kind: request, value: value)
+    else { throw SessionFailure.state }
+    try await channel.send(.data, plaintext: SessionControl(kind: reply, value: value).encode())
+    try emit([name + "ReplyHex": text(await mailbox.take())])
+  }
   let payload = try await channel.receive(hex(input()["clientDataHex"]))
   let expected = Data((0..<4000).map { UInt8(truncatingIfNeeded: $0) })
   guard payload.0 == .data, payload.1 == expected, await channel.stage == .secured else {
     throw SessionFailure.authentication
   }
   try await channel.send(.data, plaintext: Data(expected.reversed()))
-  try emit(["serverDataHex": text(await mailbox.take())])
+  let serverData = await mailbox.take()
+  try await channel.send(.data, plaintext: SessionControl(kind: .renewalRequest, value: 1).encode())
+  try emit(["serverDataHex": text(serverData), "renewalHex": text(await mailbox.take())])
   let closing = try await channel.receive(hex(input()["closeHex"]))
   guard closing.0 == .close, await channel.stage == .closed else { throw SessionFailure.state }
   let after = try await identity.publicIdentity()

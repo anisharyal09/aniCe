@@ -1,85 +1,62 @@
-# Background connection feasibility
+# Background BLE connections
 
-## Implementation boundary
+## Implementation and release gate
 
-Android includes a debug-only companion device feasibility probe and an application-scoped session controller (`SessionController`). The user interface delegates connection lifecycle management to this controller. Manual connections terminate on app backgrounding and screen lock unless the system-bound companion device service acquires session ownership.
+One application-scoped Android `SessionController` owns transport, EDHOC/readiness, records and operation generations. Native `StateFlow` publishes connection/control/renewal progress to the background owner independently of Compose snapshot application. Activities contribute presentation tokens; only an OS-bound `CompanionDeviceService` supplies background ownership. Manual connections close when the final presentation stops without a companion lease. No activity starts or binds the companion service itself.
 
-Production automatic connection, foreground-service fallback, reboot recovery, persistent Mac peripheral availability, application-control synchronization, keepalive heartbeats, and session renewal are not implemented. Full background operation remains gated by physical radio and OS daemon validation.
+Automatic nearby recovery, negotiated keepalive, fresh-session renewal, and Mac automatic availability are implemented. Android uses one device-level **Connect automatically** switch. First setup uses the native companion chooser; association is a locator/OS lease, never authentication. EDHOC pins the selected active device ID, fingerprint and key under the current local identity. Wrong first-time candidates remove their newly created association. Identity and trust journals are preserved.
 
-The feasibility probe reuses existing platform primitives: identity service, active trust storage, RFC 9528 EDHOC (method 0, cipher suite 5), encrypted readiness confirmation, and the directional AES-GCM record channel. The Android companion association acts strictly as an operating system lifecycle lease and transport locator, never an authentication credential. Candidates that fail cryptographic credential pinning are rejected, and their associated test state is cleared. Debug preferences operate independently of trust storage and contain no private keys, session nonces, or record counters.
+Notification-free support remains gated: `companion_probe_supported` is false in main resources and true only in Debug API 31+. Release contains the shared setup/controller code and signature-protected service declaration, but disables service ownership and automatic setup. API 29–30 retain manual connection. Physical address stability, range/process recovery and endurance evidence are required before promoting this resource gate. Foreground-service fallback and phone-reboot recovery are not implemented in this increment; LAN and feature integrations remain deferred.
 
 ## Native API paths
 
-| Android Version | Native Platform Behavior |
+| Android API | Presence ownership |
 | --- | --- |
-| API 29–30 | Companion service disabled via manifest resource qualifiers; manual connection lifecycle retained. |
-| API 31–32 | Address-based presence observation (`startObservingDevicePresence(String)`). |
-| API 33–35 | Address-based observation registration; system presence callbacks matched by association ID. |
-| API 36 | Association-ID presence observation requests (`ObservingDevicePresenceRequest`) with separate BLE advertisement and Bluetooth connection lifecycle events. |
+| 29–30 | Service disabled; manual connections |
+| 31–32 | Address observation and address callbacks |
+| 33–35 | Address observation; callbacks matched by association ID |
+| 36 | Association-ID requests; separate BLE advertisement and Bluetooth-connection events |
 
-The companion service (`CompanionProbeService`) is declared exclusively in the debug source set with signature permission `android.permission.BIND_COMPANION_DEVICE_SERVICE`. The probe activity is not exported. Release builds omit both components and companion permissions entirely. Only system binding confers background session ownership; the activity does not launch or bind the service.
+The nonexported setup activity and service live in main sources. The service requires `android.permission.BIND_COMPANION_DEVICE_SERVICE`; the build gate controls its enabled state. Native service creation restores ownership after process replacement even when CDM omits the previous presence callback. Duplicate events reacquire a resumed lease; unbind/destruction releases it. Every attempt revalidates the native association and pinned trust. On API 36, advertisement loss alone does not retire a transport while Bluetooth presence remains active. Association addresses are normalized to uppercase for `BluetoothAdapter`; temporary addresses are never trust credentials.
 
-On API 36, BLE advertisement loss and Bluetooth transport disconnection are evaluated independently. An advertisement disappearance does not terminate an active session while a Bluetooth connection event confirms active presence. Session operations maintain generation counters to reject stale asynchronous results. User interface ViewModel destruction does not release a companion-held session lease.
+## Android policy
 
-Association MAC addresses are normalized to uppercase prior to persistence and `BluetoothAdapter` lookup to comply with native framework validation. Diagnostics log discrete failure stages and exception class names; peer MAC addresses, exception messages, and sensitive payloads are excluded from event records.
+Saved preferences bind one selected peer ID/fingerprint to the local fingerprint, native association ID/address, automatic/paused flags and an authenticated-association marker. The existing bounded diagnostic log is retained. Private keys, session material, record counters, transports and generations remain in memory. Observation is registered only after active trust validation; a registered observation is not successful authentication.
 
-## Ownership and lifecycle
+Connection settings match the displayed device ID and fingerprint before showing enabled state, diagnostics or Reset setup. Actions recheck that binding. Enabling a different Mac explicitly retires the prior association before opening the chooser; merely opening another Mac's settings does not change the selected setup.
 
-`SessionController` manages the application coroutine scope, a single GATT transport instance, and the active session operation. State mutations and transport dispatches execute on the main thread; cryptographic handshakes and record processing dispatch to IO.
+A live service lease serializes attempts. Transient failures retry after 2, 5, 15, 30 and 60 seconds, capped at 60, with ±10% jitter. Presence loss cancels the entire retry chain; radio-off waits for radio recovery. Rejected locators are excluded for 60 seconds in an in-memory set capped at 32. No periodic wake alarms or unowned scan loop is used.
 
-Each active activity registers a presentation token. Navigating between Home and the debug probe screen preserves an active manual connection as long as at least one activity remains started. Removing the final presentation token triggers a clean disconnect for manual sessions. Configuration changes update tokens without severing connections. When the companion service acquires a session lease, the session remains active across UI backgrounding and device lock until the service releases ownership or a fatal transport/crypto failure occurs.
+| Event | Policy and session action |
+| --- | --- |
+| Presence appears / duplicate callback | Acquire the system lease; start or retain one pinned attempt |
+| Service disappearance/unbind | Cancel attempts/retries; retire session; wait for presence |
+| Transient disconnect or missed PONG | Retire old operation; bounded retry only while owned and permitted |
+| Disconnect | Persist pause before teardown; stop retries/access; retain association and native observation |
+| Switch off | Save automatic off and paused atomically; stop observation/access |
+| Switch on / explicit Connect after pause | Revalidate remembered trust/association; resume observation |
+| Pairing/discovery | Suspend automatic attempts; restore policy after the exclusive operation |
+| Revocation / identity reset | Retire session and selected setup; require explicit correction |
+| Permission/association loss / legacy peer | Pause with an actionable explanation; manual connection remains available |
+| Reset connection setup | Invalidate chooser jobs, release keys/access, remove only its association |
 
-Stale state protection is enforced at three boundaries:
-1. **Activity chooser generation:** Rejects obsolete device chooser callbacks.
-2. **Probe setup token:** Invalidates pending setup jobs if the test is cancelled or stopped.
-3. **Session operation generation:** Discards asynchronous cryptographic and transport callbacks from prior attempts.
+Stop invalidates chooser/setup/session generations before disk or suspended crypto work. Resume reserves its generation before association/trust validation; retired results and failures become cancellation, so callers cannot re-enable or pause a newer setup. A failed preference write cannot retain live application access. Pause retains observation but runs no connection/retry work; disabling stops observation. Restored system bindings treat an omitted presence source as unknown until its callback or native unbind, rather than inventing an absence. Restored configuration requires the original local identity and an active matching peer. OS rebinding can recover a process; force-stop has no automatic-recovery promise. Reboot recovery is not enabled.
 
-Companion session leases use object-identity equality, preventing stale or unbound service instances from terminating a newly acquired lease.
+## Mac policy
 
-| Event | Session Action | Association Action |
-| --- | --- | --- |
-| System presence appears | Resolve active trust, acquire session lease, initiate EDHOC handshake | Maintain active observation |
-| Duplicate presence callback | Retain existing connection attempt | None |
-| Presence disappears or service unbinds | Release companion lease and terminate session | Maintain observation for future discovery |
-| Handshake failure or authenticated peer close | Terminate session and cancel probe | Stop observation and remove OS association |
-| Explicit stop test | Invalidate setup, release companion lease, and disconnect probe | Stop observation and remove OS association |
-| UI ViewModel cleared | Release UI callbacks; preserve session if presentation or companion lease remains | None |
+The window and menu companion share one opt-in **Connect automatically** policy and allowed-phone selection. A target is frozen per attempt and resolved against active trust. Empty trust cannot enable automatic admission. The slot holds one candidate/session; other centrals cannot join it. Automatic availability advertises only while the slot is empty, stops advertising on admission, and renews empty 120-second periods. Five failed candidates in a period trigger a 120-second cooldown. Unknown candidates consume admission failures without disabling valid trust.
 
-Observation registration and peer authentication are distinct states. The `armed` flag reflects saved probe configuration. Successful observation registration indicates the system framework accepted the request; verified connectivity requires successful EDHOC exchange and encrypted readiness confirmation. Probe cancellation initiates OS disassociation even if persistent preference updates fail. Failures do not trigger automatic retry loops.
+Manual Allow connections retains its 120-second window. Disconnect pauses automatic availability before cleanup. Switch off disables it; enabling again clears pause. Closing the window retains the menu companion; sleep retires the channel and wake restores enabled availability. Quit stops all operations. Automatic login launch is not implemented. Pairing/discovery temporarily suspend admission. Core Bluetooth application access is retired when physical central disconnection is unavailable.
 
-Debug preferences record `peer`, `fingerprint`, `local`, `address`, `association`, `armed`, and `events`. Keys, record counters, and live transport references exist only in transient memory.
+Pairing cleanup restores automatic availability only if pairing and discovery are both idle at callback delivery. A newer exclusive operation retains the radio; stopping discovery can restore the saved automatic policy afterward.
 
-## Verification procedure
+## Liveness and renewal
 
-1. Install the Debug APK, complete standard pairing, and establish a manual connection.
-2. Navigate to **More → Background connection test**. Navigating into and out of this screen maintains the existing manual connection.
-3. Tap **Start setup** to terminate the manual connection and prepare for companion pairing.
-4. On the Mac, open **Allow connections**.
-5. Tap **Associate Mac** on Android and select the Mac in the system companion chooser.
-6. Open **Show test events** and confirm the transition to **EDHOC and readiness verified**.
-7. Test bidirectional communication using connection checks. Lock the Android device or switch to recent apps, send a check from the Mac, and confirm receipt in the diagnostic event log.
-8. Validate range and reconnect behavior by toggling Bluetooth or moving out of range while the Mac advertises.
-9. Tap **Stop test** upon completion. This terminates the session, unregisters presence observation, and removes the OS association.
+[Authoritative control CDDL](../protocol/session/control.cddl) defines controls inside existing DATA kind 3/envelope 6. HELLO/ACK compatibility completes within ten seconds of readiness; Android PING follows 60 seconds without authenticated activity, with one matching PONG due within 20 seconds. Unsupported peers retain manual operation; automatic policy pauses. Controls consume ordinary record sequences and never increment diagnostic check counters.
 
-Session hard limits apply: ten-second readiness timeout, 120-second idle limit, one-hour lifetime bound, and a `2^20` directional record limit. Automatic keepalive and re-keying are not implemented in this probe.
+Automatic renewal starts at 55 minutes or `2^20 − 1024` records in either direction. Mac sends one request; Android coalesces requests, blocks application submissions, retires the old session within two seconds, then performs fresh EDHOC/readiness if policy/ownership still permit it. Stop outranks renewal. Queue preflight precedes nonce reservation; encryption/post-seal submission failures burn the sequence and retire the session.
 
-The diagnostic log maintains a bounded circular buffer of up to 64 monotonic-time entries. Logs capture state transitions and check counters; payloads, cryptographic keys, and device addresses are omitted.
-
-## Acceptance matrix
-
-| Verification Target | Methodology | Status |
-| --- | --- | --- |
-| Duplicate presence events, advertising loss handling, rebind isolation | Unit test (`ProbePresenceTest`) | Pass |
-| UI clearing, stale-owner release, setup cancellation | Native instrumentation (`SessionOwnershipTest`, `CompanionSetupTest`) | Pass |
-| MAC address normalization and malformed address rejection | Native instrumentation (`CompanionSetupTest`) | Pass |
-| BLE authentication retention across activity transitions | Native physical test (`PhysicalSessionNavigationTest`) | Pass |
-| Native handshake and record provider conformance | Native instrumentation (`SessionNativeTest`) | Pass |
-| Probe isolation from production binaries | Release manifest and build inspection | Pass |
-| System association chooser discovery | Physical device verification | Pass |
-| Background companion service binding and presence handling | Physical device verification | Pass |
-| Locked-screen and background bidirectional traffic | Physical device verification | Pass |
-| Out-of-range return and process recovery | Physical device verification | Pending |
-| Long-duration session endurance and battery impact | Physical device verification | Pending |
-| Minimum OS (API 29–30) fallback | Physical device verification | Pending |
+Hard bounds remain: ten-second readiness, 120-second idle, one-hour age, `2^20` records/direction, 4,000-byte plaintext, 4,096-byte logical messages and eight queued messages/32 KiB. All deadlines are monotonic; Android elapsed realtime includes sleep. OS suspension may miss a deadline and disconnect. Owned mutable secrets are overwritten and key objects released; JVM/Swift zeroization is best effort.
 
 References: [Android background BLE](https://developer.android.com/develop/connectivity/bluetooth/ble/background), [CompanionDeviceService](https://developer.android.com/reference/android/companion/CompanionDeviceService), [Secure session profile](../protocol/session/README.md).
+

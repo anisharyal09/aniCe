@@ -11,6 +11,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import io.github.anisharyal09.anice.AniCeApplication
@@ -19,6 +20,7 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.features.session.sessionNotice
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
 
 enum class ConnectionState {
   DISCONNECTED,
@@ -32,6 +34,10 @@ enum class ConnectionState {
  * Preserves active connection state across UI activity transitions.
  */
 class SessionController(application: Application) {
+  internal data class Progress(val state: ConnectionState, val controls: Boolean?, val renewal: Long?, val checks: Int)
+  // Background owners cannot depend on Compose's snapshot apply notifications or an active Recomposer.
+  internal val progress = MutableStateFlow(Progress(ConnectionState.DISCONNECTED, null, null, 0))
+  private fun publishProgress() { progress.value = Progress(state, controlSupport, renewalReason, receivedChecks) }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var companionOwner: Any? = null
   private val app = application as AniCeApplication
@@ -46,6 +52,16 @@ class SessionController(application: Application) {
 
   var receivedChecks by mutableIntStateOf(0)
     private set
+  var controlSupport by mutableStateOf<Boolean?>(null)
+    private set
+  var renewalReason by mutableStateOf<Long?>(null)
+    private set
+  var lastFailure: SessionFailure? = null
+    private set
+  var beforeDisconnect: () -> Unit = {}
+  var beforeRequest: (DeviceIdentity) -> Unit = {}
+  var radioChanged: (Boolean) -> Unit = {}
+  private var automaticAttempt = false
 
   private var operation = 0L
   private var connection: SessionConnection? = null
@@ -96,6 +112,8 @@ class SessionController(application: Application) {
               intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) != BluetoothAdapter.STATE_ON)
         )
           cancel()
+        if (intent?.action == BluetoothAdapter.ACTION_STATE_CHANGED)
+          radioChanged(intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON)
       }
     }
 
@@ -125,21 +143,24 @@ class SessionController(application: Application) {
       status = "Allow Bluetooth access to connect."
       return
     }
+    beforeRequest(peer)
     connect(peer)
   }
 
   fun permissionReturned() {
     awaitingPermissions = false
     selected?.let {
-      if (missingPermissions().isEmpty()) connect(it)
+      if (missingPermissions().isEmpty()) { beforeRequest(it); connect(it) }
       else fail("Bluetooth access is needed. Allow it in app settings, then retry.")
     }
   }
 
   @SuppressLint("MissingPermission")
-  fun connect(peer: DeviceIdentity, candidate: BluetoothDevice? = null) {
+  fun connect(peer: DeviceIdentity, candidate: BluetoothDevice? = null, automatic: Boolean = false) {
     if (!foreground && companionOwner == null) return
     cancel()
+    lastFailure = null
+    automaticAttempt = automatic
     beforeConnect()
     selected = peer
     if (missingPermissions().isNotEmpty()) {
@@ -165,6 +186,7 @@ class SessionController(application: Application) {
     state = ConnectionState.CONNECTING
     status = "Finding your trusted Mac…"
     receivedChecks = 0
+    publishProgress()
     // Every callback belongs to this attempt; cancel/retry invalidates suspended results.
     val op = operation
     input = Channel(8)
@@ -199,6 +221,7 @@ class SessionController(application: Application) {
                   if (op == operation && bytes.contentEquals(CHECK)) {
                     receivedChecks++
                     status = "Connection check received."
+                    publishProgress()
                   }
                 }
               },
@@ -207,9 +230,14 @@ class SessionController(application: Application) {
                   if (op == operation) {
                     state = ConnectionState.SECURED
                     status = ""
+                    publishProgress()
                   }
                 }
               },
+              controls = true,
+              // Include deep sleep: OS suspension must not extend record lifetime or PONG deadlines.
+              now = { SystemClock.elapsedRealtime() },
+              renew = automatic,
             )
           connection = engine
           var checking = false
@@ -225,7 +253,15 @@ class SessionController(application: Application) {
                 checking = true
                 launch {
                   try {
-                    engine.tick()
+                    // Health checks may seal keepalive records; keep native crypto off the UI thread.
+                    withContext(Dispatchers.IO) { engine.tick() }
+                    if (op == operation) controlSupport = engine.controlSupport
+                    if (op == operation) renewalReason = engine.renewalReason
+                    if (op == operation) publishProgress()
+                    if (op == operation && renewalReason != null && !automaticAttempt) {
+                      cancel()
+                      status = "This session needs a fresh connection. Connect again."
+                    }
                   } catch (e: CancellationException) {
                     throw e
                   } catch (e: Exception) {
@@ -260,6 +296,7 @@ class SessionController(application: Application) {
   }
 
   fun checkConnection() {
+    if (state != ConnectionState.SECURED || renewalReason != null) return
     val op = operation
     val engine = connection ?: return
     scope.launch {
@@ -275,10 +312,13 @@ class SessionController(application: Application) {
   }
 
   fun disconnect() {
+    beforeDisconnect()
     val engine = connection
     val op = operation
     state = ConnectionState.DISCONNECTED
+    controlSupport = null
     status = "Disconnecting…"
+    publishProgress()
     scope.launch {
       // Peer-close submission is bounded; synchronous retirement remains necessary if it stalls.
       withTimeoutOrNull(2000) {
@@ -293,6 +333,8 @@ class SessionController(application: Application) {
   fun cancel() {
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++
+    controlSupport = null
+    renewalReason = null
     input?.close()
     input = null
     inputBytes = 0
@@ -308,6 +350,7 @@ class SessionController(application: Application) {
     scope.launch(Dispatchers.IO) { old?.close() }
     state = ConnectionState.DISCONNECTED
     status = "Open Allow connections on your Mac to reconnect."
+    publishProgress()
   }
 
   private fun finish(error: Exception, engine: SessionConnection?) {
@@ -319,14 +362,44 @@ class SessionController(application: Application) {
         state == ConnectionState.SECURED,
       )
     cancel()
+    lastFailure = (error as? SessionException)?.reason
     state = notice.state
     status = notice.text
+    publishProgress()
   }
 
   private fun fail(reason: String) {
     cancel()
     state = ConnectionState.FAILED
     status = reason
+    publishProgress()
+  }
+
+  suspend fun retireForRenewal() {
+    val engine = connection ?: return
+    val op = operation
+    state = ConnectionState.CONNECTING
+    status = "Renewing connection…"
+    publishProgress()
+    try {
+      withTimeoutOrNull(2000) { withContext(Dispatchers.IO) { engine.disconnect() } }
+    } catch (error: CancellationException) {
+      throw error
+    } catch (_: Exception) {
+      // A failed close submission still retires this channel; the owned retry loop starts fresh.
+    } finally {
+      // Stop/cancellation wins over renewal; a retired operation cannot publish another attempt.
+      if (op == operation) cancel()
+      withContext(NonCancellable + Dispatchers.IO) { engine.close() }
+    }
+  }
+
+  fun adoptAutomatic(peer: DeviceIdentity): Boolean {
+    if (state != ConnectionState.SECURED || !hasCompanionOwner || selected?.deviceId != peer.deviceId ||
+      selected?.fingerprint != peer.fingerprint || selected?.publicKey != peer.publicKey) return false
+    automaticAttempt = true
+    connection?.enableRenewal()
+    return true
   }
 
   fun foreground(presentation: Any = this) {

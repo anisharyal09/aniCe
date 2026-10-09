@@ -1,0 +1,176 @@
+{
+  "valid": [
+    {
+      "type": 1,
+      "value": 1,
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6e01"
+    },
+    {
+      "type": 2,
+      "value": 1,
+      "payloadHex": "846d616e69436520636f6e74726f6c0102a16776657273696f6e01"
+    },
+    {
+      "type": 3,
+      "value": 0,
+      "payloadHex": "846d616e69436520636f6e74726f6c0103a16972657175657374496400"
+    },
+    {
+      "type": 3,
+      "value": 4294967295,
+      "payloadHex": "846d616e69436520636f6e74726f6c0103a1697265717565737449641affffffff"
+    },
+    {
+      "type": 4,
+      "value": 0,
+      "payloadHex": "846d616e69436520636f6e74726f6c0104a16972657175657374496400"
+    },
+    {
+      "type": 4,
+      "value": 4294967295,
+      "payloadHex": "846d616e69436520636f6e74726f6c0104a1697265717565737449641affffffff"
+    },
+    {
+      "type": 5,
+      "value": 1,
+      "payloadHex": "846d616e69436520636f6e74726f6c0105a166726561736f6e01"
+    },
+    {
+      "type": 5,
+      "value": 2,
+      "payloadHex": "846d616e69436520636f6e74726f6c0105a166726561736f6e02"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "payloadHex": "",
+      "reason": "malformed"
+    },
+    {
+      "name": "truncated",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6e",
+      "reason": "malformed"
+    },
+    {
+      "name": "trailing",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6e0100",
+      "reason": "malformed"
+    },
+    {
+      "name": "indefinite-array",
+      "payloadHex": "9f6d616e69436520636f6e74726f6c0101a16776657273696f6e01ff",
+      "reason": "malformed"
+    },
+    {
+      "name": "nonminimal-version",
+      "payloadHex": "846d616e69436520636f6e74726f6c180101a16776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "nonminimal-map-length",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101b8016776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "duplicate-key",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a26776657273696f6e016776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "oversized",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6e78806161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-tag",
+      "payloadHex": "84656f746865720101a16776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-arity",
+      "payloadHex": "856d616e69436520636f6e74726f6c0101a16776657273696f6e0100",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-version",
+      "payloadHex": "846d616e69436520636f6e74726f6c0201a16776657273696f6e01",
+      "reason": "unsupportedProfile"
+    },
+    {
+      "name": "boolean-version",
+      "payloadHex": "846d616e69436520636f6e74726f6cf501a16776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-type",
+      "payloadHex": "846d616e69436520636f6e74726f6c0106a166726561736f6e01",
+      "reason": "unsupportedProfile"
+    },
+    {
+      "name": "boolean-type",
+      "payloadHex": "846d616e69436520636f6e74726f6c01f5a16776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "extra-key",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a2656578747261006776657273696f6e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "missing-key",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a0",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-key",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16972657175657374496401",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-value",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6ef5",
+      "reason": "malformed"
+    },
+    {
+      "name": "float-value",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6ef93c00",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-hello-version",
+      "payloadHex": "846d616e69436520636f6e74726f6c0101a16776657273696f6e02",
+      "reason": "malformed"
+    },
+    {
+      "name": "negative-id",
+      "payloadHex": "846d616e69436520636f6e74726f6c0103a16972657175657374496420",
+      "reason": "malformed"
+    },
+    {
+      "name": "overflow-id",
+      "payloadHex": "846d616e69436520636f6e74726f6c0104a1697265717565737449641b0000000100000000",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-reason-zero",
+      "payloadHex": "846d616e69436520636f6e74726f6c0105a166726561736f6e00",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-reason-three",
+      "payloadHex": "846d616e69436520636f6e74726f6c0105a166726561736f6e03",
+      "reason": "malformed"
+    },
+    {
+      "name": "non-map",
+      "payloadHex": "846d616e69436520636f6e74726f6c01018101",
+      "reason": "malformed"
+    },
+    {
+      "name": "invalid-text",
+      "payloadHex": "846d61ff69436520636f6e74726f6c0101a16776657273696f6e01",
+      "reason": "malformed"
+    }
+  ]
+}

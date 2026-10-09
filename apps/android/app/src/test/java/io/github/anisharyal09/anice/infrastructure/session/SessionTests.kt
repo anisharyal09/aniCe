@@ -69,6 +69,40 @@ class SessionTests {
     )
   }
 
+  @Test fun freshReconnectNeverReusesHandshakeOrExporter() = runBlocking {
+    val row = root().getJSONArray("valid").getJSONObject(0)
+    val i = identity(row, "initiator"); val r = identity(row, "responder")
+    fun fresh(server: Boolean): SessionHandshakeEngine {
+      val local = if (server) r else i
+      val peer = if (server) i else r
+      val public = io.github.anisharyal09.anice.infrastructure.identity.IdentityCrypto.publicKey(Base64.getDecoder().decode(local.publicKey))
+      val key = java.security.KeyFactory.getInstance("EC").generatePrivate(java.security.spec.ECPrivateKeySpec(
+        java.math.BigInteger(1, b(row.getJSONObject(if (server) "responder" else "initiator"), "private")),
+        (public as java.security.interfaces.ECPublicKey).params))
+      return SessionHandshakeEngine(local, server, { listOf(peer) }, { local }, {
+        val signer = java.security.Signature.getInstance("SHA256withECDSA")
+        signer.initSign(key); signer.update(it); SessionProof(local, signer.sign())
+      }, if (server) null else peer)
+    }
+    val messages = mutableListOf<ByteArray>(); val exports = mutableListOf<ByteArray>()
+    repeat(3) {
+      val c = fresh(false); val s = fresh(true)
+      try {
+        val m1 = c.initiate(); val m2 = s.respond(m1)
+        val m3 = c.authenticateResponder(m2); val m4 = s.authenticateInitiator(m3)
+        c.confirmResponder(m4)
+        val context = b(row, "exportContext-session-id-0")
+        val exported = c.export(context, 32)
+        assertArrayEquals(exported, s.export(context, 32))
+        assertTrue(messages.none { it.contentEquals(m1) }); assertTrue(exports.none { it.contentEquals(exported) })
+        messages.add(m1); exports.add(exported)
+      } finally { c.close(); s.close() }
+      try { c.export(byteArrayOf(), 32); fail("Retired exporter remained accessible") }
+      catch (error: SessionException) { assertEquals(SessionFailure.CANCELLED, error.reason) }
+    }
+    assertEquals(3, exports.size)
+  }
+
   private fun reason(text: String) =
     when (text) {
       "malformed" -> SessionFailure.MALFORMED
