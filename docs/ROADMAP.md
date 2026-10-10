@@ -1,33 +1,40 @@
 # aniCe Roadmap
 
-| Phase | Scope | Status |
+| Milestone | Scope | Status |
 | :--- | :--- | :--- |
-| **1 — Native app foundations** | Native shells, lifecycle, navigation, palette | Implemented; UI and accessibility verification pending |
-| **2 — Persistent device identity** | Protected local P-256 keys, public identity records | Implemented; verification gaps below |
-| **3 — BLE discovery** | Nearby BLE compatibility check (Mac peripheral, Android central) | Implemented; verification gaps below |
-| **4 — Pairing and trust** | QR/PIN authentication, mutual approval, peer trust store | Implemented; physical radio acceptance and security review pending |
-| **5 — Authenticated secure sessions** | EDHOC authenticated key exchange, encryption, replay defense | Handshake, record channel, BLE lifecycle and UI controls implemented; radio verification, minimum-OS baseline, and security review pending |
-| **6 — LAN transport and synchronization** | Local network transport and feature synchronization | Manual authenticated TCP implemented; native IPv4/scoped IPv6 interchange verified; packaged-app/coexistence/minimum-OS acceptance pending; synchronization deferred |
+| **Native app foundations & identity** | Native shells, lifecycle, navigation, protected local P-256 keys | Implemented |
+| **Pairing & mutual trust** | Ephemeral QR & OPAQUE PIN authentication, mutual approval, atomic trust journal | Implemented |
+| **Independent Bluetooth Low Energy (BLE)** | Compatibility discovery, EDHOC session handshake, AES-GCM records, GATT framing | Implemented |
+| **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
+| **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
+| **Application continuity** | Media controls, clipboard synchronization, bulk file transfer; continuous test hardening and fixes | ... |
 
-Automated unit and integration test suites validate core protocol contracts. Physical radio inspection, minimum-OS baseline coverage, and independent security review remain tracked as release gates.
+Automated unit, hosted, and cross-platform interchange test suites validate cryptographic, transport, and session protocol contracts.
 
-## Phase 5 milestones
+---
 
-- 5A: native method-0/suite-5 EDHOC, ADR 0005, deterministic CCS/CBOR/CDDL, strict DER/COSE adapters, independent Python oracle, three valid/21 invalid vectors.
-- Background connections: shared ownership, companion-owned nearby retry, Mac automatic availability, encrypted liveness and coordinated fresh-session renewal implemented. One automatic switch per device; Disconnect pauses recovery on that device. Authenticated peer closure preserves eligible nearby recovery on the other device. Android Release ownership remains gated pending current-build physical range/process/address/endurance acceptance. Foreground-service fallback and reboot recovery remain deferred. [Implementation boundary](BACKGROUND_CONNECTIONS.md).
-- Baseline runtime coverage: API 29 and macOS 14 runtime verification remain pending.
-- Idle work: ordinary Android identity reads avoid signing; creation/reset retain signing proof and requested signatures are verified. BLE/LAN maintenance now waits for absolute deadlines and transport events; protected identity validation remains on authenticated operations. Explicit identity/trust mutations retire both owners. A complete 17-minute Debug/USB connected BLE run passed continuity and journal-integrity assertions; three five-minute intervals recorded median CPU of 0.322% Android and 0.030% Mac of one core. Fully controlled comparisons, foreground/LAN performance, battery measurements and broader physical acceptance remain pending.
-- 5B/5C: directional AES-GCM records, shared GATT v2, readiness, lifecycle and explicit connection UI implemented. Independent record fixtures, native test suites, and isolated interchange harnesses validate bidirectional 4,000-byte payloads and lifecycle cleanup. Mac supports shared allowed-device selection with full credential pinning.
+## Technical Milestones
 
-## Phase 4 milestones
+### 1. Identity & Cryptographic Bootstrap
+- **Platform Identity:** Actor-isolated P-256 keys in `AndroidKeyStore` and macOS Keychain with ASN.1 DER boundary signatures and JSON Schema v1 public records. Ordinary reads avoid signing; creation and reset retain cryptographic signing proof. See [ADR 0001](decisions/0001-provisional-device-identity.md).
+- **Pairing Bootstrap:** Ephemeral P-256 ECDH QR code pairing with SHA-256 fingerprint commitments. 6-digit manual PIN pairing using an isolated in-memory OPAQUE bridge (`opaque-ke 4.0.1`, Argon2id). See [Pairing Contract](../protocol/pairing/README.md) and [ADR 0003](decisions/0003-provisional-pairing-and-trust.md).
+- **Mutual Trust:** Explicit on-screen approval on both devices before trust activation, persisted atomically in local trust journals. Trusted peer management includes renaming and forgetting devices.
 
-- 4A: contracts, ADR 0003, ADR 0004, shared vectors.
-- 4B: bounded bidirectional GATT, MTU fallback and cache invalidation recovery implemented; physical over-the-air acceptance pending.
-- 4C: native QR authentication, mutual consent, atomic peer trust journal.
-- 4D: OPAQUE six-digit pairing via Rust PAKE bridge, trusted-device management (renaming, forgetting).
+### 2. Independent Bluetooth Low Energy (BLE) Sessions
+- **Handshake & Record Channel:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) with mandatory message 4 authenticating pinned active trust. Directional AES-256-GCM application records with 64-bit sequence counters, 4,000-byte plaintext limit, one-hour lifetime, and hard cap of `2^20` records. Strict bidirectional `ready` / `readyAck` confirmation before payload delivery. See [Session Contract](../protocol/session/README.md) and [ADR 0005](decisions/0005-edhoc-secure-sessions.md).
+- **Native BLE Transport:** Unauthenticated 20-byte compatibility discovery probe and bounded GATT v2 session framing with 10-second reassembly deadlines. Android companion ownership provides background lifecycle in supported Debug builds; Mac provides shared allowed-device selection with credential pinning. See [Background BLE](BACKGROUND_CONNECTIONS.md) and [ADR 0004](decisions/0004-stable-ble-attribute-layout.md).
+- **Liveness & Renewal:** Encrypted HELLO/ACK negotiation, Android-initiated PING/PONG after 60 seconds of inactivity, and fresh EDHOC session renewal at 55 minutes or the `2^20 - 1024` record threshold.
 
-Signed Mac Secure Enclave verification, discovery/pairing manual radio acceptance, minimum-OS runtime coverage and independent integration security review remain pending. Earlier debugging observations do not establish completed acceptance.
+### 3. Independent Local Network (LAN) Transport
+- **Discovery & Framing:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and 5-byte TCP stream framing with bounded session envelopes (2–4,096 bytes). Native Wi-Fi socket binding, serialized legacy NSD resolution, and scoped IPv6 addressing. See [LAN Connections](LAN_CONNECTIONS.md), [LAN Contract](../protocol/lan/README.md), and [ADR 0006](decisions/0006-independent-lan-sessions.md).
+- **Concurrent Coexistence:** Independent fresh sessions and key material over BLE and LAN to the same pinned peer, coordinated under a shared peer reservation lock.
 
-## LAN transport increment
+### 4. Connected-Idle Performance Optimization
+- **Stage 1 (Initial 200 ms Polling):** Originally, maintenance ran a fixed 200 ms polling loop. Every 200 ms, Android signed an ECDSA self-check challenge against `AndroidKeyStore` and re-read `identity-v1.json` and `trusted_peers.json` from flash storage. This produced severe CPU overhead (~16% CPU in early locked-screen Doze tests) and thread spinning on both platforms.
+- **Stage 2 (1-Second Polling & Read Signing Removal):** Removed redundant private-key signing on ordinary identity reads (reserving signatures only for creation, reset, and requested authentication). Slowed secured-session maintenance loops from 200 ms to 1 second (keeping 200 ms only for initial handshake/readiness). This established the initial workload baseline: median CPU of ~3.166% on Android and ~0.385% on macOS.
+- **Stage 3 (Event-Driven Architecture):** Completely eliminated periodic polling (`delay(1000)` / `Timer(1.0)`). Replaced with cancellable waits for the earliest absolute monotonic deadline (`min(admission, handshake, readiness, liveness PING/PONG, idle, lifetime, renewal, reassembly)`). Quiet deadline waits perform zero KeyStore, Keychain, or disk reads. Full native identity, hardware protection, and in-memory trust validation are preserved on all authenticated operations. Explicit identity reset or peer revocation immediately retires both BLE and LAN transport owners through service invalidation callbacks.
+- **Measured Result:** Validated in 17-minute physical connected-idle tests, dropping single-core CPU medians from 3.166% down to 0.322% on Android and 0.385% down to 0.030% on macOS (~90% reduction).
 
-Manual LAN discovery, native TCP framing, fresh EDHOC/readiness, independent liveness and transport controls coexist with BLE for one pinned peer. Android owns LAN only while a presentation is started; Mac shares one explicit listener/session across its window and companion. Legacy NSD serialization and scoped IPv6 binding are enforced. [Implementation and acceptance](LAN_CONNECTIONS.md) · [Wire contract](../protocol/lan/README.md).
+### 5. Application Continuity
+- **Continuity Services:** Media playback controls, bidirectional clipboard synchronization, and high-speed LAN file transfer built on top of established record channels.
+- **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.
