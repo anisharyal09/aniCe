@@ -21,6 +21,7 @@ class SessionConnection(
   private val liveness = if (controls) SessionLiveness(responder) else null
   val controlSupport get() = liveness?.support
   val renewalReason get() = if (responder) null else liveness?.renewalReason
+  fun disableRenewal() { if (!closed) { renew = false; changed() } }
   fun enableRenewal() { if (!closed) { renew = true; changed() } }
   private val ownership = Any()
   private val operation = Mutex()

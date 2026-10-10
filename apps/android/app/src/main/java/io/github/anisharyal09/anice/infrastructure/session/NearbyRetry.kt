@@ -9,9 +9,9 @@ internal class NearbyRetry {
   fun reset() { failures = 0; excluded.clear() }
   fun next(jitter: Double): Long {
     require(jitter in -0.1..0.1)
-    val seconds = longArrayOf(2, 5, 15, 30, 60)[failures.coerceAtMost(4)]
-    if (failures < 4) failures++
-    return (seconds * 1000 * (1 + jitter)).toLong()
+    val seconds = longArrayOf(2, 5, 15, 30, 60, 90)[failures.coerceAtMost(5)]
+    if (failures < 5) failures++
+    return (seconds * 1000 * (1 + jitter)).toLong().coerceAtMost(90_000L)
   }
   fun reject(address: String, now: Long) {
     exclusions(now)

@@ -22,7 +22,7 @@ Automated unit, hosted, and cross-platform interchange test suites validate cryp
 
 ### 2. Independent Bluetooth Low Energy (BLE) Sessions
 - **Handshake & Record Channel:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) with mandatory message 4 authenticating pinned active trust. Directional AES-256-GCM application records with 64-bit sequence counters, 4,000-byte plaintext limit, one-hour lifetime, and hard cap of `2^20` records. Strict bidirectional `ready` / `readyAck` confirmation before payload delivery. See [Session Contract](../protocol/session/README.md) and [ADR 0005](decisions/0005-edhoc-secure-sessions.md).
-- **Native BLE Transport:** Unauthenticated 20-byte compatibility discovery probe and bounded GATT v2 session framing with 10-second reassembly deadlines. Android companion ownership provides background lifecycle in supported Debug builds; Mac provides shared allowed-device selection with credential pinning. See [Background BLE](BACKGROUND_CONNECTIONS.md) and [ADR 0004](decisions/0004-stable-ble-attribute-layout.md).
+- **Native BLE Transport:** Unauthenticated 20-byte compatibility discovery probe and bounded GATT v2 session framing with 10-second reassembly deadlines. Android companion ownership provides background lifecycle on supported API 31+ platforms; Mac provides shared allowed-device selection with credential pinning. See [Background BLE](BACKGROUND_CONNECTIONS.md) and [ADR 0004](decisions/0004-stable-ble-attribute-layout.md).
 - **Liveness & Renewal:** Encrypted HELLO/ACK negotiation, Android-initiated PING/PONG after 60 seconds of inactivity, and fresh EDHOC session renewal at 55 minutes or the `2^20 - 1024` record threshold.
 
 ### 3. Independent Local Network (LAN) Transport

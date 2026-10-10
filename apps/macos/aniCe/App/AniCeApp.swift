@@ -11,8 +11,11 @@ struct AniCeApp: App {
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
+  @State private var navigation: ConnectionNavigation
 
   init() {
+    let navigation = ConnectionNavigation()
+    _navigation = State(initialValue: navigation)
     let identity = IdentityAssembly.makeModel()
     let radio = CoreBluetoothPeripheralAdapter()
     let discovery = MacDiscoveryModel(adapter: radio)
@@ -26,6 +29,14 @@ struct AniCeApp: App {
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    pairing.onPaired = { [weak session, weak navigation] peer in
+      guard let session, let navigation else { return }
+      navigation.managingDevices = false
+      navigation.details = false
+      session.selectedPeer = peer
+      session.setAutomatic(navigation.automaticAfterPairing)
+      if !navigation.automaticAfterPairing { session.allow() }
+    }
     pairing.trustRemoved = { session.retireTrust(); lan.cancel() }
     identity.onIdentityReset = {
       lan.cancel()
@@ -65,14 +76,19 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan)
+        session: session, lan: lan, navigation: navigation)
+        .onAppear {
+          if !IdentityView.isTesting {
+            delegate.installCompanion(
+              CompanionView(identity: identity, discovery: discovery, pairing: pairing,
+                session: session, lan: lan, navigation: navigation,
+                openMainWindow: { [weak delegate] in delegate?.openMainFromCompanion() }),
+              navigation: navigation)
+          }
+        }
     }
     .defaultSize(width: 800, height: 560)
     .windowResizability(.contentMinSize)
 
-    MenuBarExtra("aniCe", systemImage: "laptopcomputer.and.iphone") {
-      CompanionView(identity: identity, discovery: discovery, pairing: pairing, session: session, lan: lan)
-    }
-    .menuBarExtraStyle(.window)
   }
 }

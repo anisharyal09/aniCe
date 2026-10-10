@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents editable identity metadata and confirmed recovery using the shared native identity owner.
 import AppKit
 import SwiftUI
 
@@ -93,7 +94,7 @@ struct IdentityView: View {
         .frame(minWidth: 460, idealWidth: 540, minHeight: 460, idealHeight: 620)
         .foregroundStyle(AniCePalette.primaryText(colorScheme))
         .background(AniCePalette.background(colorScheme))
-        .tint(AniCePalette.accent(colorScheme))
+        .tint(AniCePalette.primaryText(colorScheme))
         .alert("Reset this device’s identity?", isPresented: $confirmingReset) {
             Button("Cancel", role: .cancel) {}
             Button("Reset identity", role: .destructive) { copyFeedback = ""; Task { await model.reset() } }

@@ -76,6 +76,18 @@ class IdentityService(
         return finishCreation(journal)
     }
 
+    @Synchronized fun rename(value: String): IdentitySnapshot {
+        val name = value.trim()
+        require(name.isNotBlank() && name.codePointCount(0, name.length) <= 64)
+        val snapshot = getOrCreateIdentity()
+        val journal = metadata.read()?.also(::validateJournal) ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        val active = journal.active ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        if (active.identity != snapshot.identity) throw IdentityException(IdentityErrorKind.INCONSISTENT)
+        val renamed = active.copy(identity = active.identity.copy(deviceName = name).validate())
+        metadata.write(journal.copy(active = renamed))
+        return snapshot.copy(identity = renamed.identity)
+    }
+
     @Synchronized fun sign(message: ByteArray): IdentitySignature {
         val snapshot = getOrCreateIdentity()
         val journal = metadata.read()?.also(::validateJournal) ?: throw IdentityException(IdentityErrorKind.INCONSISTENT)
@@ -137,7 +149,7 @@ class IdentityService(
                 throw IdentityException(IdentityErrorKind.CRYPTO_FAILURE)
             }
         }
-        return IdentitySnapshot(reference.identity.copy(deviceName = DeviceIdentity.displayName(deviceName())), keys.protection(reference.alias))
+        return IdentitySnapshot(reference.identity, keys.protection(reference.alias))
     }
 
     private fun validateJournal(journal: IdentityJournal) {

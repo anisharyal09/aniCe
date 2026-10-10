@@ -30,6 +30,9 @@ enum class ConnectionState {
   FAILED,
 }
 
+internal fun retainForegroundSession(requested: Boolean, presented: Boolean, state: ConnectionState, renewing: Boolean) =
+  requested && presented && state == ConnectionState.SECURED && !renewing
+
 /**
  * Application-scoped connection manager for GATT transport and EDHOC sessions.
  * Preserves active connection state across UI activity transitions.
@@ -437,10 +440,13 @@ class SessionController(application: Application) {
     companionOwner = owner
   }
 
-  fun releaseCompanion(owner: Any) {
+  fun releaseCompanion(owner: Any, preserveForegroundSession: Boolean = false) {
     if (companionOwner !== owner) return
     companionOwner = null
-    cancel()
+    if (retainForegroundSession(preserveForegroundSession, foreground, state, renewalReason != null)) {
+      automaticAttempt = false
+      connection?.disableRenewal()
+    } else cancel()
   }
 
   fun presentationCleared() {

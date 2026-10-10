@@ -8,14 +8,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Opt-in physical connected-idle CPU test with channel continuity, encrypted-operation validation budgets and unchanged identity/trust journal assertions.
 - Foreground LAN sessions with Wi-Fi-bound sockets, scoped IPv6, bounded NSD resolution and independent Bluetooth/local-network controls.
-
-- Companion-owned nearby retry with bounded backoff, pinned saved setup, a device-level automatic connection switch and Disconnect pause. Release service ownership remains disabled pending physical acceptance.
+- Notification-free companion auto-connect on API 31+ in Debug and Release, with pinned saved setup, a device-level preference and Disconnect pause. Physical endurance and minimum-OS acceptance remain pending.
 - Coordinated fresh EDHOC renewal before lifetime/record limits, with encrypted backpressure, Stop and key-reuse regressions.
-
 - HELLO/ACK compatibility and encrypted PING/PONG in the shared session controller; legacy peers retain manual operation and unsupported background probes stop.
 - Adversarial control tests for malformed encodings, ordering, deadlines, backpressure, transport failure and hard session lifetime.
-- Debug-only system companion association/presence probe with pinned EDHOC authentication, bounded event diagnostics, explicit cleanup and API 31–36 dispatch.
-
+- Native companion association/presence handling with pinned EDHOC authentication, explicit cleanup, API 31–36 dispatch and Debug-only bounded event logs.
 - Trusted Mac Connect/Disconnect/Retry controls, native AES-GCM record channel and EDHOC/BLE ordering owner, foreground cleanup and shared v1/v2 GATT transport with bounded queues and submission deadlines.
 - Native EDHOC method 0 / suite 5 handshake engine with active-trust pinning, bounded deterministic CBOR, DER/COSE signature conversion, and cancellation guards.
 - Pairing: CameraX QR scanning and six-digit code entry with PAKE bootstrap, bounded GATT transport with automatic cache invalidation, mutual approval, atomic peer trust persistence, and local forgetting.
@@ -25,14 +22,17 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Cap nearby retry delays at 90 seconds after jitter, with saturation/reset and invalid-jitter regressions.
+- Unify device summaries, compact neutral connection controls and inline transport details. Keep checks and Debug events collapsed; pairing returns to Home and starts fresh Bluetooth work.
+- Make the accent automatic checkbox observable and resume saved setup inline. Disabling automatic ownership retains eligible foreground BLE as manual work; background/lock cleanup and hard limits remain.
+- Add atomic 1–64-code-point phone-name editing, compact identity details, full trusted fingerprints and native Back/close icons. Keys and trust stay unchanged.
+- Expose the existing 15-second LAN browse in progress text; preserve authenticated candidate selection and manual retry policy.
 - Replace BLE/LAN maintenance polling and idle TCP read timeouts with cancellable deadline waits; use elapsed realtime for authentication, record and fragment deadlines.
 - Retire both session owners from identity reset and trust-store revocation/replacement, including mutations outside presentation callbacks.
-
 - Update Android code structure tree, test inventory, and manual LAN documentation in README.
 - Load existing identity state without a signing challenge; retain creation/reset proof and validate the active journal binding and requested signature before return.
 - Add file-purpose summaries to Android sources, tests, resources, manifest and build configuration.
 - Document shared session controller architecture, companion device lifecycle boundaries, and native API paths in docs/BACKGROUND_CONNECTIONS.md.
-- Replace centered connection home with a minimal device list, contextual actions and native management menus.
 - Display eight-hex-digit fingerprint prefix instead of placeholder text; complete semantic color tokens using DESIGN.md palette.
 - Document session security and lifecycle invariants inline: trust revalidation, nonce ownership, readiness, bounded fragmentation, submission semantics and best-effort secret cleanup.
 - Record native GATT write status and session mode in transport diagnostics without recording payloads or keys.
@@ -40,15 +40,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Keep BLE and LAN connected when opening discovery; only Scan suspends/retires Bluetooth, and completion restores eligible automatic work. Preserve LAN across setup navigation; device-level Disconnect, final activity stop and screen lock still retire it.
 - LAN network-change and Disconnect callbacks retire their owner instead of cancelling only the callback coroutine; stale callbacks cannot close a newer attempt.
-
 - Retire controller state and transport on authenticated Mac closure, manual disconnect and renewal requiring manual reconnection; explicitly qualify cleanup inside coroutine receivers and publish terminal feedback before retry observation.
 - Restore companion ownership on same-instance rebind without presence replay and reject stale unbound callbacks.
 - Read private Cargo, Rustup and NDK paths during native pairing builds; preserve explicit environment overrides.
 - Cancel retired Resume results and lookup failures before they can overwrite Stop or newer setup.
-- Scope automatic connection settings, reset and checks to the displayed Mac; retire the previous association on explicit replacement.
+- Scope automatic setup and reset to the displayed Mac; retire the previous association on explicit replacement.
 - Restore native companion ownership after pause/process rebinding and observe background session/radio changes independently of Compose presentation.
-- Preserve authenticated connections when opening or leaving the background-test screen; track both activity lifecycles and disconnect only through explicit setup.
 - Normalize companion association addresses for native Bluetooth lookup and identify failed setup stages; collapse test diagnostics behind an explicit disclosure.
 - Distinguish authenticated Mac closure and idle/lifetime limits from trust failure; serialize session health checks with incoming close processing.
 - Show pairing completion and saved trust without placeholder text.

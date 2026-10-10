@@ -4,7 +4,9 @@ Already-paired Android and Mac devices can establish an independent encrypted TC
 
 ## Explicit controls
 
-Open Connection details on both devices. On Mac, select the trusted phone when several exist, then choose Allow local-network connections. On Android, choose Connect local network for that trusted Mac. Availability expires after 120 seconds unless a candidate is admitted. Connection checks and received counters are separate for Bluetooth and local network.
+Open Connection details on both devices. On Mac, select the trusted phone when several exist, then choose Allow local-network connections. The companion's Choose allowed phone action opens the main-window details for target selection. On Android, choose Connect local network for that trusted Mac. Availability expires after 120 seconds unless a candidate is admitted. Connection checks and received counters are separate for Bluetooth and local network inside collapsed Diagnostics.
+
+The device summary reads Connected when either channel has completed encrypted readiness and names only ready transports. Pending/failed secondary-channel feedback remains separate. The primary Connect action starts Bluetooth; it never enables LAN automatically. Mac companion and Android details expand inline; the Mac window uses a native details sheet.
 
 Disconnect Bluetooth and Disconnect local network affect their respective channel. Disconnect all closes both. Manual LAN does not reconnect automatically after network loss or expiry. Android closes LAN when its last presentation stops or the screen locks. Mac retains the channel through its companion until explicit disconnection, sleep or Quit. Trust removal and identity reset retire both channels.
 
@@ -28,7 +30,7 @@ Mac TCP requests keepalive probes after ten idle seconds, at five-second interva
 
 ## Lifecycle and transfer feasibility
 
-Returning to aniCe Home or closing connection details keeps the started Activity and LAN owner alive. Pressing the Android Home button backgrounds the final Activity and closes manual LAN; screen lock also closes it. Configuration recreation preserves the owner. No background-transfer lease exists in this increment.
+Returning to aniCe Home, opening automatic connection setup settings or closing connection details keeps a started Activity and LAN owner alive. Home and setup settings register independent presentation tokens; navigation in either direction releases only the activity that stopped. Pressing the Android Home button backgrounds the final Activity and closes manual LAN; screen lock also closes it. Opening Bluetooth discovery preserves both transports; starting Scan suspends/cancels only Bluetooth and leaves LAN active. Device-level Disconnect still closes both channels. Configuration recreation preserves the owner. No background-transfer lease exists in this increment.
 
 A future user-started transfer can acquire a bounded feature lease backed by an appropriate foreground service, with a visible progress/cancel notification, and release it on completion or cancellation. Android's `connectedDevice` service type supports interactions with external devices over a network, subject to manifest/type prerequisites; start restrictions and minimum-OS behavior need native tests. This is feasible platform support, not implemented transfer acceptance. [Foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types).
 

@@ -7,6 +7,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CompanionSettingsTests {
+  @Test fun automaticSetupRequiresTrustedSelectionAndAvailableIdlePresentation() {
+    val peer = DeviceIdentity("mac", "Mac", "macos", "key", "fingerprint")
+    var ready = 0
+    var blocked = 0
+    for (selected in listOf(null, peer)) for (available in listOf(false, true)) for (busy in listOf(false, true)) {
+      val result = automaticSetupReady(selected, available, busy)
+      assertEquals(selected != null && available && !busy, result)
+      if (result) ready++ else blocked++
+    }
+    assertEquals(1, ready); assertEquals(7, blocked)
+  }
   @Test fun settingsBelongToTheDisplayedRelationship() {
     val a = DeviceIdentity("00000000-0000-4000-8000-000000000001", "Mac A", "macos", "", "11".repeat(32))
     val b = a.copy(deviceId = "00000000-0000-4000-8000-000000000002", deviceName = "Mac B")

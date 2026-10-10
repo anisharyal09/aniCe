@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents device-scoped Bluetooth and local-network controls in native connection details.
+// Presents device-scoped actions and explicit transport details using the existing session owners.
 package io.github.anisharyal09.anice.features.session
 
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
+import io.github.anisharyal09.anice.R
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import io.github.anisharyal09.anice.features.backgroundprobe.hasConnectionSetup
+import androidx.compose.ui.res.painterResource
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -18,328 +24,223 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>) {
-    val nearby =
-        io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(
-            LocalContext.current
-        )
-    val permissions =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            model.permissionReturned()
-        }
+fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var automaticChanging by remember { mutableStateOf(false) }
+    var automaticNotice by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val nearby = CompanionProbe.get(context)
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        model.permissionReturned()
+    }
     val lan = model.lan
     var details by remember { mutableStateOf<PeerTrustRecord?>(null) }
-    val active =
-        model.state == ConnectionState.CONNECTING ||
-            model.state == ConnectionState.SECURED ||
-            lan.state == ConnectionState.CONNECTING ||
-            lan.state == ConnectionState.SECURED
-    details?.let { record ->
-        ModalBottomSheet(onDismissRequest = { details = null }) {
-            Column(
-                Modifier.fillMaxWidth()
-                    .heightIn(max = 600.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(record.peer.deviceName, style = MaterialTheme.typography.titleLarge)
-                val bleSelected =
-                    model.selected?.deviceId == record.peer.deviceId &&
-                        model.selected?.fingerprint == record.peer.fingerprint
-                val lanSelected =
-                    lan.selected?.deviceId == record.peer.deviceId &&
-                        lan.selected?.fingerprint == record.peer.fingerprint
-                val bleState = if (bleSelected) model.state else ConnectionState.DISCONNECTED
-                val lanState = if (lanSelected) lan.state else ConnectionState.DISCONNECTED
-                Text("Bluetooth", style = MaterialTheme.typography.titleMedium)
-                Text(stateLabel(bleState))
-                if (bleSelected && model.status.isNotBlank()) Text(model.status)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (
-                        bleState == ConnectionState.CONNECTING ||
-                            bleState == ConnectionState.SECURED
-                    ) {
-                        TextButton(
-                            onClick = model::disconnectBluetooth,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text("Disconnect Bluetooth")
-                        }
-                    } else {
-                        TextButton(
-                            onClick = {
-                                model.request(record.peer)
-                                val missing = model.missingPermissions()
-                                if (missing.isNotEmpty()) permissions.launch(missing)
-                            },
-                            enabled = !active || lanSelected,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text("Connect Bluetooth")
-                        }
-                    }
-                    if (bleState == ConnectionState.SECURED)
-                        TextButton(
-                            onClick = model::checkConnection,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text("Send check")
-                        }
-                }
-                Text("Checks received: ${if (bleSelected) model.receivedChecks else 0}")
-                HorizontalDivider()
-                Text("Local network", style = MaterialTheme.typography.titleMedium)
-                Text(stateLabel(lanState))
-                if (lanSelected && lan.status.isNotBlank()) Text(lan.status)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (
-                        lanState == ConnectionState.CONNECTING ||
-                            lanState == ConnectionState.SECURED
-                    ) {
-                        TextButton(
-                            onClick = lan::disconnect,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text("Disconnect local network")
-                        }
-                    } else {
-                        TextButton(
-                            onClick = { lan.connect(record.peer) },
-                            enabled = !active || bleSelected,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text("Connect local network")
-                        }
-                    }
-                    if (lanState == ConnectionState.SECURED)
-                        TextButton(
-                            onClick = lan::checkConnection,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text("Send check")
-                        }
-                }
-                Text("Checks received: ${if (lanSelected) lan.receivedChecks else 0}")
-                if (nearby.available)
-                    TextButton(
-                        onClick = {
-                            val intent =
-                                Intent()
-                                    .setClassName(
-                                        context.packageName,
-                                        "${context.packageName}.features.backgroundprobe.CompanionProbeActivity",
-                                    )
-                                    .putExtra("peer", record.peer.deviceId)
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text("Automatic Bluetooth connection settings")
-                    }
-                if ((bleSelected || lanSelected) && active)
-                    TextButton(
-                        onClick = model::disconnect,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text("Disconnect all")
-                    }
-            }
-        }
+    var diagnostics by remember { mutableStateOf(false) }
+    var showEvents by remember { mutableStateOf(false) }
+    val active = model.state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED) ||
+        lan.state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED)
+    fun connect(record: PeerTrustRecord) {
+        model.request(record.peer)
+        val missing = model.missingPermissions()
+        if (missing.isNotEmpty()) permissions.launch(missing)
     }
+    // A revoked entry must not remain actionable through expanded details.
+    val detailRecord = details?.let { selected -> peers.singleOrNull {
+        it.peer.deviceId == selected.peer.deviceId && it.peer.fingerprint == selected.peer.fingerprint
+    } }
+    BackHandler(enabled = details != null) { details = null }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         peers.forEachIndexed { index, record ->
-            key(record.peer.deviceId) {
-                val selected = model.selected?.deviceId == record.peer.deviceId
-                val lanSelected =
-                    lan.selected?.deviceId == record.peer.deviceId &&
-                        lan.selected?.fingerprint == record.peer.fingerprint
-                val lanActive =
-                    lanSelected &&
-                        (lan.state == ConnectionState.CONNECTING ||
-                            lan.state == ConnectionState.SECURED)
-                val waiting =
-                    !lanActive &&
-                        nearby.armed &&
-                        nearby.peerId == record.peer.deviceId &&
-                        (!selected ||
-                            model.state == ConnectionState.FAILED ||
-                            model.state == ConnectionState.DISCONNECTED)
-                DeviceSessionCard(
-                    name = record.peer.deviceName,
-                    fingerprint = record.peer.fingerprint,
-                    state =
-                        if (lanActive && (!selected || model.state != ConnectionState.SECURED))
-                            lan.state
-                        else if (selected && !waiting) model.state
-                        else ConnectionState.DISCONNECTED,
-                    status =
-                        if (lanActive && (!selected || model.state != ConnectionState.SECURED))
-                            lan.status.ifBlank { "Secured over local network." }
-                        else if (waiting)
-                            nearby.status.takeUnless { it == "Waiting nearby." }.orEmpty()
-                        else if (selected) model.status
-                        else if (active) "Disconnect your current Mac to connect to this one."
-                        else "Open Allow connections on your Mac, then connect here.",
-                    canConnect = !active,
-                    onConnect = {
-                        model.request(record.peer)
-                        val missing = model.missingPermissions()
-                        if (missing.isNotEmpty()) permissions.launch(missing)
-                    },
-                    onDisconnect = model::disconnect,
-                    onConnectionDetails = { details = record },
-                    onCheck = {
-                        if (selected && model.state == ConnectionState.SECURED)
-                            model.checkConnection()
-                        else lan.checkConnection()
-                    },
-                    probePeerId = record.peer.deviceId,
-                    automaticWaiting = waiting,
-                )
+            key(record.peer.deviceId, record.peer.fingerprint) {
+                val bleSelected = model.selected?.deviceId == record.peer.deviceId &&
+                    model.selected?.fingerprint == record.peer.fingerprint
+                val lanSelected = lan.selected?.deviceId == record.peer.deviceId &&
+                    lan.selected?.fingerprint == record.peer.fingerprint
+                val bleState = if (bleSelected) model.state else ConnectionState.DISCONNECTED
+                val lanState = if (lanSelected) lan.state else ConnectionState.DISCONNECTED
+                val canUsePeer = canConnectToPeer(model.state, lan.state, bleSelected, lanSelected)
+                val waiting = nearby.armed && nearby.peerId == record.peer.deviceId &&
+                    nearby.fingerprint == record.peer.fingerprint && canUsePeer
+                val summary = connectionSummary(bleState, lanState, waiting)
+                val feedback = buildList {
+                    if (bleSelected && bleState != ConnectionState.SECURED && model.status.isNotBlank())
+                        add("Bluetooth: ${model.status}")
+                    if (lanSelected && lanState != ConnectionState.SECURED && lan.status.isNotBlank())
+                        add("Local network: ${lan.status}")
+                    automaticNotice?.takeIf { it.first == record.peer.deviceId }?.let { add(it.second) }
+                    if (waiting && !bleSelected && nearby.status != "Waiting nearby.") add(nearby.status)
+                    if (!canUsePeer) add("Disconnect your current Mac to connect to this one.")
+                    if (!active && !waiting && isEmpty()) add("Tap Connect on both devices.")
+                }.joinToString("\n")
+                DeviceSessionCard(record.peer.deviceName, record.peer.fingerprint, summary.state,
+                    feedback, !active, { connect(record) }, model::disconnect,
+                    onConnectionDetails = { diagnostics = false; showEvents = false; details = if (details?.peer?.deviceId == record.peer.deviceId) null else record },
+                    summary = summary.text, action = summary.action,
+                    detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId)
+                if (nearby.available) {
+                    val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
+                        nearby.fingerprint == record.peer.fingerprint
+                    AutomaticConnectionToggle(checked = enabled, enabled = canUsePeer && !automaticChanging,
+                        onCheckedChange = { checked ->
+                            automaticNotice = null
+                            if (!checked) {
+                                if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint)) nearby.disable()
+                            } else if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) && nearby.address != null && model.missingPermissions().isEmpty()) {
+                                automaticChanging = true
+                                scope.launch {
+                                    try { nearby.resume() }
+                                    catch (error: CancellationException) { throw error }
+                                    catch (_: Exception) {
+                                        automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
+                                    } finally { automaticChanging = false }
+                                }
+                            } else context.startActivity(Intent().setClassName(context.packageName,
+                                "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
+                                .putExtra("peer", record.peer.deviceId).putExtra("enable", true))
+                        })
+                }
+                if (detailRecord?.peer?.deviceId == record.peer.deviceId) {
+                    Column(Modifier.fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium)
+                        .padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Connection details", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                            IconButton(onClick = { details = null }) {
+                                Icon(painterResource(R.drawable.ic_close), contentDescription = "Close connection details",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        TransportDetails("Bluetooth", bleState, if (bleSelected) model.status else "",
+                            canConnect = canUsePeer,
+                            onConnect = { connect(record) }, onDisconnect = model::disconnectBluetooth)
+                        HorizontalDivider()
+                        TransportDetails("Local network", lanState, if (lanSelected) lan.status else "",
+                            canConnect = canUsePeer,
+                            onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect)
+                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { diagnostics = !diagnostics; showEvents = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .semantics { stateDescription = if (diagnostics) "Expanded" else "Collapsed" }) {
+                            Text(if (diagnostics) "Hide diagnostics" else "Diagnostics", modifier = Modifier.fillMaxWidth())
+                        }
+                        if (diagnostics) {
+                            Text("Local network ends on background or screen lock.", style = MaterialTheme.typography.bodySmall)
+                            if (nearby.available) {
+                                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
+                                    context.startActivity(Intent().setClassName(context.packageName,
+                                        "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
+                                        .putExtra("peer", record.peer.deviceId))
+                                }) { Text("Setup settings") }
+                            } else {
+                                Text("Automatic Bluetooth connection is unavailable in this build.",
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) &&
+                                context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                                TextButton(shape = MaterialTheme.shapes.small,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    onClick = { showEvents = !showEvents },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {
+                                        stateDescription = if (showEvents) "Expanded" else "Collapsed"
+                                    }) {
+                                    Text(if (showEvents) "Hide automatic connection events" else "Automatic connection events",
+                                        modifier = Modifier.fillMaxWidth())
+                                }
+                                if (showEvents) Text(nearby.events.ifBlank { "No events yet." }, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text("Bluetooth checks received: ${if (bleSelected) model.receivedChecks else 0}")
+                            if (bleState == ConnectionState.SECURED)
+                                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::checkConnection, modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text("Send Bluetooth check")
+                                }
+                            Text("Local-network checks received: ${if (lanSelected) lan.receivedChecks else 0}")
+                            if (lanState == ConnectionState.SECURED)
+                                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = lan::checkConnection, modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text("Send local-network check")
+                                }
+                            Text("Starting a scan closes Bluetooth connections. Opening the page keeps both connections. Local network stays connected during scanning.",
+                                style = MaterialTheme.typography.bodySmall)
+                            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { details = null; onDiscoveryCheck() },
+                                modifier = Modifier.heightIn(min = 48.dp)) { Text("Check nearby discovery") }
+                        }
+                    }
+                }
             }
-            if (index < peers.lastIndex)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (index < peers.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
 }
 
 @Composable
-fun DeviceSessionCard(
-    name: String,
-    fingerprint: String,
-    state: ConnectionState,
-    status: String,
-    canConnect: Boolean,
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onCheck: () -> Unit,
-    onConnectionDetails: (() -> Unit)? = null,
-    probePeerId: String? = null,
-    automaticWaiting: Boolean = false,
-) {
-    val context = LocalContext.current
-    // Device settings expose availability truth; a gated owner cannot start background work.
-    val probeIntent =
-        remember(probePeerId) {
-            Intent()
-                .setClassName(
-                    context,
-                    "io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbeActivity",
-                )
-                .putExtra("peer", probePeerId)
+private fun TransportDetails(name: String, state: ConnectionState, status: String, canConnect: Boolean,
+    onConnect: () -> Unit, onDisconnect: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("$name · ${stateLabel(state)}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+        val active = state == ConnectionState.CONNECTING || state == ConnectionState.SECURED
+        OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp), onClick = if (active) onDisconnect else onConnect,
+            enabled = active || canConnect, modifier = Modifier.defaultMinSize(minHeight = 32.dp)
+                .semantics { contentDescription = "${when (state) {
+                    ConnectionState.CONNECTING -> "Cancel"
+                    ConnectionState.SECURED -> "Disconnect"
+                    ConnectionState.FAILED -> "Retry"
+                    else -> "Connect"
+                }} $name" }) {
+            Text(when (state) {
+                ConnectionState.CONNECTING -> "Cancel"
+                ConnectionState.SECURED -> "Disconnect"
+                ConnectionState.FAILED -> "Retry"
+                else -> "Connect"
+            })
         }
-    val hasProbe =
-        probePeerId != null && context.packageManager.resolveActivity(probeIntent, 0) != null
-    val label = if (automaticWaiting) "Waiting nearby" else stateLabel(state)
-    var menu by remember { mutableStateOf(false) }
-    val statusColor =
-        when (state) {
-            ConnectionState.SECURED -> MaterialTheme.colorScheme.tertiary
-            ConnectionState.FAILED -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
-        }
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            name,
-            modifier = Modifier.semantics { heading() },
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Medium,
-        )
-        // This prefix is a visual identifier; authentication uses the complete pinned credential.
-        Text(
-            label + " · " + fingerprint.take(8).chunked(4).joinToString(" "),
-            modifier =
-                Modifier.semantics {
-                    contentDescription = "$label. Fingerprint ${fingerprint.take(8)}"
-                },
-            style = MaterialTheme.typography.bodyMedium,
-            color = statusColor,
-        )
-        if (status.isNotBlank())
-            Text(
-                status,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style = MaterialTheme.typography.bodyMedium,
-                color =
-                    if (state == ConnectionState.FAILED) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    }
+    if (status.isNotBlank() && (state != ConnectionState.SECURED || !status.startsWith("Secured")))
+        Text(status, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+
+}
+
+@Composable
+fun DeviceSessionCard(name: String, fingerprint: String, state: ConnectionState, status: String,
+    canConnect: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit,
+    onConnectionDetails: () -> Unit,
+    summary: String = stateLabel(state),
+    action: String = connectionSummary(state, ConnectionState.DISCONNECTED).action,
+    detailsExpanded: Boolean = false) {
+    val statusColor = when (state) {
+        ConnectionState.SECURED -> MaterialTheme.colorScheme.tertiary
+        ConnectionState.FAILED -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(name, modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium)
+        Text(summary + " · " + fingerprint.take(8).chunked(4).joinToString(" "),
+            modifier = Modifier.semantics { contentDescription = "$summary. Fingerprint ${fingerprint.take(8)}" },
+            style = MaterialTheme.typography.bodyMedium, color = statusColor)
+        if (status.isNotBlank()) Text(status,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state == ConnectionState.CONNECTING) LinearProgressIndicator(Modifier.fillMaxWidth())
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (
-                state == ConnectionState.SECURED ||
-                    state == ConnectionState.CONNECTING ||
-                    automaticWaiting
-            ) {
-                TextButton(onClick = onDisconnect, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(if (state == ConnectionState.CONNECTING) "Cancel" else "Disconnect")
-                }
-            } else {
-                Button(
-                    onClick = onConnect,
-                    enabled = canConnect,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text(if (state == ConnectionState.FAILED) "Retry" else "Connect")
-                }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp), onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
+                enabled = action == "Disconnect" || action == "Cancel" || canConnect,
+                modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onConnectionDetails, modifier = Modifier.heightIn(min = 48.dp)
+                .semantics { stateDescription = if (detailsExpanded) "Expanded" else "Collapsed" }) {
+                Text("Connection details")
             }
-            if (state == ConnectionState.SECURED || hasProbe || onConnectionDetails != null)
-                Box {
-                    TextButton(
-                        onClick = { menu = true },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text("More")
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        if (onConnectionDetails != null)
-                            DropdownMenuItem(
-                                text = { Text("Connection details") },
-                                onClick = {
-                                    menu = false
-                                    onConnectionDetails()
-                                },
-                            )
-                        else if (hasProbe)
-                            DropdownMenuItem(
-                                text = { Text("Connection settings") },
-                                onClick = {
-                                    menu = false
-                                    context.startActivity(probeIntent)
-                                },
-                            )
-                        if (state == ConnectionState.SECURED)
-                            DropdownMenuItem(
-                                text = { Text("Send connection check") },
-                                onClick = {
-                                    menu = false
-                                    onCheck()
-                                },
-                            )
-                    }
-                }
         }
     }
 }
 
-private fun stateLabel(state: ConnectionState): String =
-    when (state) {
-        ConnectionState.DISCONNECTED -> "Disconnected"
-        ConnectionState.CONNECTING -> "Connecting"
-        ConnectionState.SECURED -> "Secured"
-        ConnectionState.FAILED -> "Connection failed"
-    }
+private fun stateLabel(state: ConnectionState): String = when (state) {
+    ConnectionState.DISCONNECTED -> "Disconnected"
+    ConnectionState.CONNECTING -> "Connecting"
+    ConnectionState.SECURED -> "Connected"
+    ConnectionState.FAILED -> "Connection failed"
+}

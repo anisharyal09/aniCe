@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents existing pairing approval and trust management within their explicit device flow.
 import SwiftUI
 
 struct MacPairingView: View {
   @Bindable var model: MacPairingModel
+  var showTrustedDevices = true
+  var showPairingControls = true
   @State private var resettingTrust = false
   @State private var forgetID: String?
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      pairingPanel
-      if !model.peers.isEmpty || model.trustRecoveryNeeded {
+      if showPairingControls { pairingPanel }
+      if showTrustedDevices && (!model.peers.isEmpty || model.trustRecoveryNeeded) {
         trustedDevicesPanel
       }
     }
@@ -213,6 +216,7 @@ struct MacPairingView: View {
               VStack(alignment: .leading, spacing: 2) {
                 Text(record.peer.deviceName)
                   .font(.subheadline.weight(.medium))
+                  .fixedSize(horizontal: false, vertical: true)
                 Text(record.peer.groupedFingerprint)
                   .font(.caption2.monospaced())
                   .foregroundStyle(AniCePalette.secondaryText(scheme))

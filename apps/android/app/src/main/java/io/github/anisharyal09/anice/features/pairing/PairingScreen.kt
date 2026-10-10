@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents explicit new pairing and trust management while retaining mutual approval.
 package io.github.anisharyal09.anice.features.pairing
 
 import android.Manifest
@@ -8,8 +9,11 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -24,9 +28,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @Composable
-fun PairingScreen(model: PairingViewModel) {
+fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
+    automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     var camera by remember { mutableStateOf(false) }
+    var addingDevice by remember { mutableStateOf(false) }
+    val showPairing = model.peers.isEmpty() || model.busy || addingDevice
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -64,9 +71,18 @@ fun PairingScreen(model: PairingViewModel) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Find your Mac", style = MaterialTheme.typography.headlineSmall)
-        Text("On your Mac, open aniCe → Pair a device and show a QR code or six-digit code.")
-        Text(model.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (showPairing) "Pair your Mac" else "Manage devices", style = MaterialTheme.typography.headlineSmall)
+        if (showPairing) {
+            AutomaticConnectionToggle(checked = automaticAvailable && automatic,
+                enabled = automaticAvailable && model.phase != "paired", onCheckedChange = onAutomaticChanged)
+            if (!automaticAvailable) Text("Automatic Bluetooth is unavailable in this build.", style = MaterialTheme.typography.bodySmall)
+            Text("On your Mac, open aniCe → Pair a device and show a QR code or six-digit code.")
+            Text(model.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { addingDevice = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Pair another Mac")
+            }
+        }
         if (camera) {
             PairingCamera(
                 onCode = { text ->
@@ -79,9 +95,10 @@ fun PairingScreen(model: PairingViewModel) {
                     model.cameraUnavailable()
                 },
             )
-            TextButton(onClick = { camera = false }) { Text("Cancel camera") }
-        } else if (!model.busy) {
-            Button(
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { camera = false }) { Text("Cancel camera") }
+        } else if (showPairing && !model.busy && model.phase != "paired") {
+            OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 onClick = {
                     if (
                         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -101,20 +118,21 @@ fun PairingScreen(model: PairingViewModel) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(
+            OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 onClick = {
                     model.beginPIN(pin)
                     if (model.phase == "permission") start()
                 },
                 enabled = pin.length == 6,
             ) {
-                Text("Find Mac and enter code")
+                Text("Pair using code")
             }
             if (
                 ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) !=
                     PackageManager.PERMISSION_GRANTED
             ) {
-                TextButton(
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     onClick = {
                         context.startActivity(
                             Intent(
@@ -136,13 +154,13 @@ fun PairingScreen(model: PairingViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 model.rows.forEachIndexed { index, id ->
-                    OutlinedButton(
+                    OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         onClick = { model.select(id) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
-                            if (model.rows.size == 1) "Connect to your Mac"
-                            else "Connect to nearby Mac ${index + 1}"
+                            if (model.rows.size == 1) "Verify nearby Mac"
+                            else "Verify nearby Mac ${index + 1}"
                         )
                     }
                 }
@@ -154,28 +172,30 @@ fun PairingScreen(model: PairingViewModel) {
         }
         model.peer?.let { peer ->
             Text(peer.deviceName, style = MaterialTheme.typography.titleMedium)
-            Text(peer.platform)
+            Text("Mac")
             Text(
                 peer.fingerprint.chunked(4).joinToString(" "),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
         if (model.phase == "approval")
-            Button(onClick = model::approve) { Text("Pair with this Mac") }
+            OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::approve, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Approve pairing")
+            }
         if (model.busy) {
             if (model.remaining > 0)
                 Text(
                     if (model.phase == "scan") "Scan ends in ${model.remaining} seconds"
                     else "This step ends in ${model.remaining} seconds"
                 )
-            TextButton(onClick = model::cancel) { Text("Cancel") }
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::cancel) { Text("Cancel") }
         }
         when (model.recovery) {
             "trustStore" ->
-                TextButton(onClick = { resettingTrust = true }) { Text("Reset local trust…") }
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { resettingTrust = true }) { Text("Reset local trust…") }
             "settings",
             "permission" ->
-                TextButton(
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     onClick = {
                         context.startActivity(
                             Intent(
@@ -188,13 +208,13 @@ fun PairingScreen(model: PairingViewModel) {
                     Text("Permission settings")
                 }
             "bluetooth" ->
-                TextButton(
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     onClick = { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
                 ) {
                     Text("Bluetooth settings")
                 }
             "location" ->
-                TextButton(
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     onClick = {
                         context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                     }
@@ -202,18 +222,30 @@ fun PairingScreen(model: PairingViewModel) {
                     Text("Location settings")
                 }
         }
-        HorizontalDivider()
-        Text("Trusted devices", style = MaterialTheme.typography.titleMedium)
-        if (model.peers.isEmpty()) Text("No trusted devices on this phone.")
-        model.peers.forEach { r ->
-            Text(r.peer.deviceName)
-            Text(
-                r.peer.fingerprint.chunked(4).joinToString(" "),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            TextButton(onClick = { forget = r.peer.deviceId }) { Text("Forget device…") }
+        if (!model.busy && model.peers.isNotEmpty()) {
+            HorizontalDivider()
+            Text("Trusted devices", style = MaterialTheme.typography.titleMedium)
+            model.peers.forEach { r ->
+                Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(r.peer.deviceName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                            TextButton(shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                onClick = { forget = r.peer.deviceId }) { Text("Forget…") }
+                        }
+                        Text("Mac fingerprint", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SelectionContainer {
+                            Text(r.peer.fingerprint.chunked(4).joinToString(" "),
+                                style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                }
+            }
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh trusted devices") }
         }
-        TextButton(onClick = model::refresh) { Text("Refresh trusted devices") }
     }
     if (resettingTrust)
         AlertDialog(
@@ -225,7 +257,7 @@ fun PairingScreen(model: PairingViewModel) {
                 )
             },
             confirmButton = {
-                TextButton(
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     onClick = {
                         resettingTrust = false
                         model.recoverTrustStore()
@@ -234,7 +266,7 @@ fun PairingScreen(model: PairingViewModel) {
                     Text("Reset local trust")
                 }
             },
-            dismissButton = { TextButton(onClick = { resettingTrust = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { resettingTrust = false }) { Text("Cancel") } },
         )
     if (forget != null)
         AlertDialog(
@@ -246,7 +278,7 @@ fun PairingScreen(model: PairingViewModel) {
                 )
             },
             confirmButton = {
-                TextButton(
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     onClick = {
                         model.forget(forget!!)
                         forget = null
@@ -255,6 +287,6 @@ fun PairingScreen(model: PairingViewModel) {
                     Text("Forget device")
                 }
             },
-            dismissButton = { TextButton(onClick = { forget = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { forget = null }) { Text("Cancel") } },
         )
 }

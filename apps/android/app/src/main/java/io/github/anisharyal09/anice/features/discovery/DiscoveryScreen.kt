@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents bounded Bluetooth discovery progress and compatibility results.
 package io.github.anisharyal09.anice.features.discovery
 
 import android.app.Activity
@@ -13,13 +14,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -44,6 +46,8 @@ fun DiscoveryScreen(model: DiscoveryViewModel) {
     val state = model.state
     Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Nearby compatibility check", style = MaterialTheme.typography.headlineSmall)
+        Text("Starting a scan closes Bluetooth connections. Local network stays connected.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("On your Mac, open aniCe and choose Make this Mac discoverable. Then scan here.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth()) {
@@ -52,28 +56,28 @@ fun DiscoveryScreen(model: DiscoveryViewModel) {
                 if (state.busy) CircularProgressIndicator()
                 if (state.scanning) Text("Scan ends in ${state.remainingSeconds} seconds")
                 state.candidates.forEach { candidate ->
-                    TextButton(onClick = { model.select(candidate.rowId) }, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { model.select(candidate.rowId) }, modifier = Modifier.fillMaxWidth()) {
                         Text("Nearby aniCe device ${candidate.number}")
                     }
                 }
                 if (state.busy) {
-                    TextButton(onClick = model::cancel) { Text("Cancel") }
+                    TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::cancel) { Text("Cancel") }
                 } else {
                     when (state.recovery) {
-                        RecoveryReason.permanentDenial -> Button(onClick = {
+                        RecoveryReason.permanentDenial -> OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
                             context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()))
                         }) { Text("Open app settings") }
-                        RecoveryReason.bluetoothDisabled -> Button(onClick = {
+                        RecoveryReason.bluetoothDisabled -> OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
                             enable.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
                         }) { Text("Turn on Bluetooth") }
-                        RecoveryReason.locationServicesDisabled -> Button(onClick = {
+                        RecoveryReason.locationServicesDisabled -> OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
                             context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                         }) { Text("Open location settings") }
                         RecoveryReason.unsupported -> Unit
-                        else -> Button(onClick = ::start) { Text(if (state.recovery == RecoveryReason.permission) "Allow discovery access" else "Scan for nearby devices") }
+                        else -> OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = ::start) { Text(if (state.recovery == RecoveryReason.permission) "Allow discovery access" else "Scan for nearby devices") }
                     }
                     if (state.recovery in listOf(RecoveryReason.permanentDenial, RecoveryReason.bluetoothDisabled, RecoveryReason.locationServicesDisabled)) {
-                        TextButton(onClick = ::start) { Text("Try again") }
+                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = ::start) { Text("Try again") }
                     }
                 }
             }

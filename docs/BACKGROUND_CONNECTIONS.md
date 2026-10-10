@@ -6,7 +6,7 @@ One application-scoped Android `SessionController` owns transport, EDHOC/readine
 
 Automatic nearby recovery, negotiated keepalive, fresh-session renewal, and Mac automatic availability are implemented. Android uses one device-level **Connect automatically** switch. First setup uses the native companion chooser; association is a locator/OS lease, never authentication. EDHOC pins the selected active device ID, fingerprint and key under the current local identity. Wrong first-time candidates remove their newly created association. Identity and trust journals are preserved.
 
-Notification-free support remains gated: `companion_probe_supported` is false in main resources and true only in Debug API 31+. Release contains the shared setup/controller code and signature-protected service declaration, but disables service ownership and automatic setup. API 29–30 retain manual connection. Physical address stability, range/process recovery and endurance evidence are required before promoting this resource gate. Foreground-service fallback and phone-reboot recovery are not implemented in this increment; LAN and feature integrations remain deferred.
+Notification-free companion support is enabled in main resources for Android API 31+ (`res/values-v31/bools.xml`), providing background ownership across both Debug and Release builds on supported platforms. Legacy API 29–30 targets retain manual connections via base resources (`res/values/bools.xml`). Foreground-service fallback and phone-reboot recovery are not implemented; Background LAN leases and feature-specific integrations remain deferred.
 
 ## Native API paths
 
@@ -25,7 +25,7 @@ Saved preferences bind one selected peer ID/fingerprint to the local fingerprint
 
 Connection settings match the displayed device ID and fingerprint before showing enabled state, diagnostics or Reset setup. Actions recheck that binding. Enabling a different Mac explicitly retires the prior association before opening the chooser; merely opening another Mac's settings does not change the selected setup.
 
-A live service lease serializes attempts. Transient failures retry after 2, 5, 15, 30 and 60 seconds, capped at 60, with ±10% jitter. Presence loss cancels the entire retry chain; radio-off waits for radio recovery. Rejected locators are excluded for 60 seconds in an in-memory set capped at 32. No periodic wake alarms or unowned scan loop is used.
+A live service lease serializes attempts. Transient failures use 2, 5, 15, 30, 60 and 90-second base delays with ±10% jitter and a 90-second cap applied after jitter. Presence loss cancels the entire retry chain; radio-off waits for radio recovery. Rejected locators are excluded for 60 seconds in an in-memory set capped at 32. No periodic wake alarms or unowned scan loop is used.
 
 | Event | Policy and session action |
 | --- | --- |
@@ -34,8 +34,8 @@ A live service lease serializes attempts. Transient failures retry after 2, 5, 1
 | System rebind of the same service | Restore unknown presence facts and restart only enabled, unpaused, trusted setup |
 | Transient disconnect or missed PONG | Retire old operation; bounded retry only while owned and permitted |
 | Disconnect | Persist pause before teardown; stop retries/access; retain association and native observation |
-| Switch off | Save automatic off and paused atomically; stop observation/access |
-| Switch on / explicit Connect after pause | Revalidate remembered trust/association; resume observation |
+| Switch off | Save automatic off/paused; stop observation/retries and release the service lease. Retain a secured foreground channel as manual work unless renewal is pending; background channels close |
+| Checkbox on / explicit Connect after pause | Revalidate remembered trust/association; resume observation |
 | Pairing/discovery | Suspend automatic attempts; restore policy after the exclusive operation |
 | Revocation / identity reset | Retire session and selected setup; require explicit correction |
 | Permission/association loss / legacy peer | Pause with an actionable explanation; manual connection remains available |
@@ -93,7 +93,7 @@ These measurements verify relative software workload reduction on test hardware.
 ## Reconnect acceptance
 
 1. Establish an automatic connection with the phone locked. Mac Disconnect pauses admission; verify Android leaves Secured after authenticated CLOSE and Mac remains unavailable while paused.
-2. Re-enable Mac Connect automatically with the phone untouched. Allow the existing retry backoff, capped at 60 seconds, plus connection/authentication time. Verify fresh EDHOC/readiness without opening the phone app, toggling Bluetooth or sending diagnostic checks.
+2. Re-enable Mac Connect automatically with the phone untouched. Allow the existing retry backoff, capped at 90 seconds, plus connection/authentication time. Verify fresh EDHOC/readiness without opening the phone app, toggling Bluetooth or sending diagnostic checks.
 3. Repeat with the phone removed from Recents. Pause/disable Android automatic setup and verify Mac availability cannot restart a stopped phone policy.
 
 `ProbePresenceTest` covers unbound/stale events and missing-fact recovery. `CompanionBindingTest` injects same-instance framework callbacks on an unconfigured installation; it checks rebind, invalid intents, destroyed-instance retirement and unchanged identity/trust journals/preferences. Callback injection does not establish actual CDM/radio recovery.
@@ -101,3 +101,5 @@ These measurements verify relative software workload reduction on test hardware.
 `PhysicalSessionNavigationTest.authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery` requires `physicalMacClose=<selected Mac device ID>` and existing automatic setup. It observes authenticated CLOSE, requires controller retirement within two seconds, then requires a distinct secured channel with negotiated controls after Mac automatic availability is re-enabled. Identity/trust bytes must remain unchanged.
 
 References: [Android background BLE](https://developer.android.com/develop/connectivity/bluetooth/ble/background), [CompanionDeviceService](https://developer.android.com/reference/android/companion/CompanionDeviceService), [Secure session profile](../protocol/session/README.md).
+
+Opening Android discovery leaves BLE/LAN owners untouched. Scan suspends automatic Bluetooth ownership before discovery starts; its busy-state callbacks restore eligible work after success, failure or cancellation. LAN remains independent. Android Home resumes saved matching association setup directly through the existing policy owner; no settings activity is opened. First association and repair remain in native setup. Explicit disable removes renewal eligibility from retained foreground work; hard session limits and final-presentation/screen-lock cleanup still apply. Pause, trust revocation and native lease loss retain their teardown behaviour.

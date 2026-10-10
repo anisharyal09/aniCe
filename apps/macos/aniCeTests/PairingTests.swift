@@ -134,6 +134,34 @@ private actor PairingBus {
   func names() -> [String] { events }
 }
 extension PairingTests {
+  @MainActor func testPairConnectCompletionIgnoresApprovalAndSupersededCleanup() async throws {
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "test.")
+    let peer = try await identity.publicIdentity()
+    let model = MacPairingModel(identity: identity, discovery: MacDiscoveryModel(adapter: PairingRadioFake()))
+    var completed = [DeviceIdentity]()
+    var stopped = 0
+    model.onPaired = { completed.append($0) }
+    model.afterPairing = { stopped += 1 }
+    model.active = true; model.phase = "approval"; model.peer = peer
+    model.cancel()
+    try await waitFor { stopped == 1 }
+    XCTAssertTrue(completed.isEmpty)
+    model.active = true; model.phase = "paired"; model.peer = peer
+    model.cancel()
+    model.cancel() // A newer Stop invalidates queued connection admission.
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertTrue(completed.isEmpty)
+    XCTAssertNil(model.completedPeer)
+    model.active = true; model.phase = "paired"; model.peer = peer
+    model.cancel()
+    try await waitFor { completed.count == 1 }
+    XCTAssertEqual(completed.first, peer)
+    XCTAssertEqual(model.completedPeer, peer)
+    model.cancel()
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(completed.count, 1)
+  }
+
   func testNativePakeBridgeLeadingZeroAndContextBinding() throws {
     let id = Data(repeating: 7, count: 16)
     let server = try NativePake.call(1, [Data("000001".utf8), id])

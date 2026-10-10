@@ -362,6 +362,48 @@ class SessionControlTests {
     reject(SessionFailure.CONTROL_TIMEOUT) { client.receive(SessionControl(ControlKind.PONG, 0), 81000) }
     reject(SessionFailure.CONTROL_TIMEOUT) { client.poll(81000) }
   }
+  @Test fun automaticOffRetainsForegroundChannelAndHardLifetime() = runBlocking {
+    assertTrue(retainForegroundSession(true, true, ConnectionState.SECURED, false))
+    assertFalse(retainForegroundSession(false, true, ConnectionState.SECURED, false))
+    assertFalse(retainForegroundSession(true, false, ConnectionState.SECURED, false))
+    assertFalse(retainForegroundSession(true, true, ConnectionState.SECURED, true))
+    val terminal = listOf(ConnectionState.CONNECTING, ConnectionState.FAILED, ConnectionState.DISCONNECTED)
+    assertEquals(3, terminal.size)
+    terminal.forEach { assertFalse(retainForegroundSession(true, true, it, false)) }
+    val helper = SessionTests()
+    val fixtures = helper.root().getJSONArray("valid")
+    assertTrue(fixtures.length() >= 1)
+    val fixture = fixtures.getJSONObject(0)
+    var clock = 0L
+    val outgoing = java.util.ArrayDeque<ByteArray>()
+    val replies = java.util.ArrayDeque<ByteArray>()
+    var delivered = 0
+    val client = SessionConnection(helper.engine(fixture, false), false, { true }, { outgoing.add(it) },
+      {}, {}, true, { clock }, true)
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+      { delivered++ }, {}, true, { clock }, true)
+    suspend fun pump() {
+      var frames = 0
+      while (outgoing.isNotEmpty() || replies.isNotEmpty()) {
+        assertTrue(++frames <= 32)
+        if (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+        if (replies.isNotEmpty()) client.receive(replies.removeFirst())
+      }
+    }
+    try {
+      client.start(); pump()
+      client.disableRenewal(); server.disableRenewal()
+      repeat(55) { clock = (it + 1) * 60000L; client.tick(); pump() }
+      assertNull(client.renewalReason)
+      assertFalse(client.isClosed)
+      client.sendData("still connected".toByteArray()); pump()
+      assertEquals(1, delivered)
+      clock = 3600000
+      try { client.tick(); fail("Automatic off extended the session lifetime") }
+      catch (error: SessionException) { assertEquals(SessionFailure.EXPIRED, error.reason) }
+      assertTrue(client.isClosed)
+    } finally { client.close(); server.close() }
+  }
   @Test fun encryptedRenewalBackpressureFailureAndStop() = runBlocking {
     val helper = SessionTests()
     val fixture = helper.root().getJSONArray("valid").getJSONObject(0)

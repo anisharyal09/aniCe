@@ -1,10 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents local identity information and confirmed reset inside advanced controls.
 package io.github.anisharyal09.anice.features.deviceidentity
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -16,9 +26,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
@@ -31,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -47,80 +58,122 @@ fun DeviceIdentityScreen(
     onRetry: () -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
+    onRename: (String) -> Unit = {},
 ) {
     var confirmation by rememberSaveable { mutableStateOf(false) }
+    var editingName by rememberSaveable { mutableStateOf(false) }
+    var name by rememberSaveable(state.snapshot?.identity?.deviceId) { mutableStateOf("") }
+    var advanced by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val deviceIdLabel = stringResource(R.string.device_id)
     val fingerprintLabel = stringResource(R.string.fingerprint)
     val copiedLabel = stringResource(R.string.copied)
+    if (editingName) AlertDialog(
+        onDismissRequest = { editingName = false },
+        title = { Text("Device name") },
+        text = {
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Phone name") },
+                singleLine = true, enabled = !state.isWorking,
+                supportingText = { Text("Up to 64 characters. Shown after authentication.") })
+        },
+        confirmButton = {
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                enabled = !state.isWorking && name.trim().isNotBlank() &&
+                    name.trim().codePointCount(0, name.trim().length) <= 64 && name.trim() != state.snapshot?.identity?.deviceName,
+                onClick = { onRename(name); editingName = false }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { editingName = false }) { Text(stringResource(R.string.cancel)) }
+        },
+    )
     if (confirmation) AlertDialog(
         onDismissRequest = { confirmation = false },
         title = { Text(stringResource(R.string.reset_identity_title)) },
         text = { Text(stringResource(R.string.reset_identity_warning)) },
         confirmButton = {
-            TextButton(onClick = { confirmation = false; onReset() }, enabled = !state.isWorking) {
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { confirmation = false; onReset() }, enabled = !state.isWorking) {
                 Text(stringResource(R.string.reset_identity), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = { confirmation = false }) { Text(stringResource(R.string.cancel)) }
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { confirmation = false }) { Text(stringResource(R.string.cancel)) }
         },
     )
-    Column(modifier.fillMaxSize()
-        .verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (state.isWorking) LinearProgressIndicator(Modifier.fillMaxWidth())
-        state.snapshot?.let { current ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(current.identity.deviceName, style = MaterialTheme.typography.headlineSmall)
-                Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
+            .verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (state.isWorking) LinearProgressIndicator(Modifier.fillMaxWidth())
+            state.snapshot?.let { current ->
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_phone), contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), enabled = !state.isWorking,
+                            onClick = { name = current.identity.deviceName; editingName = true },
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit name") }
+                    }
+                }
+                if (state.renameFailure) Text("Could not save the name. Try again.", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.identity_description), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(stringResource(R.string.identity_description), style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    IdentityField(deviceIdLabel, current.identity.deviceId) {
-                        copyText(context, deviceIdLabel, current.identity.deviceId)
-                        if (Build.VERSION.SDK_INT < 33) scope.launch { snackbars.showSnackbar(copiedLabel) }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    IdentityField(fingerprintLabel,
-                        current.identity.fingerprint.chunked(32).joinToString("\n") { it.chunked(4).joinToString(" ") }) {
-                        copyText(context, fingerprintLabel, current.identity.fingerprint)
-                        if (Build.VERSION.SDK_INT < 33) scope.launch { snackbars.showSnackbar(copiedLabel) }
-                    }
-                    Text(stringResource(R.string.fingerprint_description), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(stringResource(R.string.key_protection), style = MaterialTheme.typography.titleSmall)
-                        Text(current.protection.label, style = MaterialTheme.typography.bodyMedium,
+                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        IdentityField(deviceIdLabel, current.identity.deviceId) {
+                            copyText(context, deviceIdLabel, current.identity.deviceId)
+                            if (Build.VERSION.SDK_INT < 33) scope.launch { snackbars.showSnackbar(copiedLabel) }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        IdentityField(fingerprintLabel,
+                            current.identity.fingerprint.chunked(32).joinToString("\n") { it.chunked(4).joinToString(" ") }) {
+                            copyText(context, fingerprintLabel, current.identity.fingerprint)
+                            if (Build.VERSION.SDK_INT < 33) scope.launch { snackbars.showSnackbar(copiedLabel) }
+                        }
+                        Text(stringResource(R.string.fingerprint_description), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(stringResource(R.string.key_protection), style = MaterialTheme.typography.titleSmall)
+                            Text(current.protection.label, style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
-        }
-        state.failure?.let { error ->
-            Text(stringResource(R.string.identity_unavailable), style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.error)
-            Text(stringResource(when (error) {
-                IdentityErrorKind.STORAGE_UNAVAILABLE -> R.string.identity_storage_unavailable
-                IdentityErrorKind.KEY_MISSING -> R.string.identity_key_missing
-                IdentityErrorKind.INCONSISTENT -> R.string.identity_inconsistent
-                IdentityErrorKind.CRYPTO_FAILURE -> R.string.identity_crypto_failure
-            }))
-            Button(onClick = onRetry, enabled = !state.isWorking) { Text(stringResource(R.string.retry)) }
-        }
-        if (state.canReset) {
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Text(stringResource(R.string.reset_identity), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { confirmation = true }, enabled = !state.isWorking) {
-                Text(stringResource(R.string.reset_identity), color = MaterialTheme.colorScheme.error)
+            state.failure?.let { error ->
+                Text(stringResource(R.string.identity_unavailable), style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error)
+                Text(stringResource(when (error) {
+                    IdentityErrorKind.STORAGE_UNAVAILABLE -> R.string.identity_storage_unavailable
+                    IdentityErrorKind.KEY_MISSING -> R.string.identity_key_missing
+                    IdentityErrorKind.INCONSISTENT -> R.string.identity_inconsistent
+                    IdentityErrorKind.CRYPTO_FAILURE -> R.string.identity_crypto_failure
+                }))
+                OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onRetry, enabled = !state.isWorking) { Text(stringResource(R.string.retry)) }
+            }
+            if (state.canReset) {
+                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .semantics { stateDescription = if (advanced) "Expanded" else "Collapsed" }) {
+                    Text(if (advanced) "Hide advanced" else "Advanced")
+                }
+                if (advanced) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text(stringResource(R.string.reset_identity), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { confirmation = true }, enabled = !state.isWorking) {
+                        Text(stringResource(R.string.reset_identity), color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
         }
     }
@@ -128,12 +181,15 @@ fun DeviceIdentityScreen(
 
 @Composable
 private fun IdentityField(label: String, value: String, copy: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
-        TextButton(onClick = copy, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.copy_field, label))
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = copy, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.copy_field, label))
+            }
         }
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
     }
 }
 

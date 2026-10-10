@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Publishes local identity operations and preserves the displayed identity on rename failures.
 package io.github.anisharyal09.anice.features.deviceidentity
 
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ data class DeviceIdentityUiState(
     val snapshot: IdentitySnapshot? = null,
     val failure: IdentityErrorKind? = null,
     val isWorking: Boolean = false,
+    val renameFailure: Boolean = false,
 ) {
     val canReset: Boolean
         get() =
@@ -40,6 +42,21 @@ class DeviceIdentityViewModel(private val service: IdentityService) : ViewModel(
 
     fun reset() {
         if (state.canReset) update(reset = true)
+    }
+
+    fun rename(name: String) {
+        if (state.isWorking || state.snapshot == null) return
+        val previous = state
+        state = previous.copy(isWorking = true, renameFailure = false)
+        viewModelScope.launch {
+            state = try {
+                DeviceIdentityUiState(snapshot = withContext(Dispatchers.IO) { service.rename(name) })
+            } catch (_: IdentityException) {
+                previous.copy(isWorking = false, renameFailure = true)
+            } catch (_: IllegalArgumentException) {
+                previous.copy(isWorking = false, renameFailure = true)
+            }
+        }
     }
 
     private fun update(reset: Boolean) {

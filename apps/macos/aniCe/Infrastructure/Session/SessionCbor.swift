@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Defines bounded session CBOR values and typed failures with readable presentation messages.
 import Foundation
 
-enum SessionFailure: String, Error, Sendable {
+enum SessionFailure: String, LocalizedError, Sendable {
   case malformed, unsupportedProfile, untrustedPeer, authentication, state, cancelled, expired, controlTimeout
+  var errorDescription: String? {
+    switch self {
+    case .malformed: "Invalid session message"
+    case .unsupportedProfile: "These devices use incompatible session versions"
+    case .untrustedPeer: "This device is no longer trusted"
+    case .authentication: "Device authentication failed"
+    case .state: "The connection is no longer ready"
+    case .cancelled: "The connection closed"
+    case .expired: "The session reached its time or message limit"
+    case .controlTimeout: "The other device stopped responding"
+    }
+  }
 }
 
 indirect enum SessionCBOR: Equatable, Sendable {

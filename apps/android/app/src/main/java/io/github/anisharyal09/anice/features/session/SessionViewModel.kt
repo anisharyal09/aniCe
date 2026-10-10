@@ -52,6 +52,8 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     fun disconnectBluetooth() = owner.disconnect()
 
+    fun cancelBluetooth() = owner.cancel()
+
     fun cancel() {
         owner.cancel()
         lan.cancel()

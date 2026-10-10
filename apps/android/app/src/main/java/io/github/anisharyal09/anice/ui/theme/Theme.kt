@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Maps the shared aniCe palette and native shape roles into Android presentation.
 package io.github.anisharyal09.anice.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -89,8 +93,10 @@ private val DarkColors =
 
 @Composable
 fun AniCeTheme(content: @Composable () -> Unit) {
+    val palette = if (isSystemInDarkTheme()) DarkColors else LightColors
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = palette.copy(primary = palette.onSurface),
+        shapes = Shapes(small = RoundedCornerShape(8.dp)),
         content = content,
     )
 }
@@ -103,3 +109,8 @@ val ColorScheme.warning: Color
 val ColorScheme.subtleAccent: Color
     get() = primaryContainer
 
+
+/** Selection retains the shared accent while ordinary controls use neutral ink. */
+val ColorScheme.selectionAccent: Color
+    @Composable
+    get() = if (isSystemInDarkTheme()) DarkColors.primary else LightColors.primary

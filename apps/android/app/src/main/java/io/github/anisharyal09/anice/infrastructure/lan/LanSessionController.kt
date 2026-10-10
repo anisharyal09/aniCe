@@ -61,7 +61,7 @@ class LanSessionController(private val app: AniCeApplication) {
         cancel()
         selected = peer
         state = ConnectionState.CONNECTING
-        status = "Finding your trusted Mac on the local network…"
+        status = "Finding your Mac (includes a 15-second browse)…"
         receivedChecks = 0
         val op = generation
         worker =

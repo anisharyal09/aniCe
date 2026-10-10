@@ -2,6 +2,14 @@
 // Presents identity, pairing and shared Bluetooth/LAN connection details in the main window.
 import AppKit
 import SwiftUI
+import Observation
+
+@Observable @MainActor final class ConnectionNavigation {
+  var managingDevices = false
+  var details = false
+  var diagnostics = false
+  var automaticAfterPairing = true
+}
 
 struct MainWindowView: View {
   let delegate: AppDelegate
@@ -10,16 +18,15 @@ struct MainWindowView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @Environment(\.colorScheme) private var colorScheme
-
-  @State private var discoveryExpanded = false
 
   private var deviceHeader: some View {
     HStack(spacing: 14) {
       Image(systemName: "laptopcomputer")
         .font(.title2)
-        .foregroundStyle(AniCePalette.accent(colorScheme))
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
       VStack(alignment: .leading, spacing: 2) {
         Text(identity.local?.identity.deviceName ?? "This Mac")
           .font(.title3.weight(.medium))
@@ -42,26 +49,40 @@ struct MainWindowView: View {
       ScrollView(.vertical) {
         VStack(alignment: .leading, spacing: 20) {
           deviceHeader
-          if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
-            MacSessionView(peers: pairing.peers, model: session, lan: lan)
-          }
-          MacPairingView(model: pairing)
-          if pairing.hasTrustedAndroid && !pairing.active && !session.allowing {
-            VStack(alignment: .leading, spacing: 8) {
+          if navigation.managingDevices {
+            Button("Back") { navigation.managingDevices = false }.buttonStyle(.bordered)
+            Toggle("Connect automatically after pairing", isOn: $navigation.automaticAfterPairing)
+              .tint(AniCePalette.accent(colorScheme))
+              .disabled(pairing.phase == "paired")
+            MacPairingView(model: pairing)
+            if pairing.hasTrustedAndroid || session.allowing || lan.allowing {
               Button {
-                discoveryExpanded.toggle()
+                navigation.managingDevices = false
+                navigation.details = true
+                navigation.diagnostics = true
               } label: {
-                Label(
-                  "Nearby discovery compatibility check",
-                  systemImage: discoveryExpanded ? "chevron.down" : "chevron.right"
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-              }
-              .buttonStyle(.plain)
-              .foregroundStyle(AniCePalette.accent(colorScheme))
-              .accessibilityValue(discoveryExpanded ? "Expanded" : "Collapsed")
-              if discoveryExpanded { MacDiscoveryView(model: discovery) }
+                HStack(spacing: 6) {
+                  Image(systemName: "chevron.right")
+                  Text("Diagnostics")
+                }.frame(maxWidth: .infinity, alignment: .leading)
+              }.buttonStyle(.bordered)
+            }
+          } else {
+            if session.state == "Secured" || lan.state == "Secured" ||
+              (!pairing.active && (session.allowing || lan.allowing || pairing.hasTrustedAndroid)) {
+              MacSessionView(peers: pairing.peers, model: session, lan: lan,
+                details: $navigation.details, diagnostics: $navigation.diagnostics,
+                discovery: discovery, canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
+                onManageDevices: { navigation.managingDevices = true })
+            }
+            if pairing.active || !pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
+              Toggle("Connect automatically after pairing", isOn: $navigation.automaticAfterPairing)
+                .tint(AniCePalette.accent(colorScheme))
+              .disabled(pairing.phase == "paired")
+              MacPairingView(model: pairing, showTrustedDevices: !pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded)
+            }
+            if pairing.hasTrustedAndroid {
+              Button("Manage devices") { navigation.managingDevices = true }.buttonStyle(.bordered)
             }
           }
         }
@@ -72,7 +93,7 @@ struct MainWindowView: View {
     }
     .frame(minWidth: 480, minHeight: 320)
     .background(AniCePalette.background(colorScheme))
-    .tint(AniCePalette.accent(colorScheme))
+    .tint(AniCePalette.primaryText(colorScheme))
     .toolbar {
       Button("This device", systemImage: "info.circle") { identity.showingDetails = true }
     }

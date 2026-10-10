@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies foreground, companion and observable automatic-policy ownership without UI interaction.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import android.content.Context
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateObserver
+import org.junit.Assume.assumeTrue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
@@ -13,6 +18,58 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SessionOwnershipTest {
+  @Test fun automaticPreferenceNotifiesWithoutReadingStatus() = runBlocking {
+    val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
+    val policy = CompanionProbe.get(app)
+    withContext(Dispatchers.Main) {
+      assumeTrue("Requires native companion setup", policy.available && policy.address != null && policy.peerId != null)
+      val wasArmed = policy.armed
+      val wasAutomatic = app.getSharedPreferences("companion_feasibility", Context.MODE_PRIVATE)
+        .getBoolean("automatic", false)
+      val observer = SnapshotStateObserver { it() }
+      var changes = 0
+      fun observe() = observer.observeReads(Unit, { changes++ }) { policy.armed }
+      observer.start()
+      try {
+        if (!policy.armed) policy.resume()
+        Snapshot.sendApplyNotifications()
+        observe()
+        policy.pause()
+        Snapshot.sendApplyNotifications()
+        assertFalse(policy.armed)
+        assertEquals(1, changes)
+        observe()
+        try {
+          policy.resume { throw IllegalStateException("Injected trust lookup failure") }
+          fail("Failed validation armed automatic connection")
+        } catch (_: IllegalStateException) {}
+        Snapshot.sendApplyNotifications()
+        assertFalse(policy.armed)
+        assertEquals(1, changes)
+        policy.resume()
+        Snapshot.sendApplyNotifications()
+        assertTrue(policy.armed)
+        assertTrue(changes >= 2)
+        val afterResume = changes
+        observe()
+        policy.disable()
+        Snapshot.sendApplyNotifications()
+        assertFalse(policy.armed)
+        assertTrue(changes > afterResume)
+        val afterDisable = changes
+        observe()
+        policy.disable()
+        Snapshot.sendApplyNotifications()
+        assertEquals(afterDisable, changes)
+      } finally {
+        observer.stop(); observer.clear()
+        if (wasArmed) {
+          if (!policy.armed) policy.resume()
+        } else if (wasAutomatic) policy.pause() else policy.disable()
+      }
+    }
+  }
+
   @Test fun backgroundStateChangesEmitWithoutAComposePresentation() = runBlocking {
     val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
     val controller = app.sessionController

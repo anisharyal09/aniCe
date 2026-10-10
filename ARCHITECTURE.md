@@ -35,7 +35,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ## 4. Independent BLE & LAN Transports
 
-- **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime in supported Debug builds.
+- **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime on supported API 31+ platforms in Debug and Release; physical endurance and minimum-OS acceptance remain pending.
   - Contract: [BLE Discovery Wire Format](protocol/bluetooth/README.md)
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)

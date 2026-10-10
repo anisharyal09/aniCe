@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Exercises native home layout and accessibility fixtures through an opt-in visual review.
 package io.github.anisharyal09.anice.app
 
 import android.content.Intent
@@ -127,7 +128,6 @@ class HomeVisualReviewTest {
                                             HomeScreen(
                                                 hasTrustedDevices = case.state != null,
                                                 onPair = {},
-                                                onCheck = {},
                                                 modifier = Modifier.widthIn(max = case.width.dp),
                                                 sessions = {
                                                     case.state?.let {

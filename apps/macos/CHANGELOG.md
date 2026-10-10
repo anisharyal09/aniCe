@@ -7,10 +7,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Added
 
 - Shared manual Bonjour/TCP admission, encrypted LAN connection checks, same-peer reservations and sandbox network declarations.
-
 - Shared automatic nearby admission with five-failure cooldown, persisted allowed-phone policy, paused Disconnect and sleep/wake restoration.
 - Coordinated encrypted renewal requests before session lifetime or record limits.
-
 - Session control negotiation and encrypted keepalive replies, sharing existing record limits, trust validation and bounded transport queues.
 - Shared CBOR conformance fixtures and hosted tests for control ordering, timeouts, legacy peers, submission failure and suspended-send cancellation.
 - Allow connections and session controls shared by window and companion, native AES-GCM record actor, admission failure/window limits, advertising-independent established traffic and sleep/Quit cleanup.
@@ -22,9 +20,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Share readiness-based summaries, full-width device sections, neutral connection controls and accent automatic checkmarks across the window and companion. Successful pairing returns to the overview and opens fresh Bluetooth admission after guarded cleanup.
+- Expand companion details and management inline with bounded scrolling, persistent footer and Back. Use an AppKit status item/transient popover with native right-click routes and shared transport owners.
+- Provide full-width Diagnostics controls for transport checks and discovery; keep LAN/manual recovery independent. Translate typed session failures into readable reasons.
 - Replace repeating BLE/LAN maintenance timers with revision-guarded deadline tasks; separate visible admission countdowns from security work.
 - Match service-level trust revocation to the owning journal and retire both transports on identity reset/recovery.
-
 - Update macOS code structure tree, test inventory, and manual LAN documentation in README.
 - Document source/configuration responsibilities and session invariants inline: trust revalidation, nonce ownership, readiness, bounded fragmentation, submission semantics and best-effort secret cleanup.
 - Load existing public identity state without a startup signing challenge; retain creation/reset checks and verification of requested signatures.
@@ -33,7 +33,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Fixed
 
 - LAN TCP enables bounded native keepalives and retransmission timeout so an unreachable phone is detected before the authenticated idle limit.
-
 - Keep delayed pairing cleanup from replacing a newer pairing or discovery radio owner with automatic session admission.
 - Allow fresh session admission on retained Core Bluetooth indication subscriptions during an explicit window while preserving exclusive admission.
 - Show pairing actions on an unpaired Mac; hide unavailable connection controls in window and companion while retaining active-operation controls.

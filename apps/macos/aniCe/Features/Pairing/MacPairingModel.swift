@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns mutual pairing and publishes successful completion only after generation-guarded radio cleanup.
 import AppKit
 import CoreImage.CIFilterBuiltins
 import Observation
@@ -7,6 +8,8 @@ import Observation
   var trustRemoved: () -> Void = {}
   var beforePairing: () -> Void = {}
   var afterPairing: () -> Void = {}
+  var onPaired: ((DeviceIdentity) -> Void)?
+  var completedPeer: DeviceIdentity?
   var status = "Choose how to pair your Android device."
   var phase = "idle"
   var active = false
@@ -49,6 +52,7 @@ import Observation
       ) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } })
   }
   func start(_ method: PairingMethod) {
+    completedPeer = nil
     beforePairing()
     cancel()
     active = true
@@ -255,7 +259,9 @@ import Observation
   }
   func cancel(message: String = "Pairing stopped. Start a fresh invitation when ready.") {
     let wasActive = active
+    let paired = phase == "paired" ? peer : nil
     generation += 1
+    let operation = generation
     active = false
     timer?.invalidate()
     timer = nil
@@ -277,7 +283,12 @@ import Observation
     work = Task {
       await previous?.value
       await old?.close()
-      if wasActive && !self.active { self.afterPairing() }
+      if wasActive && !self.active && self.generation == operation {
+        if let paired, let onPaired = self.onPaired {
+          self.completedPeer = paired
+          onPaired(paired)
+        } else { self.afterPairing() }
+      }
     }
   }
   private func fail(

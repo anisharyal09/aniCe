@@ -65,6 +65,55 @@ class IdentityServiceTest {
     private fun expectError(kind: IdentityErrorKind, action: () -> Any?) {
         try { action(); fail("Expected $kind") } catch (error: IdentityException) { assertEquals(kind, error.kind) }
     }
+    @Test fun renamePreservesKeysTrustIdentifierAndPersistsUnicodeName() {
+        val original = service().getOrCreateIdentity()
+        val inventory = keys.values.toMap()
+        val signs = keys.signCalls
+        val name = "😀".repeat(64)
+        val renamed = service().rename("  $name  ")
+        assertEquals(original.copy(identity = original.identity.copy(deviceName = name)), renamed)
+        assertEquals(renamed, service().getOrCreateIdentity())
+        assertEquals(inventory, keys.values)
+        assertEquals(signs, keys.signCalls)
+        val journal = metadata.value
+        val invalid = listOf("", " ", "a".repeat(65), "😀".repeat(65))
+        assertEquals(4, invalid.size)
+        invalid.forEach { value ->
+            try { service().rename(value); fail("Invalid name accepted") }
+            catch (_: IllegalArgumentException) { }
+            assertEquals(journal, metadata.value)
+            assertEquals(inventory, keys.values)
+        }
+    }
+    @Test fun renameRejectsChangedJournalBeforeCommit() {
+        service().getOrCreateIdentity()
+        val initial = requireNotNull(metadata.value)
+        val changed = initial.copy(active = requireNotNull(initial.active).let {
+            it.copy(identity = it.identity.copy(deviceName = "Other edit"))
+        })
+        var reads = 0
+        metadata.beforeRead = { if (++reads == 2) metadata.value = changed }
+        expectError(IdentityErrorKind.INCONSISTENT) { service().rename("Stale edit") }
+        assertEquals(changed, metadata.value)
+        metadata.beforeRead = null
+        assertEquals("Other edit", service().getOrCreateIdentity().identity.deviceName)
+    }
+    @Test fun renameWriteAndKeyFailuresPreserveDurableIdentity() {
+        val original = service().getOrCreateIdentity()
+        val journal = metadata.value
+        val inventory = keys.values.toMap()
+        metadata.failWrite = true
+        expectError(IdentityErrorKind.STORAGE_UNAVAILABLE) { service().rename("New phone") }
+        assertEquals(journal, metadata.value)
+        assertEquals(inventory, keys.values)
+        metadata.failWrite = false
+        keys.unavailable = true
+        expectError(IdentityErrorKind.STORAGE_UNAVAILABLE) { service().rename("New phone") }
+        assertEquals(journal, metadata.value)
+        assertEquals(inventory, keys.values)
+        keys.unavailable = false
+        assertEquals(original, service().getOrCreateIdentity())
+    }
     @Test fun identitySurvivesServiceRecreationAndSigns() {
         val original = service().getOrCreateIdentity()
         val restored = service().getOrCreateIdentity()

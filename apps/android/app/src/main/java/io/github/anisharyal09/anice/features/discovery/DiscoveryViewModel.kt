@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns bounded Bluetooth discovery and reports radio-work transitions independently of navigation.
 package io.github.anisharyal09.anice.features.discovery
 
 import android.Manifest
@@ -43,6 +44,8 @@ class DiscoveryViewModel(application: Application) : AndroidViewModel(applicatio
     var awaitingPermissions = false
         private set
 
+    var onBusyChanged: (Boolean) -> Unit = {}
+
     private var foreground = false
     private val handler = Handler(Looper.getMainLooper())
     private val ticker =
@@ -72,7 +75,11 @@ class DiscoveryViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
     init {
-        session.onChange = { state = it }
+        session.onChange = {
+            val wasBusy = state.busy
+            state = it
+            if (wasBusy != it.busy) onBusyChanged(it.busy)
+        }
         ContextCompat.registerReceiver(
             context,
             receiver,

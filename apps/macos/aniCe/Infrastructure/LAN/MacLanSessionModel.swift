@@ -299,7 +299,7 @@ import Observation
     connection = nil
     if secured || !resume || error is IdentityError {
       failWindow(
-        "Local-network session ended: \(error.localizedDescription). Allow connections to retry.")
+        "Local-network session ended: \(error.localizedDescription). Open Connection details and retry Local network.")
       Task { await old?.close() }
     } else {
       retiring = true

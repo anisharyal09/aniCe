@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Assembles native presentation and coordinates transport-specific radio and lifecycle ownership.
 package io.github.anisharyal09.anice
 
 import android.os.Bundle
@@ -46,9 +47,13 @@ class MainActivity : ComponentActivity() {
             io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this).stop("Trust changed. Set up automatic connection again.")
             session.cancel()
         }
+        discovery.onBusyChanged = { busy ->
+            val nearby = io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this)
+            if (busy || pairing.busy) nearby.suspend() else nearby.resumeAfterOperation()
+        }
         discovery.beforeStart = {
             io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(this).suspend()
-            session.cancel()
+            session.cancelBluetooth()
             pairing.cancel()
         }
         identity.onIdentityReset = {

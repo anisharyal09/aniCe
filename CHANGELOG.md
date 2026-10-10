@@ -12,12 +12,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 - Architecture overview (`ARCHITECTURE.md`) documenting shared identity, mutual trust bootstrap, secure session profiles, and independent native BLE/LAN transport ownership.
 - Independent authenticated LAN sessions alongside BLE, with explicit transport controls, pinned same-peer ownership and bounded native TCP framing.
-
-- Automatic nearby BLE recovery, shared Mac availability and coordinated fresh-session renewal; notification-free Android Release ownership remains gated by physical acceptance.
-
+- Automatic nearby BLE recovery, shared Mac availability and coordinated fresh-session renewal. Notification-free Android companion ownership is enabled on API 31+; physical endurance and minimum-OS acceptance remain pending.
 - Negotiated encrypted BLE keepalive with legacy manual fallback and independent application-control conformance fixtures.
-- Debug-only Android companion-device feasibility experiment with shared session ownership and native lifecycle checks.
-
 - Trusted-device BLE session integration with encrypted readiness, replay-protected directional AES-GCM records, lifecycle cleanup, shared GATT framing and explicit connection controls.
 - Independent Python conformance oracle for record framing and test vectors covering directional AES-GCM traffic.
 - Strict native-session instrumentation checks and adversarial runner/cleanup tests with automated verification metadata.
@@ -30,15 +26,17 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Unify device connection controls, pairing handoff and management across Android and Mac; keep transport diagnostics and Debug events collapsed. Browsing Android discovery preserves both transports, while Scan retires Bluetooth only.
+- Enable Android API 31+ notification-free companion auto-connect in main resources for Debug and Release; cap jittered retry backoff at 90 seconds.
+- Refine neutral controls, accent checkboxes, phone-name editing and full trusted fingerprints. Resume saved automatic setup inline and retain eligible foreground BLE when automatic ownership is disabled.
+- Add native Mac menu-bar right-click routes and readable typed session failures.
 - Replace periodic BLE/LAN maintenance with deadline waits and transport events; keep native identity validation on authenticated operations and retire both owners on explicit security mutations.
-
 - Simplify the README around a device-focused introduction with Android/macOS as initial platforms; move the architecture overview to root ARCHITECTURE.md and correct identity protection, transport ownership, renewal and platform baseline descriptions.
 - Update repository structure trees, documentation links, and active contracts across root, Android, macOS, and protocol READMEs.
 - Reduce secured BLE maintenance frequency while retaining per-operation trust and deadline checks; remove redundant Android identity signing during ordinary reads.
 - Add concise purpose headers across source, configuration and design assets; replace conversational documentation attribution with technical verification facts.
 - Update Bluetooth Low Energy GATT service and characteristic UUIDs.
 - Add shared Mac allowed-device selector with credential pinning, full-label discovery disclosure, and compact Android fingerprint identifiers.
-- Simplify Android connection presentation to a flat device list and native contextual menus; clarify session feedback on idle limits, peer closure, and trust failure.
 - Avoid private signing probes when loading an existing Mac identity; retain certificate-free local build defaults.
 - Distinguish automated unit and contract test evidence from physical radio and manual acceptance criteria across project documentation.
 - Simplify root and app READMEs with concise structure trees and direct documentation links.
@@ -48,7 +46,6 @@ Repository-wide structure, documentation, and development conventions belong her
 ### Fixed
 
 - Retire Android LAN ownership on network changes and Disconnect; configure bounded Mac TCP peer-loss detection while preserving foreground-only LAN lifetime.
-
 - Retire Android session state and transport after authenticated Mac Disconnect instead of cancelling only its coroutine worker.
 - Restore automatic BLE ownership on same-instance Android companion service rebind and reject callbacks after unbind.
 - Resolve native pairing tool paths from private project configuration for IDE builds without shell overrides.

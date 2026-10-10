@@ -33,7 +33,8 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   // Setup tokens are process-local; persisted association locators support a fresh attempt after restart.
   private var setupGeneration = 0
-  private var stopping = false
+  private var armedPreference by mutableStateOf(preferences.getBoolean("armed", false)
+    && preferences.getBoolean("automatic", false) && !preferences.getBoolean("paused", false))
   private var owner: Any? = null
   // Native binding/presence is independent of policy; pause releases work, not this OS fact.
   private var presentOwner: Any? = null
@@ -59,8 +60,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     private set
   var events by mutableStateOf(preferences.getString("events", "") ?: "")
     private set
-  val armed get() = !stopping && available && preferences.getBoolean("armed", false)
-    && preferences.getBoolean("automatic", false) && !preferences.getBoolean("paused", false)
+  val armed get() = available && armedPreference
   val associationId get() = preferences.getInt("association", -1)
   val address get() = preferences.getString("address", null)
   val peerId get() = preferences.getString("peer", null)
@@ -81,7 +81,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   /** A new chooser receives a token that Stop invalidates before any later result can arm observation. */
   fun beginSetup(): Int {
     check(!preferences.getBoolean("armed", false))
-    stopping = false
+    armedPreference = false
     return ++setupGeneration
   }
 
@@ -101,6 +101,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
       .putBoolean("verified", preferences.getBoolean("verified", false) && peerId == peer.deviceId &&
         preferences.getString("fingerprint", null) == peer.fingerprint && this.address == locator && associationId == id)
       .putBoolean("automatic", true).putBoolean("paused", false).putBoolean("armed", true).commit())
+    armedPreference = true
     try {
       if (Build.VERSION.SDK_INT >= 36) manager.startObservingDevicePresence(
         ObservingDevicePresenceRequest.Builder().setAssociationId(id).build())
@@ -227,12 +228,12 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     if (armed) owner?.let { appeared(it) }
   }
 
-  /** Pause retains native observation for Resume; disable also stops observation. Both retire session access. */
+  /** Pause retains native observation for Resume; disable also stops observation. Disable may retain a secured foreground session as manual work. */
   fun pause(message: String = "Automatic connection is off.", disable: Boolean = false) {
     setupGeneration++
-    stopping = true
+    armedPreference = false
     monitor?.cancel(); monitor = null
-    owner?.let { app.sessionController.releaseCompanion(it) }; owner = null
+    owner?.let { app.sessionController.releaseCompanion(it, preserveForegroundSession = disable) }; owner = null
     val edit = preferences.edit().putBoolean("paused", true).putBoolean("armed", false)
     if (disable) edit.putBoolean("automatic", false)
     val saved = edit.commit()
@@ -279,7 +280,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     val oldAddress = address
     val oldId = associationId
     // Retire application access before disk work: a failed preference write cannot keep keys usable.
-    stopping = true
+    armedPreference = false
     monitor?.cancel(); monitor = null
     owner?.let { app.sessionController.releaseCompanion(it) }; owner = null
     val saved = preferences.edit().putBoolean("armed", false).remove("peer").remove("fingerprint")

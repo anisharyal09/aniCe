@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Injects native network callbacks to verify coroutine teardown retires the LAN owner.
+// Verifies LAN presentation handoff and native network teardown without UI interaction.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import androidx.lifecycle.ViewModelStore
+import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.NetworkCapabilities
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
+import io.github.anisharyal09.anice.features.session.SessionViewModel
 import io.github.anisharyal09.anice.infrastructure.lan.LanSessionController
 import kotlinx.coroutines.*
 import org.junit.Assert.*
@@ -23,6 +26,8 @@ class LanOwnershipTest {
     @Test fun disconnectCancelsDiscoveryAndReleasesReservation() = exercise("disconnect")
 
     @Test fun anotherStartedPresentationKeepsLanUntilFinalStop() = exercise("background")
+
+    @Test fun discoveryOpeningIsIdleAndScanPreservesLanUntilDeviceCancellation() = exercise("discovery")
 
     private fun exercise(action: String): Unit = runBlocking {
         val app =
@@ -47,7 +52,9 @@ class LanOwnershipTest {
                 deviceId =
                     io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity.newId()
             )
-        val controller = withContext(Dispatchers.Main) { LanSessionController(app) }
+        val controller = withContext(Dispatchers.Main) {
+            if (action == "discovery") app.lanSessionController else LanSessionController(app)
+        }
         val token = Any()
         fun field(name: String): Any? =
             LanSessionController::class
@@ -59,11 +66,13 @@ class LanOwnershipTest {
             withContext(Dispatchers.Main) {
                 controller.foreground(token)
                 controller.connect(peer)
+                assertEquals(controller.status, ConnectionState.CONNECTING, controller.state)
             }
             val callback =
                 withTimeout(5000) {
                     withContext(Dispatchers.Main) {
-                        while (field("watching") == null) delay(10)
+                        while (field("watching") == null && controller.state == ConnectionState.CONNECTING) delay(10)
+                        assertNotNull(controller.status, field("watching"))
                         field("watching") as ConnectivityManager.NetworkCallback
                     }
                 }
@@ -80,10 +89,44 @@ class LanOwnershipTest {
                         assertEquals(ConnectionState.CONNECTING, controller.state)
                         assertTrue(worker.isActive)
                         assertFalse(app.sessionPeers.permits(foreign))
+                        controller.foreground(token)
                         controller.background(other, false)
+                        controller.background(other, false) // A late settings stop cannot release Home.
+                        assertEquals(ConnectionState.CONNECTING, controller.state)
+                        assertTrue(worker.isActive)
+                        assertFalse(app.sessionPeers.permits(foreign))
+                        controller.background(token, false)
                         assertTrue(controller.status.contains("foreground"))
                     }
-                else -> withContext(Dispatchers.Main) { controller.disconnect() }
+                "discovery" -> withContext(Dispatchers.Main) {
+                    val model = SessionViewModel(app)
+                    val discovery = DiscoveryViewModel(app)
+                    val models = ViewModelStore().apply { put("discovery", discovery) }
+                    var starts = 0
+                    val busy = mutableListOf<Boolean>()
+                    discovery.beforeStart = { starts++; model.cancelBluetooth() }
+                    discovery.onBusyChanged = { busy.add(it) }
+                    try {
+                        discovery.start() // A stopped presentation cannot acquire radio work.
+                        discovery.foreground()
+                        assertEquals(0, starts)
+                        assertTrue(busy.isEmpty())
+                        assertEquals(ConnectionState.CONNECTING, controller.state)
+                        assertTrue(worker.isActive)
+                        discovery.start()
+                        discovery.cancel()
+                        assertEquals(1, starts)
+                        assertEquals(listOf(true, false), busy)
+                        discovery.cancel()
+                        assertEquals(listOf(true, false), busy)
+                        assertEquals(ConnectionState.CONNECTING, controller.state)
+                        assertTrue(worker.isActive)
+                        assertFalse(app.sessionPeers.permits(foreign))
+                    } finally { models.clear() }
+                    model.cancel()
+                }
+                "disconnect" -> withContext(Dispatchers.Main) { controller.disconnect() }
+                else -> error("Unknown native owner case: $action")
             }
             withTimeout(3000) { while (!app.sessionPeers.permits(foreign)) delay(10) }
             assertTrue(worker.isCancelled)

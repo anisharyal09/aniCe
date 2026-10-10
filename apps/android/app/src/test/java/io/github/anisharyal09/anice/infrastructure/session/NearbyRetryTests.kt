@@ -8,7 +8,7 @@ import org.junit.Test
 class NearbyRetryTests {
   @Test fun boundedDelaysJitterAndEphemeralExclusions() {
     val policy = NearbyRetry()
-    assertEquals(listOf(2000L, 5000L, 15000L, 30000L, 60000L, 60000L), List(6) { policy.next(0.0) })
+    assertEquals(listOf(2000L, 5000L, 15000L, 30000L, 60000L, 90000L, 90000L), List(7) { policy.next(0.0) })
     policy.reset()
     assertEquals(1800L, policy.next(-0.1))
     assertEquals(5500L, policy.next(0.1))
@@ -22,6 +22,21 @@ class NearbyRetryTests {
     policy.reject("candidate", 60001); policy.reset()
     assertTrue(policy.exclusions(60002).isEmpty())
     assertEquals(2000L, policy.next(0.0))
+  }
+  @Test fun positiveJitterCannotExceedNinetySecondsAfterSaturationOrReset() {
+    val cases = listOf(-0.1, 0.0, 0.1)
+    assertEquals(3, cases.size)
+    cases.forEach { jitter ->
+      val policy = NearbyRetry()
+      val nominal = listOf(2000L, 5000L, 15000L, 30000L, 60000L, 90000L)
+      assertEquals(6, nominal.size)
+      nominal.forEach { delay ->
+        assertEquals(minOf((delay * (1 + jitter)).toLong(), 90000L), policy.next(jitter))
+      }
+      repeat(16) { assertEquals(if (jitter < 0) 81000L else 90000L, policy.next(jitter)) }
+      policy.reset()
+      assertEquals((2000 * (1 + jitter)).toLong(), policy.next(jitter))
+    }
   }
   @Test fun renewalMarginsCoalescingAndRoleValidation() {
     val threshold = (1uL shl 20) - 1024uL

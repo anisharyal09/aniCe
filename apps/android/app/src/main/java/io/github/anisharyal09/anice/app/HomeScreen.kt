@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents trusted-device actions and the unpaired entry point without transport diagnostics.
 package io.github.anisharyal09.anice.app
 
 import androidx.compose.foundation.layout.*
@@ -16,11 +17,9 @@ import androidx.compose.ui.unit.dp
 fun HomeScreen(
   hasTrustedDevices: Boolean,
   onPair: () -> Unit,
-  onCheck: () -> Unit,
   sessions: @Composable () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  var menu by remember { mutableStateOf(false) }
   Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
       Modifier.widthIn(max = 640.dp)
@@ -36,27 +35,10 @@ fun HomeScreen(
           style = MaterialTheme.typography.titleMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Box {
-          TextButton(onClick = { menu = true }, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Manage")
+        if (hasTrustedDevices)
+          TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Manage devices")
           }
-          DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(
-              text = { Text(if (hasTrustedDevices) "Pair or manage devices" else "Pair your Mac") },
-              onClick = {
-                menu = false
-                onPair()
-              },
-            )
-            DropdownMenuItem(
-              text = { Text("Check nearby discovery") },
-              onClick = {
-                menu = false
-                onCheck()
-              },
-            )
-          }
-        }
       }
       if (hasTrustedDevices) sessions()
       else {
@@ -67,7 +49,7 @@ fun HomeScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          Button(onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) {
+          OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("Pair your Mac")
           }
         }

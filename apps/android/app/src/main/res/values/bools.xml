@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Disables companion background ownership until its platform/build gate enables it. -->
+<!-- Disables companion background ownership on API < 31 where CDM presence APIs are unavailable. -->
 <resources><bool name="companion_probe_supported">false</bool></resources>

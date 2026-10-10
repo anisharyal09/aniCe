@@ -1,11 +1,87 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies native session security and presentation readiness against fixtures and adversarial transitions.
 import CryptoKit
+import AppKit
 import Foundation
 import XCTest
 
 @testable import aniCe
 
 final class SessionTests: XCTestCase, @unchecked Sendable {
+  func testSessionFailuresExposeReadableReasonsInsteadOfNSErrorCodes() {
+    let failures: [SessionFailure] = [.malformed, .unsupportedProfile, .untrustedPeer, .authentication,
+      .state, .cancelled, .expired, .controlTimeout]
+    XCTAssertEqual(failures.count, 8)
+    XCTAssertEqual(Set(failures.map(\.localizedDescription)).count, 8)
+    for failure in failures {
+      XCTAssertFalse(failure.localizedDescription.contains("SessionFailure"))
+      XCTAssertFalse(failure.localizedDescription.contains("couldn’t be completed"))
+      XCTAssertFalse(failure.localizedDescription.isEmpty)
+    }
+    XCTAssertEqual(SessionFailure.cancelled.localizedDescription, "The connection closed")
+    XCTAssertEqual(SessionFailure.authentication.localizedDescription, "Device authentication failed")
+  }
+  @MainActor func testCompanionContextMenuKeepsLeftClickDistinctAndRoutesWithoutSessionActions() {
+    XCTAssertTrue(CompanionHost.showsContextMenu(eventType: .rightMouseUp, modifiers: []))
+    XCTAssertTrue(CompanionHost.showsContextMenu(eventType: .leftMouseUp, modifiers: [.control]))
+    XCTAssertFalse(CompanionHost.showsContextMenu(eventType: .leftMouseUp, modifiers: []))
+    XCTAssertFalse(CompanionHost.showsContextMenu(eventType: nil, modifiers: []))
+    XCTAssertFalse(CompanionHost.showsContextMenu(eventType: .leftMouseUp, modifiers: [.shift]))
+    let target = NSObject()
+    let items = CompanionHost.makeMenu(target: target).items
+    XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
+      ["Open aniCe", "Connection details", "Manage devices", "Quit aniCe"])
+    XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
+    for item in items where !item.isSeparatorItem {
+      XCTAssertTrue(item.target === target)
+      XCTAssertNotNil(item.action)
+    }
+    XCTAssertEqual(Set(items.compactMap(\.action)).count, 4)
+  }
+
+  func testConnectionSummaryRequiresReadinessAcrossBothTransports() {
+    let states = ["Disconnected", "Connecting", "Secured", "Failed"]
+    var connected = 0, unready = 0
+    for bluetooth in states {
+      for lan in states {
+        let result = ConnectionPresentation(bluetooth: bluetooth, lan: lan,
+          bluetoothAllowing: bluetooth == "Connecting" || bluetooth == "Secured",
+          lanAllowing: lan == "Connecting" || lan == "Secured", automatic: false)
+        if bluetooth == "Secured" || lan == "Secured" {
+          connected += 1
+          XCTAssertTrue(result.connected)
+          XCTAssertEqual(result.action, .disconnect)
+          XCTAssertEqual(result.summary.contains("Bluetooth"), bluetooth == "Secured")
+          XCTAssertEqual(result.summary.contains("Local network"), lan == "Secured")
+        } else {
+          unready += 1
+          XCTAssertFalse(result.connected)
+          XCTAssertFalse(result.summary.hasPrefix("Connected"))
+        }
+      }
+    }
+    XCTAssertEqual(connected, 7)
+    XCTAssertEqual(unready, 9)
+  }
+
+  func testConnectionActionPreservesWaitingAndSecondaryFailure() {
+    func presentation(_ bluetooth: String = "Disconnected", _ lan: String = "Disconnected",
+      bleAllowing: Bool = false, lanAllowing: Bool = false, automatic: Bool = false) -> ConnectionPresentation {
+      ConnectionPresentation(bluetooth: bluetooth, lan: lan, bluetoothAllowing: bleAllowing,
+        lanAllowing: lanAllowing, automatic: automatic)
+    }
+    XCTAssertEqual(presentation().action, .allow)
+    XCTAssertEqual(presentation("Failed").action, .retry)
+    XCTAssertEqual(presentation(bleAllowing: true).summary, "Waiting for phone")
+    XCTAssertEqual(presentation("Connecting", bleAllowing: true).action, .stop)
+    XCTAssertEqual(presentation(automatic: true).summary, "Waiting nearby")
+    XCTAssertEqual(presentation(automatic: true).action, .stop)
+    XCTAssertEqual(presentation("Failed", "Secured", lanAllowing: true).summary, "Connected · Local network")
+    XCTAssertEqual(presentation("Secured", "Failed", bleAllowing: true).action, .disconnect)
+    XCTAssertEqual(presentation("Secured", "Connecting", bleAllowing: true, lanAllowing: true).summary,
+      "Connected · Bluetooth")
+  }
+
   func root(_ name: String = "session-vectors") throws -> [String: Any] {
     let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "json"))
     return try XCTUnwrap(

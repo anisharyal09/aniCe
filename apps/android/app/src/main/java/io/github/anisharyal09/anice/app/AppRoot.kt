@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Routes existing device, pairing and diagnostic presentations while preserving native lifecycle ownership.
 package io.github.anisharyal09.anice.app
 
 import androidx.activity.compose.BackHandler
@@ -11,6 +12,9 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -27,6 +31,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import android.content.Intent
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -37,6 +44,7 @@ import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import io.github.anisharyal09.anice.features.pairing.PairingScreen
 import io.github.anisharyal09.anice.features.pairing.PairingViewModel
+import io.github.anisharyal09.anice.features.pairing.completedPairingPeer
 import io.github.anisharyal09.anice.features.session.SessionPanel
 import io.github.anisharyal09.anice.features.session.SessionViewModel
 
@@ -52,11 +60,26 @@ fun AppRoot(
         if (identity.state.snapshot != null) pairing.refresh()
     }
     var pairingScreen by rememberSaveable { mutableStateOf(false) }
+    var automaticAfterPairing by rememberSaveable { mutableStateOf(true) }
+    val context = LocalContext.current
     var details by rememberSaveable { mutableStateOf(false) }
     var nearby by rememberSaveable { mutableStateOf(false) }
     val nearbyOwner = io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(LocalContext.current)
-    LaunchedEffect(pairingScreen, nearby) {
-        if (pairingScreen || nearby) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
+    LaunchedEffect(pairing.busy) {
+        if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
+    }
+    LaunchedEffect(pairingScreen, pairing.phase, pairing.peers, identity.state.snapshot?.identity?.fingerprint) {
+        val paired = completedPairingPeer(pairing.phase, pairing.peer,
+            identity.state.snapshot?.identity?.fingerprint, pairing.peers)
+        if (pairingScreen && paired != null) {
+            pairingScreen = false
+            pairing.cancel()
+            if (automaticAfterPairing && nearbyOwner.available) {
+                context.startActivity(Intent().setClassName(context.packageName,
+                    "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
+                    .putExtra("peer", paired.deviceId).putExtra("enable", true))
+            } else session.request(paired)
+        }
     }
     val snackbars = remember { SnackbarHostState() }
     BackHandler(details || nearby || pairingScreen) {
@@ -77,22 +100,19 @@ fun AppRoot(
                     Text(stringResource(if (details) R.string.this_device else R.string.app_name))
                 },
                 navigationIcon = {
-                    if (details || nearby || pairingScreen)
-                        TextButton(
-                            onClick = {
-                                pairing.cancel()
-                                pairingScreen = false
-                                discovery.cancel()
-                                details = false
-                                nearby = false
-                            }
-                        ) {
-                            Text(stringResource(R.string.back))
+                    if (details || nearby || pairingScreen) {
+                        IconButton(onClick = {
+                            if (pairingScreen) { pairing.cancel(); pairingScreen = false }
+                            else if (nearby) { discovery.cancel(); nearby = false }
+                            else details = false
+                        }) {
+                            Icon(painterResource(R.drawable.ic_back), contentDescription = stringResource(R.string.back))
                         }
+                    }
                 },
                 actions = {
                     if (!details)
-                        TextButton(
+                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             onClick = {
                                 pairing.cancel()
                                 pairingScreen = false
@@ -107,7 +127,7 @@ fun AppRoot(
                 colors =
                     TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
                     ),
             )
         },
@@ -122,23 +142,20 @@ fun AppRoot(
             modifier = content.fillMaxSize(),
         ) { screen ->
             if (screen == 3) {
-                PairingScreen(pairing)
+                PairingScreen(pairing, nearbyOwner.available, automaticAfterPairing) { automaticAfterPairing = it }
             } else if (screen == 1) {
-                DeviceIdentityScreen(identity.state, snackbars, identity::retry, identity::reset)
+                DeviceIdentityScreen(identity.state, snackbars, identity::retry, identity::reset, onRename = identity::rename)
             } else if (screen == 2) {
                 DiscoveryScreen(discovery)
             } else {
                 HomeScreen(
                     hasTrustedDevices = pairing.peers.isNotEmpty(),
                     onPair = {
-                        session.cancel()
                         pairingScreen = true
                     },
-                    onCheck = {
-                        session.cancel()
-                        nearby = true
+                    sessions = {
+                        SessionPanel(session, pairing.peers, onDiscoveryCheck = { nearby = true })
                     },
-                    sessions = { SessionPanel(session, pairing.peers) },
                 )
             }
         }
