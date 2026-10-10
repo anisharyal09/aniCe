@@ -44,7 +44,7 @@ app/
   src/androidTest/                  Native Keystore, session, LAN, and ownership tests
   src/debug/                        API 31+ companion ownership build gate
   src/testDebug/                    Probe presence-state unit test
-  src/androidTestDebug/             Native probe checks and opt-in radio test
+  src/androidTestDebug/             Native probe checks and opt-in radio/connected-idle tests
   build.gradle.kts                  App configuration and dependencies
 gradle/wrapper/                     Gradle wrapper configuration
 build.gradle.kts                    Build plugins

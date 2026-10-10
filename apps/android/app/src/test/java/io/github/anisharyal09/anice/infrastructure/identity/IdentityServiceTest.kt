@@ -213,6 +213,22 @@ class IdentityServiceTest {
         service().resetIdentity()
         assertEquals(1, keys.values.size)
     }
+    @Test fun resetInvalidatesBeforeStorageAndRetainsDurableIdentityOnFailure() {
+        val service = service()
+        val original = service.getOrCreateIdentity()
+        var invalidations = 0
+        service.onInvalidated = {
+            invalidations++
+            assertEquals(original.identity, metadata.value!!.active!!.identity)
+        }
+        metadata.failWrite = true
+        expectError(IdentityErrorKind.STORAGE_UNAVAILABLE) { service.resetIdentity() }
+        assertEquals(1, invalidations)
+        assertEquals(original.identity, metadata.value!!.active!!.identity)
+        metadata.failWrite = false
+        assertEquals(original, service.getOrCreateIdentity())
+        assertEquals(1, keys.values.size)
+    }
     @Test fun resetChangesIdentityOnlyAfterCommit() {
         val original = service().getOrCreateIdentity()
         metadata.failCommit = true

@@ -7,6 +7,8 @@ import Foundation
   private let socket: NWConnection
   private var framing = LanFraming()
   private var budget = GattQueueBudget()
+  var changed: (() -> Void)?
+  var nextDeadline: TimeInterval? { framing.nextDeadline }
   private var closed = false
   private var interfaces: Set<Int>?
   private var nextWrite = 0
@@ -68,7 +70,7 @@ import Foundation
     guard !closed else { throw SessionFailure.cancelled }
     let bytes = try LanFraming.encode(envelope)
     try budget.reserve(envelope.count)
-    defer { budget.release(envelope.count) }
+    defer { budget.release(envelope.count); changed?() }
     let token = nextWrite
     nextWrite += 1
     try await withTaskCancellationHandler {
@@ -117,6 +119,7 @@ import Foundation
             try self.framing.end()
             throw SessionFailure.cancelled
           }
+          self.changed?()
           self.receive()
         } catch { self.fail(error) }
       }

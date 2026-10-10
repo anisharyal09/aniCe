@@ -17,6 +17,8 @@ class GattReassembler(
   private val header
     get() = if (version == 1) 7 else 9
 
+  val nextDeadline: Long? get() = (started + 10000).takeIf { buffer.isNotEmpty() }
+
   fun tick() {
     if (buffer.isNotEmpty() && now() - started >= 10000)
       throw SessionException(SessionFailure.EXPIRED)

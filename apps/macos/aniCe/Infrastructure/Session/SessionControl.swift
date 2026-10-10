@@ -112,6 +112,16 @@ struct SessionLiveness {
       try requestRenewal(message.value) // Coalesce local and remote threshold races.
     }
   }
+  var nextDeadline: Int64? {
+    guard started else { return nil }
+    var deadlines = [Int64]()
+    if support == nil || pending?.kind == .helloAck { deadlines.append(compatibilityDeadline) }
+    if let pongDeadline { deadlines.append(pongDeadline) }
+    if !responder, support == true, renewalReason == nil, pending == nil, outstanding == nil {
+      deadlines.append(lastActivity + 60000)
+    }
+    return deadlines.min()
+  }
   mutating func poll(_ now: Int64) throws {
     guard started else { return }
     if support == nil && now >= compatibilityDeadline { support = false; pending = nil }

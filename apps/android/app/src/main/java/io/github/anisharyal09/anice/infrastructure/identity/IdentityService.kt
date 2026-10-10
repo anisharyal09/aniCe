@@ -50,7 +50,11 @@ class IdentityService(
     private val deviceName: () -> String,
     private val aliasPrefix: String = "anice.identity.v1.",
 ) {
+    @Volatile var onInvalidated: () -> Unit = {}
+    @Volatile internal var identityLoads = 0L
+        private set
     @Synchronized fun getOrCreateIdentity(): IdentitySnapshot {
+        identityLoads++
         var journal = metadata.read()
         journal?.let(::validateJournal)
         if (journal == null) {
@@ -90,6 +94,7 @@ class IdentityService(
 
     /** Called only after the UI confirms replacement. */
     @Synchronized fun resetIdentity(): IdentitySnapshot {
+        onInvalidated()
         val previous = try { metadata.read()?.also(::validateJournal) } catch (error: IdentityException) {
             if (error.kind != IdentityErrorKind.INCONSISTENT) throw error
             null

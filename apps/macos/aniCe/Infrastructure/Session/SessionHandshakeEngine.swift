@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns pinned EDHOC authentication and export with native identity validation at every trust boundary.
 import CryptoKit
 import Foundation
 import Security
@@ -72,6 +73,11 @@ actor SessionHandshakeEngine {
   }
   private func ensure(_ op: Int) throws {
     guard generation == op, stage != .closed else { throw SessionFailure.cancelled }
+  }
+  var nextDeadline: TimeInterval? { stage == .complete || stage == .closed ? nil : started + 30 }
+  func checkTime() throws {
+    try ensure(generation)
+    guard stage == .complete || now() - started < 30 else { throw SessionFailure.expired }
   }
   private func check(_ op: Int) async throws {
     try ensure(op)

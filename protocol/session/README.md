@@ -75,7 +75,7 @@ PRK_exporter = KDF(PRK_out, 10, h'', 32)
 
 AEAD ciphertexts contain the ciphertext followed by the tag and omit the nonce. Message-4 plaintext must be empty. Completion exposes only a derived exporter operation; the Initiator cannot export before verifying message 4. The Responder can export after authenticating message 3 and composing message 4. Neither completion state implies application readiness or remote delivery.
 
-The engines permit a single operation. Repeated/unexpected messages terminate the attempt. A signing result must match the initial device ID, fingerprint, key and operation generation. Recheck active trust and local identity before completion/export. The 30-second handshake deadline is monotonic; callers must schedule `checkDeadline` to erase idle attempts, not rely only on incoming messages.
+The engines permit a single operation. Repeated/unexpected messages terminate the attempt. A signing result must match the initial device ID, fingerprint, key and operation generation. Recheck active trust and local identity before completion/export. The 30-second handshake deadline is monotonic; connection owners schedule the earliest absolute handshake/readiness deadline to erase idle attempts, rather than relying only on incoming messages. Deadline-only maintenance avoids native storage reads; authenticated operations retain identity/trust validation.
 
 ## Errors and privacy
 

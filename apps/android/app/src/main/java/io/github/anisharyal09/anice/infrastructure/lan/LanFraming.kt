@@ -19,6 +19,8 @@ class LanFraming(private val now: () -> Long = { System.nanoTime() / 1_000_000 }
         throw SessionException(reason)
     }
 
+    val nextDeadline: Long? get() = (started + 10000).takeIf { !failed && used != 0 }
+
     fun tick() {
         if (failed) throw SessionException(SessionFailure.CANCELLED)
         if (used != 0 && now() - started >= 10000) reject(SessionFailure.EXPIRED)

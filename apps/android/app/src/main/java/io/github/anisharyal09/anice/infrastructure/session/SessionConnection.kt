@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns authenticated envelope ordering and deadline-driven transport-independent session maintenance.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import kotlinx.coroutines.sync.Mutex
@@ -15,15 +16,16 @@ class SessionConnection(
   controls: Boolean = false,
   private val now: () -> Long = { System.nanoTime() / 1_000_000 },
   @Volatile private var renew: Boolean = false,
+  private val changed: () -> Unit = {},
 ) {
   private val liveness = if (controls) SessionLiveness(responder) else null
   val controlSupport get() = liveness?.support
   val renewalReason get() = if (responder) null else liveness?.renewalReason
-  fun enableRenewal() { if (!closed) renew = true }
+  fun enableRenewal() { if (!closed) { renew = true; changed() } }
   private val ownership = Any()
   private val operation = Mutex()
   @Volatile private var closed = false
-  private var channel: SecureSession? = null
+  @Volatile private var channel: SecureSession? = null
   @Volatile
   var closedByPeer = false
     private set
@@ -40,6 +42,20 @@ class SessionConnection(
   val isClosed
     get() = closed
 
+  suspend fun nextDeadline(includeMaintenance: Boolean = true): Long? {
+    if (closed) return null
+    val available = operation.tryLock()
+    val policy = available && includeMaintenance
+    try {
+      return listOfNotNull(
+        deadline.takeIf { it != 0L },
+        handshake.nextDeadline(),
+        channel?.nextDeadline(policy && renew && liveness?.support == true && liveness.renewalReason == null),
+        if (policy) liveness?.nextDeadline() else liveness?.pendingPongDeadline,
+      ).minOrNull()
+    } finally { if (available) operation.unlock() }
+  }
+
   suspend fun start() =
     operation.withLock {
       try {
@@ -48,7 +64,7 @@ class SessionConnection(
       } catch (e: Exception) {
         close()
         throw e
-      }
+      } finally { changed() }
     }
 
   suspend fun receive(envelope: ByteArray) =
@@ -114,7 +130,7 @@ class SessionConnection(
       } catch (e: Exception) {
         close()
         throw e
-      }
+      } finally { changed() }
     }
 
   private suspend fun makeChannel() {
@@ -144,6 +160,7 @@ class SessionConnection(
       return block()
     } finally {
       operation.unlock()
+      changed()
     }
   }
 
@@ -162,11 +179,27 @@ class SessionConnection(
     }
   }
 
-  suspend fun tick() =
-    operation.withLock {
+  @Volatile internal var maintenanceRuns = 0L
+    private set
+
+  internal fun checkDeadlines() {
+    // Authentication may suspend in a signer; retirement and hard deadlines cannot wait for it.
+    try {
       requireOpen()
+      if (timedOut()) throw SessionException(SessionFailure.EXPIRED)
+      channel?.checkDeadlines() ?: handshake.checkTime()
+      liveness?.checkPongDeadline(now())
+    } catch (e: SessionException) { retire(); throw e }
+  }
+
+  suspend fun tick() {
+    checkDeadlines()
+    if (!operation.tryLock()) return
+    try {
+      maintenanceRuns++
       try {
-        channel?.tick() ?: handshake.checkDeadline()
+        if (timedOut()) throw SessionException(SessionFailure.EXPIRED)
+        channel?.checkDeadlines() ?: handshake.checkTime()
         if (renew) channel?.renewalReason()?.let { liveness?.requestRenewal(it) }
         liveness?.poll(now())
         flushControl()
@@ -174,13 +207,14 @@ class SessionConnection(
         close()
         throw e
       }
-    }
+    } finally { operation.unlock() }
+  }
 
   private suspend fun flushControl() {
     val message = liveness?.pending ?: return
     val ch = channel ?: return
     val bytes = message.encode()
-    // Queue refusal is recoverable only before sealing; retain one logical control for a later tick.
+    // Queue refusal is recoverable only before sealing; retain one logical control for a capacity event.
     if (!capacity(bytes.size + 31)) return
     requireOpen()
     liveness.issuing(message, now())
@@ -207,6 +241,7 @@ class SessionConnection(
       channel?.close()
       channel = null
       handshake.invalidate()
+      changed()
     }
 
   suspend fun close() {
@@ -216,5 +251,27 @@ class SessionConnection(
 
   private fun requireOpen() {
     if (closed) throw SessionException(SessionFailure.CANCELLED)
+  }
+}
+
+/** One conflated event lane prevents lost wakes while a deadline snapshot is being computed. */
+internal suspend fun awaitSessionDeadline(
+  events: kotlinx.coroutines.channels.Channel<Unit>, deadline: Long?, now: () -> Long,
+): Boolean {
+  if (deadline == null) { events.receive(); return true }
+  return kotlinx.coroutines.withTimeoutOrNull((deadline - now()).coerceAtLeast(1)) { events.receive(); true } ?: false
+}
+
+/** Crypto completion recalculates deadlines without recursively requesting another crypto operation. */
+internal class SessionMaintenance {
+  private val events = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+  private val requested = java.util.concurrent.atomic.AtomicBoolean()
+  fun request() { deferWork(); resnapshot() }
+  fun deferWork() { requested.set(true) }
+  fun resnapshot() { events.trySend(Unit) }
+  suspend fun await(deadline: Long?, now: () -> Long): Boolean {
+    val event = awaitSessionDeadline(events, deadline, now)
+    val work = requested.getAndSet(false)
+    return !event || work
   }
 }

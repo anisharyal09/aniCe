@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns authenticated envelope ordering and deadline-driven transport-independent session maintenance.
 import Foundation
 
 /// Owns EDHOC/envelope ordering and readiness; transport queues remain outside authentication.
@@ -21,9 +22,11 @@ actor SessionConnection {
   private var liveness: SessionLiveness?
   private let now: @Sendable () -> Int64
   private var renew: Bool
+  private let changed: @Sendable () -> Void
+  private var deadline: Int64?
   var controlSupport: Bool? { liveness?.support }
   var renewalReason: Int64? { responder ? nil : liveness?.renewalReason }
-  func enableRenewal() { if !closed { renew = true } }
+  func enableRenewal() { if !closed { renew = true; changed() } }
   init(
     handshake: SessionHandshakeEngine, responder: Bool,
     capacity: @escaping @Sendable (Int) async -> Bool,
@@ -32,7 +35,8 @@ actor SessionConnection {
     secured: @escaping @Sendable () async -> Void,
     controls: Bool = false,
     now: @escaping @Sendable () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) },
-    renew: Bool = false
+    renew: Bool = false,
+    changed: @escaping @Sendable () -> Void = {}
   ) {
     self.handshake = handshake
     self.responder = responder
@@ -42,13 +46,26 @@ actor SessionConnection {
     self.secured = secured
     self.now = now
     self.renew = renew
+    self.changed = changed
+    deadline = now() + 30000
     liveness = controls ? SessionLiveness(responder: responder) : nil
     expected = responder ? 1 : 2
   }
   private func ensure(_ op: Int) throws {
     guard !closed, op == generation else { throw SessionFailure.cancelled }
   }
+  func nextDeadline() async -> Int64? {
+    guard !closed, !processing else { return nil }
+    let op = generation
+    let channelDeadline = await channel?.nextDeadline(
+      renew: renew && liveness?.support == true && liveness?.renewalReason == nil)
+    let handshakeDeadline = await handshake.nextDeadline
+    guard op == generation, !closed else { return nil }
+    return [handshakeDeadline.map { Int64($0 * 1000) }, deadline, channelDeadline.map { Int64($0 * 1000) }, liveness?.nextDeadline]
+      .compactMap { $0 }.min()
+  }
   func start() async throws {
+    defer { changed() }
     let op = generation
     do {
       try ensure(op)
@@ -66,7 +83,7 @@ actor SessionConnection {
       throw SessionFailure.state
     }
     processing = true
-    defer { if op == generation { processing = false } }
+    defer { if op == generation { processing = false }; changed() }
     do {
       try ensure(op)
       let (kind, payload) = try SessionEnvelope.decode(envelope)
@@ -82,10 +99,12 @@ actor SessionConnection {
         case .ready:
           try await channel.send(.readyAck)
           try ensure(op)
+          deadline = nil
           await secured()
           try ensure(op)
           try liveness?.start(now())
         case .readyAck:
+          deadline = nil
           await secured()
           try ensure(op)
           try liveness?.start(now())
@@ -135,6 +154,7 @@ actor SessionConnection {
     do {
       try ensure(op)
       channel = ch
+      deadline = now() + 10000
     } catch {
       await ch.close()
       throw error
@@ -148,6 +168,7 @@ actor SessionConnection {
     return peer
   }
   func sendData(_ bytes: Data) async throws {
+    defer { changed() }
     let op = generation
     do {
       try ensure(op)
@@ -161,13 +182,17 @@ actor SessionConnection {
       throw error
     }
   }
+  private(set) var maintenanceRuns = 0
   func tick() async throws {
+    defer { changed() }
     // Actor reentrancy must not let a health check race a suspended authenticated close.
     if processing { return }
+    maintenanceRuns += 1
     let op = generation
     do {
       try ensure(op)
-      if let channel { try await channel.tick() } else { try await handshake.checkDeadline() }
+      if let deadline, now() >= deadline { throw SessionFailure.expired }
+      if let channel { try await channel.checkDeadlines() } else { try await handshake.checkTime() }
       try ensure(op)
       if renew, let reason = await channel?.renewalReason() {
         try ensure(op)
@@ -214,5 +239,29 @@ actor SessionConnection {
     if await old?.closedByPeer == true { closedByPeer = true }
     await old?.close()
     await handshake.close()
+    changed()
+  }
+}
+
+@MainActor final class SessionDeadlineWait {
+  private var task: Task<Void, Never>?
+  private var revision = 0
+  private(set) var deadline: TimeInterval?
+  func cancel() { revision += 1; task?.cancel(); task = nil; deadline = nil }
+  func schedule(
+    now: @escaping () -> TimeInterval,
+    deadline: @escaping () async -> TimeInterval?, fire: @escaping () -> Void
+  ) {
+    cancel()
+    let token = revision
+    task = Task { [weak self] in
+      guard let due = await deadline(), let self, token == self.revision else { return }
+      self.deadline = due
+      do { try await Task.sleep(for: .seconds(max(0, due - now()))) } catch { return }
+      guard !Task.isCancelled, token == self.revision else { return }
+      self.deadline = nil
+      self.task = nil // Firing may rearm the wait; it must not cancel the current operation.
+      fire()
+    }
   }
 }

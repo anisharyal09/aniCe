@@ -799,11 +799,8 @@ extension PairingTests {
     defer { model.cancel() }
     model.allow()
     try await waitFor { radio.started }
-    func maintenanceTimer() throws -> Timer {
-      try XCTUnwrap(Mirror(reflecting: model).children.first { $0.label == "_timer" }?.value as? Timer)
-    }
-    let setupTimer = try maintenanceTimer()
-    XCTAssertEqual(setupTimer.timeInterval, 0.2)
+    try await waitFor { model.maintenanceDeadline != nil }
+    XCTAssertGreaterThan(try XCTUnwrap(model.maintenanceDeadline) - ProcessInfo.processInfo.systemUptime, 100)
     XCTAssertTrue(radio.sessionAdmitted?() ?? false)
     XCTAssertFalse(radio.sessionAdmitted?() ?? true)
     let client = try SessionHandshakeEngine(
@@ -836,18 +833,18 @@ extension PairingTests {
     XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, ready)) ?? false)
     if failReadyAck {
       try await waitFor { model.state == "Failed" }
-      XCTAssertEqual(try maintenanceTimer().timeInterval, 0.2)
-      XCTAssertFalse(setupTimer.isValid)
+      try await waitFor { model.maintenanceDeadline != nil }
+      XCTAssertGreaterThan(try XCTUnwrap(model.maintenanceDeadline) - ProcessInfo.processInfo.systemUptime, 100)
       XCTAssertTrue(radio.sent.isEmpty)
       XCTAssertEqual(model.receivedChecks, 0)
       let stage = await channel.stage
       XCTAssertEqual(stage, .readySent)
     } else {
       try await waitFor { model.state == "Secured" }
-      let securedTimer = try maintenanceTimer()
-      XCTAssertEqual(securedTimer.timeInterval, 1)
-      XCTAssertFalse(setupTimer.isValid)
-      XCTAssertTrue(securedTimer.isValid)
+      try await waitFor { model.maintenanceDeadline != nil }
+      let wait = try XCTUnwrap(model.maintenanceDeadline) - ProcessInfo.processInfo.systemUptime
+      XCTAssertGreaterThan(wait, 8) // Legacy control compatibility remains bounded at ten seconds.
+      XCTAssertLessThanOrEqual(wait, 10.1)
       XCTAssertTrue(model.status.contains(android.deviceName))
       let ack = try SessionEnvelope.decode(try XCTUnwrap(radio.sent.first))
       XCTAssertEqual(ack.0, 6)
@@ -864,11 +861,12 @@ extension PairingTests {
       XCTAssertEqual(received.0, .data)
       XCTAssertEqual(received.1, Data("aniCe connection check".utf8))
       model.cancel()
-      XCTAssertFalse(securedTimer.isValid)
+      XCTAssertNil(model.maintenanceDeadline)
       radio.started = false
       model.allow()
       try await waitFor { radio.started }
-      XCTAssertEqual(try maintenanceTimer().timeInterval, 0.2)
+      try await waitFor { model.maintenanceDeadline != nil }
+      XCTAssertGreaterThan(try XCTUnwrap(model.maintenanceDeadline) - ProcessInfo.processInfo.systemUptime, 100)
       XCTAssertEqual(model.state, "Disconnected")
     }
     XCTAssertEqual(try encoder.encode(memory.record), savedIdentity)
@@ -960,6 +958,43 @@ extension PairingTests {
     XCTAssertEqual(try encoder.encode(memory.record), savedIdentity)
     model.quit(); model.wake(); XCTAssertFalse(model.allowing)
   }
+  func testServiceRevocationClosesPendingBleOwnerAndIgnoresOtherJournals() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "revocation.test.")
+    let mac = try await identity.publicIdentity(), key = P256.Signing.PrivateKey()
+    let phone = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone test",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation),
+    ]))
+    let hash = Data(repeating: 9, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: phone, localFingerprint: mac.fingerprint,
+      method: .qr, pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: phone.deviceId, hash: hash,
+      receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let radio = SessionRadioFake(), peers = SessionPeerReservation()
+    let ble = MacSessionModel(identity: identity, adapter: radio, store: { trust }, peers: peers)
+    ble.selectedPeer = phone
+    ble.allow()
+    try await waitFor { radio.started }
+    XCTAssertTrue(ble.allowing)
+    XCTAssertEqual(peers.peer, phone)
+    let stale = try XCTUnwrap(radio.sessionAdmitted)
+    let unrelated = try PeerTrustStore(url: directory.appendingPathComponent("other.json"))
+    try unrelated.remove(phone.deviceId)
+    XCTAssertTrue(ble.allowing)
+    // A distinct instance of the owning journal still invalidates admission before its durable write.
+    let sameJournal = try PeerTrustStore(url: trust.location)
+    try sameJournal.remove(phone.deviceId)
+    XCTAssertTrue(sameJournal.list(localFingerprint: mac.fingerprint).isEmpty)
+    XCTAssertFalse(ble.allowing)
+    XCTAssertFalse(stale())
+    XCTAssertNil(peers.peer)
+  }
+
   func testExpiryCancellationStaleCallbacksAndDurableState() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

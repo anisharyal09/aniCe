@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns native peripheral admission, ordered GATT messages and bounded session submissions.
 @preconcurrency import CoreBluetooth
 import Foundation
 import os
@@ -20,6 +21,13 @@ enum PeripheralMode { case idle, discovery, pairing, trustedSession }
   func sendSession(_ message: Data) async throws
   func resumeSessionAdvertising()
   func tickSessionTransport() throws
+  var sessionDeadline: TimeInterval? { get }
+  var sessionChanged: (() -> Void)? { get set }
+}
+
+extension SessionPeripheralAdapter {
+  var sessionDeadline: TimeInterval? { nil }
+  var sessionChanged: (() -> Void)? { get { nil } set {} }
 }
 
 /// Serialize advertising across windows because callbacks carry no application token.
@@ -143,6 +151,8 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     }
     guard op == channelGeneration else { throw SessionFailure.cancelled }
   }
+  var sessionChanged: (() -> Void)?
+  var sessionDeadline: TimeInterval? { sessionReceived.nextDeadline }
   func tickSessionTransport() throws { try sessionReceived.tick() }
   func resumeSessionAdvertising() {
     guard mode == .trustedSession, central == nil else { return }
@@ -171,7 +181,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
         return
       }
       let completed = queue.removeFirst()
-      if completed.logicalSize > 0 { queueBudget.release(completed.logicalSize) }
+      if completed.logicalSize > 0 { queueBudget.release(completed.logicalSize); sessionChanged?() }
     }
   }
   /// Give backpressured cancellation frames a bounded chance to reach Core Bluetooth.
@@ -260,6 +270,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
           if let message = try sessionReceived.receive(value) {
             guard sessionWrite?(message) == true else { throw SessionFailure.state }
           }
+          sessionChanged?()
         } else if let message = try received.receive(value) {
           guard trafficBudget + message.count <= 32768 else { throw PairingFailure.transport }
           trafficBudget += message.count

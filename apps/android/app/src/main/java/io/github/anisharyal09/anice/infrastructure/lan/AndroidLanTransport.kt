@@ -11,7 +11,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal class AndroidLanTransport(private val scope: CoroutineScope) {
+internal class AndroidLanTransport(private val scope: CoroutineScope, private val changed: () -> Unit = {}) {
     private val socket = Socket()
     private val budget = GattQueueBudget()
     private val writer = Mutex()
@@ -25,7 +25,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope) {
             if (closed) throw SessionException(SessionFailure.CANCELLED)
             endpoint.network.bindSocket(socket)
             socket.connect(java.net.InetSocketAddress(endpoint.address, endpoint.port), 5000)
-            socket.soTimeout = 200
+            socket.soTimeout = 0
             socket.tcpNoDelay = true
             if (closed) throw SessionException(SessionFailure.CANCELLED)
         }
@@ -55,6 +55,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope) {
         } finally {
             watchdog.cancel()
             synchronized(budget) { budget.release(envelope.size) }
+            changed()
         }
     }
 
@@ -65,6 +66,9 @@ internal class AndroidLanTransport(private val scope: CoroutineScope) {
             val buffer = ByteArray(4096)
             while (!closed) {
                 ensureActive()
+                socket.soTimeout = framing.nextDeadline?.let {
+                    (it - SystemClock.elapsedRealtime()).coerceIn(1, 10000).toInt()
+                } ?: 0
                 val count =
                     try {
                         input.read(buffer)

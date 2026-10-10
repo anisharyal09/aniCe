@@ -23,7 +23,7 @@ class LanSessionController(private val app: AniCeApplication) {
     private var receiver: Job? = null
     private var maintenance: Job? = null
     private var transport: AndroidLanTransport? = null
-    private var connection: SessionConnection? = null
+    @Volatile private var connection: SessionConnection? = null
     private var watching: ConnectivityManager.NetworkCallback? = null
     private var ready: CompletableDeferred<Unit>? = null
     var state by mutableStateOf(ConnectionState.DISCONNECTED)
@@ -143,7 +143,8 @@ class LanSessionController(private val app: AniCeApplication) {
                         if (op != generation) return@launch
                         val remaining = deadline - SystemClock.elapsedRealtime()
                         if (remaining <= 0) break
-                        val tcp = AndroidLanTransport(scope)
+                        val maintenanceEvents = SessionMaintenance()
+                        val tcp = AndroidLanTransport(scope) { maintenanceEvents.request() }
                         transport = tcp
                         try {
                             withTimeout(remaining) { tcp.connect(endpoint) }
@@ -166,6 +167,7 @@ class LanSessionController(private val app: AniCeApplication) {
                                     app.identityService,
                                     app.trustStore,
                                     peer,
+                                    SystemClock::elapsedRealtime,
                                 )
                             }
                         if (op != generation) {
@@ -199,6 +201,7 @@ class LanSessionController(private val app: AniCeApplication) {
                                 { signal.complete(Unit) },
                                 controls = true,
                                 now = { SystemClock.elapsedRealtime() },
+                                changed = { maintenanceEvents.request() },
                             )
                         connection = engine
                         receiver =
@@ -229,27 +232,34 @@ class LanSessionController(private val app: AniCeApplication) {
                             }
                         maintenance =
                             scope.launch(Dispatchers.IO) {
+                                var controlWork: Job? = null
+                                suspend fun failed(error: Exception) {
+                                    terminal.complete(error)
+                                    signal.completeExceptionally(error)
+                                    withContext(Dispatchers.Main.immediate) {
+                                        if (op == generation && connection === engine && state == ConnectionState.SECURED)
+                                            finish(error, engine)
+                                    }
+                                }
                                 try {
                                     while (isActive && op == generation) {
-                                        delay(
-                                            if (signal.isCompleted && !signal.isCancelled) 1000
-                                            else 200
-                                        )
-                                        engine.tick()
+                                        val requested = maintenanceEvents.await(
+                                            engine.nextDeadline(controlWork?.isActive != true), SystemClock::elapsedRealtime)
+                                        if (op != generation) break
+                                        engine.checkDeadlines()
+                                        if (requested) {
+                                            if (controlWork?.isActive == true) maintenanceEvents.deferWork()
+                                            else controlWork = launch {
+                                                try { engine.tick() }
+                                                catch (error: CancellationException) { throw error }
+                                                catch (error: Exception) { failed(error) }
+                                            }.also { work -> work.invokeOnCompletion { maintenanceEvents.resnapshot() } }
+                                        }
                                     }
                                 } catch (error: CancellationException) {
                                     throw error
                                 } catch (error: Exception) {
-                                    terminal.complete(error)
-                                    signal.completeExceptionally(error)
-                                    withContext(Dispatchers.Main.immediate) {
-                                        if (
-                                            op == generation &&
-                                                connection === engine &&
-                                                state == ConnectionState.SECURED
-                                        )
-                                            finish(error, engine)
-                                    }
+                                    failed(error)
                                 }
                             }
                         try {
@@ -321,6 +331,13 @@ class LanSessionController(private val app: AniCeApplication) {
     private fun failed(message: String) {
         cancel(message)
         state = ConnectionState.FAILED
+    }
+
+    internal fun securityInvalidated() {
+        // Retire keys synchronously even when the mutation originates outside a presentation.
+        val op = generation
+        connection?.retire()
+        scope.launch { if (op == generation) cancel("Trust or identity changed. Connect again.") }
     }
 
     fun checkConnection() {

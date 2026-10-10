@@ -211,7 +211,27 @@ internal constructor(
       action()
     }
 
+  internal fun nextDeadline(renew: Boolean = false): Long? = synchronized(stateLock) {
+    if (stage == ChannelStage.CLOSED) null else listOfNotNull(
+      started + 3600000,
+      (started + 10000).takeIf { stage != ChannelStage.SECURED },
+      activity + 120000,
+      (if (renewalReason() != null) now() else started + 3300000).takeIf { renew },
+    ).minOrNull()
+  }
+
+  internal fun checkDeadlines() {
+    try { checkTime(generation.get()) } catch (e: SessionException) { close(); throw e }
+  }
+
   private suspend fun check(op: Long) {
+    checkTime(op)
+    validate()
+    if (stage == ChannelStage.CLOSED || generation.get() != op)
+      throw SessionException(SessionFailure.CANCELLED)
+  }
+
+  private fun checkTime(op: Long) {
     if (stage == ChannelStage.CLOSED || generation.get() != op)
       throw SessionException(SessionFailure.CANCELLED)
     val time = now()
@@ -226,9 +246,6 @@ internal constructor(
       transition(op) { expiration = expired }
       throw SessionException(SessionFailure.EXPIRED)
     }
-    validate()
-    if (stage == ChannelStage.CLOSED || generation.get() != op)
-      throw SessionException(SessionFailure.CANCELLED)
   }
 
   private suspend fun <T> serializeSend(block: suspend () -> T): T {

@@ -78,12 +78,16 @@ class LanTests {
         result.forEach { assertArrayEquals(envelope, it) }
         var clock = 0L
         val slow = LanFraming { clock }
+        assertNull(slow.nextDeadline)
         slow.feed(1)
+        assertEquals(10000L, slow.nextDeadline)
         clock = 9999
         slow.feed(0)
+        assertEquals(10000L, slow.nextDeadline)
         clock = 10000
         reject(SessionFailure.EXPIRED) { slow.feed(0) }
         reject(SessionFailure.CANCELLED) { slow.end() }
+        assertNull(slow.nextDeadline)
         for (size in listOf(0, 1, 4097)) reject(SessionFailure.MALFORMED) {
             LanFraming.encode(ByteArray(size))
         }

@@ -9,7 +9,7 @@ import Observation
   var status = "Allow your trusted Android device to connect."
   var selectedPeer: DeviceIdentity?
   var allowing = false
-  var remaining = 0
+  var remaining: Int { allowing ? Int(ceil(max(0, (windowDeadline ?? now()) - now()))) : 0 }
   var receivedChecks = 0
   private(set) var automatic = false
   private var suspended = false
@@ -26,6 +26,7 @@ import Observation
   private let identity: IdentityService
   private let adapter: any SessionPeripheralAdapter
   private let store: @MainActor () async throws -> PeerTrustStore
+  private var trustLocation: URL?
   private var connection: SessionConnection?
   // Generation identifies the allow window; attempt separately identifies its one candidate.
   private var generation = 0
@@ -36,7 +37,8 @@ import Observation
   private var windowDeadline: TimeInterval? { admission.deadline }
   private var handshakeDeadline: TimeInterval?
   private var startupDeadline: TimeInterval?
-  private var timer: Timer?
+  @ObservationIgnored private let deadlineWait = SessionDeadlineWait()
+  var maintenanceDeadline: TimeInterval? { deadlineWait.deadline }
   private var checking = false
   private var work: Task<Void, Never>?
   private var inputCount = 0
@@ -57,6 +59,20 @@ import Observation
     self.store = store
     self.preferences = preferences
     self.wait = wait
+    for (name, object) in [(IdentityService.invalidated, identity as AnyObject?),
+                           (PeerTrustStore.invalidated, nil)] {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) {
+        [weak self] notification in
+        let location = (notification.object as? PeerTrustStore)?.location ?? (notification.object as? URL)
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          if name == PeerTrustStore.invalidated {
+            guard let location, location == self.trustLocation else { return }
+          }
+          self.retireTrust()
+        }
+      })
+    }
     observers.append(
       NSWorkspace.shared.notificationCenter.addObserver(
         forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
@@ -137,7 +153,7 @@ import Observation
     // Display-list loading is asynchronous and must not decide whether a window can start.
     let target = selectedPeer
     let op = generation
-    // The finite startup task owns the model; stored radio/timer callbacks remain weak.
+    // The finite startup task owns the model; stored radio/deadline callbacks remain weak.
     work = Task { [self] in
       do {
         let local = try await identity.publicIdentity()
@@ -170,11 +186,17 @@ import Observation
           if automatic { reopen(after: 2) }
           return
         }
+        trustLocation = trust.location
         installCallbacks(op, target: target)
+        adapter.sessionChanged = { [weak self] in
+          guard let self, op == self.generation else { return }
+          self.tick()
+        }
         startupDeadline = now() + 10
         adapter.begin(
           event: { [weak self] event in
             guard let self, op == self.generation, self.allowing else { return }
+            defer { self.startMaintenance() }
             switch event {
             case .permissionPending:
               self.startupDeadline = nil
@@ -209,7 +231,7 @@ import Observation
             else { return .unavailable }
             return .value(data)
           })
-        startMaintenance(0.2)
+        startMaintenance()
       } catch {
         if op == generation {
           automatic = false
@@ -226,6 +248,7 @@ import Observation
         return false
       }
       self.handshakeDeadline = self.now() + 30
+      self.startMaintenance()
       self.state = "Connecting"
       self.status = "Authenticating a trusted device…"
       let candidate = self.attempt
@@ -248,7 +271,12 @@ import Observation
             },
             data: { [weak self] bytes in await self?.received(bytes, op, candidate) },
             secured: { [weak self] in await self?.secured(op, candidate) }, controls: true,
-            renew: self.automatic)
+            renew: self.automatic,
+            changed: { [weak self] in Task { @MainActor in
+              guard let self, op == self.generation, candidate == self.attempt else { return }
+              self.startMaintenance()
+            } })
+          self.startMaintenance()
         } catch {
           if op == self.generation, candidate == self.attempt {
             self.failCandidate("Authentication could not start. Retry from Android.")
@@ -275,6 +303,7 @@ import Observation
           try await engine.receive(bytes)
           guard op == self.generation, candidate == self.attempt else { return }
           if bytes.first == 3 { self.handshakeDeadline = self.now() + 10 }
+          self.startMaintenance()
           self.inputCount -= 1
           self.inputBytes -= bytes.count
           if await engine.isClosed {
@@ -315,8 +344,8 @@ import Observation
       handshakeDeadline = nil
       state = "Secured"
       status = "Secured with \(peer.deviceName) · \(peer.fingerprint.prefix(8))."
-      // Per-operation validation keeps hard deadlines independent of the slower idle maintenance.
-      startMaintenance(1)
+      // Every authenticated operation validates current identity protection and peer trust.
+      startMaintenance()
     } catch {
       if op == generation, candidate == attempt {
         failCandidate("The authenticated device is no longer available. Retry from Android.")
@@ -329,23 +358,26 @@ import Observation
     receivedChecks += 1
     status = "Secured. Connection check received."
   }
-  private func startMaintenance(_ interval: TimeInterval) {
+  private func startMaintenance() {
     guard allowing else { return }
-    timer?.invalidate()
     let op = generation
-    let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated {
-        guard let self, op == self.generation else { return }
-        self.tick()
-      }
-    }
-    self.timer = timer
-    RunLoop.main.add(timer, forMode: .common)
+    let candidate = attempt
+    deadlineWait.schedule(now: now, deadline: { [weak self] in
+      guard let self, op == self.generation, candidate == self.attempt else { return nil }
+      let session: Int64?
+      if self.checking { session = nil } else { session = await self.connection?.nextDeadline() }
+      guard op == self.generation, candidate == self.attempt else { return nil }
+      return [self.startupDeadline, self.admitted ? self.handshakeDeadline : self.windowDeadline,
+        self.adapter.sessionDeadline, session.map { Double($0) / 1000 }].compactMap { $0 }.min()
+    }, fire: { [weak self] in
+      guard let self, op == self.generation, candidate == self.attempt else { return }
+      self.tick()
+    })
   }
   func tick() {
     guard allowing else { return }
+    defer { startMaintenance() }
     let now = now()
-    remaining = Int(ceil(max(0, (windowDeadline ?? now) - now)))
     if let startupDeadline, now >= startupDeadline {
       failWindow("Bluetooth took too long to start. Retry.")
       return
@@ -380,7 +412,7 @@ import Observation
           finish(error, expiration: expiration, peerClosed: peerClosed)
         }
       }
-      if op == generation, candidate == attempt { checking = false }
+      if op == generation, candidate == attempt { checking = false; startMaintenance() }
     }
   }
   private func finish(_ error: Error, expiration: SessionExpiry?, peerClosed: Bool) {
@@ -446,7 +478,7 @@ import Observation
       } else { failWindow(reason) }
     } else {
       connection = nil
-      startMaintenance(0.2)
+      startMaintenance()
       let op = generation, candidate = attempt
       work = Task { [weak self] in
         await old?.close()
@@ -504,15 +536,14 @@ import Observation
     allowing = false
     admission.clear()
     checking = false
-    timer?.invalidate()
-    timer = nil
-    remaining = 0
+    deadlineWait.cancel()
     startupDeadline = nil
     inputCount = 0
     inputBytes = 0
     handshakeDeadline = nil
     adapter.sessionWrite = nil
     adapter.sessionDisconnect = nil
+    adapter.sessionChanged = nil
     adapter.sessionAdmitted = nil
     adapter.stop()
     let old = connection

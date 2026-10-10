@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Serializes protected identity validation and atomic replacement with session invalidation.
 import Foundation
 
 struct StoredIdentity: Codable, Sendable {
@@ -45,6 +46,8 @@ protocol IdentityStorage: Sendable {
 /// - Automatic self-verification challenge of newly created keys before committing.
 /// - Non-silent failures: transient storage errors throw [IdentityError] without destroying established keys.
 actor IdentityService {
+    static let invalidated = Notification.Name("aniCe.identity.invalidated")
+    private(set) var identityLoads = 0
     private let storage: any IdentityStorage
     private let deviceName: String
     private let tagPrefix: String
@@ -62,6 +65,7 @@ actor IdentityService {
     }
 
     private func loadIdentity() throws -> LocalIdentity {
+        identityLoads += 1
         var record: IdentityRecord
         if let saved = try storage.loadRecord() {
             record = saved
@@ -122,6 +126,7 @@ actor IdentityService {
     }
 
     func reset() throws -> LocalIdentity {
+        NotificationCenter.default.post(name: Self.invalidated, object: self)
         var old: IdentityRecord?
         do { old = try storage.loadRecord(); if let old { try validate(old) } }
         catch IdentityError.inconsistentStorage { old = nil }

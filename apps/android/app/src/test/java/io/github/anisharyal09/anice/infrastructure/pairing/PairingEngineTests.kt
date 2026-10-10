@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies trust activation, durable recovery and pairing failures with isolated native-key fixtures.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import io.github.anisharyal09.anice.infrastructure.identity.*
@@ -211,12 +212,17 @@ class PairingEngineTests {
     store.prepare(active.copy(active = false, receipt = null))
     store.discardPending()
     assertEquals(1, store.list(local.fingerprint).size)
+    var invalidations = 0
+    store.onInvalidated = { invalidations++; assertEquals(1, store.list(local.fingerprint).size) }
+    val durableBefore = requireNotNull(memory.data).clone()
     memory.fail = true
     try {
       store.remove(mac.deviceId)
       fail("Write failure ignored")
     } catch (_: IllegalStateException) {}
     assertEquals(1, store.list(local.fingerprint).size)
+    assertEquals(1, invalidations)
+    assertArrayEquals(durableBefore, memory.data)
     memory.fail = false
     engine.close()
     val reopened = PeerTrustStore(memory)

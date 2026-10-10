@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Opt-in physical connected-idle CPU test with channel continuity, encrypted-operation validation budgets and unchanged identity/trust journal assertions.
 - Foreground LAN sessions with Wi-Fi-bound sockets, scoped IPv6, bounded NSD resolution and independent Bluetooth/local-network controls.
 
 - Companion-owned nearby retry with bounded backoff, pinned saved setup, a device-level automatic connection switch and Disconnect pause. Release service ownership remains disabled pending physical acceptance.
@@ -24,9 +25,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Replace BLE/LAN maintenance polling and idle TCP read timeouts with cancellable deadline waits; use elapsed realtime for authentication, record and fragment deadlines.
+- Retire both session owners from identity reset and trust-store revocation/replacement, including mutations outside presentation callbacks.
+
 - Update Android code structure tree, test inventory, and manual LAN documentation in README.
 - Load existing identity state without a signing challenge; retain creation/reset proof and validate the active journal binding and requested signature before return.
-- Run secured-session maintenance once per second while retaining 200 ms authentication/readiness checks and native companion recovery.
 - Add file-purpose summaries to Android sources, tests, resources, manifest and build configuration.
 - Document shared session controller architecture, companion device lifecycle boundaries, and native API paths in docs/BACKGROUND_CONNECTIONS.md.
 - Replace centered connection home with a minimal device list, contextual actions and native management menus.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Persists bounded trust journals and invalidates session access before explicit revocation.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import android.util.AtomicFile
@@ -70,6 +71,7 @@ private class AndroidTrustPersistence(file: File) : TrustPersistence {
 }
 
 class PeerTrustStore(private val persistence: TrustPersistence) {
+    @Volatile var onInvalidated: () -> Unit = {}
     constructor(file: File) : this(AndroidTrustPersistence(file))
 
     companion object {
@@ -170,7 +172,10 @@ class PeerTrustStore(private val persistence: TrustPersistence) {
         }
     }
 
-    @Synchronized fun remove(id: String) = mutate { removeAll { it.peer.deviceId == id } }
+    @Synchronized fun remove(id: String) {
+        onInvalidated()
+        mutate { removeAll { it.peer.deviceId == id } }
+    }
 
     @Synchronized fun discardPending() = mutate { removeAll { !it.active } }
 

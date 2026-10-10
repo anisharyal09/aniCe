@@ -10,10 +10,17 @@ import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 
 class AniCeApplication : Application() {
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
-    val lanSessionController by lazy { io.github.anisharyal09.anice.infrastructure.lan.LanSessionController(this) }
+    private val lanOwner = lazy { io.github.anisharyal09.anice.infrastructure.lan.LanSessionController(this) }
+    val lanSessionController get() = lanOwner.value
     // UI and system-bound probe share one transport/operation owner; sessions never enter durable storage.
-    val sessionController by lazy {
+    private val bleOwner = lazy {
         io.github.anisharyal09.anice.infrastructure.session.SessionController(this)
+    }
+
+    val sessionController get() = bleOwner.value
+    private fun invalidateSessions() {
+        if (bleOwner.isInitialized()) bleOwner.value.securityInvalidated()
+        if (lanOwner.isInitialized()) lanOwner.value.securityInvalidated()
     }
 
     @Volatile
@@ -25,14 +32,16 @@ class AniCeApplication : Application() {
                 sharedTrust
                     ?: io.github.anisharyal09.anice.infrastructure.pairing
                         .PeerTrustStore(java.io.File(noBackupFilesDir, "trusted_peers.json"))
-                        .also { sharedTrust = it }
+                        .also { it.onInvalidated = ::invalidateSessions; sharedTrust = it }
             }
         set(value) {
-            synchronized(this) { sharedTrust = value }
+            invalidateSessions()
+            synchronized(this) { value.onInvalidated = ::invalidateSessions; sharedTrust = value }
         }
 
     // Share one service across activity recreation so identity operations stay serialized.
     val identityService by lazy {
         IdentityService(AndroidIdentityMetadata(this), AndroidIdentityKeys(), { Build.MODEL })
+            .also { it.onInvalidated = ::invalidateSessions }
     }
 }

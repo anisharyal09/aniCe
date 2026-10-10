@@ -2,11 +2,146 @@
 // Tests control oracle fixtures, compatibility, ping ordering and encrypted renewal failures.
 package io.github.anisharyal09.anice.infrastructure.session
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class SessionControlTests {
+  @Test fun stalledNativeKeepaliveValidationCannotBlockHardDeadlineWatcher() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    val clock = java.util.concurrent.atomic.AtomicLong()
+    val hold = java.util.concurrent.atomic.AtomicBoolean()
+    val entered = CompletableDeferred<Unit>()
+    val release = java.util.concurrent.CountDownLatch(1)
+    val outI = java.util.ArrayDeque<ByteArray>()
+    val outR = java.util.ArrayDeque<ByteArray>()
+    val client = SessionConnection(helper.engine(fixture, false, current = {
+      if (hold.get()) {
+        entered.complete(Unit)
+        assertTrue("Native validation gate was not released", release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+      }
+      helper.engineIdentity(fixture, false)
+    }), false, { true }, { outI.add(it) }, {}, {}, true, clock::get)
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outR.add(it) }, {}, {}, true, clock::get)
+    try {
+      client.start()
+      var messages = 0
+      while (outI.isNotEmpty() || outR.isNotEmpty()) {
+        assertTrue(++messages <= 32)
+        if (outI.isNotEmpty()) server.receive(outI.removeFirst())
+        if (outR.isNotEmpty()) client.receive(outR.removeFirst())
+      }
+      clock.set(60000); hold.set(true)
+      assertEquals(60000L, client.nextDeadline())
+      assertEquals(120000L, client.nextDeadline(includeMaintenance = false))
+      val control = async(Dispatchers.Default) {
+        try { client.tick(); null } catch (error: SessionException) { error.reason }
+      }
+      withTimeout(1000) { entered.await() }
+      withTimeout(1000) { assertEquals(80000L, client.nextDeadline(includeMaintenance = false)) }
+      clock.set(80000)
+      withTimeout(1000) { rejectSuspending(SessionFailure.CONTROL_TIMEOUT) { client.checkDeadlines() } }
+      assertTrue(client.isClosed)
+      release.countDown()
+      assertEquals(SessionFailure.CANCELLED, withTimeout(1000) { control.await() })
+      assertTrue(outI.isEmpty())
+    } finally { release.countDown(); client.close(); server.close() }
+  }
+
+  @Test fun cryptoCompletionDoesNotRequestMoreWorkAndBusyEventsAreRetained() = runBlocking {
+    val events = SessionMaintenance()
+    val now = { System.nanoTime() / 1_000_000 }
+    events.request(); events.resnapshot()
+    assertTrue(withTimeout(1000) { events.await(now() + 60000, now) })
+    events.resnapshot()
+    assertFalse(withTimeout(1000) { events.await(now() + 60000, now) })
+    events.deferWork(); events.resnapshot()
+    assertTrue(withTimeout(1000) { events.await(now() + 60000, now) })
+    val waiting = async { events.await(now() + 60000, now) }
+    kotlinx.coroutines.yield()
+    assertFalse(waiting.isCompleted)
+    waiting.cancelAndJoin()
+    assertTrue(withTimeout(1000) { events.await(now() - 1, now) })
+  }
+
+  @Test fun suspendedSignerCannotBlockDeadlineSnapshotOrRetirement() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    var clock = 0L
+    val entered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    var submitted = 0
+    val initiator = helper.engine(fixture, false, now = { clock })
+    val responder = helper.engine(fixture, true, signer = {
+      entered.complete(Unit); release.await()
+      SessionProof(helper.engineIdentity(fixture, true), byteArrayOf())
+    }, now = { clock })
+    val connection = SessionConnection(responder, true, { true }, { submitted++ }, {}, {}, now = { clock })
+    val receive = async {
+      try { connection.receive(SessionEnvelope.encode(1, initiator.initiate())); null }
+      catch (error: SessionException) { error.reason }
+    }
+    try {
+      withTimeout(1000) { entered.await() }
+      clock = 29999
+      withTimeout(1000) {
+        assertEquals(30000L, connection.nextDeadline())
+        connection.tick()
+      }
+      assertEquals(0L, connection.maintenanceRuns)
+      clock = 30000
+      withTimeout(1000) { rejectSuspending(SessionFailure.EXPIRED) { connection.tick() } }
+      assertTrue(connection.isClosed)
+      assertNull(connection.nextDeadline())
+      release.complete(Unit)
+      assertEquals(SessionFailure.CANCELLED, withTimeout(1000) { receive.await() })
+      assertEquals(0, submitted)
+    } finally {
+      release.complete(Unit); receive.cancelAndJoin(); connection.close(); initiator.close()
+    }
+  }
+
+  @Test fun busySubmissionCannotExtendOutstandingPongDeadline() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    var clock = 0L
+    var hold = false
+    val entered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    val outI = java.util.ArrayDeque<ByteArray>()
+    val outR = java.util.ArrayDeque<ByteArray>()
+    val client = SessionConnection(helper.engine(fixture, false), false, { true }, {
+      if (hold) { entered.complete(Unit); release.await() } else outI.add(it)
+    }, {}, {}, true, { clock })
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outR.add(it) }, {}, {}, true, { clock })
+    try {
+      client.start()
+      var messages = 0
+      while (outI.isNotEmpty() || outR.isNotEmpty()) {
+        assertTrue(++messages <= 32)
+        if (outI.isNotEmpty()) server.receive(outI.removeFirst())
+        if (outR.isNotEmpty()) client.receive(outR.removeFirst())
+      }
+      clock = 60000; client.tick()
+      assertEquals(1, outI.size)
+      hold = true
+      val send = async {
+        try { client.sendData(byteArrayOf(1)); null }
+        catch (error: SessionException) { error.reason }
+      }
+      withTimeout(1000) { entered.await() }
+      withTimeout(1000) { assertEquals(80000L, client.nextDeadline()) }
+      clock = 79999; withTimeout(1000) { client.tick() }
+      clock = 80000
+      withTimeout(1000) { rejectSuspending(SessionFailure.CONTROL_TIMEOUT) { client.checkDeadlines() } }
+      assertTrue(client.isClosed)
+      release.complete(Unit)
+      assertEquals(SessionFailure.CANCELLED, withTimeout(1000) { send.await() })
+      assertEquals(1, outI.size)
+    } finally { release.complete(Unit); client.close(); server.close() }
+  }
+
   private fun reject(reason: SessionFailure, action: () -> Unit) {
     try { action(); fail("Expected $reason") }
     catch (error: SessionException) { assertEquals(reason, error.reason) }
@@ -21,6 +156,88 @@ class SessionControlTests {
     server.issuing(ack, 0); server.submitted(ack, 0); client.receive(ack, 0)
     return client to server
   }
+  @Test fun deadlineSnapshotsDoNotSpinOnBlockedControlsOrExtendPong() {
+    val legacy = SessionLiveness(false)
+    assertNull(legacy.nextDeadline())
+    legacy.start(0)
+    assertEquals(10000L, legacy.nextDeadline())
+    legacy.poll(10000)
+    assertNull(legacy.nextDeadline())
+    val (client, server) = pair()
+    assertEquals(60000L, client.nextDeadline())
+    assertNull(server.nextDeadline())
+    client.poll(60000)
+    assertNull(client.nextDeadline()) // Queue refusal waits for capacity; no overdue PING wake loop.
+    val ping = requireNotNull(client.pending)
+    client.issuing(ping, 60001); client.submitted(ping, 60001)
+    assertEquals(80001L, client.nextDeadline())
+    client.activity(79999)
+    assertEquals(80001L, client.nextDeadline())
+    reject(SessionFailure.CONTROL_TIMEOUT) { client.poll(80001) }
+  }
+
+  @Test fun idleSnapshotsAndMaintenanceNeverValidateButTrafficDoes() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    var clock = 0L
+    var revoked = false
+    var loads = 0
+    var changes = 0
+    val outI = java.util.ArrayDeque<ByteArray>()
+    val outR = java.util.ArrayDeque<ByteArray>()
+    val client = SessionConnection(helper.engine(fixture, false, current = {
+      loads++
+      if (revoked) throw SessionException(SessionFailure.UNTRUSTED_PEER)
+      helper.engineIdentity(fixture, false)
+    }), false, { true }, { outI.add(it) }, {}, {}, true, { clock }, changed = { changes++ })
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outR.add(it) }, {}, {}, true, { clock })
+    suspend fun pump() {
+      var count = 0
+      while (outI.isNotEmpty() || outR.isNotEmpty()) {
+        assertTrue(++count <= 32)
+        if (outI.isNotEmpty()) server.receive(outI.removeFirst())
+        if (outR.isNotEmpty()) client.receive(outR.removeFirst())
+      }
+    }
+    try {
+      client.start(); pump()
+      val before = loads
+      val beforeChanges = changes
+      repeat(59) {
+        clock = (it + 1) * 1000L
+        assertEquals(60000L, client.nextDeadline())
+        client.tick()
+      }
+      assertEquals(before, loads)
+      assertEquals(beforeChanges, changes) // A maintenance wake cannot signal itself forever.
+      revoked = true; clock = 60000
+      rejectSuspending(SessionFailure.UNTRUSTED_PEER) { client.tick() }
+      assertTrue(loads > before)
+      assertTrue(outI.isEmpty())
+      assertTrue(client.isClosed)
+      assertNull(client.nextDeadline())
+    } finally { client.close(); server.close() }
+  }
+
+  private suspend fun rejectSuspending(reason: SessionFailure, action: suspend () -> Unit) {
+    try { action(); fail("Expected $reason") }
+    catch (error: SessionException) { assertEquals(reason, error.reason) }
+  }
+
+  @Test fun conflatedWakesSurviveSnapshotRacesAndCancellation() = runBlocking {
+    val events = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    val now = { System.nanoTime() / 1_000_000 }
+    events.trySend(Unit); events.trySend(Unit)
+    withTimeout(1000) { awaitSessionDeadline(events, now() + 60000, now) }
+    val waiting = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+      awaitSessionDeadline(events, null, now)
+      fail("Cancelled wait resumed")
+    }
+    waiting.cancelAndJoin()
+    withTimeout(1000) { awaitSessionDeadline(events, now() - 1, now) }
+    assertFalse(waiting.isActive)
+  }
+
   @Test fun independentControlFixturesAndDispatcherBounds() {
     val fixtures = SessionTests().root("control-vectors.json")
     val valid = fixtures.getJSONArray("valid")

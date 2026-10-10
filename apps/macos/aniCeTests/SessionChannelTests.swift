@@ -55,6 +55,12 @@ private final class ChannelClock: @unchecked Sendable {
     instant = value
   }
 }
+private actor DeadlineValidationProbe {
+  private(set) var loads = 0
+  var fault: SessionFailure?
+  func fail(_ value: SessionFailure) { fault = value }
+  func validate() throws { loads += 1; if let fault { throw fault } }
+}
 final class SessionChannelTests: XCTestCase, @unchecked Sendable {
   private let helper = SessionTests()
   private func b(_ v: [String: Any], _ name: String) throws -> Data { try helper.b(v, name) }
@@ -64,6 +70,113 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       XCTFail("Expected \(reason)")
     } catch let error as SessionFailure { XCTAssertEqual(error, reason) }
   }
+  func testDeadlineSnapshotsWaitForCapacityAndPreservePongExpiry() throws {
+    var legacy = SessionLiveness(responder: false)
+    XCTAssertNil(legacy.nextDeadline)
+    try legacy.start(0)
+    XCTAssertEqual(legacy.nextDeadline, 10000)
+    try legacy.poll(10000)
+    XCTAssertNil(legacy.nextDeadline)
+    var (client, server) = try controlPair()
+    XCTAssertEqual(client.nextDeadline, 60000)
+    XCTAssertNil(server.nextDeadline)
+    try client.poll(60000)
+    XCTAssertNil(client.nextDeadline)
+    let ping = try XCTUnwrap(client.pending)
+    try client.issuing(ping, 60001); client.submitted(ping, 60001)
+    XCTAssertEqual(client.nextDeadline, 80001)
+    client.activity(79999)
+    XCTAssertEqual(client.nextDeadline, 80001)
+    XCTAssertThrowsError(try client.poll(80001)) { XCTAssertEqual($0 as? SessionFailure, .controlTimeout) }
+  }
+  func testConnectionMaintenancePerformsNoIdentityLoadsBeforeEncryptedPing() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    let identity = try helper.identity(fixture, "initiator")
+    let clock = ChannelClock(), probe = DeadlineValidationProbe()
+    let outI = ChannelMailbox(), outR = ChannelMailbox()
+    let client = SessionConnection(handshake: try helper.engine(fixture, server: false, current: {
+      try await probe.validate(); return identity
+    }), responder: false, capacity: { _ in true }, submit: { await outI.append($0) }, data: { _ in },
+      secured: {}, controls: true, now: { Int64(clock.read() * 1000) })
+    let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+      capacity: { _ in true }, submit: { await outR.append($0) }, data: { _ in }, secured: {},
+      controls: true, now: { Int64(clock.read() * 1000) })
+    func pump() async throws {
+      var count = 0
+      while true {
+        let hasI = await !outI.messages.isEmpty, hasR = await !outR.messages.isEmpty
+        if !hasI && !hasR { break }
+        count += 1; XCTAssertLessThanOrEqual(count, 32)
+        guard count <= 32 else { throw SessionFailure.state }
+        if hasI { try await server.receive(outI.take()) }
+        if hasR { try await client.receive(outR.take()) }
+      }
+    }
+    try await client.start(); try await pump()
+    let before = await probe.loads
+    for second in 1..<60 {
+      clock.set(Double(second))
+      let deadline = await client.nextDeadline()
+      XCTAssertEqual(deadline, 60000)
+      try await client.tick()
+    }
+    let after = await probe.loads
+    XCTAssertEqual(after, before)
+    await probe.fail(.untrustedPeer); clock.set(60)
+    try await reject(.untrustedPeer) { try await client.tick() }
+    let loaded = await probe.loads, closed = await client.isClosed
+    XCTAssertGreaterThan(loaded, before); XCTAssertTrue(closed)
+    let messages = await outI.messages
+    XCTAssertTrue(messages.isEmpty)
+    await client.close(); await server.close()
+  }
+
+  func testDeadlineSnapshotsDoNotValidateAndTrafficStillFailsClosed() async throws {
+    let clock = ChannelClock(), probe = DeadlineValidationProbe()
+    let ch = try channel(now: { clock.read() }, validate: { try await probe.validate() })
+    var due = await ch.nextDeadline()
+    XCTAssertEqual(due, 10)
+    clock.set(9.999)
+    try await ch.checkDeadlines()
+    var loads = await probe.loads
+    XCTAssertEqual(loads, 0)
+    try await ch.send(.ready)
+    let v = try XCTUnwrap((helper.root("record-vectors")["valid"] as? [[String: Any]])?.first)
+    let ack = try SessionRecordCodec.seal(key: b(v, "key"), iv: b(v, "iv"), id: b(v, "session"),
+      direction: 2, kind: .readyAck, sequence: 0, plaintext: Data())
+    _ = try await ch.receive(ack)
+    let before = await probe.loads
+    due = await ch.nextDeadline()
+    XCTAssertEqual(due, 129.999)
+    for _ in 0..<100 { try await ch.checkDeadlines(); _ = await ch.nextDeadline(renew: true) }
+    loads = await probe.loads
+    XCTAssertEqual(loads, before)
+    await probe.fail(.authentication)
+    try await reject(.authentication) { try await ch.send(.data) }
+    let sent = await ch.sent
+    XCTAssertEqual(sent, 1)
+    due = await ch.nextDeadline()
+    XCTAssertNil(due)
+  }
+  @MainActor func testDeadlineWaitCancellationAndStaleSnapshots() async throws {
+    let wait = SessionDeadlineWait()
+    let gate = ChannelSubmissionGate()
+    let stale = expectation(description: "Retired snapshot must not fire")
+    stale.isInverted = true
+    wait.schedule(now: { 0 }, deadline: { await gate.pause(); return 0 }, fire: { stale.fulfill() })
+    for _ in 0..<100 { if await gate.entered { break }; await Task.yield() }
+    let entered = await gate.entered
+    XCTAssertTrue(entered)
+    let current = expectation(description: "Current deadline fires exactly once")
+    current.assertForOverFulfill = true
+    wait.schedule(now: { 0 }, deadline: { 0 }, fire: { current.fulfill() })
+    await gate.release()
+    await fulfillment(of: [current, stale], timeout: 0.1)
+    wait.schedule(now: { 0 }, deadline: { 0.01 }, fire: { stale.fulfill() })
+    wait.cancel()
+    try await Task.sleep(for: .milliseconds(20))
+  }
+
   func testIndependentControlFixturesAndDispatcherBounds() throws {
     let root = try helper.root("control-vectors")
     let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])

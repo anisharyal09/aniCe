@@ -30,6 +30,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Replace periodic BLE/LAN maintenance with deadline waits and transport events; keep native identity validation on authenticated operations and retire both owners on explicit security mutations.
+
 - Simplify the README around a device-focused introduction with Android/macOS as initial platforms; move the architecture overview to root ARCHITECTURE.md and correct identity protection, transport ownership, renewal and platform baseline descriptions.
 - Update repository structure trees, documentation links, and active contracts across root, Android, macOS, and protocol READMEs.
 - Reduce secured BLE maintenance frequency while retaining per-operation trust and deadline checks; remove redundant Android identity signing during ordinary reads.

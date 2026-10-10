@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Serializes native GATT callbacks, bounded messages and transport deadlines.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 import android.annotation.SuppressLint
@@ -20,6 +21,7 @@ class AndroidGattTransport(
   private val ended: (Boolean, PairingTransportFailure?) -> Unit,
   private val progress: (String, Long) -> Unit,
   private val trustedSession: Boolean = false,
+  private val changed: () -> Unit = {},
 ) {
   private val handler = Handler(Looper.getMainLooper())
   private val adapter
@@ -35,7 +37,7 @@ class AndroidGattTransport(
   private var epoch = 0L
   private var stage = "idle"
   private var mtu = 23
-  private var incoming = GattReassembler(if (trustedSession) 2 else 1)
+  private var incoming = GattReassembler(if (trustedSession) 2 else 1, SystemClock::elapsedRealtime)
 
   private data class PendingFragment(
     val bytes: ByteArray,
@@ -198,7 +200,7 @@ class AndroidGattTransport(
     stage = "connect"
     connectionDeadline = SystemClock.elapsedRealtime() + 15000
     progress("connecting", connectionDeadline)
-    incoming = GattReassembler(if (trustedSession) 2 else 1)
+    incoming = GattReassembler(if (trustedSession) 2 else 1, SystemClock::elapsedRealtime)
     setupRecovery = GattSetupRecovery()
     mtu = 23
     id = 0
@@ -410,6 +412,7 @@ class AndroidGattTransport(
               }
               message(bytes)
             }
+            changed()
           }
 
         override fun onCharacteristicWrite(
@@ -425,6 +428,7 @@ class AndroidGattTransport(
             if (completed.logicalSize != 0) {
               queueBudget.release(completed.logicalSize)
               completed.submitted?.invoke()
+              changed()
             }
             writing = false
             flush()
@@ -508,6 +512,8 @@ class AndroidGattTransport(
         }
       }
     }
+
+  val nextDeadline get() = incoming.nextDeadline
 
   fun tick() {
     try {
@@ -605,7 +611,7 @@ class AndroidGattTransport(
     writing = false
     closeAfterFlush = false
     stage = "idle"
-    incoming = GattReassembler(if (trustedSession) 2 else 1)
+    incoming = GattReassembler(if (trustedSession) 2 else 1, SystemClock::elapsedRealtime)
   }
 
   fun close() {

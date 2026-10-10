@@ -138,7 +138,22 @@ actor SecureSession {
   private func ensure(_ op: Int) throws {
     guard op == generation, stage != .closed else { throw SessionFailure.cancelled }
   }
+  func nextDeadline(renew: Bool = false) -> TimeInterval? {
+    guard stage != .closed else { return nil }
+    var deadlines = [started + 3600, activity + 120]
+    if stage != .secured { deadlines.append(started + 10) }
+    if renew { deadlines.append(renewalReason() == nil ? started + 3300 : now()) }
+    return deadlines.min()
+  }
+  func checkDeadlines() throws {
+    do { try checkTime(generation) } catch { close(); throw error }
+  }
   private func check(_ op: Int) async throws {
+    try checkTime(op)
+    try await validate()
+    try ensure(op)
+  }
+  private func checkTime(_ op: Int) throws {
     try ensure(op)
     let time = now()
     let expired: SessionExpiry?
@@ -155,8 +170,6 @@ actor SecureSession {
       expiration = expired
       throw SessionFailure.expired
     }
-    try await validate()
-    try ensure(op)
   }
   func tick() async throws {
     do { try await check(generation) } catch {

@@ -67,12 +67,16 @@ final class LanTests: XCTestCase {
     XCTAssertEqual(try feed(frame + frame + frame, into: &framing), [envelope, envelope, envelope])
     var clock: TimeInterval = 0
     var slow = LanFraming(now: { clock })
+    XCTAssertNil(slow.nextDeadline)
     _ = try slow.feed(1)
+    XCTAssertEqual(slow.nextDeadline, 10)
     clock = 9.999
     _ = try slow.feed(0)
+    XCTAssertEqual(slow.nextDeadline, 10)
     clock = 10
     XCTAssertThrowsError(try slow.feed(0)) { XCTAssertEqual($0 as? SessionFailure, .expired) }
     XCTAssertThrowsError(try slow.end()) { XCTAssertEqual($0 as? SessionFailure, .cancelled) }
+    XCTAssertNil(slow.nextDeadline)
     for size in [0, 1, 4097] {
       XCTAssertThrowsError(try LanFraming.encode(Data(repeating: 0, count: size))) {
         XCTAssertEqual($0 as? SessionFailure, .malformed)

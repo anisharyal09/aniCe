@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies protected identity boundaries and durable recovery with isolated key and storage faults.
 import CryptoKit
 import Foundation
 import Security
@@ -64,6 +65,26 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
         XCTAssertNotEqual(replacement.identity.deviceId, signed.identity.deviceId)
         XCTAssertTrue(signed.identity.verify(message: message, signature: signed.signature))
         XCTAssertFalse(replacement.identity.verify(message: message, signature: signed.signature))
+        XCTAssertEqual(storage.keys.count, 1)
+    }
+
+    func testResetInvalidatesAccessBeforeStorageFailureAndPreservesIdentity() async throws {
+        let storage = MemoryIdentityStorage(), invalidated = expectation(description: "Reset invalidates access")
+        invalidated.assertForOverFulfill = true
+        let identity = service(storage)
+        let original = try await identity.loadOrCreate()
+        let token = NotificationCenter.default.addObserver(forName: IdentityService.invalidated,
+            object: identity, queue: nil) { _ in invalidated.fulfill() }
+        defer { NotificationCenter.default.removeObserver(token) }
+        storage.configureFailure(operation: 1, after: false)
+        do { _ = try await identity.reset(); XCTFail("Storage failure was ignored") }
+        catch let error as IdentityError { XCTAssertEqual(error, .storageUnavailable("injected")) }
+        await fulfillment(of: [invalidated], timeout: 1)
+        XCTAssertTrue(storage.failureTriggered)
+        XCTAssertEqual(storage.record?.active?.identity, original.identity)
+        storage.clearFailure()
+        let restored = try await identity.loadOrCreate()
+        XCTAssertEqual(restored.identity, original.identity)
         XCTAssertEqual(storage.keys.count, 1)
     }
 

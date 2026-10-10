@@ -144,6 +144,33 @@ class SessionChannelTests {
     )
   }
 
+  @Test fun cheapDeadlinesRetainReadinessIdleRenewalAndHardLifetime() = runBlocking {
+    var clock = 0L
+    var loads = 0
+    var fault: SessionFailure? = null
+    val ch = channel(now = { clock }, validate = {
+      loads++
+      fault?.let { throw SessionException(it) }
+    })
+    assertEquals(10000L, ch.nextDeadline())
+    clock = 9999; ch.checkDeadlines(); assertEquals(0, loads)
+    ch.send(RecordKind.READY)
+    val v = vectors().getJSONArray("valid").getJSONObject(0)
+    ch.receive(SessionRecordCodec.seal(b(v, "key"), b(v, "iv"), b(v, "session"), 2,
+      RecordKind.READY_ACK, 0uL, byteArrayOf()))
+    val before = loads
+    assertEquals(129999L, ch.nextDeadline())
+    repeat(100) { ch.checkDeadlines(); ch.nextDeadline(true) }
+    assertEquals(before, loads)
+    fault = SessionFailure.AUTHENTICATION
+    rejects(SessionFailure.AUTHENTICATION) { ch.send(RecordKind.DATA) }
+    assertEquals(1uL, ch.sent) // Native validation failure must precede nonce reservation.
+    assertNull(ch.nextDeadline())
+    val waiting = channel(now = { 0 })
+    assertEquals(10000L, waiting.nextDeadline(true))
+    waiting.close(); assertNull(waiting.nextDeadline())
+  }
+
   @Test
   fun readinessEarlyDataFailureAndTransportNonceBurn() = runBlocking {
     val early = channel()

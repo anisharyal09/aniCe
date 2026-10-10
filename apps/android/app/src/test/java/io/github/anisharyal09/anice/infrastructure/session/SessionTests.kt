@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies EDHOC fixtures, pinned identity validation and cancellation with independent vectors.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
@@ -37,6 +38,8 @@ class SessionTests {
       )
       .validate()
   }
+
+  internal fun engineIdentity(v: JSONObject, server: Boolean) = identity(v, if (server) "responder" else "initiator")
 
   internal fun engine(
     v: JSONObject,

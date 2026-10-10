@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Persists verified trust journals and publishes explicit revocation before durable mutations.
 import Darwin
 import Foundation
 
@@ -32,7 +33,9 @@ enum TrustStoreLoadError: Error { case corrupt }
 /// - Enforces capacity bounds: maximum 128 active peers; allows re-pairing existing peers at capacity.
 /// - Defensive recovery: corrupted journals are quarantined rather than silently overwritten.
 final class PeerTrustStore: @unchecked Sendable {
+  static let invalidated = Notification.Name("aniCe.trust.invalidated")
   private let url: URL
+  var location: URL { url.standardizedFileURL }
   private var journal: TrustJournal
   private let lock = NSRecursiveLock()
 
@@ -86,6 +89,7 @@ final class PeerTrustStore: @unchecked Sendable {
         in: .userDomainMask, appropriateFor: nil, create: true
       )
       .appendingPathComponent("aniCe/trusted_peers.json")
+    NotificationCenter.default.post(name: Self.invalidated, object: target.standardizedFileURL)
     if FileManager.default.fileExists(atPath: target.path) {
       try FileManager.default.moveItem(
         at: target, to: target.appendingPathExtension("quarantined-" + UUID().uuidString))
@@ -151,6 +155,7 @@ final class PeerTrustStore: @unchecked Sendable {
 
   /// Removes a trusted peer by device ID (device forgetting).
   func remove(_ id: String) throws {
+    NotificationCenter.default.post(name: Self.invalidated, object: self)
     lock.lock()
     defer { lock.unlock() }
     let old = journal

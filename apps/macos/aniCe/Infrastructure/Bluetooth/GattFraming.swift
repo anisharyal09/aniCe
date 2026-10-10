@@ -14,6 +14,7 @@ struct GattReassembler {
     self.version = version
     self.now = now
   }
+  var nextDeadline: TimeInterval? { buffer.isEmpty ? nil : started + 10 }
   func tick() throws { if !buffer.isEmpty, now() - started >= 10 { throw SessionFailure.expired } }
   mutating func receive(_ fragment: Data) throws -> Data? {
     try tick()

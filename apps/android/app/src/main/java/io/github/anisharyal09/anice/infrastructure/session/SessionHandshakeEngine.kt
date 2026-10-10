@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns pinned EDHOC authentication and export with native identity validation at every trust boundary.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
@@ -58,10 +59,18 @@ internal constructor(
   private fun same(a: DeviceIdentity, b: DeviceIdentity) =
     a.deviceId == b.deviceId && a.fingerprint == b.fingerprint && a.publicKey == b.publicKey
 
-  private fun check() {
+  internal fun nextDeadline(): Long? = (started + 30000).takeIf {
+    stage != HandshakeStage.COMPLETE && stage != HandshakeStage.CLOSED
+  }
+
+  internal fun checkTime() {
     if (stage == HandshakeStage.CLOSED) throw SessionException(SessionFailure.CANCELLED)
-    if (stage != HandshakeStage.COMPLETE && now() - started >= 30_000)
+    if (stage != HandshakeStage.COMPLETE && now() - started >= 30000)
       throw SessionException(SessionFailure.EXPIRED)
+  }
+
+  private fun check() {
+    checkTime()
     // Revalidate current identity and pinned trust even after handshake completion.
     if (!same(currentIdentity(), local)) throw SessionException(SessionFailure.CANCELLED)
     peer?.let {
@@ -402,6 +411,7 @@ internal constructor(
       identity: IdentityService,
       trust: PeerTrustStore,
       selected: DeviceIdentity,
+      now: () -> Long = { System.nanoTime() / 1_000_000 },
     ): SessionHandshakeEngine =
       withContext(Dispatchers.IO) {
         val local = identity.getOrCreateIdentity().identity
@@ -414,6 +424,7 @@ internal constructor(
             identity.sign(message).let { SessionProof(it.snapshot.identity, it.signature) }
           },
           selected,
+          now = now,
         )
       }
   }

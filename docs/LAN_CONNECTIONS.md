@@ -54,3 +54,7 @@ Native Android owner regressions inject Wi-Fi loss and interface change, call Di
 Packaged-app Bonjour discovery and permission denial; simultaneous physical BLE/LAN and independent Disconnect; Bluetooth-disabled operation; locked/background Android retirement; Mac sleep/Quit; network/address changes; accessible native controls; API 29/macOS 14 runtime coverage; signed hardware identity protection; independent security review. Native socket interchange does not close those gates. Existing BLE Release acceptance gaps remain open.
 
 References: [RFC 6763 — DNS-Based Service Discovery](https://www.rfc-editor.org/rfc/rfc6763.html), [Network.framework](https://developer.apple.com/documentation/network), [Android NsdManager](https://developer.android.com/reference/android/net/nsd/NsdManager), [LAN wire contract](../protocol/lan/README.md).
+
+## Idle work
+
+LAN session maintenance waits for the earliest authentication/readiness, compatibility, liveness, idle/lifetime or partial-frame deadline. Transport reads and queue-capacity callbacks reschedule that wait. Android blocks idle TCP reads and applies a read timeout only to an assembling frame. Ten-second write retirement remains independent of the wait. Every authenticated record retains native identity/protection and active trust validation; identity reset and journal revocation retire BLE and LAN through their shared services. LAN presentation, lock, network-loss and manual Retry behavior remain unchanged.

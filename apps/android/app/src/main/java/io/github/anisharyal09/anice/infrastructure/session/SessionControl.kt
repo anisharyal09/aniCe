@@ -68,7 +68,9 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
   private var lastActivity = 0L
   private var helloIssued = false
   private var outstanding: Long? = null
-  private var pongDeadline: Long? = null
+  @Volatile private var pongDeadline: Long? = null
+  val pendingPongDeadline get() = pongDeadline
+  fun checkPongDeadline(now: Long) { pongDeadline?.let { if (now >= it) timeout() } }
   private var expectedPing = 0L
   @Volatile var renewalReason: Long? = null
     private set
@@ -116,6 +118,17 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
         requestRenewal(message.value) // Local and remote threshold races coalesce into one retirement.
       }
     }
+  }
+
+  fun nextDeadline(): Long? {
+    if (!started) return null
+    return listOfNotNull(
+      compatibilityDeadline.takeIf { support == null || pending?.kind == ControlKind.HELLO_ACK },
+      pongDeadline,
+      (lastActivity + 60000).takeIf {
+        !responder && support == true && renewalReason == null && pending == null && outstanding == null
+      },
+    ).minOrNull()
   }
 
   fun poll(now: Long) {

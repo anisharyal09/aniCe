@@ -16,6 +16,7 @@ import Observation
   private let peers: SessionPeerReservation
   private var listener: NWListener?
   private var transport: LanTcpTransport?
+  private var trustLocation: URL?
   private var connection: SessionConnection?
   private var admission = SessionAdmissionWindow()
   private var generation = 0
@@ -24,7 +25,8 @@ import Observation
   private var handshakeDeadline: TimeInterval?
   private var checking = false
   private var retiring = false
-  private var timer: Timer?
+  @ObservationIgnored private let deadlineWait = SessionDeadlineWait()
+  var maintenanceDeadline: TimeInterval? { deadlineWait.deadline }
   private var work: Task<Void, Never>?
   private var observers = [NSObjectProtocol]()
   private var advertisement: NWListener.Service?
@@ -35,6 +37,20 @@ import Observation
     self.identity = identity
     self.peers = peers
     self.store = store
+    for (name, object) in [(IdentityService.invalidated, identity as AnyObject?),
+                           (PeerTrustStore.invalidated, nil)] {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) {
+        [weak self] notification in
+        let location = (notification.object as? PeerTrustStore)?.location ?? (notification.object as? URL)
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          if name == PeerTrustStore.invalidated {
+            guard let location, location == self.trustLocation else { return }
+          }
+          self.cancel()
+        }
+      })
+    }
     for event in [NSWorkspace.willSleepNotification] {
       observers.append(
         NSWorkspace.shared.notificationCenter.addObserver(forName: event, object: nil, queue: .main)
@@ -65,6 +81,8 @@ import Observation
       do {
         let local = try await identity.publicIdentity()
         let trust = try await store()
+        guard op == generation else { return }
+        trustLocation = trust.location
         let active = trust.list(localFingerprint: local.fingerprint).map(\.peer).filter {
           $0.platform == "android"
         }
@@ -105,6 +123,7 @@ import Observation
         server.serviceRegistrationUpdateHandler = { [weak self] change in
           Task { @MainActor in
             guard let self, op == self.generation else { return }
+            defer { self.maintain() }
             if case .add = change {
               self.startupDeadline = nil
               self.admission.open(ProcessInfo.processInfo.systemUptime)
@@ -127,7 +146,7 @@ import Observation
         }
         startupDeadline = ProcessInfo.processInfo.systemUptime + 10
         server.start(queue: DispatchQueue(label: "aniCe LAN listener"))
-        maintain(0.2)
+        maintain()
       } catch { if op == generation { failWindow(error.localizedDescription) } }
     }
   }
@@ -160,8 +179,17 @@ import Observation
             try await self.submit(bytes, op, attempt)
           },
           data: { [weak self] bytes in await self?.received(bytes, op, attempt) },
-          secured: { [weak self] in await self?.secured(op, attempt) }, controls: true)
+          secured: { [weak self] in await self?.secured(op, attempt) }, controls: true,
+          changed: { [weak self] in Task { @MainActor in
+            guard let self, op == self.generation, attempt == self.candidate else { return }
+            self.maintain()
+          } })
         connection = engine
+        tcp.changed = { [weak self] in
+          guard let self, op == self.generation, attempt == self.candidate else { return }
+          self.tick()
+        }
+        maintain()
         tcp.start(
           deliver: { [weak self] bytes in
             guard let self, op == self.generation, attempt == self.candidate else {
@@ -171,6 +199,7 @@ import Observation
             guard op == self.generation, attempt == self.candidate else { return }
             if bytes.first == 3 {
               self.handshakeDeadline = ProcessInfo.processInfo.systemUptime + 10
+              self.maintain()
             }
             if await engine.isClosed {
               self.cancel(message: "Your Android ended the local-network session.")
@@ -203,7 +232,7 @@ import Observation
       handshakeDeadline = nil
       state = "Secured"
       status = "Secured with \(peer.deviceName) · \(peer.fingerprint.prefix(8))."
-      maintain(1)
+      maintain()
     } catch { if op == generation, attempt == candidate { failCandidate(error) } }
   }
   private func received(_ bytes: Data, _ op: Int, _ attempt: Int) {
@@ -212,16 +241,24 @@ import Observation
     receivedChecks += 1
     status = "Secured. Local-network connection check received."
   }
-  private func maintain(_ interval: TimeInterval) {
-    timer?.invalidate()
+  private func maintain() {
+    guard allowing else { return }
     let op = generation
-    let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated { if let self, op == self.generation { self.tick() } }
-    }
-    self.timer = timer
-    RunLoop.main.add(timer, forMode: .common)
+    let attempt = candidate
+    deadlineWait.schedule(now: { ProcessInfo.processInfo.systemUptime }, deadline: { [weak self] in
+      guard let self, op == self.generation, attempt == self.candidate else { return nil }
+      let session: Int64?
+      if self.checking { session = nil } else { session = await self.connection?.nextDeadline() }
+      guard op == self.generation, attempt == self.candidate else { return nil }
+      return [self.startupDeadline, self.admission.admitted ? self.handshakeDeadline : self.admission.deadline,
+        self.transport?.nextDeadline, session.map { Double($0) / 1000 }].compactMap { $0 }.min()
+    }, fire: { [weak self] in
+      guard let self, op == self.generation, attempt == self.candidate else { return }
+      self.tick()
+    })
   }
   private func tick() {
+    defer { maintain() }
     let now = ProcessInfo.processInfo.systemUptime
     if let startupDeadline, now >= startupDeadline {
       failWindow("Local-network advertising timed out. Check permissions and retry.")
@@ -247,7 +284,7 @@ import Observation
       do { try await connection.tick() } catch {
         if let self, op == self.generation, attempt == self.candidate { self.failCandidate(error) }
       }
-      if let self, op == self.generation, attempt == self.candidate { self.checking = false }
+      if let self, op == self.generation, attempt == self.candidate { self.checking = false; self.maintain() }
     }
   }
   private func failCandidate(_ error: Error) {
@@ -275,7 +312,7 @@ import Observation
         guard let self, op == self.generation, attempt == self.candidate else { return }
         self.retiring = false
         self.listener?.service = self.advertisement
-        self.maintain(0.2)
+        self.maintain()
       }
     }
   }
@@ -317,8 +354,7 @@ import Observation
     retiring = false
     startupDeadline = nil
     handshakeDeadline = nil
-    timer?.invalidate()
-    timer = nil
+    deadlineWait.cancel()
     listener?.newConnectionHandler = nil
     listener?.stateUpdateHandler = nil
     listener?.serviceRegistrationUpdateHandler = nil

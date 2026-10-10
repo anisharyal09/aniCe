@@ -12,6 +12,7 @@ struct LanFraming {
   init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
     self.now = now
   }
+  var nextDeadline: TimeInterval? { !failed && !header.isEmpty ? started + 10 : nil }
   mutating func tick() throws {
     guard !failed else { throw SessionFailure.cancelled }
     if !header.isEmpty, now() - started >= 10 {

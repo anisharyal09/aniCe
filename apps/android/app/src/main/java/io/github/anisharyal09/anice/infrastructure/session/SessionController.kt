@@ -64,8 +64,8 @@ class SessionController(application: Application) {
   var radioChanged: (Boolean) -> Unit = {}
   private var automaticAttempt = false
 
-  private var operation = 0L
-  private var connection: SessionConnection? = null
+  @Volatile private var operation = 0L
+  @Volatile private var connection: SessionConnection? = null
   private var input: Channel<ByteArray>? = null
   private var inputBytes = 0
   private var inputCount = 0
@@ -76,6 +76,7 @@ class SessionController(application: Application) {
   private var worker: Job? = null
   var beforeConnect: () -> Unit = {}
   private var readySignal: CompletableDeferred<Unit>? = null
+  private val maintenanceEvents = SessionMaintenance()
   private val transport =
     AndroidGattTransport(
       app,
@@ -103,6 +104,7 @@ class SessionController(application: Application) {
       },
       { _, _ -> },
       trustedSession = true,
+      changed = { maintenanceEvents.request() },
     )
   private val radio =
     object : BroadcastReceiver() {
@@ -207,7 +209,7 @@ class SessionController(application: Application) {
           if (candidate == null) transport.startScan(qr = true) else transport.startCandidate(candidate)
           withTimeout(30000) { readySignal?.await() }
           if (op != operation) return@launch
-          val handshake = SessionHandshakeEngine.initiator(app.identityService, trust, peer)
+          val handshake = SessionHandshakeEngine.initiator(app.identityService, trust, peer, SystemClock::elapsedRealtime)
           if (op != operation) {
             handshake.close()
             return@launch
@@ -247,39 +249,39 @@ class SessionController(application: Application) {
               // Include deep sleep: OS suspension must not extend record lifetime or PONG deadlines.
               now = { SystemClock.elapsedRealtime() },
               renew = automatic,
+              changed = { maintenanceEvents.request() },
             )
           connection = engine
-          var checking = false
           launch {
-            while (isActive && op == operation) {
-              // Readiness keeps fast maintenance; secured records enforce deadlines on every operation.
-              delay(if (state == ConnectionState.SECURED) 1000L else 200L)
-              transport.tick()
-              if (engine.timedOut()) {
-                fail("Secure connection timed out. Retry.")
-                break
-              }
-              if (!checking) {
-                checking = true
-                launch {
-                  try {
-                    // Health checks may seal keepalive records; keep native crypto off the UI thread.
-                    withContext(Dispatchers.IO) { engine.tick() }
-                    if (op == operation) controlSupport = engine.controlSupport
-                    if (op == operation) renewalReason = engine.renewalReason
-                    if (op == operation) publishProgress()
-                    if (op == operation && renewalReason != null && !automaticAttempt) {
-                      this@SessionController.cancel("This session needs a fresh connection. Connect again.")
-                    }
-                  } catch (e: CancellationException) {
-                    throw e
-                  } catch (e: Exception) {
-                    if (op == operation) finish(e, engine)
-                  } finally {
-                    checking = false
-                  }
+            var controlWork: Job? = null
+            try {
+              while (isActive && op == operation) {
+                val due = listOfNotNull(engine.nextDeadline(controlWork?.isActive != true), transport.nextDeadline).minOrNull()
+                val requested = maintenanceEvents.await(due, SystemClock::elapsedRealtime)
+                if (op != operation) break
+                transport.tick()
+                engine.checkDeadlines()
+                if (requested) {
+                  if (controlWork?.isActive == true) maintenanceEvents.deferWork()
+                  else controlWork = launch {
+                    try {
+                      withContext(Dispatchers.IO) { engine.tick() }
+                      if (op != operation) return@launch
+                      controlSupport = engine.controlSupport
+                      renewalReason = engine.renewalReason
+                      publishProgress()
+                      if (renewalReason != null && !automaticAttempt) {
+                        this@SessionController.cancel("This session needs a fresh connection. Connect again.")
+                      }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { if (op == operation) finish(e, engine) }
+                  }.also { work -> work.invokeOnCompletion { maintenanceEvents.resnapshot() } }
                 }
               }
+            } catch (e: CancellationException) {
+              throw e
+            } catch (e: Exception) {
+              if (op == operation) finish(e, engine)
             }
           }
           engine.start()
@@ -302,6 +304,13 @@ class SessionController(application: Application) {
           if (op == operation) finish(e, connection)
         }
       }
+  }
+
+  internal fun securityInvalidated() {
+    // Retire keys synchronously even when the mutation originates outside a presentation.
+    val op = operation
+    connection?.retire()
+    scope.launch { if (op == operation) cancel("Trust or identity changed. Connect again.") }
   }
 
   fun checkConnection() {

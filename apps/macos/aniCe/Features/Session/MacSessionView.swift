@@ -22,7 +22,9 @@ struct MacSessionView: View {
         Text("Trusted-device connection").font(.headline)
         Spacer()
         if model.allowing, !model.automatic, model.state != "Secured", model.remaining > 0 {
-          Text("\(model.remaining)s").font(.caption.monospacedDigit())
+          TimelineView(.periodic(from: .now, by: 1)) { _ in
+            Text("\(model.remaining)s").font(.caption.monospacedDigit())
+          }
         }
       }
       Toggle("Connect automatically", isOn: Binding(
