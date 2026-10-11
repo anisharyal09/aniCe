@@ -6,6 +6,19 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Home/Devices/Settings sidebar and saved native Window appearance preference with native and SwiftUI System inheritance across the window and connection-details sheet; companion and context menus retain system appearance.
+
+### Changed
+
+- Compact Home/companion rows open Devices with peer context before restoring the main window; clicking names/status also opens device management.
+- Add an aniCe sidebar heading with breathing room and consistent header backgrounds/dividers across Home, Devices and Settings.
+- Move local identity behind a full-width This device Settings entry with Back navigation, explicit name editing and clickable Advanced disclosure.
+- Apply the selected appearance to native window/sheet backgrounds, text and controls together; System tracks macOS independently of a forced window theme. Retain shared transport owners.
+
+## [0.1.0]
+
+### Added
+
 - Shared manual Bonjour/TCP admission, encrypted LAN connection checks, same-peer reservations and sandbox network declarations.
 - Shared automatic nearby admission with five-failure cooldown, persisted allowed-phone policy, paused Disconnect and sleep/wake restoration.
 - Coordinated encrypted renewal requests before session lifetime or record limits.
@@ -20,8 +33,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Share readiness-based summaries, full-width device sections, neutral connection controls and accent automatic checkmarks across the window and companion. Successful pairing returns to the overview and opens fresh Bluetooth admission after guarded cleanup.
-- Expand companion details and management inline with bounded scrolling, persistent footer and Back. Use an AppKit status item/transient popover with native right-click routes and shared transport owners.
+- Share readiness-based summaries and neutral connection controls across the window and companion; retain full-width details and accent automatic checkmarks in Devices. Successful pairing returns to the overview and opens fresh Bluetooth admission after guarded cleanup.
+- Use an AppKit status item/transient popover with a compact device summary, persistent footer and native right-click routes to main-window device controls.
 - Provide full-width Diagnostics controls for transport checks and discovery; keep LAN/manual recovery independent. Translate typed session failures into readable reasons.
 - Replace repeating BLE/LAN maintenance timers with revision-guarded deadline tasks; separate visible admission countdowns from security work.
 - Match service-level trust revocation to the owning journal and retire both transports on identity reset/recovery.
@@ -41,4 +54,4 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Show pairing completion and saved trust without placeholder text.
 - Send encrypted cancellation on pairing Decline with bounded transport draining before invitation cleanup.
 
-The foundation uses development version `0.0.0` (build `1`) and a provisional macOS 14 minimum.
+The initial release targets macOS 14 as a provisional minimum.

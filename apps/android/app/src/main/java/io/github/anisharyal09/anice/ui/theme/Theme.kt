@@ -10,7 +10,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import android.content.Context
 import androidx.compose.ui.graphics.Color
 
 // Static semantic roles preserve the project palette rather than inheriting Material defaults.
@@ -91,9 +93,40 @@ private val DarkColors =
         surfaceTint = Color(0xFFA7C5D6),
     )
 
+enum class Appearance { System, Light, Dark;
+    companion object {
+        fun stored(value: String?): Appearance = entries.firstOrNull { it.name == value } ?: System
+    }
+}
+
+@Composable
+fun appearancePreference(): Appearance {
+    val context = LocalContext.current
+    val preferences = remember(context) { context.applicationContext.getSharedPreferences("appearance", Context.MODE_PRIVATE) }
+    var appearance by remember { mutableStateOf(Appearance.stored(preferences.getString("mode", null))) }
+    DisposableEffect(preferences) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "mode") appearance = Appearance.stored(preferences.getString("mode", null))
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    return appearance
+}
+
+fun saveAppearance(context: Context, appearance: Appearance) {
+    context.applicationContext.getSharedPreferences("appearance", Context.MODE_PRIVATE)
+        .edit().putString("mode", appearance.name).apply()
+}
+
 @Composable
 fun AniCeTheme(content: @Composable () -> Unit) {
-    val palette = if (isSystemInDarkTheme()) DarkColors else LightColors
+    val dark = when (appearancePreference()) {
+        Appearance.System -> isSystemInDarkTheme()
+        Appearance.Light -> false
+        Appearance.Dark -> true
+    }
+    val palette = if (dark) DarkColors else LightColors
     MaterialTheme(
         colorScheme = palette.copy(primary = palette.onSurface),
         shapes = Shapes(small = RoundedCornerShape(8.dp)),
@@ -104,7 +137,7 @@ fun AniCeTheme(content: @Composable () -> Unit) {
 /** Semantic roles defined in docs/design/DESIGN.md. */
 val ColorScheme.warning: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) Color(0xFFDCB27C) else Color(0xFF825523)
+    get() = if (surface == DarkColors.surface) Color(0xFFDCB27C) else Color(0xFF825523)
 
 val ColorScheme.subtleAccent: Color
     get() = primaryContainer
@@ -113,4 +146,4 @@ val ColorScheme.subtleAccent: Color
 /** Selection retains the shared accent while ordinary controls use neutral ink. */
 val ColorScheme.selectionAccent: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) DarkColors.primary else LightColors.primary
+    get() = if (surface == DarkColors.surface) DarkColors.primary else LightColors.primary

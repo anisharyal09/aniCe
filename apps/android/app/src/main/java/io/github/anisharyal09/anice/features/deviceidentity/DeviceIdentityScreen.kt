@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -167,11 +168,13 @@ fun DeviceIdentityScreen(
                 if (advanced) {
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text(stringResource(R.string.reset_identity), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { confirmation = true }, enabled = !state.isWorking) {
-                        Text(stringResource(R.string.reset_identity), color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                        onClick = { confirmation = true }, enabled = !state.isWorking) {
+                        Text(stringResource(R.string.reset_identity))
                     }
                 }
             }

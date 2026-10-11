@@ -1,12 +1,22 @@
 # Repository changelog
 
-Repository-wide structure, documentation, and development conventions belong here. Android, macOS, and protocol changes have separate changelogs and may be versioned independently:
+Repository-wide structure, documentation, and development conventions belong here. Android, macOS, and protocol changes maintain dedicated component changelogs under unified project releases:
 
 - [Android](apps/android/CHANGELOG.md)
 - [macOS](apps/macos/CHANGELOG.md)
 - [Protocol](protocol/CHANGELOG.md)
 
 ## Unreleased
+
+### Added
+
+- Home, Devices and Settings navigation with saved native appearance preferences.
+
+### Changed
+
+- Separate compact Home/companion summaries from device connection management and local identity settings; retain a small aniCe heading on each platform.
+
+## [0.1.0]
 
 ### Added
 
@@ -55,4 +65,4 @@ Repository-wide structure, documentation, and development conventions belong her
 - Replace roadmap placeholders in pairing completion messages with the saved trust state on both platforms.
 - Send authenticated cancellation on Mac pairing Decline before Bluetooth cleanup; report cancellation and release GATT on Android.
 
-Android uses development version `0.0.0-dev`; macOS uses numeric `0.0.0` to follow Apple's bundle-version conventions. Both identify unreleased foundations, not published releases.
+Release 0.1.0 captures initial foundation protocols, dual transports, idle optimization, and unified connection flow. Active development proceeds toward subsequent feature milestones.

@@ -31,7 +31,7 @@ struct AniCeApp: App {
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
     pairing.onPaired = { [weak session, weak navigation] peer in
       guard let session, let navigation else { return }
-      navigation.managingDevices = false
+      navigation.show(.home)
       navigation.details = false
       session.selectedPeer = peer
       session.setAutomatic(navigation.automaticAfterPairing)
@@ -82,7 +82,7 @@ struct AniCeApp: App {
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
                 session: session, lan: lan, navigation: navigation,
-                openMainWindow: { [weak delegate] in delegate?.openMainFromCompanion() }),
+                openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }
         }

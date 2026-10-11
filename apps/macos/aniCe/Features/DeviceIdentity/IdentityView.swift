@@ -5,18 +5,26 @@ import SwiftUI
 
 struct IdentityView: View {
     @Bindable var model: IdentityViewModel
+    var embedded = false
+    var onBack: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var confirmingReset = false
     @State private var copyFeedback = ""
     @State private var deviceName = ""
+    @State private var editingName = false
+    @State private var advanced = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
+                if let onBack {
+                    Button(action: onBack) { Image(systemName: "chevron.left") }
+                        .buttonStyle(.plain).accessibilityLabel("Back to Settings")
+                }
                 Text("This device").font(.title2).fontWeight(.medium)
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                if !embedded { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -34,15 +42,10 @@ struct IdentityView: View {
                                 Text("macOS").foregroundStyle(AniCePalette.secondaryText(colorScheme))
                             }
                         }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Device name").font(.headline)
-                            TextField("Mac name", text: $deviceName).textFieldStyle(.roundedBorder)
-                            Text("Shown to your phone after authentication. Nearby scans keep names private.")
-                                .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                            Button("Save name") { Task { await model.rename(deviceName) } }
-                                .disabled(model.isWorking || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    || deviceName.unicodeScalars.count > 64 || deviceName == local.identity.deviceName)
-                        }
+                        Button("Edit name…") {
+                            deviceName = local.identity.deviceName
+                            editingName = true
+                        }.buttonStyle(.bordered)
                         Text("Your local identity stays the same until you reset it.")
                             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                         VStack(alignment: .leading, spacing: 16) {
@@ -80,21 +83,40 @@ struct IdentityView: View {
                     }
                     if model.local != nil {
                         Divider()
-                        Text("Reset identity").font(.headline)
-                        Text("Resetting creates a new identity. Existing pairings become invalid; you will need to pair your devices again.")
-                            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                        Button("Reset device identity", role: .destructive) { confirmingReset = true }
-                            .disabled(model.isWorking || !model.canReset)
+                        Button { advanced.toggle() } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: advanced ? "chevron.down" : "chevron.right")
+                                Text("Advanced")
+                                Spacer()
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityValue(advanced ? "Expanded" : "Collapsed")
+                        if advanced {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Resetting creates a new identity. Existing pairings become invalid; you will need to pair your devices again.")
+                                    .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                                Button("Reset device identity", role: .destructive) { confirmingReset = true }
+                                    .disabled(model.isWorking || !model.canReset)
+                            }.padding(.top, 8)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(24)
-        .frame(minWidth: 460, idealWidth: 540, minHeight: 460, idealHeight: 620)
+        .frame(minWidth: embedded ? 0 : 460, idealWidth: 540, minHeight: embedded ? 0 : 460, idealHeight: 620)
         .foregroundStyle(AniCePalette.primaryText(colorScheme))
         .background(AniCePalette.background(colorScheme))
         .tint(AniCePalette.primaryText(colorScheme))
+        .alert("Edit device name", isPresented: $editingName) {
+            TextField("Mac name", text: $deviceName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { Task { await model.rename(deviceName) } }
+                .disabled(model.isWorking || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || deviceName.unicodeScalars.count > 64 || deviceName == model.local?.identity.deviceName)
+        } message: {
+            Text("Shown to your phone after authentication.")
+        }
         .alert("Reset this device’s identity?", isPresented: $confirmingReset) {
             Button("Cancel", role: .cancel) {}
             Button("Reset identity", role: .destructive) { copyFeedback = ""; Task { await model.reset() } }

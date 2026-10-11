@@ -11,14 +11,11 @@ struct CompanionView: View {
   let lan: MacLanSessionModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
-  @State private var details = false
-  @State private var diagnostics = false
-  @State private var managingDevices = false
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      if details || managingDevices { ScrollView { deviceContent }.frame(maxHeight: 520) }
+      if pairing.peers.count > 3 { ScrollView { deviceContent }.frame(maxHeight: 520) }
       else { deviceContent }
       footer
     }
@@ -26,9 +23,6 @@ struct CompanionView: View {
     .frame(width: 350)
     .background(AniCePalette.surface(colorScheme))
     .tint(AniCePalette.primaryText(colorScheme))
-    .onChange(of: pairing.completedPeer?.deviceId) { _, peer in
-      if peer != nil { managingDevices = false; details = false }
-    }
     .task {
       if !IdentityView.isTesting {
         await identity.load()
@@ -45,35 +39,18 @@ struct CompanionView: View {
     VStack(alignment: .leading, spacing: 16) {
       if pairing.active {
         Text(pairing.status).fixedSize(horizontal: false, vertical: true)
-        Button("Review pairing") { navigation.managingDevices = true; openMain() }
+        Button("Review pairing") { navigation.open(.devices, route: .pairing, present: openMain) }
         Button("Stop pairing") { pairing.cancel() }
-      } else if managingDevices {
-        Button("Back") { managingDevices = false }.buttonStyle(.bordered)
-        Text("Manage devices").font(.headline)
-        MacPairingView(model: pairing, showPairingControls: false)
-        Button("Pair another phone…") { navigation.managingDevices = true; openMain() }
-          .buttonStyle(.bordered)
       } else if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
         MacSessionView(peers: pairing.peers, model: session, lan: lan,
-          details: $details, diagnostics: $diagnostics, companion: true,
-          onManageDevices: { details = false; managingDevices = true },
-          onChoosePhone: {
-            navigation.managingDevices = false
-            navigation.details = true
-            navigation.diagnostics = false
-            openMain()
-          },
-          onOpenDiagnostics: {
-            navigation.managingDevices = false
-            navigation.details = true
-            navigation.diagnostics = true
-            openMain()
-          })
+          details: .constant(false), diagnostics: .constant(false), compact: true,
+          onManageDevices: { navigation.open(.devices, present: openMain) },
+          onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })
       } else {
         VStack(alignment: .leading, spacing: 8) {
-          Text("Pair your phone")
+          Text("No devices paired yet")
             .font(.headline)
-          Text("Open aniCe to pair using a QR code or six-digit code.")
+          Button("Pair a device") { navigation.open(.devices, route: .pairing, present: openMain) }
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -91,9 +68,8 @@ struct CompanionView: View {
       .frame(maxWidth: .infinity)
 
       Menu {
-        Button("This device") {
-          identity.showingDetails = true
-          openMain()
+        Button("Settings") {
+          navigation.open(.settings, present: openMain)
         }
         Button("Quit aniCe") { NSApp.terminate(nil) }
       } label: {

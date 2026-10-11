@@ -18,13 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         companion = CompanionHost(content: content, onOpen: { [weak self] in
             self?.openMainFromCompanion()
         }, onManage: { [weak self] in
-            navigation.managingDevices = true
-            self?.openMainFromCompanion()
+            navigation.open(.devices, route: .pairing) { self?.openMainFromCompanion() }
         }, onDetails: { [weak self] in
-            navigation.managingDevices = false
             navigation.details = true
             navigation.diagnostics = false
-            self?.openMainFromCompanion()
+            navigation.open(.devices) { self?.openMainFromCompanion() }
         })
     }
 

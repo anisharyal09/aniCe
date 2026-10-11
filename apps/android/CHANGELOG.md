@@ -6,6 +6,19 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Home/Devices/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
+
+### Changed
+
+- Keep Home device rows compact and clickable; move full connections, pairing and diagnostics to Devices with an explicit Connection details disclosure.
+- Use smaller aniCe titles on Home/Devices and aniCe Settings on Settings. Reduce top bars to 48 dp at normal text size, allow growth for large text and tighten spacing above the Devices label.
+- Move local identity behind a full-width This device Settings entry; keep reset under Advanced with a compact neutral entry and destructive confirmation.
+- Preserve peer/nested-route state across tabs and native Back behavior; completed pairing returns Home through the guarded connection handoff.
+
+## [0.1.0]
+
+### Added
+
 - Opt-in physical connected-idle CPU test with channel continuity, encrypted-operation validation budgets and unchanged identity/trust journal assertions.
 - Foreground LAN sessions with Wi-Fi-bound sockets, scoped IPv6, bounded NSD resolution and independent Bluetooth/local-network controls.
 - Notification-free companion auto-connect on API 31+ in Debug and Release, with pinned saved setup, a device-level preference and Disconnect pause. Physical endurance and minimum-OS acceptance remain pending.
@@ -25,7 +38,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Cap nearby retry delays at 90 seconds after jitter, with saturation/reset and invalid-jitter regressions.
 - Unify device summaries, compact neutral connection controls and inline transport details. Keep checks and Debug events collapsed; pairing returns to Home and starts fresh Bluetooth work.
 - Make the accent automatic checkbox observable and resume saved setup inline. Disabling automatic ownership retains eligible foreground BLE as manual work; background/lock cleanup and hard limits remain.
-- Add atomic 1–64-code-point phone-name editing, compact identity details, full trusted fingerprints and native Back/close icons. Keys and trust stay unchanged.
+- Add atomic 1–64-code-point phone-name editing, compact identity details with neutral confirmed-reset controls, full trusted fingerprints and native Back/close icons. Keys and trust stay unchanged.
 - Expose the existing 15-second LAN browse in progress text; preserve authenticated candidate selection and manual retry policy.
 - Replace BLE/LAN maintenance polling and idle TCP read timeouts with cancellable deadline waits; use elapsed realtime for authentication, record and fragment deadlines.
 - Retire both session owners from identity reset and trust-store revocation/replacement, including mutations outside presentation callbacks.

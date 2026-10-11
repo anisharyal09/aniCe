@@ -4,10 +4,76 @@ import CryptoKit
 import AppKit
 import Foundation
 import XCTest
+import SwiftUI
+import Observation
 
 @testable import aniCe
 
 final class SessionTests: XCTestCase, @unchecked Sendable {
+  @MainActor func testNavigationDeepLinkUpdatesContextBeforePresentationAndRetainsItAcrossTabs() {
+    let navigation = ConnectionNavigation()
+    XCTAssertEqual(navigation.destination, .home)
+    navigation.destination = .settings
+    navigation.details = true
+    navigation.diagnostics = false
+    var presentations = 0
+    navigation.open(.devices, peer: "phone-a") {
+      presentations += 1
+      XCTAssertEqual(navigation.destination, .devices)
+      XCTAssertEqual(navigation.focusedPeer, "phone-a")
+      XCTAssertEqual(navigation.deviceRoute, .overview)
+    }
+    navigation.show(.settings)
+    XCTAssertEqual(navigation.settingsRoute, .overview)
+    navigation.settingsRoute = .identity
+    navigation.show(.devices)
+    navigation.show(.settings)
+    XCTAssertEqual(navigation.settingsRoute, .identity)
+    navigation.settingsRoute = .overview
+    navigation.show(.devices)
+    XCTAssertEqual(navigation.focusedPeer, "phone-a")
+    XCTAssertTrue(navigation.details)
+    XCTAssertFalse(navigation.diagnostics)
+    navigation.open(.devices, route: .pairing) {
+      presentations += 1
+      XCTAssertEqual(navigation.deviceRoute, .pairing)
+    }
+    XCTAssertEqual(presentations, 2)
+  }
+
+  func testWindowAppearanceResolvesForcedAndSystemColors() {
+    XCTAssertEqual(WindowAppearance.allCases.count, 3)
+    for system in [ColorScheme.light, .dark] {
+      XCTAssertEqual(WindowAppearance.light.colorScheme(system: system), .light)
+      XCTAssertEqual(WindowAppearance.dark.colorScheme(system: system), .dark)
+      XCTAssertEqual(WindowAppearance.system.colorScheme(system: system), system)
+      XCTAssertEqual(WindowAppearance.stored("invalid").colorScheme(system: system), system)
+    }
+  }
+
+  @MainActor func testSystemColorsFollowApplicationWhileWindowIsForced() async {
+    let application = NSApplication.shared
+    let previous = application.appearance
+    defer { application.appearance = previous }
+    application.appearance = NSAppearance(named: .darkAqua)
+    let system = SystemAppearance(application: application)
+    let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+    window.appearance = NSAppearance(named: .aqua)
+    XCTAssertEqual(system.colorScheme, .dark)
+    XCTAssertEqual(WindowAppearance.light.colorScheme(system: system.colorScheme), .light)
+    XCTAssertEqual(window.appearance?.name, .aqua)
+    XCTAssertEqual(WindowAppearance.system.colorScheme(system: system.colorScheme), .dark)
+
+    let changed = expectation(description: "System appearance updates SwiftUI colors")
+    withObservationTracking { _ = system.colorScheme } onChange: { changed.fulfill() }
+    application.appearance = NSAppearance(named: .aqua)
+    await fulfillment(of: [changed], timeout: 2)
+    XCTAssertEqual(system.colorScheme, .light)
+    XCTAssertEqual(WindowAppearance.system.colorScheme(system: system.colorScheme), .light)
+    XCTAssertEqual(WindowAppearance.dark.colorScheme(system: system.colorScheme), .dark)
+    XCTAssertEqual(application.appearance?.name, .aqua)
+  }
+
   func testSessionFailuresExposeReadableReasonsInsteadOfNSErrorCodes() {
     let failures: [SessionFailure] = [.malformed, .unsupportedProfile, .untrustedPeer, .authentication,
       .state, .cancelled, .expired, .controlTimeout]

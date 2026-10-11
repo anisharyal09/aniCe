@@ -4,11 +4,61 @@ import AppKit
 import SwiftUI
 import Observation
 
+enum AppDestination: String, CaseIterable, Identifiable {
+  case home = "Home", devices = "Devices", settings = "Settings"
+  var id: Self { self }
+  var symbol: String { switch self { case .home: "house"; case .devices: "laptopcomputer.and.iphone"; case .settings: "gearshape" } }
+}
+enum DeviceRoute { case overview, pairing }
+enum SettingsRoute { case overview, identity }
+enum WindowAppearance: String, CaseIterable {
+  case system = "System", light = "Light", dark = "Dark"
+  func colorScheme(system: ColorScheme) -> ColorScheme {
+    switch self { case .system: system; case .light: .light; case .dark: .dark }
+  }
+  static func stored(_ value: String) -> Self { Self(rawValue: value) ?? .system }
+}
+
+// Reads application appearance independently of the main window's forced appearance.
+@Observable @MainActor final class SystemAppearance {
+  private(set) var colorScheme: ColorScheme
+  @ObservationIgnored private var observation: NSKeyValueObservation?
+
+  init(application: NSApplication = .shared) {
+    colorScheme = Self.scheme(application.effectiveAppearance)
+    observation = application.observe(\.effectiveAppearance, options: [.new]) { [weak self] application, _ in
+      Task { @MainActor [weak self] in
+        self?.colorScheme = Self.scheme(application.effectiveAppearance)
+      }
+    }
+  }
+
+  private static func scheme(_ appearance: NSAppearance) -> ColorScheme {
+    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+  }
+}
+
 @Observable @MainActor final class ConnectionNavigation {
-  var managingDevices = false
+  var destination: AppDestination = .home
+  var deviceRoute: DeviceRoute = .overview
+  var settingsRoute: SettingsRoute = .overview
+  var focusedPeer: String?
   var details = false
   var diagnostics = false
   var automaticAfterPairing = true
+
+  func open(_ destination: AppDestination, peer: String? = nil, route: DeviceRoute = .overview, present: () -> Void) {
+    show(destination, peer: peer, route: route)
+    present()
+  }
+
+  func show(_ destination: AppDestination, peer: String? = nil, route: DeviceRoute = .overview) {
+    self.destination = destination
+    if destination == .devices {
+      deviceRoute = route
+      if let peer { focusedPeer = peer }
+    }
+  }
 }
 
 struct MainWindowView: View {
@@ -20,84 +70,119 @@ struct MainWindowView: View {
   let lan: MacLanSessionModel
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
-  @Environment(\.colorScheme) private var colorScheme
-
-  private var deviceHeader: some View {
-    HStack(spacing: 14) {
-      Image(systemName: "laptopcomputer")
-        .font(.title2)
-        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-      VStack(alignment: .leading, spacing: 2) {
-        Text(identity.local?.identity.deviceName ?? "This Mac")
-          .font(.title3.weight(.medium))
-          .foregroundStyle(AniCePalette.primaryText(colorScheme))
-        Text("macOS • " + (identity.local?.identity.groupedFingerprint.prefix(19) ?? ""))
-          .font(.caption)
-          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-      }
-      Spacer()
-      Button("Edit name…") { identity.showingDetails = true }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-    }
-    .padding(16)
-    .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 12))
+  @State private var systemAppearance = SystemAppearance()
+  private var colorScheme: ColorScheme {
+    WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
   }
 
+  @AppStorage("window.appearance") private var appearance = WindowAppearance.system.rawValue
+
   var body: some View {
-    GeometryReader { geometry in
-      ScrollView(.vertical) {
-        VStack(alignment: .leading, spacing: 20) {
-          deviceHeader
-          if navigation.managingDevices {
-            Button("Back") { navigation.managingDevices = false }.buttonStyle(.bordered)
-            Toggle("Connect automatically after pairing", isOn: $navigation.automaticAfterPairing)
-              .tint(AniCePalette.accent(colorScheme))
-              .disabled(pairing.phase == "paired")
-            MacPairingView(model: pairing)
-            if pairing.hasTrustedAndroid || session.allowing || lan.allowing {
-              Button {
-                navigation.managingDevices = false
-                navigation.details = true
-                navigation.diagnostics = true
-              } label: {
-                HStack(spacing: 6) {
-                  Image(systemName: "chevron.right")
-                  Text("Diagnostics")
-                }.frame(maxWidth: .infinity, alignment: .leading)
-              }.buttonStyle(.bordered)
-            }
+    NavigationSplitView {
+      VStack(alignment: .leading, spacing: 0) {
+        Text("aniCe").font(.title3.weight(.semibold)).padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
+        List(AppDestination.allCases, selection: $navigation.destination) { destination in
+          Label(destination.rawValue, systemImage: destination.symbol).tag(destination)
+        }
+      }.navigationSplitViewColumnWidth(min: 140, ideal: 160)
+    } detail: {
+      Group {
+        switch navigation.destination {
+        case .home:
+          ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+              if pairing.active {
+                Text(pairing.status)
+                Button("Review pairing") { navigation.show(.devices, route: .pairing) }
+              }
+              if pairing.hasTrustedAndroid {
+                MacSessionView(peers: pairing.peers, model: session, lan: lan,
+                  details: $navigation.details, diagnostics: $navigation.diagnostics,
+                  compact: true, onManageDevices: { navigation.show(.devices) },
+                  onOpenDevice: { peer in navigation.show(.devices, peer: peer) })
+              } else {
+                Text("No devices paired yet").font(.headline)
+                Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
+              }
+            }.frame(maxWidth: 760, alignment: .leading).padding(24)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        case .devices:
+          ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+              if navigation.deviceRoute == .pairing || !pairing.hasTrustedAndroid {
+                if pairing.hasTrustedAndroid {
+                  Button { navigation.deviceRoute = .overview } label: { Label("Back", systemImage: "chevron.backward") }
+                }
+                Toggle("Connect automatically after pairing", isOn: $navigation.automaticAfterPairing)
+                  .tint(AniCePalette.accent(colorScheme)).disabled(pairing.phase == "paired")
+                MacPairingView(model: pairing)
+              } else {
+                if pairing.peers.filter({ $0.peer.platform == "android" }).count > 1 {
+                  Picker("Device", selection: $navigation.focusedPeer) {
+                    Text("Current device").tag(String?.none)
+                    ForEach(pairing.peers.filter { $0.peer.platform == "android" }) { record in
+                      Text(record.peer.deviceName).tag(Optional(record.peer.deviceId))
+                    }
+                  }
+                }
+                MacSessionView(peers: pairing.peers, model: session, lan: lan,
+                  details: $navigation.details, diagnostics: $navigation.diagnostics,
+                  focusedPeer: navigation.focusedPeer, discovery: discovery, canDiscover: !pairing.active && !session.allowing,
+                  automaticEnabled: !pairing.active,
+                  onManageDevices: { navigation.deviceRoute = .pairing })
+                Button(pairing.active ? "Review pairing" : "Manage devices") { navigation.deviceRoute = .pairing }
+                  .buttonStyle(.bordered)
+              }
+            }.frame(maxWidth: 760, alignment: .leading).padding(24)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        case .settings:
+          if navigation.settingsRoute == .identity {
+            IdentityView(model: identity, embedded: true, onBack: { navigation.settingsRoute = .overview })
           } else {
-            if session.state == "Secured" || lan.state == "Secured" ||
-              (!pairing.active && (session.allowing || lan.allowing || pairing.hasTrustedAndroid)) {
-              MacSessionView(peers: pairing.peers, model: session, lan: lan,
-                details: $navigation.details, diagnostics: $navigation.diagnostics,
-                discovery: discovery, canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-                onManageDevices: { navigation.managingDevices = true })
-            }
-            if pairing.active || !pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
-              Toggle("Connect automatically after pairing", isOn: $navigation.automaticAfterPairing)
-                .tint(AniCePalette.accent(colorScheme))
-              .disabled(pairing.phase == "paired")
-              MacPairingView(model: pairing, showTrustedDevices: !pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded)
-            }
-            if pairing.hasTrustedAndroid {
-              Button("Manage devices") { navigation.managingDevices = true }.buttonStyle(.bordered)
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Text("Window appearance")
+                Spacer()
+                Picker("Window appearance", selection: Binding(get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
+                  ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
+                }.labelsHidden().pickerStyle(.menu).frame(width: 130)
+              }.padding(.horizontal, 24).padding(.top, 20)
+              Text("The menu-bar companion follows macOS appearance.")
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal, 24)
+              Divider().padding(.vertical, 12)
+              Button { navigation.settingsRoute = .identity } label: {
+                HStack(spacing: 12) {
+                  Image(systemName: "desktopcomputer").accessibilityHidden(true)
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("This device")
+                    if let local = identity.local {
+                      Text(local.identity.deviceName).font(.callout)
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                  }
+                  Spacer()
+                  Image(systemName: "chevron.right").accessibilityHidden(true)
+                }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                  .contentShape(Rectangle())
+              }.buttonStyle(.plain)
+                .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 24)
+              Spacer()
             }
           }
         }
-        .frame(maxWidth: 760, alignment: .leading)
-        .padding(24)
-        .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .topLeading)
-      }
+      }.navigationTitle(navigation.destination.rawValue)
+        .toolbarBackground(AniCePalette.surface(colorScheme), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
+        .background(AniCePalette.background(colorScheme))
+        .overlay(alignment: .top) { Divider() }
     }
-    .frame(minWidth: 480, minHeight: 320)
-    .background(AniCePalette.background(colorScheme))
+    .preferredColorScheme(colorScheme)
+    .frame(minWidth: 620, minHeight: 420)
     .tint(AniCePalette.primaryText(colorScheme))
-    .toolbar {
-      Button("This device", systemImage: "info.circle") { identity.showingDetails = true }
-    }
-    .sheet(isPresented: $identity.showingDetails) { IdentityView(model: identity) }
     .task {
       if !IdentityView.isTesting {
         await identity.load()
@@ -114,6 +199,10 @@ struct MainWindowView: View {
       let action = openWindow
       delegate.reopenMainWindow = {
         action(id: "main")
+        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
+          window.deminiaturize(nil)
+          window.makeKeyAndOrderFront(nil)
+        }
         NSApp.activate()
       }
     }

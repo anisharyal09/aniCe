@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -32,7 +33,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
     automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     var camera by remember { mutableStateOf(false) }
-    var addingDevice by remember { mutableStateOf(false) }
+    var addingDevice by rememberSaveable { mutableStateOf(false) }
     val showPairing = model.peers.isEmpty() || model.busy || addingDevice
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -42,7 +43,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    var pin by remember { mutableStateOf("") }
+    var pin by rememberSaveable { mutableStateOf("") }
     var resettingTrust by remember { mutableStateOf(false) }
     var forget by remember { mutableStateOf<String?>(null) }
     val permission =
