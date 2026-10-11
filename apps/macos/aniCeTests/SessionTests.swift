@@ -566,3 +566,241 @@ private actor SessionSigningGate {
     releaseWaiter = nil
   }
 }
+
+/// Runs the packaged loader from the signed hosted app without sending valid playback commands.
+final class NowPlayingGateTests: XCTestCase, @unchecked Sendable {
+  func testSandboxRemovalKeepsOriginalJournalDirectory() {
+    let home = URL(fileURLWithPath: "/Users/test account", isDirectory: true)
+    let directory = MacAppStorage.directory(home: home)
+    XCTAssertEqual(directory.path, "/Users/test account/Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe")
+    XCTAssertNotEqual(directory.path, home.appendingPathComponent("Library/Application Support/aniCe").path)
+  }
+
+  func testPackagedWatchRejectsStaleAndOversizedCommandsAndExitsOnEOF() throws {
+    let resources = try XCTUnwrap(Bundle.main.resourceURL).appendingPathComponent("NowPlaying")
+    let library = resources.appendingPathComponent("libaniCeNowPlaying.dylib")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: library.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: resources.appendingPathComponent("GPL-LICENSE.txt").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: resources.appendingPathComponent("THIRD_PARTY_NOTICES.md").path))
+    let process = Process()
+    let input = Pipe()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+    process.arguments = [resources.appendingPathComponent("now-playing.pl").path, library.path, "watch_all"]
+    process.standardInput = input
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+    let first = expectation(description: "initial native snapshot")
+    let rejected = expectation(description: "stale and oversized requests rejected")
+    rejected.expectedFulfillmentCount = 2
+    let ended = expectation(description: "EOF terminates adapter")
+    let lock = NSLock()
+    let buffer = GateBuffer()
+    output.fileHandleForReading.readabilityHandler = { file in
+      let bytes = file.availableData
+      lock.lock()
+      defer { lock.unlock() }
+      buffer.lines.append(bytes)
+      guard buffer.lines.count <= 17 * 1024 * 1024 else { XCTFail("unbounded adapter output"); return }
+      while let newline = buffer.lines.firstIndex(of: 10) {
+        let line = buffer.lines.prefix(upTo: newline)
+        buffer.lines.removeSubrange(...newline)
+        guard let row = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else {
+          XCTFail("invalid native reply"); continue
+        }
+        if let sent = row["sent"] as? Bool {
+          XCTAssertFalse(sent)
+          if buffer.rejectionCount < 2 { buffer.rejectionCount += 1; rejected.fulfill() }
+        } else if !buffer.firstReceived {
+          buffer.firstReceived = true
+          XCTAssertNil(row["error"], "native loader did not produce a snapshot")
+          XCTAssertNotNil(row["sources"])
+          first.fulfill()
+        }
+      }
+    }
+    process.terminationHandler = { _ in ended.fulfill() }
+    try process.run()
+    defer {
+      output.fileHandleForReading.readabilityHandler = nil
+      try? input.fileHandleForWriting.close()
+      if process.isRunning { process.terminate() }
+    }
+    wait(for: [first], timeout: 8)
+    let stale = "play 2147483647 00000000-0000-0000-0000-000000000000 toggle\n"
+    try input.fileHandleForWriting.write(contentsOf: Data((String(repeating: "x", count: 2049) + "\n" + stale).utf8))
+    wait(for: [rejected], timeout: 5)
+    try input.fileHandleForWriting.close()
+    wait(for: [ended], timeout: 3)
+    XCTAssertEqual(process.terminationStatus, 0)
+  }
+}
+
+/// Mutable pipe state is protected by the test reader's lock.
+private final class GateBuffer: @unchecked Sendable {
+  var lines = Data()
+  var firstReceived = false
+  var rejectionCount = 0
+}
+
+final class MediaTests: XCTestCase {
+  func testProgressScheduleBoundsAndStopsWhenInactive() {
+    let start=Date(timeIntervalSince1970:100)
+    let active=Array(MediaProgressSchedule(active:true).entries(from:start,mode:.normal).prefix(5))
+    XCTAssertEqual(active.map { $0.timeIntervalSince(start) },[0,0.25,0.5,0.75,1])
+    for mode: TimelineScheduleMode in [.normal,.lowFrequency] {
+      XCTAssertEqual(Array(MediaProgressSchedule(active:false).entries(from:start,mode:mode).prefix(5)),[start])
+    }
+  }
+  func testIndependentFixturesCanonicalEncodingAndNegativeInventory() throws {
+    let helper=SessionTests(), root=try helper.root("media-vectors")
+    let valid=try XCTUnwrap(root["valid"] as? [[String:Any]]), invalid=try XCTUnwrap(root["invalid"] as? [[String:Any]])
+    XCTAssertGreaterThanOrEqual(valid.count,12); XCTAssertGreaterThanOrEqual(invalid.count,28)
+    for row in valid {
+      let bytes=try helper.b(row,"bytes"), message=try XCTUnwrap(MediaMessage.decode(bytes))
+      XCTAssertEqual(message.kind,(row["kind"] as? NSNumber)?.int64Value)
+      XCTAssertEqual(try message.encode(),bytes)
+    }
+    for row in invalid { XCTAssertThrowsError(try MediaMessage.decode(helper.b(row,"bytes")),row["name"] as? String ?? "") }
+  }
+  func testLocalProgressBoundsAndMissingDuration() {
+    var media=MediaPlayback();media.position=10000;media.duration=200000;media.rate=1000;media.state=1;media.sampledAt=0
+    XCTAssertEqual(media.elapsed(at:2),12);XCTAssertEqual(media.elapsed(at:999999),200)
+    media.state=2;XCTAssertEqual(media.elapsed(at:999999),10)
+    media.duration = -1;media.state=1;XCTAssertEqual(media.elapsed(at:999999),1000009)
+    media.position = -1;XCTAssertEqual(media.elapsed(at:1),0)
+  }
+  @MainActor func testRetiredSubscriptionDuplicateStaleCommandsAndLegacyData() async throws {
+    let model=MacPlayback(); var outgoing:[MediaMessage]=[]
+    model.channel("ble",token:"a") { outgoing.append(try XCTUnwrap(MediaMessage.decode($0))) }
+    let sub=UUID().uuidString, source=UUID().uuidString, revision=UUID().uuidString
+    XCTAssertFalse(model.receive(Data("aniCe connection check".utf8),channel:"ble"))
+    XCTAssertTrue(model.receive(try MediaMessage(kind:2,fields:[.text(sub)]).encode(),channel:"ble"))
+    let command=try MediaMessage(kind:6,fields:[.text(sub),.integer(1),.text(source),.text(revision),.integer(1),.integer(0)]).encode()
+    XCTAssertTrue(model.receive(command,channel:"ble"));XCTAssertTrue(model.receive(command,channel:"ble"))
+    try await Task.sleep(for:.milliseconds(150))
+    XCTAssertEqual(outgoing.filter { $0.kind==7 }.map { $0.number(2) },[1,1])
+    XCTAssertTrue(outgoing.contains { $0.kind==3 });XCTAssertTrue(outgoing.contains { $0.kind==5 });XCTAssertTrue(model.phoneSubscribed)
+    model.channel("ble",token:nil) { _ in XCTFail("Retired endpoint sent") }
+    let count=outgoing.count;XCTAssertTrue(model.receive(command,channel:"ble"))
+    try await Task.sleep(for:.milliseconds(100));XCTAssertEqual(outgoing.count,count)
+    XCTAssertTrue(model.playback.source.isEmpty);XCTAssertTrue(model.sources.isEmpty);XCTAssertFalse(model.phoneSubscribed)
+  }
+  @MainActor func testLocalDisplayDefaultsOffPersistsAndDoesNotRetirePhoneSubscription() throws {
+    let suite="aniCe.media-display-tests.\(UUID().uuidString)"
+    let preferences=try XCTUnwrap(UserDefaults(suiteName:suite))
+    defer { preferences.removePersistentDomain(forName:suite) }
+    let model=MacPlayback(preferences:preferences,requestSink:{ _ in true })
+    XCTAssertFalse(model.showOnMac)
+    model.presented("companion",true);XCTAssertFalse(model.companionVisible)
+    model.channel("ble",token:"display-test") { _ in }
+    let sub=UUID().uuidString
+    _ = model.receive(try MediaMessage(kind:2,fields:[.text(sub)]).encode(),channel:"ble")
+    XCTAssertTrue(model.phoneSubscribed)
+    let pid=ProcessInfo.processInfo.processIdentifier
+    model.read(try JSONSerialization.data(withJSONObject:["pid":pid,"playbackRevision":UUID().uuidString,"sourceIsAutomatic":true,
+      "sources":[["pid":pid,"bundleIdentifier":Bundle.main.bundleIdentifier!,"isMusicApp":false,"isPlaying":false,"hasTrack":true]],
+      "kMRMediaRemoteNowPlayingInfoTitle":"Display test","isPlaying":false,"canSendCommandsDirectly":true,"canToggle":true]))
+    let retained=model.playback;XCTAssertFalse(retained.source.isEmpty)
+    model.setShowOnMac(true);XCTAssertTrue(model.showOnMac);XCTAssertTrue(model.companionVisible)
+    XCTAssertTrue(MacPlayback(preferences:preferences,requestSink:{ _ in true }).showOnMac)
+    model.setShowOnMac(false);XCTAssertFalse(model.showOnMac);XCTAssertFalse(model.companionVisible)
+    XCTAssertTrue(model.phoneSubscribed);XCTAssertEqual(model.playback,retained)
+    XCTAssertFalse(MacPlayback(preferences:preferences,requestSink:{ _ in true }).showOnMac)
+    model.setShowOnMac(true);XCTAssertTrue(model.companionVisible)
+    model.presented("companion",false);model.setShowOnMac(false);model.setShowOnMac(true)
+    XCTAssertFalse(model.companionVisible);XCTAssertTrue(model.phoneSubscribed)
+    _ = model.receive(try MediaMessage(kind:4,fields:[.text(sub)]).encode(),channel:"ble")
+    XCTAssertFalse(model.phoneSubscribed)
+  }
+  @MainActor func testInstalledScriptingDictionaryBoundsAndPermissionCapabilities() throws {
+    let good=Data("""
+      <dictionary><suite name="Playback" code="Musi"><command name="playpause" code="MusiPlPs"/><command name="next track" code="MusiNext"/><class name="application" code="capp"><property name="player position" code="pPos" type="real" access="rw"/></class></suite></dictionary>
+      """.utf8)
+    let parsed=try XCTUnwrap(PlaybackAutomationCapabilities.parse(good))
+    XCTAssertTrue(parsed.canToggle);XCTAssertNotNil(parsed.position);XCTAssertNotNil(parsed.event(for:.next,isPlaying:true));XCTAssertNil(parsed.event(for:.previous,isPlaying:false))
+    XCTAssertNil(PlaybackAutomationCapabilities.parse(Data(repeating:0,count:256*1024+1)))
+    XCTAssertNil(PlaybackAutomationCapabilities.parse(Data("<!DOCTYPE dictionary [<!ENTITY x SYSTEM 'file:///tmp/secret'>]><dictionary>&x;</dictionary>".utf8)))
+    let duplicate=Data("<dictionary><suite><command name='playpause' code='MusiPlPs'/><command name='playpause' code='MusiPlPs'/></suite></dictionary>".utf8)
+    XCTAssertNil(PlaybackAutomationCapabilities.parse(duplicate))
+    let required=Data("<dictionary><suite><command name='playpause' code='MusiPlPs'><parameter name='unsafe'/></command></suite></dictionary>".utf8)
+    XCTAssertNil(PlaybackAutomationCapabilities.parse(required))
+  }
+  @MainActor func testThumbnailBoundsAndInvalidInput() throws {
+    XCTAssertNil(MacPlayback.thumbnail(Data()));XCTAssertNil(MacPlayback.thumbnail(Data(repeating:0,count:12*1024*1024+1)))
+    let bitmap=try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:512,pixelsHigh:384,bitsPerSample:8,samplesPerPixel:3,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0))
+    if let pixels=bitmap.bitmapData { memset(pixels,0,bitmap.bytesPerRow*bitmap.pixelsHigh) }
+    let input=try XCTUnwrap(bitmap.representation(using:.jpeg,properties:[:]))
+    let thumbnail=try XCTUnwrap(MacPlayback.thumbnail(input)), decoded=try XCTUnwrap(NSBitmapImageRep(data:thumbnail))
+    XCTAssertLessThanOrEqual(thumbnail.count,65536);XCTAssertLessThanOrEqual(max(decoded.pixelsWide,decoded.pixelsHigh),256)
+  }
+  @MainActor func testPackagedOwnerAgainstCurrentlyPlayingSource() async throws {
+    guard ProcessInfo.processInfo.environment["ANICE_RUN_PLAYBACK_READ_TEST"]=="1" else { throw XCTSkip("Requires a manually started real player") }
+    let model=MacPlayback();model.presented("acceptance",true);defer { model.presented("acceptance",false) }
+    try await Task.sleep(for:.seconds(3))
+    XCTAssertEqual(model.feedback,"");XCTAssertFalse(model.playback.source.isEmpty);XCTAssertFalse(model.playback.title.isEmpty);XCTAssertFalse(model.playback.revision.isEmpty)
+    XCTAssertTrue(model.sources.contains { $0.id==model.playback.source })
+    XCTAssertFalse(model.sources.isEmpty)
+  }
+
+  @MainActor func testNativeRepliesCannotCompleteAnotherCommandAndSamplesKeepRevision() throws {
+    var requests:[PlaybackRequest]=[]
+    let model=MacPlayback(requestSink:{requests.append($0);return true})
+    let pid=ProcessInfo.processInfo.processIdentifier, nativeRevision=UUID()
+    func snapshot(_ revision: UUID,_ position: Double=1) throws -> Data {
+      try JSONSerialization.data(withJSONObject:["pid":pid,"playbackRevision":revision.uuidString,"sourceIsAutomatic":true,
+        "sources":[["pid":pid,"bundleIdentifier":Bundle.main.bundleIdentifier!,"isMusicApp":false,"isPlaying":true,"hasTrack":true,"displayName":"Test player"]],
+        "kMRMediaRemoteNowPlayingInfoTitle":"Track","kMRMediaRemoteNowPlayingInfoDuration":100,"kMRMediaRemoteNowPlayingInfoElapsedTime":position,
+        "kMRMediaRemoteNowPlayingInfoPlaybackRate":1,"isPlaying":true,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true])
+    }
+    model.read(try snapshot(nativeRevision));XCTAssertFalse(model.playback.source.isEmpty)
+    let first=model.playback
+    model.read(try snapshot(nativeRevision,2));XCTAssertEqual(model.playback.revision,first.revision)
+    var results:[Int64]=[]
+    model.command(source:first.source,revision:first.revision,action:4,value:100001) { results.append($0) }
+    XCTAssertEqual(results,[1]);XCTAssertTrue(requests.isEmpty)
+    model.command(source:first.source,revision:first.revision,action:1) { results.append($0) }
+    let oldID=try XCTUnwrap(requests.last?.requestID);XCTAssertTrue(model.busy)
+    model.read(try snapshot(UUID()));XCTAssertFalse(model.busy);XCTAssertEqual(results,[1,1])
+    let second=model.playback
+    model.command(source:second.source,revision:second.revision,action:1) { results.append($0) }
+    let newID=try XCTUnwrap(requests.last?.requestID)
+    model.read(try JSONSerialization.data(withJSONObject:["sent":true,"requestID":oldID.uuidString]))
+    XCTAssertTrue(model.busy);XCTAssertEqual(results,[1,1])
+    model.read(try JSONSerialization.data(withJSONObject:["sent":true,"requestID":newID.uuidString]))
+    XCTAssertFalse(model.busy);XCTAssertEqual(results,[1,1,0]);XCTAssertEqual(requests.count,3);XCTAssertEqual(requests.last?.command,.sample)
+    let confirmed=model.playback
+    let quick:[String:Any] = ["sampleOnly":true,"pid":pid,"playbackRevision":requests.last!.context!.revision.uuidString,"isPlaying":false,"kMRMediaRemoteNowPlayingInfoElapsedTime":42,"kMRMediaRemoteNowPlayingInfoPlaybackRate":1]
+    model.read(try JSONSerialization.data(withJSONObject:quick))
+    XCTAssertEqual(model.playback.position,42000);XCTAssertEqual(model.playback.state,2);XCTAssertEqual(model.playback.rate,0);XCTAssertEqual(model.playback.revision,confirmed.revision)
+    var stale=quick;stale["playbackRevision"]=UUID().uuidString;stale["kMRMediaRemoteNowPlayingInfoElapsedTime"]=99
+    model.read(try JSONSerialization.data(withJSONObject:stale));XCTAssertEqual(model.playback.position,42000)
+    var playOnly=try XCTUnwrap(JSONSerialization.jsonObject(with:snapshot(UUID())) as? [String:Any])
+    playOnly["canToggle"]=false;playOnly["canPlay"]=true;playOnly["canPause"]=false
+    model.read(try JSONSerialization.data(withJSONObject:playOnly));XCTAssertEqual(model.playback.actions & 1,0)
+    model.command(source:model.playback.source,revision:model.playback.revision,action:1) { results.append($0) };XCTAssertEqual(results.last,2)
+    playOnly["isPlaying"]=false;model.read(try JSONSerialization.data(withJSONObject:playOnly));XCTAssertEqual(model.playback.actions & 1,1)
+    let pausedRevision=model.playback.revision
+    model.read(try JSONSerialization.data(withJSONObject:["sampleOnly":true,"pid":pid,"playbackRevision":playOnly["playbackRevision"]!,"isPlaying":true,"kMRMediaRemoteNowPlayingInfoElapsedTime":3,"kMRMediaRemoteNowPlayingInfoPlaybackRate":1]))
+    XCTAssertEqual(model.playback.actions & 1,0);XCTAssertNotEqual(model.playback.revision,pausedRevision)
+    model.read(Data("{\"error\":\"metadata timeout\"}".utf8));XCTAssertTrue(model.playback.source.isEmpty);XCTAssertFalse(model.feedback.isEmpty)
+  }
+  @MainActor func testAppliedRemoteCommandDuplicatesExecuteOnlyOnce() async throws {
+    var requests:[PlaybackRequest]=[], sent:[MediaMessage]=[]
+    let model=MacPlayback(requestSink:{requests.append($0);return true})
+    model.channel("ble",token:"secured") { sent.append(try XCTUnwrap(MediaMessage.decode($0))) }
+    let sub=UUID().uuidString;_ = model.receive(try MediaMessage(kind:2,fields:[.text(sub)]).encode(),channel:"ble")
+    let pid=ProcessInfo.processInfo.processIdentifier
+    model.read(try JSONSerialization.data(withJSONObject:["pid":pid,"playbackRevision":UUID().uuidString,"sourceIsAutomatic":true,
+      "sources":[["pid":pid,"bundleIdentifier":Bundle.main.bundleIdentifier!,"isMusicApp":false,"isPlaying":true,"hasTrack":true]],
+      "kMRMediaRemoteNowPlayingInfoTitle":"Test","isPlaying":true,"canSendCommandsDirectly":true,"canToggle":true]))
+    let target=model.playback, command=try MediaMessage(kind:6,fields:[.text(sub),.integer(1),.text(target.source),.text(target.revision),.integer(1),.integer(0)]).encode()
+    _ = model.receive(command,channel:"ble");_ = model.receive(command,channel:"ble")
+    XCTAssertEqual(requests.count,1)
+    model.read(try JSONSerialization.data(withJSONObject:["sent":true,"requestID":requests[0].requestID!.uuidString]))
+    _ = model.receive(command,channel:"ble");try await Task.sleep(for:.milliseconds(100))
+    XCTAssertEqual(requests.count,2);XCTAssertEqual(requests.last?.command,.sample);XCTAssertEqual(sent.filter { $0.kind==7 }.map { $0.number(2) },[0,0])
+    model.channel("ble",token:nil) { _ in XCTFail("Retired") }
+  }
+
+}

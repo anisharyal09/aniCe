@@ -107,7 +107,7 @@ class SessionController(application: Application) {
       },
       { _, _ -> },
       trustedSession = true,
-      changed = { maintenanceEvents.request() },
+      changed = { maintenanceEvents.request(); scope.launch { app.nowPlaying.capacity("ble") } },
     )
   private val radio =
     object : BroadcastReceiver() {
@@ -232,7 +232,7 @@ class SessionController(application: Application) {
               },
               { bytes ->
                 withContext(Dispatchers.Main.immediate) {
-                  if (op == operation && bytes.contentEquals(CHECK)) {
+                  if (op == operation && !app.nowPlaying.receive("ble", mediaToken, bytes) && bytes.contentEquals(CHECK)) {
                     receivedChecks++
                     status = "Connection check received."
                     publishProgress()
@@ -243,6 +243,7 @@ class SessionController(application: Application) {
                 withContext(Dispatchers.Main.immediate) {
                   if (op == operation) {
                     state = ConnectionState.SECURED
+                    attachMedia()
                     status = ""
                     publishProgress()
                   }
@@ -252,7 +253,7 @@ class SessionController(application: Application) {
               // Include deep sleep: OS suspension must not extend record lifetime or PONG deadlines.
               now = { SystemClock.elapsedRealtime() },
               renew = automatic,
-              changed = { maintenanceEvents.request() },
+              changed = { maintenanceEvents.request(); scope.launch { app.nowPlaying.capacity("ble") } },
             )
           connection = engine
           launch {
@@ -352,6 +353,7 @@ class SessionController(application: Application) {
   }
 
   fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
+        app.nowPlaying.closed("ble")
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++
     controlSupport = null
@@ -456,6 +458,17 @@ class SessionController(application: Application) {
 
   val hasCompanionOwner get() = companionOwner != null
 
+
+    private val mediaToken get() = "${operation}-${System.identityHashCode(connection)}"
+    private fun attachMedia() {
+        val token=mediaToken
+        app.nowPlaying.attach("ble",token,selected?.deviceName.orEmpty()) { bytes ->
+            val engine=connection ?: throw SessionException(SessionFailure.CANCELLED)
+            if(token!=mediaToken || state!=ConnectionState.SECURED) throw SessionException(SessionFailure.CANCELLED)
+            if(!engine.applicationAvailable || transport.hasCapacity(bytes.size+31) != true) throw SessionBackpressure()
+            withContext(Dispatchers.IO) { engine.sendData(bytes) }
+        }
+    }
   companion object {
     val CHECK = "aniCe connection check".toByteArray(Charsets.UTF_8)
   }

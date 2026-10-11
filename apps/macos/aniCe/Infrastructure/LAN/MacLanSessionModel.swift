@@ -6,7 +6,7 @@ import Foundation
 import Observation
 
 @Observable @MainActor final class MacLanSessionModel {
-  private(set) var state = "Disconnected"
+  private(set) var state = "Disconnected" { didSet { mediaStateChanged() } }
   private(set) var status = "Allow your trusted Android to connect over the local network."
   private(set) var allowing = false
   private(set) var receivedChecks = 0
@@ -17,6 +17,16 @@ import Observation
   private var listener: NWListener?
   private var transport: LanTcpTransport?
   private var trustLocation: URL?
+  var mediaStateChanged: () -> Void = {}
+  var mediaCapacityChanged: () -> Void = {}
+  var mediaReceived: (Data) -> Bool = { _ in false }
+  var mediaToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(candidate)":nil }
+  func sendMedia(_ bytes: Data) async throws {
+    guard let connection, state == "Secured", transport?.capacity(bytes.count + 31) == true, await connection.applicationAvailable else { throw SessionBackpressure() }
+    let token=mediaToken
+    try await connection.sendData(bytes)
+    guard mediaToken==token else { throw SessionFailure.cancelled }
+  }
   private var connection: SessionConnection?
   private var admission = SessionAdmissionWindow()
   private var generation = 0
@@ -182,10 +192,11 @@ import Observation
           secured: { [weak self] in await self?.secured(op, attempt) }, controls: true,
           changed: { [weak self] in Task { @MainActor in
             guard let self, op == self.generation, attempt == self.candidate else { return }
-            self.maintain()
+            self.maintain(); self.mediaCapacityChanged()
           } })
         connection = engine
         tcp.changed = { [weak self] in
+          self?.mediaCapacityChanged()
           guard let self, op == self.generation, attempt == self.candidate else { return }
           self.tick()
         }
@@ -236,8 +247,9 @@ import Observation
     } catch { if op == generation, attempt == candidate { failCandidate(error) } }
   }
   private func received(_ bytes: Data, _ op: Int, _ attempt: Int) {
-    guard op == generation, attempt == candidate, bytes == Data("aniCe connection check".utf8)
-    else { return }
+    guard op == generation, attempt == candidate else { return }
+    if mediaReceived(bytes) { return }
+    guard bytes == Data("aniCe connection check".utf8) else { return }
     receivedChecks += 1
     status = "Secured. Local-network connection check received."
   }

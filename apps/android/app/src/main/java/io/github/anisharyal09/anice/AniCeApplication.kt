@@ -9,6 +9,7 @@ import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetad
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 
 class AniCeApplication : Application() {
+    val nowPlaying by lazy { io.github.anisharyal09.anice.features.media.MediaController() }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
     private val lanOwner = lazy { io.github.anisharyal09.anice.infrastructure.lan.LanSessionController(this) }
     val lanSessionController get() = lanOwner.value
@@ -19,6 +20,7 @@ class AniCeApplication : Application() {
 
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
+        nowPlaying.invalidate()
         if (bleOwner.isInitialized()) bleOwner.value.securityInvalidated()
         if (lanOwner.isInitialized()) lanOwner.value.securityInvalidated()
     }

@@ -139,3 +139,7 @@ protocol/
         ├── requirements.txt      # Pinned independent Python crypto/CBOR oracle dependencies
         └── *.py                  # Fixture generation and independent oracle regressions
 ```
+
+## Media
+
+[Media v1](media/README.md) defines foreground playback subscriptions, revision-bound commands and LAN-only bounded artwork within existing authenticated DATA. [Independent fixtures](test-vectors/media/media-vectors.json) contain positive and negative media envelopes.

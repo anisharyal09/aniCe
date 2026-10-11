@@ -59,6 +59,13 @@
 		A391955247C39A54B8DAE439 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */; };
 		FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */; };
 		20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */; };
+		A34D9997D94406D2CD684BEE /* aniCe/Features/Media/MediaWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F786D4EA28875E8B52A5050; };
+		2AC7B0EC9E0FD0C1ED8EAC03 /* aniCe/Features/Media/MacPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E997F22245B67C3AA3AE4C; };
+		CC1FEE3CCD0C897922760D25 /* aniCe/Features/Media/MediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3699A9022B41B5DC0049D2; };
+		EE3C8AAE781B333226B1FD83 /* aniCe/Features/Media/PlaybackAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B81B7ECFA842C1D48FB27EE; };
+		D7D0F0A67BF431253AC7C9F2 /* NowPlayingAdapter/PlaybackCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F8B9494D0984A4639C97CD; };
+		926FF3F3B1AAEEF195B553E2 /* NowPlayingAdapter/PlaybackSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F67013C4ECDCDD15C7F0054; };
+		AA1100000000000000000002 = {isa = PBXBuildFile; fileRef = AA1100000000000000000001; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,6 +134,13 @@
 		088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/MacLanSessionModel.swift; sourceTree = SOURCE_ROOT; };
 		CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/LanTests.swift"; sourceTree = SOURCE_ROOT; };
 		C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-vectors.json"; sourceTree = SOURCE_ROOT; };
+		4F786D4EA28875E8B52A5050 /* aniCe/Features/Media/MediaWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/MediaWire.swift"; sourceTree = SOURCE_ROOT; };
+		D0E997F22245B67C3AA3AE4C /* aniCe/Features/Media/MacPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/MacPlayback.swift"; sourceTree = SOURCE_ROOT; };
+		9A3699A9022B41B5DC0049D2 /* aniCe/Features/Media/MediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/MediaView.swift"; sourceTree = SOURCE_ROOT; };
+		9B81B7ECFA842C1D48FB27EE /* aniCe/Features/Media/PlaybackAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/PlaybackAutomation.swift"; sourceTree = SOURCE_ROOT; };
+		68F8B9494D0984A4639C97CD /* NowPlayingAdapter/PlaybackCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NowPlayingAdapter/PlaybackCommand.swift"; sourceTree = SOURCE_ROOT; };
+		3F67013C4ECDCDD15C7F0054 /* NowPlayingAdapter/PlaybackSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NowPlayingAdapter/PlaybackSource.swift"; sourceTree = SOURCE_ROOT; };
+		AA1100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/media/media-vectors.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,6 +164,13 @@
 		00000000000000000000000B = {
 			isa = PBXGroup;
 			children = (
+				AA1100000000000000000001,
+				3F67013C4ECDCDD15C7F0054,
+				68F8B9494D0984A4639C97CD,
+				9B81B7ECFA842C1D48FB27EE,
+				9A3699A9022B41B5DC0049D2,
+				D0E997F22245B67C3AA3AE4C,
+				4F786D4EA28875E8B52A5050,
 				000000000000000000000206 /* aniCeTests */,
 				00000000000000000000000C /* aniCe */,
 				00000000000000000000000D /* Products */,
@@ -346,6 +367,7 @@
 				000000000000000000000014 /* Sources */,
 				000000000000000000000015 /* Frameworks */,
 				000000000000000000000016 /* Resources */,
+				BA0100000000000000000001 /* Package Now Playing adapter */,
 			);
 			buildRules = (
 			);
@@ -420,6 +442,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1100000000000000000002,
 				20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */,
 				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
 				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
@@ -433,11 +456,30 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+        BA0100000000000000000001 /* Package Now Playing adapter */ = {
+            isa = PBXShellScriptBuildPhase;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ("$(SRCROOT)/NowPlayingAdapter/NowPlayingAdapter.swift", "$(SRCROOT)/NowPlayingAdapter/NowPlayingSelection.swift", "$(SRCROOT)/NowPlayingAdapter/PlaybackSource.swift", "$(SRCROOT)/NowPlayingAdapter/PlaybackCommand.swift", "$(SRCROOT)/NowPlayingAdapter/now-playing.pl", "$(SRCROOT)/NowPlayingAdapter/THIRD_PARTY_NOTICES.md", "$(SRCROOT)/NowPlayingAdapter/build.sh", "$(SRCROOT)/../../LICENSE");
+            outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/now-playing.pl", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/libaniCeNowPlaying.dylib", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/THIRD_PARTY_NOTICES.md", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/GPL-LICENSE.txt");
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/bash;
+            shellScript = "bash \"$SRCROOT/NowPlayingAdapter/build.sh\"";
+        };
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		000000000000000000000014 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				926FF3F3B1AAEEF195B553E2,
+				D7D0F0A67BF431253AC7C9F2,
+				EE3C8AAE781B333226B1FD83,
+				CC1FEE3CCD0C897922760D25,
+				2AC7B0EC9E0FD0C1ED8EAC03,
+				A34D9997D94406D2CD684BEE,
 				A391955247C39A54B8DAE439 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift in Sources */,
 				19F0E754132EF9E4CE17FACF /* aniCe/Infrastructure/LAN/LanTcpTransport.swift in Sources */,
 				E97ABB3514DECEED19618D8E /* aniCe/Infrastructure/LAN/LanFraming.swift in Sources */,
@@ -529,7 +571,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
@@ -581,7 +623,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
@@ -616,7 +658,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = aniCe/Info.plist;
@@ -644,7 +686,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = aniCe/Info.plist;

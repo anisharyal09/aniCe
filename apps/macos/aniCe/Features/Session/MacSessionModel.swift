@@ -5,7 +5,7 @@ import Foundation
 import Observation
 
 @Observable @MainActor final class MacSessionModel {
-  var state = "Disconnected"
+  var state = "Disconnected" { didSet { mediaStateChanged() } }
   var status = "Allow your trusted Android device to connect."
   var selectedPeer: DeviceIdentity?
   var allowing = false
@@ -27,6 +27,16 @@ import Observation
   private let adapter: any SessionPeripheralAdapter
   private let store: @MainActor () async throws -> PeerTrustStore
   private var trustLocation: URL?
+  var mediaStateChanged: () -> Void = {}
+  var mediaCapacityChanged: () -> Void = {}
+  var mediaReceived: (Data) -> Bool = { _ in false }
+  var mediaToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(attempt)":nil }
+  func sendMedia(_ bytes: Data) async throws {
+    guard let connection, state == "Secured", adapter.sessionCapacity(bytes.count + 31), await connection.applicationAvailable else { throw SessionBackpressure() }
+    let token=mediaToken
+    try await connection.sendData(bytes)
+    guard mediaToken==token else { throw SessionFailure.cancelled }
+  }
   private var connection: SessionConnection?
   // Generation identifies the allow window; attempt separately identifies its one candidate.
   private var generation = 0
@@ -189,6 +199,7 @@ import Observation
         trustLocation = trust.location
         installCallbacks(op, target: target)
         adapter.sessionChanged = { [weak self] in
+          self?.mediaCapacityChanged()
           guard let self, op == self.generation else { return }
           self.tick()
         }
@@ -274,7 +285,7 @@ import Observation
             renew: self.automatic,
             changed: { [weak self] in Task { @MainActor in
               guard let self, op == self.generation, candidate == self.attempt else { return }
-              self.startMaintenance()
+              self.startMaintenance(); self.mediaCapacityChanged()
             } })
           self.startMaintenance()
         } catch {
@@ -353,8 +364,9 @@ import Observation
     }
   }
   private func received(_ bytes: Data, _ op: Int, _ candidate: Int) {
-    guard op == generation, candidate == attempt, bytes == Data("aniCe connection check".utf8)
-    else { return }
+    guard op == generation, candidate == attempt else { return }
+    if mediaReceived(bytes) { return }
+    guard bytes == Data("aniCe connection check".utf8) else { return }
     receivedChecks += 1
     status = "Secured. Connection check received."
   }

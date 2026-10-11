@@ -5,9 +5,9 @@ import SwiftUI
 import Observation
 
 enum AppDestination: String, CaseIterable, Identifiable {
-  case home = "Home", devices = "Devices", settings = "Settings"
+  case home = "Home", devices = "Devices", features = "Features", settings = "Settings"
   var id: Self { self }
-  var symbol: String { switch self { case .home: "house"; case .devices: "laptopcomputer.and.iphone"; case .settings: "gearshape" } }
+  var symbol: String { switch self { case .home: "house"; case .devices: "laptopcomputer.and.iphone"; case .features: "square.grid.2x2"; case .settings: "gearshape" } }
 }
 enum DeviceRoute { case overview, pairing }
 enum SettingsRoute { case overview, identity }
@@ -68,11 +68,16 @@ struct MainWindowView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  let playback: MacPlayback
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
   private var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
+  }
+
+  private var mediaSurfaceVisible: Bool {
+    navigation.destination == .features || (navigation.destination == .home && playback.showOnMac)
   }
 
   @AppStorage("window.appearance") private var appearance = WindowAppearance.system.rawValue
@@ -104,6 +109,7 @@ struct MainWindowView: View {
                 Text("No devices paired yet").font(.headline)
                 Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
               }
+              if playback.showOnMac && !playback.playback.source.isEmpty { MediaView(model:playback,compact:true,visible:playback.mainVisible) { navigation.show(.features) } }
             }.frame(maxWidth: 760, alignment: .leading).padding(24)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
@@ -137,6 +143,26 @@ struct MainWindowView: View {
             }.frame(maxWidth: 760, alignment: .leading).padding(24)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
+        case .features:
+          ScrollView {
+            VStack(alignment:.leading,spacing:16) {
+              Text("Phone controls").font(.title2.weight(.semibold))
+              VStack(alignment:.leading,spacing:8) {
+                Text("Now Playing").font(.headline)
+                Text("Control this Mac’s playback from Home on your phone.").font(.callout)
+                Text(playback.phoneSubscribed ? "Active on your phone":"Open aniCe on your connected phone.")
+                  .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                if playback.playback.actions & 16 != 0 {
+                  Button("Allow playback control…") { playback.requestPermission() }
+                }
+                if !playback.feedback.isEmpty {
+                  Text(playback.feedback).font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                  if playback.playback.source.isEmpty { Button("Retry observation") { playback.retryObservation() } }
+                }
+              }.padding(16).frame(maxWidth:.infinity,alignment:.leading)
+                .background(AniCePalette.surface(colorScheme),in:RoundedRectangle(cornerRadius:12))
+            }.frame(maxWidth:760,alignment:.leading).padding(24).frame(maxWidth:.infinity,alignment:.leading)
+          }
         case .settings:
           if navigation.settingsRoute == .identity {
             IdentityView(model: identity, embedded: true, onBack: { navigation.settingsRoute = .overview })
@@ -152,6 +178,11 @@ struct MainWindowView: View {
               Text("The menu-bar companion follows macOS appearance.")
                 .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal, 24)
               Divider().padding(.vertical, 12)
+              Toggle("Show Now Playing on this Mac",isOn:Binding(get:{playback.showOnMac},set:{playback.setShowOnMac($0)}))
+                .padding(.horizontal,24)
+              Text("Show a local playback card in Home and the menu-bar companion.")
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal,24)
+              Divider().padding(.vertical,12)
               Button { navigation.settingsRoute = .identity } label: {
                 HStack(spacing: 12) {
                   Image(systemName: "desktopcomputer").accessibilityHidden(true)
@@ -195,7 +226,11 @@ struct MainWindowView: View {
         pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.")
       }
     }
+    .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
+    .onChange(of:playback.showOnMac) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
+    .onDisappear { playback.presented("main",false) }
     .onAppear {
+      if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) }
       let action = openWindow
       delegate.reopenMainWindow = {
         action(id: "main")
@@ -204,6 +239,7 @@ struct MainWindowView: View {
           window.makeKeyAndOrderFront(nil)
         }
         NSApp.activate()
+        playback.presented("main",mediaSurfaceVisible)
       }
     }
   }

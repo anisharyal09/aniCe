@@ -165,11 +165,14 @@ class SessionConnection(
     }
   }
 
+  val applicationAvailable get() = !closed && channel != null && deadline == 0L && !operation.isLocked && liveness?.renewalReason == null
   suspend fun sendData(bytes: ByteArray) = applicationOperation {
     requireOpen()
     if (liveness?.renewalReason != null) throw SessionBackpressure()
     val ch = channel ?: throw SessionException(SessionFailure.STATE)
     try {
+      flushControl()
+      if(liveness?.pending != null) throw SessionBackpressure()
       ch.send(RecordKind.DATA, bytes)
       liveness?.activity(now())
     } catch (e: SessionBackpressure) {

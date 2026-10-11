@@ -11,9 +11,12 @@ struct AniCeApp: App {
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
+  @State private var playback: MacPlayback
   @State private var navigation: ConnectionNavigation
 
   init() {
+    let playback = MacPlayback()
+    _playback = State(initialValue: playback)
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
     let identity = IdentityAssembly.makeModel()
@@ -28,6 +31,20 @@ struct AniCeApp: App {
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
+    session.mediaStateChanged = { [weak session, weak playback] in
+      playback?.channel("ble", token: session?.mediaToken) { [weak session] bytes in
+        guard let session else { throw SessionBackpressure() }; try await session.sendMedia(bytes)
+      }
+    }
+    lan.mediaStateChanged = { [weak lan, weak playback] in
+      playback?.channel("lan", token: lan?.mediaToken) { [weak lan] bytes in
+        guard let lan else { throw SessionBackpressure() }; try await lan.sendMedia(bytes)
+      }
+    }
+    session.mediaCapacityChanged = { [weak playback] in playback?.capacity("ble") }
+    lan.mediaCapacityChanged = { [weak playback] in playback?.capacity("lan") }
+    session.mediaReceived = { [weak playback] bytes in playback?.receive(bytes,channel:"ble") ?? false }
+    lan.mediaReceived = { [weak playback] bytes in playback?.receive(bytes,channel:"lan") ?? false }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
     pairing.onPaired = { [weak session, weak navigation] peer in
       guard let session, let navigation else { return }
@@ -76,12 +93,12 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, navigation: navigation)
+        session: session, lan: lan, playback: playback, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, navigation: navigation,
+                session: session, lan: lan, playback: playback, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }

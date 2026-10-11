@@ -6,12 +6,14 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Home/Devices/Settings sidebar and saved native Window appearance preference with native and SwiftUI System inheritance across the window and connection-details sheet; companion and context menus retain system appearance.
+- Shared event-driven Now Playing owner, optional Home/companion activity (off by default) and Phone controls feature information, Auto/player selection, scoped controls and explicit Automation permission; attributed universal MediaRemote adapter packaged with build-script sandboxing and signed-image replacement by rename; icon playback controls and device-first Home ordering. Native playback commands bypass full player scans, with bounded notification coalescing and one recording-bound state/position read after successful commands; visible progress uses a four-Hz periodic clock that stops while hidden or paused.
+- Home/Devices/Features/Settings sidebar and saved native Window appearance preference with native and SwiftUI System inheritance across the window and connection-details sheet; companion and context menus retain system appearance.
 
 ### Changed
 
+- Disable App Sandbox while retaining hardened runtime, signing defaults and original identity/trust journal locations; unsupported player targeting remains disabled.
 - Compact Home/companion rows open Devices with peer context before restoring the main window; clicking names/status also opens device management.
-- Add an aniCe sidebar heading with breathing room and consistent header backgrounds/dividers across Home, Devices and Settings.
+- Add an aniCe sidebar heading with breathing room and consistent header backgrounds/dividers across Home, Devices, Features and Settings.
 - Move local identity behind a full-width This device Settings entry with Back navigation, explicit name editing and clickable Advanced disclosure.
 - Apply the selected appearance to native window/sheet backgrounds, text and controls together; System tracks macOS independently of a forced window theme. Retain shared transport owners.
 

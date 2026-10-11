@@ -16,6 +16,7 @@ typealias ConnectionState = io.github.anisharyal09.anice.infrastructure.session.
  */
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
     private val owner = (application as AniCeApplication).sessionController
+    val media = (application as AniCeApplication).nowPlaying
     val lan = (application as AniCeApplication).lanSessionController
     val state
         get() = owner.state
@@ -60,11 +61,13 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun foreground(presentation: Any) {
+        media.foreground(presentation)
         owner.foreground(presentation)
         lan.foreground(presentation)
     }
 
     fun background(presentation: Any, changingConfigurations: Boolean) {
+        media.background(presentation, changingConfigurations)
         owner.background(presentation, changingConfigurations)
         lan.background(presentation, changingConfigurations)
     }

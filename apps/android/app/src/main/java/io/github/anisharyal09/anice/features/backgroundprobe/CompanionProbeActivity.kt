@@ -176,6 +176,7 @@ class CompanionProbeActivity : ComponentActivity() {
   override fun onStart() {
     super.onStart()
     val app = application as AniCeApplication
+    app.nowPlaying.foreground(this)
     app.sessionController.foreground(this)
     app.lanSessionController.foreground(this)
   }
@@ -183,6 +184,7 @@ class CompanionProbeActivity : ComponentActivity() {
   override fun onStop() {
     super.onStop()
     val app = application as AniCeApplication
+    app.nowPlaying.background(this, isChangingConfigurations)
     app.sessionController.background(this, isChangingConfigurations)
     app.lanSessionController.background(this, isChangingConfigurations)
   }

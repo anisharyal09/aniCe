@@ -42,7 +42,6 @@ fun HomeScreen(
             Text("Manage devices")
           }
       }
-      attention()
       if (hasTrustedDevices) sessions()
       else {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -57,6 +56,7 @@ fun HomeScreen(
           }
         }
       }
+      attention()
     }
   }
 }

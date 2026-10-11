@@ -36,5 +36,6 @@ Automated unit, hosted, and cross-platform interchange test suites validate cryp
 - **Measured Result:** Validated in 17-minute physical connected-idle tests, dropping single-core CPU medians from 3.166% down to 0.322% on Android and 0.385% down to 0.030% on macOS (~90% reduction).
 
 ### 5. Application Continuity
+- **Now Playing:** Shared Mac owner, optional Home/companion playback (off by default), Phone controls feature information, full Android Home controls/player picker, foreground Android subscription and media v1 over secured LAN/BLE implemented. Unsupported player actions remain disabled; integrated physical/player/minimum-OS acceptance pending. See [Now Playing evidence](features/NOW_PLAYING.md).
 - **Continuity Services:** Media playback controls, bidirectional clipboard synchronization, and high-speed LAN file transfer built on top of established record channels.
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.

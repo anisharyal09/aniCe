@@ -144,7 +144,7 @@ class LanSessionController(private val app: AniCeApplication) {
                         val remaining = deadline - SystemClock.elapsedRealtime()
                         if (remaining <= 0) break
                         val maintenanceEvents = SessionMaintenance()
-                        val tcp = AndroidLanTransport(scope) { maintenanceEvents.request() }
+                        val tcp = AndroidLanTransport(scope) { maintenanceEvents.request(); scope.launch { app.nowPlaying.capacity("lan") } }
                         transport = tcp
                         try {
                             withTimeout(remaining) { tcp.connect(endpoint) }
@@ -191,6 +191,7 @@ class LanSessionController(private val app: AniCeApplication) {
                                     withContext(Dispatchers.Main.immediate) {
                                         if (
                                             op == generation &&
+                                                !app.nowPlaying.receive("lan", mediaToken, bytes) &&
                                                 bytes.contentEquals(SessionController.CHECK)
                                         ) {
                                             receivedChecks++
@@ -198,10 +199,15 @@ class LanSessionController(private val app: AniCeApplication) {
                                         }
                                     }
                                 },
-                                { signal.complete(Unit) },
+                                {
+                                    withContext(Dispatchers.Main.immediate) {
+                                        if(op==generation) { state=ConnectionState.SECURED; attachMedia() }
+                                    }
+                                    signal.complete(Unit)
+                                },
                                 controls = true,
                                 now = { SystemClock.elapsedRealtime() },
-                                changed = { maintenanceEvents.request() },
+                                changed = { maintenanceEvents.request(); scope.launch { app.nowPlaying.capacity("lan") } },
                             )
                         connection = engine
                         receiver =
@@ -279,6 +285,7 @@ class LanSessionController(private val app: AniCeApplication) {
                                     "Local-network connection ended during confirmation."
                                 )
                             state = ConnectionState.SECURED
+                            attachMedia()
                             status = ""
                             awaitCancellation()
                         } catch (error: TimeoutCancellationException) {
@@ -295,6 +302,7 @@ class LanSessionController(private val app: AniCeApplication) {
                         tcp.close()
                         engine.retire()
                         withContext(NonCancellable + Dispatchers.IO) { engine.close() }
+                        app.nowPlaying.closed("lan")
                         connection = null
                     }
                     throw lastError
@@ -375,6 +383,7 @@ class LanSessionController(private val app: AniCeApplication) {
     }
 
     fun cancel(message: String = "Allow local-network connections on your Mac to reconnect.") {
+        app.nowPlaying.closed("lan")
         generation++
         val old = connection
         connection = null
@@ -412,4 +421,15 @@ class LanSessionController(private val app: AniCeApplication) {
                 "Local network ended because aniCe left the foreground. Allow connections on your Mac to reconnect."
             )
     }
+    private val mediaToken get() = "${generation}-${System.identityHashCode(connection)}"
+    private fun attachMedia() {
+        val token=mediaToken
+        app.nowPlaying.attach("lan",token,selected?.deviceName.orEmpty()) { bytes ->
+            val engine=connection ?: throw SessionException(SessionFailure.CANCELLED)
+            if(token!=mediaToken || state!=ConnectionState.SECURED) throw SessionException(SessionFailure.CANCELLED)
+            if(!engine.applicationAvailable || transport?.hasCapacity(bytes.size+31) != true) throw SessionBackpressure()
+            withContext(Dispatchers.IO) { engine.sendData(bytes) }
+        }
+    }
+
 }

@@ -10,7 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
-- Home, Devices and Settings navigation with saved native appearance preferences.
+- Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls and foreground subscriptions over existing secured LAN/BLE; icon playback controls and device-first Home ordering.
+- Home, Devices, Features and Settings navigation with saved native appearance preferences.
 
 ### Changed
 

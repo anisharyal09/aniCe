@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Preserves the original app-container journal location and native Keychain identity backend.
+import Darwin
 import CryptoKit
 import Foundation
 import os
@@ -27,8 +29,7 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
     init(namespace: String, backend: MacIdentityBackend, recordURL: URL? = nil) {
         self.namespace = namespace
         self.backend = backend
-        self.recordURL = recordURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("aniCe/Identity/development-identity.json")
+        self.recordURL = recordURL ?? MacAppStorage.directory.appendingPathComponent("Identity/development-identity.json")
     }
 
     func loadRecord() throws -> IdentityRecord? {
@@ -295,5 +296,19 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
             throw IdentityError.storageUnavailable(String(CFErrorGetCode(value)))
         }
         throw IdentityError.storageUnavailable("unknown system error")
+    }
+}
+
+/// Sandbox removal must not redirect identity/trust reads to a fresh application-support directory.
+enum MacAppStorage {
+    static func directory(home: URL) -> URL {
+        home.appendingPathComponent("Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe", isDirectory: true)
+    }
+    static var directory: URL {
+        // passwd names the account home independently of Foundation's sandbox container redirection.
+        guard let home = getpwuid(getuid())?.pointee.pw_dir else {
+            preconditionFailure("Account home unavailable")
+        }
+        return directory(home: URL(fileURLWithPath: String(cString: home), isDirectory: true))
     }
 }

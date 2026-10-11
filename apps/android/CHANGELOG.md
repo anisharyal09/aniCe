@@ -6,7 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Home/Devices/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
+- Now Playing Home activity and Features workspace with foreground Mac subscriptions, Home Auto/player selection, source-bound controls and LAN-only bounded artwork; secured Bluetooth carries metadata and controls; icon playback controls and device-first Home ordering without repeated device/playback-state metadata. Seek release retains a locally advancing target until a matching position sample, with failure, replacement and timeout rollback.
+
+- Home/Devices/Features/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
 
 ### Changed
 

@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts and independent bounded fixtures within existing authenticated DATA records.
+
 - Versioned LAN TCP envelope binding and independent framing fixtures; existing EDHOC and encrypted-record formats remain unchanged.
 
 - Coordinated RENEWAL_REQUEST behavior, 55-minute/record-margin thresholds and old-session retirement before fresh EDHOC.

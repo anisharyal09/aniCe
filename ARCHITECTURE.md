@@ -82,3 +82,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 - [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
 - [Design Guide & Palette](docs/design/DESIGN.md)
 - [Project Roadmap & Verification Gates](docs/ROADMAP.md)
+
+## Now Playing ownership and process boundary
+
+Mac Debug/Release disable App Sandbox and package a separate universal Perl-loaded MediaRemote adapter. Identity/trust journals retain their original app-container paths and Keychain policy remains unchanged. One application-scoped MacPlayback owns event-driven local playback and foreground Android subscriptions through existing authenticated DATA. Secured LAN is preferred, otherwise BLE carries metadata/controls; artwork stays on LAN. Channel replacement clears state and never replays commands. Unsupported directed actions remain disabled. See [media contracts](protocol/media/README.md) and [feature architecture](docs/features/NOW_PLAYING.md). See [process-boundary decision](docs/decisions/0007-macos-unsandboxed-playback-prototype.md).

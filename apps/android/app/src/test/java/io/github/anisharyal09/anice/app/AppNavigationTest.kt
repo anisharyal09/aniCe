@@ -69,4 +69,15 @@ class AppNavigationTest {
         assertNotNull(restoredEmpty)
         assertNull(restoredEmpty!!.focusedPeer)
     }
+    @Test fun featuresBackAndSavedWorkspacePreserveOtherRoutes() {
+        assertEquals(listOf("Home","Devices","Features","Settings"),AppDestination.entries.map { it.label })
+        val state=AppNavigation(AppDestination.Features,DeviceRoute.Discovery,"mac-x")
+        state.mediaDetails=true
+        val scope=androidx.compose.runtime.saveable.SaverScope { true }
+        val saved=with(AppNavigation.saver) { scope.save(state) }!!
+        val restored=AppNavigation.saver.restore(saved)!!
+        assertTrue(restored.mediaDetails);restored.back();assertEquals(AppDestination.Features,restored.destination);assertFalse(restored.mediaDetails)
+        restored.back();assertEquals(AppDestination.Home,restored.destination);assertEquals(DeviceRoute.Discovery,restored.route);assertEquals("mac-x",restored.focusedPeer)
+    }
+
 }

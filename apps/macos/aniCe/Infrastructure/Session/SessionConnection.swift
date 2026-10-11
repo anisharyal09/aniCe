@@ -167,13 +167,16 @@ actor SessionConnection {
     try ensure(op)
     return peer
   }
+  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && !processing && liveness?.renewalReason == nil }
   func sendData(_ bytes: Data) async throws {
     defer { changed() }
     let op = generation
     do {
       try ensure(op)
       if liveness?.renewalReason != nil { throw SessionBackpressure() }
+      try await flushControl(op)
       guard let channel else { throw SessionFailure.state }
+      if liveness?.pending != nil || sendingControl { throw SessionBackpressure() }
       try await channel.send(.data, plaintext: bytes)
       try ensure(op)
       liveness?.activity(now())

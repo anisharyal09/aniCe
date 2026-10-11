@@ -41,11 +41,7 @@ final class PeerTrustStore: @unchecked Sendable {
 
   /// Initializes the store, creating application directories and loading existing trusted peers.
   init(url: URL? = nil) throws {
-    let directory =
-      try url?.deletingLastPathComponent()
-      ?? FileManager.default.url(
-        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-      ).appendingPathComponent("aniCe", isDirectory: true)
+    let directory = url?.deletingLastPathComponent() ?? MacAppStorage.directory
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     var excluded = directory
     var values = URLResourceValues()
@@ -82,13 +78,7 @@ final class PeerTrustStore: @unchecked Sendable {
 
   /// Recovers from a corrupted trust file by moving the damaged file to a quarantine path.
   static func recover(url: URL? = nil) throws -> PeerTrustStore {
-    let target =
-      try url
-      ?? FileManager.default.url(
-        for: .applicationSupportDirectory,
-        in: .userDomainMask, appropriateFor: nil, create: true
-      )
-      .appendingPathComponent("aniCe/trusted_peers.json")
+    let target = url ?? MacAppStorage.directory.appendingPathComponent("trusted_peers.json")
     NotificationCenter.default.post(name: Self.invalidated, object: target.standardizedFileURL)
     if FileManager.default.fileExists(atPath: target.path) {
       try FileManager.default.moveItem(
