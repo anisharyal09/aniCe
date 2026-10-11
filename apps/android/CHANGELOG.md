@@ -6,11 +6,13 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Now Playing Home activity and Features workspace with foreground Mac subscriptions, Home Auto/player selection, source-bound controls and LAN-only bounded artwork; secured Bluetooth carries metadata and controls; icon playback controls and device-first Home ordering without repeated device/playback-state metadata. Seek release retains a locally advancing target until a matching position sample, with failure, replacement and timeout rollback.
+- Now Playing Home controls/player picker and Features workspace over one secured LAN/BLE subscription, with source-bound commands, atomic seek/elapsed previews and LAN-only artwork. Silent native media notifications use a fixed 90-second pause grace and existing companion-owned background BLE. Verified player volume and separately advertised Mac output volume support sliders and phone/system volume controls; bounded latest-intent handling confirms previews and never replays uncertain commands.
 
 - Home/Devices/Features/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
 
 ### Changed
+
+- Group Now Playing code and matching tests under features/nowplaying; move application BLE/LAN owners, connection feedback and nearby policy into Connections; preserve manifest entry points and stored association keys, and register media through feature-neutral secured DATA dispatch.
 
 - Keep Home device rows compact and clickable; move full connections, pairing and diagnostics to Devices with an explicit Connection details disclosure.
 - Use smaller aniCe titles on Home/Devices and aniCe Settings on Settings. Reduce top bars to 48 dp at normal text size, allow growth for large text and tighten spacing above the Devices label.

@@ -2,6 +2,7 @@
 // Verifies companion binding, stale callbacks and combined radio presence boundaries.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.ProbePresence
 import org.junit.Assert.*
 import org.junit.Test
 

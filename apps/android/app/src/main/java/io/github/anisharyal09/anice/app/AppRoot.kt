@@ -34,50 +34,21 @@ import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
 import io.github.anisharyal09.anice.ui.theme.saveAppearance
 
-enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"), Features("Features"), Settings("Settings") }
-enum class DeviceRoute { Overview, Pairing, Discovery }
-enum class SettingsRoute { Overview, Identity }
-
-@Stable
-class AppNavigation(destination: AppDestination = AppDestination.Home,
-    route: DeviceRoute = DeviceRoute.Overview, focusedPeer: String? = null, settingsRoute: SettingsRoute = SettingsRoute.Overview) {
-    var destination by mutableStateOf(destination)
-    var route by mutableStateOf(route)
-    var focusedPeer by mutableStateOf(focusedPeer)
-    var mediaDetails by mutableStateOf(false)
-    var settingsRoute by mutableStateOf(settingsRoute)
-    fun select(page: AppDestination, unpaired: Boolean) {
-        destination = page
-        if (page == AppDestination.Devices && unpaired) route = DeviceRoute.Pairing
-    }
-    fun openDevice(id: String) { focusedPeer = id; route = DeviceRoute.Overview; destination = AppDestination.Devices }
-    fun pair() { route = DeviceRoute.Pairing; destination = AppDestination.Devices }
-    fun paired() { route = DeviceRoute.Overview; destination = AppDestination.Home }
-    fun back() {
-        if (destination == AppDestination.Devices && route != DeviceRoute.Overview) route = DeviceRoute.Overview
-        else if (destination == AppDestination.Features && mediaDetails) mediaDetails=false
-        else if (destination == AppDestination.Settings && settingsRoute != SettingsRoute.Overview) settingsRoute = SettingsRoute.Overview
-        else destination = AppDestination.Home
-    }
-    companion object {
-        val saver = listSaver<AppNavigation, String>(
-            save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString()) },
-            restore = { AppNavigation(AppDestination.valueOf(it[0]), DeviceRoute.valueOf(it[1]), it[2].ifEmpty { null }, SettingsRoute.valueOf(it.getOrNull(3) ?: SettingsRoute.Overview.name)).also { value -> value.mediaDetails=it.getOrNull(4)=="true" } })
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     pairing: PairingViewModel, session: SessionViewModel) {
     val navigation = rememberSaveable(saver = AppNavigation.saver) { AppNavigation() }
+    LaunchedEffect(session.media.openWorkspaceRequest) {
+        if(session.media.openWorkspaceRequest) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true;session.media.workspaceOpened() }
+    }
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {
         if (identity.state.snapshot != null) pairing.refresh()
     }
 
     var automaticAfterPairing by rememberSaveable { mutableStateOf(true) }
     val context = LocalContext.current
-    val nearbyOwner = io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe.get(LocalContext.current)
+    val nearbyOwner = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(LocalContext.current)
     LaunchedEffect(pairing.busy) {
         if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
     }
@@ -132,7 +103,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AppDestination.Home -> HomeScreen(pairing.peers.isNotEmpty(), onPair = {
                         navigation.pair()
                     }, compact = true, attention = {
-                        if (session.media.playback?.source?.isNotEmpty()==true) io.github.anisharyal09.anice.features.media.MediaView(session.media,compact=true) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true }
+                        if (session.media.compactVisible) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media,compact=true) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true }
                         if (pairing.busy) {
                             Text(pairing.status, style = MaterialTheme.typography.bodyMedium)
                             TextButton(onClick = { navigation.pair() }) { Text("Review pairing") }
@@ -141,62 +112,11 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                         SessionPanel(session, pairing.peers, onDiscoveryCheck = {}, compact = true,
                             onOpenDevice = { id -> navigation.openDevice(id) })
                     })
-                    AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) { when (navigation.route) {
-                        DeviceRoute.Pairing -> {
-                            PairingScreen(pairing, nearbyOwner.available, automaticAfterPairing) { automaticAfterPairing = it }
-                        }
-                        DeviceRoute.Discovery -> DiscoveryScreen(discovery)
-                        DeviceRoute.Overview -> {
-                            if (pairing.peers.isEmpty()) HomeScreen(false, onPair = { navigation.route = DeviceRoute.Pairing }, sessions = {})
-                            else HomeScreen(true, onPair = { navigation.route = DeviceRoute.Pairing }, sessions = {
-                                if (pairing.busy) TextButton(onClick = { navigation.route = DeviceRoute.Pairing }) { Text("Review pairing") }
-                                SessionPanel(session, pairing.peers,
-                                    onDiscoveryCheck = { navigation.route = DeviceRoute.Discovery }, focusedPeer = navigation.focusedPeer,
-                                    onFocusConsumed = { navigation.focusedPeer = null })
-                            })
-                        }
+                    AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
+                        DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing) { automaticAfterPairing=it }
                     }
-                    }
-                    AppDestination.Features -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-                        if(navigation.mediaDetails) {
-                            TextButton(onClick={navigation.mediaDetails=false}) { Text("Back to Features") }
-                            io.github.anisharyal09.anice.features.media.MediaView(session.media)
-                        } else {
-                            Text("Mac controls",style=MaterialTheme.typography.titleMedium)
-                            Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.surfaceContainer, onClick={navigation.mediaDetails=true}) {
-                                Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                                    Text("Now Playing",style=MaterialTheme.typography.titleMedium)
-                                    Text(session.media.playback?.title?.takeIf { it.isNotEmpty() } ?: "Playback and controls from your Mac",style=MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    }
-                    AppDestination.Settings -> {
-                        if (navigation.settingsRoute == SettingsRoute.Identity) {
-                            DeviceIdentityScreen(identity.state, snackbars, identity::retry, identity::reset, onRename = identity::rename)
-                        } else Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Text("Appearance", style = MaterialTheme.typography.titleMedium)
-                            val appearance = appearancePreference()
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Appearance.entries.forEach { mode ->
-                                    FilterChip(selected = appearance == mode,
-                                        onClick = { saveAppearance(context, mode) }, label = { Text(mode.name) })
-                                }
-                            }
-                            HorizontalDivider()
-                            Row(Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Open this device") {
-                                navigation.settingsRoute = SettingsRoute.Identity
-                            }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("This device", style = MaterialTheme.typography.titleMedium)
-                                    Text(identity.state.snapshot?.identity?.deviceName ?: "Device identity",
-                                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Icon(painterResource(R.drawable.ic_back), contentDescription = null,
-                                    modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = 180f })
-                            }
-                        }
-                    }
+                    AppDestination.Features -> FeaturesScreen(session.media, navigation)
+                    AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context)
                 }
             }
         }

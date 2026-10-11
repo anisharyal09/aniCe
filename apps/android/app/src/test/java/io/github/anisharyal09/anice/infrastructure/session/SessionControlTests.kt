@@ -2,6 +2,8 @@
 // Tests control oracle fixtures, compatibility, ping ordering and encrypted renewal failures.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
+import io.github.anisharyal09.anice.infrastructure.connections.retainForegroundSession
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test

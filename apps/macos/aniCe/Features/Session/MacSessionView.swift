@@ -209,7 +209,7 @@ struct MacSessionView: View {
       if lan.allowing {
         Button(lan.state == "Secured" ? "Disconnect local network" : "Stop allowing local network", action: lan.disconnect).disabled(!ownsLan)
       } else {
-        Button("Allow local-network connections") { lan.allow(selected: device, bluetooth: model) }
+        Button("Allow local-network connections") { lan.allow(selected: device, bluetoothAllowing: model.allowing) }
         .disabled(!peerAvailable)
       }
       VStack(alignment: .leading, spacing: 0) {

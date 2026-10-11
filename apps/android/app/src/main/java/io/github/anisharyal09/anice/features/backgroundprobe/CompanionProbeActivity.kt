@@ -3,6 +3,7 @@
 @file:Suppress("DEPRECATION") // API 31/32 association results use EXTRA_DEVICE.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanFilter
 import android.companion.*
@@ -62,7 +63,7 @@ class CompanionProbeActivity : ComponentActivity() {
     setContent {
       val controller = (application as AniCeApplication).sessionController
       val configured = hasConnectionSetup(peer, probe.peerId, probe.fingerprint)
-      val connected = controller.state == io.github.anisharyal09.anice.infrastructure.session.ConnectionState.SECURED &&
+      val connected = controller.state == io.github.anisharyal09.anice.infrastructure.connections.ConnectionState.SECURED &&
         hasConnectionSetup(peer, controller.selected?.deviceId, controller.selected?.fingerprint)
       val policyStatus = probe.status
       var startRequested by rememberSaveable { mutableStateOf(intent.getBooleanExtra("enable", false)) }

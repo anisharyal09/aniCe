@@ -10,10 +10,13 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
-- Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls and foreground subscriptions over existing secured LAN/BLE; icon playback controls and device-first Home ordering.
+- Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls over existing secured LAN/BLE, atomic seek feedback, native Android media presentation and a fixed 90-second paused grace; companion-owned background BLE and separately negotiated selected-player volume remain capability/permission gated; independently advertised Mac output volume supports phone buttons without player scripting.
 - Home, Devices, Features and Settings navigation with saved native appearance preferences.
 
 ### Changed
+
+- Group Now Playing implementation, adapter and tests by feature; separate application connection owners, navigation, playback authority, native process handling and media queues. Add dependency/link/Xcode membership checks and relocate the byte-preserving media fixture generator.
+- Consolidate feature usage and limitations; keep app-wide ADRs at the decision root and independent decisions in feature folders. Update READMEs, source maps, attribution and agent state without repeated verification matrices or stage reports.
 
 - Separate compact Home/companion summaries from device connection management and local identity settings; retain a small aniCe heading on each platform.
 

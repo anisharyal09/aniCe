@@ -14,6 +14,8 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
 | **Trusted-device sessions** | `1` | Implemented; acceptance pending | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
+| **Now Playing** | `1` | Implemented; acceptance pending | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
+| **Player volume** | `1` | Capability gated; player acceptance pending | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 
 ---
@@ -143,3 +145,5 @@ protocol/
 ## Media
 
 [Media v1](media/README.md) defines foreground playback subscriptions, revision-bound commands and LAN-only bounded artwork within existing authenticated DATA. [Independent fixtures](test-vectors/media/media-vectors.json) contain positive and negative media envelopes.
+
+Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_VOLUME.md), with independent positive/negative fixtures and unchanged media/player-volume v1 encodings.

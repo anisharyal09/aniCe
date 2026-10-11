@@ -2,6 +2,7 @@
 // Verifies that device summaries require encrypted readiness and preserve independent transport outcomes.
 package io.github.anisharyal09.anice.features.session
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import org.junit.Assert.*
 import org.junit.Test
 

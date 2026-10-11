@@ -7,7 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 
-typealias ConnectionState = io.github.anisharyal09.anice.infrastructure.session.ConnectionState
+typealias ConnectionState = io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 
 /**
  * Exposes the shared owner's observable state without copying it into a second connection model.
@@ -76,6 +76,6 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     companion object {
         val CHECK
-            get() = io.github.anisharyal09.anice.infrastructure.session.SessionController.CHECK
+            get() = io.github.anisharyal09.anice.infrastructure.connections.SessionController.CHECK
     }
 }

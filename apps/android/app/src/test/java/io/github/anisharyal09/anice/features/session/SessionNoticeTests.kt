@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package io.github.anisharyal09.anice.features.session
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
+import io.github.anisharyal09.anice.infrastructure.connections.SessionNotice
 import io.github.anisharyal09.anice.infrastructure.session.SessionExpiry
 import io.github.anisharyal09.anice.infrastructure.session.SessionFailure
+import io.github.anisharyal09.anice.infrastructure.connections.sessionNotice
 import org.junit.Assert.*
 import org.junit.Test
 

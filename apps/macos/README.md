@@ -14,44 +14,25 @@ Mac advertises only the public aniCe service UUID and generic name for 120 secon
 
 ```text
 aniCe/
-  App/
-    AniCeApp.swift                  App scenes and shared identity model
-    AppDelegate.swift               Window and Dock activation
-    MainWindowView.swift            Main window and details sheet
-    CompanionView.swift             Menu-bar actions
-    IdentityAssembly.swift          Backend and service assembly
-  Features/DeviceIdentity/
-    IdentityView.swift              Details, copying, reset confirmation
-    IdentityViewModel.swift         Presentation state and recovery
-  Features/Discovery/              Shared discovery model and view
-  Features/Pairing/                Shared pairing model, QR/PIN and trusted-device view
-  Features/Session/                Shared session model and view
-  Infrastructure/Identity/
-    DeviceIdentity.swift            Public identity validation and encoding
-    IdentityService.swift           Actor-isolated lifecycle and signing
-    MacIdentityStorage.swift        Keychain backends and atomic metadata
-  Infrastructure/Bluetooth/        Peripheral adapter, codec, timed session
-  Infrastructure/LAN/              Bonjour listener, TCP transport, stream framing
-  Infrastructure/Pairing/          Bootstrap engine, native crypto, trust journal, PAKE ABI
-  Infrastructure/Session/          EDHOC, records, ordering actors, envelope, peer reservation
-  UI/
-    Theme/AniCePalette.swift         Semantic light/dark colors
-    Components/EmptyStateView.swift  Unpaired-state view
-  Info.plist                       Bonjour declarations and local-network usage description
-  aniCe.entitlements                Sandbox client/server and hardware entitlements
-aniCeTests/
-  DiscoveryTests.swift             Discovery payload and timeout tests
-  IdentityTests.swift              Hosted identity and storage tests
-  LanTests.swift                   Stream framing, keepalive options and exclusion tests
-  PairingTests.swift               Hosted pairing and PAKE engine tests
-  SessionChannelTests.swift        Application record channel and limit tests
-  SessionTests.swift               EDHOC handshake, control and renewal tests
-IdentityInterchange/
-  main.swift                        Test-only signature interchange endpoint
-SessionInterchange/
-  main.swift                        Test-only protected-key EDHOC interchange endpoint
-  TcpInterchange.swift              Test-only native TCP interchange endpoint
-aniCe.xcodeproj/                    Targets, source references, shared scheme
+  App/                         Assembly, navigation, window and companion
+  Features/                    Identity, discovery, pairing and session presentation
+    NowPlaying/                Playback model, native bridge, session link, codecs and views
+      Adapter/                 Attributed helper sources, Perl loader and packaging
+  Infrastructure/
+    Connections/               BLE/LAN owners and feature-neutral DATA dispatch
+    Identity/                  Keychain storage and identity lifecycle
+    Bluetooth/                 Native peripheral adapter and framing
+    LAN/                       Bonjour, TCP and framing
+    Pairing/                   Bootstrap, trust and native PAKE interface
+    Session/                   EDHOC, encrypted records and readiness
+  UI/                          Shared palette and components
+  Info.plist                   Native service and permission declarations
+  aniCe.entitlements           App Sandbox disabled; hardware/network entitlements
+aniCeTests/                    Hosted suites and shared fixtures
+  NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+IdentityInterchange/           Native test-only signature endpoint
+SessionInterchange/            Native test-only session/TCP endpoints
+aniCe.xcodeproj/               Target membership, build inputs and shared scheme
 ```
 
 The window and companion share identity, connection state and the allowed-device selection. Connect freezes one selected Android credential or accepts any trusted Android, with only one admitted candidate at a time. The authenticated phone name is shown after readiness. The full nearby-discovery label toggles its content. When adding or moving Swift files, update Xcode target membership and any interchange compiler paths. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
@@ -92,8 +73,10 @@ Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac 
 
 Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
 
-Home, Devices and Settings use a native sidebar. Home and the companion show compact device summaries; companion arrows select Devices and its peer before restoring the main window. Settings has a compact This device entry opening local identity and explicit name editing, alongside saved Window appearance; System resolves application appearance; the main window and connection-details sheet apply the resolved native presentation scheme. The companion and context menus follow macOS appearance independently.
+Home, Devices, Features and Settings use a native sidebar. Home and the companion show compact device summaries; companion arrows select Devices and its peer before restoring the main window. Settings has a compact This device entry opening local identity and explicit name editing, alongside saved Window appearance; System resolves application appearance; the main window and connection-details sheet apply the resolved native presentation scheme. The companion and context menus follow macOS appearance independently.
 
 ## Now Playing
 
-Debug/Release disable App Sandbox for the [packaged playback integration](../../docs/features/NOW_PLAYING.md). Identity metadata and trust journals retain their original container paths, with no migration or reset. Hardened runtime remains enabled in settings. Release app/helper signatures carry runtime flags; Xcode disables effective runtime for its default ad-hoc Debug app. Certificate-signed runtime acceptance is pending. Settings → Show Now Playing on this Mac enables local Home/companion cards, off by default, independently of phone playback. Home and companion share one playback owner; Features → Phone controls describes playback provided to Android; foreground Android subscriptions use existing secured DATA records. Unsupported directed actions stay disabled.
+Features → Phone controls provides remote playback to Android. Local Home/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
+
+Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.

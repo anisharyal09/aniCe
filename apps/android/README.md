@@ -16,37 +16,26 @@ Android finds nearby aniCe candidates using a service-filtered foreground scan, 
 app/
   src/main/
     java/io/github/anisharyal09/anice/
-      AniCeApplication.kt           Shared identity, trust and session owners
-      MainActivity.kt               Activity entry point and UI host
-      app/
-        AppRoot.kt                  Navigation and safe insets
-        HomeScreen.kt               Compact Home and Devices list layout
-      features/deviceidentity/
-        DeviceIdentityScreen.kt     Details, copying, reset confirmation
-        DeviceIdentityViewModel.kt  Presentation state and async requests
-      features/discovery/           Nearby screen and lifecycle ViewModel
-      features/pairing/             Camera scanning, PIN entry, approval UI
-      features/session/             Session ViewModel, panels and connection feedback
-      features/backgroundprobe/     Native companion setup/service and automatic policy
-      infrastructure/identity/
-        DeviceIdentity.kt           Public identity validation and encoding
-        IdentityService.kt          Identity lifecycle and signing
-        AndroidIdentityStorage.kt   Keystore and atomic metadata
-      infrastructure/bluetooth/     Scan/GATT adapter, codec, coordinator
-      infrastructure/lan/           NSD discovery, TCP transport, stream framing, resolution lane
-      infrastructure/pairing/       Native PAKE JNI, pairing codec, engine, trust store
-      infrastructure/session/       EDHOC, records, ordering owner, envelope, peer reservation
-      ui/theme/
-        Theme.kt                    Semantic Material palette
-    res/                            Strings, icons, themes, backup rules
-    AndroidManifest.xml             Application declarations
-  src/test/                         JVM validation, pairing, session, and LAN unit tests
-  src/androidTest/                  Native Keystore, session, LAN, and ownership tests
-  src/debug/                        API 31+ companion ownership build gate
-  src/testDebug/                    Probe presence-state unit test
-  src/androidTestDebug/             Native probe checks and opt-in radio/connected-idle tests
+      app/                          Assembly and navigation
+      features/                     Feature models and presentation
+        nowplaying/                 Playback, codecs, artwork and native media presentation
+      infrastructure/
+        connections/                BLE/LAN owners, nearby policy and DATA dispatch
+        identity/                   Keystore storage and identity lifecycle
+        bluetooth/                  Native scan/GATT and framing
+        lan/                        NSD, TCP and framing
+        pairing/                    Bootstrap, trust and native PAKE interface
+        session/                    EDHOC, encrypted records and readiness
+      ui/                           Shared theme and components
+    res/                            Native resources and companion availability gates
+    AndroidManifest.xml             Installed activity/service/receiver identities
+  src/test/                         JVM suites mirroring feature/infrastructure packages
+  src/androidTest/                  Native storage, transport and media-session suites
+  src/debug/                        Debug-specific resources and probes
+  src/testDebug/                    Debug probe tests
+  src/androidTestDebug/             Native probes and opt-in connected-device tests
   build.gradle.kts                  App configuration and dependencies
-gradle/wrapper/                     Gradle wrapper configuration
+gradle/wrapper/                     Supported Gradle entry point
 build.gradle.kts                    Build plugins
 settings.gradle.kts                 Modules and repositories
 ```
@@ -92,4 +81,8 @@ Pairing offers Connect automatically before approval and starts fresh Bluetooth 
 
 **Settings → This device → Edit name** persists a trimmed name of 1–64 Unicode code points in the atomic identity journal. Device ID, public key and fingerprint stay unchanged; existing trust remains valid. The initial name uses the Android model, and future identity exchanges carry the saved name.
 
-Home shows compact device summaries; Devices contains connections, pairing and diagnostics; Settings contains a compact This device entry and saved System/Light/Dark appearance. Bottom navigation preserves session owners and nested routes. Empty Home opens pairing through Pair a device.
+Home shows compact device summaries and playback; Devices contains connections, pairing and diagnostics; Features contains implemented Mac controls; Settings contains a compact This device entry and saved System/Light/Dark appearance. Bottom navigation preserves session owners and nested routes. Empty Home opens pairing through Pair a device.
+
+## Now Playing
+
+Home and Features → Mac controls provide playback, player selection and supported seek/player-volume controls. Phone volume buttons control supported Mac output volume. See [Now Playing](../../docs/features/NOW_PLAYING.md) for notification behavior, background ownership, permissions and limitations.

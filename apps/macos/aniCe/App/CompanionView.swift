@@ -9,7 +9,7 @@ struct CompanionView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
-  let playback: MacPlayback
+  let playback: MacPlaybackModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
   @Environment(\.colorScheme) private var colorScheme
@@ -18,7 +18,7 @@ struct CompanionView: View {
     VStack(alignment: .leading, spacing: 16) {
       if pairing.peers.count > 3 { ScrollView { deviceContent }.frame(maxHeight: 520) }
       else { deviceContent }
-      if playback.showOnMac && !playback.playback.source.isEmpty { MediaView(model:playback,compact:true,visible:playback.companionVisible,playerPicker:false) { navigation.open(.features,present:openMain) } }
+      if playback.showOnMac && playback.compactVisible { MediaView(model:playback,compact:true,visible:playback.companionVisible,playerPicker:false) { navigation.open(.features,present:openMain) } }
       footer
     }
     .padding(24)
@@ -88,7 +88,7 @@ struct CompanionView: View {
 @MainActor final class CompanionHost: NSObject, NSPopoverDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let popover = NSPopover()
-  private let playback: MacPlayback
+  private let playback: MacPlaybackModel
   private let onOpen: () -> Void
   private let onManage: () -> Void
   private let onDetails: () -> Void

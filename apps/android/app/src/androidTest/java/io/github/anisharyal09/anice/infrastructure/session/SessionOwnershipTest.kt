@@ -2,6 +2,7 @@
 // Verifies foreground, companion and observable automatic-policy ownership without UI interaction.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import android.content.Context
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateObserver
@@ -9,7 +10,7 @@ import org.junit.Assume.assumeTrue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
-import io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.*

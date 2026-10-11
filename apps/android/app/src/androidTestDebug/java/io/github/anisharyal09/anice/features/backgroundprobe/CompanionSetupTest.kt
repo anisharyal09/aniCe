@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.bluetooth.BluetoothAdapter
 import android.net.MacAddress

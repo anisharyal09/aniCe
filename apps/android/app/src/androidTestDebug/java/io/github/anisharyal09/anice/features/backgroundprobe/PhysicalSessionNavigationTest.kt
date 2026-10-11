@@ -2,12 +2,13 @@
 // Verifies shared Android session ownership and authenticated teardown against a physical Mac.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import android.app.Activity
 import android.content.Intent
 import io.github.anisharyal09.anice.AniCeApplication
-import io.github.anisharyal09.anice.infrastructure.session.ConnectionState
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import java.io.File
 import kotlinx.coroutines.*
 import org.junit.Assert.*

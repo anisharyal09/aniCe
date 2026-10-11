@@ -40,13 +40,13 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
   - Vectors: [`discovery-vectors.json`](protocol/test-vectors/discovery-vectors.json)
-- **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android connects over Wi-Fi; Mac accepts local connections. LAN currently carries connection checks, with the same 4,000-byte record bound as BLE.
+- **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android connects over Wi-Fi; Mac accepts local connections. LAN carries connection checks and subscribed media DATA, with the same 4,000-byte record bound as BLE.
   - Contract: [LAN Binding Contract](protocol/lan/README.md)
   - Lifecycle: [Independent LAN Connections](docs/LAN_CONNECTIONS.md)
   - Decisions: [ADR 0006 (Independent LAN Sessions)](docs/decisions/0006-independent-lan-sessions.md)
   - Vectors: [`lan-vectors.json`](protocol/test-vectors/lan/lan-vectors.json)
 - **Concurrent Coexistence:** Simultaneous BLE and LAN sessions to the same pinned peer with independent session keys, nonces, and counters under a shared reservation lock.
-- **Ownership:** Android manual LAN closes on final activity stop, screen lock or network loss. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Automatic LAN reconnection and feature routing are deferred.
+- **Ownership:** Android manual LAN closes on final activity stop, screen lock or network loss. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Automatic LAN reconnection remains deferred.
 
 ---
 
@@ -62,12 +62,8 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 ## Complete Reference Index
 
 ### Architecture Decisions (ADRs)
-- [ADR 0001: Platform-Native Device Identity](docs/decisions/0001-provisional-device-identity.md)
-- [ADR 0002: Provisional BLE Discovery](docs/decisions/0002-provisional-ble-discovery.md)
-- [ADR 0003: Provisional Pairing and Trust Establishment](docs/decisions/0003-provisional-pairing-and-trust.md)
-- [ADR 0004: Stable BLE Attribute Layout](docs/decisions/0004-stable-ble-attribute-layout.md)
-- [ADR 0005: EDHOC Secure Sessions & Directional Record Channel](docs/decisions/0005-edhoc-secure-sessions.md)
-- [ADR 0006: Independent LAN Sessions Alongside BLE](docs/decisions/0006-independent-lan-sessions.md)
+
+See the [decision index](docs/decisions/README.md) for shared foundations and feature-specific decisions.
 
 ### Protocol Contracts & Schemas
 - [Protocol Overview & Active Contracts](protocol/README.md)
@@ -76,6 +72,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 - [Pairing Bootstrap Protocol](protocol/pairing/README.md)
 - [Secure Sessions & Record Channel](protocol/session/README.md)
 - [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
+- [Now Playing DATA](protocol/media/README.md)
 
 ### Operational Guides & Implementation Roadmaps
 - [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
@@ -83,6 +80,18 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 - [Design Guide & Palette](docs/design/DESIGN.md)
 - [Project Roadmap & Verification Gates](docs/ROADMAP.md)
 
-## Now Playing ownership and process boundary
+## Now Playing
 
-Mac Debug/Release disable App Sandbox and package a separate universal Perl-loaded MediaRemote adapter. Identity/trust journals retain their original app-container paths and Keychain policy remains unchanged. One application-scoped MacPlayback owns event-driven local playback and foreground Android subscriptions through existing authenticated DATA. Secured LAN is preferred, otherwise BLE carries metadata/controls; artwork stays on LAN. Channel replacement clears state and never replays commands. Unsupported directed actions remain disabled. See [media contracts](protocol/media/README.md) and [feature architecture](docs/features/NOW_PLAYING.md). See [process-boundary decision](docs/decisions/0007-macos-unsandboxed-playback-prototype.md).
+One application-scoped MacPlaybackModel owns playback state, selection and observation leases; its MediaProcessBridge owns the packaged native adapter and MediaSessionLink owns subscriptions. Android controls this owner through one existing secured channel, preferring foreground LAN and using BLE otherwise. Background requires existing companion ownership. Artwork stays on LAN; channel replacement requires fresh state and never replays commands.
+
+Mac output volume and verified selected-player volume are independently negotiated controls. See [feature behavior](docs/features/NOW_PLAYING.md), [media contracts](protocol/media/README.md) and the [playback decision](docs/decisions/features/now-playing/0009-remote-playback-presentation.md).
+
+App Sandbox is disabled for the entire Mac app. Identity/trust paths, Keychain policy and session cryptography remain unchanged; [ADR 0007](docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records the access and signing consequences.
+
+## Application DATA and source organization
+
+Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android manifest companion activity/service packages retain their original names; only their policy implementation moves. Existing identity, association and appearance persistence keys remain unchanged.
+
+App registers the media FeatureHandler before DATA delivery. FeatureDispatch publishes authenticated channel descriptors (instance ID, transport and peer identity/fingerprint), availability, retirement and capacity events. SecuredChannel rejects retired instances and bounds submissions to 4,000 bytes; transport owners retain capacity preflight, readiness ordering, liveness priority and nonce ownership. Handlers distinguish handled, discarded and unrecognized DATA; unrecognized records retain connection-check fallback. Dispatch owns no transfer scheduler or sealed-record queue.
+
+Native navigation types and Features destination content are separated from app shells. MacPlaybackModel is the sole playback authority; its owned process bridge fences native delivery by launch generation, and its session link coalesces logical snapshots before sealing. The fixture generator lives beside the media fixture; native and interchange scripts remain supported entry points. `python3 scripts/check-structure.py` checks dependency direction, local documentation links and explicit Xcode membership.

@@ -32,7 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbe
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable

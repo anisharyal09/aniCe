@@ -7,7 +7,7 @@
 | **Independent Bluetooth Low Energy (BLE)** | Compatibility discovery, EDHOC session handshake, AES-GCM records, GATT framing | Implemented |
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
-| **Application continuity** | Media controls, clipboard synchronization, bulk file transfer; continuous test hardening and fixes | ... |
+| **Application continuity** | Now Playing implemented; More features and platform support coming soon. | In progress |
 
 Automated unit, hosted, and cross-platform interchange test suites validate cryptographic, transport, and session protocol contracts.
 
@@ -36,6 +36,8 @@ Automated unit, hosted, and cross-platform interchange test suites validate cryp
 - **Measured Result:** Validated in 17-minute physical connected-idle tests, dropping single-core CPU medians from 3.166% down to 0.322% on Android and 0.385% down to 0.030% on macOS (~90% reduction).
 
 ### 5. Application Continuity
-- **Now Playing:** Shared Mac owner, optional Home/companion playback (off by default), Phone controls feature information, full Android Home controls/player picker, foreground Android subscription and media v1 over secured LAN/BLE implemented. Unsupported player actions remain disabled; integrated physical/player/minimum-OS acceptance pending. See [Now Playing evidence](features/NOW_PLAYING.md).
-- **Continuity Services:** Media playback controls, bidirectional clipboard synchronization, and high-speed LAN file transfer built on top of established record channels.
+- **Now Playing:** Remote Mac playback, source selection, seek previews, native Android notifications (`MediaSession` / `Notification.MediaStyle`), and player/output volume controls are implemented. Mac Home/companion display is optional. See [Now Playing](features/NOW_PLAYING.md), [ADR 0007](decisions/0007-macos-unsandboxed-playback-prototype.md), and [ADR 0009](decisions/features/now-playing/0009-remote-playback-presentation.md).
+
+...
+
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.

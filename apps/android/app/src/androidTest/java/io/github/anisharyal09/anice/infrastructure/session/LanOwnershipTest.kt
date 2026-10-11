@@ -2,6 +2,7 @@
 // Verifies LAN presentation handoff and native network teardown without UI interaction.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import androidx.lifecycle.ViewModelStore
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import android.net.ConnectivityManager
@@ -11,7 +12,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.features.session.SessionViewModel
-import io.github.anisharyal09.anice.infrastructure.lan.LanSessionController
+import io.github.anisharyal09.anice.infrastructure.connections.LanSessionController
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test

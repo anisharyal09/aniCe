@@ -6,10 +6,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Shared event-driven Now Playing owner, optional Home/companion activity (off by default) and Phone controls feature information, Auto/player selection, scoped controls and explicit Automation permission; attributed universal MediaRemote adapter packaged with build-script sandboxing and signed-image replacement by rename; icon playback controls and device-first Home ordering. Native playback commands bypass full player scans, with bounded notification coalescing and one recording-bound state/position read after successful commands; visible progress uses a four-Hz periodic clock that stops while hidden or paused.
+- Shared event-driven Now Playing owner with optional Home/companion activity, Phone controls information and attributed packaged universal adapter. Source-bound controls resolve native/script support per action, recover matching late capabilities and publish position samples after commands. Explicit Music/Spotify volume verification gates player sliders; native output-device observation supports phone volume controls. Preview confirmation, readable availability and selection-preserving refresh handle asynchronous results without replaying writes.
 - Home/Devices/Features/Settings sidebar and saved native Window appearance preference with native and SwiftUI System inheritance across the window and connection-details sheet; companion and context menus retain system appearance.
 
 ### Changed
+
+- Separate MacPlaybackModel, MediaProcessBridge and MediaSessionLink; group connection owners under Connections, register feature-neutral DATA handling in App, and split hosted suites with shared independent fixtures.
 
 - Disable App Sandbox while retaining hardened runtime, signing defaults and original identity/trust journal locations; unsupported player targeting remains disabled.
 - Compact Home/companion rows open Devices with peer context before restoring the main window; clicking names/status also opens device management.

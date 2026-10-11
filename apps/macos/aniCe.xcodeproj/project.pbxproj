@@ -45,7 +45,7 @@
 		CC2537F76576ED2CBAF9A80F /* aniCe/Infrastructure/Pairing/PairingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */; };
 		D8D003F789CFE6CBB27FC01E /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A95CA8384F875E996F9139 /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift */; };
 		E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0FAD41BE08DB04EA6CA9505 /* aniCeTests/SessionChannelTests.swift */; };
-		F943A3689758A079688E15F8 /* aniCe/Features/Session/MacSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */; };
+		F943A3689758A079688E15F8 /* aniCe/Infrastructure/Connections/MacSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556A43D6EFF8B2A2ABA78A24 /* aniCe/Infrastructure/Connections/MacSessionModel.swift */; };
 		FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */; };
 		FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */; };
 		FCD0A6A722F1CA9B89AC6AC9 /* aniCe/Infrastructure/Session/SessionCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF837DC52D1A22954F8A0CC /* aniCe/Infrastructure/Session/SessionCrypto.swift */; };
@@ -56,16 +56,34 @@
 		6A3F087AAB1C657A3EE6E68A /* aniCe/Infrastructure/Session/SessionPeerReservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763B24FA2DE4267D36DCA182 /* aniCe/Infrastructure/Session/SessionPeerReservation.swift */; };
 		E97ABB3514DECEED19618D8E /* aniCe/Infrastructure/LAN/LanFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CE218729CE483AA40F7B152 /* aniCe/Infrastructure/LAN/LanFraming.swift */; };
 		19F0E754132EF9E4CE17FACF /* aniCe/Infrastructure/LAN/LanTcpTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */; };
-		A391955247C39A54B8DAE439 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */; };
+		A391955247C39A54B8DAE439 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088E75AB91963156C23260D5 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift */; };
 		FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */; };
 		20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */; };
-		A34D9997D94406D2CD684BEE /* aniCe/Features/Media/MediaWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F786D4EA28875E8B52A5050; };
-		2AC7B0EC9E0FD0C1ED8EAC03 /* aniCe/Features/Media/MacPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E997F22245B67C3AA3AE4C; };
-		CC1FEE3CCD0C897922760D25 /* aniCe/Features/Media/MediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3699A9022B41B5DC0049D2; };
-		EE3C8AAE781B333226B1FD83 /* aniCe/Features/Media/PlaybackAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B81B7ECFA842C1D48FB27EE; };
-		D7D0F0A67BF431253AC7C9F2 /* NowPlayingAdapter/PlaybackCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F8B9494D0984A4639C97CD; };
-		926FF3F3B1AAEEF195B553E2 /* NowPlayingAdapter/PlaybackSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F67013C4ECDCDD15C7F0054; };
+		A34D9997D94406D2CD684BEE /* aniCe/Features/NowPlaying/MediaWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F786D4EA28875E8B52A5050; };
+		2AC7B0EC9E0FD0C1ED8EAC03 /* aniCe/Features/NowPlaying/MacPlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E997F22245B67C3AA3AE4C; };
+		CC1FEE3CCD0C897922760D25 /* aniCe/Features/NowPlaying/MediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3699A9022B41B5DC0049D2; };
+		EE3C8AAE781B333226B1FD83 /* aniCe/Features/NowPlaying/PlaybackAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B81B7ECFA842C1D48FB27EE; };
+		D7D0F0A67BF431253AC7C9F2 /* aniCe/Features/NowPlaying/Adapter/PlaybackCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F8B9494D0984A4639C97CD; };
+		926FF3F3B1AAEEF195B553E2 /* aniCe/Features/NowPlaying/Adapter/PlaybackSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F67013C4ECDCDD15C7F0054; };
 		AA1100000000000000000002 = {isa = PBXBuildFile; fileRef = AA1100000000000000000001; };
+		A88E4A57C366B8F49BF348E1 /* aniCe/App/AppNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44400B339DD4F0C72AAD72FD; };
+		E1728305D061746B45A1A5C3 /* aniCe/Infrastructure/Connections/FeatureDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCF12AD488F7D30F70776DFD; };
+		A748EC67B8A3306A56133A5B /* aniCe/Features/NowPlaying/MediaProcessBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B267D8E475863371DD2C0AE; };
+		4206965564F9361F5C4C2AA4 /* aniCe/Features/NowPlaying/MediaSessionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AD2698142215B36FAF9467; };
+		26AEED17CBDDE483B38EF1F2 /* aniCeTests/NavigationAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4EE9233703057A84035C690; };
+		17DF506938FC5A7030B149A4 /* aniCeTests/SessionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF1A8C5ED31593319075195; };
+		56BF6E0E9BF7C49DD96623E1 /* aniCeTests/NowPlaying/PackagedAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545AA68D8842B1A3825E53B9; };
+		37D4295E83741498D4CCD68B /* aniCeTests/NowPlaying/MediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC6FE7E995098CD289F52EB; };
+		877A16FC897B3FDF1BE11F56 /* aniCe/App/FeaturesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCA2E4BCAC982F9693EBC96; };
+		A420E9395D8F99F11FF1B3B5 /* aniCeTests/IdentityFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65EFE3CD37ACE93ADAFC6439; };
+		251558678B0CAD9ADEE2BCAD /* aniCeTests/ConnectionLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4778C61A4CAEABE1F0BF7DC6; };
+		AF534A4C839E1C4955C76C84 /* aniCe/App/WindowDestinations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CC8A5063B9EEC3D1AF88CB; };
+		0C2BBFAFB43C718F7D80D7D2 /* aniCe/Features/NowPlaying/PlayerVolumeWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066503AC0B0272998F8382D3; };
+		1CAD97B955DF438A4E72570A /* aniCe/Features/NowPlaying/PlayerVolumeEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31882EFF5623B3766EF77BE; };
+		2F4C3E959C2B63EEAE37D4AB /* aniCe/Features/NowPlaying/PlayerVolumeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED339B5EB815B646CB5385C6; };
+		B267B0535D61B78766EECCF5 /* ../../protocol/test-vectors/media/volume-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B011E9D35E7A07A04FACA37A; };
+		16767FDDEADC12BEDB3CD533 /* aniCe/Features/NowPlaying/MacOutputVolume.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7A7C7ACBC354918B4A452F; };
+		ABCA12000000000000000002 = {isa = PBXBuildFile; fileRef = ABCA12000000000000000001; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -113,7 +131,7 @@
 		238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Bluetooth/GattFraming.swift; sourceTree = SOURCE_ROOT; };
 		268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingEngine.swift; sourceTree = SOURCE_ROOT; };
 		543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/SessionTests.swift; sourceTree = SOURCE_ROOT; };
-		556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Session/MacSessionModel.swift; sourceTree = SOURCE_ROOT; };
+		556A43D6EFF8B2A2ABA78A24 /* aniCe/Infrastructure/Connections/MacSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/MacSessionModel.swift; sourceTree = SOURCE_ROOT; };
 		63457F669CCC8B7994A71D7A /* aniCe/Features/Pairing/MacPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacPairingView.swift; sourceTree = SOURCE_ROOT; };
 		827ECA8094D4F1E9A92668B4 /* ../../protocol/test-vectors/session/rfc9529-components.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/session/rfc9529-components.json"; sourceTree = SOURCE_ROOT; };
 		88FFC4482694BD876043669A /* aniCeTests/PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/PairingTests.swift; sourceTree = SOURCE_ROOT; };
@@ -131,16 +149,34 @@
 		763B24FA2DE4267D36DCA182 /* aniCe/Infrastructure/Session/SessionPeerReservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Session/SessionPeerReservation.swift; sourceTree = SOURCE_ROOT; };
 		8CE218729CE483AA40F7B152 /* aniCe/Infrastructure/LAN/LanFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/LanFraming.swift; sourceTree = SOURCE_ROOT; };
 		CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/LanTcpTransport.swift; sourceTree = SOURCE_ROOT; };
-		088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/LAN/MacLanSessionModel.swift; sourceTree = SOURCE_ROOT; };
+		088E75AB91963156C23260D5 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/MacLanSessionModel.swift; sourceTree = SOURCE_ROOT; };
 		CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/LanTests.swift"; sourceTree = SOURCE_ROOT; };
 		C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-vectors.json"; sourceTree = SOURCE_ROOT; };
-		4F786D4EA28875E8B52A5050 /* aniCe/Features/Media/MediaWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/MediaWire.swift"; sourceTree = SOURCE_ROOT; };
-		D0E997F22245B67C3AA3AE4C /* aniCe/Features/Media/MacPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/MacPlayback.swift"; sourceTree = SOURCE_ROOT; };
-		9A3699A9022B41B5DC0049D2 /* aniCe/Features/Media/MediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/MediaView.swift"; sourceTree = SOURCE_ROOT; };
-		9B81B7ECFA842C1D48FB27EE /* aniCe/Features/Media/PlaybackAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Media/PlaybackAutomation.swift"; sourceTree = SOURCE_ROOT; };
-		68F8B9494D0984A4639C97CD /* NowPlayingAdapter/PlaybackCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NowPlayingAdapter/PlaybackCommand.swift"; sourceTree = SOURCE_ROOT; };
-		3F67013C4ECDCDD15C7F0054 /* NowPlayingAdapter/PlaybackSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NowPlayingAdapter/PlaybackSource.swift"; sourceTree = SOURCE_ROOT; };
+		4F786D4EA28875E8B52A5050 /* aniCe/Features/NowPlaying/MediaWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaWire.swift"; sourceTree = SOURCE_ROOT; };
+		D0E997F22245B67C3AA3AE4C /* aniCe/Features/NowPlaying/MacPlaybackModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MacPlaybackModel.swift"; sourceTree = SOURCE_ROOT; };
+		9A3699A9022B41B5DC0049D2 /* aniCe/Features/NowPlaying/MediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaView.swift"; sourceTree = SOURCE_ROOT; };
+		9B81B7ECFA842C1D48FB27EE /* aniCe/Features/NowPlaying/PlaybackAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/PlaybackAutomation.swift"; sourceTree = SOURCE_ROOT; };
+		68F8B9494D0984A4639C97CD /* aniCe/Features/NowPlaying/Adapter/PlaybackCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/Adapter/PlaybackCommand.swift"; sourceTree = SOURCE_ROOT; };
+		3F67013C4ECDCDD15C7F0054 /* aniCe/Features/NowPlaying/Adapter/PlaybackSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/Adapter/PlaybackSource.swift"; sourceTree = SOURCE_ROOT; };
 		AA1100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/media/media-vectors.json"; sourceTree = SOURCE_ROOT; };
+		44400B339DD4F0C72AAD72FD /* aniCe/App/AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/AppNavigation.swift"; sourceTree = SOURCE_ROOT; };
+		DCF12AD488F7D30F70776DFD /* aniCe/Infrastructure/Connections/FeatureDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Infrastructure/Connections/FeatureDispatch.swift"; sourceTree = SOURCE_ROOT; };
+		5B267D8E475863371DD2C0AE /* aniCe/Features/NowPlaying/MediaProcessBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaProcessBridge.swift"; sourceTree = SOURCE_ROOT; };
+		40AD2698142215B36FAF9467 /* aniCe/Features/NowPlaying/MediaSessionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaSessionLink.swift"; sourceTree = SOURCE_ROOT; };
+		C4EE9233703057A84035C690 /* aniCeTests/NavigationAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NavigationAppearanceTests.swift"; sourceTree = SOURCE_ROOT; };
+		9AF1A8C5ED31593319075195 /* aniCeTests/SessionFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/SessionFixtures.swift"; sourceTree = SOURCE_ROOT; };
+		545AA68D8842B1A3825E53B9 /* aniCeTests/NowPlaying/PackagedAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/PackagedAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		6AC6FE7E995098CD289F52EB /* aniCeTests/NowPlaying/MediaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/MediaTests.swift"; sourceTree = SOURCE_ROOT; };
+		9DCA2E4BCAC982F9693EBC96 /* aniCe/App/FeaturesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/FeaturesView.swift"; sourceTree = SOURCE_ROOT; };
+		65EFE3CD37ACE93ADAFC6439 /* aniCeTests/IdentityFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/IdentityFixture.swift"; sourceTree = SOURCE_ROOT; };
+		4778C61A4CAEABE1F0BF7DC6 /* aniCeTests/ConnectionLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/ConnectionLifecycleTests.swift"; sourceTree = SOURCE_ROOT; };
+		47CC8A5063B9EEC3D1AF88CB /* aniCe/App/WindowDestinations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/WindowDestinations.swift"; sourceTree = SOURCE_ROOT; };
+		066503AC0B0272998F8382D3 /* aniCe/Features/NowPlaying/PlayerVolumeWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/PlayerVolumeWire.swift"; sourceTree = SOURCE_ROOT; };
+		D31882EFF5623B3766EF77BE /* aniCe/Features/NowPlaying/PlayerVolumeEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/PlayerVolumeEvent.swift"; sourceTree = SOURCE_ROOT; };
+		ED339B5EB815B646CB5385C6 /* aniCe/Features/NowPlaying/PlayerVolumeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/PlayerVolumeView.swift"; sourceTree = SOURCE_ROOT; };
+		B011E9D35E7A07A04FACA37A /* ../../protocol/test-vectors/media/volume-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/media/volume-vectors.json"; sourceTree = SOURCE_ROOT; };
+		DF7A7C7ACBC354918B4A452F /* aniCe/Features/NowPlaying/MacOutputVolume.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MacOutputVolume.swift"; sourceTree = SOURCE_ROOT; };
+		ABCA12000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/media/output-volume-vectors.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +200,24 @@
 		00000000000000000000000B = {
 			isa = PBXGroup;
 			children = (
+				DF7A7C7ACBC354918B4A452F,
+				B011E9D35E7A07A04FACA37A,
+				ABCA12000000000000000001,
+				ED339B5EB815B646CB5385C6,
+				D31882EFF5623B3766EF77BE,
+				066503AC0B0272998F8382D3,
+				47CC8A5063B9EEC3D1AF88CB,
+				4778C61A4CAEABE1F0BF7DC6,
+				65EFE3CD37ACE93ADAFC6439,
+				9DCA2E4BCAC982F9693EBC96,
+				6AC6FE7E995098CD289F52EB,
+				545AA68D8842B1A3825E53B9,
+				9AF1A8C5ED31593319075195,
+				C4EE9233703057A84035C690,
+				40AD2698142215B36FAF9467,
+				5B267D8E475863371DD2C0AE,
+				DCF12AD488F7D30F70776DFD,
+				44400B339DD4F0C72AAD72FD,
 				AA1100000000000000000001,
 				3F67013C4ECDCDD15C7F0054,
 				68F8B9494D0984A4639C97CD,
@@ -236,7 +290,7 @@
 			isa = PBXGroup;
 			children = (
 				E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */,
-				556A43D6EFF8B2A2ABA78A24 /* aniCe/Features/Session/MacSessionModel.swift */,
+				556A43D6EFF8B2A2ABA78A24 /* aniCe/Infrastructure/Connections/MacSessionModel.swift */,
 				238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */,
 				AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */,
 				01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */,
@@ -327,7 +381,7 @@
 			children = (
 				C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */,
 				CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */,
-				088E75AB91963156C23260D5 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift */,
+				088E75AB91963156C23260D5 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift */,
 				CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */,
 				8CE218729CE483AA40F7B152 /* aniCe/Infrastructure/LAN/LanFraming.swift */,
 				763B24FA2DE4267D36DCA182 /* aniCe/Infrastructure/Session/SessionPeerReservation.swift */,
@@ -442,6 +496,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B267B0535D61B78766EECCF5,
+				ABCA12000000000000000002,
 				AA1100000000000000000002,
 				20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */,
 				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
@@ -461,11 +517,11 @@
             isa = PBXShellScriptBuildPhase;
             buildActionMask = 2147483647;
             files = ();
-            inputPaths = ("$(SRCROOT)/NowPlayingAdapter/NowPlayingAdapter.swift", "$(SRCROOT)/NowPlayingAdapter/NowPlayingSelection.swift", "$(SRCROOT)/NowPlayingAdapter/PlaybackSource.swift", "$(SRCROOT)/NowPlayingAdapter/PlaybackCommand.swift", "$(SRCROOT)/NowPlayingAdapter/now-playing.pl", "$(SRCROOT)/NowPlayingAdapter/THIRD_PARTY_NOTICES.md", "$(SRCROOT)/NowPlayingAdapter/build.sh", "$(SRCROOT)/../../LICENSE");
+            inputPaths = ("$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/NowPlayingAdapter.swift", "$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/NowPlayingSelection.swift", "$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/PlaybackSource.swift", "$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/PlaybackCommand.swift", "$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/now-playing.pl", "$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md", "$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/build.sh", "$(SRCROOT)/../../LICENSE");
             outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/now-playing.pl", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/libaniCeNowPlaying.dylib", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/THIRD_PARTY_NOTICES.md", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/NowPlaying/GPL-LICENSE.txt");
             runOnlyForDeploymentPostprocessing = 0;
             shellPath = /bin/bash;
-            shellScript = "bash \"$SRCROOT/NowPlayingAdapter/build.sh\"";
+            shellScript = "bash \"$SRCROOT/aniCe/Features/NowPlaying/Adapter/build.sh\"";
         };
 /* End PBXShellScriptBuildPhase section */
 
@@ -474,19 +530,29 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				16767FDDEADC12BEDB3CD533,
+				2F4C3E959C2B63EEAE37D4AB,
+				1CAD97B955DF438A4E72570A,
+				0C2BBFAFB43C718F7D80D7D2,
+				AF534A4C839E1C4955C76C84,
+				877A16FC897B3FDF1BE11F56,
+				4206965564F9361F5C4C2AA4,
+				A748EC67B8A3306A56133A5B,
+				E1728305D061746B45A1A5C3,
+				A88E4A57C366B8F49BF348E1,
 				926FF3F3B1AAEEF195B553E2,
 				D7D0F0A67BF431253AC7C9F2,
 				EE3C8AAE781B333226B1FD83,
 				CC1FEE3CCD0C897922760D25,
 				2AC7B0EC9E0FD0C1ED8EAC03,
 				A34D9997D94406D2CD684BEE,
-				A391955247C39A54B8DAE439 /* aniCe/Infrastructure/LAN/MacLanSessionModel.swift in Sources */,
+				A391955247C39A54B8DAE439 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift in Sources */,
 				19F0E754132EF9E4CE17FACF /* aniCe/Infrastructure/LAN/LanTcpTransport.swift in Sources */,
 				E97ABB3514DECEED19618D8E /* aniCe/Infrastructure/LAN/LanFraming.swift in Sources */,
 				6A3F087AAB1C657A3EE6E68A /* aniCe/Infrastructure/Session/SessionPeerReservation.swift in Sources */,
 				48948FCB77CE94C9E7D3009B /* aniCe/Infrastructure/Session/SessionEnvelope.swift in Sources */,
 				FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */,
-				F943A3689758A079688E15F8 /* aniCe/Features/Session/MacSessionModel.swift in Sources */,
+				F943A3689758A079688E15F8 /* aniCe/Infrastructure/Connections/MacSessionModel.swift in Sources */,
 				64CF98FCB6E025D6CD950B4D /* aniCe/Infrastructure/Bluetooth/GattFraming.swift in Sources */,
 				AC0100000000000000000001 /* aniCe/Infrastructure/Session/SessionControl.swift in Sources */,
 				FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */,
@@ -524,6 +590,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				251558678B0CAD9ADEE2BCAD,
+				A420E9395D8F99F11FF1B3B5,
+				37D4295E83741498D4CCD68B,
+				56BF6E0E9BF7C49DD96623E1,
+				17DF506938FC5A7030B149A4,
+				26AEED17CBDDE483B38EF1F2,
 				FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */,
 				E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */,
 				FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */,

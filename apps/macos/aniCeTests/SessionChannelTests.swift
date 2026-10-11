@@ -62,7 +62,7 @@ private actor DeadlineValidationProbe {
   func validate() throws { loads += 1; if let fault { throw fault } }
 }
 final class SessionChannelTests: XCTestCase, @unchecked Sendable {
-  private let helper = SessionTests()
+  private let helper = SessionFixtures()
   private func b(_ v: [String: Any], _ name: String) throws -> Data { try helper.b(v, name) }
   private func reject(_ reason: SessionFailure, _ action: () async throws -> Void) async throws {
     do {

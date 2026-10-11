@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Independently negotiated Mac output-volume v1, output-device identity/revision validation and positive/negative fixtures; preserves media/player-volume v1 bytes and shares bounded subscription command deduplication.
+- Separately negotiated selected-player volume v1 with independent positive/negative fixtures; media v1 fixture and envelope bytes remain unchanged. Clarify companion-owned BLE background subscriptions and fresh-channel retirement.
 - Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts and independent bounded fixtures within existing authenticated DATA records.
 
 - Versioned LAN TCP envelope binding and independent framing fixtures; existing EDHOC and encrypted-record formats remain unchanged.

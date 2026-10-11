@@ -3,6 +3,8 @@
 @file:Suppress("DEPRECATION", "OVERRIDE_DEPRECATION") // Android 12–15 deliver the older presence callbacks.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.ProbePresence
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import android.companion.AssociationInfo
 import android.companion.CompanionDeviceService
 import android.companion.DevicePresenceEvent

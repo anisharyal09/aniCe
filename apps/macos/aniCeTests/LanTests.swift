@@ -22,7 +22,7 @@ final class LanTests: XCTestCase {
     XCTAssertFalse(parameters.includePeerToPeer)
     XCTAssertEqual(parameters.prohibitedInterfaceTypes?.contains(.loopback), true)
   }
-  private let helper = SessionTests()
+  private let helper = SessionFixtures()
   private func feed(_ bytes: Data, into framing: inout LanFraming) throws -> [Data] {
     try bytes.compactMap { try framing.feed($0) }
   }

@@ -11,11 +11,11 @@ struct AniCeApp: App {
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
-  @State private var playback: MacPlayback
+  @State private var playback: MacPlaybackModel
   @State private var navigation: ConnectionNavigation
 
   init() {
-    let playback = MacPlayback()
+    let playback = MacPlaybackModel()
     _playback = State(initialValue: playback)
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
@@ -31,20 +31,26 @@ struct AniCeApp: App {
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
-    session.mediaStateChanged = { [weak session, weak playback] in
-      playback?.channel("ble", token: session?.mediaToken) { [weak session] bytes in
-        guard let session else { throw SessionBackpressure() }; try await session.sendMedia(bytes)
-      }
+    let features=FeatureDispatch()
+    features.register(playback)
+    session.channelStateChanged = { [weak session] in
+      if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
+        features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
+          guard let session else { throw SessionFailure.cancelled }; try await session.sendData(bytes)
+        }
+      } else { features.retired("ble") }
     }
-    lan.mediaStateChanged = { [weak lan, weak playback] in
-      playback?.channel("lan", token: lan?.mediaToken) { [weak lan] bytes in
-        guard let lan else { throw SessionBackpressure() }; try await lan.sendMedia(bytes)
-      }
+    lan.channelStateChanged = { [weak lan] in
+      if let lan, let token=lan.channelToken, let peer=lan.authenticatedPeer {
+        features.available(ChannelDescriptor(instance:token,transport:"lan",peer:peer)) { [weak lan] bytes in
+          guard let lan else { throw SessionFailure.cancelled }; try await lan.sendData(bytes)
+        }
+      } else { features.retired("lan") }
     }
-    session.mediaCapacityChanged = { [weak playback] in playback?.capacity("ble") }
-    lan.mediaCapacityChanged = { [weak playback] in playback?.capacity("lan") }
-    session.mediaReceived = { [weak playback] bytes in playback?.receive(bytes,channel:"ble") ?? false }
-    lan.mediaReceived = { [weak playback] bytes in playback?.receive(bytes,channel:"lan") ?? false }
+    session.channelCapacityChanged = { features.capacityAvailable("ble") }
+    lan.channelCapacityChanged = { features.capacityAvailable("lan") }
+    session.applicationDataReceived = { [weak session] bytes in features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
+    lan.applicationDataReceived = { [weak lan] bytes in features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
     pairing.onPaired = { [weak session, weak navigation] peer in
       guard let session, let navigation else { return }

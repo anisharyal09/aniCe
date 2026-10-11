@@ -1,0 +1,8 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Describes separately advertised Mac output-device volume inside the current authenticated media subscription.
+output-volume = ["aniCe output volume", 1, kind: 1..4, fields: capability / sample / command / result]
+capability = [1]
+sample = [subscription: uuid, output: uuid / "", revision: uuid / "", supported: bool, level: -1..100]
+command = [subscription: uuid, command-id: 1..4294967295, output: uuid, revision: uuid, level: 0..100]
+result = [subscription: uuid, command-id: 1..4294967295, result: 0..7]
+uuid = tstr .size 36

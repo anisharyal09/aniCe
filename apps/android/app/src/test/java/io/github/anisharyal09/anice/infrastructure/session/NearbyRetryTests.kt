@@ -2,6 +2,7 @@
 // Tests backoff/exclusion bounds and role-specific renewal margins/coalescing.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import io.github.anisharyal09.anice.infrastructure.connections.NearbyRetry
 import org.junit.Assert.*
 import org.junit.Test
 

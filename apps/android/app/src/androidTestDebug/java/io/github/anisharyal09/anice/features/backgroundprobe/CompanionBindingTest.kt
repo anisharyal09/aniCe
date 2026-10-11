@@ -2,6 +2,8 @@
 // Exercises same-instance companion rebind and terminal retirement without changing trusted setup.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.ProbePresence
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import android.companion.CompanionDeviceService
 import android.content.Context
 import android.content.ContextWrapper

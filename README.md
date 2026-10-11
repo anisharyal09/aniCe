@@ -20,20 +20,20 @@ protocol/
   lan/                  Local network stream framing and mDNS discovery contract
   pairing/              Authenticated bootstrap and control-pipe contract (QR & OPAQUE PIN)
   session/              EDHOC, encrypted records, controls and session envelopes
+  media/                Now Playing DATA contract and bounded artwork
   schemas/              Shared public identity contract (JSON Schema v1)
-  test-vectors/         Cryptographic verification cases (identity, pairing, session, LAN)
+  test-vectors/         Cryptographic verification cases (identity, pairing, session, LAN, media)
   fixtures/             Sample public identities
 scripts/                Identity/session/LAN interchange and native pairing builds
 docs/
   design/               Shared design guide
-  decisions/            Architecture decisions (ADRs 0001–0006)
+  decisions/            App-wide ADRs and features/<feature>/ decisions
+  features/             Feature usage and limitations
   BACKGROUND_CONNECTIONS.md Background BLE lifecycle and gates
   LAN_CONNECTIONS.md    Independent authenticated LAN connections
-  ROADMAP.md            Phased milestone status and verification gates
+  ROADMAP.md            Implemented capabilities and planned work
 .agents/                Operational coding context
 core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
-tests/                  Reserved for system tests
-tools/                  Reserved for developer utilities
 ```
 
 ---
@@ -41,9 +41,10 @@ tools/                  Reserved for developer utilities
 ## Development & Architecture Decisions
 
 - **Architecture Overview:** [Identity, trust, sessions and transports](ARCHITECTURE.md)
-- **Architecture Decisions:** ADR [0001](docs/decisions/0001-provisional-device-identity.md) (Device Identity) · [0002](docs/decisions/0002-provisional-ble-discovery.md) (BLE Discovery) · [0003](docs/decisions/0003-provisional-pairing-and-trust.md) (Pairing & Trust) · [0004](docs/decisions/0004-stable-ble-attribute-layout.md) (GATT Layout) · [0005](docs/decisions/0005-edhoc-secure-sessions.md) (EDHOC Secure Sessions) · [0006](docs/decisions/0006-independent-lan-sessions.md) (Independent LAN Sessions)
+- **Architecture Decisions:** [Shared foundations and feature decisions](docs/decisions/README.md)
 - **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
 - **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
+- **Features:** [Now Playing](docs/features/NOW_PLAYING.md)
 - **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md)
 
 Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. API 29/macOS 14 runtime acceptance remains pending. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.

@@ -9,13 +9,28 @@ import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetad
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 
 class AniCeApplication : Application() {
-    val nowPlaying by lazy { io.github.anisharyal09.anice.features.media.MediaController() }
+    private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
+    override fun onCreate() {
+        super.onCreate()
+        nowPlaying.presentationChanged={ mediaNotification.update() }
+        mediaNotification.update()
+        if(applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE!=0) {
+            val timingTag="AniCeMediaTiming"
+            nowPlaying.trace={ event,time ->
+                if(android.util.Log.isLoggable(timingTag,android.util.Log.DEBUG)) {
+                    android.util.Log.d(timingTag,"$event $time")
+                }
+            }
+        }
+    }
+    val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
+    val features = io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also { it.register(nowPlaying) }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
-    private val lanOwner = lazy { io.github.anisharyal09.anice.infrastructure.lan.LanSessionController(this) }
+    private val lanOwner = lazy { io.github.anisharyal09.anice.infrastructure.connections.LanSessionController(this) }
     val lanSessionController get() = lanOwner.value
     // UI and system-bound probe share one transport/operation owner; sessions never enter durable storage.
     private val bleOwner = lazy {
-        io.github.anisharyal09.anice.infrastructure.session.SessionController(this)
+        io.github.anisharyal09.anice.infrastructure.connections.SessionController(this).also { it.companionOwnershipChanged = nowPlaying::companionOwnershipChanged }
     }
 
     val sessionController get() = bleOwner.value

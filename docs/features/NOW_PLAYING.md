@@ -1,57 +1,55 @@
 # Now Playing
 
-## Usage and supported behavior
+## Using playback controls
 
-Home displays genuine playback and all advertised controls, including the Auto/player picker on Android. The phone controls playback on the originating Mac. Mac Features → Phone controls describes this capability, shows its active subscription and exposes explicit Automation permission. Android Features → Mac controls → Now Playing retains the full artwork/detail workspace. Mac Settings → Show Now Playing on this Mac enables compact local playback on Home and the companion, off by default; companion detail opens Phone controls. The saved display preference does not disable phone subscriptions or controls. Android subscribes automatically while foregrounded and connected; no sharing toggle or extra connection owner exists.
+Android Home shows playback from the connected trusted Mac, including Auto/player selection and supported play/pause, previous/next and seek controls. Features → Mac controls → Now Playing opens the full workspace with artwork and the originating Mac. Device summaries stay above playback.
 
-Auto ranks playing above paused, retains the current source among equals, then prefers system current, then stable PID order. Manual selection overrides Auto, survives temporary metadata gaps with controls unavailable and resets on player exit or observation stop. A track replacement cancels a scrub; one seek is sent when dragging finishes. Android retains the requested position locally after release until a matching source/revision sample agrees with its position within one second, preventing a jump back to the previous sample. The preview advances locally while playing and clears on failure, source/revision replacement, subscription retirement or a six-second deadline; an applied command result alone does not confirm position. Unknown duration/live streams omit seeking. Progress advances locally from monotonic position/rate samples; there is no per-second network progress timer. Mac progress uses a four-Hz periodic timeline rather than an animation/display-link schedule; hidden, paused or missing-position playback schedules only its initial presentation.
+Mac Features → Phone controls shows the active subscription and explicit permission actions. Settings → Show Now Playing on this Mac optionally adds playback to Mac Home and the companion; it is off by default and does not affect phone controls.
 
-Missing title/artist remain absent; a native recording identifier can establish a genuine session without a title. Player support depends on registered MediaRemote metadata and reliable directed controls. Native controls use the selected player path/recording. Players with an installed playback scripting dictionary may use PID-addressed Apple Events after an explicit Mac **Allow playback control…** action. Remote actions cannot trigger permission prompts. Unsupported controls stay disabled; metadata can remain available. The implementation does not establish universal browser/player support.
+Auto follows playing sources before paused ones, retains the current source among equals, then prefers system current and stable PID order. Manual selection lasts until the player exits or observation stops. Temporary metadata gaps disable controls without changing the selection. Available actions depend on the selected player; metadata alone does not establish control support.
 
-Home keeps trusted-device summaries above playback on both platforms; the companion uses the same order. Playback controls use accessible icons whose action labels convey Playing/Paused without repeating it in metadata. Compact Android Home relies on the device summary above for origin; the full workspace names the Mac.
+Seeking previews the slider and elapsed label together and sends once on release. A matching position sample confirms the preview; failure, track replacement or a six-second deadline clears it with feedback. Unknown duration and live streams omit seeking. Progress advances locally without per-second network updates.
 
-## Architecture and transport
+### Volume and permissions
 
-One application-scoped `MacPlayback` owns a packaged event-driven adapter and all local/remote consumers. The adapter observes only while an enabled Mac Home/companion media card, Phone controls feature information or an Android subscription needs it. Hiding local playback releases those local display leases; remote subscriptions remain active. Window hide/minimize/close and companion dismissal release presentation leases. Android final background stop clears its subscribed state while preserving existing background BLE ownership and foreground-only LAN policy.
+**Player volume** changes the selected application's volume. Music and Spotify are candidates; support requires explicit Mac permission and packaged read/write/read verification. Unverified players, browsers and wrappers do not offer this slider. Refresh player controls preserves selection and can recover temporarily unavailable support without prompting or retrying writes.
 
-Reference: Vorssaint revision `b0599423cbf38dd0e28415ccd3f9874a2548668f`. Reviewed reused files and preserved notices are listed in [attribution](../../apps/macos/NowPlayingAdapter/THIRD_PARTY_NOTICES.md). No notch, radial menu, queue, shuffle or lyrics code is incorporated.
+**Mac output volume** changes the Mac's default audio output. Phone volume buttons and native system media controls adjust it in five-point steps when Now Playing is active and the output device exposes a writable volume property. This needs no Automation permission. When unavailable, foreground volume buttons keep their normal Android behavior.
 
-The fixed `/usr/bin/perl` loader loads a signed universal `libaniCeNowPlaying.dylib`. Packaging replaces the signed dylib by rename rather than overwriting a potentially loaded image. Bounded JSON lines carry native metadata and recording-targeted requests between app and helper. Native requests identify PID/recording revision and request UUID; the helper checks recording/process identity before directed execution. Recording-targeted validation/delivery uses a serial command queue independent of full player scans; source selection stays serialized with scans. Notifications coalesce into one pending scan after 30 ms and at most one follow-up scan; new notifications do not postpone the current scan. Oversized input lines discard through newline. A successful playback command triggers one recording-bound position/state sample on the command queue, avoiding the full source scan; stale samples are ignored and never change another recording. EOF ends the watcher. Observation failure clears playback and uses at most three bounded startup retries. No global playback-command fallback exists.
+Supported native playback controls are automatic. Scripting controls require an explicit Mac permission action; phone commands cannot trigger approval prompts. Features explains discovering, unsupported, permission-needed and temporarily unavailable controls.
 
-Debug/Release disable App Sandbox; hardened-runtime target settings and existing signing defaults remain. Xcode disables effective runtime for its ad-hoc Debug app; Release and helper signatures carry runtime flags. Certificate-signed Debug/runtime acceptance remains pending. Journals retain their original container paths, identity backend/tags/ACLs and trust credentials. [Process boundary decision](../decisions/0007-macos-unsandboxed-playback-prototype.md) records the access change and pending signing/platform acceptance.
+### Notifications and background use
 
-The authoritative [media contract](../../protocol/media/README.md) and [CDDL](../../protocol/media/media.cddl) define deterministic CBOR within existing authenticated DATA. One compatible secured LAN subscription is preferred; BLE otherwise carries metadata and controls, including supported seek. Media never activates LAN. A channel change requires a fresh subscription/snapshot; pending commands are not replayed. Legacy peers remain connected without media.
+Android uses a silent native media notification and lock-screen controls. Tapping opens Now Playing. Pausing starts a fixed 90-second grace period, after which compact cards and system media presentation disappear; Features retains paused controls. Resuming restores presentation.
 
-Artwork is LAN-only, in-memory, ≤256 pixels, ≤64 KiB, sequential binary chunks ≤2 KiB, with one ten-second fixed-deadline assembly and SHA-256/dimension validation. The Mac coalesces unsent snapshots; existing liveness has priority over commands/results/snapshots, then artwork. No disk cache or URL fetching exists.
+Foreground Android subscribes automatically. Background controls require existing companion ownership and an already-secured BLE connection. Without that ownership, including API 29–30, background playback presentation stops. Disconnect, player exit, trust removal or identity/session replacement clears remote state.
 
-## Verification matrix
+## Implementation
 
-Packaged read-only target validation completed five consecutive requests in 7–24 ms on Apple Silicon/current macOS. After signed-image replacement by rename, three consecutive helper startups and nine recording-bound state/position samples passed; sample round trips measured 1 ms. These measurements exclude radio transfer and player command execution. Dispatch checks hold a player scan open, verify validation still executes and verify source selection waits for the scan. Playback response and phone round-trip latency remain physical acceptance checks.
+Mac code lives under `apps/macos/aniCe/Features/NowPlaying/`, with packaged helper sources in `Adapter/` and tests in `apps/macos/aniCeTests/NowPlaying/`. Android implementation and matching tests use `features/nowplaying/`; the installed media receiver retains its original component namespace.
 
-CPU investigation on the Debug app under Xcode captured predominantly waiting threads in ten- and fifteen-second process samples; the sampled helper was idle. A separate fifteen-second observation of the restarted app showed mostly 0–3% CPU with brief 11–12% readings. Its process sample included connection setup and authenticated media sends through existing native identity checks. Sustained 19% usage and 55% peaks were not reproduced. These observations precede the periodic-progress change and do not establish a measured improvement or playback/endurance acceptance.
+One application-scoped `MacPlaybackModel` owns selection, revisions, permissions, commands and observation leases. `MediaProcessBridge` handles the packaged helper; `MediaSessionLink` handles subscriptions and bounded submissions. Observation runs only while a Mac media surface or remote subscription needs it. Shared Connections dispatches authenticated DATA without owning playback.
 
+Commands validate the selected process/recording and never fall back to global playback commands.
 
-| Acceptance area | Evidence |
-| --- | --- |
-| Packaged helper, Apple Silicon/macOS 27.0.1, ad-hoc Debug | Hosted startup, initial metadata, invalid/stale input, bounds, EOF cleanup and packaged license checks |
-| YT Audio Air / `anish.creations.yt-audio-air`, WebKit helper | Native metadata and directed pause/resume observed; Firefox stayed paused |
-| Non-current Firefox | Metadata/manual selection observed; unavailable native targeting rejected, controls disabled |
-| Apple Music / Spotify | Native or installed scripting-dictionary support implemented; full packaged playback/Automation denial matrix pending |
-| Safari / Chrome | Registered native metadata/control path implemented; physical playback/targeting matrix pending |
-| Source ties/manual gaps/PID/pipe input | Pure adversarial adapter checks |
-| Wire malformed/oversized/version/inventory/revisions | Independent positive/negative fixtures tested in both native codecs |
-| Android foreground overlap, legacy capability absence, channel replacement, fresh subscriptions/no replay, stale scrub, seek preview confirmation/failure/timeout, saturation | JVM behavioral tests |
-| Artwork offsets, lengths, hash mismatch, supersession and fixed timeout | JVM assembly tests; physical decoding/rendering and transfer latency pending |
-| Mac subscription retirement/dedup/stale commands and local progress | Hosted tests |
-| Keychain/identity/trust/session regression | Isolated hosted regressions; production journal paths preserved |
-| macOS 14 / Intel runtime | Pending; universal arm64/x86_64 compilation is separate evidence |
-| Certificate-signed hardened runtime | Pending; local builds use existing ad-hoc signing defaults |
-| Physical phone/Mac UI, foreground/background, sleep/wake, denial, CPU/endurance | Pending on integrated build; automated suites do not establish these results |
+Each subscription uses one already-secured channel, preferring compatible LAN and otherwise BLE. Channel changes require a fresh subscription and snapshot; submitted commands never replay. Artwork is LAN-only, in memory, bounded to 256 pixels/64 KiB with 2 KiB chunks and a ten-second assembly deadline. LAN never activates automatically.
 
-Automated checks: the latest Mac suite executes 109 tests with zero failures and one manually started-player test skipped; isolated Keychain and inactive/cadence progress checks pass. The preceding 108-test run also verified the packaged playback owner reading a manually playing source. 122 Android JVM tests pass; lint reports zero errors/twelve warnings; Debug/test/Release APK builds pass. Both data-preserving APK replacements retain identical identity/trust journal hashes. Universal Debug/Release compilation, strict resource/signature checks and unchanged Mac production journal hashes are verified; effective Debug/runtime limitations remain as recorded above. Physical radio/UI acceptance, minimum OS and player-specific support remain distinct release gates.
+Detailed contracts and decisions:
 
-## Feature log and exclusions
+- [Media messages and lifecycle](../../protocol/media/README.md), [player volume](../../protocol/media/PLAYER_VOLUME.md) and [Mac output volume](../../protocol/media/OUTPUT_VOLUME.md).
+- [Mac process boundary and signing](../decisions/0007-macos-unsandboxed-playback-prototype.md), [feature DATA boundaries](../decisions/0008-application-data-feature-boundaries.md) and [seek, notification and volume behavior](../decisions/features/now-playing/0009-remote-playback-presentation.md).
+- [Presentation guidance](../design/DESIGN.md#now-playing).
 
-The current increment adds shared local/remote playback, source selection, bounded thumbnails, revision-bound controls and Home/Features/companion presentation. UI appearance reuses existing semantic palettes and native accessible controls; slider activities have no swipe gesture. Compact activities have no history or placeholder track.
+## References and attribution
 
-Audio streaming, Android media notifications/lock-screen controls/background media service, automatic LAN activation, volume, shuffle, lyrics, queues, ADB/scrcpy and clipboard work are deferred. Discovery-disconnect recovery remains separate.
+[Vorssaint](https://github.com/vorssaint/vorssaint-utils/tree/b0599423cbf38dd0e28415ccd3f9874a2548668f) supplied the reference architecture for a Perl-loaded MediaRemote adapter. Six files incorporate adapted upstream code: the native adapter, native selection, source inventory, command framing, playback scripting support and Perl loader. This is code reuse, beyond architectural inspiration. Their original copyright/SPDX headers remain; the [packaged attribution](../../apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md) maps each file and records its modifications.
+
+aniCe implements the application-scoped playback owner, authenticated transport integration, media contracts, Android controls, notification lifecycle and Mac output-volume extension around that adapter.
+
+## Known limitations
+
+Offline Android tests/lint/builds, Mac hosted tests/universal builds and native API checks pass. Packaged WebKit playback controls and Mac output writes have been exercised on current Apple Silicon macOS.
+
+Physical phone-button/lock-screen behavior, Music/Spotify volume and permission denial, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery behavior remain pending. Playback stutter remains unresolved. macOS 14, Intel runtime and certificate-signed Debug acceptance are also pending; universal compilation does not establish runtime support.
+
+Audio streaming, a separate media background service, automatic LAN activation, shuffle, lyrics and queues are outside this feature. Discovery-disconnect recovery remains separate.

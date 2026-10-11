@@ -2,6 +2,7 @@
 // Measures connected CPU and validation work without changing native ownership or generating traffic.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import android.os.Process
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4

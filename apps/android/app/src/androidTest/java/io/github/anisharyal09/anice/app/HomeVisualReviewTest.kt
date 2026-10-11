@@ -2,6 +2,7 @@
 // Exercises native home layout and accessibility fixtures through an opt-in visual review.
 package io.github.anisharyal09.anice.app
 
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -23,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
-import io.github.anisharyal09.anice.features.session.ConnectionState
 import io.github.anisharyal09.anice.features.session.DeviceSessionCard
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import java.io.File

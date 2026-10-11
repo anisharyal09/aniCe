@@ -1,6 +1,6 @@
 # Media v1
 
-[media.cddl](media.cddl) is the authoritative message shape. Messages are deterministic RFC 8949 CBOR arrays inside existing authenticated DATA records, at most 4,000 plaintext bytes. Session readiness, HELLO/ACK control negotiation, connection checks, EDHOC, exporter labels, AES-GCM framing and nonce ownership are unchanged. Unknown media versions/kinds are discarded; absent media capability leaves legacy connections usable.
+[media.cddl](media.cddl) is the authoritative message shape. Messages are deterministic RFC 8949 CBOR arrays inside existing authenticated DATA records, at most 4,000 plaintext bytes. Session readiness, HELLO/ACK control negotiation, connection checks, EDHOC, exporter labels, AES-GCM framing and nonce ownership are unchanged. The separately negotiated [player-volume extension](PLAYER_VOLUME.md) preserves media v1 bytes. Unknown media versions/kinds are discarded; absent media capability leaves legacy connections usable.
 
 ## Messages
 
@@ -29,7 +29,7 @@ Results: `0 applied`, `1 stale`, `2 unsupported`, `3 permission-needed`, `4 deni
 
 ## Subscription and scheduling
 
-Android owns media while at least one activity is foregrounded. Navigation does not change ownership. Configuration replacement gets a one-second grace; final background stop unsubscribes and clears remote state. Android selects compatible already-secured LAN first, otherwise compatible already-secured BLE. No connection is initiated by media. Mac owns one subscription across both transports. Switching retires the previous subscription, queued logical commands, pending results, artwork and displayed state, then requires a fresh subscription, acknowledgement and snapshot. Uncertain/sealed commands never migrate or replay. Session loss, trust invalidation, identity reset and replacement clear media endpoints.
+Android owns media while at least one activity is foregrounded. Navigation does not change ownership. Configuration replacement gets a one-second grace. Foreground subscriptions select compatible already-secured LAN first, otherwise compatible already-secured BLE. Final background stop retires LAN media state; an existing valid companion lease permits a fresh subscription on already-secured BLE. Without companion ownership, including API 29–30, background stop unsubscribes and clears remote state. A paused session hides compact/system presentation after a fixed 90-second monotonic deadline; an event-only BLE subscription remains under companion ownership to observe resumption. Repeated metadata does not extend that deadline. No background artwork, progress polling or media foreground service is added. No connection is initiated by media. Mac owns one subscription across both transports. Switching retires the previous subscription, queued logical commands, pending results, artwork and displayed state, then requires a fresh subscription, acknowledgement and snapshot. Uncertain/sealed commands never migrate or replay. Session loss, trust invalidation, identity reset and replacement clear media endpoints.
 
 BLE carries snapshots, selection, commands and results. LAN additionally carries artwork. Mac observation runs only for a visible Home/Features surface, visible companion or active remote subscription; stopping observation clears manual selection and native target state.
 
@@ -43,4 +43,6 @@ Android permits one in-memory assembly, with a fixed ten-second monotonic deadli
 
 ## Independent fixtures
 
-[media-vectors.json](../test-vectors/media/media-vectors.json) contains 12 positive and 28 negative independently encoded fixtures. `scripts/generate-media-vectors.py` uses a standalone Python RFC 8949 encoder; it imports neither native codec. Both platform suites assert inventory floors, byte-for-byte encoding, bounds and rejection. Lifecycle, channel routing, scrub replacement, saturation and assembly deadlines have separate behavioral tests.
+[media-vectors.json](../test-vectors/media/media-vectors.json) contains 12 positive and 28 negative independently encoded fixtures. `protocol/test-vectors/media/generate.py` uses a standalone Python RFC 8949 encoder; it imports neither native codec. Both platform suites assert inventory floors, byte-for-byte encoding, bounds and rejection. Lifecycle, channel routing, scrub replacement, saturation and assembly deadlines have separate behavioral tests.
+
+[Mac output volume](OUTPUT_VOLUME.md) is a distinct, independently negotiated extension for phone volume buttons. Player volume remains selected-player-only; media v1 bytes are unchanged.
