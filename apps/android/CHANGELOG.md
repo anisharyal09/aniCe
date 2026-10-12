@@ -6,11 +6,15 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Bidirectional local file transfer controller and Compose UI (`TransferController`, `TransferView`, `TransferWire`, `TransferNotification`, `TransferActionReceiver`) with cumulative credit flow control, sequential multi-file streaming, Storage Access Framework document picker support, temporary `.anice-part` staging, atomic rename, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
+- Optimize LAN streaming throughput: pre-allocate 2-MiB TCP send/receive socket buffers before connect and expand read loop to 64 KiB for full TCP window scaling; cache validation and `kid` digest on immutable `DeviceIdentity` instances to eliminate repeated BigInteger curve point verification and `KeyFactory` JNI instantiation per record; cache loaded `IdentitySnapshot` in `IdentityService` to avoid redundant KeyStore Binder IPC; decouple `sendOperation` and `receive` locking in `SessionConnection` so recipient flow-control ACKs stream concurrently over full-duplex TCP; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
 - Now Playing Home controls/player picker and Features workspace over one secured LAN/BLE subscription, with source-bound commands, atomic seek/elapsed previews and LAN-only artwork. Silent native media notifications use a fixed 90-second pause grace and existing companion-owned background BLE. Verified player volume and separately advertised Mac output volume support sliders and phone/system volume controls; bounded latest-intent handling confirms previews and never replays uncertain commands.
 
 - Home/Devices/Features/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
 
 ### Changed
+
+- Parse LAN receive buffers in bounded slices with one clock sample per read; add native cumulative-credit benchmarking with payload validation, CPU/GC and socket/delivery timing. The isolated bulk probe uses bounded larger records and Debug-only Wi-Fi power ownership; production DATA and Release permissions remain unchanged.
 
 - Group Now Playing code and matching tests under features/nowplaying; move application BLE/LAN owners, connection feedback and nearby policy into Connections; preserve manifest entry points and stored association keys, and register media through feature-neutral secured DATA dispatch.
 

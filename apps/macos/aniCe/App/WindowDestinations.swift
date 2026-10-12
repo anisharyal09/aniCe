@@ -19,6 +19,9 @@ ScrollView {
                 Text("No devices paired yet").font(.headline)
                 Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
               }
+              if transfer.state != .idle {
+                TransferView(model: transfer)
+              }
               if playback.showOnMac && playback.compactVisible { MediaView(model:playback,compact:true,visible:playback.mainVisible) { navigation.show(.features) } }
             }.frame(maxWidth: 760, alignment: .leading).padding(24)
               .frame(maxWidth: .infinity, alignment: .leading)

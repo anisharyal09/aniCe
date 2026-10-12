@@ -78,8 +78,7 @@ object SessionCrypto {
     )
   }
 
-  fun kid(identity: DeviceIdentity): ByteArray =
-    hash(IdentityCrypto.decodeBase64(identity.publicKey))
+  fun kid(identity: DeviceIdentity): ByteArray = identity.kid()
 
   fun idCredential(identity: DeviceIdentity): Cbor =
     Cbor.Map(listOf(Cbor.Integer(4) to Cbor.Bytes(kid(identity))))

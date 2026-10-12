@@ -10,10 +10,13 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Bidirectional local file transfer between trusted Mac and Android devices over authenticated LAN with sequential multi-file streaming, recipient approval, atomic `.anice-part` staging, cumulative credit flow control and presentation across Features and Home live-activity.
 - Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls over existing secured LAN/BLE, atomic seek feedback, native Android media presentation and a fixed 90-second paused grace; companion-owned background BLE and separately negotiated selected-player volume remain capability/permission gated; independently advertised Mac output volume supports phone buttons without player scripting.
 - Home, Devices, Features and Settings navigation with saved native appearance preferences.
 
 ### Changed
+
+- Add production-transport LAN bulk benchmarking and isolated throughput verification tools.
 
 - Group Now Playing implementation, adapter and tests by feature; separate application connection owners, navigation, playback authority, native process handling and media queues. Add dependency/link/Xcode membership checks and relocate the byte-preserving media fixture generator.
 - Consolidate feature usage and limitations; keep app-wide ADRs at the decision root and independent decisions in feature folders. Update READMEs, source maps, attribution and agent state without repeated verification matrices or stage reports.

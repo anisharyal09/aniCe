@@ -22,10 +22,14 @@ import Observation
   var applicationDataReceived: (Data) -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(candidate)":nil }
   func sendData(_ bytes: Data) async throws {
-    guard let connection, state == "Secured", transport?.capacity(bytes.count + 31) == true, await connection.applicationAvailable else { throw SessionBackpressure() }
-    let token=channelToken
+    guard let connection, let transport, state == "Secured" else { throw SessionBackpressure() }
+    let token = channelToken
+    let capacity = await transport.capacity(bytes.count + 31)
+    let ready = await connection.applicationAvailable
+    guard channelToken == token else { throw SessionFailure.cancelled }
+    guard capacity, ready else { throw SessionBackpressure() }
     try await connection.sendData(bytes)
-    guard channelToken==token else { throw SessionFailure.cancelled }
+    guard channelToken == token else { throw SessionFailure.cancelled }
   }
   private var connection: SessionConnection?
   private var admission = SessionAdmissionWindow()
@@ -195,36 +199,41 @@ import Observation
             self.maintain(); self.channelCapacityChanged()
           } })
         connection = engine
-        tcp.changed = { [weak self] in
-          self?.channelCapacityChanged()
-          guard let self, op == self.generation, attempt == self.candidate else { return }
-          self.tick()
-        }
         maintain()
-        tcp.start(
+        await tcp.start(
           deliver: { [weak self] bytes in
-            guard let self, op == self.generation, attempt == self.candidate else {
-              throw SessionFailure.cancelled
-            }
             try await engine.receive(bytes)
-            guard op == self.generation, attempt == self.candidate else { return }
-            if bytes.first == 3 {
-              self.handshakeDeadline = ProcessInfo.processInfo.systemUptime + 10
-              self.maintain()
-            }
-            if await engine.isClosed {
-              self.cancel(message: "Your Android ended the local-network session.")
-            }
+            if bytes.first == 3 { await self?.handshakeReceived(op, attempt) }
+            if await engine.isClosed { await self?.peerClosed(op, attempt) }
           },
           ended: { [weak self] error in
-            guard let self, op == self.generation, attempt == self.candidate else { return }
-            self.failCandidate(error)
+            Task { @MainActor in
+              guard let self, op == self.generation, attempt == self.candidate else { return }
+              self.failCandidate(error)
+            }
+          }, changed: { [weak self] in
+            Task { @MainActor in
+              guard let self, op == self.generation, attempt == self.candidate else { return }
+              self.channelCapacityChanged()
+              self.maintain()
+            }
           })
       } catch { if op == generation, attempt == candidate { failCandidate(error) } }
     }
   }
-  private func capacity(_ size: Int, _ op: Int, _ attempt: Int) -> Bool {
-    op == generation && attempt == candidate && transport?.capacity(size) == true
+  private func handshakeReceived(_ op: Int, _ attempt: Int) {
+    guard op == generation, attempt == candidate else { return }
+    handshakeDeadline = ProcessInfo.processInfo.systemUptime + 10
+    maintain()
+  }
+  private func peerClosed(_ op: Int, _ attempt: Int) {
+    guard op == generation, attempt == candidate else { return }
+    cancel(message: "Your Android ended the local-network session.")
+  }
+  private func capacity(_ size: Int, _ op: Int, _ attempt: Int) async -> Bool {
+    guard op == generation, attempt == candidate, let transport else { return false }
+    let available = await transport.capacity(size)
+    return op == generation && attempt == candidate && available
   }
   private func submit(_ bytes: Data, _ op: Int, _ attempt: Int) async throws {
     guard op == generation, attempt == candidate, let transport else {
@@ -263,7 +272,7 @@ import Observation
       if self.checking { session = nil } else { session = await self.connection?.nextDeadline() }
       guard op == self.generation, attempt == self.candidate else { return nil }
       return [self.startupDeadline, self.admission.admitted ? self.handshakeDeadline : self.admission.deadline,
-        self.transport?.nextDeadline, session.map { Double($0) / 1000 }].compactMap { $0 }.min()
+        session.map { Double($0) / 1000 }].compactMap { $0 }.min()
     }, fire: { [weak self] in
       guard let self, op == self.generation, attempt == self.candidate else { return }
       self.tick()
@@ -284,10 +293,6 @@ import Observation
       failCandidate(SessionFailure.expired)
       return
     }
-    do { try transport?.tick() } catch {
-      failCandidate(error)
-      return
-    }
     guard !checking, let connection else { return }
     checking = true
     let op = generation
@@ -305,7 +310,8 @@ import Observation
     candidate += 1
     handshakeDeadline = nil
     checking = false
-    transport?.close()
+    let retiredTransport = transport
+    Task { await retiredTransport?.close() }
     transport = nil
     let old = connection
     connection = nil
@@ -373,7 +379,8 @@ import Observation
     listener?.cancel()
     listener = nil
     advertisement = nil
-    transport?.close()
+    let retiredTransport = transport
+    Task { await retiredTransport?.close() }
     transport = nil
     let old = connection
     connection = nil

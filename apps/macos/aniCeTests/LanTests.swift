@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Probes LAN framing, peer reservations and admission under malformed and stale operations.
+import CryptoKit
 import Foundation
 import Network
 import XCTest
@@ -11,6 +12,7 @@ final class LanTests: XCTestCase {
     let parameters = LanTcpTransport.parameters()
     let options = try XCTUnwrap(
       parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options)
+    XCTAssertTrue(options.noDelay)
     XCTAssertTrue(options.enableKeepalive)
     XCTAssertGreaterThan(options.keepaliveIdle, 0)
     XCTAssertGreaterThan(options.keepaliveCount, 0)
@@ -24,7 +26,13 @@ final class LanTests: XCTestCase {
   }
   private let helper = SessionFixtures()
   private func feed(_ bytes: Data, into framing: inout LanFraming) throws -> [Data] {
-    try bytes.compactMap { try framing.feed($0) }
+    let time = try framing.beginBuffer()
+    var offset = 0
+    var result = [Data]()
+    while offset < bytes.count {
+      if let frame = try framing.feed(bytes, offset: &offset, receivedAt: time) { result.append(frame) }
+    }
+    return result
   }
   func testIndependentFixturesAndEverySplitPoint() throws {
     let root = try helper.root("lan-vectors")
@@ -55,7 +63,7 @@ final class LanTests: XCTestCase {
       ) {
         XCTAssertEqual($0 as? SessionFailure, reason)
       }
-      XCTAssertThrowsError(try framing.feed(1)) {
+      XCTAssertThrowsError(try feed(Data([1]), into: &framing)) {
         XCTAssertEqual($0 as? SessionFailure, .cancelled)
       }
     }
@@ -68,13 +76,13 @@ final class LanTests: XCTestCase {
     var clock: TimeInterval = 0
     var slow = LanFraming(now: { clock })
     XCTAssertNil(slow.nextDeadline)
-    _ = try slow.feed(1)
+    _ = try feed(Data([1]), into: &slow)
     XCTAssertEqual(slow.nextDeadline, 10)
     clock = 9.999
-    _ = try slow.feed(0)
+    _ = try feed(Data([0]), into: &slow)
     XCTAssertEqual(slow.nextDeadline, 10)
     clock = 10
-    XCTAssertThrowsError(try slow.feed(0)) { XCTAssertEqual($0 as? SessionFailure, .expired) }
+    XCTAssertThrowsError(try feed(Data([0]), into: &slow)) { XCTAssertEqual($0 as? SessionFailure, .expired) }
     XCTAssertThrowsError(try slow.end()) { XCTAssertEqual($0 as? SessionFailure, .cancelled) }
     XCTAssertNil(slow.nextDeadline)
     for size in [0, 1, 4097] {
@@ -83,6 +91,69 @@ final class LanTests: XCTestCase {
       }
     }
   }
+  func testBufferClockIsSampledOnceAndSlicesPreserveOffsets() throws {
+    var reads = 0
+    var framing = LanFraming(now: { reads += 1; return 0 })
+    let payload = Data(repeating: 7, count: 4096)
+    let wire = try LanFraming.encode(payload)
+    let slice = (Data([99, 99]) + wire).dropFirst(2)
+    XCTAssertEqual(try feed(slice, into: &framing), [payload])
+    XCTAssertEqual(reads, 1)
+    for count in 1..<wire.count {
+      var partial = LanFraming()
+      _ = try feed(Data(wire.prefix(count)), into: &partial)
+      XCTAssertThrowsError(try partial.end()) { XCTAssertEqual($0 as? SessionFailure, .malformed) }
+      XCTAssertThrowsError(try partial.beginBuffer()) { XCTAssertEqual($0 as? SessionFailure, .cancelled) }
+    }
+  }
+
+  func testBulkProbeIndependentOracleAndStandardIsolation() throws {
+    let root = try helper.root("bulk-probe-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
+    XCTAssertGreaterThanOrEqual(valid.count, 3); XCTAssertGreaterThanOrEqual(invalid.count, 10)
+    let key = try helper.b(root, "key"), iv = try helper.b(root, "iv"), id = try helper.b(root, "id")
+    for row in valid {
+      let size = try XCTUnwrap(row["length"] as? Int)
+      let plain = Data((0..<size).map { UInt8($0 % 251) })
+      let record = try SessionRecordCodec.seal(key: key, iv: iv, id: id, direction: 1,
+        kind: .data, sequence: 0, plaintext: plain, profile: .bulkProbe)
+      let digest = SHA256.hash(data: record).map { String(format: "%02x", $0) }.joined()
+      XCTAssertEqual(digest, row["recordSHA256"] as? String)
+      XCTAssertEqual(record.prefix(14), try helper.b(row, "header"))
+      XCTAssertEqual(record.suffix(16), try helper.b(row, "tag"))
+      XCTAssertEqual(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
+        expected: 0, record: record, profile: .bulkProbe).1, plain)
+      XCTAssertThrowsError(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
+        expected: 0, record: record)) { XCTAssertEqual($0 as? SessionFailure, .malformed) }
+    }
+    for row in invalid {
+      let reason = try XCTUnwrap(SessionFailure(rawValue: XCTUnwrap(row["reason"] as? String)))
+      XCTAssertThrowsError(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
+        expected: 0, record: helper.b(row, "record"), profile: .bulkProbe)) {
+        XCTAssertEqual($0 as? SessionFailure, reason)
+      }
+    }
+    XCTAssertThrowsError(try SessionRecordCodec.seal(key: key, iv: iv, id: id, direction: 1,
+      kind: .data, sequence: 0, plaintext: Data(repeating: 0, count: 4194305), profile: .bulkProbe))
+    XCTAssertThrowsError(try SessionEnvelope.encode(1, Data(repeating: 0, count: 4096), profile: .bulkProbe))
+    let envelope = Data(repeating: 6, count: 4194335)
+    let frame = try LanFraming.encode(envelope, profile: .bulkProbe)
+    var bulk = LanFraming(profile: .bulkProbe)
+    XCTAssertEqual(try feed(frame, into: &bulk), [envelope])
+    var standard = LanFraming()
+    XCTAssertThrowsError(try feed(Data(frame.prefix(5)), into: &standard)) {
+      XCTAssertEqual($0 as? SessionFailure, .unsupportedProfile)
+    }
+    var budget = LanQueueBudget(profile: .bulkProbe)
+    for _ in 0..<4 { try budget.reserve(envelope.count) }
+    XCTAssertFalse(budget.canReserve(1))
+    for _ in 0..<4 { budget.release(envelope.count) }
+    XCTAssertTrue(budget.canReserve(envelope.count))
+    XCTAssertFalse(LanQueueBudget(profile: .standard).canReserve(envelope.count))
+    XCTAssertNotEqual(SessionProfile.standard.exporterLabel, SessionProfile.bulkProbe.exporterLabel)
+  }
+
   @MainActor func testUnknownAdmissionIsExclusiveAndKnownPeersRemainPinned() throws {
     let row = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     let peer = try helper.identity(row, "initiator")
@@ -119,29 +190,35 @@ final class LanTests: XCTestCase {
     XCTAssertFalse(window.claim(130))
   }
 
+  @MainActor private func assertCapacity(_ transport: LanTcpTransport, _ size: Int, _ expected: Bool,
+    file: StaticString = #filePath, line: UInt = #line) async {
+    let available = await transport.capacity(size)
+    XCTAssertEqual(available, expected, file: file, line: line)
+  }
+
   @MainActor func testQueuedWritesAreBoundedAndCloseResumesEverySubmission() async throws {
     let socket = NWConnection(host: "127.0.0.1", port: 9, using: .tcp)
     let transport = LanTcpTransport(socket)
     var jobs = [Task<Void, Error>]()
     let envelope = Data(repeating: 6, count: 4096)
     for _ in 0..<8 {
-      XCTAssertTrue(transport.capacity(envelope.count))
+      await assertCapacity(transport, envelope.count, true)
       jobs.append(Task { try await transport.submit(envelope) })
       await Task.yield()
     }
-    XCTAssertFalse(transport.capacity(2))
+    await assertCapacity(transport, 2, false)
     do {
       try await transport.submit(Data([1, 0]))
       XCTFail("Queue overflow accepted")
     } catch is SessionBackpressure {}
-    transport.close()
+    await transport.close()
     for job in jobs {
       do {
         try await job.value
         XCTFail("Retired submission succeeded")
       } catch let failure as SessionFailure { XCTAssertEqual(failure, .cancelled) }
     }
-    XCTAssertFalse(transport.capacity(2))
+    await assertCapacity(transport, 2, false)
   }
 
   @MainActor func testStalledNativeSubmissionIsRetiredByWatchdog() async throws {
@@ -154,7 +231,7 @@ final class LanTests: XCTestCase {
     } catch let failure as SessionFailure { XCTAssertEqual(failure, .cancelled) }
     XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - start, 10)
     XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 15)
-    XCTAssertFalse(transport.capacity(2))
+    await assertCapacity(transport, 2, false)
   }
 
   @MainActor func testCancellationRetiresAnOutstandingSubmission() async throws {
@@ -169,6 +246,6 @@ final class LanTests: XCTestCase {
       XCTAssertEqual(failure, .cancelled)
     }
     await Task.yield()
-    XCTAssertFalse(transport.capacity(2))
+    await assertCapacity(transport, 2, false)
   }
 }

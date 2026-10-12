@@ -4,6 +4,7 @@
 
 package io.github.anisharyal09.anice.infrastructure.lan
 
+import io.github.anisharyal09.anice.infrastructure.session.SessionProfile
 import android.content.Context
 import android.net.*
 import android.net.nsd.*
@@ -38,7 +39,8 @@ internal object LanAddress {
             }
 }
 
-internal class AndroidLanDiscovery(context: Context) {
+internal class AndroidLanDiscovery(context: Context, profile: SessionProfile = SessionProfile.STANDARD) {
+    private val type = if (profile == SessionProfile.STANDARD) TYPE else "_anicebulk._tcp"
     private val nsd = context.getSystemService(NsdManager::class.java)
     private val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
     private val executor = Executor { it.run() }
@@ -73,7 +75,7 @@ internal class AndroidLanDiscovery(context: Context) {
                         if (
                             !stopped.get() &&
                                 found.size < 8 &&
-                                service.serviceType.trimEnd('.') == TYPE
+                                service.serviceType.trimEnd('.') == type
                         ) {
                             if (
                                 Build.VERSION.SDK_INT < 33 ||
@@ -97,13 +99,13 @@ internal class AndroidLanDiscovery(context: Context) {
             try {
                 if (Build.VERSION.SDK_INT >= 33)
                     nsd.discoverServices(
-                        TYPE,
+                        type,
                         NsdManager.PROTOCOL_DNS_SD,
                         network,
                         executor,
                         listener,
                     )
-                else nsd.discoverServices(TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+                else nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener)
                 withTimeoutOrNull(15000) { failure.await() }
             } finally {
                 stopped.set(true)

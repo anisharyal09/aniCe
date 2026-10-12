@@ -14,6 +14,14 @@ class AniCeApplication : Application() {
         super.onCreate()
         nowPlaying.presentationChanged={ mediaNotification.update() }
         mediaNotification.update()
+        transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
+        transfer.onLeaseChanged = { _ -> transferNotification.update() }
+        transfer.onStateChanged = { _ ->
+            transferNotification.update()
+            if (!transfer.isBusy) {
+                lanSessionController.onTransferIdle()
+            }
+        }
         if(applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE!=0) {
             val timingTag="AniCeMediaTiming"
             nowPlaying.trace={ event,time ->
@@ -24,7 +32,12 @@ class AniCeApplication : Application() {
         }
     }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
-    val features = io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also { it.register(nowPlaying) }
+    val transfer = io.github.anisharyal09.anice.features.transfer.TransferController(this)
+    private val transferNotification by lazy { io.github.anisharyal09.anice.features.transfer.TransferNotification(this, transfer) }
+    val features = io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
+        it.register(nowPlaying)
+        it.register(transfer)
+    }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
     private val lanOwner = lazy { io.github.anisharyal09.anice.infrastructure.connections.LanSessionController(this) }
     val lanSessionController get() = lanOwner.value

@@ -12,11 +12,14 @@ struct AniCeApp: App {
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
   @State private var playback: MacPlaybackModel
+  @State private var transfer: MacTransferModel
   @State private var navigation: ConnectionNavigation
 
   init() {
     let playback = MacPlaybackModel()
     _playback = State(initialValue: playback)
+    let transfer = MacTransferModel()
+    _transfer = State(initialValue: transfer)
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
     let identity = IdentityAssembly.makeModel()
@@ -33,6 +36,7 @@ struct AniCeApp: App {
       preferences: .standard, peers: peers)
     let features=FeatureDispatch()
     features.register(playback)
+    features.register(transfer)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
         features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
@@ -99,7 +103,7 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
             delegate.installCompanion(

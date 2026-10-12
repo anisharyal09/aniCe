@@ -21,8 +21,9 @@ protocol/
   pairing/              Authenticated bootstrap and control-pipe contract (QR & OPAQUE PIN)
   session/              EDHOC, encrypted records, controls and session envelopes
   media/                Now Playing DATA contract and bounded artwork
+  transfer/             Local file transfer protocol and CDDL schema
   schemas/              Shared public identity contract (JSON Schema v1)
-  test-vectors/         Cryptographic verification cases (identity, pairing, session, LAN, media)
+  test-vectors/         Cryptographic verification cases (identity, pairing, session, LAN, media, transfer)
   fixtures/             Sample public identities
 scripts/                Identity/session/LAN interchange and native pairing builds
 docs/
@@ -44,8 +45,8 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 - **Architecture Decisions:** [Shared foundations and feature decisions](docs/decisions/README.md)
 - **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
 - **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
-- **Features:** [Now Playing](docs/features/NOW_PLAYING.md)
-- **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md)
+- **Features:** [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md)
+- **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md)
 
 Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. API 29/macOS 14 runtime acceptance remains pending. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
 

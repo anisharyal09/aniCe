@@ -18,6 +18,7 @@ aniCe/
   Features/                    Identity, discovery, pairing and session presentation
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
+    Transfer/                  Transfer model, SwiftUI views and wire codecs
   Infrastructure/
     Connections/               BLE/LAN owners and feature-neutral DATA dispatch
     Identity/                  Keychain storage and identity lifecycle
@@ -30,6 +31,7 @@ aniCe/
   aniCe.entitlements           App Sandbox disabled; hardware/network entitlements
 aniCeTests/                    Hosted suites and shared fixtures
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+  Transfer/                    Transfer model and wire codec test suites
 IdentityInterchange/           Native test-only signature endpoint
 SessionInterchange/            Native test-only session/TCP endpoints
 aniCe.xcodeproj/               Target membership, build inputs and shared scheme
@@ -69,7 +71,7 @@ Signing diagnostics log only operation counts under `identity-signing`; repeated
 
 ## Secure sessions
 
-Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). Feature synchronization remains deferred.
+Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) provides bidirectional file transfers over authenticated LAN.
 
 Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
 
@@ -78,5 +80,9 @@ Home, Devices, Features and Settings use a native sidebar. Home and the companio
 ## Now Playing
 
 Features → Phone controls provides remote playback to Android. Local Home/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
+
+## Local File Transfer
+
+Features → Local file transfer and Home live-activity provide file sending, incoming batch approval, folder selection and progress tracking with transfer rates. Incoming files stage atomically in `.anice-part` before verification and rename. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.

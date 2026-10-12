@@ -12,6 +12,7 @@ struct MainWindowView: View {
   let session: MacSessionModel
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
+  let transfer: MacTransferModel
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
@@ -38,7 +39,7 @@ struct MainWindowView: View {
         switch navigation.destination {
         case .home: homeContent
         case .devices: devicesContent
-        case .features: FeaturesView(playback:playback)
+        case .features: FeaturesView(playback: playback, transfer: transfer)
         case .settings: settingsContent
 
         }

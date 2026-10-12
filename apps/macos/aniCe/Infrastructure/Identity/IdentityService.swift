@@ -52,6 +52,8 @@ actor IdentityService {
     private let deviceName: String
     private let tagPrefix: String
 
+    private var cachedPublicIdentity: DeviceIdentity?
+
     init(storage: any IdentityStorage, deviceName: String, tagPrefix: String) {
         self.storage = storage
         self.deviceName = DeviceIdentity.normalizedName(deviceName)
@@ -91,11 +93,18 @@ actor IdentityService {
             }
         }
 
-        return try finish(record)
+        let loaded = try finish(record)
+        cachedPublicIdentity = loaded.identity
+        return loaded
     }
 
     /// Public access does not add a preliminary signing operation to pairing.
-    func publicIdentity() throws -> DeviceIdentity { try loadIdentity().identity }
+    func publicIdentity() throws -> DeviceIdentity {
+        if let cachedPublicIdentity { return cachedPublicIdentity }
+        let identity = try loadIdentity().identity
+        cachedPublicIdentity = identity
+        return identity
+    }
 
     /// Updates public display metadata without replacing the device ID or signing key.
     func rename(_ name: String) throws -> LocalIdentity {
@@ -109,6 +118,7 @@ actor IdentityService {
                                          publicKey: Data(base64Encoded: current.identity.publicKey)!)
         record.active = StoredIdentity(identity: renamed, keyTag: active.keyTag, protection: active.protection)
         try storage.saveRecord(record)
+        cachedPublicIdentity = nil
         return try loadIdentity()
     }
 
@@ -127,6 +137,7 @@ actor IdentityService {
 
     func reset() throws -> LocalIdentity {
         NotificationCenter.default.post(name: Self.invalidated, object: self)
+        cachedPublicIdentity = nil
         var old: IdentityRecord?
         do { old = try storage.loadRecord(); if let old { try validate(old) } }
         catch IdentityError.inconsistentStorage { old = nil }
@@ -143,7 +154,9 @@ actor IdentityService {
         // This atomic record update is the only identity-switch commit point.
         try storage.saveRecord(record)
         // The replacement already passed its signing check before the commit.
-        return try finish(record)
+        let loaded = try finish(record)
+        cachedPublicIdentity = loaded.identity
+        return loaded
     }
 
     private func newPending() -> PendingIdentity {

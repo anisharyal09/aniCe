@@ -6,6 +6,7 @@ import Foundation
 actor SessionConnection {
   private let handshake: SessionHandshakeEngine
   private let responder: Bool
+  private let profile: SessionProfile
   private let capacity: @Sendable (Int) async -> Bool
   private let submit: @Sendable (Data) async throws -> Void
   private let data: @Sendable (Data) async -> Void
@@ -18,6 +19,7 @@ actor SessionConnection {
   private var closed = false
   var isClosed: Bool { closed }
   private var processing = false
+  private var sendingData = false
   private var sendingControl = false
   private var liveness: SessionLiveness?
   private let now: @Sendable () -> Int64
@@ -36,8 +38,10 @@ actor SessionConnection {
     controls: Bool = false,
     now: @escaping @Sendable () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) },
     renew: Bool = false,
-    changed: @escaping @Sendable () -> Void = {}
+    changed: @escaping @Sendable () -> Void = {},
+    profile: SessionProfile = .standard
   ) {
+    self.profile = profile
     self.handshake = handshake
     self.responder = responder
     self.capacity = capacity
@@ -86,7 +90,7 @@ actor SessionConnection {
     defer { if op == generation { processing = false }; changed() }
     do {
       try ensure(op)
-      let (kind, payload) = try SessionEnvelope.decode(envelope)
+      let (kind, payload) = try SessionEnvelope.decode(envelope, profile: profile)
       if kind == 5 { try await handshake.receiveError(payload) }
       if kind == 6 {
         guard let channel else { throw SessionFailure.state }
@@ -149,8 +153,8 @@ actor SessionConnection {
     let clock = now
     let ch = try await SecureSession.fromHandshake(
       handshake, responder: responder, capacity: capacity,
-      submit: { [submit] record in try await submit(SessionEnvelope.encode(6, record)) },
-      now: { Double(clock()) / 1000 })
+      submit: { [submit, profile] record in try await submit(SessionEnvelope.encode(6, record, profile: profile)) },
+      now: { Double(clock()) / 1000 }, profile: profile)
     do {
       try ensure(op)
       channel = ch
@@ -167,9 +171,11 @@ actor SessionConnection {
     try ensure(op)
     return peer
   }
-  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && !processing && liveness?.renewalReason == nil }
+  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && !sendingData && liveness?.renewalReason == nil }
   func sendData(_ bytes: Data) async throws {
-    defer { changed() }
+    guard !sendingData else { throw SessionBackpressure() }
+    sendingData = true
+    defer { sendingData = false; changed() }
     let op = generation
     do {
       try ensure(op)
@@ -235,6 +241,7 @@ actor SessionConnection {
     closed = true
     generation += 1
     processing = false
+    sendingData = false
     sendingControl = false
     let old = channel
     channel = nil

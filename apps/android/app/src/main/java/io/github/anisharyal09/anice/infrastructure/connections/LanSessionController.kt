@@ -39,13 +39,18 @@ class LanSessionController(private val app: AniCeApplication) {
     var receivedChecks by mutableIntStateOf(0)
         private set
 
+    private var backgroundTimeoutJob: Job? = null
+
     init {
         ContextCompat.registerReceiver(
             app,
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
-                    if (intent?.action == Intent.ACTION_SCREEN_OFF)
-                        cancel("Local-network connection ended when the phone locked.")
+                    if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                        if (!app.transfer.isBusy) {
+                            startBackgroundDisconnectTimer("Local-network connection ended after screen lock.")
+                        }
+                    }
                 }
             },
             IntentFilter(Intent.ACTION_SCREEN_OFF),
@@ -53,8 +58,42 @@ class LanSessionController(private val app: AniCeApplication) {
         )
     }
 
+    private fun startBackgroundDisconnectTimer(reason: String = "Local-network disconnected after being inactive in the background.") {
+        backgroundTimeoutJob?.cancel()
+        val prefs = app.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE)
+        val timeoutMinutes = prefs.getInt("lan_background_timeout_minutes", 3)
+        if (timeoutMinutes <= 0) return
+        backgroundTimeoutJob = scope.launch {
+            delay(timeoutMinutes * 60 * 1000L)
+            if (presentations.isEmpty() && !app.transfer.isBusy) {
+                cancel(reason)
+            }
+        }
+    }
+
+    fun onTransferIdle() {
+        if (presentations.isEmpty()) {
+            startBackgroundDisconnectTimer()
+        }
+    }
+
+    fun connectPreferred(): Boolean {
+        if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) return true
+        val target = selected
+            ?: app.sessionController.selected
+            ?: runCatching {
+                val local = app.identityService.getOrCreateIdentity().identity
+                val macs = app.trustStore.list(local.fingerprint).map { it.peer }.filter { it.platform == "macos" }
+                if (macs.size == 1) macs.first() else null
+            }.getOrNull()
+        if (target != null) {
+            connect(target)
+            return true
+        }
+        return false
+    }
+
     fun connect(peer: DeviceIdentity) {
-        if (presentations.isEmpty()) return
         if (!app.sessionPeers.permits(peer)) {
             status = "Disconnect the other device before connecting to this Mac."
             return
@@ -189,14 +228,20 @@ class LanSessionController(private val app: AniCeApplication) {
                                     tcp.submit(bytes)
                                 },
                                 { bytes ->
-                                    withContext(Dispatchers.Main.immediate) {
-                                        if (
-                                            op == generation &&
-                                                app.features.handle("lan", channelToken, bytes) == DataHandling.UNRECOGNIZED &&
-                                                bytes.contentEquals(SessionController.CHECK)
-                                        ) {
-                                            receivedChecks++
-                                            status = "Local-network connection check received."
+                                    val handled =
+                                        if (op == generation)
+                                            app.features.handle("lan", channelToken, bytes)
+                                        else DataHandling.UNRECOGNIZED
+                                    if (
+                                        op == generation &&
+                                            handled == DataHandling.UNRECOGNIZED &&
+                                            bytes.contentEquals(SessionController.CHECK)
+                                    ) {
+                                        withContext(Dispatchers.Main.immediate) {
+                                            if (op == generation) {
+                                                receivedChecks++
+                                                status = "Local-network connection check received."
+                                            }
                                         }
                                     }
                                 },
@@ -413,14 +458,19 @@ class LanSessionController(private val app: AniCeApplication) {
 
     fun foreground(presentation: Any) {
         presentations.add(presentation)
+        backgroundTimeoutJob?.cancel()
+        backgroundTimeoutJob = null
     }
 
     fun background(presentation: Any, changingConfigurations: Boolean) {
         presentations.remove(presentation)
-        if (presentations.isEmpty() && !changingConfigurations)
-            cancel(
-                "Local network ended because aniCe left the foreground. Allow connections on your Mac to reconnect."
-            )
+        if (presentations.isEmpty() && !changingConfigurations) {
+            if (app.transfer.isBusy) {
+                // Active transfer in flight: preserve the LAN connection!
+                return
+            }
+            startBackgroundDisconnectTimer()
+        }
     }
     private val channelToken get() = "${generation}-${System.identityHashCode(connection)}"
     private fun publishChannel() {

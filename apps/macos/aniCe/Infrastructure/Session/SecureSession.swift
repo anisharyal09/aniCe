@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns bounded directional records, readiness and generation-fenced native validation.
 import CryptoKit
 import Foundation
+
+enum SessionProfile: UInt8, Sendable {
+  case standard = 1, bulkProbe = 2
+  var maximumPlaintext: Int { self == .standard ? 4000 : 4194304 }
+  var maximumEnvelope: Int { self == .standard ? 4096 : maximumPlaintext + 31 }
+  var exporterLabel: String { self == .standard ? "aniCe session" : "aniCe bulk probe" }
+}
 
 enum RecordKind: UInt8, Sendable {
   case ready = 1
@@ -36,41 +44,42 @@ enum SessionRecordCodec {
   }
   static func seal(
     key: Data, iv: Data, id: Data, direction: UInt8, kind: RecordKind, sequence: UInt64,
-    plaintext: Data
+    plaintext: Data, profile: SessionProfile = .standard
   ) throws -> Data {
     guard key.count == 32, iv.count == 12, id.count == 32, (1...2).contains(direction),
-      plaintext.count <= 4000, kind == .data || plaintext.isEmpty
+      plaintext.count <= profile.maximumPlaintext, kind == .data || plaintext.isEmpty
     else { throw SessionFailure.malformed }
     let header =
-      Data([1, kind.rawValue]) + integer(sequence, bytes: 8)
+      Data([profile.rawValue, kind.rawValue]) + integer(sequence, bytes: 8)
       + integer(UInt64(plaintext.count), bytes: 4)
     let box = try AES.GCM.seal(
       plaintext, using: SymmetricKey(data: key), nonce: AES.GCM.Nonce(data: nonce(iv, sequence)),
       authenticating: header + id + Data([direction]))
     return header + box.ciphertext + box.tag
   }
-  static func open(key: Data, iv: Data, id: Data, direction: UInt8, expected: UInt64, record: Data)
+  static func open(key: Data, iv: Data, id: Data, direction: UInt8, expected: UInt64, record: Data, profile: SessionProfile = .standard)
     throws -> (RecordKind, Data)
   {
     guard key.count == 32, iv.count == 12, id.count == 32, (1...2).contains(direction) else {
       throw SessionFailure.malformed
     }
-    let bytes = [UInt8](record)
-    guard (30...4030).contains(bytes.count), bytes[0] == 1,
-      let kind = RecordKind(rawValue: bytes[1])
+    guard (30...(profile.maximumPlaintext + 30)).contains(record.count), record.first == profile.rawValue
     else { throw SessionFailure.malformed }
+    let header = Data(record.prefix(14))
+    let bytes = [UInt8](header)
+    guard let kind = RecordKind(rawValue: bytes[1]) else { throw SessionFailure.malformed }
     let sequence = bytes[2..<10].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
     let length = bytes[10..<14].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
-    guard length <= 4000, UInt64(bytes.count) == 30 + length else { throw SessionFailure.malformed }
+    guard length <= UInt64(profile.maximumPlaintext), UInt64(record.count) == 30 + length else { throw SessionFailure.malformed }
     guard sequence == expected else { throw SessionFailure.authentication }
     let plain: Data
     do {
       let box = try AES.GCM.SealedBox(
         nonce: AES.GCM.Nonce(data: nonce(iv, sequence)),
-        ciphertext: Data(bytes[14..<(bytes.count - 16)]), tag: Data(bytes.suffix(16)))
+        ciphertext: Data(record.dropFirst(14).dropLast(16)), tag: Data(record.suffix(16)))
       plain = try AES.GCM.open(
         box, using: SymmetricKey(data: key),
-        authenticating: Data(bytes[0..<14]) + id + Data([direction]))
+        authenticating: header + id + Data([direction]))
     } catch { throw SessionFailure.authentication }
     guard kind == .data || plain.isEmpty else { throw SessionFailure.malformed }
     return (kind, plain)
@@ -80,6 +89,7 @@ enum SessionRecordCodec {
 /// Owns directional record keys and readiness; actor reentrancy is guarded across suspension.
 actor SecureSession {
   private let responder: Bool
+  private let profile: SessionProfile
   private var sendKey: Data
   private var receiveKey: Data
   private var sendIV: Data
@@ -117,12 +127,14 @@ actor SecureSession {
     validate: @escaping @Sendable () async throws -> Void,
     capacity: @escaping @Sendable (Int) async -> Bool,
     submit: @escaping @Sendable (Data) async throws -> Void,
-    now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    profile: SessionProfile = .standard
   ) throws {
     guard sendKey.count == 32, receiveKey.count == 32, sendIV.count == 12, receiveIV.count == 12,
       sessionID.count == 32
     else { throw SessionFailure.malformed }
     self.responder = responder
+    self.profile = profile
     self.sendKey = sendKey
     self.receiveKey = receiveKey
     self.sendIV = sendIV
@@ -185,7 +197,7 @@ actor SecureSession {
     defer { if op == generation { sending = false } }
     do {
       try await check(op)
-      guard plaintext.count <= 4000, kind == .data || plaintext.isEmpty else {
+      guard plaintext.count <= profile.maximumPlaintext, kind == .data || plaintext.isEmpty else {
         throw SessionFailure.malformed
       }
       let permitted: Bool
@@ -207,7 +219,7 @@ actor SecureSession {
       if kind == .ready { stage = .readySent }
       let record = try SessionRecordCodec.seal(
         key: sendKey, iv: sendIV, id: sessionID, direction: responder ? 2 : 1, kind: kind,
-        sequence: sequence, plaintext: plaintext)
+        sequence: sequence, plaintext: plaintext, profile: profile)
       try await submit(record)
       try await check(op)
       activity = now()
@@ -240,7 +252,7 @@ actor SecureSession {
       }
       let result = try SessionRecordCodec.open(
         key: receiveKey, iv: receiveIV, id: sessionID, direction: responder ? 1 : 2,
-        expected: received, record: record)
+        expected: received, record: record, profile: profile)
       let allowed: Bool
       switch result.0 {
       case .ready: allowed = responder && stage == .waiting
@@ -286,16 +298,16 @@ actor SecureSession {
     _ handshake: SessionHandshakeEngine, responder: Bool,
     capacity: @escaping @Sendable (Int) async -> Bool,
     submit: @escaping @Sendable (Data) async throws -> Void,
-    now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    profile: SessionProfile = .standard
   ) async throws -> SecureSession {
     // Binding order is initiator/responder on both peers; purpose/direction separate exports.
     let bindings = try await handshake.bindings()
     func export(_ direction: Int64, _ purpose: String, _ length: Int) async throws -> Data {
-      let context = try SessionCbor.encode(
-        .array([
-          .text("aniCe session"), .integer(1), .bytes(bindings.0), .bytes(bindings.1),
-          .integer(direction), .text(purpose),
-        ]))
+      let bounds: [SessionCBOR] = profile == .standard ? [] : [.integer(Int64(profile.maximumPlaintext))]
+      let context = try SessionCbor.encode(.array(
+        [.text(profile.exporterLabel), .integer(1)] + bounds +
+        [.bytes(bindings.0), .bytes(bindings.1), .integer(direction), .text(purpose)]))
       return try await handshake.export(context: context, length: length)
     }
     var material = [Data]()
@@ -310,7 +322,7 @@ actor SecureSession {
       return try SecureSession(
         responder: responder, sendKey: material[0], receiveKey: material[1], sendIV: material[2],
         receiveIV: material[3], sessionID: material[4],
-        validate: { try await handshake.checkDeadline() }, capacity: capacity, submit: submit, now: now)
+        validate: { try await handshake.checkDeadline() }, capacity: capacity, submit: submit, now: now, profile: profile)
     } catch {
       for i in material.indices { material[i].resetBytes(in: 0..<material[i].count) }
       throw error

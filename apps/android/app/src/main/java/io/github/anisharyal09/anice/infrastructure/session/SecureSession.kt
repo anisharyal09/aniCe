@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns bounded directional records, readiness and generation-fenced native validation.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import java.nio.ByteBuffer
@@ -9,6 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+enum class SessionProfile(val wire: Int, val maximumPlaintext: Int, val maximumEnvelope: Int, val exporterLabel: String) {
+  STANDARD(1, 4000, 4096, "aniCe session"),
+  BULK_PROBE(2, 4194304, 4194335, "aniCe bulk probe"),
+}
 
 enum class RecordKind(val wire: Int) {
   READY(1),
@@ -65,19 +71,20 @@ object SessionRecordCodec {
     kind: RecordKind,
     sequence: ULong,
     plaintext: ByteArray,
+    profile: SessionProfile = SessionProfile.STANDARD,
   ): ByteArray {
     if (
       key.size != 32 ||
         iv.size != 12 ||
         id.size != 32 ||
         direction !in 1..2 ||
-        plaintext.size > 4000 ||
+        plaintext.size > profile.maximumPlaintext ||
         (kind != RecordKind.DATA && plaintext.isNotEmpty())
     )
       throw SessionException(SessionFailure.MALFORMED)
     val header =
       ByteBuffer.allocate(14)
-        .put(1)
+        .put(profile.wire.toByte())
         .put(kind.wire.toByte())
         .putLong(sequence.toLong())
         .putInt(plaintext.size)
@@ -93,19 +100,20 @@ object SessionRecordCodec {
     direction: Int,
     expected: ULong,
     record: ByteArray,
+    profile: SessionProfile = SessionProfile.STANDARD,
   ): Pair<RecordKind, ByteArray> {
     if (key.size != 32 || iv.size != 12 || id.size != 32 || direction !in 1..2)
       throw SessionException(SessionFailure.MALFORMED)
-    if (record.size !in 30..4030) throw SessionException(SessionFailure.MALFORMED)
+    if (record.size !in 30..(profile.maximumPlaintext + 30)) throw SessionException(SessionFailure.MALFORMED)
     val h = ByteBuffer.wrap(record)
-    if (h.get().toInt() != 1) throw SessionException(SessionFailure.MALFORMED)
+    if (h.get().toInt() != profile.wire) throw SessionException(SessionFailure.MALFORMED)
     val kind =
       RecordKind.entries.firstOrNull { it.wire == h.get(1).toInt() }
         ?: throw SessionException(SessionFailure.MALFORMED)
     h.position(2)
     val sequence = h.long.toULong()
     val length = h.int.toLong() and 0xffffffffL
-    if (length > 4000 || record.size.toLong() != 30 + length)
+    if (length > profile.maximumPlaintext || record.size.toLong() != 30 + length)
       throw SessionException(SessionFailure.MALFORMED)
     if (sequence != expected) throw SessionException(SessionFailure.AUTHENTICATION)
     val plain =
@@ -113,8 +121,10 @@ object SessionRecordCodec {
         key,
         nonce(iv, sequence),
         record.copyOfRange(0, 14) + id + direction.toByte(),
-        record.copyOfRange(14, record.size),
+        record,
         false,
+        14,
+        record.size - 14,
       )
     if (kind != RecordKind.DATA && plain.isNotEmpty())
       throw SessionException(SessionFailure.MALFORMED)
@@ -127,6 +137,8 @@ object SessionRecordCodec {
     aad: ByteArray,
     data: ByteArray,
     encrypt: Boolean,
+    offset: Int = 0,
+    length: Int = data.size,
   ): ByteArray {
     try {
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -136,7 +148,7 @@ object SessionRecordCodec {
         GCMParameterSpec(128, nonce),
       )
       cipher.updateAAD(aad)
-      return cipher.doFinal(data)
+      return cipher.doFinal(data, offset, length)
     } catch (e: java.security.GeneralSecurityException) {
       throw SessionException(SessionFailure.AUTHENTICATION)
     }
@@ -158,6 +170,7 @@ internal constructor(
   private val capacity: suspend (Int) -> Boolean,
   private val submit: suspend (ByteArray) -> Unit,
   private val now: () -> Long = { System.nanoTime() / 1_000_000 },
+  private val profile: SessionProfile = SessionProfile.STANDARD,
 ) {
   private val stateLock = Any()
   private val sendMutex = Mutex()
@@ -264,7 +277,7 @@ internal constructor(
         var reserved = false
         try {
           check(op)
-          if (plaintext.size > 4000 || (kind != RecordKind.DATA && plaintext.isNotEmpty()))
+          if (plaintext.size > profile.maximumPlaintext || (kind != RecordKind.DATA && plaintext.isNotEmpty()))
             throw SessionException(SessionFailure.MALFORMED)
           val permitted =
             when (kind) {
@@ -297,6 +310,7 @@ internal constructor(
               kind,
               sequence,
               plaintext,
+              profile,
             )
           check(op)
           submit(record)
@@ -337,6 +351,7 @@ internal constructor(
               if (responder) 1 else 2,
               received,
               record,
+              profile,
             )
           check(op)
           val allowed =
@@ -387,6 +402,7 @@ internal constructor(
       capacity: suspend (Int) -> Boolean,
       submit: suspend (ByteArray) -> Unit,
       now: () -> Long = { System.nanoTime() / 1_000_000 },
+      profile: SessionProfile = SessionProfile.STANDARD,
     ): SecureSession {
       // Binding order is initiator/responder on both peers; purpose/direction separate exports.
       val bindings = handshake.bindings()
@@ -394,14 +410,10 @@ internal constructor(
         handshake.export(
           SessionCbor.encode(
             Cbor.Array(
-              listOf(
-                Cbor.Text("aniCe session"),
-                Cbor.Integer(1),
-                Cbor.Bytes(bindings.first),
-                Cbor.Bytes(bindings.second),
-                Cbor.Integer(direction.toLong()),
-                Cbor.Text(purpose),
-              )
+              listOf(Cbor.Text(profile.exporterLabel), Cbor.Integer(1)) +
+                (if (profile == SessionProfile.STANDARD) emptyList() else listOf(Cbor.Integer(profile.maximumPlaintext.toLong()))) +
+                listOf(Cbor.Bytes(bindings.first), Cbor.Bytes(bindings.second),
+                  Cbor.Integer(direction.toLong()), Cbor.Text(purpose))
             )
           ),
           length,
@@ -426,6 +438,7 @@ internal constructor(
           capacity,
           submit,
           now,
+          profile,
         )
       } catch (e: Exception) {
         material.forEach { it.fill(0) }

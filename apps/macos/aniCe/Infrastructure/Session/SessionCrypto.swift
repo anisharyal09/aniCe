@@ -31,8 +31,7 @@ enum SessionCrypto {
     ])
   }
   static func kid(_ identity: DeviceIdentity) throws -> Data {
-    try identity.validate()
-    guard let point = Data(base64Encoded: identity.publicKey) else {
+    guard let point = Data(base64Encoded: identity.publicKey), point.count == 65, point.first == 4 else {
       throw SessionFailure.malformed
     }
     return hash(point)

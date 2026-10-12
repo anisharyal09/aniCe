@@ -17,6 +17,7 @@ class SessionConnection(
   private val now: () -> Long = { System.nanoTime() / 1_000_000 },
   @Volatile private var renew: Boolean = false,
   private val changed: () -> Unit = {},
+  private val profile: SessionProfile = SessionProfile.STANDARD,
 ) {
   private val liveness = if (controls) SessionLiveness(responder) else null
   val controlSupport get() = liveness?.support
@@ -72,7 +73,7 @@ class SessionConnection(
     operation.withLock {
       try {
         requireOpen()
-        val (kind, payload) = SessionEnvelope.decode(envelope)
+        val (kind, payload) = SessionEnvelope.decode(envelope, profile)
         if (kind == 5) handshake.receiveError(payload)
         if (kind == 6) {
           val ch = channel ?: throw SessionException(SessionFailure.STATE)
@@ -142,8 +143,9 @@ class SessionConnection(
         handshake,
         responder,
         capacity,
-        { submit(SessionEnvelope.encode(6, it)) },
+        { submit(SessionEnvelope.encode(6, it, profile)) },
         now,
+        profile,
       )
     // Exporting can suspend; never publish keys created after synchronous retirement.
     synchronized(ownership) {
@@ -155,17 +157,19 @@ class SessionConnection(
     }
   }
 
+  private val sendOperation = Mutex()
+
   private suspend fun <T> applicationOperation(block: suspend () -> T): T {
-    if (!operation.tryLock()) throw SessionBackpressure()
+    if (!sendOperation.tryLock()) throw SessionBackpressure()
     try {
       return block()
     } finally {
-      operation.unlock()
+      sendOperation.unlock()
       changed()
     }
   }
 
-  val applicationAvailable get() = !closed && channel != null && deadline == 0L && !operation.isLocked && liveness?.renewalReason == null
+  val applicationAvailable get() = !closed && channel != null && deadline == 0L && !sendOperation.isLocked && liveness?.renewalReason == null
   suspend fun sendData(bytes: ByteArray) = applicationOperation {
     requireOpen()
     if (liveness?.renewalReason != null) throw SessionBackpressure()

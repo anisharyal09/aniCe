@@ -11,7 +11,22 @@ import Observation
 
 struct SessionFixtures {
   func root(_ name: String = "session-vectors") throws -> [String: Any] {
-    let url = try XCTUnwrap(Bundle(for: SessionTests.self).url(forResource: name, withExtension: "json"))
+    let bundleUrl = Bundle(for: SessionTests.self).url(forResource: name, withExtension: "json")
+    let repoUrl = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("protocol/test-vectors")
+    let candidates = [
+      bundleUrl,
+      repoUrl.appendingPathComponent("\(name).json"),
+      repoUrl.appendingPathComponent("transfer/\(name).json"),
+      repoUrl.appendingPathComponent("media/\(name).json"),
+      repoUrl.appendingPathComponent("lan/\(name).json"),
+    ].compactMap { $0 }
+    guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+      throw SessionFailure.malformed
+    }
     return try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
   }

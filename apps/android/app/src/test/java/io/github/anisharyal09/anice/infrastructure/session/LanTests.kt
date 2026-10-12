@@ -14,8 +14,17 @@ import org.junit.Test
 class LanTests {
     private fun bytes(text: String) = text.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
-    private fun decode(framing: LanFraming, wire: ByteArray) =
-        wire.map { framing.feed(it) }.filterNotNull()
+    private fun decode(framing: LanFraming, wire: ByteArray): List<ByteArray> {
+        val time = framing.beginBuffer()
+        var offset = 0
+        val result = mutableListOf<ByteArray>()
+        while (offset < wire.size) {
+            val frame = framing.feed(wire, offset, wire.size - offset, time)
+            offset += framing.consumed
+            if (frame != null) result.add(frame)
+        }
+        return result
+    }
 
     private fun reject(reason: SessionFailure, body: () -> Unit) {
         try {
@@ -64,7 +73,7 @@ class LanTests {
                 decode(framing, bytes(row.getString("frameHex")))
                 framing.end()
             }
-            reject(SessionFailure.CANCELLED) { framing.feed(1) }
+            reject(SessionFailure.CANCELLED) { decode(framing, byteArrayOf(1)) }
         }
     }
 
@@ -79,18 +88,81 @@ class LanTests {
         var clock = 0L
         val slow = LanFraming { clock }
         assertNull(slow.nextDeadline)
-        slow.feed(1)
+        decode(slow, byteArrayOf(1))
         assertEquals(10000L, slow.nextDeadline)
         clock = 9999
-        slow.feed(0)
+        decode(slow, byteArrayOf(0))
         assertEquals(10000L, slow.nextDeadline)
         clock = 10000
-        reject(SessionFailure.EXPIRED) { slow.feed(0) }
+        reject(SessionFailure.EXPIRED) { decode(slow, byteArrayOf(0)) }
         reject(SessionFailure.CANCELLED) { slow.end() }
         assertNull(slow.nextDeadline)
         for (size in listOf(0, 1, 4097)) reject(SessionFailure.MALFORMED) {
             LanFraming.encode(ByteArray(size))
         }
+    }
+
+    @Test
+    fun clockSampleAndSlicesAreBounded() {
+        var reads = 0
+        val framing = LanFraming { reads++; 0L }
+        val payload = ByteArray(4096) { 7 }
+        val wire = LanFraming.encode(payload)
+        val surrounded = byteArrayOf(99, 99) + wire + byteArrayOf(99)
+        val time = framing.beginBuffer()
+        assertArrayEquals(payload, framing.feed(surrounded, 2, wire.size, time))
+        assertEquals(wire.size, framing.consumed)
+        assertEquals(1, reads)
+        for (count in 1 until wire.size) {
+            val partial = LanFraming()
+            decode(partial, wire.copyOfRange(0, count))
+            reject(SessionFailure.MALFORMED) { partial.end() }
+            reject(SessionFailure.CANCELLED) { partial.beginBuffer() }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            framing.feed(wire, Int.MAX_VALUE, 2, time)
+        }
+    }
+
+    @Test
+    fun bulkProbeOracleAndStandardIsolation() {
+        val root = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("lan/bulk-probe-vectors.json"))
+            .bufferedReader().use { it.readText() })
+        val valid = root.getJSONArray("valid")
+        val invalid = root.getJSONArray("invalid")
+        assertTrue(valid.length() >= 3); assertTrue(invalid.length() >= 10)
+        val key = bytes(root.getString("keyHex")); val iv = bytes(root.getString("ivHex")); val id = bytes(root.getString("idHex"))
+        repeat(valid.length()) {
+            val row = valid.getJSONObject(it)
+            val plain = ByteArray(row.getInt("length")) { index -> (index % 251).toByte() }
+            val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, plain, SessionProfile.BULK_PROBE)
+            assertArrayEquals(bytes(row.getString("recordSHA256")), SessionCrypto.hash(record))
+            assertArrayEquals(bytes(row.getString("headerHex")), record.copyOfRange(0, 14))
+            assertArrayEquals(bytes(row.getString("tagHex")), record.copyOfRange(record.size - 16, record.size))
+            assertArrayEquals(plain, SessionRecordCodec.open(key, iv, id, 1, 0uL, record, SessionProfile.BULK_PROBE).second)
+            reject(SessionFailure.MALFORMED) { SessionRecordCodec.open(key, iv, id, 1, 0uL, record) }
+        }
+        repeat(invalid.length()) {
+            val row = invalid.getJSONObject(it)
+            reject(if (row.getString("reason") == "authentication") SessionFailure.AUTHENTICATION else SessionFailure.MALFORMED) {
+                SessionRecordCodec.open(key, iv, id, 1, 0uL, bytes(row.getString("recordHex")), SessionProfile.BULK_PROBE)
+            }
+        }
+        reject(SessionFailure.MALFORMED) {
+            SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, ByteArray(4194305), SessionProfile.BULK_PROBE)
+        }
+        reject(SessionFailure.MALFORMED) { SessionEnvelope.encode(1, ByteArray(4096), SessionProfile.BULK_PROBE) }
+        val envelope = ByteArray(4194335) { 6 }
+        val frame = LanFraming.encode(envelope, SessionProfile.BULK_PROBE)
+        assertArrayEquals(envelope, decode(LanFraming(SessionProfile.BULK_PROBE), frame).single())
+        reject(SessionFailure.UNSUPPORTED_PROFILE) { decode(LanFraming(), frame.copyOfRange(0, 5)) }
+        val budget = LanQueueBudget(SessionProfile.BULK_PROBE)
+        repeat(4) { budget.reserve(envelope.size) }
+        assertFalse(budget.canReserve(1))
+        repeat(4) { budget.release(envelope.size) }
+        assertTrue(budget.canReserve(envelope.size))
+        assertFalse(LanQueueBudget(SessionProfile.STANDARD).canReserve(envelope.size))
+        assertNotEquals(SessionProfile.STANDARD.exporterLabel, SessionProfile.BULK_PROBE.exporterLabel)
     }
 
     @Test

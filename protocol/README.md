@@ -17,6 +17,7 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **Now Playing** | `1` | Implemented; acceptance pending | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated; player acceptance pending | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
+| **File Transfer** | `1` | Implemented; acceptance pending | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---
 
@@ -115,7 +116,9 @@ protocol/
 ├── fixtures/
 │   └── identity/                  # Sample valid JSON records (android.json, macos.json)
 ├── lan/
-│   └── README.md                  # Local network stream framing and mDNS discovery contract
+│   ├── README.md                  # Local network stream framing and mDNS discovery contract
+│   ├── BENCHMARK.md               # Production LAN throughput benchmark harness & gates
+│   └── BULK_PROBE.md              # Isolated bulk record profiling specification
 ├── pairing/
 │   └── README.md                  # Pairing protocol, framing, cryptography & state machine
 ├── schemas/
@@ -124,22 +127,30 @@ protocol/
 │   ├── README.md                  # EDHOC, encrypted records and BLE session contract
 │   ├── session.cddl               # Restricted deterministic CCS/EDHOC definitions
 │   └── control.cddl               # Bounded CBOR compatibility, liveness and renewal controls
+├── transfer/
+│   ├── README.md                  # Local file transfer protocol, flow control & lifecycle
+│   └── transfer.cddl              # Authoritative message and envelope CDDL definitions
 └── test-vectors/
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
     ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
     ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
     ├── lan/
+    │   ├── bulk-probe-vectors.json # Positive & negative bulk probe framing vectors
+    │   ├── generate_bulk_probe_vectors.py # Bulk probe fixture generator
     │   ├── lan-vectors.json       # Positive & negative TCP stream envelope framing vectors
     │   └── generate_lan_vectors.py # Independent Python oracle and fixture generator
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
-    └── session/
-        ├── session-vectors.json  # Complete method-0/suite-5 traces and invalid handshakes
-        ├── record-vectors.json   # AES-GCM records, nonce/counter boundaries and tampering cases
-        ├── control-vectors.json  # Valid/invalid compatibility, ping and renewal controls
-        ├── rfc9529-components.json # Published suite-0 derivations used for common components
-        ├── requirements.txt      # Pinned independent Python crypto/CBOR oracle dependencies
-        └── *.py                  # Fixture generation and independent oracle regressions
+    ├── session/
+    │   ├── session-vectors.json  # Complete method-0/suite-5 traces and invalid handshakes
+    │   ├── record-vectors.json   # AES-GCM records, nonce/counter boundaries and tampering cases
+    │   ├── control-vectors.json  # Valid/invalid compatibility, ping and renewal controls
+    │   ├── rfc9529-components.json # Published suite-0 derivations used for common components
+    │   ├── requirements.txt      # Pinned independent Python crypto/CBOR oracle dependencies
+    │   └── *.py                  # Fixture generation and independent oracle regressions
+    └── transfer/
+        ├── transfer-vectors.json  # Positive & negative transfer message fixtures
+        └── generate_transfer_vectors.py # Fixture generator
 ```
 
 ## Media
@@ -147,3 +158,7 @@ protocol/
 [Media v1](media/README.md) defines foreground playback subscriptions, revision-bound commands and LAN-only bounded artwork within existing authenticated DATA. [Independent fixtures](test-vectors/media/media-vectors.json) contain positive and negative media envelopes.
 
 Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_VOLUME.md), with independent positive/negative fixtures and unchanged media/player-volume v1 encodings.
+
+## File Transfer
+
+[File Transfer v1](transfer/README.md) defines sequential multi-file batch transfers over authenticated LAN DATA records with 64-chunk cumulative credit flow control, recipient batch approval, temporary `.anice-part` staging with atomic renames, and incremental SHA-256 verification. [Independent fixtures](test-vectors/transfer/transfer-vectors.json) validate positive and negative envelopes and transfer parameters.

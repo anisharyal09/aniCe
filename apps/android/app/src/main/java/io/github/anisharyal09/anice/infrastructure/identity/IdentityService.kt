@@ -53,7 +53,10 @@ class IdentityService(
     @Volatile var onInvalidated: () -> Unit = {}
     @Volatile internal var identityLoads = 0L
         private set
+    @Volatile private var cachedSnapshot: IdentitySnapshot? = null
+
     @Synchronized fun getOrCreateIdentity(): IdentitySnapshot {
+        cachedSnapshot?.let { return it }
         identityLoads++
         var journal = metadata.read()
         journal?.let(::validateJournal)
@@ -70,10 +73,13 @@ class IdentityService(
                 metadata.write(journal)
             }
             cleanup(journal)
+            cachedSnapshot = snapshot
             return snapshot
         }
         if (journal.pending == null) throw IdentityException(IdentityErrorKind.INCONSISTENT)
-        return finishCreation(journal)
+        val created = finishCreation(journal)
+        cachedSnapshot = created
+        return created
     }
 
     @Synchronized fun rename(value: String): IdentitySnapshot {
@@ -85,7 +91,9 @@ class IdentityService(
         if (active.identity != snapshot.identity) throw IdentityException(IdentityErrorKind.INCONSISTENT)
         val renamed = active.copy(identity = active.identity.copy(deviceName = name).validate())
         metadata.write(journal.copy(active = renamed))
-        return snapshot.copy(identity = renamed.identity)
+        val updated = snapshot.copy(identity = renamed.identity)
+        cachedSnapshot = updated
+        return updated
     }
 
     @Synchronized fun sign(message: ByteArray): IdentitySignature {
@@ -107,6 +115,7 @@ class IdentityService(
     /** Called only after the UI confirms replacement. */
     @Synchronized fun resetIdentity(): IdentitySnapshot {
         onInvalidated()
+        cachedSnapshot = null
         val previous = try { metadata.read()?.also(::validateJournal) } catch (error: IdentityException) {
             if (error.kind != IdentityErrorKind.INCONSISTENT) throw error
             null
@@ -115,7 +124,9 @@ class IdentityService(
         val pending = newPending()
         val staged = IdentityJournal(previous?.active, pending, retired.filter { it != previous?.active?.alias })
         metadata.write(staged)
-        return finishCreation(staged)
+        val committed = finishCreation(staged)
+        cachedSnapshot = committed
+        return committed
     }
 
     private fun newPending(): PendingIdentity {

@@ -6,6 +6,7 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Local File Transfer v1 protocol (`protocol/transfer/transfer.cddl`, `README.md`) over authenticated LAN DATA records (≤ 4,000 bytes) with 11 deterministic CBOR messages, cumulative credit flow control (64-window / 3,072-byte chunks), incremental SHA-256 verification, and 52 independent test vectors (19 valid, 33 invalid).
 - Independently negotiated Mac output-volume v1, output-device identity/revision validation and positive/negative fixtures; preserves media/player-volume v1 bytes and shares bounded subscription command deduplication.
 - Separately negotiated selected-player volume v1 with independent positive/negative fixtures; media v1 fixture and envelope bytes remain unchanged. Clarify companion-owned BLE background subscriptions and fresh-channel retirement.
 - Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts and independent bounded fixtures within existing authenticated DATA records.
@@ -24,6 +25,8 @@ Records shared communication-contract changes, compatibility implications, and p
 - Public device identity schema version 1: canonical P-256 public keys, SHA-256 fingerprints, and native DER signature interoperability.
 
 ### Changed
+
+- Document isolated LAN benchmark DATA payloads and acceptance reporting; production framing, session records and media fixtures retain their bytes.
 
 - Clarify deadline-driven handshake retirement and per-operation validation without changing session or control bytes.
 

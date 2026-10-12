@@ -4,10 +4,12 @@ import SwiftUI
 
 struct FeaturesView: View {
   let playback: MacPlaybackModel
+  let transfer: MacTransferModel
   @Environment(\.colorScheme) private var colorScheme
   var body: some View {
           ScrollView {
             VStack(alignment:.leading,spacing:16) {
+              TransferView(model: transfer)
               Text("Phone controls").font(.title2.weight(.semibold))
               VStack(alignment:.leading,spacing:8) {
                 Text("Now Playing").font(.headline)

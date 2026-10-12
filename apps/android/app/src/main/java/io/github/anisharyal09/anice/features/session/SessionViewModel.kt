@@ -17,6 +17,7 @@ typealias ConnectionState = io.github.anisharyal09.anice.infrastructure.connecti
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
     private val owner = (application as AniCeApplication).sessionController
     val media = (application as AniCeApplication).nowPlaying
+    val transfer = (application as AniCeApplication).transfer
     val lan = (application as AniCeApplication).lanSessionController
     val state
         get() = owner.state

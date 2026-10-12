@@ -3,7 +3,6 @@
 package io.github.anisharyal09.anice.infrastructure.lan
 
 import android.os.SystemClock
-import io.github.anisharyal09.anice.infrastructure.bluetooth.GattQueueBudget
 import io.github.anisharyal09.anice.infrastructure.session.*
 import java.net.Socket
 import java.net.SocketTimeoutException
@@ -11,11 +10,15 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal class AndroidLanTransport(private val scope: CoroutineScope, private val changed: () -> Unit = {}) {
+internal class AndroidLanTransport(private val scope: CoroutineScope, private val profile: SessionProfile = SessionProfile.STANDARD, private val changed: () -> Unit = {}) {
     private val socket = Socket()
-    private val budget = GattQueueBudget()
+    private val budget = LanQueueBudget(profile)
     private val writer = Mutex()
     @Volatile private var closed = false
+    var readNanos = 0L
+        private set
+    var deliveryNanos = 0L
+        private set
 
     fun hasCapacity(size: Int): Boolean =
         synchronized(budget) { !closed && budget.canReserve(size) }
@@ -23,12 +26,22 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
     suspend fun connect(endpoint: LanEndpoint) =
         withContext(Dispatchers.IO) {
             if (closed) throw SessionException(SessionFailure.CANCELLED)
+            if (profile == SessionProfile.BULK_PROBE) {
+                // Set before connect so TCP window scaling includes the bulk receive budget.
+                socket.receiveBufferSize = 8 * 1024 * 1024
+                socket.sendBufferSize = 2 * 1024 * 1024
+            } else {
+                socket.receiveBufferSize = 2 * 1024 * 1024
+                socket.sendBufferSize = 2 * 1024 * 1024
+            }
             endpoint.network.bindSocket(socket)
             socket.connect(java.net.InetSocketAddress(endpoint.address, endpoint.port), 5000)
             socket.soTimeout = 0
             socket.tcpNoDelay = true
             if (closed) throw SessionException(SessionFailure.CANCELLED)
         }
+
+    fun bufferSizes(): Pair<Int, Int> = socket.sendBufferSize to socket.receiveBufferSize
 
     suspend fun submit(envelope: ByteArray) {
         synchronized(budget) {
@@ -46,7 +59,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
             writer.withLock {
                 withContext(Dispatchers.IO) {
                     if (closed) throw SessionException(SessionFailure.CANCELLED)
-                    socket.getOutputStream().write(LanFraming.encode(envelope))
+                    socket.getOutputStream().write(LanFraming.encode(envelope, profile))
                 }
             }
         } catch (error: Exception) {
@@ -61,14 +74,15 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
 
     suspend fun receive(deliver: suspend (ByteArray) -> Unit) =
         withContext(Dispatchers.IO) {
-            val framing = LanFraming { SystemClock.elapsedRealtime() }
+            val framing = LanFraming(profile) { SystemClock.elapsedRealtime() }
             val input = socket.getInputStream()
-            val buffer = ByteArray(4096)
+            val buffer = ByteArray(65536)
             while (!closed) {
                 ensureActive()
                 socket.soTimeout = framing.nextDeadline?.let {
                     (it - SystemClock.elapsedRealtime()).coerceIn(1, 10000).toInt()
                 } ?: 0
+                val readStarted = if (profile == SessionProfile.BULK_PROBE) System.nanoTime() else 0L
                 val count =
                     try {
                         input.read(buffer)
@@ -76,11 +90,22 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
                         framing.tick()
                         continue
                     }
+                if (profile == SessionProfile.BULK_PROBE) readNanos += System.nanoTime() - readStarted
                 if (count < 0) {
                     framing.end()
                     throw java.io.EOFException("Local-network connection ended.")
                 }
-                for (index in 0 until count) framing.feed(buffer[index])?.let { deliver(it) }
+                val receivedAt = framing.beginBuffer()
+                var offset = 0
+                while (offset < count) {
+                    val envelope = framing.feed(buffer, offset, count - offset, receivedAt)
+                    offset += framing.consumed
+                    if (envelope != null) {
+                        val deliveryStarted = if (profile == SessionProfile.BULK_PROBE) System.nanoTime() else 0L
+                        deliver(envelope)
+                        if (profile == SessionProfile.BULK_PROBE) deliveryNanos += System.nanoTime() - deliveryStarted
+                    }
+                }
             }
         }
 

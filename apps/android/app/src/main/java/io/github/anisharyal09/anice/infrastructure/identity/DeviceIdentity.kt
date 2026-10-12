@@ -30,7 +30,11 @@ data class DeviceIdentity(
         .put("deviceId", deviceId).put("deviceName", deviceName).put("platform", platform)
         .put("algorithm", algorithm).put("publicKey", publicKey).put("fingerprint", fingerprint)
 
+    @Volatile @Transient private var validated: Boolean = false
+    @Volatile @Transient private var cachedKid: ByteArray? = null
+
     fun validate(): DeviceIdentity {
+        if (validated) return this
         require(identitySchemaVersion == 1 && algorithm == "ECDSA_P256_SHA256")
         require(UUID_V4.matches(deviceId))
         require(deviceName.isNotBlank() && deviceName == deviceName.trim())
@@ -39,7 +43,13 @@ data class DeviceIdentity(
         val bytes = IdentityCrypto.decodeBase64(publicKey)
         IdentityCrypto.publicKey(bytes)
         require(fingerprint == IdentityCrypto.fingerprint(bytes))
+        validated = true
         return this
+    }
+
+    fun kid(): ByteArray {
+        validate()
+        return cachedKid ?: MessageDigest.getInstance("SHA-256").digest(IdentityCrypto.decodeBase64(publicKey)).also { cachedKid = it }
     }
 
     companion object {

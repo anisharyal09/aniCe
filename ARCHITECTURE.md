@@ -41,6 +41,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
   - Vectors: [`discovery-vectors.json`](protocol/test-vectors/discovery-vectors.json)
 - **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android connects over Wi-Fi; Mac accepts local connections. LAN carries connection checks and subscribed media DATA, with the same 4,000-byte record bound as BLE.
+  - Mac frame assembly, submission accounting and watchdogs run in a transport actor; Android socket work runs on IO dispatchers. Frame parsing samples time once per receive buffer, retaining fixed assembly deadlines and existing queue/nonce bounds.
   - Contract: [LAN Binding Contract](protocol/lan/README.md)
   - Lifecycle: [Independent LAN Connections](docs/LAN_CONNECTIONS.md)
   - Decisions: [ADR 0006 (Independent LAN Sessions)](docs/decisions/0006-independent-lan-sessions.md)
@@ -73,10 +74,12 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [Secure Sessions & Record Channel](protocol/session/README.md)
 - [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
 - [Now Playing DATA](protocol/media/README.md)
+- [Local File Transfer Protocol](protocol/transfer/README.md)
 
 ### Operational Guides & Implementation Roadmaps
 - [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
 - [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
+- [Local File Transfer Feature Guide](docs/features/FILE_TRANSFER.md)
 - [Design Guide & Palette](docs/design/DESIGN.md)
 - [Project Roadmap & Verification Gates](docs/ROADMAP.md)
 
@@ -87,6 +90,10 @@ One application-scoped MacPlaybackModel owns playback state, selection and obser
 Mac output volume and verified selected-player volume are independently negotiated controls. See [feature behavior](docs/features/NOW_PLAYING.md), [media contracts](protocol/media/README.md) and the [playback decision](docs/decisions/features/now-playing/0009-remote-playback-presentation.md).
 
 App Sandbox is disabled for the entire Mac app. Identity/trust paths, Keychain policy and session cryptography remain unchanged; [ADR 0007](docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records the access and signing consequences.
+
+## Local File Transfer
+
+Local file transfer streams sequential multi-file batches (1..128 files) between trusted peers over authenticated LAN DATA records, using 64-chunk cumulative credit flow control (3,072-byte chunks), recipient offer approval, `.anice-part` staging with incremental SHA-256 verification and atomic rename, full-duplex ACK pipelining, and presentation across Features and Home live-activity. See [feature behavior](docs/features/FILE_TRANSFER.md) and [transfer contracts](protocol/transfer/README.md).
 
 ## Application DATA and source organization
 

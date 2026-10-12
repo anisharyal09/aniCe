@@ -103,6 +103,9 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AppDestination.Home -> HomeScreen(pairing.peers.isNotEmpty(), onPair = {
                         navigation.pair()
                     }, compact = true, attention = {
+                        if (session.transfer.state !is io.github.anisharyal09.anice.features.transfer.TransferState.Idle) {
+                            io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer)
+                        }
                         if (session.media.compactVisible) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media,compact=true) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true }
                         if (pairing.busy) {
                             Text(pairing.status, style = MaterialTheme.typography.bodyMedium)
@@ -115,7 +118,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
                         DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing) { automaticAfterPairing=it }
                     }
-                    AppDestination.Features -> FeaturesScreen(session.media, navigation)
+                    AppDestination.Features -> FeaturesScreen(session.media, session.transfer, navigation)
                     AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context)
                 }
             }

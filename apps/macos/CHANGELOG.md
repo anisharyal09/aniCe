@@ -6,10 +6,14 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Bidirectional local file transfer engine and UI (`MacTransferModel`, `TransferView`, `TransferWire`) with 64-chunk cumulative credit flow control, sequential multi-file batch streaming, temporary `.anice-part` staging with atomic rename, sleep assertion management, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
+- Optimize LAN streaming throughput: compute `SessionCrypto.kid` directly from decoded public key bytes avoiding redundant CryptoKit curve reconstruction per record; cache authenticated public device identity in `IdentityService` to eliminate redundant Keychain `securityd` IPC overhead during record validation; decouple `sendData` and `receive` locking in `SessionConnection` to allow concurrent full-duplex ACK transmission; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
 - Shared event-driven Now Playing owner with optional Home/companion activity, Phone controls information and attributed packaged universal adapter. Source-bound controls resolve native/script support per action, recover matching late capabilities and publish position samples after commands. Explicit Music/Spotify volume verification gates player sliders; native output-device observation supports phone volume controls. Preview confirmation, readable availability and selection-preserving refresh handle asynchronous results without replaying writes.
 - Home/Devices/Features/Settings sidebar and saved native Window appearance preference with native and SwiftUI System inheritance across the window and connection-details sheet; companion and context menus retain system appearance.
 
 ### Changed
+
+- Move LAN socket delivery, sliced frame parsing, bounded write accounting and independent assembly watchdogs off the main actor; exercise the production transport in native interchange.
 
 - Separate MacPlaybackModel, MediaProcessBridge and MediaSessionLink; group connection owners under Connections, register feature-neutral DATA handling in App, and split hosted suites with shared independent fixtures.
 
