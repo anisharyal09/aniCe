@@ -15,7 +15,7 @@ import Darwin
     let server = try NWListener(using: LanTcpTransport.parameters(), on: .any)
     server.service = NWListener.Service(
       name: "aniCe-" + UUID().uuidString.lowercased(),
-      type: profile == .standard ? "_anice._tcp" : "_anicebulk._tcp", txtRecord: NWTXTRecord(["v": "1"]))
+      type: profile == .bulkProbe ? "_anicebulk._tcp" : "_anice._tcp", txtRecord: NWTXTRecord(["v": profile == .lanTransfer ? "2" : "1"]))
     listener = server
     return try await withCheckedThrowingContinuation { continuation in
       portReady = continuation
@@ -258,6 +258,7 @@ private func benchmarkRun(engine: SessionConnection, tcp: InterchangeTcpPeer,
     await state.wait(version)
   }
   let receiveSeconds = ProcessInfo.processInfo.systemUptime - receiveStart
+  FileHandle.standardError.write(Data("LAN benchmark: received \(state.total) bytes in \(receiveSeconds) seconds; starting send\n".utf8))
   let sendStart = ProcessInfo.processInfo.systemUptime
   let socketStart = await tcp.socketSendSeconds
   var submissionSeconds = 0.0
@@ -301,7 +302,7 @@ private func benchmarkRun(engine: SessionConnection, tcp: InterchangeTcpPeer,
 
 @MainActor func tcpInterchange(identity: IdentityService) async throws {
   try await benchmarkSelfCheck()
-  let profile: SessionProfile = CommandLine.arguments.contains("--bulk-probe") ? .bulkProbe : .standard
+  let profile: SessionProfile = CommandLine.arguments.contains("--bulk-probe") ? .bulkProbe : CommandLine.arguments.contains("--lan-transfer") ? .lanTransfer : .standard
   let server = InterchangeTcpServer(profile: profile)
   defer { server.close() }
   let port = try await server.listen()
@@ -313,18 +314,19 @@ private func benchmarkRun(engine: SessionConnection, tcp: InterchangeTcpPeer,
   let bootstrap = try input()
   let peer = try DeviceIdentity.decode(
     JSONSerialization.data(withJSONObject: bootstrap["identity"] as Any))
+  let tcp = try await server.accept()
+  // Discovery waiting is outside the connected peer's thirty-second handshake deadline.
   let handshake = try SessionHandshakeEngine(
     local: local, responder: true, trusted: { [peer] },
     currentIdentity: { try await identity.publicIdentity() },
     signer: { try await identity.sign(message: $0) }, selectedPeer: peer)
-  let tcp = try await server.accept()
   defer { Task { await tcp.close() } }
   let reply = InterchangeMailbox()
   let benchmarkMiB = bootstrap["benchmarkMiB"] as? Int ?? 0
   let window = bootstrap["window"] as? Int ?? 32
-  guard (bootstrap["profile"] as? String ?? "standard") == (profile == .standard ? "standard" : "bulk-probe") else { throw SessionFailure.unsupportedProfile }
-  guard [0, 100, 1024].contains(benchmarkMiB), (profile == .standard ? [32, 64] : [4, 8]).contains(window) else { throw SessionFailure.malformed }
-  let benchmark = LanBenchmarkState(total: benchmarkMiB * 1048576, window: window, chunkBytes: profile == .standard ? 3072 : profile.maximumPlaintext - 5)
+  guard (bootstrap["profile"] as? String ?? "standard") == (profile == .standard ? "standard" : profile == .lanTransfer ? "lan-transfer" : "bulk-probe") else { throw SessionFailure.unsupportedProfile }
+  guard [0, 4, 16, 100, 1024].contains(benchmarkMiB), (profile == .standard ? [32, 64] : [4, 8]).contains(window) else { throw SessionFailure.malformed }
+  let benchmark = LanBenchmarkState(total: benchmarkMiB * 1048576, window: window, chunkBytes: profile == .standard ? 3072 : profile == .lanTransfer ? 131072 : profile.maximumPlaintext - 5)
   let expected = Data((0..<4000).map { UInt8($0 % 128) })
   let engine = SessionConnection(
     handshake: handshake, responder: true,
@@ -341,6 +343,7 @@ private func benchmarkRun(engine: SessionConnection, tcp: InterchangeTcpPeer,
   }
   try await engine.sendData(Data(expected.reversed()))
   if benchmarkMiB != 0 {
+    FileHandle.standardError.write(Data("LAN benchmark: authenticated conformance complete; starting DATA\n".utf8))
     let metrics = try await benchmarkRun(engine: engine, tcp: tcp, state: benchmark)
     try emit(["benchmark": metrics])
     while !(await engine.isClosed) { try await engine.receive(tcp.receive()) }

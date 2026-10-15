@@ -97,7 +97,7 @@ class SessionConnection(
               liveness?.start(now())
             }
             RecordKind.DATA -> {
-              val control = if (liveness != null) SessionControl.application(result.second) else null
+              val control = if (liveness != null) SessionControl.application(result.second, minOf(262144, maxOf(4096, profile.maximumPlaintext))) else null
               if (control != null) liveness!!.receive(control, now()) else data(result.second)
             }
             RecordKind.CLOSE -> {
@@ -161,11 +161,15 @@ class SessionConnection(
 
   private suspend fun <T> applicationOperation(block: suspend () -> T): T {
     if (!sendOperation.tryLock()) throw SessionBackpressure()
+    var refused = false
     try {
       return block()
+    } catch (error: SessionBackpressure) {
+      refused = true
+      throw error
     } finally {
       sendOperation.unlock()
-      changed()
+      if (!refused) changed()
     }
   }
 

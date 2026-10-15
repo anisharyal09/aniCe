@@ -307,10 +307,11 @@ class SessionControlTests {
     for (serverControls in listOf(true, false)) {
       var clock = 0L
       var writable = true
+      val signals = java.util.concurrent.atomic.AtomicInteger()
       val outboundI = java.util.ArrayDeque<ByteArray>()
       val outboundR = java.util.ArrayDeque<ByteArray>()
       val delivered = mutableListOf<ByteArray>()
-      val client = SessionConnection(helper.engine(fixture, false), false, { writable }, { outboundI.add(it) }, {}, {}, true, { clock })
+      val client = SessionConnection(helper.engine(fixture, false), false, { writable }, { outboundI.add(it) }, {}, {}, true, { clock }, changed = { signals.incrementAndGet() })
       val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outboundR.add(it) }, { delivered.add(it) }, {}, serverControls, { clock })
       suspend fun pump() {
         var count = 0
@@ -335,6 +336,12 @@ class SessionControlTests {
           assertEquals(false, client.controlSupport)
           delivered.clear() // Legacy dispatch receives HELLO as ordinary data and ignores it in the app.
         }
+        writable = false
+        val signalsBeforeRefusal = signals.get()
+        try { client.sendData(byteArrayOf(1)); fail("Unwritable transport admitted DATA") }
+        catch (_: SessionBackpressure) {}
+        assertEquals("Refusal must not wake its own capacity waiter", signalsBeforeRefusal, signals.get())
+        writable = true
         client.sendData("aniCe connection check".toByteArray()); pump()
         assertEquals(1, delivered.size)
         clock = 3600000

@@ -46,15 +46,15 @@ struct AniCeApp: App {
     }
     lan.channelStateChanged = { [weak lan] in
       if let lan, let token=lan.channelToken, let peer=lan.authenticatedPeer {
-        features.available(ChannelDescriptor(instance:token,transport:"lan",peer:peer)) { [weak lan] bytes in
+        features.available(ChannelDescriptor(instance:token,transport:"lan",peer:peer,maximumDataBytes:SessionProfile.lanTransfer.maximumPlaintext)) { [weak lan] bytes in
           guard let lan else { throw SessionFailure.cancelled }; try await lan.sendData(bytes)
         }
       } else { features.retired("lan") }
     }
     session.channelCapacityChanged = { features.capacityAvailable("ble") }
     lan.channelCapacityChanged = { features.capacityAvailable("lan") }
-    session.applicationDataReceived = { [weak session] bytes in features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
-    lan.applicationDataReceived = { [weak lan] bytes in features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
+    session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
+    lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
     pairing.onPaired = { [weak session, weak navigation] peer in
       guard let session, let navigation else { return }

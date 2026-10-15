@@ -147,8 +147,8 @@ class LanNativeTest {
             val peer = DeviceIdentity.fromJson(config.getJSONObject("identity"))
             val local = identity.getOrCreateIdentity().identity
             val profileName = config.optString("profile", "standard")
-            require(profileName in listOf("standard", "bulk-probe"))
-            val profile = if (profileName == "standard") SessionProfile.STANDARD else SessionProfile.BULK_PROBE
+            require(profileName in listOf("standard", "bulk-probe", "lan-transfer"))
+            val profile = when (profileName) { "standard" -> SessionProfile.STANDARD; "lan-transfer" -> SessionProfile.LAN_TRANSFER; else -> SessionProfile.BULK_PROBE }
             val benchmarkMiB = config.optInt("benchmarkMiB", 0)
             if (benchmarkMiB != 0) {
                 // Instrumentation restarts the target process; foreground acceptance needs a manual reopen.
@@ -169,8 +169,8 @@ class LanNativeTest {
                 check(lock.isHeld)
             }
             val window = config.optInt("window", 32)
-            require(benchmarkMiB in listOf(0, 100, 1024) && window in (if (profile == SessionProfile.STANDARD) listOf(32, 64) else listOf(4, 8)))
-            val bulk = LanNativeBenchmark(benchmarkMiB * 1048576, window, if (profile == SessionProfile.STANDARD) 3072 else profile.maximumPlaintext - 5)
+            require(benchmarkMiB in listOf(0, 4, 16, 100, 1024) && window in (if (profile == SessionProfile.STANDARD) listOf(32, 64) else listOf(4, 8)))
+            val bulk = LanNativeBenchmark(benchmarkMiB * 1048576, window, if (profile == SessionProfile.STANDARD) 3072 else if (profile == SessionProfile.LAN_TRANSFER) 131072 else profile.maximumPlaintext - 5)
             File(directory, "client.json")
                 .writeText(JSONObject().put("identity", local.toJson())
                     .put("benchmarkMiB", benchmarkMiB).put("window", window).put("profile", profileName).toString())

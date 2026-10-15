@@ -4,17 +4,34 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## Unreleased
 
+### Fixed
+
+- Keep transfer file opening, reads, receive writes, hashing, finalization and cleanup off presentation threads. Await ordered storage before credit, reject retired callbacks after suspension, and stop refused submissions from waking their own capacity waiters.
+
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks. On Android, remove duplicate native reads around synchronous cryptography while validating before delivery and retaining generation/deadline fences.
+
+- Keep Android’s Connect LAN action visible in the file-transfer panel when Bluetooth is connected and LAN is disconnected.
+
+- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
+
+- Retain the native Keystore provider connection while re-reading live aliases, public keys and key protection on every identity check; detect external deletion and same-alias replacement.
+
+- Enforce LAN-preferred file transfer routing with BLE fallback, background lifecycle ownership, exclusive partial staging, checked finalization, and isolated reply correlation. Notification denial no longer blocks approved foreground transfers; release idle leases and stale timers deterministically, preserve approved BLE work during screen lock, and require explicit resend for interrupted batches.
+
 ### Added
 
-- Bidirectional local file transfer controller and Compose UI (`TransferController`, `TransferView`, `TransferWire`, `TransferNotification`, `TransferActionReceiver`) with cumulative credit flow control, sequential multi-file streaming, Storage Access Framework document picker support, temporary `.anice-part` staging, atomic rename, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
-- Optimize LAN streaming throughput: pre-allocate 2-MiB TCP send/receive socket buffers before connect and expand read loop to 64 KiB for full TCP window scaling; cache validation and `kid` digest on immutable `DeviceIdentity` instances to eliminate repeated BigInteger curve point verification and `KeyFactory` JNI instantiation per record; cache loaded `IdentitySnapshot` in `IdentityService` to avoid redundant KeyStore Binder IPC; decouple `sendOperation` and `receive` locking in `SessionConnection` so recipient flow-control ACKs stream concurrently over full-duplex TCP; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
+- Bidirectional local file transfer controller and Compose UI (`TransferController`, `TransferView`, `TransferWire`, `TransferNotification`, `TransferActionReceiver`) with cumulative credit flow control, sequential multi-file streaming, Storage Access Framework document picker support, exclusive job-owned partial documents and checked provider finalization, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
+- Optimize LAN streaming throughput: pre-allocate 2-MiB TCP send/receive socket buffers before connect and expand read loop to 64 KiB for full TCP window scaling; cache validation and `kid` digest on immutable `DeviceIdentity` instances to eliminate repeated BigInteger curve point verification and `KeyFactory` JNI instantiation per record; decouple `sendOperation` and `receive` locking in `SessionConnection` so recipient flow-control ACKs stream concurrently over full-duplex TCP; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
 - Now Playing Home controls/player picker and Features workspace over one secured LAN/BLE subscription, with source-bound commands, atomic seek/elapsed previews and LAN-only artwork. Silent native media notifications use a fixed 90-second pause grace and existing companion-owned background BLE. Verified player volume and separately advertised Mac output volume support sliders and phone/system volume controls; bounded latest-intent handling confirms previews and never replays uncertain commands.
 
 - Home/Devices/Features/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
+- Adversarial test coverage for maximum profile-3 bounds, cipher tampering rejection, buffer independence across encryption directions, exact CBOR payload sizing, scratch framing identity, and single-copy chunk framing.
 
 ### Changed
 
 - Parse LAN receive buffers in bounded slices with one clock sample per read; add native cumulative-credit benchmarking with payload validation, CPU/GC and socket/delivery timing. The isolated bulk probe uses bounded larger records and Debug-only Wi-Fi power ownership; production DATA and Release permissions remain unchanged.
+
+- Remove per-record allocations and copies from the authenticated record path: one AES-GCM provider cipher, key spec and authentication suffix per direction, record headers written into the record buffer, exact-size deterministic CBOR encoding, single-copy chunk framing out of the reused transfer buffer, TCP framing into transport-owned scratch space, and one compiled device-ID pattern for journal validation. Receive validates native identity and trust after synchronous tag verification so unauthenticated records never reach Keystore. Wire bytes, bounds and typed failures are unchanged.
 
 - Group Now Playing code and matching tests under features/nowplaying; move application BLE/LAN owners, connection feedback and nearby policy into Connections; preserve manifest entry points and stored association keys, and register media through feature-neutral secured DATA dispatch.
 

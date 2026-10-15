@@ -14,12 +14,35 @@ class AniCeApplication : Application() {
         super.onCreate()
         nowPlaying.presentationChanged={ mediaNotification.update() }
         mediaNotification.update()
+        lanSessionController.onUnleasedBackgroundWork = {
+            if (transfer.isBusy && (transfer.activeChannel?.descriptor?.transport == "lan" ||
+                    transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting)) {
+                transfer.cancelTransfer(); true
+            } else false
+        }
+        transfer.onPickerChanged = { updateTransferOwnership() }
         transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
-        transfer.onLeaseChanged = { _ -> transferNotification.update() }
+        transfer.onLeaseChanged = { approved ->
+            transferNotification.update()
+            if (approved) {
+                if (lanSessionController.foreground || bleOwner.isInitialized() && bleOwner.value.foreground) {
+                    try {
+                        transfer.backgroundAllowed = true
+                        androidx.core.content.ContextCompat.startForegroundService(this,
+                            android.content.Intent(this, io.github.anisharyal09.anice.features.transfer.TransferService::class.java))
+                    } catch (_: IllegalStateException) { transfer.backgroundAllowed = false }
+                    catch (_: SecurityException) { transfer.backgroundAllowed = false }
+                }
+            } else if (!approved) {
+                transfer.backgroundAllowed = false
+                stopService(android.content.Intent(this, io.github.anisharyal09.anice.features.transfer.TransferService::class.java))
+            }
+            updateTransferOwnership()
+        }
         transfer.onStateChanged = { _ ->
             transferNotification.update()
             if (!transfer.isBusy) {
-                lanSessionController.onTransferIdle()
+                lanSessionController.onWorkIdle()
             }
         }
         if(applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE!=0) {
@@ -31,6 +54,21 @@ class AniCeApplication : Application() {
             }
         }
     }
+    private fun updateTransferOwnership() {
+        val transport = transfer.activeChannel?.descriptor?.transport
+        val connecting = transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting
+        lanSessionController.updateWorkLease(transfer.backgroundAllowed && (transport == "lan" || connecting),
+            transfer.selectingFiles && transport != "ble")
+        if (bleOwner.isInitialized()) bleOwner.value.updateWorkLease(
+            transfer.backgroundAllowed && transport == "ble", transfer.selectingFiles && transport == "ble")
+    }
+
+    internal fun transferServiceStopped() {
+        transfer.backgroundAllowed = false
+        lanSessionController.onWorkServiceStopped()
+        if (bleOwner.isInitialized()) bleOwner.value.onWorkServiceStopped()
+    }
+
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
     val transfer = io.github.anisharyal09.anice.features.transfer.TransferController(this)
     private val transferNotification by lazy { io.github.anisharyal09.anice.features.transfer.TransferNotification(this, transfer) }

@@ -1,6 +1,17 @@
 # Local File Transfer Protocol v1
 
+The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2, record profile 3 and transfer capability 2. Standard profile 1/BLE limits and fixture bytes remain unchanged.
+
+
 [transfer.cddl](transfer.cddl) defines the authoritative message structure. Messages are deterministic RFC 8949 CBOR arrays transported inside authenticated DATA records bounded to 4,000 plaintext bytes. Existing session authentication, readiness, connection checks, EDHOC, exporter labels, AES-256-GCM framing and nonce ownership remain unchanged.
+
+## Transport selection
+
+Both native apps advertise capability v1 on each secured LAN/BLE channel to the same pinned device ID and fingerprint. Capability and chunk/window limits are channel-generation scoped. A secured LAN channel has priority over BLE regardless of arrival order; an incompatible LAN peer does not authorize silent BLE routing while LAN remains secured. Only decoded transfer envelopes participate in this selection; unrelated feature DATA remains available to other handlers.
+
+Idle routing chooses LAN, otherwise BLE. An offer assembly and its subsequent batch, including preparation and approval, remain bound to one channel generation. LAN arrival during a BLE batch changes the next batch's route after cleanup. Retiring a standby channel cannot terminate the active batch; stale retirement/capability events cannot replace a live generation. Retiring the active channel invalidates preparation, continuations, offer assembly and partial storage before selecting the remaining secured channel. Messages from the retired generation are discarded. Scheduled ACK/accept work captures its job epoch before suspension; late failures cannot mutate a successor job. Terminal rejects/cancels remain bound to the original live channel even after preference changes. Capability received during an incoming offer remains available after job cleanup.
+
+Transport fallback changes availability for a new batch. It does not replay sealed records or continue a partially transferred file across independent session keys. Interrupted files require a new offer and explicit recipient approval; kinds 10/11 remain unavailable for resumption. No CDDL, capability-version, cryptographic or fixture-byte change is required.
 
 ## Envelopes and Messages
 
@@ -13,7 +24,7 @@ Every transfer message uses the four-element envelope `["aniCe transfer", 1, kin
 | 3 | `accept` | Receiver → Sender | `[batchId, acceptedFiles]` | Receiver explicitly accepts the batch; empty list indicates all offered files accepted |
 | 4 | `reject` | Receiver → Sender | `[batchId, reason]` | Receiver rejects the batch with typed rationale |
 | 5 | `chunk` | Sender → Receiver | `[batchId, fileId, offset, data]` | Carries up to 3,072 bytes of sequential file content |
-| 6 | `ack` | Receiver → Sender | `[batchId, fileId, written]` | Cumulative acknowledgement of durably written bytes |
+| 6 | `ack` | Receiver → Sender | `[batchId, fileId, written]` | Cumulative acknowledgement of written bytes for flow control |
 | 7 | `file-result` | Bidirectional | `[batchId, fileId, result, hash]` | Final confirmation of file completion or error with verified SHA-256 digest |
 | 8 | `batch-result`| Bidirectional | `[batchId, result]` | Signals termination of the entire batch |
 | 9 | `cancel` | Bidirectional | `[batchId, fileId, reason]` | Aborts an individual file or entire batch |
@@ -65,16 +76,14 @@ Every transfer message uses the four-element envelope `["aniCe transfer", 1, kin
 - **Credit Enforcement**: The sender tracks `inFlight = sentBytes - acknowledgedBytes`. When `inFlight >= maxWindow * maxChunkBytes`, the sender pauses and buffers at most one unsent chunk, resuming immediately upon receiving an `ack`.
 - **Integrity Calculation**: Receivers compute SHA-256 incrementally as chunks arrive. Final verification requires exact length match and hash equality before renaming to the final destination.
 
-## Coordinated LAN Renewal
+## Application-state validation
 
-For multi-gigabyte transfers that approach directional record limits ($2^{20} - 4,096$ records) or session age limits (54 minutes), peers coordinate a transparent TCP connection rotation:
+Each assembled offer must contain exactly its declared file count and byte sum, with unique file IDs across slices and consistent slice metadata. Receivers bound assembly to one batch and a fixed ten-second deadline. Unsupported or inconsistent assemblies cannot reach approval.
 
-```
-ACTIVE → QUIESCING → CHECKPOINTED → RETIRED → NEW_TCP_AUTHENTICATING → READY → ACTIVE
-```
+Chunks must target the current batch/file, match the next written offset and fit within its remaining length. ACKs must target the current sending file, advance monotonically and never exceed admitted bytes. Successful file results require the current batch/file, complete admitted length and expected SHA-256. A batch result cannot substitute for verified per-file results. Channel retirement invalidates pending work.
 
-1. **Trigger**: Initiated when record counter reaches $2^{20} - 4,096$ or elapsed session duration reaches 54 minutes.
-2. **Quiescing**: Transfer engine pauses new chunk emissions, drains in-flight TCP data, and flushes durable file offsets to disk.
-3. **Endpoint Validation**: The successor listener port and address are validated against the established peer identity.
-4. **Fresh Handshake**: A fresh TCP connection and fresh EDHOC handshake are completed while preserving open file descriptors and streaming hash contexts.
-5. **Session Transition**: The previous session keys are retired immediately upon successful authentication of the successor, and chunk transmission resumes without re-transferring acknowledged bytes.
+## Recovery and renewal status
+
+Kinds 10 and 11 reserve resume/status vocabulary. Current apps do not implement resume journals or checkpoint recovery; a resume request receives status 4 (unavailable). Capability v1 advertises basic chunk/window support and does not prove recovery or coordinated LAN renewal.
+
+Transparent renewal requires a separately negotiated Connections/Session extension with endpoint exchange, quiescing, durable checkpoints, old keys/socket retirement and a fresh TCP/EDHOC exchange before restarting work. No overlapping old/successor sessions or in-band rekey is permitted. That extension is not implemented. Multi-gigabyte renewal and crash-after-rename reconciliation remain development gates.

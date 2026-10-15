@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies isolated native Keystore persistence, external mutation and protected signing.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -17,6 +18,32 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class IdentityStorageTest {
+    @Test fun nativeProviderReuseDetectsExternalKeyReplacementAndDeletion() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val testId = DeviceIdentity.newId()
+        val filename = "identity-test-$testId.json"
+        val prefix = "anice.test.$testId."
+        val keys = AndroidIdentityKeys()
+        val external = AndroidIdentityKeys()
+        val owner = IdentityService(AndroidIdentityMetadata(context, filename), keys, { "Native validation" }, prefix)
+        try {
+            val initial = owner.getOrCreateIdentity()
+            repeat(4) { assertEquals(initial, owner.getOrCreateIdentity()) }
+            val alias = keys.aliases().single { it.startsWith(prefix) }
+            external.delete(alias)
+            external.create(alias)
+            try { owner.getOrCreateIdentity(); fail("External replacement accepted") }
+            catch (error: IdentityException) { assertEquals(IdentityErrorKind.INCONSISTENT, error.kind) }
+            assertTrue(external.aliases().contains(alias))
+            external.delete(alias)
+            try { owner.getOrCreateIdentity(); fail("External deletion accepted") }
+            catch (error: IdentityException) { assertEquals(IdentityErrorKind.KEY_MISSING, error.kind) }
+        } finally {
+            external.aliases().filter { it.startsWith(prefix) }.forEach(external::delete)
+            File(context.noBackupFilesDir, filename).delete()
+        }
+    }
+
     @Test fun keystorePersistenceSigningAndReset() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val testId = DeviceIdentity.newId()

@@ -19,7 +19,7 @@ import Observation
   private var trustLocation: URL?
   var channelStateChanged: () -> Void = {}
   var channelCapacityChanged: () -> Void = {}
-  var applicationDataReceived: (Data) -> Bool = { _ in false }
+  var applicationDataReceived: (Data) async -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(candidate)":nil }
   func sendData(_ bytes: Data) async throws {
     guard let connection, let transport, state == "Secured" else { throw SessionBackpressure() }
@@ -119,7 +119,7 @@ import Observation
         let server = try NWListener(using: parameters, on: .any)
         listener = server
         // The service name is an ephemeral locator, never an identity or authentication claim.
-        let txt = NWTXTRecord(["v": "1"])
+        let txt = NWTXTRecord(["v": "2"])
         advertisement = NWListener.Service(
           name: "aniCe-" + UUID().uuidString.lowercased(), type: "_anice._tcp", txtRecord: txt)
         server.service = advertisement
@@ -175,7 +175,7 @@ import Observation
     status = "Authenticating your trusted Android…"
     handshakeDeadline = ProcessInfo.processInfo.systemUptime + 30
     let attempt = candidate
-    let tcp = LanTcpTransport(socket)
+    let tcp = LanTcpTransport(socket, profile: .lanTransfer)
     transport = tcp
     work = Task { [self] in
       do {
@@ -197,7 +197,7 @@ import Observation
           changed: { [weak self] in Task { @MainActor in
             guard let self, op == self.generation, attempt == self.candidate else { return }
             self.maintain(); self.channelCapacityChanged()
-          } })
+          } }, profile: .lanTransfer)
         connection = engine
         maintain()
         await tcp.start(
@@ -255,9 +255,9 @@ import Observation
       maintain()
     } catch { if op == generation, attempt == candidate { failCandidate(error) } }
   }
-  private func received(_ bytes: Data, _ op: Int, _ attempt: Int) {
+  private func received(_ bytes: Data, _ op: Int, _ attempt: Int) async {
     guard op == generation, attempt == candidate else { return }
-    if applicationDataReceived(bytes) { return }
+    if await applicationDataReceived(bytes) { return }
     guard bytes == Data("aniCe connection check".utf8) else { return }
     receivedChecks += 1
     status = "Secured. Local-network connection check received."

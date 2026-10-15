@@ -166,6 +166,68 @@ class LanTests {
     }
 
     @Test
+    fun lanTransferOracleAndStandardIsolation() {
+        val root = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("lan/lan-transfer-vectors.json"))
+            .bufferedReader().use { it.readText() })
+        val valid = root.getJSONArray("valid")
+        val invalid = root.getJSONArray("invalid")
+        assertTrue(valid.length() >= 3); assertTrue(invalid.length() >= 10)
+        val key = bytes(root.getString("keyHex")); val iv = bytes(root.getString("ivHex")); val id = bytes(root.getString("idHex"))
+        repeat(valid.length()) {
+            val row = valid.getJSONObject(it)
+            val plain = ByteArray(row.getInt("length")) { index -> (index % 251).toByte() }
+            val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, plain, SessionProfile.LAN_TRANSFER)
+            assertArrayEquals(bytes(row.getString("recordSHA256")), SessionCrypto.hash(record))
+            assertArrayEquals(bytes(row.getString("headerHex")), record.copyOfRange(0, 14))
+            assertArrayEquals(bytes(row.getString("tagHex")), record.copyOfRange(record.size - 16, record.size))
+            assertArrayEquals(plain, SessionRecordCodec.open(key, iv, id, 1, 0uL, record, SessionProfile.LAN_TRANSFER).second)
+            reject(SessionFailure.MALFORMED) { SessionRecordCodec.open(key, iv, id, 1, 0uL, record) }
+        }
+        repeat(invalid.length()) {
+            val row = invalid.getJSONObject(it)
+            reject(if (row.getString("reason") == "authentication") SessionFailure.AUTHENTICATION else SessionFailure.MALFORMED) {
+                SessionRecordCodec.open(key, iv, id, 1, 0uL, bytes(row.getString("recordHex")), SessionProfile.LAN_TRANSFER)
+            }
+        }
+        reject(SessionFailure.MALFORMED) {
+            SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, ByteArray(262145), SessionProfile.LAN_TRANSFER)
+        }
+        reject(SessionFailure.MALFORMED) { SessionEnvelope.encode(1, ByteArray(4096), SessionProfile.LAN_TRANSFER) }
+        val envelope = ByteArray(262175) { 6 }
+        val frame = LanFraming.encode(envelope, SessionProfile.LAN_TRANSFER)
+        assertArrayEquals(envelope, decode(LanFraming(SessionProfile.LAN_TRANSFER), frame).single())
+        reject(SessionFailure.UNSUPPORTED_PROFILE) { decode(LanFraming(), frame.copyOfRange(0, 5)) }
+        val budget = LanQueueBudget(SessionProfile.LAN_TRANSFER)
+        repeat(4) { budget.reserve(envelope.size) }
+        assertFalse(budget.canReserve(1))
+        repeat(4) { budget.release(envelope.size) }
+        assertTrue(budget.canReserve(envelope.size))
+        assertFalse(LanQueueBudget(SessionProfile.STANDARD).canReserve(envelope.size))
+        assertNotEquals(SessionProfile.STANDARD.exporterLabel, SessionProfile.LAN_TRANSFER.exporterLabel)
+    }
+
+    @Test
+    fun scratchFramingIsByteIdenticalAndAllocationFree() {
+        val envelope = ByteArray(4096) { (it % 251).toByte() }
+        val scratch = ByteArray(SessionProfile.LAN_TRANSFER.maximumEnvelope + 5)
+        val framed = LanFraming.encodeInto(scratch, envelope, SessionProfile.LAN_TRANSFER)
+        assertEquals(envelope.size + 5, framed)
+        assertArrayEquals(LanFraming.encode(envelope, SessionProfile.LAN_TRANSFER), scratch.copyOf(framed))
+        // A longer frame followed by a shorter one cannot leave the previous body behind.
+        LanFraming.encodeInto(scratch, ByteArray(262144) { 3 }, SessionProfile.LAN_TRANSFER)
+        val short = byteArrayOf(9, 8)
+        val second = LanFraming.encodeInto(scratch, short, SessionProfile.LAN_TRANSFER)
+        assertEquals(short.size + 5, second)
+        assertArrayEquals(short, decode(LanFraming(SessionProfile.LAN_TRANSFER), scratch.copyOf(second)).single())
+        for (size in listOf(0, 1, 262176)) reject(SessionFailure.MALFORMED) {
+            LanFraming.encodeInto(scratch, ByteArray(size), SessionProfile.LAN_TRANSFER)
+        }
+        for (size in listOf(0, 4096)) reject(SessionFailure.MALFORMED) {
+            LanFraming.encodeInto(ByteArray(size), envelope, SessionProfile.LAN_TRANSFER)
+        }
+    }
+
+    @Test
     fun timeoutCancellationAndStaleCallbackNeverOverlapResolutions() = runBlocking {
         val lane = LegacyResolutionLane<String>()
         val first = lane.begin()

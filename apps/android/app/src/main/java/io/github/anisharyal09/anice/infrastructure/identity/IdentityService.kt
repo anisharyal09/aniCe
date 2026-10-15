@@ -53,10 +53,8 @@ class IdentityService(
     @Volatile var onInvalidated: () -> Unit = {}
     @Volatile internal var identityLoads = 0L
         private set
-    @Volatile private var cachedSnapshot: IdentitySnapshot? = null
 
     @Synchronized fun getOrCreateIdentity(): IdentitySnapshot {
-        cachedSnapshot?.let { return it }
         identityLoads++
         var journal = metadata.read()
         journal?.let(::validateJournal)
@@ -73,12 +71,10 @@ class IdentityService(
                 metadata.write(journal)
             }
             cleanup(journal)
-            cachedSnapshot = snapshot
             return snapshot
         }
         if (journal.pending == null) throw IdentityException(IdentityErrorKind.INCONSISTENT)
         val created = finishCreation(journal)
-        cachedSnapshot = created
         return created
     }
 
@@ -92,7 +88,6 @@ class IdentityService(
         val renamed = active.copy(identity = active.identity.copy(deviceName = name).validate())
         metadata.write(journal.copy(active = renamed))
         val updated = snapshot.copy(identity = renamed.identity)
-        cachedSnapshot = updated
         return updated
     }
 
@@ -115,7 +110,6 @@ class IdentityService(
     /** Called only after the UI confirms replacement. */
     @Synchronized fun resetIdentity(): IdentitySnapshot {
         onInvalidated()
-        cachedSnapshot = null
         val previous = try { metadata.read()?.also(::validateJournal) } catch (error: IdentityException) {
             if (error.kind != IdentityErrorKind.INCONSISTENT) throw error
             null
@@ -125,7 +119,6 @@ class IdentityService(
         val staged = IdentityJournal(previous?.active, pending, retired.filter { it != previous?.active?.alias })
         metadata.write(staged)
         val committed = finishCreation(staged)
-        cachedSnapshot = committed
         return committed
     }
 
@@ -171,7 +164,7 @@ class IdentityService(
                 require(it.identity.platform == "android" && it.alias == aliasPrefix + it.identity.deviceId)
             }
             journal.pending?.let {
-                require(it.deviceId.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")))
+                require(it.deviceId.matches(DEVICE_ID))
                 require(it.alias == aliasPrefix + it.deviceId && it.alias != journal.active?.alias)
             }
             require(journal.cleanup.distinct() == journal.cleanup)
@@ -188,5 +181,10 @@ class IdentityService(
             // Cleanup is retryable. A committed reset must never be rolled back after this point.
             try { metadata.write(journal.copy(cleanup = remaining)) } catch (_: IdentityException) { }
         }
+    }
+
+    private companion object {
+        // Compiled once: journal validation runs on every identity read, that is on every record.
+        val DEVICE_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     }
 }

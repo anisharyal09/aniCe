@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Validates bounded public identities and canonical cryptographic encodings.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 import java.math.BigInteger
@@ -112,7 +113,7 @@ object IdentityCrypto {
     }
 
     fun fingerprint(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
-        .joinToString("") { "%02x".format(it.toInt() and 255) }
+        .toHexString()
 
     fun verify(publicKey: ByteArray, message: ByteArray, signature: ByteArray): Boolean = try {
         requireCanonicalDer(signature)

@@ -12,6 +12,13 @@ struct TransferView: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Local file transfer").font(.headline)
 
+      if model.preparing {
+        HStack {
+          ProgressView().controlSize(.small)
+          Text("Preparing files…").font(.caption)
+          Button("Cancel") { model.cancelTransfer() }
+        }
+      }
       switch model.state {
       case .idle:
         idleContent
@@ -41,12 +48,18 @@ struct TransferView: View {
 
   @ViewBuilder
   private var idleContent: some View {
-    Text("Send and receive files directly over authenticated local network.")
+    Text("Send files over local network, with Bluetooth available when local network is disconnected.")
       .font(.callout)
       .foregroundStyle(AniCePalette.secondaryText(colorScheme))
 
+    if let channel = model.activeChannel {
+      Text(channel.descriptor.transport == "lan" ? "Using local network" : "Using Bluetooth")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+    }
+
     if !model.peerConnected {
-      Text("Connect your trusted Android device over local network to transfer files.")
+      Text("Connect your trusted Android device over local network or Bluetooth to transfer files.")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
     }
@@ -57,7 +70,7 @@ struct TransferView: View {
       Label("Send files…", systemImage: "arrow.up.circle")
     }
     .buttonStyle(.borderedProminent)
-    .disabled(!model.peerConnected)
+    .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
   }
 
   @ViewBuilder
@@ -186,7 +199,7 @@ struct TransferView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.small)
-        .disabled(!model.peerConnected)
+        .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
 
         Button("Done") {
           model.dismiss()
@@ -214,7 +227,7 @@ struct TransferView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.small)
-        .disabled(!model.peerConnected)
+        .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
 
         Button("Dismiss") {
           model.dismiss()

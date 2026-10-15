@@ -76,7 +76,12 @@ struct LanFraming {
   }
   static func encode(_ envelope: Data, profile: SessionProfile = .standard) throws -> Data {
     guard (2...profile.maximumEnvelope).contains(envelope.count) else { throw SessionFailure.malformed }
-    return Data([profile.rawValue]) + SessionRecordCodec.integer(UInt64(envelope.count), bytes: 4) + envelope
+    // One reserved buffer: concatenation would copy the prefix and the envelope twice over.
+    var frame = Data(capacity: envelope.count + 5)
+    frame.append(profile.rawValue)
+    frame.append(SessionRecordCodec.integer(UInt64(envelope.count), bytes: 4))
+    frame.append(envelope)
+    return frame
   }
 }
 

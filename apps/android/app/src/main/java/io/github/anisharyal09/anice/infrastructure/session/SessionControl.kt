@@ -46,9 +46,9 @@ data class SessionControl(val kind: ControlKind, val value: Long = 1) {
     }
 
     /** Arrays must be valid CBOR; other payloads and arrays with a different tag keep their dispatcher. */
-    fun application(bytes: ByteArray): SessionControl? {
+    fun application(bytes: ByteArray, maximumBytes: Int = SessionCbor.MAX_BYTES): SessionControl? {
       if (bytes.isEmpty() || (bytes[0].toInt() and 0xe0) != 0x80) return null
-      val parsed = SessionCbor.decode(bytes)
+      val parsed = SessionCbor.decode(bytes, maximumBytes)
       val row = (parsed as? Cbor.Array)?.value ?: return null
       if (row.firstOrNull() != Cbor.Text(TAG)) return null
       if (bytes.size > 128) throw SessionException(SessionFailure.MALFORMED)

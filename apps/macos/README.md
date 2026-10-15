@@ -71,7 +71,7 @@ Signing diagnostics log only operation counts under `identity-signing`; repeated
 
 ## Secure sessions
 
-Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) provides bidirectional file transfers over authenticated LAN.
+Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) provides bidirectional file transfers over authenticated LAN with BLE fallback when LAN is disconnected.
 
 Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
 
@@ -83,6 +83,6 @@ Features → Phone controls provides remote playback to Android. Local Home/comp
 
 ## Local File Transfer
 
-Features → Local file transfer and Home live-activity provide file sending, incoming batch approval, folder selection and progress tracking with transfer rates. Incoming files stage atomically in `.anice-part` before verification and rename. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Features → Local file transfer and Home live-activity provide file sending, incoming batch approval, folder selection and progress tracking with transfer rates. Incoming files use exclusive job-owned partials and checked verification/synchronization before non-overwriting publication. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.

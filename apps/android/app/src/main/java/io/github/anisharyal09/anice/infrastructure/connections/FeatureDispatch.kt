@@ -6,7 +6,7 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.*
 
 enum class DataHandling { HANDLED, DISCARDED, UNRECOGNIZED }
-data class ChannelDescriptor(val instance: String, val transport: String, val peer: DeviceIdentity)
+data class ChannelDescriptor(val instance: String, val transport: String, val peer: DeviceIdentity, val maximumDataBytes: Int = 4000)
 interface SecuredChannel {
     val descriptor: ChannelDescriptor
     suspend fun sendData(bytes: ByteArray)
@@ -15,7 +15,7 @@ interface FeatureHandler {
     fun available(channel: SecuredChannel)
     fun retired(descriptor: ChannelDescriptor)
     fun capacityAvailable(descriptor: ChannelDescriptor)
-    fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling
+    suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling
 }
 class FeatureDispatch {
     private val handlers = mutableListOf<FeatureHandler>()
@@ -28,7 +28,7 @@ class FeatureDispatch {
             override val descriptor = descriptor
             override suspend fun sendData(bytes: ByteArray) {
                 if (channels[descriptor.transport] !== this) throw SessionException(SessionFailure.CANCELLED)
-                require(bytes.size <= 4000)
+                require(bytes.size <= descriptor.maximumDataBytes)
                 send(bytes)
                 if (channels[descriptor.transport] !== this) throw SessionException(SessionFailure.CANCELLED)
             }
@@ -38,10 +38,10 @@ class FeatureDispatch {
     }
     fun retired(transport: String) { channels.remove(transport)?.let { old -> handlers.forEach { it.retired(old.descriptor) } } }
     fun capacityAvailable(transport: String) { channels[transport]?.let { channel -> handlers.forEach { it.capacityAvailable(channel.descriptor) } } }
-    fun handle(transport: String, instance: String, bytes: ByteArray): DataHandling {
+    suspend fun handle(transport: String, instance: String, bytes: ByteArray): DataHandling {
         val descriptor = channels[transport]?.descriptor ?: return DataHandling.DISCARDED
         if (descriptor.instance != instance) return DataHandling.DISCARDED
-        for (handler in handlers) { val result = handler.handle(descriptor, bytes); if (result != DataHandling.UNRECOGNIZED) return result }
+        for (handler in handlers) { val result = handler.handle(descriptor, bytes); if (channels[transport]?.descriptor != descriptor) return DataHandling.DISCARDED; if (result != DataHandling.UNRECOGNIZED) return result }
         return DataHandling.UNRECOGNIZED
     }
 }

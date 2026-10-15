@@ -17,6 +17,11 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class IdentityServiceTest {
+    @org.junit.Test fun fingerprintUsesCanonicalFixedWidthLowercaseHex() {
+        assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", IdentityCrypto.fingerprint(byteArrayOf()))
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", IdentityCrypto.fingerprint("abc".toByteArray()))
+    }
+
     private class MemoryMetadata : IdentityMetadataStore {
         var value: IdentityJournal? = null
         var readError: IdentityErrorKind? = null
@@ -246,6 +251,16 @@ class IdentityServiceTest {
         expectError(IdentityErrorKind.STORAGE_UNAVAILABLE) { service().getOrCreateIdentity() }
         keys.unavailable = false
         assertEquals(original, service().getOrCreateIdentity())
+    }
+    @Test fun liveServiceRevalidatesNativeKeyAfterDeletionAndReplacement() {
+        val owner = service()
+        val original = owner.getOrCreateIdentity()
+        val alias = metadata.value!!.active!!.alias
+        keys.values.clear()
+        expectError(IdentityErrorKind.KEY_MISSING) { owner.getOrCreateIdentity() }
+        keys.create(alias)
+        expectError(IdentityErrorKind.INCONSISTENT) { owner.getOrCreateIdentity() }
+        assertEquals(original.identity, metadata.value!!.active!!.identity)
     }
     @Test fun missingKeyRequiresExplicitReset() {
         val original = service().getOrCreateIdentity()

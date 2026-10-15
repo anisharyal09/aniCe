@@ -8,15 +8,32 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ## Unreleased
 
+### Fixed
+
+- Keep transfer file opening, reads, receive writes, hashing, finalization and cleanup off presentation threads. Await ordered storage before credit, reject retired callbacks after suspension, and stop refused submissions from waking their own capacity waiters.
+
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks. On Android, remove duplicate native reads around synchronous cryptography while validating before delivery and retaining generation/deadline fences.
+
+- Keep Android’s Connect LAN action visible in the file-transfer panel when Bluetooth is connected and LAN is disconnected.
+
+- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
+
+- Avoid repeated native backend setup during transfers while retaining live key, protection and journal validation and unchanged session wire limits.
+
+- Enforce LAN-preferred file transfer routing with BLE fallback, background lifecycle ownership, exclusive partial staging, checked finalization, and isolated reply correlation. Notification denial no longer blocks approved foreground transfers; interrupted batches require explicit resend.
+
 ### Added
 
-- Bidirectional local file transfer between trusted Mac and Android devices over authenticated LAN with sequential multi-file streaming, recipient approval, atomic `.anice-part` staging, cumulative credit flow control and presentation across Features and Home live-activity.
+- Bidirectional local file transfer between trusted Mac and Android devices over authenticated LAN with BLE fallback, sequential multi-file streaming, recipient approval, exclusive job-owned partial staging, cumulative credit flow control and presentation across Features and Home live-activity.
 - Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls over existing secured LAN/BLE, atomic seek feedback, native Android media presentation and a fixed 90-second paused grace; companion-owned background BLE and separately negotiated selected-player volume remain capability/permission gated; independently advertised Mac output volume supports phone buttons without player scripting.
 - Home, Devices, Features and Settings navigation with saved native appearance preferences.
+- Adversarial test coverage for maximum profile-3 bounds, cipher tampering rejection, buffer independence across encryption directions, exact CBOR payload sizing, scratch framing identity, single-copy chunk framing, and sliced-buffer decoding.
 
 ### Changed
 
 - Add production-transport LAN bulk benchmarking and isolated throughput verification tools.
+
+- Remove per-record allocations and copies from the authenticated record path: one AES-GCM provider cipher, key spec and authentication suffix per session direction, record headers written into the record buffer instead of concatenated onto it, exact-size deterministic CBOR encoding, single-copy chunk slicing out of the reused transfer buffer, TCP framing into transport-owned scratch space, and one compiled device-ID pattern for journal validation. macOS assembles records and frames into single reserved buffers and decodes sliced buffers without a re-basing copy. Wire bytes, bounds, typed failures and live native validation are unchanged.
 
 - Group Now Playing implementation, adapter and tests by feature; separate application connection owners, navigation, playback authority, native process handling and media queues. Add dependency/link/Xcode membership checks and relocate the byte-preserving media fixture generator.
 - Consolidate feature usage and limitations; keep app-wide ADRs at the decision root and independent decisions in feature folders. Update READMEs, source maps, attribution and agent state without repeated verification matrices or stage reports.

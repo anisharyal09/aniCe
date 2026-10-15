@@ -17,7 +17,7 @@ import kotlinx.coroutines.*
 internal class NsdResolutionFailure(val code: Int) :
     Exception("Local-network discovery failed ($code). Retry.")
 
-internal data class LanEndpoint(val network: Network, val address: InetAddress, val port: Int)
+internal data class LanEndpoint(val network: Network, val address: InetAddress, val port: Int, val profile: SessionProfile = SessionProfile.STANDARD)
 
 internal object LanAddress {
     fun scoped(address: InetAddress, interfaceIndex: Int?): InetAddress {
@@ -39,8 +39,8 @@ internal object LanAddress {
             }
 }
 
-internal class AndroidLanDiscovery(context: Context, profile: SessionProfile = SessionProfile.STANDARD) {
-    private val type = if (profile == SessionProfile.STANDARD) TYPE else "_anicebulk._tcp"
+internal class AndroidLanDiscovery(context: Context, private val profile: SessionProfile = SessionProfile.STANDARD) {
+    private val type = if (profile == SessionProfile.BULK_PROBE) "_anicebulk._tcp" else TYPE
     private val nsd = context.getSystemService(NsdManager::class.java)
     private val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
     private val executor = Executor { it.run() }
@@ -123,7 +123,8 @@ internal class AndroidLanDiscovery(context: Context, profile: SessionProfile = S
                     }
                 val properties = links() ?: error("Wi-Fi network changed. Retry.")
                 if (
-                    !resolved.attributes["v"].contentEquals(byteArrayOf(49)) ||
+                    !(resolved.attributes["v"].contentEquals(byteArrayOf(49)) ||
+                        type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(50))) ||
                         resolved.port !in 1..65535
                 )
                     continue
@@ -149,7 +150,8 @@ internal class AndroidLanDiscovery(context: Context, profile: SessionProfile = S
                     if (!LanAddress.local(scoped, properties)) continue
                     val key = "${scoped.hostAddress}:${resolved.port}"
                     if (endpoints.size < 8)
-                        endpoints.putIfAbsent(key, LanEndpoint(network, scoped, resolved.port))
+                        endpoints.putIfAbsent(key, LanEndpoint(network, scoped, resolved.port,
+                            if (type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(50))) SessionProfile.LAN_TRANSFER else profile))
                 }
             }
             return endpoints.values.toList()

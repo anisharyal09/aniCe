@@ -2,7 +2,6 @@
 // Owns bounded directional records, readiness and generation-fenced native validation.
 package io.github.anisharyal09.anice.infrastructure.session
 
-import java.nio.ByteBuffer
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -14,6 +13,7 @@ import kotlinx.coroutines.withContext
 enum class SessionProfile(val wire: Int, val maximumPlaintext: Int, val maximumEnvelope: Int, val exporterLabel: String) {
   STANDARD(1, 4000, 4096, "aniCe session"),
   BULK_PROBE(2, 4194304, 4194335, "aniCe bulk probe"),
+  LAN_TRANSFER(3, 262144, 262175, "aniCe LAN transfer"),
 }
 
 enum class RecordKind(val wire: Int) {
@@ -59,8 +59,15 @@ internal class RecordSequence {
 object SessionRecordCodec {
   fun nonce(iv: ByteArray, sequence: ULong): ByteArray {
     if (iv.size != 12) throw SessionException(SessionFailure.MALFORMED)
-    val mask = ByteBuffer.allocate(12).putInt(0).putLong(sequence.toLong()).array()
-    return ByteArray(12) { (iv[it].toInt() xor mask[it].toInt()).toByte() }
+    return ByteArray(12).also { nonce(iv, sequence, it) }
+  }
+
+  // iv XOR (0x00000000 || big-endian sequence) written into out; no mask allocation per record.
+  internal fun nonce(iv: ByteArray, sequence: ULong, out: ByteArray) {
+    System.arraycopy(iv, 0, out, 0, 4)
+    val value = sequence.toLong()
+    for (i in 0 until 8)
+      out[4 + i] = (iv[4 + i].toInt() xor (value ushr (56 - i * 8)).toByte().toInt()).toByte()
   }
 
   fun seal(
@@ -72,26 +79,7 @@ object SessionRecordCodec {
     sequence: ULong,
     plaintext: ByteArray,
     profile: SessionProfile = SessionProfile.STANDARD,
-  ): ByteArray {
-    if (
-      key.size != 32 ||
-        iv.size != 12 ||
-        id.size != 32 ||
-        direction !in 1..2 ||
-        plaintext.size > profile.maximumPlaintext ||
-        (kind != RecordKind.DATA && plaintext.isNotEmpty())
-    )
-      throw SessionException(SessionFailure.MALFORMED)
-    val header =
-      ByteBuffer.allocate(14)
-        .put(profile.wire.toByte())
-        .put(kind.wire.toByte())
-        .putLong(sequence.toLong())
-        .putInt(plaintext.size)
-        .array()
-    return header +
-      crypt(key, nonce(iv, sequence), header + id + direction.toByte(), plaintext, true)
-  }
+  ): ByteArray = RecordCipher(key, iv, id, direction).seal(kind, sequence, plaintext, profile)
 
   fun open(
     key: ByteArray,
@@ -101,57 +89,99 @@ object SessionRecordCodec {
     expected: ULong,
     record: ByteArray,
     profile: SessionProfile = SessionProfile.STANDARD,
-  ): Pair<RecordKind, ByteArray> {
+  ): Pair<RecordKind, ByteArray> = RecordCipher(key, iv, id, direction).open(expected, record, profile)
+}
+
+/**
+ * One AES-GCM state owned by a single serialized session direction. The provider cipher, the key
+ * spec and the `id || direction` authentication suffix are built once per session rather than per
+ * record; the header is written into the record buffer instead of being concatenated onto it.
+ * Never shared between concurrent owners: SecureSession serializes each direction with its mutex.
+ */
+internal class RecordCipher(key: ByteArray, iv: ByteArray, id: ByteArray, direction: Int) {
+  init {
     if (key.size != 32 || iv.size != 12 || id.size != 32 || direction !in 1..2)
       throw SessionException(SessionFailure.MALFORMED)
+  }
+
+  private val baseIV = iv.copyOf()
+  private val keySpec = SecretKeySpec(key, "AES")
+  private val aad = id + direction.toByte()
+  private val header = ByteArray(14)
+  private val cipher =
+    try {
+      Cipher.getInstance("AES/GCM/NoPadding")
+    } catch (_: java.security.GeneralSecurityException) {
+      throw SessionException(SessionFailure.AUTHENTICATION)
+    }
+
+  fun seal(kind: RecordKind, sequence: ULong, plaintext: ByteArray, profile: SessionProfile): ByteArray {
+    if (plaintext.size > profile.maximumPlaintext || (kind != RecordKind.DATA && plaintext.isNotEmpty()))
+      throw SessionException(SessionFailure.MALFORMED)
+    header[0] = profile.wire.toByte()
+    header[1] = kind.wire.toByte()
+    putLong(header, 2, sequence.toLong())
+    putInt(header, 10, plaintext.size)
+    try {
+      cipher.init(Cipher.ENCRYPT_MODE, keySpec, GCMParameterSpec(128, nonce(sequence)))
+      // GCM concatenates successive AAD updates; two updates avoid materializing header + id.
+      cipher.updateAAD(header)
+      cipher.updateAAD(aad)
+      val ciphertext = cipher.doFinal(plaintext, 0, plaintext.size)
+      val record = ByteArray(plaintext.size + 30)
+      System.arraycopy(header, 0, record, 0, 14)
+      System.arraycopy(ciphertext, 0, record, 14, ciphertext.size)
+      return record
+    } catch (_: java.security.GeneralSecurityException) {
+      throw SessionException(SessionFailure.AUTHENTICATION)
+    }
+  }
+
+  fun open(expected: ULong, record: ByteArray, profile: SessionProfile): Pair<RecordKind, ByteArray> {
     if (record.size !in 30..(profile.maximumPlaintext + 30)) throw SessionException(SessionFailure.MALFORMED)
-    val h = ByteBuffer.wrap(record)
-    if (h.get().toInt() != profile.wire) throw SessionException(SessionFailure.MALFORMED)
+    if ((record[0].toInt() and 255) != profile.wire) throw SessionException(SessionFailure.MALFORMED)
     val kind =
-      RecordKind.entries.firstOrNull { it.wire == h.get(1).toInt() }
+      RecordKind.entries.firstOrNull { it.wire == (record[1].toInt() and 255) }
         ?: throw SessionException(SessionFailure.MALFORMED)
-    h.position(2)
-    val sequence = h.long.toULong()
-    val length = h.int.toLong() and 0xffffffffL
+    val sequence = getLong(record, 2).toULong()
+    val length = getInt(record, 10).toLong() and 0xffffffffL
     if (length > profile.maximumPlaintext || record.size.toLong() != 30 + length)
       throw SessionException(SessionFailure.MALFORMED)
     if (sequence != expected) throw SessionException(SessionFailure.AUTHENTICATION)
     val plain =
-      crypt(
-        key,
-        nonce(iv, sequence),
-        record.copyOfRange(0, 14) + id + direction.toByte(),
-        record,
-        false,
-        14,
-        record.size - 14,
-      )
-    if (kind != RecordKind.DATA && plain.isNotEmpty())
-      throw SessionException(SessionFailure.MALFORMED)
+      try {
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, GCMParameterSpec(128, nonce(sequence)))
+        cipher.updateAAD(record, 0, 14)
+        cipher.updateAAD(aad)
+        // The tag verifies synchronously; only authenticated plaintext can leave this method.
+        cipher.doFinal(record, 14, record.size - 14)
+      } catch (_: java.security.GeneralSecurityException) {
+        throw SessionException(SessionFailure.AUTHENTICATION)
+      }
+    if (kind != RecordKind.DATA && plain.isNotEmpty()) throw SessionException(SessionFailure.MALFORMED)
     return kind to plain
   }
 
-  private fun crypt(
-    key: ByteArray,
-    nonce: ByteArray,
-    aad: ByteArray,
-    data: ByteArray,
-    encrypt: Boolean,
-    offset: Int = 0,
-    length: Int = data.size,
-  ): ByteArray {
-    try {
-      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      cipher.init(
-        if (encrypt) Cipher.ENCRYPT_MODE else Cipher.DECRYPT_MODE,
-        SecretKeySpec(key, "AES"),
-        GCMParameterSpec(128, nonce),
-      )
-      cipher.updateAAD(aad)
-      return cipher.doFinal(data, offset, length)
-    } catch (e: java.security.GeneralSecurityException) {
-      throw SessionException(SessionFailure.AUTHENTICATION)
-    }
+  private fun nonce(sequence: ULong) = ByteArray(12).also { SessionRecordCodec.nonce(baseIV, sequence, it) }
+
+  private fun putLong(target: ByteArray, offset: Int, value: Long) {
+    for (i in 0 until 8) target[offset + i] = (value ushr (56 - i * 8)).toByte()
+  }
+
+  private fun putInt(target: ByteArray, offset: Int, value: Int) {
+    for (i in 0 until 4) target[offset + i] = (value ushr (24 - i * 8)).toByte()
+  }
+
+  private fun getLong(source: ByteArray, offset: Int): Long {
+    var value = 0L
+    for (i in 0 until 8) value = (value shl 8) or (source[offset + i].toLong() and 255)
+    return value
+  }
+
+  private fun getInt(source: ByteArray, offset: Int): Int {
+    var value = 0
+    for (i in 0 until 4) value = (value shl 8) or (source[offset + i].toInt() and 255)
+    return value
   }
 }
 
@@ -206,6 +236,11 @@ internal constructor(
         sessionID.size == 32
     )
   }
+
+  // One provider cipher per direction, built after the material above is validated. Each is used
+  // only under its own mutex, so no record path performs a provider lookup or key import.
+  private val sendCipher = RecordCipher(sendKey, sendIV, sessionID, if (responder) 2 else 1)
+  private val receiveCipher = RecordCipher(receiveKey, receiveIV, sessionID, if (responder) 1 else 2)
 
   suspend fun tick() =
     withContext(Dispatchers.IO) {
@@ -293,7 +328,6 @@ internal constructor(
           }
           // Include the record header, tag and envelope byte before consuming a nonce.
           if (!capacity(plaintext.size + 31)) throw SessionBackpressure()
-          check(op)
           val sequence =
             transition(op) {
               if (kind == RecordKind.READY) stage = ChannelStage.READY_SENT
@@ -301,19 +335,11 @@ internal constructor(
                 reserved = true
               } // Burn before invoking encryption; failures are terminal.
             }
-          val record =
-            SessionRecordCodec.seal(
-              sendKey,
-              sendIV,
-              sessionID,
-              if (responder) 2 else 1,
-              kind,
-              sequence,
-              plaintext,
-              profile,
-            )
-          check(op)
+          val record = sendCipher.seal(kind, sequence, plaintext, profile)
+          checkTime(op)
           submit(record)
+          // Native validation runs before sealing and after awaited submission; the generation and
+          // deadline fence bracketing encryption is check(op) above and checkTime(op) here.
           check(op)
           transition(op) {
             activity = now()
@@ -338,21 +364,13 @@ internal constructor(
       receiveMutex.withLock {
         val op = generation.get()
         try {
-          check(op)
+          checkTime(op)
           if (received >= (1uL shl 20)) {
             transition(op) { expiration = SessionExpiry.RECORD_LIMIT }
             throw SessionException(SessionFailure.EXPIRED)
           }
-          val result =
-            SessionRecordCodec.open(
-              receiveKey,
-              receiveIV,
-              sessionID,
-              if (responder) 1 else 2,
-              received,
-              record,
-              profile,
-            )
+          val result = receiveCipher.open(received, record, profile)
+          // Native identity/trust validation gates delivery after synchronous tag verification.
           check(op)
           val allowed =
             when (result.first) {

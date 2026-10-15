@@ -3,7 +3,6 @@
 package io.github.anisharyal09.anice.infrastructure.lan
 
 import io.github.anisharyal09.anice.infrastructure.session.*
-import java.nio.ByteBuffer
 
 class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, private val now: () -> Long = { System.nanoTime() / 1_000_000 }) {
     private val header = ByteArray(5)
@@ -47,7 +46,9 @@ class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, 
                 consumed += count
                 if (header[0] != profile.wire.toByte()) reject(SessionFailure.UNSUPPORTED_PROFILE)
                 if (used < 5) return null
-                val size = ByteBuffer.wrap(header, 1, 4).int
+                val size =
+                    ((header[1].toInt() and 255) shl 24) or ((header[2].toInt() and 255) shl 16) or
+                        ((header[3].toInt() and 255) shl 8) or (header[4].toInt() and 255)
                 if (size !in 2..profile.maximumEnvelope) reject(SessionFailure.MALFORMED)
                 body = ByteArray(size)
             }
@@ -74,7 +75,27 @@ class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, 
     companion object {
         fun encode(envelope: ByteArray, profile: SessionProfile = SessionProfile.STANDARD): ByteArray {
             if (envelope.size !in 2..profile.maximumEnvelope) throw SessionException(SessionFailure.MALFORMED)
-            return ByteBuffer.allocate(5).put(profile.wire.toByte()).putInt(envelope.size).array() + envelope
+            return ByteArray(envelope.size + 5).also { frame(it, envelope, profile) }
+        }
+
+        /**
+         * Frames into a caller-owned buffer of at least `maximumEnvelope + 5` bytes and returns the
+         * framed length, so a transport that already owns scratch space allocates nothing per record.
+         */
+        internal fun encodeInto(out: ByteArray, envelope: ByteArray, profile: SessionProfile): Int {
+            if (envelope.size !in 2..profile.maximumEnvelope || out.size < envelope.size + 5)
+                throw SessionException(SessionFailure.MALFORMED)
+            return frame(out, envelope, profile)
+        }
+
+        private fun frame(out: ByteArray, envelope: ByteArray, profile: SessionProfile): Int {
+            out[0] = profile.wire.toByte()
+            out[1] = (envelope.size ushr 24).toByte()
+            out[2] = (envelope.size ushr 16).toByte()
+            out[3] = (envelope.size ushr 8).toByte()
+            out[4] = envelope.size.toByte()
+            System.arraycopy(envelope, 0, out, 5, envelope.size)
+            return envelope.size + 5
         }
     }
 }

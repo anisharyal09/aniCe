@@ -317,6 +317,34 @@ class SessionTests {
   }
 
   @Test
+  fun cborPayloadBoundsMeasureAndCopyOnce() = runBlocking {
+    val payload = ByteArray(262139) { (it % 251).toByte() }
+    // The largest LAN-transfer payload encodes to exactly the profile bound, not one byte more.
+    val wire = SessionCbor.encode(Cbor.Bytes(payload), 262144)
+    assertEquals(262144, wire.size)
+    val decoded = SessionCbor.decode(wire, 262144) as Cbor.Bytes
+    assertArrayEquals(payload, decoded.value)
+    java.util.Arrays.fill(wire, 0)
+    // Decoded bytes own their storage; the encoded buffer cannot reach them afterwards.
+    assertArrayEquals(payload, decoded.value)
+    val source = ByteArray(64) { 9 }
+    val sliced = Cbor.Bytes(source, 4, 12)
+    assertEquals(8, sliced.value.size)
+    java.util.Arrays.fill(source, 0)
+    // A slice copies at construction, so a reused read buffer cannot reach the node.
+    assertArrayEquals(ByteArray(8) { 9 }, sliced.value)
+    assertThrows(IndexOutOfBoundsException::class.java) { Cbor.Bytes(source, 60, 68) }
+    // A payload-carrying structure is measured and written by the same traversal.
+    val nested =
+      SessionCbor.encode(Cbor.Array(listOf(Cbor.Integer(1), Cbor.Bytes(ByteArray(131072) { 5 }))), 262144)
+    assertEquals(131079, nested.size)
+    assertEquals(131072, ((SessionCbor.decode(nested, 262144) as Cbor.Array).value[1] as Cbor.Bytes).value.size)
+    rejects(SessionFailure.MALFORMED) { SessionCbor.encode(Cbor.Bytes(ByteArray(262140)), 262144) }
+    rejects(SessionFailure.MALFORMED) { SessionCbor.encode(Cbor.Bytes(ByteArray(262140)), 262139) }
+    rejects(SessionFailure.MALFORMED) { SessionCbor.decode(ByteArray(262145), 262144) }
+  }
+
+  @Test
   fun signatureRangeAndPaddingRejections() = runBlocking {
     val order = hex("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
     for (scalar in

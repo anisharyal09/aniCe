@@ -7,6 +7,11 @@ import XCTest
 @testable import aniCe
 
 final class IdentityTests: XCTestCase, @unchecked Sendable {
+    func testFingerprintUsesCanonicalFixedWidthLowercaseHex() {
+        XCTAssertEqual(DeviceIdentity.fingerprint(Data()), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        XCTAssertEqual(DeviceIdentity.fingerprint(Data("abc".utf8)), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
     func testSharedVectors() throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "identity-vectors", withExtension: "json"))
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
@@ -201,6 +206,40 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(try storage.keyTags().count, 1)
     }
 
+    func testNativeReadsDetectExternalReplacementDeletionAndJournalChanges() async throws {
+        guard ProcessInfo.processInfo.environment["ANICE_RUN_KEYCHAIN_TESTS"] == "1" else {
+            throw XCTSkip("Enable ANICE_RUN_KEYCHAIN_TESTS=1 for isolated native validation.")
+        }
+        let namespace = "io.github.anisharyal09.anice.tests." + UUID().uuidString.lowercased()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(namespace)
+        let recordURL = directory.appendingPathComponent("record.json")
+        let storage = MacIdentityStorage(namespace: namespace, backend: .developmentKeychain, recordURL: recordURL)
+        let external = MacIdentityStorage(namespace: namespace, backend: .developmentKeychain, recordURL: recordURL)
+        defer {
+            if let tags = try? external.keyTags() { for tag in tags { try? external.deleteKey(tag: tag) } }
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let owner = IdentityService(storage: storage, deviceName: "Native validation", tagPrefix: namespace + ".")
+        let original = try await owner.publicIdentity()
+        for _ in 0..<4 { let current = try await owner.publicIdentity(); XCTAssertEqual(current, original) }
+        let record = try XCTUnwrap(storage.loadRecord())
+        var corrupted = record
+        corrupted.storageVersion = 2
+        try external.saveRecord(corrupted)
+        do { _ = try await owner.publicIdentity(); XCTFail("Corrupt durable journal accepted") }
+        catch IdentityError.inconsistentStorage {}
+        try external.saveRecord(record)
+        let tag = try XCTUnwrap(record.active).keyTag
+        try external.deleteKey(tag: tag)
+        _ = try external.createKey(tag: tag)
+        do { _ = try await owner.publicIdentity(); XCTFail("External key replacement accepted") }
+        catch IdentityError.inconsistentStorage {}
+        XCTAssertNotNil(try external.key(tag: tag))
+        try external.deleteKey(tag: tag)
+        do { _ = try await owner.publicIdentity(); XCTFail("External key deletion accepted") }
+        catch IdentityError.keyMissing {}
+    }
+
     func testDevelopmentRejectsOldExportPolicyWithoutDeletingKey() throws {
         guard ProcessInfo.processInfo.environment["ANICE_RUN_KEYCHAIN_TESTS"] == "1" else {
             throw XCTSkip("Enable isolated Keychain tests explicitly")
@@ -236,6 +275,20 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
         }
         XCTAssertEqual(try storage.keyTags(), [tag], "Policy failure must preserve the old key")
         XCTAssertNil(try storage.loadRecord(), "Policy inspection must not create or replace identity metadata")
+    }
+
+    func testLivePublicIdentityRevalidatesDeletedAndReplacedKey() async throws {
+        let storage = MemoryIdentityStorage()
+        let owner = service(storage)
+        let original = try await owner.publicIdentity()
+        let tag = try XCTUnwrap(storage.record?.active?.keyTag)
+        try storage.deleteKey(tag: tag)
+        do { _ = try await owner.publicIdentity(); XCTFail("Deleted key accepted") }
+        catch { XCTAssertEqual(error as? IdentityError, .keyMissing) }
+        _ = try storage.createKey(tag: tag)
+        do { _ = try await owner.publicIdentity(); XCTFail("Replaced key accepted") }
+        catch { XCTAssertEqual(error as? IdentityError, .inconsistentStorage) }
+        XCTAssertEqual(storage.record?.active?.identity, original)
     }
 
     func testExistingIdentityUsesOnlyOnePrivateKeyOperationPerRequest() async throws {

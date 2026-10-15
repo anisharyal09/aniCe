@@ -25,6 +25,8 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
     let namespace: String
     let backend: MacIdentityBackend
     private let recordURL: URL
+    private let nativeKeyLock = NSLock()
+    private var retainedNativeKey: SecKey?
 
     init(namespace: String, backend: MacIdentityBackend, recordURL: URL? = nil) {
         self.namespace = namespace
@@ -100,8 +102,18 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
     }
 
     func key(tag: String) throws -> StoredPublicKey? {
-        guard let key = try keyReference(tag: tag) else { return nil }
-        return try publicKey(key, tag: tag)
+        try nativeKeyLock.withLock {
+            // Keep Apple's validated object alive across fresh native lookup; no metadata or policy check is skipped.
+            try withExtendedLifetime(retainedNativeKey) {
+                guard let key = try keyReference(tag: tag) else {
+                    retainedNativeKey = nil
+                    return nil
+                }
+                let value = try publicKey(key, tag: tag)
+                retainedNativeKey = key
+                return value
+            }
+        }
     }
 
     func createKey(tag: String) throws -> StoredPublicKey {

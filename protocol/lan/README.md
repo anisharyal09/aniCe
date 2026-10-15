@@ -1,5 +1,7 @@
 # aniCe LAN binding v1
 
+The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2, record profile 3 and transfer capability 2. Standard profile 1/BLE limits and fixture bytes remain unchanged.
+
 ## Discovery and roles
 
 Android is TCP client and EDHOC initiator; macOS is TCP listener and EDHOC responder. Existing active trust is mandatory. LAN does not pair devices or modify identity/trust journals.

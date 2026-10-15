@@ -60,6 +60,7 @@
 		FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */; };
 		20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */; };
 		AEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */; };
+		AEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */; };
 		A34D9997D94406D2CD684BEE /* aniCe/Features/NowPlaying/MediaWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F786D4EA28875E8B52A5050; };
 		2AC7B0EC9E0FD0C1ED8EAC03 /* aniCe/Features/NowPlaying/MacPlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E997F22245B67C3AA3AE4C; };
 		CC1FEE3CCD0C897922760D25 /* aniCe/Features/NowPlaying/MediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3699A9022B41B5DC0049D2; };
@@ -160,6 +161,7 @@
 		CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/LanTests.swift"; sourceTree = SOURCE_ROOT; };
 		C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-vectors.json"; sourceTree = SOURCE_ROOT; };
 		BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/bulk-probe-vectors.json"; sourceTree = SOURCE_ROOT; };
+		BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-transfer-vectors.json"; sourceTree = SOURCE_ROOT; };
 		4F786D4EA28875E8B52A5050 /* aniCe/Features/NowPlaying/MediaWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaWire.swift"; sourceTree = SOURCE_ROOT; };
 		D0E997F22245B67C3AA3AE4C /* aniCe/Features/NowPlaying/MacPlaybackModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MacPlaybackModel.swift"; sourceTree = SOURCE_ROOT; };
 		9A3699A9022B41B5DC0049D2 /* aniCe/Features/NowPlaying/MediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaView.swift"; sourceTree = SOURCE_ROOT; };
@@ -401,6 +403,7 @@
 			children = (
 				C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */,
 				BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */,
+				BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */,
 				CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */,
 				088E75AB91963156C23260D5 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift */,
 				CCA7ECC39AB300927C11E890 /* aniCe/Infrastructure/LAN/LanTcpTransport.swift */,
@@ -522,6 +525,7 @@
 				AA1100000000000000000002,
 				20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */,
 				AEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json in Resources */,
+				AEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json in Resources */,
 				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
 				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
 				AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */,

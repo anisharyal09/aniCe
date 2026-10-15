@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Verifies encrypted records, control deadlines and nonce ownership against fixtures and lifecycle faults.
 import Foundation
+import os
 import XCTest
 
 @testable import aniCe
@@ -267,12 +268,14 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     for serverControls in [true, false] {
       let clock = ChannelClock()
+      let writable = OSAllocatedUnfairLock(initialState: true)
+      let signals = OSAllocatedUnfairLock(initialState: 0)
       let outI = ChannelMailbox(), outR = ChannelMailbox()
       let c = SessionConnection(
         handshake: try helper.engine(v, server: false), responder: false,
-        capacity: { _ in clock.read() != 60 }, submit: { await outI.append($0) },
+        capacity: { _ in clock.read() != 60 && writable.withLock { $0 } }, submit: { await outI.append($0) },
         data: { await outI.record($0) }, secured: { await outI.secure() }, controls: true,
-        now: { Int64(clock.read() * 1000) })
+        now: { Int64(clock.read() * 1000) }, changed: { signals.withLock { $0 += 1 } })
       let s = SessionConnection(
         handshake: try helper.engine(v, server: true), responder: true, capacity: { _ in true },
         submit: { await outR.append($0) }, data: { await outR.record($0) },
@@ -303,6 +306,12 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
         let support = await c.controlSupport
         XCTAssertEqual(support, false)
       }
+      writable.withLock { $0 = false }
+      let signalsBeforeRefusal = signals.withLock { $0 }
+      do { try await c.sendData(Data([1])); XCTFail("Unwritable transport admitted DATA") }
+      catch is SessionBackpressure {}
+      XCTAssertEqual(signals.withLock { $0 }, signalsBeforeRefusal, "Refusal must not wake its own capacity waiter")
+      writable.withLock { $0 = true }
       let before = await outR.data.count
       try await c.sendData(Data("aniCe connection check".utf8)); try await pump()
       let after = await outR.data.count
@@ -881,5 +890,85 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     XCTAssertFalse(
       try GattReassembler.fragments(Data([1]), id: UInt64(UInt32.max), capacity: 20, version: 2)
         .isEmpty)
+  }
+  func testProfileRecordBoundsTamperingAndSlicedDecode() async throws {
+    let key = Data((0..<32).map { UInt8($0) })
+    let iv = Data((0..<12).map { UInt8($0 * 3) })
+    let id = Data((0..<32).map { UInt8($0 * 7) })
+    // Empty, minimum and maximum profile-3 plaintexts size, seal and open through one path.
+    for size in [0, 1, 2, 262143, 262144] {
+      let plain = Data((0..<size).map { UInt8($0 % 251) })
+      let record = try SessionRecordCodec.seal(
+        key: key, iv: iv, id: id, direction: 1, kind: .data, sequence: 7, plaintext: plain,
+        profile: .lanTransfer)
+      XCTAssertEqual(record.count, size + 30)
+      XCTAssertEqual(
+        try SessionRecordCodec.open(
+          key: key, iv: iv, id: id, direction: 1, expected: 7, record: record,
+          profile: .lanTransfer
+        ).1, plain)
+    }
+    let sealed = try SessionRecordCodec.seal(
+      key: key, iv: iv, id: id, direction: 1, kind: .data, sequence: 7,
+      plaintext: Data(repeating: 5, count: 64), profile: .lanTransfer)
+    func tampered(_ index: Int) -> Data {
+      var bytes = [UInt8](sealed)
+      bytes[index] = bytes[index] &+ 1
+      return Data(bytes)
+    }
+    // Profile and length bytes are structural and never reach the cipher.
+    for index in [0, 12, 13] {
+      try await reject(.malformed) {
+        _ = try SessionRecordCodec.open(
+          key: key, iv: iv, id: id, direction: 1, expected: 7, record: tampered(index),
+          profile: .lanTransfer)
+      }
+    }
+    try await reject(.malformed) {
+      var badKind = [UInt8](sealed)
+      badKind[1] = 5
+      _ = try SessionRecordCodec.open(
+        key: key, iv: iv, id: id, direction: 1, expected: 7, record: Data(badKind),
+        profile: .lanTransfer)
+    }
+    // Sequence, kind (when mapping to a valid kind like CLOSE), ciphertext, tag and the authenticated id/direction suffix are cryptographic.
+    for index in [1, 9, 14, sealed.count - 1] {
+      try await reject(.authentication) {
+        _ = try SessionRecordCodec.open(
+          key: key, iv: iv, id: id, direction: 1, expected: 7, record: tampered(index),
+          profile: .lanTransfer)
+      }
+    }
+    try await reject(.authentication) {
+      _ = try SessionRecordCodec.open(
+        key: key, iv: iv, id: Data(repeating: 1, count: 32), direction: 1, expected: 7,
+        record: sealed, profile: .lanTransfer)
+    }
+    try await reject(.authentication) {
+      _ = try SessionRecordCodec.open(
+        key: key, iv: iv, id: id, direction: 2, expected: 7, record: sealed, profile: .lanTransfer)
+    }
+    // Decoding indexes from the buffer's own start, so a sliced input needs no re-based copy.
+    let wire = try SessionCbor.encode(
+      .array([.text("aniCe transfer"), .integer(1), .bytes(Data(repeating: 9, count: 4096))]),
+      maximumBytes: 262144)
+    var padded = Data([0xaa, 0xbb, 0xcc])
+    padded.append(wire)
+    XCTAssertEqual(padded[3...].startIndex, 3)
+    XCTAssertEqual(
+      try SessionCbor.decode(padded[3...], maximumBytes: 262144),
+      try SessionCbor.decode(wire, maximumBytes: 262144))
+    // Map ordering is judged against the sliced bytes, not the parent buffer's indexing.
+    let map = try SessionCbor.encode(
+      .map([.init(.integer(2), .bool(false)), .init(.integer(8), .bool(true))]),
+      maximumBytes: 262144)
+    var ordered = Data([0x00])
+    ordered.append(map)
+    XCTAssertEqual(
+      try SessionCbor.decode(ordered[1...], maximumBytes: 262144),
+      try SessionCbor.decode(map, maximumBytes: 262144))
+    var unsorted = Data([0xa2, 0x08, 0xf5, 0x02, 0xf4])
+    unsorted.insert(0x00, at: 0)
+    try await reject(.malformed) { _ = try SessionCbor.decode(unsorted[1...], maximumBytes: 262144) }
   }
 }

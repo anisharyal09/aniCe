@@ -15,10 +15,11 @@ class FeatureDispatchTests {
         var capacity = 0
         var handled = 0
         var result = DataHandling.UNRECOGNIZED
+        var receive: (suspend () -> Unit)? = null
         override fun available(channel: SecuredChannel) { this.channel=channel }
         override fun retired(descriptor: ChannelDescriptor) { retired++ }
         override fun capacityAvailable(descriptor: ChannelDescriptor) { capacity++ }
-        override fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling { handled++; return result }
+        override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling { handled++; receive?.invoke(); return result }
     }
     private fun descriptor(id: String) = ChannelDescriptor(id,"ble",DeviceIdentity("fixture","Mac","macos","fixture-key","fixture-fingerprint"))
     @Test fun retiresInstancesAndPreservesUnrecognizedFallback() = runBlocking {
@@ -41,6 +42,24 @@ class FeatureDispatchTests {
         assertEquals(1,sends)
         dispatch.retired("ble"); dispatch.capacityAvailable("ble"); assertEquals(1,handler.capacity)
     }
+    @Test fun suspendedDeliveryReleasesUiAndCannotFallThroughAfterReplacement() = runBlocking {
+        val dispatch = FeatureDispatch()
+        val first = Handler(); val next = Handler()
+        dispatch.register(first); dispatch.register(next)
+        dispatch.available(descriptor("old")) {}
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        first.receive = { entered.complete(Unit); release.await() }
+        val delivery = async { dispatch.handle("ble", "old", byteArrayOf(1)) }
+        withTimeout(1000) { entered.await() }
+        var heartbeat = false
+        launch { heartbeat = true }.join()
+        assertTrue(heartbeat)
+        dispatch.available(descriptor("new")) {}
+        release.complete(Unit)
+        assertEquals(DataHandling.DISCARDED, withTimeout(1000) { delivery.await() })
+        assertEquals(0, next.handled)
+    }
+
     @Test fun retirementDuringSubmissionDoesNotReplayUncertainData() = runBlocking {
         val dispatch=FeatureDispatch(); val handler=Handler(); dispatch.register(handler)
         val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); var sends=0

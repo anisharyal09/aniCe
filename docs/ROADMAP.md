@@ -7,7 +7,7 @@
 | **Independent Bluetooth Low Energy (BLE)** | Compatibility discovery, EDHOC session handshake, AES-GCM records, GATT framing | Implemented |
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
-| **Local File Transfer** | Bidirectional batch streaming, cumulative credit flow control, atomic staging, and UI across Features and Home | Implemented |
+| **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Recovery, renewal and physical acceptance pending |
 | **Application continuity** | Now Playing implemented; More features and platform support coming soon. | In progress |
 
 Automated unit, hosted, and cross-platform interchange test suites validate cryptographic, transport, and session protocol contracts.
@@ -39,6 +39,6 @@ Automated unit, hosted, and cross-platform interchange test suites validate cryp
 ### 5. Application Continuity
 - **Now Playing:** Remote Mac playback, source selection, seek previews, native Android notifications (`MediaSession` / `Notification.MediaStyle`), and player/output volume controls are implemented. Mac Home/companion display is optional. See [Now Playing](features/NOW_PLAYING.md), [ADR 0007](decisions/0007-macos-unsandboxed-playback-prototype.md), and [ADR 0009](decisions/features/now-playing/0009-remote-playback-presentation.md).
 
-- **Local File Transfer:** Bidirectional sequential batch streaming (1..128 files) over authenticated LAN DATA records with cumulative credit flow control (64-chunk window / 3,072-byte chunks), recipient offer approval, `.anice-part` staging with incremental SHA-256 verification and atomic rename, on-demand connection, and presentation across Features and Home live-activity. See [Local File Transfer](features/FILE_TRANSFER.md) and [Transfer Contract](../protocol/transfer/README.md).
+- **Local File Transfer:** Bidirectional sequential batch streaming (1..128 files) over authenticated LAN DATA records with cumulative credit flow control (64-chunk window / 3,072-byte chunks), recipient offer approval, exclusive partial staging with checked SHA-256 verification and finalization, on-demand connection, and presentation across Features and Home live-activity. See [Local File Transfer](features/FILE_TRANSFER.md) and [Transfer Contract](../protocol/transfer/README.md).
 
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.

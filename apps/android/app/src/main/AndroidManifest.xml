@@ -2,6 +2,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
@@ -20,6 +23,7 @@
         android:fullBackupContent="false" android:icon="@drawable/ic_launcher"
         android:label="@string/app_name" android:supportsRtl="true" android:theme="@style/Theme.AniCe">
         <receiver android:name=".features.media.MediaActionReceiver" android:exported="false" />
+        <service android:name=".features.transfer.TransferService" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <receiver android:name=".features.transfer.TransferActionReceiver" android:exported="false" />
         <activity android:name=".features.backgroundprobe.CompanionProbeActivity" android:exported="false" />
         <!-- Disabled until native compatibility is verified; API-31 class cannot load on API 29/30. -->

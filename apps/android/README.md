@@ -19,7 +19,7 @@ app/
       app/                          Assembly and navigation
       features/                     Feature models and presentation
         nowplaying/                 Playback, codecs, artwork and native media presentation
-        transfer/                   File transfer controller, Compose UI, wire codecs and notifications
+        transfer/                   Transfer controller, document-tree destination, foreground service, UI and wire codec
       infrastructure/
         connections/                BLE/LAN owners, nearby policy and DATA dispatch
         identity/                   Keystore storage and identity lifecycle
@@ -72,7 +72,7 @@ Home → Pair a device → Devices offers QR scanning and six-digit entry. Camer
 
 Successful pairing returns to Home after cleanup and active trust confirmation. Connect starts the separate authenticated Bluetooth session; approval on both devices remains required for pairing. Manage devices shows saved devices first and keeps live connections running while browsing; Pair another Mac opens new-pairing inputs.
 
-Mac selects an allowed Android (or Any trusted Android) and taps **Connect** to open Bluetooth admission; Android taps **Connect** beside its trusted Mac on Home or Devices. The device summary shows **Connected** after encrypted readiness and names the ready Bluetooth/local-network channels. Android identifies each entry with eight fingerprint hex digits; Mac admits one candidate at a time and pins a selected Android’s complete credential. **Connection details** contains independent transport controls and collapsed **Diagnostics** for encrypted checks, counters and nearby discovery. A failed secondary channel does not hide a working connection. **Manage devices** opens existing pairing/trust management. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) provides bidirectional file transfers over authenticated LAN.
+Mac selects an allowed Android (or Any trusted Android) and taps **Connect** to open Bluetooth admission; Android taps **Connect** beside its trusted Mac on Home or Devices. The device summary shows **Connected** after encrypted readiness and names the ready Bluetooth/local-network channels. Android identifies each entry with eight fingerprint hex digits; Mac admits one candidate at a time and pins a selected Android’s complete credential. **Connection details** contains independent transport controls and collapsed **Diagnostics** for encrypted checks, counters and nearby discovery. A failed secondary channel does not hide a working connection. **Manage devices** opens existing pairing/trust management. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) provides bidirectional file transfers over authenticated LAN with BLE fallback when LAN is disconnected.
 
 ## Background connection experiment
 
@@ -90,4 +90,4 @@ Home and Features → Mac controls provide playback, player selection and suppor
 
 ## Local File Transfer
 
-Home and Features → Local file transfer provide file transfer controls, incoming batch approval and progress tracking with rate metrics. Transferred files stage atomically in `.anice-part` before verification and media scanning. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Home and Features → Local file transfer provide file transfer controls, incoming batch approval and progress tracking with rate metrics. Reception uses an approved local document-tree folder after provider preflight. Exclusive partials are verified and synchronized before provider rename; SAF atomicity is not assumed. Background continuation requires foreground approval and the connected-device transfer service; notification permission controls drawer visibility. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).

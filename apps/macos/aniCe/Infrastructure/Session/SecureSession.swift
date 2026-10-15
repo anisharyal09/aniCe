@@ -4,10 +4,10 @@ import CryptoKit
 import Foundation
 
 enum SessionProfile: UInt8, Sendable {
-  case standard = 1, bulkProbe = 2
-  var maximumPlaintext: Int { self == .standard ? 4000 : 4194304 }
+  case standard = 1, bulkProbe = 2, lanTransfer = 3
+  var maximumPlaintext: Int { self == .standard ? 4000 : self == .lanTransfer ? 262144 : 4194304 }
   var maximumEnvelope: Int { self == .standard ? 4096 : maximumPlaintext + 31 }
-  var exporterLabel: String { self == .standard ? "aniCe session" : "aniCe bulk probe" }
+  var exporterLabel: String { self == .standard ? "aniCe session" : self == .lanTransfer ? "aniCe LAN transfer" : "aniCe bulk probe" }
 }
 
 enum RecordKind: UInt8, Sendable {
@@ -55,7 +55,13 @@ enum SessionRecordCodec {
     let box = try AES.GCM.seal(
       plaintext, using: SymmetricKey(data: key), nonce: AES.GCM.Nonce(data: nonce(iv, sequence)),
       authenticating: header + id + Data([direction]))
-    return header + box.ciphertext + box.tag
+    // Reserve once: assembling into a single uniquely-referenced buffer avoids the intermediate
+    // copies that successive `+` concatenations produce for a payload-sized record.
+    var record = Data(capacity: plaintext.count + 30)
+    record.append(header)
+    record.append(box.ciphertext)
+    record.append(box.tag)
+    return record
   }
   static func open(key: Data, iv: Data, id: Data, direction: UInt8, expected: UInt64, record: Data, profile: SessionProfile = .standard)
     throws -> (RecordKind, Data)
@@ -213,7 +219,6 @@ actor SecureSession {
       }
       // Include the record header, tag and envelope byte before consuming a nonce.
       guard await capacity(plaintext.count + 31) else { throw SessionBackpressure() }
-      try await check(op)
       let sequence = try sendSequence.reserve()
       reserved = true  // A reserved nonce remains burned even when encryption/submission fails.
       if kind == .ready { stage = .readySent }
@@ -221,6 +226,8 @@ actor SecureSession {
         key: sendKey, iv: sendIV, id: sessionID, direction: responder ? 2 : 1, kind: kind,
         sequence: sequence, plaintext: plaintext, profile: profile)
       try await submit(record)
+      // Native validation runs before sealing and after awaited submission; generation and deadline
+      // fencing around encryption is check(op) above and the check(op) below.
       try await check(op)
       activity = now()
       if kind == .readyAck { stage = .secured }

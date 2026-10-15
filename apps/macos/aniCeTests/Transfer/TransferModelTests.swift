@@ -10,10 +10,10 @@ final class MockSecuredChannel: SecuredChannel {
   var sentData: [Data] = []
   var onSendData: ((Data) async throws -> Void)?
 
-  init(instance: String = "test-token", transport: String = "lan", deviceName: String = "Pixel 9") {
+  init(instance: String = "test-token", transport: String = "lan", deviceName: String = "Pixel 9", maximumDataBytes: Int = 4000, peer: DeviceIdentity? = nil) {
     let key = P256.Signing.PrivateKey()
-    let peer = try! DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: deviceName, publicKey: key.publicKey.x963Representation)
-    self.descriptor = ChannelDescriptor(instance: instance, transport: transport, peer: peer)
+    let peer = peer ?? (try! DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: deviceName, publicKey: key.publicKey.x963Representation))
+    self.descriptor = ChannelDescriptor(instance: instance, transport: transport, peer: peer, maximumDataBytes: maximumDataBytes)
   }
 
   func sendData(_ bytes: Data) async throws {
@@ -41,26 +41,405 @@ final class TransferModelTests: XCTestCase {
     try await super.tearDown()
   }
 
-  func testOfferAcceptStreamAndVerifyBatch() async throws {
+  func testLANWinsEitherConnectionOrderAndFallsBackOnlyOnItsRetirement() async throws {
+    for lanFirst in [false, true] {
+      let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
+      let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+      for channel in lanFirst ? [lan, ble] : [ble, lan] {
+        owner.available(channel)
+        _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+      }
+      XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+      XCTAssertTrue(owner.peerCompatible)
+      let handlingResult1 = await owner.handle(try TransferMessage.cancel(batch: UUID().uuidString.lowercased(), file: "", reason: 0).encode(), on: ble.descriptor)
+      XCTAssertEqual(handlingResult1, .discarded)
+      owner.retired(ChannelDescriptor(instance: "stale", transport: "lan", peer: lan.descriptor.peer))
+      XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+      owner.retired(lan.descriptor)
+      XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+      XCTAssertTrue(owner.peerCompatible)
+      owner.retired(ble.descriptor)
+      XCTAssertFalse(owner.peerConnected)
+      XCTAssertFalse(owner.peerCompatible)
+    }
+  }
+
+  func testCapabilityDoesNotLeakAcrossChannelsOrSessionReplacement() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(instance: "ble", transport: "ble")
+    let lan = MockSecuredChannel(instance: "lan", peer: ble.descriptor.peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    owner.available(lan)
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+    XCTAssertFalse(owner.peerCompatible)
+    owner.retired(ble.descriptor)
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    let successor = MockSecuredChannel(instance: "successor", peer: lan.descriptor.peer)
+    owner.available(successor)
+    XCTAssertFalse(owner.peerCompatible)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    XCTAssertFalse(owner.peerCompatible)
+    owner.dismiss()
+  }
+
+  func testLANLossRetiresPartialAndRejectsOldChunksBeforeBLERetry() async throws {
+    let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    for channel in [lan, ble] {
+      owner.available(channel)
+      _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    }
+    try await offer(owner, lan, size: 10)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data([0])).encode(), on: lan.descriptor)
+    owner.retired(lan.descriptor)
+    guard case .failed = owner.state else { return XCTFail("Interrupted batch must fail") }
+    XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+    XCTAssertTrue(owner.peerCompatible)
+    for _ in 0..<200 {
+      if try FileManager.default.contentsOfDirectory(atPath: tempDir.path).isEmpty { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: tempDir.path).isEmpty)
+    let handlingResult2 = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 1, data: Data(repeating: 0, count: 9)).encode(), on: lan.descriptor)
+    XCTAssertEqual(handlingResult2, .discarded)
+    try await offer(owner, ble)
+    guard case .incomingOffer = owner.state else { return XCTFail("BLE retry unavailable") }
+    owner.dismiss()
+  }
+
+  func testActiveBLEBatchKeepsItsGenerationUntilCleanupThenPrefersLAN() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(instance: "ble", transport: "ble")
+    let lan = MockSecuredChannel(instance: "lan", peer: ble.descriptor.peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    try await offer(owner, ble, size: 1)
+    owner.available(lan)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+    owner.cancelTransfer(local: false)
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+    XCTAssertTrue(owner.peerCompatible)
+  }
+
+  func testFallbackRejectsAnotherPeer() async {
+    let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
+    let other = MockSecuredChannel(instance: "other", transport: "ble")
+    owner.available(lan)
+    owner.available(other)
+    owner.retired(lan.descriptor)
+    XCTAssertFalse(owner.peerConnected)
+  }
+
+  func testCancellingBLEBatchStillNotifiesItsPeerWhenLANBecomesPreferred() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(instance: "ble", transport: "ble")
+    let lan = MockSecuredChannel(instance: "lan", peer: ble.descriptor.peer)
+    owner.available(ble)
+    try await offer(owner, ble, size: 1)
+    owner.available(lan)
+    owner.cancelTransfer()
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+    for _ in 0..<50 {
+      if ble.sentData.compactMap({ try? TransferMessage.decode($0) }).contains(where: { $0.kind == 9 }) { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertTrue(ble.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 9 })
+    XCTAssertFalse(lan.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 9 })
+  }
+
+  func testStandbyCapabilityWaitSurvivesJobCleanupAndUsesStandbyCapacity() async throws {
+    let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    var attempts = 0
+    ble.onSendData = { _ in attempts += 1; if attempts == 1 { throw SessionBackpressure() } }
+    owner.available(lan)
+    try await offer(owner, lan, size: 1)
+    owner.available(ble)
+    for _ in 0..<50 { if attempts == 1 { break }; try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(attempts, 1)
+    owner.cancelTransfer(local: false)
+    owner.capacityAvailable(ble.descriptor)
+    for _ in 0..<50 { if attempts == 2 { break }; try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(attempts, 2)
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+  }
+
+  func testPartiallyAssembledBLEOfferKeepsItsChannelWhenLANArrives() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(instance: "ble", transport: "ble")
+    let lan = MockSecuredChannel(instance: "lan", peer: ble.descriptor.peer)
+    owner.available(ble)
+    let batch = UUID().uuidString.lowercased()
+    let rows: [SessionCBOR] = (0...1).map { index in
+      .array([.text(UUID().uuidString.lowercased()), .text("\(index).bin"), .integer(0), .bytes(Data(SHA256.hash(data: Data())))])
+    }
+    _ = await owner.handle(try TransferMessage.offer(batch: batch, sliceIndex: 0, totalSlices: 2,
+      totalFiles: 2, totalBytes: 0, files: [rows[0]]).encode(), on: ble.descriptor)
+    owner.available(lan)
+    XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+    _ = await owner.handle(try TransferMessage.offer(batch: batch, sliceIndex: 1, totalSlices: 2,
+      totalFiles: 2, totalBytes: 0, files: [rows[1]]).encode(), on: ble.descriptor)
+    guard case .incomingOffer = owner.state else { return XCTFail("Offer lost during LAN arrival") }
+    XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+    await owner.rejectIncomingOffer()
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+    XCTAssertTrue(ble.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 4 })
+    XCTAssertFalse(lan.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 4 })
+  }
+
+  func testCapabilityArrivingAfterOfferRemainsUsableAfterCleanup() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    try await offer(owner, channel, size: 1)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    await owner.rejectIncomingOffer()
+    XCTAssertTrue(owner.peerCompatible)
+    owner.retired(channel.descriptor)
+    XCTAssertFalse(owner.peerCompatible)
+  }
+
+  func testQueuedAckCannotCrossIntoNextChannelOrBatch() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(instance: "ble", transport: "ble")
+    let lan = MockSecuredChannel(instance: "lan", peer: ble.descriptor.peer)
+    owner.available(ble)
+    try await offer(owner, ble, size: 100_000)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    owner.available(lan)
+    for index in 0..<8 {
+      _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+        offset: Int64(index * 3072), data: Data(repeating: 0, count: 3072)).encode(), on: ble.descriptor)
+    }
+    owner.cancelTransfer(local: false)
+    try await offer(owner, lan, size: 1)
+    let next = owner.state
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(owner.state, next)
+    XCTAssertFalse(lan.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 6 })
+    XCTAssertFalse(ble.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 6 })
+    owner.dismiss()
+  }
+
+  func testLateAcceptFailureCannotFailTheNextOffer() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    try await offer(owner, channel, size: 1)
+    var release: CheckedContinuation<Void, Never>?
+    channel.onSendData = { bytes in
+      if try TransferMessage.decode(bytes)?.kind == 3 {
+        await withCheckedContinuation { release = $0 }
+        throw SessionFailure.cancelled
+      }
+    }
+    let accepting = Task { await owner.acceptIncomingOffer(destination: tempDir) }
+    for _ in 0..<50 { if release != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+    guard let pending = release else { accepting.cancel(); return XCTFail("Accept was not submitted") }
+    owner.cancelTransfer(local: false)
+    try await offer(owner, channel, size: 2)
+    let next = owner.state
+    pending.resume()
+    await accepting.value
+    XCTAssertEqual(owner.state, next)
+    owner.dismiss()
+  }
+
+  func testRetiringStandbyChannelReleasesItsCapacityWaitWithoutRetainingOwner() async throws {
+    var owner: MacTransferModel? = MacTransferModel()
+    weak var releasedOwner = owner
+    let lan = MockSecuredChannel(instance: "lan")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    var blocked = false
+    ble.onSendData = { _ in blocked = true; throw SessionBackpressure() }
+    owner?.available(lan)
+    owner?.available(ble)
+    for _ in 0..<50 { if blocked { break }; try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertTrue(blocked)
+    owner?.retired(ble.descriptor)
+    XCTAssertEqual(owner?.activeChannel?.descriptor, lan.descriptor)
+    owner = nil
+    for _ in 0..<50 { if releasedOwner == nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertNil(releasedOwner)
+  }
+
+  func testOfferAssemblyPreservesOrderingAndRejectsConflictingDuplicates() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    let batch = UUID().uuidString.lowercased()
+    let rows: [SessionCBOR] = (0...1).map { index in
+      .array([.text(UUID().uuidString.lowercased()), .text("\(index).bin"), .integer(0), .bytes(Data(SHA256.hash(data: Data())))])
+    }
+    func slice(_ index: Int64, row: SessionCBOR? = nil) throws -> Data {
+      try TransferMessage.offer(batch: batch, sliceIndex: index, totalSlices: 2, totalFiles: 2,
+        totalBytes: 0, files: [row ?? rows[Int(index)]]).encode()
+    }
+    _ = await owner.handle(try slice(1), on: channel.descriptor)
+    _ = await owner.handle(try slice(1), on: channel.descriptor)
+    XCTAssertEqual(owner.state, .idle)
+    _ = await owner.handle(try slice(0), on: MockSecuredChannel(instance: "other").descriptor)
+    XCTAssertEqual(owner.state, .idle)
+    _ = await owner.handle(try slice(0, row: rows[1]), on: channel.descriptor)
+    XCTAssertEqual(owner.state, .idle)
+    _ = await owner.handle(try slice(1), on: channel.descriptor)
+    _ = await owner.handle(try slice(1, row: rows[0]), on: channel.descriptor)
+    _ = await owner.handle(try slice(0), on: channel.descriptor)
+    XCTAssertEqual(owner.state, .idle)
+    _ = await owner.handle(try slice(1), on: channel.descriptor)
+    guard case .incomingOffer(let offer) = owner.state else { return XCTFail("Missing complete offer") }
+    XCTAssertEqual(offer.files.map(\.name), ["0.bin", "1.bin"])
+    owner.dismiss()
+  }
+
+  private func offer(_ owner: MacTransferModel, _ channel: MockSecuredChannel, size: Int64 = 0) async throws {
+    let digest = Data(SHA256.hash(data: Data(repeating: 0, count: Int(size))))
+    let message = TransferMessage.offer(batch: UUID().uuidString.lowercased(), sliceIndex: 0,
+      totalSlices: 1, totalFiles: 1, totalBytes: size,
+      files: [.array([.text(UUID().uuidString.lowercased()), .text("empty.bin"), .integer(size), .bytes(digest)])])
+    _ = await owner.handle(try message.encode(), on: channel.descriptor)
+  }
+
+  func testCancellationRetiresAckEffectsAndKeepsNextOfferUsable() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    try await offer(owner, channel, size: 100_000)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    var release: CheckedContinuation<Void, Never>?
+    var cancelled = false
+    channel.onSendData = { bytes in
+      if try TransferMessage.decode(bytes)?.kind == 6 {
+        await withCheckedContinuation { release = $0 }
+        cancelled = Task.isCancelled
+      }
+    }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    for index in 0..<8 {
+      _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+        offset: Int64(index * 3072), data: Data(repeating: 0, count: 3072)).encode(), on: channel.descriptor)
+    }
+    for _ in 0..<50 { if release != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+    guard let pending = release else { return XCTFail("ACK was not submitted") }
+    owner.cancelTransfer(local: false)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 8 * 3072, data: Data(repeating: 0, count: 3072)).encode(), on: channel.descriptor)
+    XCTAssertEqual(owner.state, .cancelled)
+    try await offer(owner, channel, size: 1)
+    let next = owner.state
+    pending.resume()
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertFalse(cancelled)
+    XCTAssertEqual(owner.state, next)
+  }
+
+  func testFailedFinalizationCannotReportSuccess() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    try await offer(owner, channel, size: 1)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    let partial = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix(".anice-") })
+    try FileManager.default.removeItem(at: partial)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString, offset: 0, data: Data([0])).encode(), on: channel.descriptor)
+    guard case .failed = owner.state else { return XCTFail("Finalization error ignored") }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("empty.bin").path))
+    XCTAssertFalse(channel.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 7 && $0.number(2) == 0 })
+  }
+
+  func testInconsistentTotalsAndRetiredChannelCannotPresentOffer() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    let message = TransferMessage.offer(batch: UUID().uuidString.lowercased(), sliceIndex: 0, totalSlices: 1,
+      totalFiles: 1, totalBytes: 2, files: [.array([.text(UUID().uuidString.lowercased()), .text("a"), .integer(1), .bytes(Data(repeating: 0, count: 32))])])
+    _ = await owner.handle(try message.encode(), on: channel.descriptor)
+    XCTAssertEqual(owner.state, .idle)
+    let handlingResult3 = await owner.handle(try message.encode(), on: MockSecuredChannel(instance: "retired").descriptor)
+    XCTAssertEqual(handlingResult3, .discarded)
+    XCTAssertEqual(owner.state, .idle)
+  }
+
+  func testLegacyPeerCannotStartTransferWithoutCapability() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    let source = tempDir.appendingPathComponent("a")
+    try Data([1]).write(to: source)
+    await owner.sendFiles(urls: [source])
+    guard case .failed = owner.state else { return XCTFail("Legacy peer accepted") }
+    XCTAssertFalse(channel.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 2 })
+  }
+
+  func testEmptyFileCompletesAndPreservesUnrelatedPartial() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    try await offer(owner, channel)
+    let unrelated = tempDir.appendingPathComponent("empty.bin.anice-part")
+    try Data("keep".utf8).write(to: unrelated)
+    await owner.acceptIncomingOffer(destination: tempDir)
+    for _ in 0..<50 { if case .completed = owner.state { break }; try await Task.sleep(for: .milliseconds(10)) }
+    guard case .completed = owner.state else { return XCTFail("Empty file did not complete") }
+    XCTAssertEqual(try Data(contentsOf: tempDir.appendingPathComponent("empty.bin")), Data())
+    XCTAssertEqual(try Data(contentsOf: unrelated), Data("keep".utf8))
+  }
+
+  func testFailedDestinationDoesNotAcceptOrReportSuccess() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    try await offer(owner, channel)
+    let blocked = tempDir.appendingPathComponent("not-a-folder")
+    try Data("keep".utf8).write(to: blocked)
+    await owner.acceptIncomingOffer(destination: blocked)
+    guard case .failed = owner.state else { return XCTFail("Destination error ignored") }
+    let messages = channel.sentData.compactMap { try? TransferMessage.decode($0) }
+    XCTAssertFalse(messages.contains { $0.kind == 3 || $0.kind == 7 && $0.number(2) == 0 })
+    XCTAssertEqual(try Data(contentsOf: blocked), Data("keep".utf8))
+  }
+
+  func testUnrelatedCancelAndBatchResultCannotCompleteCurrentOffer() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    try await offer(owner, channel, size: 1)
+    let before = owner.state
+    _ = await owner.handle(try TransferMessage.batchResult(batch: UUID().uuidString.lowercased(), result: 0).encode(), on: channel.descriptor)
+    _ = await owner.handle(try TransferMessage.cancel(batch: UUID().uuidString.lowercased()).encode(), on: channel.descriptor)
+    XCTAssertEqual(owner.state, before)
+  }
+
+  func testOfferAcceptStreamAndVerifyBatch() async throws { try await verifyBatch(transport: "lan") }
+
+  func testBLEFallbackStreamsAndVerifiesBatch() async throws { try await verifyBatch(transport: "ble") }
+
+
+
+  func testLargerLanChunksStreamAcrossCreditWindows() async throws { try await verifyBatch(transport: "lan", maximumChunkBytes: 131072) }
+
+  private func verifyBatch(transport: String, maximumChunkBytes: Int = 3072) async throws {
+    let maximumDataBytes = maximumChunkBytes > 3072 ? 262144 : 4000
+    let capability = try TransferMessage.capability(version: maximumChunkBytes > 3072 ? 2 : 1, maxChunkBytes: Int64(maximumChunkBytes), maxWindow: maximumChunkBytes > 3072 ? 8 : 64).encode(maximumChunkBytes: maximumChunkBytes)
     let sender = MacTransferModel()
     let receiver = MacTransferModel()
 
-    let senderChannel = MockSecuredChannel(deviceName: "MacBook")
-    let receiverChannel = MockSecuredChannel(deviceName: "Phone")
+    let senderChannel = MockSecuredChannel(transport: transport, deviceName: "MacBook", maximumDataBytes: maximumDataBytes)
+    let receiverChannel = MockSecuredChannel(transport: transport, deviceName: "Phone", maximumDataBytes: maximumDataBytes)
 
     sender.available(senderChannel)
+
+    _ = await sender.handle(capability, on: senderChannel.descriptor)
     receiver.available(receiverChannel)
+    _ = await receiver.handle(capability, on: receiverChannel.descriptor)
 
     // Route messages between sender and receiver
     senderChannel.onSendData = { data in
-      _ = receiver.handle(data, on: receiverChannel.descriptor)
+      _ = await receiver.handle(data, on: receiverChannel.descriptor)
     }
     receiverChannel.onSendData = { data in
-      _ = sender.handle(data, on: senderChannel.descriptor)
+      _ = await sender.handle(data, on: senderChannel.descriptor)
     }
 
     // Create a 10 KiB test file
-    let testData = Data((0..<10240).map { UInt8($0 % 251) })
+    let testData = Data((0..<(maximumChunkBytes > 3072 ? 2097169 : 10240)).map { UInt8($0 % 251) })
     let testFileURL = tempDir.appendingPathComponent("sample.bin")
     try testData.write(to: testFileURL)
 
@@ -74,7 +453,7 @@ final class TransferModelTests: XCTestCase {
     }
     XCTAssertEqual(batch.files.count, 1)
     XCTAssertEqual(batch.files[0].name, "sample.bin")
-    XCTAssertEqual(batch.files[0].size, 10240)
+    XCTAssertEqual(batch.files[0].size, Int64(testData.count))
 
     // Accept offer on receiver
     let destFolder = tempDir.appendingPathComponent("downloads")
@@ -109,6 +488,7 @@ final class TransferModelTests: XCTestCase {
     let receiver = MacTransferModel()
     let receiverChannel = MockSecuredChannel(deviceName: "Phone")
     receiver.available(receiverChannel)
+    _ = await receiver.handle(try TransferMessage.capability().encode(), on: receiverChannel.descriptor)
 
     let batchId = UUID().uuidString.lowercased()
     let fileId = UUID().uuidString.lowercased()
@@ -130,7 +510,7 @@ final class TransferModelTests: XCTestCase {
         ])
       ]
     )
-    _ = receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
+    _ = await receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
 
     guard case .incomingOffer = receiver.state else {
       XCTFail("Receiver did not enter incomingOffer")
@@ -148,7 +528,7 @@ final class TransferModelTests: XCTestCase {
       offset: 0,
       data: Data([1, 2, 3, 99])
     )
-    _ = receiver.handle(try corruptedChunk.encode(), on: receiverChannel.descriptor)
+    _ = await receiver.handle(try corruptedChunk.encode(), on: receiverChannel.descriptor)
 
     // Wait for failure
     guard case .failed(let reason) = receiver.state else {
@@ -170,6 +550,7 @@ final class TransferModelTests: XCTestCase {
     let receiver = MacTransferModel()
     let receiverChannel = MockSecuredChannel(deviceName: "Phone")
     receiver.available(receiverChannel)
+    _ = await receiver.handle(try TransferMessage.capability().encode(), on: receiverChannel.descriptor)
 
     let batchId = UUID().uuidString.lowercased()
     let fileId = UUID().uuidString.lowercased()
@@ -189,7 +570,7 @@ final class TransferModelTests: XCTestCase {
         ])
       ]
     )
-    _ = receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
+    _ = await receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
 
     XCTAssertTrue(receiver.state != .idle)
     await receiver.rejectIncomingOffer(reason: 0)
@@ -200,6 +581,7 @@ final class TransferModelTests: XCTestCase {
     let receiver = MacTransferModel()
     let receiverChannel = MockSecuredChannel(deviceName: "Phone")
     receiver.available(receiverChannel)
+    _ = await receiver.handle(try TransferMessage.capability().encode(), on: receiverChannel.descriptor)
 
     let batchId = UUID().uuidString.lowercased()
     let fileId = UUID().uuidString.lowercased()
@@ -219,7 +601,7 @@ final class TransferModelTests: XCTestCase {
         ])
       ]
     )
-    _ = receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
+    _ = await receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
 
     let destFolder = tempDir.appendingPathComponent("downloads")
     try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
@@ -227,7 +609,7 @@ final class TransferModelTests: XCTestCase {
 
     // Send partial chunk
     let chunk = TransferMessage.chunk(batch: batchId, file: fileId, offset: 0, data: Data([1, 2, 3]))
-    _ = receiver.handle(try chunk.encode(), on: receiverChannel.descriptor)
+    _ = await receiver.handle(try chunk.encode(), on: receiverChannel.descriptor)
 
     // Now cancel
     receiver.cancelTransfer(local: true)
@@ -242,6 +624,7 @@ final class TransferModelTests: XCTestCase {
     let sender = MacTransferModel()
     let senderChannel = MockSecuredChannel(deviceName: "MacBook")
     sender.available(senderChannel)
+    _ = await sender.handle(try TransferMessage.capability().encode(), on: senderChannel.descriptor)
 
     // Create 250,000 byte file (requires > 64 chunks of 3072 bytes)
     let totalSize: Int64 = 250_000
@@ -270,7 +653,7 @@ final class TransferModelTests: XCTestCase {
 
     // Peer accepts
     let acceptMsg = TransferMessage.accept(batch: batchIdStr, files: [])
-    _ = sender.handle(try acceptMsg.encode(), on: senderChannel.descriptor)
+    _ = await sender.handle(try acceptMsg.encode(), on: senderChannel.descriptor)
 
     // Wait until sender pauses at 64 chunks (196,608 bytes)
     for _ in 0..<50 {
@@ -280,9 +663,15 @@ final class TransferModelTests: XCTestCase {
 
     XCTAssertEqual(sentChunkCount, 64, "Sender should pause at exactly 64 chunks before receiving ack")
 
+    _ = await sender.handle(try TransferMessage.ack(batch: UUID().uuidString.lowercased(), file: fileIdStr, written: Int64.max).encode(), on: senderChannel.descriptor)
+    _ = await sender.handle(try TransferMessage.ack(batch: batchIdStr, file: fileIdStr, written: totalSize + 1).encode(), on: senderChannel.descriptor)
+    _ = await sender.handle(try TransferMessage.batchResult(batch: batchIdStr, result: 0).encode(), on: senderChannel.descriptor)
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(sentChunkCount, 64, "Wrong/future ACK cannot release credit")
+
     // Send ack for 64 chunks
     let ack = TransferMessage.ack(batch: batchIdStr, file: fileIdStr, written: 64 * 3072)
-    _ = sender.handle(try ack.encode(), on: senderChannel.descriptor)
+    _ = await sender.handle(try ack.encode(), on: senderChannel.descriptor)
 
     // Sender should resume and send the rest of the chunks
     for _ in 0..<50 {
@@ -294,10 +683,14 @@ final class TransferModelTests: XCTestCase {
 
     // Send file-result and batch-result to finish
     let fileRes = TransferMessage.fileResult(batch: batchIdStr, file: fileIdStr, result: 0, hash: Data(SHA256.hash(data: testData)))
-    _ = sender.handle(try fileRes.encode(), on: senderChannel.descriptor)
+    _ = await sender.handle(try fileRes.encode(), on: senderChannel.descriptor)
     let batchRes = TransferMessage.batchResult(batch: batchIdStr, result: 0)
-    _ = sender.handle(try batchRes.encode(), on: senderChannel.descriptor)
+    _ = await sender.handle(try batchRes.encode(), on: senderChannel.descriptor)
 
+    for _ in 0..<50 {
+      if case .completed = sender.state { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
     XCTAssertEqual(sender.state, .completed(batchId: UUID(uuidString: batchIdStr)!, fileCount: 1, totalBytes: totalSize))
   }
 
@@ -309,7 +702,10 @@ final class TransferModelTests: XCTestCase {
     let receiverChannel = MockSecuredChannel(deviceName: "Phone")
 
     sender.available(senderChannel)
+
+    _ = await sender.handle(try TransferMessage.capability().encode(), on: senderChannel.descriptor)
     receiver.available(receiverChannel)
+    _ = await receiver.handle(try TransferMessage.capability().encode(), on: receiverChannel.descriptor)
 
     var senderAttempts = 0
     senderChannel.onSendData = { data in
@@ -321,7 +717,7 @@ final class TransferModelTests: XCTestCase {
         }
         throw SessionBackpressure()
       }
-      _ = receiver.handle(data, on: receiverChannel.descriptor)
+      _ = await receiver.handle(data, on: receiverChannel.descriptor)
     }
 
     var receiverAttempts = 0
@@ -334,7 +730,7 @@ final class TransferModelTests: XCTestCase {
         }
         throw SessionBackpressure()
       }
-      _ = sender.handle(data, on: senderChannel.descriptor)
+      _ = await sender.handle(data, on: senderChannel.descriptor)
     }
 
     // 307,200 bytes = exactly 100 chunks of 3072 bytes (exceeds 64 chunk limit)
@@ -370,6 +766,68 @@ final class TransferModelTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: receivedFileURL.path))
     let receivedData = try Data(contentsOf: receivedFileURL)
     XCTAssertEqual(receivedData, testData)
+  }
+
+  func testReceiverAccurateCumulativeProgressAcrossThrottleBoundaries() async throws {
+    let receiver = MacTransferModel()
+    let receiverChannel = MockSecuredChannel(deviceName: "Phone")
+    receiver.available(receiverChannel)
+    _ = await receiver.handle(try TransferMessage.capability().encode(), on: receiverChannel.descriptor)
+
+    let batchId = UUID().uuidString.lowercased()
+    let fileId = UUID().uuidString.lowercased()
+    let chunkSize = 3072
+    let chunkCount = 4
+    let totalBytes = chunkSize * chunkCount
+    let fileBytes = Data((0..<totalBytes).map { UInt8($0 % 251) })
+    let fileHash = Data(SHA256.hash(data: fileBytes))
+
+    let offer = TransferMessage.offer(
+      batch: batchId,
+      sliceIndex: 0,
+      totalSlices: 1,
+      totalFiles: 1,
+      totalBytes: Int64(totalBytes),
+      files: [
+        SessionCBOR.array([
+          .text(fileId),
+          .text("rapid.bin"),
+          .integer(Int64(totalBytes)),
+          .bytes(fileHash)
+        ])
+      ]
+    )
+    _ = await receiver.handle(try offer.encode(), on: receiverChannel.descriptor)
+
+    let destFolder = tempDir.appendingPathComponent("downloads")
+    try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
+    await receiver.acceptIncomingOffer(destination: destFolder)
+
+    for i in 0..<chunkCount {
+      let offset = i * chunkSize
+      let chunkData = fileBytes.subdata(in: offset..<(offset + chunkSize))
+      let chunkMsg = TransferMessage.chunk(
+        batch: batchId,
+        file: fileId,
+        offset: Int64(offset),
+        data: chunkData
+      )
+      _ = await receiver.handle(try chunkMsg.encode(), on: receiverChannel.descriptor)
+    }
+
+    if case .completed(_, let count, let bytes) = receiver.state {
+      XCTAssertEqual(count, 1)
+      XCTAssertEqual(bytes, Int64(totalBytes))
+    } else if case .transferring(_, _, _, _, _, let bytes, let speed) = receiver.state {
+      XCTAssertEqual(bytes, Int64(totalBytes))
+      XCTAssertGreaterThan(speed, 0)
+    } else {
+      XCTFail("Unexpected receiver state: \(receiver.state)")
+    }
+
+    let receivedFileURL = destFolder.appendingPathComponent("rapid.bin")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: receivedFileURL.path))
+    XCTAssertEqual(try Data(contentsOf: receivedFileURL), fileBytes)
   }
 }
 

@@ -47,9 +47,10 @@ enum SessionCbor {
   private static let maxDepth = 8
 
   static func sequence(_ values: SessionCBOR...) throws -> Data { try encodeValues(values) }
-  static func encode(_ value: SessionCBOR) throws -> Data { try encodeValues([value]) }
+  static func encode(_ value: SessionCBOR, maximumBytes: Int = maxBytes) throws -> Data { try encodeValues([value], maximumBytes: maximumBytes) }
 
-  private static func encodeValues(_ values: [SessionCBOR]) throws -> Data {
+  private static func encodeValues(_ values: [SessionCBOR], maximumBytes: Int = maxBytes) throws -> Data {
+    guard (1...262144).contains(maximumBytes) else { throw SessionFailure.malformed }
     var out = Data()
     var items = 0
     func head(_ major: UInt8, _ n: UInt64) {
@@ -69,12 +70,12 @@ enum SessionCbor {
       switch value {
       case .integer(let n): head(n >= 0 ? 0 : 1, n >= 0 ? UInt64(n) : UInt64(-(n + 1)))
       case .bytes(let data):
-        guard data.count <= maxBytes else { throw SessionFailure.malformed }
+        guard data.count <= maximumBytes else { throw SessionFailure.malformed }
         head(2, UInt64(data.count))
         out.append(data)
       case .text(let text):
         let data = Data(text.utf8)
-        guard data.count <= maxBytes else { throw SessionFailure.malformed }
+        guard data.count <= maximumBytes else { throw SessionFailure.malformed }
         head(3, UInt64(data.count))
         out.append(data)
       case .array(let array):
@@ -101,25 +102,26 @@ enum SessionCbor {
         }
       case .bool(let b): out.append(b ? 0xf5 : 0xf4)
       }
-      guard out.count <= maxBytes else { throw SessionFailure.malformed }
+      guard out.count <= maximumBytes else { throw SessionFailure.malformed }
     }
     for v in values { try write(v, 0) }
     return out
   }
-  static func decode(_ data: Data) throws -> SessionCBOR {
-    let values = try decodeSequence(data)
+  static func decode(_ data: Data, maximumBytes: Int = maxBytes) throws -> SessionCBOR {
+    let values = try decodeSequence(data, maximumBytes: maximumBytes)
     guard values.count == 1 else { throw SessionFailure.malformed }
     return values[0]
   }
-  static func decodeSequence(_ data: Data) throws -> [SessionCBOR] {
-    guard data.count <= maxBytes else { throw SessionFailure.malformed }
-    let data = Data(data)
+  static func decodeSequence(_ data: Data, maximumBytes: Int = maxBytes) throws -> [SessionCBOR] {
+    guard (1...262144).contains(maximumBytes), data.count <= maximumBytes else { throw SessionFailure.malformed }
+    // Index from the buffer's own start so a sliced input needs no re-basing copy.
+    let base = data.startIndex
     var offset = 0
     var items = 0
     func byte() throws -> UInt8 {
       guard offset < data.count else { throw SessionFailure.malformed }
       defer { offset += 1 }
-      return data[offset]
+      return data[base + offset]
     }
     func length(_ extra: UInt8) throws -> UInt64 {
       if extra < 24 { return UInt64(extra) }
@@ -155,8 +157,8 @@ enum SessionCbor {
       case 0: return .integer(Int64(n))
       case 1: return .integer(-1 - Int64(n))
       case 2, 3:
-        guard n <= maxBytes, n <= data.count - offset else { throw SessionFailure.malformed }
-        let bytes = data.subdata(in: offset..<(offset + Int(n)))
+        guard n <= maximumBytes, n <= data.count - offset else { throw SessionFailure.malformed }
+        let bytes = data.subdata(in: (base + offset)..<(base + offset + Int(n)))
         offset += Int(n)
         if major == 2 { return .bytes(bytes) }
         guard let text = String(data: bytes, encoding: .utf8) else {
@@ -177,7 +179,7 @@ enum SessionCbor {
           case .array, .map: throw SessionFailure.malformed
           default: break
           }
-          let encoded = data.subdata(in: start..<offset)
+          let encoded = data.subdata(in: (base + start)..<(base + offset))
           if let previous { guard less(previous, encoded) else { throw SessionFailure.malformed } }
           previous = encoded
           pairs.append(.init(key, try read(depth + 1)))

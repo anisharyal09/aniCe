@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Revalidates native Keystore keys and atomically persists the identity journal.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 import android.content.Context
@@ -66,7 +67,8 @@ class AndroidIdentityMetadata(context: Context, filename: String = "identity-v1.
 
 /** Non-exportable signing keys without per-use authentication. */
 class AndroidIdentityKeys : IdentityKeyStore {
-    private fun store(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private val nativeStore by lazy { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }
+    private fun store(): KeyStore = nativeStore
     private fun <T> access(block: () -> T): T = try { block() }
         catch (error: IdentityException) { throw error }
         catch (error: android.security.keystore.KeyPermanentlyInvalidatedException) { throw IdentityException(IdentityErrorKind.KEY_MISSING, error) }

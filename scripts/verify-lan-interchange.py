@@ -51,7 +51,7 @@ def require_deadline_failure(log):
 
 
 def benchmark_result(android, mac, total, window):
-    assert total in (100 * 1048576, 1024 * 1048576) and window in (4, 8, 32, 64)
+    assert total in (4 * 1048576, 16 * 1048576, 100 * 1048576, 1024 * 1048576) and window in (4, 8, 32, 64)
     for metrics in (android, mac):
         assert isinstance(metrics, dict)
         assert metrics['bytes'] == total and metrics['window'] == window
@@ -85,9 +85,10 @@ def main():
     parser.add_argument('--serial', required=True)
     parser.add_argument('--family', choices=('ipv4', 'link-local'), default='ipv4')
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--benchmark-mib', type=int, choices=(100, 1024))
+    parser.add_argument('--mac-binary', type=Path, help='Use an already-built native interchange helper')
+    parser.add_argument('--benchmark-mib', type=int, choices=(4, 16, 100, 1024))
     parser.add_argument('--window', type=int, choices=(4, 8, 32, 64))
-    parser.add_argument('--profile', choices=('standard', 'bulk-probe'), default='standard')
+    parser.add_argument('--profile', choices=('standard', 'bulk-probe', 'lan-transfer'), default='standard')
     args = parser.parse_args()
     args.window = args.window or (32 if args.profile == 'standard' else 4)
     if args.window not in ((32, 64) if args.profile == 'standard' else (4, 8)):
@@ -107,14 +108,18 @@ def main():
     sources += [ROOT / 'apps/macos/aniCe/Infrastructure/LAN/LanFraming.swift',
                 ROOT / 'apps/macos/aniCe/Infrastructure/LAN/LanTcpTransport.swift',
                 ROOT / 'apps/macos/SessionInterchange/TcpInterchange.swift', ROOT / 'apps/macos/SessionInterchange/main.swift']
-    binary = output / 'tcp-interchange'
-    environment = dict(os.environ, DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer')
-    with (output / 'build.log').open('w') as log:
-        subprocess.run(['xcrun', 'swiftc', *(['-O'] if args.benchmark_mib else []), '-swift-version', '6', '-D', 'ANICE_DEVELOPMENT_KEYCHAIN',
-                        '-module-cache-path', str(output / 'module-cache'), '-framework', 'Foundation',
-                        '-framework', 'CryptoKit', '-framework', 'Security', '-framework', 'Network',
-                        *map(str, sources), '-o', str(binary)], env=environment, stdout=log,
-                       stderr=subprocess.STDOUT, check=True, timeout=180)
+    if args.mac_binary:
+        binary = args.mac_binary.resolve(strict=True)
+        assert binary.is_file() and os.access(binary, os.X_OK)
+    else:
+        binary = output / 'tcp-interchange'
+        environment = dict(os.environ, DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer')
+        with (output / 'build.log').open('w') as log:
+            subprocess.run(['xcrun', 'swiftc', *(['-O'] if args.benchmark_mib else []), '-swift-version', '6', '-D', 'ANICE_DEVELOPMENT_KEYCHAIN',
+                            '-module-cache-path', str(output / 'module-cache'), '-framework', 'Foundation',
+                            '-framework', 'CryptoKit', '-framework', 'Security', '-framework', 'Network',
+                            *map(str, sources), '-o', str(binary)], env=environment, stdout=log,
+                           stderr=subprocess.STDOUT, check=True, timeout=180)
     run = str(uuid.uuid4())
     remote = f'files/lan-interchange-{run}'
     bootstrap = f'/data/local/tmp/anice-lan-{run}.json'
@@ -125,7 +130,7 @@ def main():
     cleaned = False
     try:
         with (output / 'mac.log').open('w') as mac_log, (output / 'instrumentation.log').open('w') as instrument_log:
-            mac = subprocess.Popen([str(binary), '--tcp', *(['--bulk-probe'] if args.profile == 'bulk-probe' else [])], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            mac = subprocess.Popen([str(binary), '--tcp', *(['--' + args.profile] if args.profile != 'standard' else [])], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=mac_log, text=True)
             server = read_event(mac)
             server['family'] = args.family

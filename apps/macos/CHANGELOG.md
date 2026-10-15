@@ -4,16 +4,31 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## Unreleased
 
+### Fixed
+
+- Keep transfer file opening, reads, receive writes, hashing, finalization and cleanup off presentation threads. Await ordered storage before credit, reject retired callbacks after suspension, and stop refused submissions from waking their own capacity waiters.
+
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks.
+
+- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
+
+- Retain the validated native Keychain key handle across fresh lookups to avoid repeated ACL integrity setup; re-read key presence, protection and identity/trust journals for every operation, including external deletion/replacement.
+
+- Enforce LAN-preferred file transfer routing with BLE fallback, exclusive partial staging, checked finalization, isolated reply correlation, bounded offer assembly, and event-driven capacity waits; interrupted batches require explicit resend.
+
 ### Added
 
-- Bidirectional local file transfer engine and UI (`MacTransferModel`, `TransferView`, `TransferWire`) with 64-chunk cumulative credit flow control, sequential multi-file batch streaming, temporary `.anice-part` staging with atomic rename, sleep assertion management, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
-- Optimize LAN streaming throughput: compute `SessionCrypto.kid` directly from decoded public key bytes avoiding redundant CryptoKit curve reconstruction per record; cache authenticated public device identity in `IdentityService` to eliminate redundant Keychain `securityd` IPC overhead during record validation; decouple `sendData` and `receive` locking in `SessionConnection` to allow concurrent full-duplex ACK transmission; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
+- Bidirectional local file transfer engine and UI (`MacTransferModel`, `TransferView`, `TransferWire`) with 64-chunk cumulative credit flow control, sequential multi-file batch streaming, exclusive partial staging with checked non-overwriting finalization, sleep assertion management, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
+- Optimize LAN streaming throughput: compute `SessionCrypto.kid` directly from decoded public key bytes avoiding redundant CryptoKit curve reconstruction per record; decouple `sendData` and `receive` locking in `SessionConnection` to allow concurrent full-duplex ACK transmission; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
 - Shared event-driven Now Playing owner with optional Home/companion activity, Phone controls information and attributed packaged universal adapter. Source-bound controls resolve native/script support per action, recover matching late capabilities and publish position samples after commands. Explicit Music/Spotify volume verification gates player sliders; native output-device observation supports phone volume controls. Preview confirmation, readable availability and selection-preserving refresh handle asynchronous results without replaying writes.
 - Home/Devices/Features/Settings sidebar and saved native Window appearance preference with native and SwiftUI System inheritance across the window and connection-details sheet; companion and context menus retain system appearance.
+- Adversarial test coverage for maximum profile-3 bounds, cipher tampering rejection, sliced-buffer decoding, and buffer independence.
 
 ### Changed
 
 - Move LAN socket delivery, sliced frame parsing, bounded write accounting and independent assembly watchdogs off the main actor; exercise the production transport in native interchange.
+
+- Remove per-record copies from the authenticated record path: assemble records and TCP frames into single reserved buffers and decode sliced buffers without re-basing the input. Wire bytes, bounds and live native validation are unchanged.
 
 - Separate MacPlaybackModel, MediaProcessBridge and MediaSessionLink; group connection owners under Connections, register feature-neutral DATA handling in App, and split hosted suites with shared independent fixtures.
 

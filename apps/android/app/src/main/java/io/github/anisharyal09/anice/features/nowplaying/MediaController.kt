@@ -52,7 +52,7 @@ class MediaController(private val dispatcher: CoroutineDispatcher=Dispatchers.Ma
     override fun available(channel: SecuredChannel) { val d=channel.descriptor; attach(d.transport,d.instance,d.peer.deviceName,channel::sendData) }
     override fun retired(descriptor: ChannelDescriptor) { closed(descriptor.transport) }
     override fun capacityAvailable(descriptor: ChannelDescriptor) { capacity(descriptor.transport) }
-    override fun handle(descriptor: ChannelDescriptor, bytes: ByteArray) = handleData(descriptor.transport,descriptor.instance,bytes)
+    override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray) = handleData(descriptor.transport,descriptor.instance,bytes)
     private class Link(val token: String, val origin: String, val send: suspend (ByteArray)->Unit) {
         var capable=false
         var volumeCapable=false
@@ -198,6 +198,7 @@ class MediaController(private val dispatcher: CoroutineDispatcher=Dispatchers.Ma
     }
     fun receive(kind: String, token: String, bytes: ByteArray)=handleData(kind,token,bytes)!=DataHandling.UNRECOGNIZED
     private fun handleData(kind: String, token: String, bytes: ByteArray): DataHandling {
+        if (bytes.size > 4000) return DataHandling.UNRECOGNIZED
         return try {
             val media=MediaMessage.decode(bytes)
             if(media!=null) { receiveMedia(kind,token,media);DataHandling.HANDLED }

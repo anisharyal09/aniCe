@@ -1,78 +1,44 @@
 # Local File Transfer
 
-## Using file transfer
+Send batches of 1–128 files from Features → Local file transfer over an already-authenticated local-network or Bluetooth connection. Local network has priority whenever it is secured. The peer must advertise transfer support. Bluetooth is available when local network is disconnected; it is slower and uses the existing secured BLE session. The receiver approves each batch; files transfer sequentially with bounded cumulative credit.
 
-### Sending files
+Updated Android and Mac apps use bounded 128-KiB LAN chunks with an authenticated 256-KiB record profile. Bluetooth retains 3-KiB chunks. Both apps must be updated to use LAN revision 2; Android can still connect to an older Mac using the original smaller LAN records. Native identity and trust checks remain live. See the [LAN profile contract](../../protocol/lan/TRANSFER_PROFILE.md).
 
-Android and Mac can initiate file transfers from Features → Local file transfer or from the Home live-activity card when a trusted peer is secured over the local network.
+## Connection changes
 
-- **Batch bounds:** Batches contain 1 to 128 files. Senders precompute SHA-256 digests and file sizes before sending offer slices.
-- **Filename sanitization:** Filenames must be 1 to 255 UTF-8 bytes. Forward slashes `/`, backslashes `\`, NUL `\0`, directory traversal (`.` and `..`), and leading or trailing whitespace are rejected at the protocol boundary.
-- **On-demand connection:** If LAN is not currently secured when tapping **Send files…**, the app initiates an on-demand local-network connection to the preferred trusted peer, queuing file selection until secured.
+On Android, the idle Local file transfer panel exposes **Connect LAN** whenever local network is disconnected, including while Bluetooth is connected. It starts the existing trusted-Mac LAN connection flow.
 
-### Incoming offers and recipient approval
+Both transports must belong to the same authenticated device. Support and negotiated limits are checked separately on each connection. A new batch uses local network whenever it is secured, regardless of which connection became ready first. A batch already running on Bluetooth finishes on that connection; the next batch uses local network.
 
-- **Offer partitioning:** Batch inventories are partitioned into slices of up to 8 files, ensuring each offer record remains well within the 4,000-byte authenticated DATA limit.
-- **Approval:** The recipient reviews the batch summary (file count, total size, file names) and can accept or decline. Senders show a waiting status with local cancellation.
-- **Destination folder:** Mac saves incoming files to the user's `Downloads` directory by default, with an explicit **Choose…** directory picker. Android saves to standard external `Download` storage.
+Losing the active connection ends the batch and removes its current partial file. The remaining secured connection becomes available automatically. Send the files again and approve the new batch to restart; unfinished bytes are not resumed. Files already published remain in place and are not overwritten. A new batch may create another copy of files that completed before disconnection.
 
-### Streaming and flow control
+## Storage and preparation
 
-- **Credit flow control:** Senders stream file content in sequential 3,072-byte chunks with at most 64 unacknowledged chunks in flight simultaneously ($64 \times 3,072 = 196,608$ bytes). When in-flight bytes reach the window limit, the sender pauses until the recipient acknowledges written bytes.
-- **Acknowledgement cadence:** Recipients emit cumulative `ack` records every 8 chunks received ($24,576$ bytes), upon expiry of a 20-ms timer with unacknowledged bytes pending, and immediately upon receiving the final chunk of a file.
-- **Throughput metrics:** Progress percentage, transferred byte counts, and transfer rates are calculated continuously and published to the UI at 100-ms intervals.
+Mac reception uses the selected folder, exclusive job-owned partials, SHA-256 verification, file synchronization and non-overwriting same-filesystem publication. Storage errors produce failure rather than completion. Existing files and unrelated partials remain untouched.
 
-### Staging, verification and atomic commit
+Android reception opens the system folder picker. Local external-storage and Downloads document providers are accepted only after a disposable read/write/seek/flush/rename/delete probe and available-space check with a 64-MiB reserve. Incompatible providers produce readable feedback. Provider rename is not claimed to be atomic. Persistable grants acquired by the active job are released at cleanup; pre-existing permission modes are retained. Cloud providers are excluded.
 
-- **Staging:** Incoming chunks are written sequentially to a temporary `<filename>.anice-part` staging file while calculating the running SHA-256 digest.
-- **Verification:** When the file offset matches the advertised size, the recipient flushes and closes the file descriptor, verifies that the digest matches the sender's SHA-256 hash, and atomically renames `.anice-part` to the destination filename.
-- **Collision handling:** If a file with the target name already exists in the destination folder, the recipient appends a numeric suffix: `<base> (1).<ext>`.
-- **System indexing:** Android immediately triggers `MediaScannerConnection.scanFile` upon atomic rename so transferred media appears in the system gallery without a reboot.
-- **Integrity failure:** If the digest does not match, the recipient immediately deletes the `.anice-part` file and signals failure to the sender.
+Transfer v1 offers include full-file SHA-256, so senders prepare hashes before offering. Preparation runs off the UI thread, is cancellable and displays Preparing files. Streaming completion digests require a separately versioned contract; existing v1 bytes remain unchanged.
 
-### System lifecycle, notifications and power assertions
+## Execution and presentation
 
-- **Background retention:** Android `LanSessionController` preserves local-network connections across background transitions while transfers are active or initiating, preventing document-picker suspension from dropping the session.
-- **Notification shade:** Android presents ongoing transfer progress, percentage, file index, and transfer rate in the system notification shade via `TransferNotification`. A notification **Cancel** action broadcasts through `TransferActionReceiver` to abort the transfer cleanly. Notification Binder IPC calls are rate-limited to 250-ms intervals during streaming.
-- **Sleep assertions:** macOS acquires an `IOPMAssertionCreateWithName` power assertion (`kIOPMAssertionTypePreventUserIdleSystemSleep`) when a transfer begins, preventing system idle sleep until the transfer completes, fails, or cancels.
+ACKs identify the active batch/file and cannot exceed admitted bytes. File results must identify the active source and match its digest before success is accepted. Batch-result messages cannot bypass file verification. Empty files finalize without chunks. Offer assembly permits one incomplete inventory for at most ten seconds and validates aggregate counts, byte totals and unique file IDs.
 
----
+Capacity refusal waits for transport events with a bounded timeout; there is no five-millisecond retry loop. Submitted records are not replayed. Progress byte counts are independent of throttled UI updates. Feature delivery is awaited in transport order. File opening, reads, receive writes, SHA-256 updates, synchronization, publication and cleanup execute on IO workers/actors; presentation state stays on its UI owner. Cancellation invalidates the job before callbacks resume. Android waits for old storage cleanup before acquiring a successor destination grant. Complete verified partials survive failed publication; corrupt partials are discarded. Capacity refusal emits no synthetic availability event that could wake its own rejected sender.
+
+Android starts a connected-device foreground service after a visible user starts sending or approves a destination. Ownership begins during LAN connection and hashing, before the offer is submitted, and continues through destination preflight and streaming. A picker has a separate sixty-second lease; result handling acquires approved work before releasing that lease. Approved LAN and BLE jobs use the transfer service independently of companion ownership. Incoming offers alone do not acquire approved background work.
+
+Notification permission controls progress and cancel actions in the notification drawer; it does not gate the foreground service. When permission is denied, Android retains its foreground-service notice in the system Task Manager. The permission setting is not changed automatically. A failed service start or service loss retires unowned background work. Idle LAN follows the configured background timeout after approved work finishes. Mac idle-sleep assertions belong to the active job. See [Android notification permission](https://developer.android.com/develop/ui/compose/notifications/notification-permission).
+
+## Current limits
+
+- Resume journals, durable checkpoints, finalization-intent recovery and coordinated LAN renewal are not implemented. Disconnect ends the job and removes its current partial. Restarting transfer is a new explicit action on the remaining connection, with LAN preferred again after reconnection.
+- Resume requests receive unavailable status; accepting capability v1 does not establish resumable large-file support.
+- Provider revocation, rename behavior and background phone-lock continuity need physical acceptance. SAF cannot guarantee non-overwriting atomic publication across every provider.
+- The prior larger-record benchmark does not establish production 3,072-byte transfer throughput after native-key revalidation was restored. Physical application transfer on local Wi-Fi typically ranges from sub-megabit rates on degraded 2.4 GHz channels up to approximately 1–3 MB/s under favorable local network conditions(for smaller file ~10MB)), accompanied by transfer progress bar and rate display stutter on both platforms during active streaming. The 1-GiB, concurrent Now Playing latency and CPU/battery gates remain pending.
 
 ## Implementation
 
-### Source organization
+Android implementation and tests live under `features/transfer/`; Mac implementation and tests live under `Features/Transfer/` and `aniCeTests/Transfer/`. TransferDestination owns the Android folder grant and provider probe; TransferService presents approved foreground ownership. The existing connection and session owners retain authentication, nonce ownership and backpressure.
 
-- **Android:**
-  - `apps/android/app/src/main/java/io/github/anisharyal09/anice/features/transfer/`:
-    - `TransferController.kt`: State machine, flow control, offer dispatch, chunk streaming, staging and verification.
-    - `TransferView.kt`: Jetpack Compose UI for offer review, folder selection, progress and cancellation.
-    - `TransferWire.kt`: Normative CBOR serialization and deserialization for all 11 protocol message types.
-    - `TransferNotification.kt`: System notification channel, progress bar and status updates.
-    - `TransferActionReceiver.kt`: Broadcast receiver routing notification cancellation actions.
-  - Tests: `apps/android/app/src/test/java/io/github/anisharyal09/anice/features/transfer/` (`TransferControllerTests.kt`, `TransferWireTests.kt`).
-- **macOS:**
-  - `apps/macos/aniCe/Features/Transfer/`:
-    - `MacTransferModel.swift`: Main-actor transfer engine, flow-control queues, sleep assertions and staging.
-    - `TransferView.swift`: SwiftUI presentation across Features and compact live-activity panels.
-    - `TransferWire.swift`: Normative CBOR serialization and deserialization.
-  - Tests: `apps/macos/aniCeTests/Transfer/` (`TransferModelTests.swift`, `TransferWireTests.swift`).
-- **Protocol:**
-  - CDDL Schema: `protocol/transfer/transfer.cddl`
-  - Specification: `protocol/transfer/README.md`
-  - Independent test vectors: `protocol/test-vectors/transfer/transfer-vectors.json` (52 cases: 19 valid, 33 invalid).
-
----
-
-## Detailed contracts and decisions
-
-- [Local File Transfer Protocol v1](../../protocol/transfer/README.md) and [CDDL Schema](../../protocol/transfer/transfer.cddl).
-- [Independent Local Network Transport](../LAN_CONNECTIONS.md) and [LAN Contract](../../protocol/lan/README.md).
-- [Presentation and Semantic Tokens](../design/DESIGN.md).
-
----
-
-## Known limitations
-
-- **Single active batch:** A peer rejects incoming offers with reason code `3` (Busy) if another transfer is currently active.
-- **LAN-only transport:** Local file transfer requires an authenticated local-network (LAN) channel. High-bandwidth file streaming is not supported over Bluetooth Low Energy.
-- **Multi-gigabyte renewal:** Transparent TCP session rotation before the 54-minute / $2^{20} - 4{,}096$ record threshold is specified in protocol v1; multi-gigabyte continuous endurance benchmarks remain a physical release gate.
+See the authoritative [transfer contract](../../protocol/transfer/README.md), [CDDL](../../protocol/transfer/transfer.cddl), [LAN contract](../../protocol/lan/README.md) and [design guide](../design/DESIGN.md).

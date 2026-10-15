@@ -12,8 +12,8 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
     fun number(i: Int) = (fields.getOrNull(i) as? Cbor.Integer)?.value ?: 0L
     fun bytes(i: Int) = (fields.getOrNull(i) as? Cbor.Bytes)?.value ?: ByteArray(0)
 
-    fun encode(): ByteArray {
-        validate()
+    fun encode(maximumChunkBytes: Int = 3072): ByteArray {
+        validate(maximumChunkBytes)
         return SessionCbor.encode(
             Cbor.Array(
                 listOf(
@@ -22,11 +22,13 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
                     Cbor.Integer(kind),
                     Cbor.Array(fields)
                 )
-            )
-        ).also { if (it.size > 4000) throw TransferWireException() }
+            ),
+            maximumBytes = if (maximumChunkBytes > 3072) 262144 else 4096
+        ).also { if (it.size > if (maximumChunkBytes > 3072) 262144 else 4000) throw TransferWireException() }
     }
 
-    fun validate() {
+    fun validate(maximumChunkBytes: Int = 3072) {
+        require(maximumChunkBytes in 1..131072)
         fun check(v: Boolean) { if (!v) throw TransferWireException() }
         fun n(v: Cbor?, min: Long, max: Long) = (v as? Cbor.Integer)?.value?.let { it in min..max } == true
         fun t(v: Cbor?, max: Int, uuid: Boolean = false, empty: Boolean = false): Boolean {
@@ -51,7 +53,8 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
 
         when (kind) {
             1L -> { // capability
-                check(fields.size == 3 && n(fields[0], 1, 1) && n(fields[1], 1, 3072) && n(fields[2], 1, 64))
+                check(fields.size == 3 && (n(fields[0], 1, 1) && n(fields[1], 1, 3072) && n(fields[2], 1, 64) ||
+                    maximumChunkBytes > 3072 && n(fields[0], 2, 2) && n(fields[1], 1, maximumChunkBytes.toLong()) && n(fields[2], 1, 8)))
             }
             2L -> { // offer: [batch, sliceIndex, totalSlices, totalFiles, totalBytes, files]
                 check(fields.size == 6 && t(fields[0], 36, uuid = true) && n(fields[1], 0, 15) &&
@@ -84,7 +87,7 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
                 check(fields.size == 4 && t(fields[0], 36, uuid = true) && t(fields[1], 36, uuid = true) &&
                     n(fields[2], 0, Long.MAX_VALUE))
                 val data = (fields[3] as? Cbor.Bytes)?.value ?: throw TransferWireException()
-                check(data.isNotEmpty() && data.size <= 3072)
+                check(data.isNotEmpty() && data.size <= maximumChunkBytes)
             }
             6L -> { // ack: [batch, file, written]
                 check(fields.size == 3 && t(fields[0], 36, uuid = true) && t(fields[1], 36, uuid = true) &&
@@ -114,14 +117,14 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
     }
 
     companion object {
-        fun decode(bytes: ByteArray): TransferMessage? {
-            if (bytes.size > 4000) throw TransferWireException()
-            val row = (SessionCbor.decode(bytes) as? Cbor.Array)?.value ?: return null
+        fun decode(bytes: ByteArray, maximumChunkBytes: Int = 3072): TransferMessage? {
+            if (bytes.size > if (maximumChunkBytes > 3072) 262144 else 4000) throw TransferWireException()
+            val row = (SessionCbor.decode(bytes, if (maximumChunkBytes > 3072) 262144 else 4096) as? Cbor.Array)?.value ?: return null
             if (row.firstOrNull() != Cbor.Text("aniCe transfer")) return null
             if (row.size != 4 || row[1] != Cbor.Integer(1)) throw TransferWireException()
             val kind = (row[2] as? Cbor.Integer)?.value ?: throw TransferWireException()
             val fields = (row[3] as? Cbor.Array)?.value ?: throw TransferWireException()
-            return TransferMessage(kind, fields).also { it.validate() }
+            return TransferMessage(kind, fields).also { it.validate(maximumChunkBytes) }
         }
 
         fun capability(version: Long = 1L, maxChunkBytes: Long = 3072L, maxWindow: Long = 64L) =
@@ -138,6 +141,10 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
 
         fun chunk(batch: String, file: String, offset: Long, data: ByteArray) =
             TransferMessage(5L, listOf(Cbor.Text(batch), Cbor.Text(file), Cbor.Integer(offset), Cbor.Bytes(data)))
+
+        /** Frames a chunk straight out of a reused read buffer, copying the chunk bytes only once. */
+        fun chunkFrom(batch: String, file: String, offset: Long, source: ByteArray, length: Int) =
+            TransferMessage(5L, listOf(Cbor.Text(batch), Cbor.Text(file), Cbor.Integer(offset), Cbor.Bytes(source, 0, length)))
 
         fun ack(batch: String, file: String, written: Long) =
             TransferMessage(6L, listOf(Cbor.Text(batch), Cbor.Text(file), Cbor.Integer(written)))

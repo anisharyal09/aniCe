@@ -51,9 +51,9 @@ struct SessionControl: Equatable, Sendable {
     return result
   }
   /// Valid arrays with other tags and non-array application payloads retain their existing dispatcher.
-  static func application(_ bytes: Data) throws -> Self? {
+  static func application(_ bytes: Data, maximumBytes: Int = SessionCbor.maxBytes) throws -> Self? {
     guard let first = bytes.first, first & 0xe0 == 0x80 else { return nil }
-    let parsed = try SessionCbor.decode(bytes)
+    let parsed = try SessionCbor.decode(bytes, maximumBytes: maximumBytes)
     guard case .array(let row) = parsed, row.first == .text(tag) else { return nil }
     guard bytes.count <= 128 else { throw SessionFailure.malformed }
     return try fromCbor(parsed)

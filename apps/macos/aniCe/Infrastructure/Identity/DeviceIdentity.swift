@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Validates bounded public identities and canonical cryptographic encodings.
 import CryptoKit
 import Foundation
 
@@ -77,7 +78,14 @@ struct DeviceIdentity: Codable, Equatable, Sendable {
     }
 
     static func fingerprint(_ publicKey: Data) -> String {
-        SHA256.hash(data: publicKey).map { String(format: "%02x", $0) }.joined()
+        let digits = Array("0123456789abcdef".utf8)
+        var hex = [UInt8]()
+        hex.reserveCapacity(64)
+        for byte in SHA256.hash(data: publicKey) {
+            hex.append(digits[Int(byte >> 4)])
+            hex.append(digits[Int(byte & 15)])
+        }
+        return String(decoding: hex, as: UTF8.self)
     }
 
     static func normalizedName(_ name: String?) -> String {

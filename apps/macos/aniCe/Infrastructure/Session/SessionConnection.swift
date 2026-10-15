@@ -113,7 +113,7 @@ actor SessionConnection {
           try ensure(op)
           try liveness?.start(now())
         case .data:
-          if liveness != nil, let control = try SessionControl.application(result.1) {
+          if liveness != nil, let control = try SessionControl.application(result.1, maximumBytes: min(262144, max(4096, profile.maximumPlaintext))) {
             try liveness?.receive(control, now())
           } else { await data(result.1) }
         case .close:
@@ -175,7 +175,8 @@ actor SessionConnection {
   func sendData(_ bytes: Data) async throws {
     guard !sendingData else { throw SessionBackpressure() }
     sendingData = true
-    defer { sendingData = false; changed() }
+    var refused = false
+    defer { sendingData = false; if !refused { changed() } }
     let op = generation
     do {
       try ensure(op)
@@ -186,7 +187,7 @@ actor SessionConnection {
       try await channel.send(.data, plaintext: bytes)
       try ensure(op)
       liveness?.activity(now())
-    } catch is SessionBackpressure { throw SessionBackpressure() } catch {
+    } catch is SessionBackpressure { refused = true; throw SessionBackpressure() } catch {
       await close()
       throw error
     }

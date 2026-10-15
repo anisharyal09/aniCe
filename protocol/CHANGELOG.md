@@ -4,16 +4,26 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ## Unreleased
 
+### Fixed
+
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks.
+- Define LAN-preferred file-transfer routing, channel-scoped capability, sliced-offer affinity and generation-bound replies; interrupted batches require explicit resend and existing wire fixture bytes remain unchanged.
+- Clarify transfer inventory/state validation, written ACK semantics and unavailable resume behavior; identify coordinated LAN renewal as unimplemented without changing existing fixture bytes.
+
 ### Added
 
-- Local File Transfer v1 protocol (`protocol/transfer/transfer.cddl`, `README.md`) over authenticated LAN DATA records (≤ 4,000 bytes) with 11 deterministic CBOR messages, cumulative credit flow control (64-window / 3,072-byte chunks), incremental SHA-256 verification, and 52 independent test vectors (19 valid, 33 invalid).
-- Independently negotiated Mac output-volume v1, output-device identity/revision validation and positive/negative fixtures; preserves media/player-volume v1 bytes and shares bounded subscription command deduplication.
-- Separately negotiated selected-player volume v1 with independent positive/negative fixtures; media v1 fixture and envelope bytes remain unchanged. Clarify companion-owned BLE background subscriptions and fresh-channel retirement.
-- Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts and independent bounded fixtures within existing authenticated DATA records.
-
-- Versioned LAN TCP envelope binding and independent framing fixtures; existing EDHOC and encrypted-record formats remain unchanged.
-
+- Local File Transfer v1 protocol (`protocol/transfer/transfer.cddl`, `README.md`) over LAN-preferred authenticated LAN/BLE DATA records (≤ 4,000 bytes) with 11 deterministic CBOR messages, cumulative credit flow control (64-window / 3,072-byte chunks), incremental SHA-256 verification, and 52 independent test vectors (19 valid, 33 invalid).
+- Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts, independently negotiated Mac output volume v1, and selected-player volume v1 within existing authenticated DATA records.
+- Versioned LAN TCP envelope binding and independent framing fixtures.
 - Coordinated RENEWAL_REQUEST behavior, 55-minute/record-margin thresholds and old-session retirement before fresh EDHOC.
+
+### Changed
+
+- Document production LAN benchmarking, bulk probe telemetry, and real-world file transfer performance characteristics across RF tiers in `protocol/lan/BENCHMARK.md`.
+
+## [0.1.0]
+
+### Added
 
 - Bounded deterministic CBOR application controls in DATA kind 3/envelope 6, authoritative CDDL, and eight valid/26 invalid independent cbor2 fixtures.
 - HELLO/ACK compatibility, one outstanding PING/PONG and monotonic liveness deadlines.
@@ -26,10 +36,7 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
-- Document isolated LAN benchmark DATA payloads and acceptance reporting; production framing, session records and media fixtures retain their bytes.
-
 - Clarify deadline-driven handshake retirement and per-operation validation without changing session or control bytes.
-
 - Update active contracts table, add trusted-device sessions and LAN binding sections, and update directory layout with LAN specifications and test vectors in README.
 - Clarify manual verification boundaries and add purpose summaries to oracle regression modules and dependency configuration.
 - Update BLE GATT primary service and characteristic UUIDs.

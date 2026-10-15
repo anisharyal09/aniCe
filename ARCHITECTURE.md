@@ -40,14 +40,14 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
   - Vectors: [`discovery-vectors.json`](protocol/test-vectors/discovery-vectors.json)
-- **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android connects over Wi-Fi; Mac accepts local connections. LAN carries connection checks and subscribed media DATA, with the same 4,000-byte record bound as BLE.
+- **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android connects over Wi-Fi; Mac accepts local connections. LAN carries connection checks, subscribed media DATA and preferred file-transfer DATA, with the same 4,000-byte record bound as BLE.
   - Mac frame assembly, submission accounting and watchdogs run in a transport actor; Android socket work runs on IO dispatchers. Frame parsing samples time once per receive buffer, retaining fixed assembly deadlines and existing queue/nonce bounds.
   - Contract: [LAN Binding Contract](protocol/lan/README.md)
   - Lifecycle: [Independent LAN Connections](docs/LAN_CONNECTIONS.md)
   - Decisions: [ADR 0006 (Independent LAN Sessions)](docs/decisions/0006-independent-lan-sessions.md)
   - Vectors: [`lan-vectors.json`](protocol/test-vectors/lan/lan-vectors.json)
 - **Concurrent Coexistence:** Simultaneous BLE and LAN sessions to the same pinned peer with independent session keys, nonces, and counters under a shared reservation lock.
-- **Ownership:** Android manual LAN closes on final activity stop, screen lock or network loss. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Automatic LAN reconnection remains deferred.
+- **Ownership:** Android idle LAN follows its configured background timeout after final activity stop or screen lock; bounded pickers and user-approved transfer-service leases retain active work. Network loss still retires the channel. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Automatic LAN reconnection remains deferred.
 
 ---
 
@@ -93,12 +93,14 @@ App Sandbox is disabled for the entire Mac app. Identity/trust paths, Keychain p
 
 ## Local File Transfer
 
-Local file transfer streams sequential multi-file batches (1..128 files) between trusted peers over authenticated LAN DATA records, using 64-chunk cumulative credit flow control (3,072-byte chunks), recipient offer approval, `.anice-part` staging with incremental SHA-256 verification and atomic rename, full-duplex ACK pipelining, and presentation across Features and Home live-activity. See [feature behavior](docs/features/FILE_TRANSFER.md) and [transfer contracts](protocol/transfer/README.md).
+Local file transfer streams sequential multi-file batches (1..128 files) between trusted peers over authenticated LAN DATA records, using 64-chunk cumulative credit flow control (3,072-byte chunks), recipient offer approval, exclusive partial staging with incremental SHA-256 verification and checked finalization, full-duplex ACK pipelining, and presentation across Features and Home live-activity. See [feature behavior](docs/features/FILE_TRANSFER.md) and [transfer contracts](protocol/transfer/README.md).
 
 ## Application DATA and source organization
 
 Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android manifest companion activity/service packages retain their original names; only their policy implementation moves. Existing identity, association and appearance persistence keys remain unchanged.
 
-App registers the media FeatureHandler before DATA delivery. FeatureDispatch publishes authenticated channel descriptors (instance ID, transport and peer identity/fingerprint), availability, retirement and capacity events. SecuredChannel rejects retired instances and bounds submissions to 4,000 bytes; transport owners retain capacity preflight, readiness ordering, liveness priority and nonce ownership. Handlers distinguish handled, discarded and unrecognized DATA; unrecognized records retain connection-check fallback. Dispatch owns no transfer scheduler or sealed-record queue.
+App registers media and transfer FeatureHandlers before DATA delivery. Android feature mutations are delivered on the main dispatcher; transport framing and cryptography remain off-main. FeatureDispatch publishes authenticated channel descriptors (instance ID, transport and peer identity/fingerprint), availability, retirement and capacity events. SecuredChannel rejects retired instances and bounds submissions to the authenticated channel profile; transport owners retain capacity preflight, readiness ordering, liveness priority and nonce ownership. Delivery awaits feature IO without blocking presentation; generation checks reject retired callbacks. Handlers distinguish handled, discarded and unrecognized DATA; unrecognized records retain connection-check fallback. Dispatch owns no transfer scheduler or sealed-record queue.
 
 Native navigation types and Features destination content are separated from app shells. MacPlaybackModel is the sole playback authority; its owned process bridge fences native delivery by launch generation, and its session link coalesces logical snapshots before sealing. The fixture generator lives beside the media fixture; native and interchange scripts remain supported entry points. `python3 scripts/check-structure.py` checks dependency direction, local documentation links and explicit Xcode membership.
+
+Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Recovery journals, provider crash reconciliation and coordinated LAN renewal remain unimplemented.

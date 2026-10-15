@@ -7,8 +7,9 @@ struct ChannelDescriptor: Equatable {
   let instance: String
   let transport: String
   let peer: DeviceIdentity
+  var maximumDataBytes: Int = 4000
   static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.instance == rhs.instance && lhs.transport == rhs.transport && lhs.peer.deviceId == rhs.peer.deviceId && lhs.peer.fingerprint == rhs.peer.fingerprint
+    lhs.maximumDataBytes == rhs.maximumDataBytes && lhs.instance == rhs.instance && lhs.transport == rhs.transport && lhs.peer.deviceId == rhs.peer.deviceId && lhs.peer.fingerprint == rhs.peer.fingerprint
   }
 }
 @MainActor protocol SecuredChannel: AnyObject {
@@ -19,7 +20,7 @@ struct ChannelDescriptor: Equatable {
   func available(_ channel: any SecuredChannel)
   func retired(_ descriptor: ChannelDescriptor)
   func capacityAvailable(_ descriptor: ChannelDescriptor)
-  func handle(_ bytes: Data, on descriptor: ChannelDescriptor) -> DataHandling
+  func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling
 }
 @MainActor final class FeatureDispatch {
   private final class Channel: SecuredChannel {
@@ -29,7 +30,7 @@ struct ChannelDescriptor: Equatable {
     init(_ descriptor: ChannelDescriptor, owner: FeatureDispatch, submit: @escaping @MainActor (Data) async throws -> Void) { self.descriptor=descriptor; self.owner=owner; self.submit=submit }
     func sendData(_ bytes: Data) async throws {
       guard owner?.channels[descriptor.transport] === self else { throw SessionFailure.cancelled }
-      guard bytes.count <= 4000 else { throw SessionFailure.malformed }
+      guard bytes.count <= descriptor.maximumDataBytes else { throw SessionFailure.malformed }
       try await submit(bytes)
       guard owner?.channels[descriptor.transport] === self else { throw SessionFailure.cancelled }
     }
@@ -45,9 +46,9 @@ struct ChannelDescriptor: Equatable {
   }
   func retired(_ transport: String) { if let old=channels.removeValue(forKey:transport) { for handler in handlers { handler.retired(old.descriptor) } } }
   func capacityAvailable(_ transport: String) { if let channel=channels[transport] { for handler in handlers { handler.capacityAvailable(channel.descriptor) } } }
-  func handle(_ bytes: Data, transport: String, instance: String?) -> DataHandling {
+  func handle(_ bytes: Data, transport: String, instance: String?) async -> DataHandling {
     guard let descriptor=channels[transport]?.descriptor, descriptor.instance==instance else { return .discarded }
-    for handler in handlers { let result=handler.handle(bytes,on:descriptor); if result != .unrecognized { return result } }
+    for handler in handlers { let result=await handler.handle(bytes,on:descriptor); guard channels[transport]?.descriptor == descriptor else { return .discarded }; if result != .unrecognized { return result } }
     return .unrecognized
   }
 }

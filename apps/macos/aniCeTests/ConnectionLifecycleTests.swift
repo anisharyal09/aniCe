@@ -392,11 +392,35 @@ import XCTest
     var channel: (any SecuredChannel)?
     var retirement = 0, capacity = 0, received = 0
     var result = DataHandling.unrecognized
+    var receive: (() async -> Void)?
     func available(_ channel: any SecuredChannel) { self.channel=channel }
     func retired(_ descriptor: ChannelDescriptor) { retirement += 1 }
     func capacityAvailable(_ descriptor: ChannelDescriptor) { capacity += 1 }
-    func handle(_ bytes: Data, on descriptor: ChannelDescriptor) -> DataHandling { received += 1; return result }
+    func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling { received += 1; await receive?(); return result }
   }
+  func testSuspendedDeliveryAllowsUIAndRejectsRetiredFallthrough() async throws {
+    let fixture = SessionFixtures(), root = try fixture.root()
+    let row = try XCTUnwrap((root["valid"] as? [[String: Any]])?.first)
+    let peer = try fixture.identity(row, "initiator")
+    let dispatch = FeatureDispatch(), first = Handler(), next = Handler()
+    dispatch.register(first); dispatch.register(next)
+    dispatch.available(ChannelDescriptor(instance: "old", transport: "ble", peer: peer)) { _ in }
+    var entered = false
+    var resume: CheckedContinuation<Void, Never>?
+    first.receive = { entered = true; await withCheckedContinuation { resume = $0 } }
+    let delivery = Task { await dispatch.handle(Data([1]), transport: "ble", instance: "old") }
+    for _ in 0..<200 {
+      if entered { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(entered, "Awaited delivery blocked the presentation owner")
+    dispatch.available(ChannelDescriptor(instance: "new", transport: "ble", peer: peer)) { _ in }
+    resume?.resume()
+    let result = await delivery.value
+    XCTAssertEqual(result, .discarded)
+    XCTAssertEqual(next.received, 0)
+  }
+
   func testRetiredChannelsBoundsAndConnectionCheckFallback() async throws {
     let fixture=SessionFixtures(), root=try fixture.root()
     let row=try XCTUnwrap((root["valid"] as? [[String:Any]])?.first)
@@ -405,13 +429,16 @@ import XCTest
     var sends=0
     dispatch.available(ChannelDescriptor(instance:"first",transport:"ble",peer:peer)) { _ in sends += 1 }
     let old=try XCTUnwrap(handler.channel)
-    XCTAssertEqual(dispatch.handle(Data([1]),transport:"ble",instance:"first"),.unrecognized)
+    let handlingResult1 = await dispatch.handle(Data([1]),transport:"ble",instance:"first")
+    XCTAssertEqual(handlingResult1,.unrecognized)
     handler.result = .discarded
-    XCTAssertEqual(dispatch.handle(Data([1]),transport:"ble",instance:"first"),.discarded)
+    let handlingResult2 = await dispatch.handle(Data([1]),transport:"ble",instance:"first")
+    XCTAssertEqual(handlingResult2,.discarded)
     dispatch.capacityAvailable("ble"); XCTAssertEqual(handler.capacity,1)
     dispatch.available(ChannelDescriptor(instance:"second",transport:"ble",peer:peer)) { _ in sends += 1 }
     XCTAssertEqual(handler.retirement,1)
-    XCTAssertEqual(dispatch.handle(Data([1]),transport:"ble",instance:"first"),.discarded)
+    let handlingResult3 = await dispatch.handle(Data([1]),transport:"ble",instance:"first")
+    XCTAssertEqual(handlingResult3,.discarded)
     XCTAssertEqual(handler.received,2)
     do { try await old.sendData(Data([1])); XCTFail("Retired channel sent DATA") } catch let error as SessionFailure { XCTAssertEqual(error,.cancelled) }
     XCTAssertEqual(sends,0)

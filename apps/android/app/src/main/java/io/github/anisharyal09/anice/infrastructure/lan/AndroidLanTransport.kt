@@ -10,10 +10,12 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal class AndroidLanTransport(private val scope: CoroutineScope, private val profile: SessionProfile = SessionProfile.STANDARD, private val changed: () -> Unit = {}) {
+internal class AndroidLanTransport(private val scope: CoroutineScope, val profile: SessionProfile = SessionProfile.STANDARD, private val changed: () -> Unit = {}) {
     private val socket = Socket()
     private val budget = LanQueueBudget(profile)
     private val writer = Mutex()
+    // Framed writes reuse this scratch space; the writer mutex serializes every use of it.
+    private val frame = ByteArray(profile.maximumEnvelope + 5)
     @Volatile private var closed = false
     var readNanos = 0L
         private set
@@ -59,7 +61,8 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
             writer.withLock {
                 withContext(Dispatchers.IO) {
                     if (closed) throw SessionException(SessionFailure.CANCELLED)
-                    socket.getOutputStream().write(LanFraming.encode(envelope, profile))
+                    val framed = LanFraming.encodeInto(frame, envelope, profile)
+                    socket.getOutputStream().write(frame, 0, framed)
                 }
             }
         } catch (error: Exception) {
@@ -82,7 +85,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
                 socket.soTimeout = framing.nextDeadline?.let {
                     (it - SystemClock.elapsedRealtime()).coerceIn(1, 10000).toInt()
                 } ?: 0
-                val readStarted = if (profile == SessionProfile.BULK_PROBE) System.nanoTime() else 0L
+                val readStarted = if (profile != SessionProfile.STANDARD) System.nanoTime() else 0L
                 val count =
                     try {
                         input.read(buffer)
@@ -90,7 +93,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
                         framing.tick()
                         continue
                     }
-                if (profile == SessionProfile.BULK_PROBE) readNanos += System.nanoTime() - readStarted
+                if (profile != SessionProfile.STANDARD) readNanos += System.nanoTime() - readStarted
                 if (count < 0) {
                     framing.end()
                     throw java.io.EOFException("Local-network connection ended.")
@@ -101,9 +104,9 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, private va
                     val envelope = framing.feed(buffer, offset, count - offset, receivedAt)
                     offset += framing.consumed
                     if (envelope != null) {
-                        val deliveryStarted = if (profile == SessionProfile.BULK_PROBE) System.nanoTime() else 0L
+                        val deliveryStarted = if (profile != SessionProfile.STANDARD) System.nanoTime() else 0L
                         deliver(envelope)
-                        if (profile == SessionProfile.BULK_PROBE) deliveryNanos += System.nanoTime() - deliveryStarted
+                        if (profile != SessionProfile.STANDARD) deliveryNanos += System.nanoTime() - deliveryStarted
                     }
                 }
             }

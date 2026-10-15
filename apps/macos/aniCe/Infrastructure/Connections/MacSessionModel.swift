@@ -29,7 +29,7 @@ import Observation
   private var trustLocation: URL?
   var channelStateChanged: () -> Void = {}
   var channelCapacityChanged: () -> Void = {}
-  var applicationDataReceived: (Data) -> Bool = { _ in false }
+  var applicationDataReceived: (Data) async -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(attempt)":nil }
   func sendData(_ bytes: Data) async throws {
     guard let connection, state == "Secured", adapter.sessionCapacity(bytes.count + 31), await connection.applicationAvailable else { throw SessionBackpressure() }
@@ -363,9 +363,9 @@ import Observation
       }
     }
   }
-  private func received(_ bytes: Data, _ op: Int, _ candidate: Int) {
+  private func received(_ bytes: Data, _ op: Int, _ candidate: Int) async {
     guard op == generation, candidate == attempt else { return }
-    if applicationDataReceived(bytes) { return }
+    if await applicationDataReceived(bytes) { return }
     guard bytes == Data("aniCe connection check".utf8) else { return }
     receivedChecks += 1
     status = "Secured. Connection check received."

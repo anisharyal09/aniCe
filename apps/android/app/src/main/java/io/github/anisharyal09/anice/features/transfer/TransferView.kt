@@ -2,7 +2,6 @@
 // Presents local file transfer controls, incoming batch approval and progress in the Android feature workspace.
 package io.github.anisharyal09.anice.features.transfer
 
-import android.os.Environment
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,21 +14,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.io.File
 
 @Composable
 fun TransferView(controller: TransferController, compact: Boolean = false, onOpenDetails: () -> Unit = {}) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) {
-            controller.sendUris(uris)
-        }
+        if (uris.isNotEmpty()) controller.sendUris(uris)
+        controller.endPicker()
     }
 
-    val defaultDownloadFolder = remember {
-        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            ?: context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: File(context.filesDir, "Downloads")
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val destinationPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val intent = result.data
+        if (result.resultCode == android.app.Activity.RESULT_OK && intent?.data != null) {
+            controller.acceptIncomingOffer(intent.data!!, intent.flags)
+        }
+        controller.endPicker()
     }
 
     Surface(
@@ -50,16 +50,34 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                 Text("Local file transfer", style = MaterialTheme.typography.titleMedium)
             }
 
+            if (android.os.Build.VERSION.SDK_INT >= 33 && !androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                TextButton(onClick = { notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) {
+                    Text("Show transfer notifications")
+                }
+            }
+            if (controller.preparing) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Preparing files…", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { controller.cancelTransfer() }) { Text("Cancel") }
+                }
+            }
             when (val current = controller.state) {
                 is TransferState.Idle -> {
                     Text(
-                        "Send and receive files directly over authenticated local network.",
+                        "Send files over local network, with Bluetooth available when local network is disconnected.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    controller.activeChannel?.let { channel ->
+                        Text(
+                            if (channel.descriptor.transport == "lan") "Using local network" else "Using Bluetooth",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     if (!controller.peerConnected) {
                         Text(
-                            "Connect your trusted Mac over local network to transfer files.",
+                            "Connect your trusted Mac over local network or Bluetooth to transfer files.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -69,10 +87,12 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
+                            enabled = !controller.preparing,
                             onClick = {
                                 if (!controller.peerConnected) {
                                     controller.onDemandLanConnection?.invoke()
                                 }
+                                controller.beginPicker()
                                 launcher.launch(arrayOf("*/*"))
                             },
                             shape = MaterialTheme.shapes.small,
@@ -80,8 +100,9 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         ) {
                             Text("Send files…")
                         }
-                        if (!controller.peerConnected) {
+                        if (controller.activeChannel?.descriptor?.transport != "lan") {
                             OutlinedButton(
+                                enabled = !controller.preparing,
                                 onClick = { controller.onDemandLanConnection?.invoke() },
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier.heightIn(min = 48.dp)
@@ -182,13 +203,18 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         }
                     }
                     Text(
-                        "Save to: Downloads",
+                        "Choose a local folder for received files.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
-                            onClick = { controller.acceptIncomingOffer(defaultDownloadFolder) },
+                            onClick = {
+                                controller.beginPicker()
+                                destinationPicker.launch(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT_TREE)
+                                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                        android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION))
+                            },
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
@@ -271,6 +297,7 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         Button(
                             onClick = {
                                 controller.dismiss()
+                                controller.beginPicker()
                                 launcher.launch(arrayOf("*/*"))
                             },
                             enabled = controller.peerConnected,
@@ -297,6 +324,7 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         Button(
                             onClick = {
                                 controller.dismiss()
+                                controller.beginPicker()
                                 launcher.launch(arrayOf("*/*"))
                             },
                             enabled = controller.peerConnected,
@@ -324,6 +352,7 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         Button(
                             onClick = {
                                 controller.dismiss()
+                                controller.beginPicker()
                                 launcher.launch(arrayOf("*/*"))
                             },
                             enabled = controller.peerConnected,
@@ -351,6 +380,7 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                         Button(
                             onClick = {
                                 controller.dismiss()
+                                controller.beginPicker()
                                 launcher.launch(arrayOf("*/*"))
                             },
                             enabled = controller.peerConnected,

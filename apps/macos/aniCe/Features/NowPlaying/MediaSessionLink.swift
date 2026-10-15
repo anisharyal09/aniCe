@@ -44,6 +44,7 @@ import Observation
   }
   func capacity(_ kind: String) { if let link=links[kind], link.sending { link.wake=true } else { pump(kind) } }
   func handle(_ data: Data, channel kind: String) -> DataHandling {
+    guard data.count <= 4000 else { return .unrecognized }
     do {
       if let message=try MediaMessage.decode(data) { return receive(message,channel:kind) ? .handled:.discarded }
       if let message=try PlayerVolumeMessage.decode(data) { return receiveVolume(message,channel:kind) ? .handled:.discarded }

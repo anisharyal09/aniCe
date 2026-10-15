@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Owns explicit foreground LAN discovery, authenticated sessions and independent teardown.
+// Owns explicit LAN sessions, bounded picker/approved-work ownership and independent teardown.
 package io.github.anisharyal09.anice.infrastructure.connections
 
 import io.github.anisharyal09.anice.infrastructure.lan.*
@@ -14,11 +14,17 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.*
 import kotlinx.coroutines.*
 
-class LanSessionController(private val app: AniCeApplication) {
+class LanSessionController(private val app: AniCeApplication,
+    private val backgroundTimeoutMillis: () -> Long = {
+        app.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE)
+            .getInt("lan_background_timeout_minutes", 3).toLong() * 60_000L
+    }
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val discovery = AndroidLanDiscovery(app)
     private val networks = app.getSystemService(ConnectivityManager::class.java)
     private val presentations = mutableSetOf<Any>()
+    internal val foreground get() = presentations.isNotEmpty()
     @Volatile private var generation = 0L
     private var worker: Job? = null
     private var receiver: Job? = null
@@ -40,39 +46,67 @@ class LanSessionController(private val app: AniCeApplication) {
         private set
 
     private var backgroundTimeoutJob: Job? = null
+    private var workLease = false
+    private var pickerLease = false
+    var onUnleasedBackgroundWork: () -> Boolean = { false }
 
-    init {
-        ContextCompat.registerReceiver(
-            app,
-            object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (intent?.action == Intent.ACTION_SCREEN_OFF) {
-                        if (!app.transfer.isBusy) {
-                            startBackgroundDisconnectTimer("Local-network connection ended after screen lock.")
-                        }
-                    }
-                }
-            },
-            IntentFilter(Intent.ACTION_SCREEN_OFF),
-            ContextCompat.RECEIVER_EXPORTED,
-        )
+    fun updateWorkLease(approved: Boolean, picking: Boolean) {
+        val withdrawingPicker = pickerLease && !picking
+        val withdrawingWork = workLease && !approved
+        workLease = approved
+        pickerLease = picking
+        if (workLease || pickerLease) {
+            backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
+        } else if (withdrawingPicker && presentations.isEmpty()) {
+            onUnleasedBackgroundWork()
+            cancel("File selection ended while aniCe was background. Reconnect to continue.")
+        } else if (withdrawingWork && presentations.isEmpty()) {
+            startBackgroundDisconnectTimer()
+        }
     }
 
-    private fun startBackgroundDisconnectTimer(reason: String = "Local-network disconnected after being inactive in the background.") {
-        backgroundTimeoutJob?.cancel()
-        val prefs = app.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE)
-        val timeoutMinutes = prefs.getInt("lan_background_timeout_minutes", 3)
-        if (timeoutMinutes <= 0) return
-        backgroundTimeoutJob = scope.launch {
-            delay(timeoutMinutes * 60 * 1000L)
-            if (presentations.isEmpty() && !app.transfer.isBusy) {
-                cancel(reason)
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF && !workLease && !pickerLease) {
+                startBackgroundDisconnectTimer("Local-network connection ended after screen lock.")
             }
         }
     }
 
-    fun onTransferIdle() {
-        if (presentations.isEmpty()) {
+    init {
+        ContextCompat.registerReceiver(app, screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF),
+            ContextCompat.RECEIVER_EXPORTED)
+    }
+
+    internal fun dispose() {
+        cancel()
+        app.unregisterReceiver(screenReceiver)
+    }
+
+    private fun startBackgroundDisconnectTimer(reason: String = "Local-network disconnected after being inactive in the background.") {
+        backgroundTimeoutJob?.cancel()
+        val timeoutMillis = backgroundTimeoutMillis()
+        if (timeoutMillis <= 0) return
+        val op = generation
+        backgroundTimeoutJob = scope.launch {
+            delay(timeoutMillis)
+            if (op == generation && presentations.isEmpty() && !workLease && !pickerLease) {
+                this@LanSessionController.cancel(reason)
+            }
+        }
+    }
+
+    fun onWorkServiceStopped() {
+        if (!workLease) return
+        workLease = false
+        if (presentations.isEmpty() && !pickerLease) {
+            onUnleasedBackgroundWork()
+            cancel("Background transfer ownership ended. Reconnect to transfer again.")
+        }
+    }
+
+    fun onWorkIdle() {
+        if (presentations.isEmpty() && !workLease && !pickerLease) {
             startBackgroundDisconnectTimer()
         }
     }
@@ -184,7 +218,7 @@ class LanSessionController(private val app: AniCeApplication) {
                         val remaining = deadline - SystemClock.elapsedRealtime()
                         if (remaining <= 0) break
                         val maintenanceEvents = SessionMaintenance()
-                        val tcp = AndroidLanTransport(scope) { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } }
+                        val tcp = AndroidLanTransport(scope, endpoint.profile) { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } }
                         transport = tcp
                         try {
                             withTimeout(remaining) { tcp.connect(endpoint) }
@@ -230,7 +264,10 @@ class LanSessionController(private val app: AniCeApplication) {
                                 { bytes ->
                                     val handled =
                                         if (op == generation)
-                                            app.features.handle("lan", channelToken, bytes)
+                                            withContext(Dispatchers.Main.immediate) {
+                                                if (op == generation) app.features.handle("lan", channelToken, bytes)
+                                                else DataHandling.DISCARDED
+                                            }
                                         else DataHandling.UNRECOGNIZED
                                     if (
                                         op == generation &&
@@ -254,6 +291,7 @@ class LanSessionController(private val app: AniCeApplication) {
                                 controls = true,
                                 now = { SystemClock.elapsedRealtime() },
                                 changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } },
+                                profile = endpoint.profile,
                             )
                         connection = engine
                         receiver =
@@ -391,7 +429,7 @@ class LanSessionController(private val app: AniCeApplication) {
         // Retire keys synchronously even when the mutation originates outside a presentation.
         val op = generation
         connection?.retire()
-        scope.launch { if (op == generation) cancel("Trust or identity changed. Connect again.") }
+        scope.launch { if (op == generation) this@LanSessionController.cancel("Trust or identity changed. Connect again.") }
     }
 
     fun checkConnection() {
@@ -429,6 +467,9 @@ class LanSessionController(private val app: AniCeApplication) {
     }
 
     fun cancel(message: String = "Allow local-network connections on your Mac to reconnect.") {
+        backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
+        workLease = false
+        pickerLease = false
         app.features.retired("lan")
         generation++
         val old = connection
@@ -465,18 +506,19 @@ class LanSessionController(private val app: AniCeApplication) {
     fun background(presentation: Any, changingConfigurations: Boolean) {
         presentations.remove(presentation)
         if (presentations.isEmpty() && !changingConfigurations) {
-            if (app.transfer.isBusy) {
-                // Active transfer in flight: preserve the LAN connection!
+            if (pickerLease || workLease) {
                 return
             }
-            startBackgroundDisconnectTimer()
+            if (onUnleasedBackgroundWork()) {
+                cancel("Background transfer service is unavailable; keep aniCe open during transfer.")
+            } else startBackgroundDisconnectTimer()
         }
     }
     private val channelToken get() = "${generation}-${System.identityHashCode(connection)}"
     private fun publishChannel() {
         val token=channelToken
         val peer=selected ?: return
-        app.features.available(ChannelDescriptor(token,"lan",peer)) { bytes ->
+        app.features.available(ChannelDescriptor(token,"lan",peer,transport?.profile?.maximumPlaintext ?: 4000)) { bytes ->
             val engine=connection ?: throw SessionException(SessionFailure.CANCELLED)
             if(token!=channelToken || state!=ConnectionState.SECURED) throw SessionException(SessionFailure.CANCELLED)
             if(!engine.applicationAvailable || transport?.hasCapacity(bytes.size+31) != true) throw SessionBackpressure()

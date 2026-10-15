@@ -23,6 +23,24 @@ class SessionChannelTests {
     }
   }
 
+  @Test fun nativeRevocationIsCheckedBeforeDeliveryWithoutAdvancingCounter() = runBlocking {
+    var revoked = false
+    var loads = 0
+    val ch = channel(validate = { loads++; if (revoked) throw SessionException(SessionFailure.UNTRUSTED_PEER) })
+    val row = vectors().getJSONArray("valid").getJSONObject(0)
+    fun record(kind: RecordKind, sequence: ULong, plain: ByteArray = byteArrayOf()) =
+      SessionRecordCodec.seal(b(row, "key"), b(row, "iv"), b(row, "session"), 2, kind, sequence, plain)
+    ch.send(RecordKind.READY)
+    ch.receive(record(RecordKind.READY_ACK, 0uL))
+    val before = loads
+    assertArrayEquals(byteArrayOf(1), ch.receive(record(RecordKind.DATA, 1uL, byteArrayOf(1))).second)
+    assertEquals(before + 1, loads)
+    revoked = true
+    rejects(SessionFailure.UNTRUSTED_PEER) { ch.receive(record(RecordKind.DATA, 2uL, byteArrayOf(2))) }
+    assertEquals(2uL, ch.received)
+    assertEquals(ChannelStage.CLOSED, ch.stage)
+  }
+
   @Test
   fun independentRecordsAndUnsignedCounters() {
     val rows = vectors().getJSONArray("valid")
@@ -120,6 +138,50 @@ class SessionChannelTests {
       SessionRecordCodec.seal(key, iv, id, 1, RecordKind.READY, 0uL, byteArrayOf(1))
     }
     rejects(SessionFailure.MALFORMED) { SessionRecordCodec.nonce(ByteArray(11), 0uL) }
+  }
+
+  @Test
+  fun recordBoundsTamperingAndBufferIndependence() = runBlocking {
+    val key = ByteArray(32) { it.toByte() }
+    val iv = ByteArray(12) { (it * 3).toByte() }
+    val id = ByteArray(32) { (it * 7).toByte() }
+    val profile = SessionProfile.LAN_TRANSFER
+    // Empty, minimum and maximum LAN plaintexts size, seal and open through the same path.
+    for (size in listOf(0, 1, 2, 262143, 262144)) {
+      val plain = ByteArray(size) { (it % 251).toByte() }
+      val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 7uL, plain, profile)
+      assertEquals(size + 30, record.size)
+      assertArrayEquals(plain, SessionRecordCodec.open(key, iv, id, 1, 7uL, record, profile).second)
+    }
+    val source = ByteArray(262144) { (it % 251).toByte() }
+    val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 7uL, source, profile)
+    val sealed = record.copyOf()
+    java.util.Arrays.fill(source, 0)
+    // A sealed record owns its storage: reusing the caller's buffer cannot reach it.
+    assertArrayEquals(sealed, record)
+    val opened = SessionRecordCodec.open(key, iv, id, 1, 7uL, record, profile).second
+    java.util.Arrays.fill(record, 0)
+    // Opened plaintext owns its storage too; neither direction aliases its caller.
+    assertArrayEquals(ByteArray(262144) { (it % 251).toByte() }, opened)
+    fun tamper(index: Int) = sealed.copyOf().also { it[index] = (it[index] + 1).toByte() }
+    // Profile and length bytes are structural: they never reach the cipher.
+    for (index in listOf(0, 12, 13)) rejects(SessionFailure.MALFORMED) {
+      SessionRecordCodec.open(key, iv, id, 1, 7uL, tamper(index), profile)
+    }
+    rejects(SessionFailure.MALFORMED) {
+      val badKind = sealed.copyOf().also { it[1] = 5 }
+      SessionRecordCodec.open(key, iv, id, 1, 7uL, badKind, profile)
+    }
+    // Sequence, kind (when mapping to a valid kind like CLOSE), ciphertext, tag and the authenticated id/direction suffix are cryptographic.
+    for (index in listOf(1, 9, 14, sealed.size - 1)) rejects(SessionFailure.AUTHENTICATION) {
+      SessionRecordCodec.open(key, iv, id, 1, 7uL, tamper(index), profile)
+    }
+    rejects(SessionFailure.AUTHENTICATION) {
+      SessionRecordCodec.open(key, iv, ByteArray(32) { (it * 7 + 1).toByte() }, 1, 7uL, sealed, profile)
+    }
+    rejects(SessionFailure.AUTHENTICATION) {
+      SessionRecordCodec.open(key, iv, id, 2, 7uL, sealed, profile)
+    }
   }
 
   private fun channel(

@@ -77,6 +77,8 @@ class SessionController(application: Application) {
   private val presentations = mutableSetOf<Any>()
   internal val foreground get() = presentations.isNotEmpty()
   private var awaitingPermissions = false
+  private var workLease = false
+  private var pickerLease = false
   private var worker: Job? = null
   var beforeConnect: () -> Unit = {}
   private var readySignal: CompletableDeferred<Unit>? = null
@@ -114,7 +116,7 @@ class SessionController(application: Application) {
     object : BroadcastReceiver() {
       override fun onReceive(context: Context?, intent: Intent?) {
         if (
-          (intent?.action == Intent.ACTION_SCREEN_OFF && companionOwner == null) ||
+          (intent?.action == Intent.ACTION_SCREEN_OFF && companionOwner == null && !workLease && !pickerLease) ||
             (intent?.action == BluetoothAdapter.ACTION_STATE_CHANGED &&
               intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) != BluetoothAdapter.STATE_ON)
         )
@@ -315,7 +317,7 @@ class SessionController(application: Application) {
     // Retire keys synchronously even when the mutation originates outside a presentation.
     val op = operation
     connection?.retire()
-    scope.launch { if (op == operation) cancel("Trust or identity changed. Connect again.") }
+    scope.launch { if (op == operation) this@SessionController.cancel("Trust or identity changed. Connect again.") }
   }
 
   fun checkConnection() {
@@ -354,7 +356,9 @@ class SessionController(application: Application) {
   }
 
   fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
-        app.features.retired("ble")
+    workLease = false
+    pickerLease = false
+    app.features.retired("ble")
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++
     controlSupport = null
@@ -428,6 +432,19 @@ class SessionController(application: Application) {
     return true
   }
 
+  fun updateWorkLease(approved: Boolean, picking: Boolean) {
+    val withdrawing = workLease || pickerLease
+    workLease = approved && state == ConnectionState.SECURED
+    pickerLease = picking && state == ConnectionState.SECURED
+    if (withdrawing && !foreground && companionOwner == null && !workLease && !pickerLease) cancel()
+  }
+
+  fun onWorkServiceStopped() {
+    if (!workLease) return
+    workLease = false
+    if (!foreground && companionOwner == null && !pickerLease) cancel("Background transfer ownership ended.")
+  }
+
   fun foreground(presentation: Any = this) {
     presentations.add(presentation)
   }
@@ -435,7 +452,7 @@ class SessionController(application: Application) {
   fun background(presentation: Any = this, changingConfigurations: Boolean = false) {
     presentations.remove(presentation)
     // The system permission dialog temporarily backgrounds the app during explicit setup.
-    if (!foreground && !changingConfigurations && !awaitingPermissions && companionOwner == null) cancel()
+    if (!foreground && !changingConfigurations && !awaitingPermissions && companionOwner == null && !workLease && !pickerLease) cancel()
   }
 
   fun acquireCompanion(owner: Any) {
@@ -448,7 +465,7 @@ class SessionController(application: Application) {
     if (companionOwner !== owner) return
     companionOwner = null
     companionOwnershipChanged(false)
-    if (retainForegroundSession(preserveForegroundSession, foreground, state, renewalReason != null)) {
+    if (retainForegroundSession(preserveForegroundSession || workLease || pickerLease, foreground || workLease || pickerLease, state, renewalReason != null)) {
       automaticAttempt = false
       connection?.disableRenewal()
     } else cancel()
@@ -456,7 +473,7 @@ class SessionController(application: Application) {
 
   fun presentationCleared() {
     beforeConnect = {}
-    if (!foreground && companionOwner == null) cancel()
+    if (!foreground && companionOwner == null && !workLease && !pickerLease) cancel()
   }
 
   var companionOwnershipChanged: (Boolean)->Unit = {}
