@@ -80,6 +80,11 @@ actor SessionConnection {
       throw error
     }
   }
+  // Application delivery runs outside the reentry gate: it hops actors and decodes a whole record,
+  // and none of that may delay control flush, deadline maintenance or the next record's
+  // authentication. Delivery order is preserved because every caller awaits one `receive` before
+  // starting the next — LanTcpTransport's ingress consumer and MacSessionModel's input chain are both
+  // single sequential loops.
   func receive(_ envelope: Data) async throws {
     let op = generation
     guard !processing else {
@@ -87,7 +92,7 @@ actor SessionConnection {
       throw SessionFailure.state
     }
     processing = true
-    defer { if op == generation { processing = false }; changed() }
+    var delivery: Data?
     do {
       try ensure(op)
       let (kind, payload) = try SessionEnvelope.decode(envelope, profile: profile)
@@ -115,7 +120,7 @@ actor SessionConnection {
         case .data:
           if liveness != nil, let control = try SessionControl.application(result.1, maximumBytes: min(262144, max(4096, profile.maximumPlaintext))) {
             try liveness?.receive(control, now())
-          } else { await data(result.1) }
+          } else { delivery = result.1 }
         case .close:
           closedByPeer = true
           await close()
@@ -147,6 +152,11 @@ actor SessionConnection {
       await close()
       throw error
     }
+    if op == generation { processing = false }
+    changed()
+    // Control has already been flushed and the gate is released, so a slow or failing application
+    // handler can no longer hold up maintenance or the next record.
+    if let delivery { await data(delivery) }
   }
   private func makeChannel(_ op: Int) async throws {
     // Exporting can suspend; close the newly created channel if ownership was retired meanwhile.

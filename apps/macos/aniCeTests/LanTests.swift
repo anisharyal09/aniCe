@@ -107,6 +107,21 @@ final class LanTests: XCTestCase {
     }
   }
 
+  func testEnvelopesAreOwnedByTheCallerAndNeverAliasTheAssemblyBuffers() throws {
+    let first = Data(repeating: 1, count: 64), second = Data(repeating: 2, count: 64)
+    var wire = try LanFraming.encode(first)
+    wire.append(try LanFraming.encode(second))
+    var framing = LanFraming()
+    let frames = try feed(wire, into: &framing)
+    XCTAssertEqual(frames, [first, second])
+    let third = Data(repeating: 3, count: 64)
+    let following = try feed(try LanFraming.encode(third), into: &framing)
+    XCTAssertEqual(following, [third])
+    // A handed-off envelope is the frame's own value, so assembling the next record cannot rewrite
+    // one already sitting in the ingress queue.
+    XCTAssertEqual(frames, [first, second])
+  }
+
   func testBulkProbeIndependentOracleAndStandardIsolation() throws {
     let root = try helper.root("bulk-probe-vectors")
     let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
@@ -295,4 +310,120 @@ final class LanTests: XCTestCase {
     await Task.yield()
     await assertCapacity(transport, 2, false)
   }
+
+  @MainActor private func socket() -> NWConnection {
+    NWConnection(host: "127.0.0.1", port: 9, using: .tcp)
+  }
+
+  /// With no consumer running, a pushed envelope must stay until it is popped, and `pop` must report
+  /// nil only after the hand-off is closed — never a synthetic empty.
+  @MainActor func testIngressHandsOffEveryEnvelopeInOrder() async throws {
+    let transport = LanTcpTransport(socket(), profile: .lanTransfer)
+    let queue = await transport.ingressQueue
+    let expected = (0..<64).map { Data(repeating: UInt8($0), count: 4096) }
+    let produced = Task { for bytes in expected { await queue.push(bytes) } }
+    var received = [Data]()
+    for _ in expected.indices {
+      let next = await queue.pop()
+      received.append(try XCTUnwrap(next))
+    }
+    await produced.value
+    XCTAssertEqual(received, expected)
+    await queue.close()
+    let drained = await queue.pop()
+    XCTAssertNil(drained)
+  }
+
+  /// The regression guard for this change: a full hand-off suspends its producer. An implementation
+  /// that dropped (every `AsyncStream` buffering policy does) or grew without bound would complete
+  /// the suspended push here and report a count past the profile-3 admission limit.
+  @MainActor func testAFullIngressSuspendsItsProducerInsteadOfDroppingOrGrowing() async throws {
+    let transport = LanTcpTransport(socket(), profile: .lanTransfer)
+    let queue = await transport.ingressQueue
+    let envelope = Data(repeating: 6, count: 262175)
+    for _ in 0..<4 { await queue.push(envelope) }
+    let filled = await queue.count
+    XCTAssertEqual(filled, 4)
+    let probe = IngressProbe()
+    let blocked = Task {
+      await queue.push(envelope)
+      await probe.pushed()
+    }
+    for _ in 0..<200 where await probe.count == 0 { try await Task.sleep(for: .milliseconds(1)) }
+    let early = await probe.count
+    XCTAssertEqual(early, 0, "A full hand-off must suspend its producer")
+    let held = await queue.count
+    XCTAssertEqual(held, 4, "A suspended producer must not buffer past the bound")
+    let first = await queue.pop()
+    XCTAssertEqual(first, envelope)
+    await blocked.value
+    let refilled = await queue.count
+    XCTAssertEqual(refilled, 4, "Popping one envelope releases exactly one suspended push")
+    await transport.close()
+  }
+
+  /// The bound restates the documented admission limit, so the profile decides it: eight standard
+  /// envelopes, four for the larger bulk and LAN-transfer records.
+  @MainActor func testTheProfileSelectsTheDocumentedIngressBound() async throws {
+    for (profile, limit) in [(SessionProfile.standard, 8), (SessionProfile.lanTransfer, 4)] {
+      let transport = LanTcpTransport(socket(), profile: profile)
+      let queue = await transport.ingressQueue
+      for _ in 0..<limit { await queue.push(Data([1])) }
+      let filled = await queue.count
+      XCTAssertEqual(filled, limit)
+      let probe = IngressProbe()
+      let blocked = Task {
+        await queue.push(Data([2]))
+        await probe.pushed()
+      }
+      for _ in 0..<200 where await probe.count == 0 { try await Task.sleep(for: .milliseconds(1)) }
+      let past = await probe.count
+      let retained = await queue.count
+      XCTAssertEqual(past, 0)
+      XCTAssertEqual(retained, limit)
+      await transport.close()
+      await blocked.value
+      // Closing ends the hand-off without emptying it: the envelopes it already accepted still reach
+      // the consumer, and only then does `pop` report the end of the stream.
+      var delivered = [Data]()
+      while let bytes = await queue.pop() { delivered.append(bytes) }
+      XCTAssertEqual(delivered, Array(repeating: Data([1]), count: limit))
+    }
+  }
+
+  /// A stream end must not discard records the read loop already handed over. The peer's FIN commonly
+  /// follows its last record, so a close that emptied the hand-off would drop the record carrying the
+  /// peer's CLOSE — which inline delivery always delivered, and which `closedByPeer` depends on.
+  @MainActor func testClosingTheIngressHandOffStillDeliversTheEnvelopesAlreadyHandedOver() async throws {
+    let transport = LanTcpTransport(socket(), profile: .lanTransfer)
+    let queue = await transport.ingressQueue
+    let handed = (0..<4).map { Data(repeating: UInt8($0 + 1), count: 128) }
+    for bytes in handed { await queue.push(bytes) }
+    // The hand-off is full, so a fifth producer can only leave `push` once it is closed — awaiting it
+    // is what proves the close landed, instead of racing a yield loop. It must leave without
+    // appending, which is why it is absent from what is delivered below.
+    let blocked = Task { await queue.push(Data([9])) }
+    await transport.close()
+    await blocked.value
+    var delivered = [Data]()
+    while let bytes = await queue.pop() { delivered.append(bytes) }
+    XCTAssertEqual(delivered, handed, "Closing the hand-off must not discard what it already accepted")
+  }
+
+  /// Closing a transport has to unwind both halves of the hand-off: a consumer waiting on an empty
+  /// queue would otherwise strand the delivery task for the life of the process.
+  @MainActor func testClosingTheTransportReleasesAWaitingIngressConsumer() async throws {
+    let transport = LanTcpTransport(socket(), profile: .lanTransfer)
+    let queue = await transport.ingressQueue
+    let waiting = Task { await queue.pop() }
+    for _ in 0..<50 { await Task.yield() }
+    await transport.close()
+    let drained = await waiting.value
+    XCTAssertNil(drained)
+  }
+}
+
+private actor IngressProbe {
+  private(set) var count = 0
+  func pushed() { count += 1 }
 }

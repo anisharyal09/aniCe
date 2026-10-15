@@ -6,7 +6,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Keep transfer file opening, reads, receive writes, hashing, finalization and cleanup off presentation threads. Await ordered storage before credit, reject retired callbacks after suspension, and stop refused submissions from waking their own capacity waiters.
+- Report transfer direction and finalization in the file-transfer panel: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate rather than as 0%, and label progress for screen readers.
+
+- Publish received files under an available name instead of failing a verified batch: advance suffixes atomically when destination names are taken, publish by copying when destination volumes cannot hold hard links, report real POSIX error codes instead of unknown save errors, and preserve verified partials on finalization failure.
+
+- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered ingress queues, size read buffers to one whole record, and release session processing gates before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
+
+- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization.
 
 - Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks.
 

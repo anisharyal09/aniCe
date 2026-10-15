@@ -183,8 +183,9 @@ class IdentityService(
         }
     }
 
-    private companion object {
+    internal companion object {
         // Compiled once: journal validation runs on every identity read, that is on every record.
+        // Shared with the metadata store so both validate the same device-id format.
         val DEVICE_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     }
 }

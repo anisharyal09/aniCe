@@ -26,8 +26,8 @@ struct TransferView: View {
         waitingContent(batch: batch)
       case .incomingOffer(let batch):
         incomingOfferContent(batch: batch)
-      case .transferring(let batch, let fileIndex, let fileName, _, _, let totalBytes, let speedBps):
-        transferringContent(batch: batch, fileIndex: fileIndex, fileName: fileName, totalBytes: totalBytes, speedBps: speedBps)
+      case .transferring(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let speedBps):
+        transferringContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, speedBps: speedBps)
       case .completed(let batchId, let fileCount, let totalBytes):
         completedContent(batchId: batchId, fileCount: fileCount, totalBytes: totalBytes)
       case .rejected:
@@ -149,27 +149,48 @@ struct TransferView: View {
   }
 
   @ViewBuilder
-  private func transferringContent(batch: TransferBatch, fileIndex: Int, fileName: String, totalBytes: Int64, speedBps: Double) -> some View {
+  private func transferringContent(batch: TransferBatch, fileIndex: Int, fileName: String, fileBytes: Int64, fileSize: Int64, totalBytes: Int64, speedBps: Double) -> some View {
+    let activity = model.receiving ? "Receiving" : "Sending"
+    let target = model.receiving ? "from" : "to"
+    // A received file is hashed and published after its final chunk, so the bar sits at 100% with no
+    // rate while nothing is being transferred. Say so instead of appearing to stall.
+    let saving = model.finalizing && fileBytes >= fileSize
+    let hasTotal = batch.totalBytes > 0
     VStack(alignment: .leading, spacing: 8) {
       HStack {
-        Text("Transferring \(fileName)").font(.callout.weight(.medium))
+        Text("\(activity) \(fileName) \(target) \(batch.peerName)").font(.callout.weight(.medium))
           .lineLimit(1).truncationMode(.middle)
         Spacer()
         Text("\(fileIndex) of \(batch.files.count)").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
 
-      ProgressView(value: Double(totalBytes), total: Double(max(1, batch.totalBytes)))
+      if saving {
+        ProgressView().progressViewStyle(.linear)
+          .accessibilityLabel("Verifying and saving \(fileName)")
+        Text("Verifying and saving…")
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      } else if hasTotal {
+        ProgressView(value: Double(totalBytes), total: Double(batch.totalBytes))
+          .accessibilityLabel("\(activity) \(fileName), \(Int(Double(totalBytes) / Double(batch.totalBytes) * 100)) percent")
+      } else {
+        // An empty batch has no proportion to report; an invented 0% would read as a stall.
+        ProgressView().progressViewStyle(.linear)
+          .accessibilityLabel("\(activity) \(fileName)")
+      }
 
       HStack {
-        Text("\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: batch.totalBytes, countStyle: .file))")
+        Text(hasTotal
+          ? "\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: batch.totalBytes, countStyle: .file))"
+          : "\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)) transferred")
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         Spacer()
-        if speedBps > 0 {
-          Text("\(ByteCountFormatter.string(fromByteCount: Int64(speedBps), countStyle: .file))/s")
-            .font(.caption)
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-        }
+        // No rate is not a rate of zero: the rolling window reports nothing until it has two
+        // observations and decays on a stall. Hold the cell and mark it unavailable.
+        Text(speedBps > 0 ? "\(ByteCountFormatter.string(fromByteCount: Int64(speedBps), countStyle: .file))/s" : "—")
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
 
       Button("Cancel", role: .cancel) {
@@ -188,18 +209,22 @@ struct TransferView: View {
           .foregroundStyle(AniCePalette.success(colorScheme))
         Text("Transfer completed").font(.callout.weight(.medium))
       }
-      Text("\(fileCount) file\(fileCount == 1 ? "" : "s") (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))) transferred successfully.")
+      Text(model.receiving
+        ? "\(fileCount) file\(fileCount == 1 ? "" : "s") (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))) saved to \(selectedFolder.lastPathComponent)."
+        : "\(fileCount) file\(fileCount == 1 ? "" : "s") (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))) sent to your Android device.")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
 
       HStack(spacing: 8) {
-        Button("Send more…") {
-          model.dismiss()
-          promptAndSendFiles()
+        if !model.receiving {
+          Button("Send more…") {
+            model.dismiss()
+            promptAndSendFiles()
+          }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.small)
+          .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-        .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
 
         Button("Done") {
           model.dismiss()

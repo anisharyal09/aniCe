@@ -80,6 +80,7 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
 - [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
 - [Local File Transfer Feature Guide](docs/features/FILE_TRANSFER.md)
+- [Authenticated Record Performance & Cost Model](docs/PERFORMANCE.md)
 - [Design Guide & Palette](docs/design/DESIGN.md)
 - [Project Roadmap & Verification Gates](docs/ROADMAP.md)
 

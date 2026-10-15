@@ -42,6 +42,8 @@ class IdentityServiceTest {
         var unavailable = false
         var failDelete = false
         var signCalls = 0
+        var publicKeyReads = 0
+        var protectionReads = 0
         var signError: IdentityErrorKind? = null
         var signatureOverride: ByteArray? = null
         private fun check() { if (unavailable) throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE) }
@@ -52,8 +54,11 @@ class IdentityServiceTest {
                 initialize(ECGenParameterSpec("secp256r1")); generateKeyPair()
             }
         }
-        override fun publicKey(alias: String): ByteArray? { check(); return values[alias]?.let { IdentityCrypto.exportPublicKey(it.public) } }
-        override fun protection(alias: String): KeyProtection = KeyProtection.PLATFORM
+        override fun publicKey(alias: String): ByteArray? {
+            check(); publicKeyReads++
+            return values[alias]?.let { IdentityCrypto.exportPublicKey(it.public) }
+        }
+        override fun protection(alias: String): KeyProtection { protectionReads++; return KeyProtection.PLATFORM }
         override fun sign(alias: String, message: ByteArray): ByteArray {
             check()
             signCalls++
@@ -127,6 +132,20 @@ class IdentityServiceTest {
         val signature = service().sign(data)
         assertEquals(original, signature.snapshot)
         assertTrue(IdentityCrypto.verify(IdentityCrypto.decodeBase64(original.identity.publicKey), data, signature.signature))
+    }
+    @Test fun everyIdentityReadRevalidatesKeyPresenceAndProtectionExactlyOnce() {
+        val owner = service()
+        val original = owner.getOrCreateIdentity()
+        val presence = keys.publicKeyReads
+        val protections = keys.protectionReads
+        repeat(4) { index ->
+            assertEquals(original, owner.getOrCreateIdentity())
+            // Hoisting the journal regexes removed work inside a validation, never the validation:
+            // one identity read still performs exactly one native key-presence read and one
+            // key-protection read. A cache of either would leave these counters flat.
+            assertEquals(index + 1, keys.publicKeyReads - presence)
+            assertEquals(index + 1, keys.protectionReads - protections)
+        }
     }
     @Test fun publicReadsDoNotSignAndCreationResetAndRequestsEachSignOnce() {
         val original = service().getOrCreateIdentity()

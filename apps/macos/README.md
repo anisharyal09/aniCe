@@ -18,12 +18,12 @@ aniCe/
   Features/                    Identity, discovery, pairing and session presentation
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
-    Transfer/                  Transfer model, SwiftUI views and wire codecs
+    Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
   Infrastructure/
     Connections/               BLE/LAN owners and feature-neutral DATA dispatch
     Identity/                  Keychain storage and identity lifecycle
     Bluetooth/                 Native peripheral adapter and framing
-    LAN/                       Bonjour, TCP and framing
+    LAN/                       Bonjour, TCP, framing and bounded ingress queue
     Pairing/                   Bootstrap, trust and native PAKE interface
     Session/                   EDHOC, encrypted records and readiness
   UI/                          Shared palette and components
@@ -83,6 +83,6 @@ Features → Phone controls provides remote playback to Android. Local Home/comp
 
 ## Local File Transfer
 
-Features → Local file transfer and Home live-activity provide file sending, incoming batch approval, folder selection and progress tracking with transfer rates. Incoming files use exclusive job-owned partials and checked verification/synchronization before non-overwriting publication. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Features → Local file transfer and Home live-activity provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.

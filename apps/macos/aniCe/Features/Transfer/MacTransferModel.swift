@@ -73,7 +73,14 @@ enum TransferState: Equatable {
   private var sendingFile: TransferFile?
   private var epoch = UUID()
   private var capacityRevision = 0
-  private var finalizing = false
+
+  /// True from the moment a received file's last chunk lands until it is hashed and published.
+  private(set) var finalizing = false
+
+  /// Direction of the active or most recently finished batch: true while this Mac receives it. It
+  /// deliberately outlives cleanup so a completed panel can still report which way the files moved;
+  /// `dismiss()` clears it.
+  private(set) var receiving = false
 
   // Receiver state
   private struct OfferAssembly {
@@ -94,7 +101,7 @@ enum TransferState: Equatable {
   private var lastAckedWrittenBytes: Int64 = 0
   private var ackTask: Task<Void, Never>?
   private var ackTimerTask: Task<Void, Never>?
-  private var receiverStartTime: TimeInterval = 0
+  private var receiverRate = TransferRate()
   private var lastReceiverUiUpdate: TimeInterval = 0
 
   deinit {
@@ -334,6 +341,7 @@ enum TransferState: Equatable {
     let batchId = UUID()
     let batch = TransferBatch(id: batchId, files: files, totalBytes: totalBytes, peerName: channel.descriptor.peer.deviceName)
     currentBatch = batch
+    receiving = false
     state = .waitingForPeerApproval(batch: batch)
     acquireSleepAssertion()
 
@@ -387,7 +395,7 @@ enum TransferState: Equatable {
     guard activeChannel != nil else { return }
     let operation = epoch
     var totalTransferred: Int64 = 0
-    let startTime = ProcessInfo.processInfo.systemUptime
+    var rate = TransferRate()
     var lastUiUpdate: TimeInterval = 0
 
     for (fileIndex, file) in batch.files.enumerated() {
@@ -458,8 +466,7 @@ enum TransferState: Equatable {
           let now = ProcessInfo.processInfo.systemUptime
           if now - lastUiUpdate >= 0.1 || fileBytesSent == file.size {
             lastUiUpdate = now
-            let elapsed = max(0.001, now - startTime)
-            let speed = Double(totalTransferred) / elapsed
+            let speed = rate.add(totalTransferred, at: now)
 
             self.state = .transferring(
               batch: batch,
@@ -634,11 +641,12 @@ enum TransferState: Equatable {
       guard operation == epoch else { return }
     } catch { if operation == epoch { failTransfer(reason: "Cannot use destination: \(error.localizedDescription)") }; return }
     destinationFolder = destination
+    receiving = true
     receiverCurrentFileIndex = 0
     receiverWrittenBytes = 0
     receiverTotalTransferred = 0
     lastAckedWrittenBytes = 0
-    receiverStartTime = 0
+    receiverRate = TransferRate()
     lastReceiverUiUpdate = 0
 
     do { try await prepareReceiverForFile(at: 0, in: batch) }
@@ -761,13 +769,9 @@ enum TransferState: Equatable {
     receiverTotalTransferred += Int64(data.count)
 
     let now = ProcessInfo.processInfo.systemUptime
-    if receiverStartTime == 0 {
-      receiverStartTime = now
-    }
     if now - lastReceiverUiUpdate >= 0.1 || receiverWrittenBytes == currentFile.size {
       lastReceiverUiUpdate = now
-      let elapsed = max(0.001, now - receiverStartTime)
-      let speed = Double(receiverTotalTransferred) / elapsed
+      let speed = receiverRate.add(receiverTotalTransferred, at: now)
 
       state = .transferring(
         batch: batch,
@@ -798,11 +802,27 @@ enum TransferState: Equatable {
     let operation = epoch
     let file = batch.files[receiverCurrentFileIndex]
     ackTimerTask?.cancel(); ackTimerTask = nil
+    // Hashing and publication move no further bytes, so the last measured rate is stale. Both
+    // receivers present a zero rate as "no rate available" while the file is being saved.
+    if case .transferring(let active, let index, let name, let bytes, let size, let total, _) = state {
+      state = .transferring(
+        batch: active, fileIndex: index, fileName: name, fileBytes: bytes, fileSize: size,
+        totalBytes: total, speedBps: 0)
+    }
     let digest: Data
     do {
       digest = try await storage.finish(name: file.name, expected: file.sha256)
     } catch {
-      if operation == epoch { finalizing = false; failTransfer(reason: "Hash mismatch or destination finalization failed: \(error.localizedDescription)") }
+      if operation == epoch {
+        finalizing = false
+        // Verification and publication fail for different reasons; the receiver is told which one,
+        // and a digest mismatch reports the same wording Android uses for the same condition.
+        var reason = "Cannot save the received file: \(error.localizedDescription)"
+        if let failure = error as? SessionFailure, failure == .authentication {
+          reason = "Hash mismatch"
+        }
+        failTransfer(reason: reason)
+      }
       return
     }
     guard operation == epoch, receiverStorage === storage else { return }
@@ -851,6 +871,7 @@ enum TransferState: Equatable {
   }
 
   func dismiss() {
+    receiving = false
     state = .idle
     cleanupActiveTransfer()
   }
@@ -924,6 +945,142 @@ enum TransferState: Equatable {
   }
 }
 
+/// Reports the rate across the most recent `samples` observations rather than across the whole
+/// transfer.
+///
+/// A lifetime average (`total / elapsed`) cannot answer "how fast is it going now": it hides a ramp
+/// up, keeps reporting a healthy number while the link has stalled, and drags a genuinely fast
+/// second file down behind a slow first one. A bounded window decays toward zero when the link stops
+/// delivering and reflects the current link again as soon as bytes resume.
+struct TransferRate {
+  private let samples: Int
+  private var counts: [Int64]
+  private var times: [TimeInterval]
+  private var size = 0
+  private var next = 0
+
+  init(samples: Int = 8) {
+    precondition(samples >= 2, "A rate needs two observations.")
+    self.samples = samples
+    counts = Array(repeating: 0, count: samples)
+    times = Array(repeating: 0, count: samples)
+  }
+
+  /// Records `totalBytes` observed at `at` and returns the rate in bytes per second.
+  /// Returns `0` until two observations exist and whenever the window covers no progress, which
+  /// callers present as "no rate available" rather than as a measured zero.
+  mutating func add(_ totalBytes: Int64, at: TimeInterval) -> Double {
+    counts[next] = totalBytes
+    times[next] = at
+    next = (next + 1) % samples
+    if size < samples { size += 1 }
+    guard size >= 2 else { return 0 }
+    let oldest = size < samples ? 0 : next
+    let newest = (next - 1 + samples) % samples
+    let span = times[newest] - times[oldest]
+    let delta = counts[newest] - counts[oldest]
+    guard span > 0, delta > 0 else { return 0 }
+    return Double(delta) / span
+  }
+}
+
+/// Publishes a verified partial into its destination folder without overwriting anything.
+///
+/// The link is what decides the name, so a collision is resolved by the filesystem refusing the
+/// link rather than by a check-then-act on an existence probe. A hard link is an implementation
+/// detail of publication, not a requirement of the transfer, so a destination that cannot hold one
+/// (iCloud Drive, an external or network volume) publishes by copying. The digest is verified
+/// before this runs, so neither mode can publish unverified bytes.
+enum TransferPublisher {
+  /// Suffix attempts before publication is reported as impossible.
+  static let maximumSuffix = 10000
+
+  /// `name` for suffix `0`, otherwise `base (suffix).ext`.
+  static func suffixed(_ name: String, _ suffix: Int) -> String {
+    guard suffix > 0 else { return name }
+    let ns = name as NSString
+    let ext = ns.pathExtension
+    let base = ns.deletingPathExtension
+    return ext.isEmpty ? "\(base) (\(suffix))" : "\(base) (\(suffix)).\(ext)"
+  }
+
+  /// The real POSIX reason, so a failure is diagnosable instead of reported as an unknown save error.
+  private static func failure(_ code: Int32, _ url: URL) -> Error {
+    let reason = String(cString: strerror(code))
+    return NSError(
+      domain: NSPOSIXErrorDomain,
+      code: Int(code),
+      userInfo: [NSLocalizedDescriptionKey: "\(reason) (\(url.lastPathComponent))"]
+    )
+  }
+
+  /// The link primitive, so a volume that cannot hold hard links is verifiable without one.
+  static func publish(
+    _ partial: URL,
+    as name: String,
+    in folder: URL,
+    hardLink: (String, String) -> Int32 = { Darwin.link($0, $1) }
+  ) throws {
+    var suffix = 0
+    var linking = true
+    while suffix <= maximumSuffix {
+      let target = folder.appendingPathComponent(suffixed(name, suffix))
+      if linking {
+        if hardLink(partial.path, target.path) == 0 {
+          guard unlink(partial.path) == 0 else { throw failure(errno, partial) }
+          return
+        }
+        let code = errno
+        if code == EEXIST {
+          suffix += 1
+          continue
+        }
+        // Only a volume that cannot express a link switches modes; any other error is real.
+        guard code == EXDEV || code == ENOTSUP || code == EPERM || code == EMLINK else {
+          // The destination is what could not be published, so it is what the failure names — the
+          // staging partial is a random name the user never chose and cannot act on.
+          throw failure(code, target)
+        }
+        linking = false
+        suffix = 0
+        continue
+      }
+      // O_EXCL makes the destination decision atomic and non-overwriting.
+      let descriptor = open(target.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+      if descriptor < 0 {
+        let code = errno
+        // A name already in use advances the suffix rather than discarding an already verified
+        // transfer. An existing symlink is one: the system reports it as EEXIST or, under
+        // O_NOFOLLOW, as ELOOP.
+        if code == EEXIST || code == ELOOP {
+          suffix += 1
+          continue
+        }
+        throw failure(code, target)
+      }
+      do {
+        // The destination handle owns the descriptor, so creating it before anything that can throw
+        // means an unwind still closes the descriptor instead of leaking it.
+        let destination = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        let source = try FileHandle(forReadingFrom: partial)
+        while let block = try source.read(upToCount: 1 << 20), !block.isEmpty {
+          try destination.write(contentsOf: block)
+        }
+        try source.close()
+        try destination.synchronize()
+        try destination.close()
+      } catch {
+        // A half-written copy is not a published file; the verified partial survives for recovery.
+        try? FileManager.default.removeItem(at: target)
+        throw error
+      }
+      try FileManager.default.removeItem(at: partial)
+      return
+    }
+    throw failure(EEXIST, folder.appendingPathComponent(name))
+  }
+}
+
 // Each received file has one storage actor; transport delivery awaits checked writes before ACK credit.
 private actor TransferReceiveStorage {
   private var handle: FileHandle?
@@ -966,16 +1123,7 @@ private actor TransferReceiveStorage {
     try handle.synchronize()
     try handle.close()
     self.handle = nil
-    var target = folder.appendingPathComponent(name)
-    let ext = (name as NSString).pathExtension
-    let base = (name as NSString).deletingPathExtension
-    var suffix = 1
-    while FileManager.default.fileExists(atPath: target.path) {
-      target = folder.appendingPathComponent(ext.isEmpty ? "\(base) (\(suffix))" : "\(base) (\(suffix)).\(ext)")
-      suffix += 1
-    }
-    guard link(partial.path, target.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
-    guard unlink(partial.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+    try TransferPublisher.publish(partial, as: name, in: folder)
     self.partial = nil
     return digest
   }

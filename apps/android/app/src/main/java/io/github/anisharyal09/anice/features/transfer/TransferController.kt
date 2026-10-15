@@ -124,7 +124,16 @@ class TransferController(
     private var sendingFile: TransferFile? = null
     private val retiredBatches = java.util.ArrayDeque<String>()
     private var currentBatch: TransferBatch? = null
-    private var finalizing = false
+
+    /** True from the moment a received file's last chunk lands until it is hashed and published. */
+    var finalizing by mutableStateOf(false); private set
+
+    /**
+     * Direction of the active or most recently finished batch: true while this device receives it.
+     * It deliberately outlives [cleanupTransfer] so a completed panel can still report which way the
+     * files moved; [dismiss] clears it.
+     */
+    var receiving by mutableStateOf(false); private set
 
     private var peerMaxChunkBytes: Long = 3072L
     private var peerMaxWindow: Long = 64L
@@ -155,7 +164,7 @@ class TransferController(
     private var lastAckedWrittenBytes: Long = 0L
     private var ackJob: Job? = null
     private var ackTimerJob: Job? = null
-    private var receiverStartTime: Long = 0L
+    private var receiverRate = TransferRate()
     private var lastReceiverUiUpdate: Long = 0L
 
     private fun updateState(newState: TransferState) {
@@ -262,9 +271,14 @@ class TransferController(
     }
 
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
-        val message = try { TransferMessage.decode(bytes, chunkLimit(descriptor)) ?: return DataHandling.UNRECOGNIZED }
-        catch (_: TransferWireException) { return DataHandling.DISCARDED }
-        catch (_: SessionException) { return DataHandling.UNRECOGNIZED }
+        val limit = chunkLimit(descriptor)
+        // A profile-3 chunk record carries 131 KiB of CBOR. Decoding it on a background dispatcher
+        // keeps that work off the presentation thread, where it previously blocked frame rendering.
+        val message = try {
+            withContext(Dispatchers.Default) { TransferMessage.decode(bytes, limit) }
+                ?: return DataHandling.UNRECOGNIZED
+        } catch (_: TransferWireException) { return DataHandling.DISCARDED }
+          catch (_: SessionException) { return DataHandling.UNRECOGNIZED }
         if (channels[descriptor.transport]?.descriptor != descriptor) return DataHandling.DISCARDED
         if (message.kind == 1L) {
             capabilities[descriptor.transport] = message
@@ -409,6 +423,7 @@ class TransferController(
         val batchId = UUID.randomUUID().toString()
         val batch = TransferBatch(batchId, files, totalBytes, channel.descriptor.peer.deviceName)
         currentBatch = batch
+        receiving = false
         updateState(TransferState.WaitingForPeerApproval(batch))
         onLeaseChanged?.invoke(true)
 
@@ -470,7 +485,7 @@ class TransferController(
         if (activeChannel == null) return
         val operation = epoch
         var totalTransferred = 0L
-        val startTime = clock()
+        val rate = TransferRate()
         var lastUiUpdate = 0L
 
         for ((fileIndex, file) in batch.files.withIndex()) {
@@ -551,8 +566,7 @@ class TransferController(
                         val now = clock()
                         if (now - lastUiUpdate >= 100L || fileBytesSent == file.size) {
                             lastUiUpdate = now
-                            val elapsed = (now - startTime).coerceAtLeast(1L)
-                            val speed = (totalTransferred * 1000.0) / elapsed
+                            val speed = rate.add(totalTransferred, now)
 
                             withContext(dispatcher) {
                                 updateState(
@@ -738,13 +752,14 @@ class TransferController(
         val operation = epoch
 
         destinationDirectory = destinationDir
+        receiving = true
         receiveCleanup?.join()
         if (operation != epoch) return
         receiverCurrentFileIndex = 0
         receiverWrittenBytes = 0L
         receiverTotalTransferred = 0L
         lastAckedWrittenBytes = 0L
-        receiverStartTime = 0L
+        receiverRate = TransferRate()
         lastReceiverUiUpdate = 0L
 
         try { prepareReceiverForFile(0, current.batch) }
@@ -874,13 +889,9 @@ class TransferController(
         receiverTotalTransferred += data.size
 
         val now = clock()
-        if (receiverStartTime == 0L) {
-            receiverStartTime = now
-        }
         if (now - lastReceiverUiUpdate >= 100L || receiverWrittenBytes == currentFile.size) {
             lastReceiverUiUpdate = now
-            val elapsed = (now - receiverStartTime).coerceAtLeast(1L)
-            val speed = (receiverTotalTransferred * 1000.0) / elapsed
+            val speed = receiverRate.add(receiverTotalTransferred, now)
 
             updateState(
                 TransferState.Transferring(
@@ -917,6 +928,15 @@ class TransferController(
         finalizing = true
         val operation = epoch
         ackTimerJob?.cancel(); ackTimerJob = null
+        // Hashing and publication move no further bytes, so the last measured rate is stale. Both
+        // receivers present a zero rate as "no rate available" while the file is being saved.
+        (state as? TransferState.Transferring)?.let {
+            updateState(
+                TransferState.Transferring(
+                    it.batch, it.fileIndex, it.fileName, it.fileBytes, it.fileSize, it.totalBytes, 0.0
+                )
+            )
+        }
         val digest = try {
             storage.finish(file.name, file.sha256)
         } catch (error: Exception) {
@@ -975,6 +995,7 @@ class TransferController(
     }
 
     fun dismiss() {
+        receiving = false
         updateState(TransferState.Idle)
         cleanupTransfer()
     }

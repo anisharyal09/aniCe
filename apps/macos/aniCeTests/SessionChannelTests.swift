@@ -56,6 +56,23 @@ private final class ChannelClock: @unchecked Sendable {
     instant = value
   }
 }
+/// Holds the first application delivery open so the session gate can be probed while it is
+/// outstanding, and records every delivery so ordering stays asserted.
+private actor ChannelDeliveryGate {
+  private var resume: CheckedContinuation<Void, Never>?
+  private(set) var entered = false
+  private(set) var delivered = [Data]()
+  func pause(_ bytes: Data) async {
+    delivered.append(bytes)
+    guard delivered.count == 1 else { return }
+    entered = true
+    await withCheckedContinuation { resume = $0 }
+  }
+  func release() {
+    resume?.resume()
+    resume = nil
+  }
+}
 private actor DeadlineValidationProbe {
   private(set) var loads = 0
   var fault: SessionFailure?
@@ -495,6 +512,49 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       XCTAssertTrue(closed); XCTAssertTrue(i.isEmpty); XCTAssertTrue(r.isEmpty)
       await c.close(); await s.close()
     }
+  }
+  func testDeliveryDoesNotHoldTheSessionGateOrReorderRecords() async throws {
+    let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    let outI = ChannelMailbox(), outR = ChannelMailbox()
+    let gate = ChannelDeliveryGate()
+    let c = SessionConnection(
+      handshake: try helper.engine(v, server: false), responder: false, capacity: { _ in true },
+      submit: { await outI.append($0) }, data: { await outI.record($0) }, secured: {})
+    let s = SessionConnection(
+      handshake: try helper.engine(v, server: true), responder: true, capacity: { _ in true },
+      submit: { await outR.append($0) }, data: { await gate.pause($0) }, secured: {})
+    func pump() async throws {
+      for _ in 0..<32 {
+        let hasI = await !outI.messages.isEmpty, hasR = await !outR.messages.isEmpty
+        if !hasI && !hasR { return }
+        if hasI { try await s.receive(outI.take()) }
+        if await !outR.messages.isEmpty { try await c.receive(outR.take()) }
+      }
+      XCTFail("Unbounded session exchange")
+    }
+    try await c.start()
+    try await pump()
+    let first = Data((0..<4000).map { UInt8(truncatingIfNeeded: $0) })
+    let second = Data(repeating: 7, count: 512)
+    try await c.sendData(first)
+    let delivering = Task { try await s.receive(outI.take()) }
+    for _ in 0..<200 where await !gate.entered { try await Task.sleep(for: .milliseconds(1)) }
+    let entered = await gate.entered
+    XCTAssertTrue(entered)
+    // A delivery that holds the gate would make this health check a silent no-op, which is exactly
+    // how a slow application handler used to stall control flush and deadline maintenance.
+    let before = await s.maintenanceRuns
+    try await s.tick()
+    let after = await s.maintenanceRuns
+    XCTAssertEqual(after, before + 1, "Delivery must not hold the session gate")
+    await gate.release()
+    try await delivering.value
+    try await c.sendData(second)
+    try await s.receive(outI.take())
+    let delivered = await gate.delivered
+    XCTAssertEqual(delivered, [first, second], "Releasing the gate must not reorder records")
+    await c.close()
+    await s.close()
   }
   func testCodecRejectsInvalidMaterialAndSealBounds() async throws {
     let cases = [

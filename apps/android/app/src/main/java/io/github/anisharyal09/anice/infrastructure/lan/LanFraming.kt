@@ -32,7 +32,9 @@ class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, 
     var consumed = 0
         private set
 
-    // The caller samples once per read and awaits delivery before feeding the remaining slice.
+    // One sample per read: every slice of that read is fed with that read's receivedAt. The caller
+    // must keep the returned envelopes in order, but it may hand them off instead of delivering
+    // inline, because an assembled envelope is an owned array this instance no longer references.
     fun feed(buffer: ByteArray, start: Int, length: Int, receivedAt: Long): ByteArray? {
         if (failed) throw SessionException(SessionFailure.CANCELLED)
         require(start >= 0 && length >= 0 && start <= buffer.size - length)

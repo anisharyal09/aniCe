@@ -10,7 +10,13 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Fixed
 
-- Keep transfer file opening, reads, receive writes, hashing, finalization and cleanup off presentation threads. Await ordered storage before credit, reject retired callbacks after suspension, and stop refused submissions from waking their own capacity waiters.
+- Report transfer direction and finalization in the file-transfer panels and Android's progress notification: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate progress rather than as 0%, label progress for screen readers, and correct the completion notification's file count.
+
+- Publish received files under an available name instead of failing a verified batch: resolve taken destination names by suffixing (`name (1).ext`), confirm destination-provider renames, fall back to copying when destinations cannot hold hard links, report real POSIX error codes on macOS, and preserve verified partials on finalization failure.
+
+- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered ingress queues, size read buffers to one whole record, decode received chunks off presentation threads, and release session operation mutexes before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
+
+- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization and preparation.
 
 - Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks. On Android, remove duplicate native reads around synchronous cryptography while validating before delivery and retaining generation/deadline fences.
 

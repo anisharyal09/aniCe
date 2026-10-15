@@ -19,12 +19,12 @@ app/
       app/                          Assembly and navigation
       features/                     Feature models and presentation
         nowplaying/                 Playback, codecs, artwork and native media presentation
-        transfer/                   Transfer controller, document-tree destination, foreground service, UI and wire codec
+        transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/
         connections/                BLE/LAN owners, nearby policy and DATA dispatch
         identity/                   Keystore storage and identity lifecycle
         bluetooth/                  Native scan/GATT and framing
-        lan/                        NSD, TCP and framing
+        lan/                        NSD, TCP, framing and bounded ingress queue
         pairing/                    Bootstrap, trust and native PAKE interface
         session/                    EDHOC, encrypted records and readiness
       ui/                           Shared theme and components
@@ -90,4 +90,4 @@ Home and Features → Mac controls provide playback, player selection and suppor
 
 ## Local File Transfer
 
-Home and Features → Local file transfer provide file transfer controls, incoming batch approval and progress tracking with rate metrics. Reception uses an approved local document-tree folder after provider preflight. Exclusive partials are verified and synchronized before provider rename; SAF atomicity is not assumed. Background continuation requires foreground approval and the connected-device transfer service; notification permission controls drawer visibility. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Home and Features → Local file transfer provide file transfer controls, incoming batch approval and rolling-window rate tracking. Reception uses an approved local document-tree folder with non-overwriting numeric suffixes (`name (1).ext`) and copy fallback on filesystems lacking hard links. Exclusive partials are verified and synchronized before provider publication; SAF atomicity is not assumed. Background continuation requires foreground approval and the connected-device transfer service; notification permission controls drawer visibility. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).

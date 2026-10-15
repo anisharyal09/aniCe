@@ -1,7 +1,67 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Owns ordered Network.framework frames, bounded submissions and descriptor retirement.
+// Owns ordered Network.framework frames, a bounded ingress hand-off, and descriptor retirement.
 import Foundation
 @preconcurrency import Network
+
+/// Bounded ordered hand-off between a transport read loop and its single delivery consumer.
+///
+/// A full queue suspends the producer, so the bound is real backpressure and never a drop.
+/// `AsyncStream` has no such policy — every buffering option discards an element when full, which
+/// would fail a valid transfer on a fast link. One consumer drains in order, which is the record
+/// order authenticated sequencing depends on.
+actor LanIngressQueue {
+  private let limit: Int
+  private var pending = [Data]()
+  private var room: CheckedContinuation<Void, Never>?
+  private var next: CheckedContinuation<Void, Never>?
+  private var closed = false
+  init(limit: Int) { self.limit = max(1, limit) }
+  var count: Int { pending.count }
+  /// Only one producer exists — the read loop issues its next read only after this returns — so at
+  /// most one producer is ever suspended here.
+  func push(_ bytes: Data) async {
+    while !closed, pending.count >= limit {
+      await withCheckedContinuation { room = $0 }
+    }
+    guard !closed else { return }
+    pending.append(bytes)
+    if let waiting = next {
+      next = nil
+      waiting.resume()
+    }
+  }
+  /// The single consumer. Reports nil once the queue is closed and drained. Both continuations are
+  /// wake-ups only, so the resumed side always re-reads `pending` and `closed` rather than a value it
+  /// could observe out of date.
+  func pop() async -> Data? {
+    while pending.isEmpty {
+      if closed { return nil }
+      await withCheckedContinuation { next = $0 }
+      if closed, pending.isEmpty { return nil }
+    }
+    let bytes = pending.removeFirst()
+    if let waiting = room {
+      room = nil
+      waiting.resume()
+    }
+    return bytes
+  }
+  /// Closes the hand-off without emptying it.
+  ///
+  /// A producer suspended on a full queue and a consumer waiting on an empty one both have to be
+  /// let go, or closing the transport would strand them instead of unwinding the read loop. Entries
+  /// the read loop already handed over still belong to the consumer: the peer's FIN commonly follows
+  /// its last record, so a close that discarded the queue would drop the record carrying the peer's
+  /// CLOSE. `pop` reports nil only once the queue is closed *and* drained.
+  func close() {
+    guard !closed else { return }
+    closed = true
+    room?.resume()
+    room = nil
+    next?.resume()
+    next = nil
+  }
+}
 
 actor LanTcpTransport {
   private let socket: NWConnection
@@ -18,11 +78,17 @@ actor LanTcpTransport {
   private var ended: (@Sendable (Error) -> Void)?
   private var assemblyWatchdog: Task<Void, Never>?
   private var assemblyDeadline: TimeInterval?
+  // The read loop hands every assembled envelope here and returns to `socket.receive` immediately, so
+  // the socket stays read while an earlier record is still being decoded, validated and written. The
+  // capacity restates the documented admission bound (8 envelopes standard, 4 otherwise) rather than
+  // adding one.
+  private let ingress: LanIngressQueue
   init(_ socket: NWConnection, profile: SessionProfile = .standard) {
     self.socket = socket
     self.profile = profile
     self.framing = LanFraming(profile: profile)
     self.budget = LanQueueBudget(profile: profile)
+    self.ingress = LanIngressQueue(limit: profile == .standard ? 8 : 4)
   }
   nonisolated static func parameters() -> NWParameters {
     let tcp = NWProtocolTCP.Options()
@@ -53,6 +119,22 @@ actor LanTcpTransport {
       Task { await self?.stateChanged(state) }
     }
     socket.start(queue: DispatchQueue(label: "aniCe LAN connection"))
+    // Not stored: the consumer ends by itself once the hand-off is closed and drained, so there is no
+    // handle to cancel and no owner to leak. It holds the transport weakly.
+    Task { [weak self] in await self?.drain() }
+  }
+  /// A delivery failure reaches the same terminal handling as an inline one, and remains the reported
+  /// cause: `fail` closes the transport, which is what releases a reader suspended in the hand-off.
+  /// The consumer retires `deliver` when it ends, so a close that leaves envelopes behind still lets
+  /// them be delivered before the closure goes away.
+  private func drain() async {
+    defer { deliver = nil }
+    do {
+      while let bytes = await ingress.pop() {
+        guard let deliver else { return }
+        try await deliver(bytes)
+      }
+    } catch { fail(error) }
   }
   private func pathChanged(_ path: NWPath) {
     guard !closed, let interfaces else { return }
@@ -77,6 +159,9 @@ actor LanTcpTransport {
     }
   }
   func capacity(_ size: Int) -> Bool { !closed && budget.canReserve(size) }
+  /// Exposed so the hand-off ordering and the documented admission bound stay verifiable without a
+  /// live Wi-Fi socket, which the hosted suite cannot open.
+  var ingressQueue: LanIngressQueue { ingress }
   func submit(_ envelope: Data) async throws {
     guard !closed else { throw SessionFailure.cancelled }
     let bytes = try LanFraming.encode(envelope, profile: profile)
@@ -112,7 +197,9 @@ actor LanTcpTransport {
   }
   private func receive() {
     guard !closed else { return }
-    socket.receive(minimumIncompleteLength: 1, maximumLength: 65536) {
+    // One whole profile record fits one read. TCP returns as soon as any byte is available, so sizing
+    // the buffer to the record does not delay a partial frame or its assembly deadline.
+    socket.receive(minimumIncompleteLength: 1, maximumLength: profile.maximumEnvelope + 5) {
       [weak self] data, _, complete, error in
       Task { await self?.received(data, complete: complete, error: error) }
     }
@@ -125,9 +212,12 @@ actor LanTcpTransport {
         var offset = 0
         while offset < data.count {
           guard !closed else { return }
-          let envelope = try framing.feed(data, offset: &offset, receivedAt: receivedAt)
+          let frame = try framing.feed(data, offset: &offset, receivedAt: receivedAt)
           scheduleAssemblyDeadline()
-          if let envelope { try await deliver?(envelope) }
+          // Reading must not wait on delivery: the previous shape held the socket unread for the whole
+          // decode, native validation and actor hop of every record, so TCP backpressure amplified
+          // each stall. Only a full hand-off suspends the reader.
+          if let frame { await ingress.push(frame) }
         }
       }
       guard !closed else { return }
@@ -167,8 +257,11 @@ actor LanTcpTransport {
     closed = true
     assemblyWatchdog?.cancel()
     assemblyWatchdog = nil
-    deliver = nil
+    // The hand-off is closed but not emptied, and the consumer is not cancelled: it delivers the
+    // envelopes the read loop already handed over and then ends by itself, which is what keeps a
+    // stream end from discarding a record that arrived before it. Everything else retires now.
     ended = nil
+    Task { await ingress.close() }
     socket.stateUpdateHandler = nil
     socket.pathUpdateHandler = nil
     socket.cancel()

@@ -561,4 +561,62 @@ class SessionChannelTests {
     assertTrue(GattReassembler.fragments(byteArrayOf(1), 0xffffffffL, 20, 2).isNotEmpty())
     rejects(SessionFailure.MALFORMED) { SessionEnvelope.decode(byteArrayOf(9, 0)) }
   }
+
+  /**
+   * Application delivery must not hold the session lock: a slow handler would otherwise stall
+   * control flush, deadline maintenance and the next record's authentication behind it. The probe is
+   * order-neutral because `maintenanceRuns` only advances when `tick()` acquires the lock.
+   */
+  @Test
+  fun deliveryRunsOutsideTheSessionLockWithoutReorderingOrDropping() = runBlocking {
+    val h = SessionTests()
+    val v = h.root().getJSONArray("valid").getJSONObject(0)
+    val outboundI = java.util.ArrayDeque<ByteArray>()
+    val outboundR = java.util.ArrayDeque<ByteArray>()
+    val dataR = mutableListOf<ByteArray>()
+    val entered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    var securedI = 0
+    var securedR = 0
+    suspend fun pump(from: java.util.ArrayDeque<ByteArray>, to: SessionConnection) {
+      while (from.isNotEmpty()) to.receive(from.removeFirst())
+    }
+    val c = SessionConnection(h.engine(v, false), false, { true }, { outboundI.add(it) }, {}, { securedI++ })
+    val s =
+      SessionConnection(
+        h.engine(v, true),
+        true,
+        { true },
+        { outboundR.add(it) },
+        {
+          dataR.add(it)
+          if (dataR.size == 1) { entered.complete(Unit); release.await() }
+        },
+        { securedR++ },
+      )
+    c.start()
+    repeat(4) { pump(outboundI, s); pump(outboundR, c) }
+    assertEquals(1, securedI)
+    assertEquals(1, securedR)
+
+    val payload = ByteArray(4000) { it.toByte() }
+    c.sendData(payload)
+    val delivering = launch { pump(outboundI, s) }
+    entered.await()
+    val before = s.maintenanceRuns
+    s.tick()
+    assertEquals("Delivery must not hold the session lock", before + 1, s.maintenanceRuns)
+    assertFalse("Delivery must still be outstanding while the handler is blocked", delivering.isCompleted)
+    release.complete(Unit)
+    delivering.join()
+    assertArrayEquals(payload, dataR.single())
+
+    // The caller awaits one receive before the next, so ordering survives the unlock.
+    val second = ByteArray(16) { 5 }
+    c.sendData(second)
+    pump(outboundI, s)
+    assertEquals(2, dataR.size)
+    assertArrayEquals(payload, dataR[0])
+    assertArrayEquals(second, dataR[1])
+  }
 }

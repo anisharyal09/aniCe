@@ -40,10 +40,10 @@ class AndroidIdentityMetadata(context: Context, filename: String = "identity-v1.
             val pending = json.optJSONObject("pending")?.let { PendingIdentity(it.getString("alias"), it.getString("deviceId")) }
             val list = json.getJSONArray("cleanup")
             val cleanup = (0 until list.length()).map { list.getString(it) }
-            fun validAlias(alias: String): Boolean = Regex("^anice\\.(identity|test)\\.[a-zA-Z0-9.-]+$").matches(alias)
+            fun validAlias(alias: String): Boolean = ALIAS.matches(alias)
             require(active == null || (validAlias(active.alias) && active.alias.endsWith(active.identity.deviceId)))
             require(pending == null || (validAlias(pending.alias) && pending.alias.endsWith(pending.deviceId) &&
-                pending.deviceId.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"))))
+                pending.deviceId.matches(IdentityService.DEVICE_ID)))
             require(cleanup.all(::validAlias) && cleanup.none { it == active?.alias || it == pending?.alias })
             require(active != null || pending != null)
             return IdentityJournal(active, pending, cleanup)
@@ -62,6 +62,11 @@ class AndroidIdentityMetadata(context: Context, filename: String = "identity-v1.
             file.failWrite(stream)
             throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE, error)
         }
+    }
+
+    private companion object {
+        // Compiled once: journal validation runs on every identity read, that is on every record.
+        val ALIAS = Regex("^anice\\.(identity|test)\\.[a-zA-Z0-9.-]+$")
     }
 }
 

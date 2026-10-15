@@ -415,6 +415,64 @@ final class TransferModelTests: XCTestCase {
 
   func testLargerLanChunksStreamAcrossCreditWindows() async throws { try await verifyBatch(transport: "lan", maximumChunkBytes: 131072) }
 
+  func testDirectionAndFinalizationAreObservableAcrossAFullRoundTrip() async throws {
+    let capability = try TransferMessage.capability().encode(maximumChunkBytes: 3072)
+    let sender = MacTransferModel()
+    let receiver = MacTransferModel()
+
+    let senderChannel = MockSecuredChannel(transport: "lan", deviceName: "MacBook", maximumDataBytes: 4000)
+    let receiverChannel = MockSecuredChannel(transport: "lan", deviceName: "Phone", maximumDataBytes: 4000)
+
+    sender.available(senderChannel)
+    _ = await sender.handle(capability, on: senderChannel.descriptor)
+    receiver.available(receiverChannel)
+    _ = await receiver.handle(capability, on: receiverChannel.descriptor)
+
+    senderChannel.onSendData = { data in _ = await receiver.handle(data, on: receiverChannel.descriptor) }
+    receiverChannel.onSendData = { data in _ = await sender.handle(data, on: senderChannel.descriptor) }
+
+    // No batch exists yet, so neither side may claim a direction.
+    XCTAssertFalse(sender.receiving)
+    XCTAssertFalse(receiver.receiving)
+
+    let testData = Data((0..<12288).map { UInt8($0 % 251) })
+    let testFileURL = tempDir.appendingPathComponent("direction.bin")
+    try testData.write(to: testFileURL)
+
+    await sender.sendFiles(urls: [testFileURL])
+
+    guard case .incomingOffer = receiver.state else {
+      XCTFail("Expected incomingOffer on receiver, got \(receiver.state)")
+      return
+    }
+    XCTAssertFalse(receiver.receiving, "An unapproved offer must not claim the receiving direction")
+
+    let destFolder = tempDir.appendingPathComponent("downloads")
+    try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
+    await receiver.acceptIncomingOffer(destination: destFolder)
+    XCTAssertTrue(receiver.receiving, "Receiver must report the receiving direction")
+
+    var completed = false
+    for _ in 0..<50 {
+      if case .completed = receiver.state, case .completed = sender.state {
+        completed = true
+        break
+      }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertTrue(completed, "Transfer did not complete in time")
+
+    // The completed panel still reports which way the files moved, so the direction has to outlive
+    // the cleanup that runs immediately after the completed state is published.
+    XCTAssertTrue(receiver.receiving, "Receiver lost its direction at completion")
+    XCTAssertFalse(sender.receiving, "Sender claimed the receiving direction")
+    XCTAssertFalse(receiver.finalizing, "Finalization outlived the batch")
+    XCTAssertFalse(sender.finalizing)
+
+    receiver.dismiss()
+    XCTAssertFalse(receiver.receiving, "Dismiss must clear the recorded direction")
+  }
+
   private func verifyBatch(transport: String, maximumChunkBytes: Int = 3072) async throws {
     let maximumDataBytes = maximumChunkBytes > 3072 ? 262144 : 4000
     let capability = try TransferMessage.capability(version: maximumChunkBytes > 3072 ? 2 : 1, maxChunkBytes: Int64(maximumChunkBytes), maxWindow: maximumChunkBytes > 3072 ? 8 : 64).encode(maximumChunkBytes: maximumChunkBytes)
@@ -820,7 +878,10 @@ final class TransferModelTests: XCTestCase {
       XCTAssertEqual(bytes, Int64(totalBytes))
     } else if case .transferring(_, _, _, _, _, let bytes, let speed) = receiver.state {
       XCTAssertEqual(bytes, Int64(totalBytes))
-      XCTAssertGreaterThan(speed, 0)
+      // A rate needs two observations separated in time. This burst completes inside one 100 ms UI
+      // interval, so there is genuinely no rate to report, and reporting a lifetime average here is
+      // exactly the drift the rolling window replaced.
+      XCTAssertEqual(speed, 0)
     } else {
       XCTFail("Unexpected receiver state: \(receiver.state)")
     }
@@ -828,6 +889,157 @@ final class TransferModelTests: XCTestCase {
     let receivedFileURL = destFolder.appendingPathComponent("rapid.bin")
     XCTAssertTrue(FileManager.default.fileExists(atPath: receivedFileURL.path))
     XCTAssertEqual(try Data(contentsOf: receivedFileURL), fileBytes)
+  }
+}
+
+final class TransferRateTests: XCTestCase {
+  func testRecentSliceDecidesTheRateNotTheLifetimeAverage() {
+    var rate = TransferRate(samples: 3)
+    XCTAssertEqual(rate.add(0, at: 0), 0)
+    XCTAssertEqual(rate.add(1048576, at: 0.1), 10485760, accuracy: 1)
+    // The origin is still in the window, so this covers the whole 0.2 s observed so far.
+    XCTAssertEqual(rate.add(1179648, at: 0.2), 5898240, accuracy: 1)
+    // 1 MiB at t=0 has aged out: only 128 KiB across the window's 0.2 s remains, so the rate must
+    // drop 16x. A lifetime average would still report 3932160 B/s here, which is the drift this
+    // replaced.
+    XCTAssertEqual(rate.add(1179648, at: 0.3), 655360, accuracy: 1)
+    XCTAssertEqual(rate.add(1179648, at: 0.4), 0)
+  }
+
+  func testAnIncompleteWindowMeasuresFromItsOldestSample() {
+    var rate = TransferRate()
+    XCTAssertEqual(rate.add(4096, at: 0), 0)
+    // Two observations at one instant span no time and cannot yield a rate.
+    XCTAssertEqual(rate.add(8192, at: 0), 0)
+    XCTAssertEqual(rate.add(8192, at: 0), 0)
+    // 4096 B arrived across the window's single elapsed second; the lifetime average is 8192 B/s.
+    XCTAssertEqual(rate.add(8192, at: 1), 4096, accuracy: 0.001)
+  }
+}
+
+final class TransferPublisherTests: XCTestCase {
+  private var tempDir: URL!
+
+  override func setUpWithError() throws {
+    tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+  }
+
+  override func tearDownWithError() throws {
+    if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+  }
+
+  private func name(_ suffix: Int) -> String { TransferPublisher.suffixed("sample.bin", suffix) }
+
+  func testSuffixZeroIsTheNameItselfAndTheRestIsPlacedBeforeTheExtension() {
+    XCTAssertEqual(TransferPublisher.suffixed("sample.bin", 0), "sample.bin")
+    XCTAssertEqual(TransferPublisher.suffixed("sample.bin", 1), "sample (1).bin")
+    XCTAssertEqual(TransferPublisher.suffixed("sample.bin", 12), "sample (12).bin")
+    // Only the last dot separates an extension, so a compound suffix keeps its own dots.
+    XCTAssertEqual(TransferPublisher.suffixed("archive.tar.gz", 4), "archive.tar (4).gz")
+    XCTAssertEqual(TransferPublisher.suffixed("README", 3), "README (3)")
+    // A leading dot names the file; it is not an extension separator.
+    XCTAssertEqual(TransferPublisher.suffixed(".gitignore", 2), ".gitignore (2)")
+  }
+
+  func testATakenNameIsNeverOverwrittenAndPublicationStillSucceeds() throws {
+    let folder = try makeFolder()
+    let partial = try makePartial(in: folder)
+    let taken = ["sample.bin", "sample (1).bin"]
+    for takenName in taken { try Data([9, 9, 9]).write(to: folder.appendingPathComponent(takenName)) }
+
+    try TransferPublisher.publish(partial, as: "sample.bin", in: folder)
+
+    for takenName in taken {
+      XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(takenName)), Data([9, 9, 9]))
+    }
+    XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(name(2))), payload)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(),
+                   [name(2), "sample (1).bin", "sample.bin"].sorted())
+  }
+
+  func testAVolumeWithoutHardLinksPublishesByCopying() throws {
+    let folder = try makeFolder()
+    let partial = try makePartial(in: folder)
+    try Data([9, 9, 9]).write(to: folder.appendingPathComponent("sample.bin"))
+
+    try TransferPublisher.publish(partial, as: "sample.bin", in: folder) { _, _ in
+      errno = ENOTSUP
+      return -1
+    }
+
+    XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("sample.bin")), Data([9, 9, 9]))
+    XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(name(1))), payload)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path),
+                   "The staging partial must not survive publication")
+  }
+
+  func testARealFailureKeepsItsPosixReasonInsteadOfAnUnknownSaveError() throws {
+    let folder = try makeFolder()
+    let partial = try makePartial(in: folder)
+
+    XCTAssertThrowsError(try TransferPublisher.publish(partial, as: "sample.bin", in: folder) { _, _ in
+      errno = EACCES
+      return -1
+    }) { error in
+      let failure = error as NSError
+      XCTAssertEqual(failure.domain, NSPOSIXErrorDomain)
+      XCTAssertEqual(failure.code, Int(EACCES))
+      XCTAssertTrue(failure.localizedDescription.contains(String(cString: strerror(EACCES))))
+      XCTAssertTrue(failure.localizedDescription.contains("sample.bin"))
+    }
+    // The verified partial survives a failed publication for recovery.
+    XCTAssertEqual(try Data(contentsOf: partial), payload)
+  }
+
+  func testAFailureInsideTheCopyFallbackIsNotSwallowedAndLeavesNoTarget() throws {
+    let folder = try makeFolder()
+    let partial = try makePartial(in: folder)
+
+    XCTAssertThrowsError(try TransferPublisher.publish(partial, as: "sample.bin", in: folder) { _, _ in
+      // The link is refused and the staging partial vanishes before the copy can read it.
+      try? FileManager.default.removeItem(at: partial)
+      errno = ENOTSUP
+      return -1
+    })
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [])
+  }
+
+  /// A symlink occupying the destination name is a taken name, not a failed publication. It is
+  /// reported as EEXIST or, under `O_NOFOLLOW`, as ELOOP; treating either as fatal would discard a
+  /// completed, already verified transfer on exactly the volumes that take the copy path.
+  func testASymlinkAtTheDestinationIsATakenNameRatherThanAFailedPublication() throws {
+    let folder = try makeFolder()
+    let partial = try makePartial(in: folder)
+    let link = folder.appendingPathComponent("sample.bin")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: URL(fileURLWithPath: "nowhere"))
+
+    try TransferPublisher.publish(partial, as: "sample.bin", in: folder) { _, _ in
+      errno = ENOTSUP
+      return -1
+    }
+
+    XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(name(1))), payload)
+    XCTAssertEqual(try link.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink, true)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(),
+                   [name(1), "sample.bin"].sorted())
+    XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path),
+                   "The staging partial must not survive publication")
+  }
+
+  private let payload = Data((0..<4096).map { UInt8($0 % 251) })
+
+  private func makeFolder() throws -> URL {
+    let folder = tempDir.appendingPathComponent("downloads")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    return folder
+  }
+
+  private func makePartial(in folder: URL) throws -> URL {
+    let partial = folder.appendingPathComponent(".anice-\(UUID().uuidString).part")
+    try payload.write(to: partial)
+    return partial
   }
 }
 

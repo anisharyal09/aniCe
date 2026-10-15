@@ -29,7 +29,9 @@ struct LanFraming {
     try check(time)
     return time
   }
-  // One receive-time sample covers the buffer; callers await each frame before consuming more.
+  // One sample per read: every slice of that read is fed with that read's receivedAt. The caller
+  // must keep the returned envelopes in order, but it may hand them off instead of delivering
+  // inline, because an assembled envelope is a value this instance no longer references.
   mutating func feed(_ bytes: Data, offset: inout Int, receivedAt time: TimeInterval) throws -> Data? {
     guard !failed else { throw SessionFailure.cancelled }
     precondition((0...bytes.count).contains(offset))

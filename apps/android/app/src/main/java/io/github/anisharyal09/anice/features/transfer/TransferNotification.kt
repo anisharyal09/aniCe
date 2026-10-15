@@ -38,7 +38,9 @@ class TransferNotification(private val context: Context, private val controller:
                 if (now - lastNotifyTime < 250L) return
                 lastNotifyTime = now
 
-                val percent = if (state.totalBytes > 0) {
+                // An empty batch has no proportion to report; a determinate zero would read as a stall.
+                val determinate = state.batch.totalBytes > 0
+                val percent = if (determinate) {
                     ((state.totalBytes * 100) / state.batch.totalBytes).toInt().coerceIn(0, 100)
                 } else 0
 
@@ -56,14 +58,15 @@ class TransferNotification(private val context: Context, private val controller:
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
+                val progress = "${state.fileName} (${state.fileIndex}/${state.batch.files.size})"
                 val speedMb = String.format(java.util.Locale.ROOT, "%.1f", state.speedBps / (1024.0 * 1024.0))
-                val content = "${state.fileName} (${state.fileIndex}/${state.batch.files.size}) • $speedMb MB/s"
+                val content = if (state.speedBps > 0) "$progress • $speedMb MB/s" else progress
 
                 val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_launcher)
-                    .setContentTitle("Transferring files")
+                    .setContentTitle(if (controller.receiving) "Receiving files" else "Sending files")
                     .setContentText(content)
-                    .setProgress(100, percent, false)
+                    .setProgress(100, percent, !determinate)
                     .setContentIntent(openIntent)
                     .setOngoing(true)
                     .setOnlyAlertOnce(true)
@@ -74,10 +77,14 @@ class TransferNotification(private val context: Context, private val controller:
             }
             is TransferState.Completed -> {
                 lastNotifyTime = 0L
+                val files = "${state.fileCount} file${if (state.fileCount == 1) "" else "s"}"
                 val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle("File transfer complete")
-                    .setContentText("Transferred ${state.fileCount} files successfully")
+                    .setContentText(
+                        if (controller.receiving) "Saved $files to the folder you chose"
+                        else "Sent $files successfully"
+                    )
                     .setAutoCancel(true)
                     .build()
                 manager.notify(NOTIFICATION_ID, notification)

@@ -7,6 +7,8 @@ import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.AccessDeniedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.UUID
@@ -15,7 +17,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal class TransferReceiveStorage(private val folder: File, private val destination: TransferDestination?) {
+internal class TransferReceiveStorage(
+    private val folder: File,
+    private val destination: TransferDestination?,
+    /** The link primitive, so a destination that cannot hold hard links is verifiable without one. */
+    private val link: (target: File, owned: File) -> Unit = { target, owned -> Files.createLink(target.toPath(), owned.toPath()) },
+) {
     private val mutex = Mutex()
     private var stream: FileOutputStream? = null
     private var partial: File? = null
@@ -62,21 +69,44 @@ internal class TransferReceiveStorage(private val folder: File, private val dest
             stream = null
             document?.let { destination!!.finish(it, name); document = null }
             partial?.let { owned ->
-                var target = File(folder, name)
-                val dot = name.lastIndexOf('.')
-                val base = if (dot > 0) name.substring(0, dot) else name
-                val ext = if (dot > 0) name.substring(dot) else ""
-                var suffix = 1
-                while (target.exists()) target = File(folder, "$base (${suffix++})$ext")
-                try { Files.createLink(target.toPath(), owned.toPath()) }
-                catch (error: java.nio.file.AccessDeniedException) {
-                    throw IOException("Destination cannot publish files exclusively", error)
-                }
-                Files.delete(owned.toPath())
+                publish(folder, name, owned)
                 partial = null
             }
             actual
         }
+    }
+
+    /**
+     * Publishes the verified partial under a name that does not overwrite an existing file.
+     * The link is what decides the name, so two publications cannot both win the same one and there
+     * is no check-then-act window. A destination that cannot hold hard links publishes by copying
+     * instead: the digest is verified before this method runs, so a copy cannot publish unverified
+     * bytes, and publication is non-overwriting in both modes.
+     */
+    private fun publish(folder: File, name: String, owned: File) {
+        var suffix = 0
+        var copying = false
+        while (suffix < TransferNaming.MAXIMUM_SUFFIX) {
+            val target = File(folder, TransferNaming.suffixed(name, suffix))
+            try {
+                if (copying) Files.copy(owned.toPath(), target.toPath())
+                else link(target, owned)
+                Files.delete(owned.toPath())
+                return
+            } catch (_: FileAlreadyExistsException) {
+                suffix++
+            } catch (error: AccessDeniedException) {
+                throw IOException("Destination cannot publish files exclusively", error)
+            } catch (error: Exception) {
+                // A hard link is an implementation detail of this folder, not a requirement of the
+                // transfer, so an unsupported link falls back to one copy. Whatever the copy also
+                // rejects is reported rather than swallowed.
+                if (copying) throw IOException("Cannot publish the received file.", error)
+                copying = true
+                suffix = 0
+            }
+        }
+        throw IOException("Cannot find an unused name for \"$name\".")
     }
 
     suspend fun discard() = withContext(Dispatchers.IO) {

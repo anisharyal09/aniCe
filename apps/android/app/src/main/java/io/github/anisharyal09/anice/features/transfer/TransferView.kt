@@ -12,11 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun TransferView(controller: TransferController, compact: Boolean = false, onOpenDetails: () -> Unit = {}) {
+fun TransferView(controller: TransferController) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) controller.sendUris(uris)
@@ -51,14 +53,20 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
             }
 
             if (android.os.Build.VERSION.SDK_INT >= 33 && !androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-                TextButton(onClick = { notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) {
+                TextButton(
+                    onClick = { notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
                     Text("Show transfer notifications")
                 }
             }
             if (controller.preparing) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Preparing files…", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { controller.cancelTransfer() }) { Text("Cancel") }
+                    TextButton(
+                        onClick = { controller.cancelTransfer() },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) { Text("Cancel") }
                 }
             }
             when (val current = controller.state) {
@@ -230,12 +238,21 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                     }
                 }
                 is TransferState.Transferring -> {
+                    val activity = if (controller.receiving) "Receiving" else "Sending"
+                    val target = if (controller.receiving) "from" else "to"
+                    // A received file is hashed and published after its final chunk, so the bar sits at
+                    // 100% with no rate while nothing is being transferred. Say so instead of stalling.
+                    val saving = controller.finalizing && current.fileBytes >= current.fileSize
+                    val hasTotal = current.batch.totalBytes > 0
+                    val fraction = if (hasTotal)
+                        (current.totalBytes.toFloat() / current.batch.totalBytes.toFloat()).coerceIn(0f, 1f)
+                    else 0f
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            "Transferring ${current.fileName}",
+                            "$activity ${current.fileName} $target ${current.batch.peerName}",
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -247,32 +264,46 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    LinearProgressIndicator(
-                        progress = {
-                            if (current.batch.totalBytes > 0)
-                                (current.totalBytes.toFloat() / current.batch.totalBytes.toFloat()).coerceIn(0f, 1f)
-                            else 0f
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                    )
+                    when {
+                        saving -> LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .semantics { contentDescription = "Verifying and saving ${current.fileName}" }
+                        )
+                        // An empty batch has no proportion to report; an invented 0% would read as a stall.
+                        !hasTotal -> LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .semantics { contentDescription = "$activity ${current.fileName}" }
+                        )
+                        else -> LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .semantics { contentDescription = "$activity ${current.fileName}, ${(fraction * 100).toInt()} percent" }
+                        )
+                    }
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            "${Formatter.formatFileSize(context, current.totalBytes)} of ${Formatter.formatFileSize(context, current.batch.totalBytes)}",
+                            if (hasTotal)
+                                "${Formatter.formatFileSize(context, current.totalBytes)} of ${Formatter.formatFileSize(context, current.batch.totalBytes)}"
+                            else "${Formatter.formatFileSize(context, current.totalBytes)} transferred",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (current.speedBps > 0) {
-                            Text(
-                                "${Formatter.formatFileSize(context, current.speedBps.toLong())}/s",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        // No rate is not a rate of zero: the rolling window reports nothing until it has
+                        // two observations and decays on a stall. Hold the cell and mark it unavailable.
+                        Text(
+                            if (current.speedBps > 0) "${Formatter.formatFileSize(context, current.speedBps.toLong())}/s" else "—",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
@@ -283,28 +314,32 @@ fun TransferView(controller: TransferController, compact: Boolean = false, onOpe
                     }
                 }
                 is TransferState.Completed -> {
+                    val files = "${current.fileCount} file${if (current.fileCount == 1) "" else "s"} (${Formatter.formatFileSize(context, current.totalBytes)})"
                     Text(
                         "Transfer completed",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        "${current.fileCount} file${if (current.fileCount == 1) "" else "s"} (${Formatter.formatFileSize(context, current.totalBytes)}) transferred successfully.",
+                        if (controller.receiving) "$files saved to the folder you chose."
+                        else "$files sent to your Mac.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                controller.dismiss()
-                                controller.beginPicker()
-                                launcher.launch(arrayOf("*/*"))
-                            },
-                            enabled = controller.peerConnected,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Send more…")
+                        if (!controller.receiving) {
+                            Button(
+                                onClick = {
+                                    controller.dismiss()
+                                    controller.beginPicker()
+                                    launcher.launch(arrayOf("*/*"))
+                                },
+                                enabled = controller.peerConnected,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text("Send more…")
+                            }
                         }
                         OutlinedButton(
                             onClick = { controller.dismiss() },

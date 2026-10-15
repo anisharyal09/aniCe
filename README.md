@@ -32,6 +32,7 @@ docs/
   features/             Feature usage and limitations
   BACKGROUND_CONNECTIONS.md Background BLE lifecycle and gates
   LAN_CONNECTIONS.md    Independent authenticated LAN connections
+  PERFORMANCE.md        Authenticated record performance budget and cost model
   ROADMAP.md            Implemented capabilities and planned work
 .agents/                Operational coding context
 core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
@@ -46,7 +47,7 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 - **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
 - **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
 - **Features:** [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md)
-- **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md)
+- **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
 
 Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. API 29/macOS 14 runtime acceptance remains pending. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
 

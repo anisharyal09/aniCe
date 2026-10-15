@@ -309,4 +309,29 @@ class LanTests {
         reservation.release(lan)
         assertTrue(reservation.acquire(ble, peer.copy(deviceId = "other"), "new-local"))
     }
+
+    /**
+     * The queue between the read loop and delivery hands an assembled envelope to a worker without
+     * awaiting it, which is only sound if the framing never references that array again. A returned
+     * envelope is owned by the caller, and later assemblies cannot reach into an earlier one.
+     */
+    @Test
+    fun envelopesAreOwnedByTheCallerAndNeverAliasTheAssemblyBuffers() {
+        val first = ByteArray(64) { 1 }
+        val second = ByteArray(64) { 2 }
+        val wire = LanFraming.encode(first) + LanFraming.encode(second)
+        val framing = LanFraming()
+        val time = framing.beginBuffer()
+        // Both envelopes are produced from one read sample before either is handed off.
+        val a = framing.feed(wire, 0, wire.size, time)
+        val b = framing.feed(wire, framing.consumed, wire.size - framing.consumed, time)
+        assertArrayEquals(first, a)
+        assertArrayEquals(second, b)
+        // A later record reuses the framing's own assembly storage; the handed-off arrays are separate.
+        val third = ByteArray(64) { 3 }
+        assertArrayEquals(third, framing.feed(LanFraming.encode(third), 0, 69, time))
+        assertArrayEquals(first, a)
+        assertArrayEquals(second, b)
+        framing.end()
+    }
 }

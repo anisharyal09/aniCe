@@ -923,7 +923,10 @@ class TransferControllerTests {
             }
             is TransferState.Transferring -> {
                 assertEquals(totalBytes.toLong(), state.totalBytes)
-                assertTrue(state.speedBps > 0)
+                // A rate needs two observations separated in time. This burst completes inside one
+                // 100 ms UI interval, so there is genuinely no rate to report, and reporting a
+                // lifetime average here is exactly the drift the rolling window replaced.
+                assertEquals(0.0, state.speedBps, 0.0)
             }
             else -> fail("Unexpected receiver state: ${receiver.state}")
         }
@@ -931,5 +934,165 @@ class TransferControllerTests {
         val receivedFile = File(destFolder, "rapid.bin")
         assertTrue(receivedFile.exists())
         assertArrayEquals(fileBytes, receivedFile.readBytes())
+    }
+
+    @Test
+    fun aTakenDestinationNameStreamsToASuffixedNameWithoutFailingTheBatch() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderChannel = MockAndroidSecuredChannel(transport = "lan", deviceName = "Phone")
+        val receiverChannel = MockAndroidSecuredChannel(transport = "lan", deviceName = "MacBook")
+        val capability = TransferMessage.capability().encode()
+
+        sender.available(senderChannel)
+        sender.handle(senderChannel.descriptor, capability)
+        receiver.available(receiverChannel)
+        receiver.handle(receiverChannel.descriptor, capability)
+        senderChannel.onSendData = { receiver.handle(receiverChannel.descriptor, it) }
+        receiverChannel.onSendData = { sender.handle(senderChannel.descriptor, it) }
+
+        val testFile = File(tempDir, "sample.bin")
+        val testData = ByteArray(10240) { (it % 251).toByte() }
+        testFile.writeBytes(testData)
+
+        val destFolder = File(tempDir, "downloads")
+        destFolder.mkdirs()
+        // The destination already holds the advertised name and the first suffixed name.
+        File(destFolder, "sample.bin").writeBytes(byteArrayOf(9, 9, 9))
+        File(destFolder, "sample (1).bin").writeBytes(byteArrayOf(8, 8))
+
+        sender.sendFiles(listOf(testFile))
+        for (i in 0 until 50) {
+            if (receiver.state is TransferState.IncomingOffer) break
+            delay(10)
+        }
+        receiver.acceptIncomingOffer(destFolder)
+
+        var completed = false
+        for (i in 0 until 100) {
+            if (sender.state is TransferState.Completed && receiver.state is TransferState.Completed) {
+                completed = true
+                break
+            }
+            delay(20)
+        }
+        assertTrue("Batch failed on a taken name: sender=${sender.state}, receiver=${receiver.state}", completed)
+        assertArrayEquals(
+            "An existing file was overwritten",
+            byteArrayOf(9, 9, 9),
+            File(destFolder, "sample.bin").readBytes(),
+        )
+        assertArrayEquals(byteArrayOf(8, 8), File(destFolder, "sample (1).bin").readBytes())
+        assertArrayEquals(testData, File(destFolder, "sample (2).bin").readBytes())
+    }
+
+    @Test
+    fun transferDirectionIsObservableAndSurvivesCompletion() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderChannel = MockAndroidSecuredChannel(transport = "lan", deviceName = "MacBook Pro")
+        val receiverChannel = MockAndroidSecuredChannel(transport = "lan", deviceName = "Phone")
+        val capability = TransferMessage.capability().encode()
+
+        sender.available(senderChannel)
+        sender.handle(senderChannel.descriptor, capability)
+        receiver.available(receiverChannel)
+        receiver.handle(receiverChannel.descriptor, capability)
+        senderChannel.onSendData = { receiver.handle(receiverChannel.descriptor, it) }
+        receiverChannel.onSendData = { sender.handle(senderChannel.descriptor, it) }
+
+        // No batch exists yet, so neither side may claim a direction.
+        assertFalse(sender.receiving)
+        assertFalse(receiver.receiving)
+
+        val testFile = File(tempDir, "direction.bin")
+        testFile.writeBytes(ByteArray(12288) { (it % 251).toByte() })
+
+        sender.sendFiles(listOf(testFile))
+        for (i in 0 until 50) {
+            if (receiver.state is TransferState.IncomingOffer) break
+            delay(10)
+        }
+        assertTrue("Expected IncomingOffer: ${receiver.state}", receiver.state is TransferState.IncomingOffer)
+        assertFalse("An unapproved offer must not claim the receiving direction", receiver.receiving)
+
+        val destFolder = File(tempDir, "downloads")
+        destFolder.mkdirs()
+        receiver.acceptIncomingOffer(destFolder)
+
+        var completed = false
+        for (i in 0 until 100) {
+            if (sender.state is TransferState.Completed && receiver.state is TransferState.Completed) {
+                completed = true
+                break
+            }
+            delay(20)
+        }
+        assertTrue("Batch did not complete: sender=${sender.state}, receiver=${receiver.state}", completed)
+
+        // The completed panel still reports which way the files moved, so the direction has to
+        // outlive the cleanup that runs immediately after the completed state is published.
+        assertTrue("Receiver lost its direction at completion", receiver.receiving)
+        assertFalse("Sender claimed the receiving direction", sender.receiving)
+        assertFalse(receiver.finalizing)
+        assertFalse(sender.finalizing)
+
+        receiver.dismiss()
+        assertFalse("Dismiss must clear the recorded direction", receiver.receiving)
+    }
+
+    @Test
+    fun finalizationIsReportedOnlyWhileAFullyReceivedFilePublishes() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderChannel = MockAndroidSecuredChannel(transport = "lan", deviceName = "MacBook Pro")
+        val receiverChannel = MockAndroidSecuredChannel(transport = "lan", deviceName = "Phone")
+        val capability = TransferMessage.capability().encode()
+
+        sender.available(senderChannel)
+        sender.handle(senderChannel.descriptor, capability)
+        receiver.available(receiverChannel)
+        receiver.handle(receiverChannel.descriptor, capability)
+        senderChannel.onSendData = { receiver.handle(receiverChannel.descriptor, it) }
+        receiverChannel.onSendData = { sender.handle(senderChannel.descriptor, it) }
+
+        // Every published state must agree with the finalization flag: a panel that claims to be
+        // verifying and saving is only truthful once the whole file has landed.
+        var reported = 0
+        val disagreements = mutableListOf<String>()
+        receiver.onStateChanged = { published ->
+            if (receiver.finalizing) {
+                reported++
+                val transferring = published as? TransferState.Transferring
+                if (transferring == null || transferring.fileBytes < transferring.fileSize) {
+                    disagreements.add(published.toString())
+                }
+            }
+        }
+
+        val testFile = File(tempDir, "publishing.bin")
+        testFile.writeBytes(ByteArray(6144) { (it % 251).toByte() })
+
+        sender.sendFiles(listOf(testFile))
+        for (i in 0 until 50) {
+            if (receiver.state is TransferState.IncomingOffer) break
+            delay(10)
+        }
+        val destFolder = File(tempDir, "downloads")
+        destFolder.mkdirs()
+        receiver.acceptIncomingOffer(destFolder)
+
+        var completed = false
+        for (i in 0 until 100) {
+            if (receiver.state is TransferState.Completed) {
+                completed = true
+                break
+            }
+            delay(20)
+        }
+        assertTrue("Batch did not complete: receiver=${receiver.state}", completed)
+        assertTrue("Finalization was never observable", reported > 0)
+        assertTrue("Finalization reported without a fully received file: $disagreements", disagreements.isEmpty())
+        assertFalse("Finalization outlived the batch", receiver.finalizing)
     }
 }

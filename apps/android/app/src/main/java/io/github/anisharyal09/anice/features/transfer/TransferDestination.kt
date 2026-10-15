@@ -60,12 +60,36 @@ internal class TransferDestination(private val context: Context, private val tre
         ?: throw IOException("Cannot open the received document.")
 
     fun finish(uri: Uri, name: String): Uri {
+        val taken = existingNames()
+        var suffix = 0
+        while (suffix < TransferNaming.MAXIMUM_SUFFIX) {
+            val candidate = TransferNaming.suffixed(name, suffix)
+            if (candidate !in taken) {
+                // SAF has no exclusive rename-if-absent: the listing taken above *is* this file's
+                // collision check, and a rename that fails for any other reason is reported as a
+                // provider failure rather than retried as if it were a collision. A taken name
+                // advances the suffix instead, so nothing here overwrites an existing document.
+                return DocumentsContract.renameDocument(resolver, uri, candidate)
+                    ?: throw IOException("Cannot finalize the received file. The provider refused renaming.")
+            }
+            suffix++
+        }
+        throw IOException("Cannot find an unused name for \"$name\".")
+    }
+
+    /**
+     * Display names already present in the destination folder.
+     * Receiving a file must not fail on a name that is already in use, so a collision is resolved by
+     * suffixing here and never by overwriting the existing document or discarding a transfer that has
+     * already been received and verified.
+     */
+    private fun existingNames(): Set<String> {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(root))
+        val names = mutableSetOf<String>()
         resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
-            while (cursor.moveToNext()) if (cursor.getString(0) == name) throw IOException("A file named $name already exists. Choose another folder.")
+            while (cursor.moveToNext()) cursor.getString(0)?.let(names::add)
         } ?: throw IOException("Cannot check destination filenames.")
-        return DocumentsContract.renameDocument(resolver, uri, name)
-            ?: throw IOException("Cannot finalize the received file. The provider refused renaming.")
+        return names
     }
 
     fun delete(uri: Uri) { if (!DocumentsContract.deleteDocument(resolver, uri)) throw IOException("Cannot remove partial document.") }

@@ -69,7 +69,13 @@ class SessionConnection(
       } finally { changed() }
     }
 
-  suspend fun receive(envelope: ByteArray) =
+  // Application delivery runs outside the session lock: it hops dispatchers and decodes a whole
+  // record, and none of that may delay control flush, deadline maintenance or the next record's
+  // authentication. Delivery order is preserved because every caller awaits one `receive` before
+  // starting the next; LanSessionController's transport consumer and SessionController's queue worker
+  // are both single sequential loops.
+  suspend fun receive(envelope: ByteArray) {
+    var delivery: ByteArray? = null
     operation.withLock {
       try {
         requireOpen()
@@ -98,7 +104,7 @@ class SessionConnection(
             }
             RecordKind.DATA -> {
               val control = if (liveness != null) SessionControl.application(result.second, minOf(262144, maxOf(4096, profile.maximumPlaintext))) else null
-              if (control != null) liveness!!.receive(control, now()) else data(result.second)
+              if (control != null) liveness!!.receive(control, now()) else delivery = result.second
             }
             RecordKind.CLOSE -> {
               closedByPeer = true
@@ -134,6 +140,10 @@ class SessionConnection(
         throw e
       } finally { changed() }
     }
+    // Session control has already been flushed and the lock is released, so a slow or failing
+    // application handler can no longer hold up maintenance or the next record.
+    delivery?.let { data(it) }
+  }
 
   private suspend fun makeChannel() {
     requireOpen()
