@@ -7,6 +7,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -44,12 +46,16 @@ import kotlinx.coroutines.delay
         while(owner.foregroundVisible && media?.state==1L) { delay(250); now=SystemClock.elapsedRealtime() }
     }
     Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+        Column(Modifier.fillMaxWidth().padding(if(compact) 12.dp else 16.dp),verticalArrangement=Arrangement.spacedBy(if(compact) 6.dp else 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().then(if(compact) Modifier.clickable(onClick=open) else Modifier),
+                horizontalArrangement=Arrangement.SpaceBetween,
+                verticalAlignment=Alignment.CenterVertically
+            ) {
                 Text("Now Playing",style=MaterialTheme.typography.titleMedium)
                 if(compact) IconButton(onClick=open) { Icon(painterResource(R.drawable.ic_media_open),contentDescription="Open Now Playing") }
             }
-            if(media!=null) Box {
+            if(media!=null && (!compact || media.sources.size > 1)) Box {
                 TextButton(onClick={picker=true},enabled=!owner.busy) { Text(if(media.selection.isEmpty()) "Player: Auto" else "Player: ${media.sources.firstOrNull { it.first==media.selection }?.second ?: media.player}") }
                 DropdownMenu(expanded=picker,onDismissRequest={picker=false}) {
                     DropdownMenuItem(text={Text("Auto")},onClick={picker=false;owner.command(6)})
@@ -58,13 +64,11 @@ import kotlinx.coroutines.delay
             }
             if(media!=null && media.source.isNotEmpty()) {
                 Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    owner.artwork?.let { Image(it.asImageBitmap(),contentDescription=null,modifier=Modifier.size(if(compact) 48.dp else 96.dp)) }
-                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    owner.artwork?.let { Image(it.asImageBitmap(),contentDescription=null,modifier=Modifier.size(if(compact) 44.dp else 96.dp)) }
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                         if(media.title.isNotEmpty()) Text(media.title,style=MaterialTheme.typography.bodyLarge)
                         if(media.artist.isNotEmpty()) Text(media.artist,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(media.player,style=MaterialTheme.typography.bodySmall)
-                        if(media.state==0L) Text("Playback unavailable",style=MaterialTheme.typography.bodySmall)
-                        if(!compact) Text("From ${owner.origin}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if(!compact) Text(owner.displayedOutputVolume?.let { "Phone volume buttons · Mac output $it%" } ?: "Mac output volume unavailable for this audio output.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -85,7 +89,7 @@ import kotlinx.coroutines.delay
                     IconButton(onClick={owner.command(1)},enabled=!owner.busy && media.actions and 1L!=0L) { Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play") }
                     IconButton(onClick={owner.command(3)},enabled=!owner.busy && media.actions and 4L!=0L) { Icon(painterResource(R.drawable.ic_media_next),contentDescription="Next") }
                 }
-                owner.displayedVolume?.let { level ->
+                if(!compact) owner.displayedVolume?.let { level ->
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                         Text("Player volume",style=MaterialTheme.typography.bodySmall)
                         Text("${(volumeDrag ?: level.toFloat()).toInt()}%",style=MaterialTheme.typography.bodySmall,fontFamily=FontFamily.Monospace)

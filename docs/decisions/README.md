@@ -19,3 +19,8 @@ Decisions affecting the whole app or shared infrastructure live at this level, e
 
 - [0009 — Remote playback, notifications and volume](features/now-playing/0009-remote-playback-presentation.md)
 - [Usage and limitations](../features/NOW_PLAYING.md)
+
+### Local File Transfer
+
+- [0010 — Mac transfer notifications and companion activity](features/file-transfer/0010-macos-transfer-notifications.md)
+- [Usage and limitations](../features/FILE_TRANSFER.md)

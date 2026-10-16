@@ -141,6 +141,36 @@ final class FindDeviceTests: XCTestCase {
     XCTAssertEqual(notifier.posts.count, 2)
     owner.retired(channel.descriptor)
   }
+  @MainActor func testAppNotificationRoutingPreservesBothFeaturesAndIgnoresUnknownCategories() {
+    let center = UNUserNotificationCenter.current()
+    let previousDelegate = center.delegate
+    defer { center.delegate = previousDelegate }
+    let find = MacFindDeviceNotifier()
+    var dismissed: [String] = []
+    find.dismissed = { dismissed.append($0) }
+    var opened = 0
+    let transfer = MacTransferNotifier(model: MacTransferModel(), openMainWindow: { opened += 1 })
+    let delegate = AppDelegate()
+    delegate.configureNotifications(findDevice: find, transfer: transfer)
+    XCTAssertTrue(center.delegate === delegate)
+    let categories = AppDelegate.notificationCategories
+    XCTAssertEqual(Set(categories.map(\.identifier)), [MacFindDeviceNotifier.category,
+      MacTransferNotifier.Category.offer, MacTransferNotifier.Category.result])
+    XCTAssertTrue(categories.first { $0.identifier == MacFindDeviceNotifier.category }!.options.contains(.customDismissAction))
+    delegate.handleNotificationAction(category: MacFindDeviceNotifier.category,
+      action: UNNotificationDismissActionIdentifier, identifier: "find-exact-id")
+    XCTAssertEqual(dismissed, ["find-exact-id"])
+    XCTAssertEqual(opened, 0)
+    delegate.handleNotificationAction(category: MacTransferNotifier.Category.offer,
+      action: MacTransferNotifier.Action.choose, identifier: "transfer")
+    XCTAssertEqual(opened, 1)
+    delegate.handleNotificationAction(category: "unknown",
+      action: UNNotificationDefaultActionIdentifier, identifier: "unrelated")
+    delegate.handleNotificationAction(category: MacTransferNotifier.Category.result,
+      action: MacFindDeviceNotifier.dismissAction, identifier: "wrong-feature")
+    XCTAssertEqual(opened, 1)
+    XCTAssertEqual(dismissed, ["find-exact-id"])
+  }
   @MainActor func testNativeActionAndOrdinaryDismissalRouteExactIdentifiers() {
     let notifier = MacFindDeviceNotifier()
     var dismissed: [String] = []

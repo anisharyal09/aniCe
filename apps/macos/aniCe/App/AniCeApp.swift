@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Assembles shared trust, peer reservations and native Bluetooth/LAN owners for both scenes.
 import SwiftUI
+import UserNotifications
 
 @main
 struct AniCeApp: App {
@@ -15,6 +16,7 @@ struct AniCeApp: App {
   @State private var findDevice: MacFindDeviceModel
   private let findNotifier: MacFindDeviceNotifier
   @State private var transfer: MacTransferModel
+  @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
 
   init() {
@@ -27,6 +29,20 @@ struct AniCeApp: App {
     _playback = State(initialValue: playback)
     let transfer = MacTransferModel()
     _transfer = State(initialValue: transfer)
+    let transferNotifier = MacTransferNotifier(
+      model: transfer,
+      openMainWindow: {
+        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
+          window.deminiaturize(nil)
+          window.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate()
+      }
+    )
+    _transferNotifier = State(initialValue: transferNotifier)
+    transfer.onEvent = { [weak transferNotifier] event in
+      transferNotifier?.handle(event)
+    }
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
     let identity = IdentityAssembly.makeModel()
@@ -80,6 +96,7 @@ struct AniCeApp: App {
     }
     _pairing = State(initialValue: pairing)
     _session = State(initialValue: session)
+    delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier)
     session.restoreAutomatic()
   }
 
@@ -117,7 +134,7 @@ struct AniCeApp: App {
             delegate.onTerminate = { findNotifier.clearAll() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, findDevice: findDevice, navigation: navigation,
+                session: session, lan: lan, playback: playback, findDevice: findDevice, transfer: transfer, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }

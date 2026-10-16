@@ -36,11 +36,35 @@ enum TransferState: Equatable {
   case cancelled
 }
 
+enum TransferEvent: Equatable {
+  case incomingOffer(TransferBatch)
+  case completed(fileCount: Int, totalBytes: Int64)
+  case failed(reason: String)
+}
+
 @Observable @MainActor final class MacTransferModel: FeatureHandler {
   private(set) var state: TransferState = .idle
   private(set) var activeChannel: (any SecuredChannel)?
   private(set) var peerConnected = false
   private(set) var peerCompatible = false
+  /// External event sink for native notification bridges. Emits completed and failed only when receiving.
+  var onEvent: ((TransferEvent) -> Void)?
+
+  /// Exposes the active incoming offer batch, or nil outside .incomingOffer.
+  /// Fences background notification actions against stale or out-of-order execution without extra state.
+  var pendingOffer: TransferBatch? {
+    if case .incomingOffer(let b) = state { return b }
+    return nil
+  }
+  /// URLs of files published during the active or most recently finished receive operation.
+  /// Deliberately outlives cleanup so a completed panel can still resolve and reveal the files;
+  /// `dismiss()` or a new accept clears it.
+  private(set) var publishedURLs: [URL] = []
+
+  /// Destination folder of the active or most recently finished receive operation.
+  /// Deliberately outlives cleanup so a completed panel can report where files were saved;
+  /// `dismiss()` clears it.
+  private(set) var receiveFolder: URL?
   private var channels: [String: any SecuredChannel] = [:]
   private var capabilities: [String: TransferMessage] = [:]
   private var isBusy: Bool {
@@ -516,7 +540,11 @@ enum TransferState: Equatable {
       try? await sendWithBackpressure(encoded)
     }
     state = .completed(batchId: batch.id, fileCount: batch.files.count, totalBytes: batch.totalBytes)
+    let count = batch.files.count
+    let bytes = batch.totalBytes
+    let wasReceiving = receiving
     cleanupActiveTransfer()
+    if wasReceiving { onEvent?(.completed(fileCount: count, totalBytes: bytes)) }
   }
 
   private func handleAck(_ message: TransferMessage) {
@@ -625,6 +653,7 @@ enum TransferState: Equatable {
       currentBatch = batch
       state = .incomingOffer(batch: batch)
       acquireSleepAssertion()
+      onEvent?(.incomingOffer(batch))
     }
   }
 
@@ -641,6 +670,8 @@ enum TransferState: Equatable {
       guard operation == epoch else { return }
     } catch { if operation == epoch { failTransfer(reason: "Cannot use destination: \(error.localizedDescription)") }; return }
     destinationFolder = destination
+    receiveFolder = destination
+    publishedURLs.removeAll()
     receiving = true
     receiverCurrentFileIndex = 0
     receiverWrittenBytes = 0
@@ -811,7 +842,9 @@ enum TransferState: Equatable {
     }
     let digest: Data
     do {
-      digest = try await storage.finish(name: file.name, expected: file.sha256)
+      let finished = try await storage.finish(name: file.name, expected: file.sha256)
+      digest = finished.digest
+      publishedURLs.append(finished.url)
     } catch {
       if operation == epoch {
         finalizing = false
@@ -848,7 +881,11 @@ enum TransferState: Equatable {
           try await self.sendWithBackpressure(TransferMessage.batchResult(batch: batch.idString, result: 0).encode())
           guard operation == self.epoch else { return }
           self.state = .completed(batchId: batch.id, fileCount: batch.files.count, totalBytes: batch.totalBytes)
+          let count = batch.files.count
+          let bytes = batch.totalBytes
+          let wasReceiving = self.receiving
           self.cleanupActiveTransfer()
+          if wasReceiving { self.onEvent?(.completed(fileCount: count, totalBytes: bytes)) }
         }
       } catch { if operation == self.epoch { self.failTransfer(reason: "Completion delivery failed") } }
     }
@@ -872,6 +909,8 @@ enum TransferState: Equatable {
 
   func dismiss() {
     receiving = false
+    publishedURLs.removeAll()
+    receiveFolder = nil
     state = .idle
     cleanupActiveTransfer()
   }
@@ -886,7 +925,9 @@ enum TransferState: Equatable {
       }
     }
     state = .failed(reason: reason)
+    let wasReceiving = receiving
     cleanupActiveTransfer()
+    if wasReceiving { onEvent?(.failed(reason: reason)) }
   }
 
   private func cleanupActiveTransfer(selectChannel: Bool = true) {
@@ -1015,12 +1056,13 @@ enum TransferPublisher {
   }
 
   /// The link primitive, so a volume that cannot hold hard links is verifiable without one.
+  @discardableResult
   static func publish(
     _ partial: URL,
     as name: String,
     in folder: URL,
     hardLink: (String, String) -> Int32 = { Darwin.link($0, $1) }
-  ) throws {
+  ) throws -> URL {
     var suffix = 0
     var linking = true
     while suffix <= maximumSuffix {
@@ -1028,7 +1070,7 @@ enum TransferPublisher {
       if linking {
         if hardLink(partial.path, target.path) == 0 {
           guard unlink(partial.path) == 0 else { throw failure(errno, partial) }
-          return
+          return target
         }
         let code = errno
         if code == EEXIST {
@@ -1075,7 +1117,7 @@ enum TransferPublisher {
         throw error
       }
       try FileManager.default.removeItem(at: partial)
-      return
+      return target
     }
     throw failure(EEXIST, folder.appendingPathComponent(name))
   }
@@ -1114,7 +1156,7 @@ private actor TransferReceiveStorage {
     hasher.update(data: data)
   }
 
-  func finish(name: String, expected: Data) throws -> Data {
+  func finish(name: String, expected: Data) throws -> (digest: Data, url: URL) {
     assert(!Thread.isMainThread)
     guard let handle, let partial, let folder else { throw CocoaError(.fileWriteUnknown) }
     let digest = Data(hasher.finalize())
@@ -1123,9 +1165,9 @@ private actor TransferReceiveStorage {
     try handle.synchronize()
     try handle.close()
     self.handle = nil
-    try TransferPublisher.publish(partial, as: name, in: folder)
+    let publishedURL = try TransferPublisher.publish(partial, as: name, in: folder)
     self.partial = nil
-    return digest
+    return (digest: digest, url: publishedURL)
   }
 
   func discard() {

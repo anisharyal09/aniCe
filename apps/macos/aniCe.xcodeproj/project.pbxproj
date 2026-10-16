@@ -99,6 +99,8 @@
 		C7F01D6B909E13E9D6AF2780 = {isa = PBXBuildFile; fileRef = CDA20BB9D9A904058EB42454; };
 		63AC0DCC193885313F1F132F = {isa = PBXBuildFile; fileRef = F59E511361C133E8CC2EB410; };
 		9DF815E709C26EE3E825817A = {isa = PBXBuildFile; fileRef = F4295D8EB600679BAA3D0AEF; };
+		B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000007; };
+		B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000008; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -207,6 +209,8 @@
 		CDA20BB9D9A904058EB42454 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = "aniCe/Features/FindDevice/en.lproj/FindDevice.strings"; sourceTree = SOURCE_ROOT; };
 		F59E511361C133E8CC2EB410 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/FindDevice/FindDeviceTests.swift"; sourceTree = SOURCE_ROOT; };
 		F4295D8EB600679BAA3D0AEF = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/find-device/find-device-vectors.json"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferNotifier.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Transfer/TransferNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -268,6 +272,8 @@
 				B10200000000000000000004,
 				B10200000000000000000005,
 				B10200000000000000000006,
+				B10200000000000000000007,
+				B10200000000000000000008,
 				000000000000000000000206 /* aniCeTests */,
 				00000000000000000000000C /* aniCe */,
 				00000000000000000000000D /* Products */,
@@ -640,6 +646,7 @@
 				B10100000000000000000001 /* aniCe/Features/Transfer/TransferWire.swift in Sources */,
 				B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */,
 				B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */,
+				B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -662,6 +669,7 @@
 				B10100000000000000000002 /* aniCeTests/Transfer/TransferWireTests.swift in Sources */,
 				B10100000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift in Sources */,
 				63AC0DCC193885313F1F132F,
+				B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

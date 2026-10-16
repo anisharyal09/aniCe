@@ -1,14 +1,59 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Retains companion presentation and the main-window reopening action without owning sessions.
+// Retains companion presentation, notification delegation and the main-window reopening action.
 import AppKit
+import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     // Retain the scene action after its view disappears so Dock reopening still works.
     var reopenMainWindow: (@MainActor () -> Void)?
+    private var notifier: MacTransferNotifier?
+    private var findNotifier: MacFindDeviceNotifier?
     private var companion: CompanionHost?
     var onTerminate: () -> Void = {}
     func applicationWillTerminate(_ notification: Notification) { onTerminate() }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func configureNotifications(findDevice: MacFindDeviceNotifier, transfer: MacTransferNotifier) {
+        findNotifier = findDevice
+        notifier = transfer
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories(Self.notificationCategories)
+    }
+
+    static var notificationCategories: Set<UNNotificationCategory> {
+        MacTransferNotifier.notificationCategories().union([MacFindDeviceNotifier.notificationCategory])
+    }
+
+    func handleNotificationAction(category: String, action: String, identifier: String) {
+        if category == MacFindDeviceNotifier.category {
+            findNotifier?.handleAction(action, identifier: identifier)
+        } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result {
+            notifier?.handleAction(action)
+        }
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let category = notification.request.content.categoryIdentifier
+        let known = category == MacFindDeviceNotifier.category ||
+            category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result
+        completionHandler(known ? [.banner, .list, .sound] : [])
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+        let category = response.notification.request.content.categoryIdentifier
+        let action = response.actionIdentifier, identifier = response.notification.request.identifier
+        Task { @MainActor [weak self] in
+            defer { completionHandler() }
+            self?.handleNotificationAction(category: category, action: action, identifier: identifier)
+        }
+    }
 
     func openMainFromCompanion() {
         companion?.close()

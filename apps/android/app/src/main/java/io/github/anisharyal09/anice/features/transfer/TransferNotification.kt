@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.text.format.Formatter
 import androidx.core.app.NotificationCompat
 import io.github.anisharyal09.anice.MainActivity
 import io.github.anisharyal09.anice.R
@@ -16,15 +17,24 @@ class TransferNotification(private val context: Context, private val controller:
     private val manager = context.getSystemService(NotificationManager::class.java)
 
     init {
-        val channel = NotificationChannel(
+        val progressChannel = NotificationChannel(
             CHANNEL_ID,
-            "File Transfer",
+            "File Transfer Progress",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
             description = "Shows progress of active local file transfers"
             setShowBadge(false)
         }
-        manager.createNotificationChannel(channel)
+        val alertChannel = NotificationChannel(
+            ALERT_CHANNEL_ID,
+            "File Transfer Alerts",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Alerts for incoming file transfers and completion"
+            setShowBadge(true)
+        }
+        manager.createNotificationChannel(progressChannel)
+        manager.createNotificationChannel(alertChannel)
     }
 
     private var lastNotifyTime = 0L
@@ -33,6 +43,35 @@ class TransferNotification(private val context: Context, private val controller:
     fun update() {
         val state = controller.state
         when (state) {
+            is TransferState.IncomingOffer -> {
+                lastNotifyTime = 0L
+                val files = "${state.batch.files.size} file${if (state.batch.files.size == 1) "" else "s"}"
+                val total = Formatter.formatFileSize(context, state.batch.totalBytes)
+                val openIntent = PendingIntent.getActivity(
+                    context,
+                    0,
+                    Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val declineIntent = PendingIntent.getBroadcast(
+                    context,
+                    1,
+                    Intent(context, TransferActionReceiver::class.java).setAction(TransferActionReceiver.ACTION_CANCEL),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_launcher)
+                    .setContentTitle("Incoming files from ${state.batch.peerName}")
+                    .setContentText("$files ($total)")
+                    .setContentIntent(openIntent)
+                    .setAutoCancel(true)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declineIntent)
+                    .build()
+                manager.notify(NOTIFICATION_ID, notification)
+            }
             is TransferState.Transferring -> {
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (now - lastNotifyTime < 250L) return
@@ -78,7 +117,7 @@ class TransferNotification(private val context: Context, private val controller:
             is TransferState.Completed -> {
                 lastNotifyTime = 0L
                 val files = "${state.fileCount} file${if (state.fileCount == 1) "" else "s"}"
-                val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle("File transfer complete")
                     .setContentText(
@@ -91,7 +130,7 @@ class TransferNotification(private val context: Context, private val controller:
             }
             is TransferState.Failed -> {
                 lastNotifyTime = 0L
-                val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle("File transfer failed")
                     .setContentText(state.reason)
@@ -108,6 +147,7 @@ class TransferNotification(private val context: Context, private val controller:
 
     companion object {
         const val CHANNEL_ID = "anice_file_transfer"
+        const val ALERT_CHANNEL_ID = "anice_file_transfer_alerts"
         const val NOTIFICATION_ID = 2002
     }
 }

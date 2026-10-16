@@ -3,7 +3,7 @@
 import AppKit
 import UserNotifications
 
-@MainActor final class MacFindDeviceNotifier: NSObject, FindDeviceNotifying, UNUserNotificationCenterDelegate {
+@MainActor final class MacFindDeviceNotifier: NSObject, FindDeviceNotifying {
   nonisolated static let category = "ANICE_FIND_DEVICE"
   nonisolated static let dismissAction = "ANICE_FIND_DISMISS"
   var dismissed: (String) -> Void = { _ in }
@@ -13,20 +13,18 @@ import UserNotifications
   init(center: UNUserNotificationCenter = .current()) {
     self.center = center
     super.init()
-    center.delegate = self
     setup = Task { [weak self] in
       guard let self else { return }
       let pending = await center.pendingNotificationRequests()
       center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix("find-device-") })
       let old = await center.deliveredNotifications()
       center.removeDeliveredNotifications(withIdentifiers: old.map { $0.request.identifier }.filter { $0.hasPrefix("find-device-") })
-      var categories = await center.notificationCategories()
-      categories = categories.filter { $0.identifier != Self.category }
-      categories.insert(UNNotificationCategory(identifier: Self.category,
-        actions: [UNNotificationAction(identifier: Self.dismissAction, title: Self.text("find_dismiss"), options: [])],
-        intentIdentifiers: [], options: [.customDismissAction]))
-      center.setNotificationCategories(categories)
     }
+  }
+  static var notificationCategory: UNNotificationCategory {
+    UNNotificationCategory(identifier: category,
+      actions: [UNNotificationAction(identifier: dismissAction, title: text("find_dismiss"), options: [])],
+      intentIdentifiers: [], options: [.customDismissAction])
   }
   static func text(_ key: String) -> String { NSLocalizedString(key, tableName: "FindDevice", bundle: .main, comment: "Find Device") }
   func requestPermission() async -> String {
@@ -63,18 +61,6 @@ import UserNotifications
     center.removeDeliveredNotifications(withIdentifiers: [identifier])
   }
   func clearAll() { for identifier in Array(identifiers) { clear(identifier: identifier) } }
-  nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-    completionHandler(notification.request.content.categoryIdentifier == Self.category ? [.banner, .list, .sound] : [])
-  }
-  nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-    withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
-    let id = response.notification.request.identifier, action = response.actionIdentifier
-    Task { @MainActor [weak self] in
-      defer { completionHandler() }
-      self?.handleAction(action, identifier: id)
-    }
-  }
   func handleAction(_ action: String, identifier: String) {
     if action == Self.dismissAction || action == UNNotificationDismissActionIdentifier || action == UNNotificationDefaultActionIdentifier {
       dismissed(identifier)
