@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Retains companion presentation and the main-window reopening action without owning sessions.
+// Retains companion presentation, notification delegation and the main-window reopening action.
 import AppKit
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // Retain the scene action after its view disappears so Dock reopening still works.
     var reopenMainWindow: (@MainActor () -> Void)?
+    var notifier: MacTransferNotifier?
     private var companion: CompanionHost?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if let notifier {
+            UNUserNotificationCenter.current().delegate = notifier
+        }
+    }
 
     func openMainFromCompanion() {
         companion?.close()

@@ -92,6 +92,8 @@
 		B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000004; };
 		B10100000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000005; };
 		B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000006; };
+		B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000007; };
+		B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000008; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -193,6 +195,8 @@
 		B10200000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferModel.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Transfer/TransferModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000006 /* aniCe/Features/Transfer/TransferView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferView.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferNotifier.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Transfer/TransferNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -247,6 +251,8 @@
 				B10200000000000000000004,
 				B10200000000000000000005,
 				B10200000000000000000006,
+				B10200000000000000000007,
+				B10200000000000000000008,
 				000000000000000000000206 /* aniCeTests */,
 				00000000000000000000000C /* aniCe */,
 				00000000000000000000000D /* Products */,
@@ -613,6 +619,7 @@
 				B10100000000000000000001 /* aniCe/Features/Transfer/TransferWire.swift in Sources */,
 				B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */,
 				B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */,
+				B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -634,6 +641,7 @@
 				000000000000000000000202 /* IdentityTests.swift in Sources */,
 				B10100000000000000000002 /* aniCeTests/Transfer/TransferWireTests.swift in Sources */,
 				B10100000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift in Sources */,
+				B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

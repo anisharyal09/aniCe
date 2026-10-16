@@ -46,6 +46,7 @@ struct MacSessionView: View {
   var onOpenDevice: (String) -> Void = { _ in }
   var onChoosePhone: () -> Void = {}
   var onOpenDiagnostics: () -> Void = {}
+  var onSendFiles: (() -> Void)? = nil
   @Environment(\.colorScheme) private var scheme
   private var androidPeers: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }
   private var device: DeviceIdentity? {
@@ -101,9 +102,31 @@ struct MacSessionView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
+  private func isPeerConnected(_ record: PeerTrustRecord) -> Bool {
+    let peer = record.peer
+    let bluetoothPeer = model.authenticatedPeer ?? model.selectedPeer
+    let ownsBluetooth = bluetoothPeer?.deviceId == peer.deviceId && bluetoothPeer?.fingerprint == peer.fingerprint ||
+      (bluetoothPeer == nil && androidPeers.count == 1)
+    let ownsLan = lan.authenticatedPeer?.deviceId == peer.deviceId && lan.authenticatedPeer?.fingerprint == peer.fingerprint
+    let state = ConnectionPresentation(bluetooth: ownsBluetooth ? model.state : "Disconnected",
+      lan: ownsLan ? lan.state : "Disconnected", bluetoothAllowing: ownsBluetooth && model.allowing,
+      lanAllowing: ownsLan && lan.allowing, automatic: ownsBluetooth && model.automatic)
+    return state.connected
+  }
+
+  // In compact overview, show only connected peers when any peer is connected,
+  // avoiding menu-bar clutter from disconnected paired devices.
+  private var orderedAndroidPeers: [PeerTrustRecord] {
+    let connected = androidPeers.filter { isPeerConnected($0) }
+    if !connected.isEmpty {
+      return connected
+    }
+    return androidPeers
+  }
+
   private var compactOverview: some View {
     VStack(alignment: .leading, spacing: 12) {
-      ForEach(androidPeers) { record in
+      ForEach(orderedAndroidPeers) { record in
         let peer = record.peer
         let bluetoothPeer = model.authenticatedPeer ?? model.selectedPeer
         let ownsBluetooth = bluetoothPeer?.deviceId == peer.deviceId && bluetoothPeer?.fingerprint == peer.fingerprint ||
@@ -113,24 +136,55 @@ struct MacSessionView: View {
           lan: ownsLan ? lan.state : "Disconnected", bluetoothAllowing: ownsBluetooth && model.allowing,
           lanAllowing: ownsLan && lan.allowing, automatic: ownsBluetooth && model.automatic)
         let occupied = model.allowing || lan.allowing || model.automatic
-        HStack(spacing: 12) {
-          Button { onOpenDevice(peer.deviceId) } label: {
-            VStack(alignment: .leading, spacing: 3) {
-              Text(peer.deviceName).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-              Text(state.summary).font(.caption)
-                .foregroundStyle(state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
-            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-          }.buttonStyle(.plain).accessibilityLabel("Open Devices for " + peer.deviceName)
-            .accessibilityValue(state.summary)
-          Button(state.action.rawValue) {
-            switch state.action {
-            case .disconnect, .stop: model.disconnect(); lan.disconnect()
-            case .allow, .retry: model.selectedPeer = peer; model.allow()
+        VStack(alignment: .leading, spacing: 8) {
+          HStack(spacing: 12) {
+            Button { onOpenDevice(peer.deviceId) } label: {
+              VStack(alignment: .leading, spacing: 3) {
+                Text(peer.deviceName).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                Text(state.summary).font(.caption)
+                  .foregroundStyle(state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
+              }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("Open Devices for " + peer.deviceName)
+              .accessibilityValue(state.summary)
+
+            Button(state.action.rawValue) {
+              switch state.action {
+              case .disconnect, .stop: model.disconnect(); lan.disconnect()
+              case .allow, .retry: model.selectedPeer = peer; model.allow()
+              }
+            }.buttonStyle(.bordered).controlSize(.small)
+              .disabled(occupied && !ownsBluetooth && !ownsLan)
+
+            Button { onOpenDevice(peer.deviceId) } label: { Image(systemName: "chevron.right") }
+              .buttonStyle(.borderless).accessibilityLabel("Open Devices for " + peer.deviceName)
+          }
+
+          if state.connected, let onSendFiles {
+            Button(action: onSendFiles) {
+              HStack(spacing: 8) {
+                Image(systemName: "paperplane.fill")
+                  .font(.subheadline)
+                  .foregroundStyle(AniCePalette.accent(scheme))
+                Text("Send files…")
+                  .font(.subheadline.weight(.medium))
+                  .foregroundStyle(AniCePalette.primaryText(scheme))
+                Spacer()
+                Image(systemName: "plus.circle")
+                  .font(.caption)
+                  .foregroundStyle(AniCePalette.secondaryText(scheme))
+              }
+              .padding(.horizontal, 12)
+              .padding(.vertical, 8)
+              .frame(maxWidth: .infinity)
+              .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 8))
+              .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                  .stroke(AniCePalette.separator(scheme), lineWidth: 0.5)
+              )
             }
-          }.buttonStyle(.bordered).controlSize(.small)
-            .disabled(occupied && !ownsBluetooth && !ownsLan)
-          Button { onOpenDevice(peer.deviceId) } label: { Image(systemName: "chevron.right") }
-            .buttonStyle(.borderless).accessibilityLabel("Open Devices for " + peer.deviceName)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send files to \(peer.deviceName)")
+          }
         }
       }
       if lan.allowing && lan.authenticatedPeer == nil {

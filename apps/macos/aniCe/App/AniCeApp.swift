@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Assembles shared trust, peer reservations and native Bluetooth/LAN owners for both scenes.
 import SwiftUI
+import UserNotifications
 
 @main
 struct AniCeApp: App {
@@ -13,6 +14,7 @@ struct AniCeApp: App {
   @State private var lan: MacLanSessionModel
   @State private var playback: MacPlaybackModel
   @State private var transfer: MacTransferModel
+  @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
 
   init() {
@@ -20,6 +22,21 @@ struct AniCeApp: App {
     _playback = State(initialValue: playback)
     let transfer = MacTransferModel()
     _transfer = State(initialValue: transfer)
+    let transferNotifier = MacTransferNotifier(
+      model: transfer,
+      openMainWindow: {
+        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
+          window.deminiaturize(nil)
+          window.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate()
+      }
+    )
+    _transferNotifier = State(initialValue: transferNotifier)
+    UNUserNotificationCenter.current().delegate = transferNotifier
+    transfer.onEvent = { [weak transferNotifier] event in
+      transferNotifier?.handle(event)
+    }
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
     let identity = IdentityAssembly.makeModel()
@@ -106,9 +123,10 @@ struct AniCeApp: App {
         session: session, lan: lan, playback: playback, transfer: transfer, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
+            delegate.notifier = transferNotifier
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, navigation: navigation,
+                session: session, lan: lan, playback: playback, transfer: transfer, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }

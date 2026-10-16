@@ -6,7 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Report transfer direction and finalization in the file-transfer panel: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate rather than as 0%, and label progress for screen readers.
+- Report transfer direction and destination in the file-transfer panel: name the peer and whether the batch is sending or receiving, report the model's actual received folder rather than a pending choice, enable Show in Finder for published files, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate rather than as 0%, and label progress for screen readers.
 
 - Publish received files under an available name instead of failing a verified batch: advance suffixes atomically when destination names are taken, publish by copying when destination volumes cannot hold hard links, report real POSIX error codes instead of unknown save errors, and preserve verified partials on finalization failure.
 
@@ -14,7 +14,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization.
 
-- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks.
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of credit; preserve standard BLE formats and live native identity/trust checks.
 
 - Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
 
@@ -24,6 +24,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Native file transfer notifications (`MacTransferNotifier`, `UNUserNotificationCenter`) with interactive Accept (saving to `~/Downloads`), Choose folder… (raising the offer in the main app), Decline, and completion notice with Show in Finder.
+- Compact file-transfer live activity and device presentation in the menu bar companion (`CompanionView`, `TransferView(compact: true)`): two-activity paging (`1 of 2`), page indicators with attention affordance for incoming offers without stealing selection, swipe isolated to transfer card, connected-only device filtering when active peers exist, card-styled `Send files…` action hidden during active transfers, relaxed non-congested result/cancellation notices, persistent popover retention during file/folder selection, and centered Open aniCe navigation.
 - Bidirectional local file transfer engine and UI (`MacTransferModel`, `TransferView`, `TransferWire`) with 64-chunk cumulative credit flow control, sequential multi-file batch streaming, exclusive partial staging with checked non-overwriting finalization, sleep assertion management, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
 - Optimize LAN streaming throughput: compute `SessionCrypto.kid` directly from decoded public key bytes avoiding redundant CryptoKit curve reconstruction per record; decouple `sendData` and `receive` locking in `SessionConnection` to allow concurrent full-duplex ACK transmission; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
 - Shared event-driven Now Playing owner with optional Home/companion activity, Phone controls information and attributed packaged universal adapter. Source-bound controls resolve native/script support per action, recover matching late capabilities and publish position samples after commands. Explicit Music/Spotify volume verification gates player sliders; native output-device observation supports phone volume controls. Preview confirmation, readable availability and selection-preserving refresh handle asynchronous results without replaying writes.

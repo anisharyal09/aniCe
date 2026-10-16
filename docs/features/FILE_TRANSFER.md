@@ -32,6 +32,8 @@ Android starts a connected-device foreground service after a visible user starts
 
 Notification permission controls progress and cancel actions in the notification drawer; it does not gate the foreground service. When permission is denied, Android retains its foreground-service notice in the system Task Manager. The permission setting is not changed automatically. A failed service start or service loss retires unowned background work. Idle LAN follows the configured background timeout after approved work finishes. Mac idle-sleep assertions belong to the active job. See [Android notification permission](https://developer.android.com/develop/ui/compose/notifications/notification-permission).
 
+Mac posts native notifications (`UNUserNotificationCenter`) on incoming offers with interactive **Accept** (saving by default to `~/Downloads`), **Choose folder…** (activating aniCe with the offer visible for custom destination selection), and **Decline**, plus a completion notice with **Show in Finder**. Notification permission is requested lazily on first need; when denied or dismissed, the offer remains interactive in the menu-bar companion and main window without gating transfer execution. The companion hosts a compact transfer live activity with rate/progress, cancel, and page navigation alongside Now Playing, falling back to in-app presentation when unattended banners are disabled.
+
 ## Current limits
 
 - Resume journals, durable checkpoints, finalization-intent recovery and coordinated LAN renewal are not implemented. Disconnect ends the job and removes its current partial. Restarting transfer is a new explicit action on the remaining connection, with LAN preferred again after reconnection.
