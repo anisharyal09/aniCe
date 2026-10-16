@@ -12,6 +12,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Define Find Device v1 capability, request and correlated result envelopes with per-generation replay floors, bounded duplicate history and queues, OS-submission acknowledgement semantics (Android additionally waits for alarm-player startup) and independent positive/negative fixtures.
+
 - Local File Transfer v1 protocol (`protocol/transfer/transfer.cddl`, `README.md`) over LAN-preferred authenticated LAN/BLE DATA records (≤ 4,000 bytes) with 11 deterministic CBOR messages, cumulative credit flow control (64-window / 3,072-byte chunks), incremental SHA-256 verification, and 52 independent test vectors (19 valid, 33 invalid).
 - Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts, independently negotiated Mac output volume v1, and selected-player volume v1 within existing authenticated DATA records.
 - Versioned LAN TCP envelope binding and independent framing fixtures.

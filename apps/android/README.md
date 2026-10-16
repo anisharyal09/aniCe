@@ -91,3 +91,7 @@ Home and Features → Mac controls provide playback, player selection and suppor
 ## Local File Transfer
 
 Home and Features → Local file transfer provide file transfer controls, incoming batch approval and rolling-window rate tracking. Reception uses an approved local document-tree folder with non-overwriting numeric suffixes (`name (1).ext`) and copy fallback on filesystems lacking hard links. Exclusive partials are verified and synchronized before provider publication; SAF atomicity is not assumed. Background continuation requires foreground approval and the connected-device transfer service; notification permission controls drawer visibility. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+
+## Find Device
+
+Connected trusted-device actions can request a native notification on the peer. Features provides local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, platform limits and pending physical acceptance.

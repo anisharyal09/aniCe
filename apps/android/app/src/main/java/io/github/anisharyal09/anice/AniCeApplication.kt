@@ -69,12 +69,18 @@ class AniCeApplication : Application() {
         if (bleOwner.isInitialized()) bleOwner.value.onWorkServiceStopped()
     }
 
+    val findDeviceNotification by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceNotification(this) }
+    val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
     val transfer = io.github.anisharyal09.anice.features.transfer.TransferController(this)
     private val transferNotification by lazy { io.github.anisharyal09.anice.features.transfer.TransferNotification(this, transfer) }
-    val features = io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
-        it.register(nowPlaying)
-        it.register(transfer)
+    // Notification adapters need the base context attached by Android after Application construction.
+    val features by lazy {
+        io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
+            it.register(nowPlaying)
+            it.register(transfer)
+            it.register(findDevice)
+        }
     }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
     private val lanOwner = lazy { io.github.anisharyal09.anice.infrastructure.connections.LanSessionController(this) }

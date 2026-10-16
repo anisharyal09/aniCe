@@ -30,6 +30,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Add bidirectional Find Device over existing authenticated connections, with bounded Android alarm-stream ringing and Stop controls, native Mac notifications, explicit local permission setup and documented platform limits.
+
 - Bidirectional local file transfer between trusted Mac and Android devices over authenticated LAN with BLE fallback, sequential multi-file streaming, recipient approval, exclusive job-owned partial staging, cumulative credit flow control and presentation across Features and Home live-activity.
 - Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls over existing secured LAN/BLE, atomic seek feedback, native Android media presentation and a fixed 90-second paused grace; companion-owned background BLE and separately negotiated selected-player volume remain capability/permission gated; independently advertised Mac output volume supports phone buttons without player scripting.
 - Home, Devices, Features and Settings navigation with saved native appearance preferences.

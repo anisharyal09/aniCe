@@ -24,6 +24,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add Find Device to connected-peer actions and the companion, with localized UserNotifications, explicit local permission setup, identifier-bound dismissal and application-owned expiry/cleanup.
+
 - Bidirectional local file transfer engine and UI (`MacTransferModel`, `TransferView`, `TransferWire`) with 64-chunk cumulative credit flow control, sequential multi-file batch streaming, exclusive partial staging with checked non-overwriting finalization, sleep assertion management, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
 - Optimize LAN streaming throughput: compute `SessionCrypto.kid` directly from decoded public key bytes avoiding redundant CryptoKit curve reconstruction per record; decouple `sendData` and `receive` locking in `SessionConnection` to allow concurrent full-duplex ACK transmission; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
 - Shared event-driven Now Playing owner with optional Home/companion activity, Phone controls information and attributed packaged universal adapter. Source-bound controls resolve native/script support per action, recover matching late capabilities and publish position samples after commands. Explicit Music/Spotify volume verification gates player sliders; native output-device observation supports phone volume controls. Preview confirmation, readable availability and selection-preserving refresh handle asynchronous results without replaying writes.

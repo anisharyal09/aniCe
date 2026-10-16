@@ -1,0 +1,8 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Bounded deterministic CBOR Find Device messages inside existing authenticated DATA.
+find-device = ["aniCe find device", 1, 1, []] /
+              ["aniCe find device", 1, 2, [request-id, sequence]] /
+              ["aniCe find device", 1, 3, [request-id, sequence, result]]
+request-id = tstr .regexp "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+sequence = 1..4294967295
+result = 0..4 ; submitted, blocked, stale, busy, failed

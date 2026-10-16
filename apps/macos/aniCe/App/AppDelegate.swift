@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Retain the scene action after its view disappears so Dock reopening still works.
     var reopenMainWindow: (@MainActor () -> Void)?
     private var companion: CompanionHost?
+    var onTerminate: () -> Void = {}
+    func applicationWillTerminate(_ notification: Notification) { onTerminate() }
 
     func openMainFromCompanion() {
         companion?.close()

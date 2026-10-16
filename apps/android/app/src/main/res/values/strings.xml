@@ -25,4 +25,25 @@
     <string name="identity_key_missing">The saved signing key is missing or unusable. Try again, or reset this device’s identity to create a replacement.</string>
     <string name="identity_inconsistent">The saved identity could not be read consistently. Try again, or reset it to create a replacement.</string>
     <string name="identity_crypto_failure">The identity could not complete its signing check. Try again, or reset it to create a replacement.</string>
+    <string name="find_title">Find Device</string>
+    <string name="find_notification_body">Your paired device %1$s is looking for you.</string>
+    <string name="find_dismiss">Dismiss</string>
+    <string name="find_idle">Connect a trusted device to send a notification.</string>
+    <string name="find_waiting">Waiting for your paired device…</string>
+    <string name="find_submitted">Your paired device submitted the notification. Display and sound depend on its system settings.</string>
+    <string name="find_blocked">Notifications are blocked on your paired device. Allow them there and try again.</string>
+    <string name="find_stale">This request is no longer current.</string>
+    <string name="find_busy">Your paired device already has an active alert.</string>
+    <string name="find_failed">The request failed. Notification delivery is unconfirmed.</string>
+    <string name="find_timeout">No response received. Notification delivery is unconfirmed.</string>
+    <string name="find_disconnected">Connection closed. Notification delivery is unconfirmed.</string>
+    <string name="find_permission">Allow notifications on this device</string>
+    <string name="find_settings">Notification settings</string>
+    <string name="find_explanation">Send a notification to a connected trusted device. Sound follows system settings.</string>
+    <string name="find_unsupported">Find Device is unavailable. Connect a device with Find Device support.</string>
+    <string name="find_local_allowed">Notifications are allowed on this device. Presentation and sound follow system settings.</string>
+    <string name="find_local_blocked">Notifications are not allowed on this device. Enable them in notification settings to receive Find Device alerts.</string>
+    <string name="find_ringing_title">Your device is being located</string>
+    <string name="find_stop_ringing">Stop ringing</string>
+    <string name="find_ring_explanation">This phone rings for up to 60 seconds when a connected trusted device looks for it, even in Silent or Vibrate mode. Ringing uses your alarm volume and respects Do Not Disturb. Stop it here or in its notification.</string>
 </resources>

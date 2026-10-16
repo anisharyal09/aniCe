@@ -162,3 +162,7 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## File Transfer
 
 [File Transfer v1](transfer/README.md) defines sequential multi-file batch transfers over authenticated LAN DATA records with 64-chunk cumulative credit flow control, recipient batch approval, temporary `.anice-part` staging with atomic renames, and incremental SHA-256 verification. [Independent fixtures](test-vectors/transfer/transfer-vectors.json) validate positive and negative envelopes and transfer parameters.
+
+## Find Device
+
+[Find Device v1](find-device/README.md) defines bidirectional notification requests and correlated OS-submission results over existing authenticated DATA.

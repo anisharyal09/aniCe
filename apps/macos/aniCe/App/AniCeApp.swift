@@ -12,10 +12,17 @@ struct AniCeApp: App {
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
   @State private var playback: MacPlaybackModel
+  @State private var findDevice: MacFindDeviceModel
+  private let findNotifier: MacFindDeviceNotifier
   @State private var transfer: MacTransferModel
   @State private var navigation: ConnectionNavigation
 
   init() {
+    let notifier = MacFindDeviceNotifier()
+    findNotifier = notifier
+    let findDevice = MacFindDeviceModel(notifier: notifier)
+    notifier.dismissed = { [weak findDevice] id in findDevice?.dismiss(identifier: id) }
+    _findDevice = State(initialValue: findDevice)
     let playback = MacPlaybackModel()
     _playback = State(initialValue: playback)
     let transfer = MacTransferModel()
@@ -37,6 +44,7 @@ struct AniCeApp: App {
     let features=FeatureDispatch()
     features.register(playback)
     features.register(transfer)
+    features.register(findDevice)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
         features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
@@ -103,12 +111,13 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
+            delegate.onTerminate = { findNotifier.clearAll() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, navigation: navigation,
+                session: session, lan: lan, playback: playback, findDevice: findDevice, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }

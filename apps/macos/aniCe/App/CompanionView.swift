@@ -10,6 +10,7 @@ struct CompanionView: View {
   let session: MacSessionModel
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
+  let findDevice: MacFindDeviceModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
   @Environment(\.colorScheme) private var colorScheme
@@ -18,6 +19,7 @@ struct CompanionView: View {
     VStack(alignment: .leading, spacing: 16) {
       if pairing.peers.count > 3 { ScrollView { deviceContent }.frame(maxHeight: 520) }
       else { deviceContent }
+      FindDeviceView(model: findDevice, peers: pairing.peers)
       if playback.showOnMac && playback.compactVisible { MediaView(model:playback,compact:true,visible:playback.companionVisible,playerPicker:false) { navigation.open(.features,present:openMain) } }
       footer
     }

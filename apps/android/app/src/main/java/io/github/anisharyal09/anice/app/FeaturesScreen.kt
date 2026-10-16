@@ -13,12 +13,13 @@ import io.github.anisharyal09.anice.features.transfer.TransferController
 import io.github.anisharyal09.anice.features.transfer.TransferView
 
 @Composable
-fun FeaturesScreen(media: MediaController, transfer: TransferController, navigation: AppNavigation) {
+fun FeaturesScreen(media: MediaController, transfer: TransferController, findDevice: io.github.anisharyal09.anice.features.finddevice.FindDeviceController, navigation: AppNavigation) {
 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                         if(navigation.mediaDetails) {
                             TextButton(onClick={navigation.mediaDetails=false}) { Text("Back to Features") }
                             io.github.anisharyal09.anice.features.nowplaying.MediaView(media)
                         } else {
+                            io.github.anisharyal09.anice.features.finddevice.FindDeviceSetup(findDevice)
                             TransferView(transfer)
                             Text("Mac controls",style=MaterialTheme.typography.titleMedium)
                             Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.surfaceContainer, onClick={navigation.mediaDetails=true}) {
