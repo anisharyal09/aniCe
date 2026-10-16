@@ -34,6 +34,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Streamline Now Playing presentation across Home and main Features workspace: reduce compact card height on Home with tighter spacing, padding, and artwork; hide redundant player selection and player volume slider in compact mode; turn the compact header label and icon into a unified navigation button that opens the full player in Features; embed the complete playback player with timeline scrubber and volume controls into Features alongside structured phone controls, permission actions, and output volume information.
+
 - Move LAN socket delivery, sliced frame parsing, bounded write accounting and independent assembly watchdogs off the main actor; exercise the production transport in native interchange.
 
 - Remove per-record copies from the authenticated record path: assemble records and TCP frames into single reserved buffers and decode sliced buffers without re-basing the input. Wire bytes, bounds and live native validation are unchanged.

@@ -23,13 +23,27 @@ struct MediaView: View {
   @Environment(\.colorScheme) private var scheme
   private var media: MediaPlayback { model.playback }
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        Text("Now Playing").font(.headline)
-        Spacer()
-        if compact { Button(action:open) { Image(systemName:"arrow.up.right") }.accessibilityLabel("View phone controls") }
+    VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+      if compact {
+        Button(action: open) {
+          HStack {
+            Text("Now Playing").font(.headline)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+              .font(.subheadline.weight(.semibold))
+              .foregroundStyle(AniCePalette.secondaryText(scheme))
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("View phone controls")
+      } else {
+        HStack {
+          Text("Now Playing").font(.headline)
+          Spacer()
+        }
       }
-      if playerPicker {
+      if playerPicker && (!compact || model.sources.count > 1) {
         Picker("Player",selection:Binding(get:{ model.selection },set:{ id in model.command(source:id,revision:model.catalogue,action:id.isEmpty ? 6:5) })) {
           Text("Auto").tag("")
           ForEach(model.sources) { Text($0.name).tag($0.id) }
@@ -38,19 +52,17 @@ struct MediaView: View {
       if !media.source.isEmpty {
         HStack(alignment:.top,spacing:12) {
           if let bytes=model.artwork, let image=NSImage(data:bytes) {
-            Image(nsImage:image).resizable().scaledToFit().frame(width:compact ? 48:96,height:compact ? 48:96).clipShape(RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
+            Image(nsImage:image).resizable().scaledToFit().frame(width:compact ? 44:96,height:compact ? 44:96).clipShape(RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
           }
-          VStack(alignment:.leading,spacing:4) {
+          VStack(alignment:.leading,spacing:2) {
             if !media.title.isEmpty { Text(media.title).font(.body.weight(.medium)).fixedSize(horizontal:false,vertical:true) }
-            if !media.artist.isEmpty { Text(media.artist).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal:false,vertical:true) }
-            if !compact { Text("On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
+            if !media.artist.isEmpty { Text(media.artist).font(.subheadline).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal:false,vertical:true) }
             Text(media.player).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-            if media.state == 0 { Text("Playback unavailable").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
           }
         }
         TimelineView(MediaProgressSchedule(active:media.state == 1 && media.position >= 0 && visible)) { _ in
           let elapsed=media.elapsed(at:ProcessInfo.processInfo.systemUptime)
-          VStack(spacing:4) {
+          VStack(spacing:2) {
             if media.actions & 8 != 0, media.duration>0 {
               Slider(value:Binding(get:{scrub ?? elapsed},set:{ value in
                 guard !cancelled else { return }; if target == nil { target=media }; scrub=value
@@ -64,7 +76,7 @@ struct MediaView: View {
             }
           }
         }
-        HStack(spacing:16) {
+        HStack(spacing: compact ? 12 : 16) {
           control("backward.end.fill","Previous",2,2)
           control(media.state == 1 ? "pause.fill":"play.fill",media.state == 1 ? "Pause":"Play",1,1)
           control("forward.end.fill","Next",3,4)
@@ -74,17 +86,19 @@ struct MediaView: View {
       } else if !compact {
         Text(model.selection.isEmpty ? "Play media on this Mac to see it here.":"Waiting for playback information from the selected player.").foregroundStyle(AniCePalette.secondaryText(scheme))
       }
-      PlayerVolumeView(model:model)
+      if !compact {
+        PlayerVolumeView(model:model)
+      }
       if !model.feedback.isEmpty && !compact {
         Text(model.feedback).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
         if media.source.isEmpty { Button("Retry observation") { model.retryObservation() } }
       }
-    }.padding(16).frame(maxWidth:.infinity,alignment:.leading)
+    }.padding(compact ? 12 : 16).frame(maxWidth:.infinity,alignment:.leading)
       .background(AniCePalette.surface(scheme),in:RoundedRectangle(cornerRadius:12))
       .onChange(of:media.revision) { _,_ in if target != nil { cancelled=true }; target=nil; scrub=nil }
   }
   private func control(_ symbol: String,_ label: String,_ action: Int64,_ mask: Int64) -> some View {
-    Button { model.command(source:media.source,revision:media.revision,action:action) } label: { Image(systemName:symbol).frame(minWidth:32,minHeight:28) }
+    Button { model.command(source:media.source,revision:media.revision,action:action) } label: { Image(systemName:symbol).frame(minWidth:compact ? 28:32,minHeight:compact ? 24:28) }
       .disabled(model.busy || media.actions & mask == 0).accessibilityLabel(label)
   }
   static func time(_ seconds: Double) -> String { let value=Int(max(0,seconds)); return String(format:"%d:%02d",value/60,value%60) }
