@@ -52,7 +52,7 @@ import Observation
   func supports(_ peer: DeviceIdentity) -> Bool { selected(peer) != nil }
   func canFind(_ peer: DeviceIdentity) -> Bool { selected(peer) != nil && !busy }
   private func selected(_ peer: DeviceIdentity) -> Link? {
-    ["lan", "ble"].compactMap { links[$0] }.first {
+    ["lan", "ble"].lazy.compactMap { self.links[$0] }.first {
       $0.capable && $0.channel.descriptor.peer.deviceId == peer.deviceId && $0.channel.descriptor.peer.fingerprint == peer.fingerprint
     }
   }
@@ -111,7 +111,8 @@ import Observation
     // Record admission before any suspension; duplicate in-flight requests cannot create another alert.
     remember(reply(message, .stale), link)
     let key = peerKey(descriptor)
-    guard alerts[key] == nil, link.history.processing == nil else { let response = reply(message, .busy); remember(response, link); enqueue(response, link); return .handled }
+    guard link.history.processing == nil else { let response = reply(message, .busy); remember(response, link); enqueue(response, link); return .handled }
+    if let previous = alerts[key] { dismiss(identifier: previous.identifier) }
     link.history.processing = message.sequence
     defer { link.history.processing = nil }
     let identifier = "find-device-" + UUID().uuidString.lowercased()
@@ -151,8 +152,9 @@ import Observation
   }
   private func schedule() {
     timer?.cancel(); timer = nil
-    let deadlines = alerts.values.map(\.deadline) + (pending.map { [$0.deadline] } ?? []) + links.values.flatMap { $0.queue.map { $0.1 } }
-    guard let next = deadlines.min() else { return }
+    let next = [alerts.values.lazy.map(\.deadline).min(), pending?.deadline,
+      links.values.lazy.flatMap { $0.queue.lazy.map { $0.1 } }.min()].compactMap { $0 }.min()
+    guard let next else { return }
     let delay = max(0.001, next - now())
     timer = Task { [weak self] in
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }

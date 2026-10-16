@@ -6,6 +6,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Replace an existing Find Device notification for a fresh request instead of returning busy after its banner fades. Duplicate requests and stale dismissal callbacks cannot revive or clear the replacement.
+
+- Avoid materializing Find Device channel candidates and complete deadline inventories during routing and expiry scheduling. Preserve LAN preference, BLE fallback and existing alert deadlines.
+
 - Report transfer direction and finalization in the file-transfer panel: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate rather than as 0%, and label progress for screen readers.
 
 - Publish received files under an available name instead of failing a verified batch: advance suffixes atomically when destination names are taken, publish by copying when destination volumes cannot hold hard links, report real POSIX error codes instead of unknown save errors, and preserve verified partials on finalization failure.

@@ -21,6 +21,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Specify fresh-request replacement for submitted Mac Find Device notifications while retaining Android ringing/submission busy responses and duplicate suppression. Wire bytes and result codes are unchanged.
+
 - Document production LAN benchmarking, bulk probe telemetry, and real-world file transfer performance characteristics across RF tiers in `protocol/lan/BENCHMARK.md`.
 
 ## [0.1.0]

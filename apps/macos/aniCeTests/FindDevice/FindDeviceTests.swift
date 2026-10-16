@@ -100,6 +100,47 @@ final class FindDeviceTests: XCTestCase {
     XCTAssertFalse(try ble.sentData.compactMap { try FindDeviceMessage.decode($0) }.contains { $0.kind == 2 })
     owner.retired(ble.descriptor)
   }
+  @MainActor func testIncompatibleLANDoesNotHideCompatibleBLE() async throws {
+    let lan = MockSecuredChannel(instance: "lan")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    let owner = MacFindDeviceModel(notifier: FindNotifierFake())
+    try await ready(owner, ble); owner.available(lan)
+    owner.find(lan.descriptor.peer)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertTrue(try ble.sentData.compactMap { try FindDeviceMessage.decode($0) }.contains { $0.kind == 2 })
+    XCTAssertFalse(try lan.sentData.compactMap { try FindDeviceMessage.decode($0) }.contains { $0.kind == 2 })
+    owner.retired(ble.descriptor); owner.retired(lan.descriptor)
+  }
+  @MainActor func testFreshRequestReplacesFadedMacAlertWithoutRevivingDuplicatesOrExtendingExpiry() async throws {
+    var time = 0.0
+    let notifier = FindNotifierFake(), channel = MockSecuredChannel()
+    let owner = MacFindDeviceModel(notifier: notifier, now: { time })
+    try await ready(owner, channel)
+    let first = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 1)
+    _ = await owner.handle(try first.encode(), on: channel.descriptor)
+    let old = try XCTUnwrap(notifier.posts.last)
+    time = 15
+    let second = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 2)
+    _ = await owner.handle(try second.encode(), on: channel.descriptor)
+    let replacement = try XCTUnwrap(notifier.posts.last)
+    XCTAssertNotEqual(old, replacement)
+    XCTAssertEqual(notifier.posts.count, 2)
+    XCTAssertTrue(notifier.cleared.contains(old))
+    await Task.yield()
+    XCTAssertEqual(try channel.sentData.compactMap { try FindDeviceMessage.decode($0) }.last?.result, FindResult.submitted.rawValue)
+    owner.dismiss(identifier: old)
+    _ = await owner.handle(try first.encode(), on: channel.descriptor)
+    _ = await owner.handle(try second.encode(), on: channel.descriptor)
+    XCTAssertEqual(notifier.posts.count, 2)
+    XCTAssertFalse(notifier.cleared.contains(replacement))
+    time = 74.999; owner.expire()
+    XCTAssertFalse(notifier.cleared.contains(replacement))
+    time = 75; owner.expire()
+    XCTAssertTrue(notifier.cleared.contains(replacement))
+    _ = await owner.handle(try second.encode(), on: channel.descriptor)
+    XCTAssertEqual(notifier.posts.count, 2)
+    owner.retired(channel.descriptor)
+  }
   @MainActor func testNativeActionAndOrdinaryDismissalRouteExactIdentifiers() {
     let notifier = MacFindDeviceNotifier()
     var dismissed: [String] = []

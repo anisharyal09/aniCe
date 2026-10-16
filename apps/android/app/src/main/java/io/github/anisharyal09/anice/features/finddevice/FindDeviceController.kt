@@ -47,7 +47,7 @@ class FindDeviceController(
     val busy get() = pending != null
     private fun peerKey(d: ChannelDescriptor) = d.peer.deviceId + ":" + d.peer.fingerprint
     private fun live(d: ChannelDescriptor) = links[d.transport]?.channel?.descriptor == d
-    private fun selected(peer: DeviceIdentity) = listOf("lan", "ble").mapNotNull { links[it] }.firstOrNull {
+    private fun selected(peer: DeviceIdentity) = sequenceOf("lan", "ble").mapNotNull { links[it] }.firstOrNull {
         it.capable && it.channel.descriptor.peer.deviceId == peer.deviceId && it.channel.descriptor.peer.fingerprint == peer.fingerprint
     }
     fun canFind(peer: DeviceIdentity) = !busy && selected(peer) != null
@@ -146,7 +146,7 @@ class FindDeviceController(
     }
     private fun schedule() {
         timer?.cancel(); timer = null
-        val next = (alerts.values.map { it.deadline } + listOfNotNull(pending?.deadline) + links.values.flatMap { it.queue.map { item -> item.second } }).minOrNull() ?: return
+        val next = (alerts.values.asSequence().map { it.deadline } + sequenceOf(pending?.deadline).filterNotNull() + links.values.asSequence().flatMap { it.queue.asSequence().map { item -> item.second } }).minOrNull() ?: return
         timer = scope.launch { wait(maxOf(1, next - now())); expire() }
     }
     private fun enqueue(message: FindDeviceMessage, link: Link) {

@@ -108,6 +108,15 @@ class FindDeviceTests {
         assertFalse(h.owner.busy); assertEquals("find_disconnected", h.owner.feedbackKey)
         assertFalse(ble.sent.any { it.kind == 2L }); h.owner.retired(ble.descriptor)
     }
+    @Test fun incompatibleLanCannotHideCompatibleBleOrMatchAnotherPeer() = runBlocking {
+        val h = Harness(); val lan = Channel(); val ble = Channel("ble", peer = lan.descriptor.peer)
+        h.ready(ble); h.owner.available(lan)
+        assertFalse(h.owner.canFind(lan.descriptor.peer.copy(fingerprint = "other")))
+        h.owner.find(lan.descriptor.peer)
+        assertTrue(ble.sent.any { it.kind == 2L })
+        assertFalse(lan.sent.any { it.kind == 2L })
+        h.owner.retired(ble.descriptor); h.owner.retired(lan.descriptor)
+    }
     @Test fun backpressureAndUnsentRequestDeadlineNeverReplaysOnCapacity() = runBlocking {
         val h = Harness(); val c = Channel(); h.ready(c); c.blocked = true
         h.owner.find(c.descriptor.peer); assertTrue(h.owner.busy)

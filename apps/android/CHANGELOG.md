@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Avoid materializing Find Device channel candidates and complete deadline inventories during routing and expiry scheduling. Preserve LAN preference, BLE fallback and existing alert deadlines.
+
 - Report transfer direction and finalization in the file-transfer panel and its progress notification: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate progress rather than as 0%, label progress for screen readers, and correct the completion notification's file count. Remove the unused transfer-panel parameters and raise the notification-permission and preparing controls to the 48 dp minimum.
 
 - Publish received files under an available name instead of failing a verified batch: resolve taken destination names by suffixing (`name (1).ext`), confirm destination-provider renames, fall back to copying when folders cannot hold hard links, and preserve verified partials on finalization failure.
