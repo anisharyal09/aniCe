@@ -5,10 +5,14 @@ import SwiftUI
 struct FeaturesView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
+  let findDevice: MacFindDeviceModel
+  let findNotifier: MacFindDeviceNotifier
+  let peers: [PeerTrustRecord]
   @Environment(\.colorScheme) private var colorScheme
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
+        FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
         TransferView(model: transfer)
         Text("Phone controls").font(.title2.weight(.semibold))
         MediaView(model: playback, compact: false, visible: true)

@@ -93,6 +93,11 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     onConnectionDetails = { if (compact) onOpenDevice(record.peer.deviceId) else { diagnostics = false; showEvents = false; details = if (details == record.peer.deviceId + ":" + record.peer.fingerprint) null else record.peer.deviceId + ":" + record.peer.fingerprint } },
                     summary = summary.text, action = summary.action,
                     detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact)
+                if (model.findDevice.availableFor(record.peer)) {
+                    OutlinedButton(onClick = { model.findDevice.find(record.peer) }, enabled = !model.findDevice.busy,
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text(androidx.compose.ui.res.stringResource(R.string.find_title)) }
+                }
+                if (model.findDevice.feedbackKey != "find_idle" && model.findDevice.feedbackPeer?.deviceId == record.peer.deviceId && model.findDevice.feedbackPeer?.fingerprint == record.peer.fingerprint) io.github.anisharyal09.anice.features.finddevice.FindDeviceFeedback(model.findDevice)
                 if (!compact && nearby.available) {
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint

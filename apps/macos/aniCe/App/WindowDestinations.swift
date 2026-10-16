@@ -19,6 +19,7 @@ ScrollView {
                 Text("No devices paired yet").font(.headline)
                 Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
               }
+              FindDeviceView(model: findDevice, peers: pairing.peers)
               if transfer.state != .idle {
                 TransferView(model: transfer)
               }
@@ -51,6 +52,7 @@ ScrollView {
                   focusedPeer: navigation.focusedPeer, discovery: discovery, canDiscover: !pairing.active && !session.allowing,
                   automaticEnabled: !pairing.active,
                   onManageDevices: { navigation.deviceRoute = .pairing })
+                FindDeviceView(model: findDevice, peers: pairing.peers)
                 Button(pairing.active ? "Review pairing" : "Manage devices") { navigation.deviceRoute = .pairing }
                   .buttonStyle(.bordered)
               }

@@ -38,6 +38,16 @@ import io.github.anisharyal09.anice.ui.theme.saveAppearance
 @Composable
 fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     pairing: PairingViewModel, session: SessionViewModel) {
+    session.findDevice.incomingAlert?.let { alert ->
+        AlertDialog(onDismissRequest = { session.findDevice.dismiss(alert.identifier) },
+            title = { Text(androidx.compose.ui.res.stringResource(R.string.find_ringing_title)) },
+            text = { Text(androidx.compose.ui.res.stringResource(R.string.find_notification_body, alert.peerName)) },
+            confirmButton = {
+                Button(onClick = { session.findDevice.dismiss(alert.identifier) }) {
+                    Text(androidx.compose.ui.res.stringResource(R.string.find_stop_ringing))
+                }
+            })
+    }
     val navigation = rememberSaveable(saver = AppNavigation.saver) { AppNavigation() }
     LaunchedEffect(session.media.openWorkspaceRequest) {
         if(session.media.openWorkspaceRequest) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true;session.media.workspaceOpened() }
@@ -118,7 +128,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
                         DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing) { automaticAfterPairing=it }
                     }
-                    AppDestination.Features -> FeaturesScreen(session.media, session.transfer, navigation)
+                    AppDestination.Features -> FeaturesScreen(session.media, session.transfer, session.findDevice, navigation)
                     AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context)
                 }
             }

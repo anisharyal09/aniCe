@@ -9,7 +9,7 @@ Incoming file transfers over secured LAN or Bluetooth previously required an ope
 Introduce native macOS notifications (`UNUserNotificationCenter`) and a compact transfer live activity in the menu-bar companion:
 
 1. **Native notification channel**:
-   - Register `MacTransferNotifier` as `@preconcurrency UNUserNotificationCenterDelegate` before `applicationWillFinishLaunching` finishes, preserving cold-launch action clicks.
+   - Register `AppDelegate` as the single `UNUserNotificationCenterDelegate` during app assembly and before launch finishes. It registers both transfer categories together with Find Device and routes responses by category to each feature owner, preserving cold-launch action clicks without replacing another feature’s delegate or categories.
    - Define two notification categories:
      - `FILE_TRANSFER_OFFER`: Includes **Accept** (`ACCEPT_ACTION`, saving to `~/Downloads`), **Choose folder…** (`CHOOSE_ACTION`, foreground-activating aniCe with the offer visible), and **Decline** (`DECLINE_ACTION`, destructive).
      - `TRANSFER_RESULT`: Includes **Show in Finder** (`SHOW_IN_FINDER`), revealing published files via `NSWorkspace.shared.activateFileViewerSelecting`.

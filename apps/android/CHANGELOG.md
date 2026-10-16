@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Avoid materializing Find Device channel candidates and complete deadline inventories during routing and expiry scheduling. Preserve LAN preference, BLE fallback and existing alert deadlines.
+
 - Report transfer direction and finalization in the file-transfer panel and its progress notification: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate progress rather than as 0%, label progress for screen readers, and correct the completion notification's file count. Remove the unused transfer-panel parameters and raise the notification-permission and preparing controls to the 48 dp minimum.
 
 - Publish received files under an available name instead of failing a verified batch: resolve taken destination names by suffixing (`name (1).ext`), confirm destination-provider renames, fall back to copying when folders cannot hold hard links, and preserve verified partials on finalization failure.
@@ -25,6 +27,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Enforce LAN-preferred file transfer routing with BLE fallback, background lifecycle ownership, exclusive partial staging, checked finalization, and isolated reply correlation. Notification denial no longer blocks approved foreground transfers; release idle leases and stale timers deterministically, preserve approved BLE work during screen lock, and require explicit resend for interrupted batches.
 
 ### Added
+
+- Add Find Device requests and localized alerts with a bounded alarm-stream ringing service, Stop notification/in-app dialog, permission checks, dismissal/disconnect/focus/timeout cleanup, deferred context-backed initialization and existing companion BLE ownership. Silent/Vibrate is supported without changing sound mode or alarm volume; DND and native audio policy remain authoritative.
 
 - Bidirectional local file transfer controller and Compose UI (`TransferController`, `TransferView`, `TransferWire`, `TransferNotification`, `TransferActionReceiver`) with cumulative credit flow control, sequential multi-file streaming, Storage Access Framework document picker support, exclusive job-owned partial documents and checked provider finalization, full-duplex flow-control ACK submission, high-priority heads-up incoming transfer notifications with tap-to-open and Decline actions, and integration into Features and Home live-activity.
 - Optimize LAN streaming throughput: pre-allocate 2-MiB TCP send/receive socket buffers before connect and size the read loop to one whole record, with the socket read decoupled from record delivery by a bounded ordered queue; cache validation and `kid` digest on immutable `DeviceIdentity` instances to eliminate repeated BigInteger curve point verification and `KeyFactory` JNI instantiation per record; decouple `sendOperation` and `receive` locking in `SessionConnection` so recipient flow-control ACKs stream concurrently over full-duplex TCP; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.

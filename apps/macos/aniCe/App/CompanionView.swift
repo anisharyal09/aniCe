@@ -10,6 +10,7 @@ struct CompanionView: View {
   let session: MacSessionModel
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
+  let findDevice: MacFindDeviceModel
   let transfer: MacTransferModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
@@ -21,6 +22,7 @@ struct CompanionView: View {
     VStack(alignment: .leading, spacing: 16) {
       if pairing.peers.count > 3 { ScrollView { deviceContent }.frame(maxHeight: 520) }
       else { deviceContent }
+      FindDeviceView(model: findDevice, peers: pairing.peers)
       liveActivitySection
       footer
     }

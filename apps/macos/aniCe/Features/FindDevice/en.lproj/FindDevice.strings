@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Localizes Find Device notification content and native controls.
+"find_title" = "Find Device";
+"find_notification_body" = "Your paired device %@ is looking for you.";
+"find_dismiss" = "Dismiss";
+"find_idle" = "Connect a trusted device to send a notification.";
+"find_waiting" = "Waiting for your paired device…";
+"find_submitted" = "Your paired device submitted the notification. Display and sound depend on its system settings.";
+"find_blocked" = "Notifications are blocked on your paired device. Allow them there and try again.";
+"find_stale" = "This request is no longer current.";
+"find_busy" = "Your paired device already has an active alert.";
+"find_failed" = "The request failed. Notification delivery is unconfirmed.";
+"find_timeout" = "No response received. Notification delivery is unconfirmed.";
+"find_disconnected" = "Connection closed. Notification delivery is unconfirmed.";
+"find_permission" = "Allow notifications on this device";
+"find_settings" = "Notification settings";
+"find_explanation" = "Send a notification to a connected trusted device. Sound follows system settings.";
+"find_unsupported" = "Find Device is unavailable. Connect a device with Find Device support.";
+"find_local_allowed" = "Notifications are allowed on this device. Presentation and sound follow system settings.";
+"find_local_blocked" = "Notifications are not allowed on this device. Enable them in notification settings to receive Find Device alerts.";
+"find_local_unknown" = "Checking notification settings…";
+"find_local_error" = "Notification permission could not be requested. Check notification settings.";

@@ -13,6 +13,8 @@ struct MainWindowView: View {
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
+  let findDevice: MacFindDeviceModel
+  let findNotifier: MacFindDeviceNotifier
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
@@ -39,7 +41,7 @@ struct MainWindowView: View {
         switch navigation.destination {
         case .home: homeContent
         case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer)
+        case .features: FeaturesView(playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers)
         case .settings: settingsContent
 
         }

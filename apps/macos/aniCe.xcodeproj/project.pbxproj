@@ -92,6 +92,13 @@
 		B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000004; };
 		B10100000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000005; };
 		B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000006; };
+		DC7D6D6B0A51432C588DD292 = {isa = PBXBuildFile; fileRef = 2431830D4D540A539464BB7D; };
+		3398E971825802A705E9A67B = {isa = PBXBuildFile; fileRef = D41082AC158A40F353908272; };
+		7B88E2DA9E74AC684276032A = {isa = PBXBuildFile; fileRef = CCA505D8B781B0E22B4A5F2A; };
+		65B514A7C11CA38D4097E903 = {isa = PBXBuildFile; fileRef = 7BA913A6C9D1F3BEEF7A8EFC; };
+		C7F01D6B909E13E9D6AF2780 = {isa = PBXBuildFile; fileRef = CDA20BB9D9A904058EB42454; };
+		63AC0DCC193885313F1F132F = {isa = PBXBuildFile; fileRef = F59E511361C133E8CC2EB410; };
+		9DF815E709C26EE3E825817A = {isa = PBXBuildFile; fileRef = F4295D8EB600679BAA3D0AEF; };
 		B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000007; };
 		B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000008; };
 /* End PBXBuildFile section */
@@ -195,6 +202,13 @@
 		B10200000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferModel.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Transfer/TransferModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000006 /* aniCe/Features/Transfer/TransferView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferView.swift"; sourceTree = SOURCE_ROOT; };
+		2431830D4D540A539464BB7D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/FindDevice/FindDeviceWire.swift"; sourceTree = SOURCE_ROOT; };
+		D41082AC158A40F353908272 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/FindDevice/MacFindDeviceModel.swift"; sourceTree = SOURCE_ROOT; };
+		CCA505D8B781B0E22B4A5F2A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/FindDevice/MacFindDeviceNotifier.swift"; sourceTree = SOURCE_ROOT; };
+		7BA913A6C9D1F3BEEF7A8EFC = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/FindDevice/FindDeviceView.swift"; sourceTree = SOURCE_ROOT; };
+		CDA20BB9D9A904058EB42454 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = "aniCe/Features/FindDevice/en.lproj/FindDevice.strings"; sourceTree = SOURCE_ROOT; };
+		F59E511361C133E8CC2EB410 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/FindDevice/FindDeviceTests.swift"; sourceTree = SOURCE_ROOT; };
+		F4295D8EB600679BAA3D0AEF = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/find-device/find-device-vectors.json"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferNotifier.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Transfer/TransferNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -220,6 +234,13 @@
 		00000000000000000000000B = {
 			isa = PBXGroup;
 			children = (
+				F4295D8EB600679BAA3D0AEF,
+				F59E511361C133E8CC2EB410,
+				CDA20BB9D9A904058EB42454,
+				7BA913A6C9D1F3BEEF7A8EFC,
+				CCA505D8B781B0E22B4A5F2A,
+				D41082AC158A40F353908272,
+				2431830D4D540A539464BB7D,
 				DF7A7C7ACBC354918B4A452F,
 				B011E9D35E7A07A04FACA37A,
 				ABCA12000000000000000001,
@@ -518,6 +539,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7F01D6B909E13E9D6AF2780,
 				AB0000000000000000000012 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -526,6 +548,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9DF815E709C26EE3E825817A,
 				B267B0535D61B78766EECCF5,
 				ABCA12000000000000000002,
 				AA1100000000000000000002,
@@ -563,6 +586,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				65B514A7C11CA38D4097E903,
+				7B88E2DA9E74AC684276032A,
+				3398E971825802A705E9A67B,
+				DC7D6D6B0A51432C588DD292,
 				16767FDDEADC12BEDB3CD533,
 				2F4C3E959C2B63EEAE37D4AB,
 				1CAD97B955DF438A4E72570A,
@@ -641,6 +668,7 @@
 				000000000000000000000202 /* IdentityTests.swift in Sources */,
 				B10100000000000000000002 /* aniCeTests/Transfer/TransferWireTests.swift in Sources */,
 				B10100000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift in Sources */,
+				63AC0DCC193885313F1F132F,
 				B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

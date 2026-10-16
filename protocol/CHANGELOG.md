@@ -12,12 +12,16 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Define Find Device v1 capability, request and correlated result envelopes with per-generation replay floors, bounded duplicate history and queues, OS-submission acknowledgement semantics (Android additionally waits for alarm-player startup) and independent positive/negative fixtures.
+
 - Local File Transfer v1 protocol (`protocol/transfer/transfer.cddl`, `README.md`) over LAN-preferred authenticated LAN/BLE DATA records (≤ 4,000 bytes) with 11 deterministic CBOR messages, cumulative credit flow control (64-window / 3,072-byte chunks), incremental SHA-256 verification, and 52 independent test vectors (19 valid, 33 invalid).
 - Media v1 deterministic CBOR capability/subscription/snapshot/selection/command/result/artwork contracts, independently negotiated Mac output volume v1, and selected-player volume v1 within existing authenticated DATA records.
 - Versioned LAN TCP envelope binding and independent framing fixtures.
 - Coordinated RENEWAL_REQUEST behavior, 55-minute/record-margin thresholds and old-session retirement before fresh EDHOC.
 
 ### Changed
+
+- Specify fresh-request replacement for submitted Mac Find Device notifications while retaining Android ringing/submission busy responses and duplicate suppression. Wire bytes and result codes are unchanged.
 
 - Document production LAN benchmarking, bulk probe telemetry, and real-world file transfer performance characteristics across RF tiers in `protocol/lan/BENCHMARK.md`.
 

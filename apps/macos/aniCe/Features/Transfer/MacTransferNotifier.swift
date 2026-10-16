@@ -63,7 +63,7 @@ struct TransferNotificationContent: Equatable {
   }
 }
 
-@MainActor final class MacTransferNotifier: NSObject, @preconcurrency UNUserNotificationCenterDelegate {
+@MainActor final class MacTransferNotifier: NSObject {
   enum Category {
     static let offer = "FILE_TRANSFER_OFFER"
     static let result = "TRANSFER_RESULT"
@@ -87,11 +87,10 @@ struct TransferNotificationContent: Equatable {
     self.openMainWindow = openMainWindow
     self.center = center
     super.init()
-    registerCategories()
   }
 
   // Registers modal actions: Accept saves unattended to ~/Downloads; Choose folder foregrounds aniCe for destination selection; Decline rejects; Show in Finder reveals published files.
-  func registerCategories() {
+  static func notificationCategories() -> Set<UNNotificationCategory> {
     let acceptAction = UNNotificationAction(
       identifier: Action.accept,
       title: "Accept",
@@ -126,7 +125,7 @@ struct TransferNotificationContent: Equatable {
       options: []
     )
 
-    center.setNotificationCategories([offerCategory, resultCategory])
+    return [offerCategory, resultCategory]
   }
 
   func handle(_ event: TransferEvent) {
@@ -187,25 +186,6 @@ struct TransferNotificationContent: Equatable {
         NSLog("Transfer notification delivery failed: %@", error.localizedDescription)
       }
     }
-  }
-
-  // MARK: - UNUserNotificationCenterDelegate
-
-  func userNotificationCenter(
-    _ center: UNUserNotificationCenter,
-    willPresent notification: UNNotification,
-    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-  ) {
-    completionHandler([.banner, .list, .sound])
-  }
-
-  func userNotificationCenter(
-    _ center: UNUserNotificationCenter,
-    didReceive response: UNNotificationResponse,
-    withCompletionHandler completionHandler: @escaping () -> Void
-  ) {
-    handleAction(response.actionIdentifier)
-    completionHandler()
   }
 
   // Fences action execution against stale offers: verifies pendingOffer != nil before dispatching.
