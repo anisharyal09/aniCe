@@ -229,7 +229,7 @@ final class TransferNotifierTests: XCTestCase {
     )
   }
 
-  func testMultiDeviceOrderingStablePartition() {
+  func testPrimaryPeerSelectionUsesConnectedPartitionAndPreservesOrder() {
     let idA = UUID().uuidString.lowercased()
     let idB = UUID().uuidString.lowercased()
     let idC = UUID().uuidString.lowercased()
@@ -246,29 +246,17 @@ final class TransferNotifierTests: XCTestCase {
 
     let peers: [PeerTrustRecord] = [recordA, recordB, recordC]
 
-    func isConnected(_ record: PeerTrustRecord) -> Bool {
-      record.peer.deviceId == idB
+    // Exercise the presentation path used by Devices and the companion instead of reimplementing
+    // its partition locally.
+    func displayed(_ connected: Set<String>) -> [String] {
+      ConnectionPresentation.primaryPeers(peers) { connected.contains($0.peer.deviceId) }
+        .map { $0.peer.deviceId }
     }
 
-    // Compact overview filters out disconnected devices when any device is connected
-    func orderedCompact(_ list: [PeerTrustRecord]) -> [PeerTrustRecord] {
-      let connected = list.filter { isConnected($0) }
-      if !connected.isEmpty { return connected }
-      return list
-    }
-
-    let ordered = orderedCompact(peers)
-    XCTAssertEqual(ordered.map { $0.peer.deviceId }, [idB], "Only connected peer should appear in compact overview")
-
-    // When none are connected, all paired devices remain available to connect
-    func noneConnected(_ record: PeerTrustRecord) -> Bool { false }
-    func orderedNoneConnected(_ list: [PeerTrustRecord]) -> [PeerTrustRecord] {
-      let connected = list.filter { noneConnected($0) }
-      if !connected.isEmpty { return connected }
-      return list
-    }
-    let fallback = orderedNoneConnected(peers)
-    XCTAssertEqual(fallback.map { $0.peer.deviceId }, [idA, idB, idC])
+    XCTAssertEqual(displayed([idB]), [idB], "Only connected peers should appear while any peer is connected")
+    XCTAssertEqual(displayed([idA, idC]), [idA, idC], "Connected peers must retain their stored order")
+    XCTAssertEqual(displayed([idA, idB, idC]), [idA, idB, idC])
+    XCTAssertEqual(displayed([]), [idA, idB, idC], "With no connection, all paired devices remain available")
   }
 }
 

@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Replaced the transfer-ordering test that reimplemented compact/none-connected ordering locally with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback. The strict local verification gate now cross-checks hosted-suite result bundles against `xcodebuild` test-case lines and rejects zero-test runs, failures, crashes and undocumented skips.
+
 - Clipboard panel, favourites and companion entry with credential-scoped automatic consent, permission-aware pasteboard observation, sensitive-content confirmation and bounded LAN/BLE delivery with idempotent fallback. Manual sends survive automatic clipboard changes during preparation; disabling automatic sharing immediately cancels pending automatic preparation.
 
 - Resilient file transfers: a mid-stream LAN or Bluetooth loss now pauses with retained partial storage, frozen progress in the transfer panel and menu-bar companion, and a native paused notification. A reconnected LAN to the same peer resumes automatically at the verified offset; either device can explicitly continue over Bluetooth from the panel or notification when LAN stays down, with the receiver asking the sender to validate the prefix it holds. Cancel deletes the partial, and a 15-minute pause timeout fails and cleans it up.

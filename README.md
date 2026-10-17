@@ -10,7 +10,7 @@ The pairing and transport foundations include P-256 identities, QR and OPAQUE PI
 
 **0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer, Find Device and text Clipboard are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
 
-Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 265 Android JVM tests; the Mac hosted suite reports 246 tests, including six explicit skips, with zero failures.
+Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 265 Android JVM tests; the Mac hosted suite contains 246 tests, of which 243 pass and the three real-player acceptance tests are explicit documented skips when the strict gate enables the isolated Keychain tests. Zero tests fail.
 
 ---
 
@@ -58,6 +58,7 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 - **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
 
 Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. API 29/macOS 14 runtime acceptance remains pending. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
+
 
 ---
 

@@ -1,7 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Generates independent deterministic CBOR media fixtures for both native codecs.
-import json, copy
+import argparse, json, copy
 from pathlib import Path
+parser=argparse.ArgumentParser()
+parser.add_argument('--check',action='store_true',help='verify committed fixtures instead of rewriting them')
+CHECK=parser.parse_args().check
+def emit(name,value):
+    target=Path(__file__).resolve().parent/name
+    rendered=json.dumps(value,indent=2)+'\n'
+    if CHECK:
+        if target.read_text()!=rendered:raise SystemExit(f'{name} differs; regenerate media fixtures and review the diff.')
+    else:
+        target.write_text(rendered)
 # Independent RFC 8949 encoder; deliberately does not import application codecs.
 def head(m,n):
  if n<24:return bytes([m*32+n])
@@ -25,7 +35,7 @@ for name,index,value in [('title-bound',3,'x'*513),('title-nul',3,'a\0b'),('posi
  fields=copy.deepcopy(snap);fields[index]=value;invalid.append((name,msg(5,fields)))
 out={'oracle':'Independent Python RFC 8949 encoder; no native codec imports','valid':[{'name':n,'bytesHex':enc(v).hex(),'kind':v[2]} for n,v in valid],'invalid':[{'name':n,'bytesHex':enc(v).hex()} for n,v in invalid]}
 out['invalid'] += [{'name':'truncated','bytesHex':enc(msg(5,snap)).hex()[:-2]},{'name':'oversized-record','bytesHex':enc(msg(8,[u,src,rev,bytes(32),65536,0,bytes(3900)])).hex()},{'name':'noncanonical-integer','bytesHex':(b'\x84'+enc('aniCe media')+b'\x18\x01'+enc(1)+enc([1,False])).hex()}]
-(Path(__file__).resolve().parent / 'media-vectors.json').write_text(json.dumps(out,indent=2)+'\n')
+emit('media-vectors.json',out)
 print(len(out['valid']),len(out['invalid']))
 # Optional player-volume fixtures share only this independent primitive encoder.
 def volume(k,f,v=1): return ['aniCe player volume',v,k,f]
@@ -34,7 +44,7 @@ vb=[('version',volume(1,[1],2)),('kind',volume(5,[])),('short-capability',volume
 vb += [('missing-source',volume(2,[u,'',rev,False,-1])),('missing-revision',volume(2,[u,src,'',False,-1]))]
 vo={'oracle':'Independent Python RFC 8949 encoder; no native codec imports','valid':[{'name':n,'bytesHex':enc(v).hex(),'kind':v[2]} for n,v in vg],'invalid':[{'name':n,'bytesHex':enc(v).hex()} for n,v in vb]}
 vo['invalid'] += [{'name':'truncated','bytesHex':enc(volume(3,[u,1,src,rev,50])).hex()[:-2]},{'name':'noncanonical-integer','bytesHex':(b'\x84'+enc('aniCe player volume')+b'\x18\x01'+enc(1)+enc([1])).hex()},{'name':'oversized','bytesHex':enc(volume(1,['x'*4000])).hex()}]
-(Path(__file__).resolve().parent / 'volume-vectors.json').write_text(json.dumps(vo,indent=2)+'\n')
+emit('volume-vectors.json',vo)
 print('volume',len(vo['valid']),len(vo['invalid']))
 
 # Output volume has a separately negotiated tag and device identity, preserving player and media bytes.
@@ -42,5 +52,5 @@ og=[(n,['aniCe output volume',*v[1:]]) for n,v in vg]
 ob=[(n,['aniCe output volume',*v[1:]]) for n,v in vb]
 oo={'oracle':'Independent Python RFC 8949 encoder; no native codec imports','valid':[{'name':n,'bytesHex':enc(v).hex(),'kind':v[2]} for n,v in og],'invalid':[{'name':n,'bytesHex':enc(v).hex()} for n,v in ob]}
 oo['invalid'] += [{'name':'truncated','bytesHex':enc(['aniCe output volume',1,3,[u,1,src,rev,50]]).hex()[:-2]},{'name':'noncanonical-integer','bytesHex':(b'\x84'+enc('aniCe output volume')+b'\x18\x01'+enc(1)+enc([1])).hex()},{'name':'oversized','bytesHex':enc(['aniCe output volume',1,1,['x'*4000]]).hex()}]
-(Path(__file__).resolve().parent / 'output-volume-vectors.json').write_text(json.dumps(oo,indent=2)+'\n')
+emit('output-volume-vectors.json',oo)
 print('output volume',len(oo['valid']),len(oo['invalid']))

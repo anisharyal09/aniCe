@@ -10,6 +10,10 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Strict local verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) prove the gate rejects those false-success shapes. No CI workflow is added.
+- `--check` drift verification for every independent vector generator (clipboard, transfer, media, find-device, identity, pairing, session handshake/control/record, LAN framing, bulk probe and LAN transfer). Identity checking compares all non-randomized fields and verifies committed signatures with OpenSSL.
+- Replaced the macOS transfer-ordering test that asserted a local reimplementation with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback.
+
 - Native text Clipboard v1 on Android and macOS, with manual sharing, per-device opt-in automatic sharing and direct native clipboard delivery over secured LAN or BLE.
 
 - File transfers now pause instead of failing when the active LAN or Bluetooth channel drops mid-stream. The verified partial is retained for 15 minutes, local-network reconnection resumes automatically at the last verified offset, and either device can explicitly continue over Bluetooth when LAN stays down (the receiver asks the sender to validate the prefix it already holds). Paused cards and notifications show frozen progress, Continue over Bluetooth where available and Cancel; pause remains automatic on transport loss, with no manual pause action. A capable LAN that appears during a Bluetooth stream upgrades the active transfer in place through the same resume handshake, so continuing over Bluetooth no longer keeps streaming over Bluetooth after Wi-Fi returns. On Android, a paused or active batch retains a secured Bluetooth fallback lease so the fallback survives and the channel does not connect/disconnect repeatedly.

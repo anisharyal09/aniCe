@@ -8,7 +8,7 @@ Automatic nearby recovery uses an OS-bound companion lease and one device settin
 
 ## Development version and verification
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device and text Clipboard are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -22,6 +22,8 @@ app/
     java/io/github/anisharyal09/anice/
       app/                          Assembly and navigation
       features/                     Feature models and presentation
+        clipboard/                  Clipboard model, automatic/manual sharing and focus gating
+        finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/
@@ -60,6 +62,15 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradle
 
 Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
+For the strict aggregate gate, run from the repository root:
+
+```sh
+python3 scripts/verify-suite.py fast --android --vector-python .venv/bin/python
+python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
+```
+
+The gate parses the JUnit reports and fails on zero tests, failures, crashes, truncated reports and undocumented skips. `connectedDebugAndroidTest` alone is not an acceptance result because several native tests are environment-gated.
+
 Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. The minimum remains provisional. Key protection is reported from the actual device, not assumed.
 
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
@@ -94,7 +105,7 @@ Home and Features → Now Playing provide playback, player selection and support
 
 ## Local File Transfer
 
-Home → Files and Features → Send files provide file transfer controls, incoming batch approval and rolling-window rate tracking. Reception uses an approved local document-tree folder with non-overwriting numeric suffixes (`name (1).ext`) and copy fallback on filesystems lacking hard links. Exclusive partials are verified and synchronized before provider publication; SAF atomicity is not assumed. Background continuation requires foreground approval and the connected-device transfer service; notification permission controls drawer visibility. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Home → Files and Features → Send files provide file transfer controls, incoming batch approval and rolling-window rate tracking. Reception uses an approved local document-tree folder with non-overwriting numeric suffixes (`name (1).ext`) and copy fallback on filesystems lacking hard links. Exclusive partials are verified and synchronized before provider publication; SAF atomicity is not assumed. Background continuation requires foreground approval and the connected-device transfer service; notification permission controls drawer visibility. Mid-stream channel loss automatically pauses with in-memory partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; cross-launch resume after process death remains unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 ## Find Device
 

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Generates independent deterministic CBOR file transfer fixtures for both native codecs.
+import argparse
 import json, copy
 from pathlib import Path
 
@@ -108,5 +109,15 @@ assert len(out['valid']) >= 12, f"Expected at least 12 valid fixtures, found {le
 assert len(out['invalid']) >= 20, f"Expected at least 20 invalid fixtures, found {len(out['invalid'])}"
 
 target = Path(__file__).resolve().parent / 'transfer-vectors.json'
-target.write_text(json.dumps(out, indent=2) + '\n')
-print(f'Wrote {len(out["valid"])} valid and {len(out["invalid"])} invalid transfer test vectors.')
+content = json.dumps(out, indent=2) + '\n'
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--check', action='store_true', help='verify the committed fixture instead of rewriting it')
+    args = parser.parse_args()
+    if args.check:
+        if target.read_text() != content:
+            raise SystemExit('Transfer fixtures differ; regenerate them and review the diff.')
+        print(f'Transfer fixtures match: {len(out["valid"])} valid and {len(out["invalid"])} invalid.')
+    else:
+        target.write_text(content)
+        print(f'Wrote {len(out["valid"])} valid and {len(out["invalid"])} invalid transfer test vectors.')

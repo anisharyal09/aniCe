@@ -164,8 +164,89 @@ def generate():
     }
 
 
+def public_key_der(point):
+    """Wraps an uncompressed P-256 point in a SubjectPublicKeyInfo structure."""
+    assert len(point) == 65 and point[0] == 4
+    return bytes.fromhex("3059301306072a8648ce3d020106082a8648ce3d030107034200") + point
+
+
+def verify_signature(point, message, signature, directory):
+    """Uses OpenSSL, a third implementation, rather than either application verifier."""
+    der = directory / "identity-public.der"
+    pem = directory / "identity-public.pem"
+    message_file = directory / "message.bin"
+    signature_file = directory / "signature.der"
+    der.write_bytes(public_key_der(point))
+    message_file.write_bytes(message)
+    signature_file.write_bytes(signature)
+    run("openssl", "pkey", "-pubin", "-inform", "DER", "-in", str(der), "-out", str(pem))
+    result = subprocess.run(
+        ["openssl", "dgst", "-sha256", "-verify", str(pem), "-signature", str(signature_file), str(message_file)],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
+def without_signatures(document):
+    """Signatures are randomized; compare every other fixture field exactly.
+
+    Oracle rows are independent named cases, so their order is not part of the
+    contract.  Sorting keeps the drift check sensitive to added, removed or
+    changed cases without failing on a harmless reordering.
+    """
+    normalized = copy.deepcopy(document)
+    for row in normalized["valid"]:
+        row.pop("signatureBase64", None)
+    for row in normalized["invalidSignatures"]:
+        row.pop("signatureBase64", None)
+    for key in ("valid", "invalidIdentities", "invalidSignatures"):
+        normalized[key].sort(key=lambda row: row.get("name", ""))
+    return normalized
+
+
+def check(path):
+    """Detects fixture drift and independently verifies every committed signature."""
+    committed = json.loads(path.read_text(encoding="utf-8"))
+    generated = generate()
+    if without_signatures(committed) != without_signatures(generated):
+        raise SystemExit("Identity fixtures differ outside randomized signatures; regenerate them and review the diff.")
+    if len(committed["valid"]) < 2 or len(committed["invalidIdentities"]) < 21 or len(committed["invalidSignatures"]) < 12:
+        raise SystemExit("Identity fixture inventory shrank below its documented floor.")
+    # OpenSSL parses one DER signature and ignores trailing bytes.  The
+    # application contract rejects that non-canonical encoding, so OpenSSL
+    # acceptance is expected for this one case only; it is not a crypto oracle.
+    openssl_lenient = {"trailing-byte"}
+    with tempfile.TemporaryDirectory(prefix="anice-public-identity-check-") as folder:
+        directory = Path(folder)
+        for row in committed["valid"]:
+            point = bytes.fromhex(row["publicKeyHex"])
+            message = base64.b64decode(row["messageBase64"], validate=True)
+            signature = base64.b64decode(row["signatureBase64"], validate=True)
+            if not verify_signature(point, message, signature, directory):
+                raise SystemExit("Committed valid identity signature failed OpenSSL verification: " + row["name"])
+        for row in committed["invalidSignatures"]:
+            point = base64.b64decode(row["identity"]["publicKey"], validate=True)
+            message = base64.b64decode(row["messageBase64"], validate=True)
+            signature = base64.b64decode(row["signatureBase64"], validate=True)
+            accepted = verify_signature(point, message, signature, directory)
+            if row["name"] in openssl_lenient:
+                if not accepted:
+                    raise SystemExit("OpenSSL unexpectedly rejected the canonicality-negative case: " + row["name"])
+            elif accepted:
+                raise SystemExit("Committed invalid identity signature was accepted by OpenSSL: " + row["name"])
+    print(f"Identity fixtures match and {len(committed['valid'])} signatures verify with OpenSSL.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True, help="JSON file to create or replace")
+    parser.add_argument("--output", type=Path, help="JSON file to create or replace")
+    parser.add_argument("--check", action="store_true", help="verify the committed fixture instead of rewriting it")
     options = parser.parse_args()
-    options.output.write_text(json.dumps(generate(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if options.check:
+        if options.output:
+            parser.error("--output cannot be combined with --check")
+        check(Path(__file__).with_name("identity-vectors.json"))
+    else:
+        if options.output is None:
+            parser.error("--output is required unless --check is used")
+        options.output.write_text(json.dumps(generate(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

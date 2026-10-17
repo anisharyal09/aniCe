@@ -8,7 +8,7 @@ Opt-in Connect automatically shares nearby admission, allowed-phone selection an
 
 ## Development version and verification
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device and text Clipboard are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -20,6 +20,8 @@ Mac advertises only the public aniCe service UUID and generic name for 120 secon
 aniCe/
   App/                         Assembly, navigation, window and companion
   Features/                    Identity, discovery, pairing and session presentation
+    Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
+    FindDevice/                Peer ring request actions, sound player and notification setup
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
     Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
@@ -34,6 +36,8 @@ aniCe/
   Info.plist                   Native service and permission declarations
   aniCe.entitlements           App Sandbox disabled; hardware/network entitlements
 aniCeTests/                    Hosted suites and shared fixtures
+  Clipboard/                   Clipboard model, debounce and wire codec test suites
+  FindDevice/                  Find device payload and state transition test suites
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
   Transfer/                    Transfer model and wire codec test suites
 IdentityInterchange/           Native test-only signature endpoint
@@ -61,6 +65,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 
 App: `/tmp/aniCe-DerivedData/Build/Products/Debug/aniCe.app`. Prefix the test command with `TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS=1` to include isolated Keychain integration tests.
 
+For the strict aggregate gate, run from the repository root:
+
+```sh
+python3 scripts/verify-suite.py fast --macos --vector-python .venv/bin/python
+```
+
+The gate enables the Keychain tests, cross-checks the result bundle against `xcodebuild`'s test-case lines, and fails on zero tests, failures, crashes and undocumented skips. The real-player/manual tests are printed by name when they cannot run.
+
 ## Development storage
 
 The storage backend remains the development login Keychain, without hardware isolation. The default build uses local ad-hoc signing without a certificate requirement. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Stable certificate signing keeps code identity across rebuilds; ad-hoc builds may require renewed Keychain authorization. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
@@ -87,7 +99,7 @@ Features → Now Playing → Playback setup provides remote playback to Android.
 
 ## Local File Transfer
 
-Overview → Files and the companion provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and the companion provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Mid-stream channel loss automatically pauses with in-memory partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; cross-launch resume after process death remains unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 

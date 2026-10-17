@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Independent AES-GCM records from the EDHOC oracle's exporter outputs."""
+import argparse
 import json
 import struct
 from pathlib import Path
@@ -54,4 +55,14 @@ def generate():
 
 
 if __name__ == "__main__":
-    Path(__file__).with_name("record-vectors.json").write_text(json.dumps(generate(), indent=2)+"\n")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true", help="verify the committed fixture instead of rewriting it")
+    options = parser.parse_args()
+    target = Path(__file__).with_name("record-vectors.json")
+    content = json.dumps(generate(), indent=2) + "\n"
+    if options.check:
+        if target.read_text() != content:
+            raise SystemExit("Record fixtures differ; regenerate them and review the diff.")
+        print("Record fixtures match the independent AES-GCM oracle.")
+    else:
+        target.write_text(content)

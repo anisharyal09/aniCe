@@ -11,6 +11,7 @@ Run with:
     uv run protocol/test-vectors/generate_pairing_vectors.py
 """
 
+import argparse
 import base64
 import hashlib
 import hmac
@@ -127,10 +128,19 @@ def generate_vectors() -> dict:
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="verify the committed fixture instead of rewriting it")
+    options = parser.parse_args()
     root = generate_vectors()
     output_path = Path(__file__).with_name("pairing-vectors.json")
-    output_path.write_text(json.dumps(root, indent=2) + "\n")
-    print(f"Wrote test vectors to {output_path}")
+    content = json.dumps(root, indent=2) + "\n"
+    if options.check:
+        if output_path.read_text() != content:
+            raise SystemExit("Pairing fixtures differ; regenerate them and review the diff.")
+        print(f"Pairing fixtures match: {output_path.name}")
+    else:
+        output_path.write_text(content)
+        print(f"Wrote test vectors to {output_path}")
 
 
 if __name__ == "__main__":

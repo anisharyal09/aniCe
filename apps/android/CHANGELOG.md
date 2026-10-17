@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Strict local verification gate for the shared JVM/Android checks. It parses JUnit reports and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips; shared vector generators now support `--check` drift validation.
+
 - Clipboard panel and shared per-peer settings, actual-focus automatic reading, marked background incoming writes, sensitive-content confirmation and bounded LAN/BLE delivery with idempotent fallback. Manual sends survive automatic clipboard changes during preparation; disabling automatic sharing immediately cancels pending automatic preparation. A focus-triggered sample waits for clipboard negotiation when the connection becomes ready after aniCe opens.
 
 - Resilient file transfers: a mid-stream LAN or Bluetooth loss now pauses with retained partial storage, frozen progress and a paused ongoing notification. A reconnected LAN to the same peer resumes automatically at the verified offset; either device can explicitly continue over Bluetooth when LAN stays down, with the receiver asking the sender to validate the prefix it holds. Cancel deletes the partial, and a 15-minute pause timeout fails and cleans it up.

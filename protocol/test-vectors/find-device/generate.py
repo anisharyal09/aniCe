@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Independently encodes canonical and adversarial Find Device fixture inventories.
+import argparse
 import json
 from pathlib import Path
 
@@ -47,4 +48,14 @@ def generate():
 
 
 if __name__ == '__main__':
-    Path(__file__).with_name('find-device-vectors.json').write_text(json.dumps(generate(), indent=2)+'\n')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--check', action='store_true', help='verify the committed fixture instead of rewriting it')
+    args = parser.parse_args()
+    target = Path(__file__).with_name('find-device-vectors.json')
+    content = json.dumps(generate(), indent=2) + '\n'
+    if args.check:
+        if target.read_text() != content:
+            raise SystemExit('Find Device fixtures differ; regenerate them and review the diff.')
+        print('Find Device fixtures match their independent encoder.')
+    else:
+        target.write_text(content)
