@@ -6,32 +6,11 @@ Repository-wide structure, documentation, and development conventions belong her
 - [macOS](apps/macos/CHANGELOG.md)
 - [Protocol](protocol/CHANGELOG.md)
 
-## Unreleased
-
-### Fixed
-
-- Report transfer direction and finalization in the file-transfer panels and Android's progress notification: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate progress rather than as 0%, label progress for screen readers, and correct the completion notification's file count.
-
-- Publish received files under an available name instead of failing a verified batch: resolve taken destination names by suffixing (`name (1).ext`), confirm destination-provider renames, fall back to copying when destinations cannot hold hard links, report real POSIX error codes on macOS, and preserve verified partials on finalization failure.
-
-- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered ingress queues, size read buffers to one whole record, decode received chunks off presentation threads, and release session operation mutexes before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
-
-- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization and preparation.
-
-- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks. On Android, remove duplicate native reads around synchronous cryptography while validating before delivery and retaining generation/deadline fences.
-
-- Keep Android’s Connect LAN action visible in the file-transfer panel when Bluetooth is connected and LAN is disconnected.
-
-- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
-
-- Avoid repeated native backend setup during transfers while retaining live key, protection and journal validation and unchanged session wire limits.
-
-- Enforce LAN-preferred file transfer routing with BLE fallback, background lifecycle ownership, exclusive partial staging, checked finalization, and isolated reply correlation. Notification denial no longer blocks approved foreground transfers; interrupted batches require explicit resend.
+## [0.2.0]
 
 ### Added
 
 - Add bidirectional Find Device over existing authenticated connections, with bounded Android alarm-stream ringing and Stop controls, native Mac notifications, explicit local permission setup and documented platform limits.
-
 - Bidirectional local file transfer between trusted Mac and Android devices over authenticated LAN with BLE fallback, sequential multi-file streaming, recipient approval, exclusive job-owned partial staging, cumulative credit flow control and presentation across Features and Home live-activity.
 - Now Playing on Mac Home/companion and Android Home, with phone Home controls and platform-specific Features information, revision-bound controls over existing secured LAN/BLE, atomic seek feedback, native Android media presentation and a fixed 90-second paused grace; companion-owned background BLE and separately negotiated selected-player volume remain capability/permission gated; independently advertised Mac output volume supports phone buttons without player scripting.
 - Home, Devices, Features and Settings navigation with saved native appearance preferences.
@@ -40,19 +19,34 @@ Repository-wide structure, documentation, and development conventions belong her
 ### Changed
 
 - Record full offline Android native rebuild and packaged ABI/alignment verification after restoring persistent build prerequisites.
-
-- Prepare the unreleased 0.2.0-dev milestone, build 2, covering Now Playing, Local File Transfer, Find Device and the native UI overhaul following 0.1.0.
+- Finalize the 0.2.0 release, build 2, covering Now Playing, Local File Transfer, Find Device and the native UI overhaul following 0.1.0.
 - Document completed manual feature/UI testing, physical connection and transfer measurements, native Find Device ringing/Stop/expiry tests and current automated checks in the verification record. Replace blanket pending-acceptance wording with specific remaining platform, lifecycle, accessibility and performance coverage.
 - Align native navigation around compact Home activity, dedicated feature panels, Devices, Favourites, Settings and About. Keep phone automatic preferences in Devices, Add device in a quiet footer and the About username link last. Preserve application-scoped connection and feature owners; document the reference layout and truthful availability states.
-
 - Add production-transport LAN bulk benchmarking and isolated throughput verification tools.
-
 - Remove per-record allocations and copies from the authenticated record path: one AES-GCM provider cipher, key spec and authentication suffix per session direction, record headers written into the record buffer instead of concatenated onto it, exact-size deterministic CBOR encoding, single-copy chunk slicing out of the reused transfer buffer, TCP framing into transport-owned scratch space, and one compiled device-ID pattern for journal validation. macOS assembles records and frames into single reserved buffers and decodes sliced buffers without a re-basing copy. Wire bytes, bounds, typed failures and live native validation are unchanged.
-
 - Group Now Playing implementation, adapter and tests by feature; separate application connection owners, navigation, playback authority, native process handling and media queues. Add dependency/link/Xcode membership checks and relocate the byte-preserving media fixture generator.
 - Consolidate feature usage and limitations; keep app-wide ADRs at the decision root and independent decisions in feature folders. Update READMEs, source maps, attribution and agent state without repeated verification matrices or stage reports.
-
 - Separate compact Home/companion summaries from device connection management and local identity settings; retain a small aniCe heading on each platform.
+
+### Fixed
+
+- Retain Now Playing playback capabilities across track and context changes for the same active source process on macOS, eliminating transient action mask clears that caused flickering media controls and disappearing previous/next/play/pause/seek buttons on connected Android devices. Opportunistically merge resolved capabilities into initial metadata snapshots.
+- De-churn Android media notifications and playback session controls: bind a single persistent `MediaSession.Callback` routing dynamically to active playback, coalesce notification updates, deduplicate playback state transitions, exclude output-volume revisions from the notification provider key, and recover dismissed notifications gracefully.
+- Decode media artwork off the presentation thread on Android (`Dispatchers.Default`) behind an atomic generation, revision, and digest fence.
+- Offload Android Keystore and trust-store disk lookups during preferred LAN connections to background IO coroutines.
+- Declutter Find Device UX on macOS and Android: hide setup guidance buttons when local notification permission is already granted, quiet the settings link, suppress redundant "idle" status when peers are connected, and render native peer cards with truthful connection state. Keep "This device" and "Add device" within the natural scrolling list on Android.
+- Stabilize Android LAN session lifecycle: eliminate spurious Wi-Fi disconnections caused by temporary IPv6 SLAAC privacy address changes by checking interface persistence and address retention.
+- Report transfer direction and finalization in the file-transfer panels and Android's progress notification: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate progress rather than as 0%, label progress for screen readers, and correct the completion notification's file count.
+- Publish received files under an available name instead of failing a verified batch: resolve taken destination names by suffixing (`name (1).ext`), confirm destination-provider renames, fall back to copying when destinations cannot hold hard links, report real POSIX error codes on macOS, and preserve verified partials on finalization failure.
+- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered ingress queues, size read buffers to one whole record, decode received chunks off presentation threads, and release session operation mutexes before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
+- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization and preparation.
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks. On Android, remove duplicate native reads around synchronous cryptography while validating before delivery and retaining generation/deadline fences.
+- Keep Android’s Connect LAN action visible in the file-transfer panel when Bluetooth is connected and LAN is disconnected.
+- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
+- Avoid repeated native backend setup during transfers while retaining live key, protection and journal validation and unchanged session wire limits.
+- Enforce LAN-preferred file transfer routing with BLE fallback, background lifecycle ownership, exclusive partial staging, checked finalization, and isolated reply correlation. Notification denial no longer blocks approved foreground transfers; interrupted batches require explicit resend.
+
+Release 0.2.0 delivers remote Now Playing media controls, bidirectional LAN-preferred Local File Transfer with BLE fallback, Find Device native alerts, and an overhauled native navigation and design system.
 
 ## [0.1.0]
 

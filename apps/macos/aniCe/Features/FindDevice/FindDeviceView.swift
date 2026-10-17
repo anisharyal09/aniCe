@@ -9,14 +9,23 @@ struct FindDeviceView: View {
   var notifier: MacFindDeviceNotifier? = nil
   @State private var permissionKey = "find_local_unknown"
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 12) {
       if peers.isEmpty { Text("find_pair_first", tableName: "FindDevice").font(.callout).foregroundStyle(.secondary) }
       if let notifier {
         Text("find_explanation", tableName: "FindDevice").font(.callout)
-        Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }
-        Text(MacFindDeviceNotifier.text(permissionKey)).font(.caption).foregroundStyle(.secondary)
-        Button(MacFindDeviceNotifier.text("find_settings")) {
-          if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+        if permissionKey == "find_local_allowed" {
+          HStack(spacing: 8) {
+            Text(MacFindDeviceNotifier.text("find_local_allowed")).font(.caption).foregroundStyle(.secondary)
+            Button(MacFindDeviceNotifier.text("find_settings")) {
+              if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+            }.buttonStyle(.link).font(.caption)
+          }
+        } else {
+          Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }.buttonStyle(.bordered)
+          Text(MacFindDeviceNotifier.text(permissionKey)).font(.caption).foregroundStyle(.secondary)
+          Button(MacFindDeviceNotifier.text("find_settings")) {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+          }.buttonStyle(.bordered)
         }
       }
       ForEach(peers) { record in
@@ -30,13 +39,16 @@ struct FindDeviceView: View {
           if !model.supports(record.peer) {
             Text(MacFindDeviceNotifier.text(model.connected(record.peer) ? "find_not_advertised" : "find_connect_first"))
               .font(.caption).foregroundStyle(.secondary)
+          } else if model.connected(record.peer) {
+            Text("Connected").font(.caption).foregroundStyle(.secondary)
           }
         }
       }
       if let peer = model.feedbackPeer, model.feedbackKey != "find_idle" {
         Text(peer.deviceName).font(.caption)
       }
-      if notifier != nil || model.feedbackKey != "find_idle" {
+      let showIdle = model.feedbackKey == "find_idle" && !peers.contains { model.connected($0.peer) }
+      if showIdle || (model.feedbackKey != "find_idle" && !model.feedbackKey.isEmpty) {
         Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }

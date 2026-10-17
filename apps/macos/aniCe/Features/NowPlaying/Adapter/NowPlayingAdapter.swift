@@ -227,6 +227,7 @@ public func vorssaintNowPlayingGet() {
     }
     if let position { settlePosition(&snapshot, sample: position, revision: revision) } else { lastPosition = nil }
     snapshot["capabilityState"] = "discovering"
+    if let ready = capabilities.currentValues { snapshot.merge(ready) { _, new in new } }
     if watching { snapshot.merge(NativePlayback.sourceReply) { _, new in new } }
     emit(snapshot)
     if let revision, let selected {

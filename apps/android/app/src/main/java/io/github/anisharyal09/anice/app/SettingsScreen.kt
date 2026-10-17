@@ -32,23 +32,34 @@ fun SettingsScreen(identity: DeviceIdentityViewModel, snackbars: SnackbarHostSta
                             DeviceIdentityScreen(identity.state, snackbars, identity::retry, identity::reset, onRename = identity::rename)
                         } else if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text("aniCe", style = MaterialTheme.typography.titleSmall)
+                                Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
                                 val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
-                                version?.let { Text("Version $it", style = MaterialTheme.typography.bodySmall) }
+                                version?.let { Text("Version $it", style = MaterialTheme.typography.bodyMedium) }
                                 Text("Connect your Mac and Android.", style = MaterialTheme.typography.bodyMedium)
-
-                                TextButton(onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://github.com/anisharyal09/aniCe"))) }) { Text("Source code") }
-                                TextButton(onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://github.com/anisharyal09/aniCe/blob/main/LICENSE"))) }) { Text("License · GPL-3.0-or-later") }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Made by", style = MaterialTheme.typography.bodyMedium)
+                                    Text(buildAnnotatedString {
+                                        withLink(LinkAnnotation.Url("https://anisharyal09.com.np/", TextLinkStyles(
+                                            style = SpanStyle(color = MaterialTheme.colorScheme.selectionAccent,
+                                                textDecoration = TextDecoration.Underline)))) {
+                                            append("@anisharyal09")
+                                        }
+                                    }, style = MaterialTheme.typography.bodyMedium)
+                                }
                                 Text(buildAnnotatedString {
-                                    withLink(LinkAnnotation.Url("https://anisharyal09.com.np/", TextLinkStyles(
+                                    withLink(LinkAnnotation.Url("https://github.com/anisharyal09/aniCe", TextLinkStyles(
                                         style = SpanStyle(color = MaterialTheme.colorScheme.selectionAccent,
                                             textDecoration = TextDecoration.Underline)))) {
-                                        append("@anisharyal09")
+                                        append("Source code")
                                     }
-                                }, modifier = Modifier.heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically),
-                                    style = MaterialTheme.typography.bodySmall)
+                                }, style = MaterialTheme.typography.bodyMedium)
+                                Text(buildAnnotatedString {
+                                    withLink(LinkAnnotation.Url("https://github.com/anisharyal09/aniCe/blob/main/LICENSE", TextLinkStyles(
+                                        style = SpanStyle(color = MaterialTheme.colorScheme.selectionAccent,
+                                            textDecoration = TextDecoration.Underline)))) {
+                                        append("License · GPL-3.0-or-later")
+                                    }
+                                }, style = MaterialTheme.typography.bodyMedium)
                             }
                         } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Text("Appearance", style = MaterialTheme.typography.titleSmall)

@@ -249,7 +249,7 @@ private final class PlaybackEvent: @unchecked Sendable {
       permissionTarget=source
       if playback.source != next.source { automation=nil }
       capabilityState=row["capabilityState"] as? String ?? "ready"
-      if nativeContext != context || playback.source != next.source { nativeCapabilities=[:] }
+      if playback.source != next.source { nativeCapabilities=[:] }
       for key in ["canSendCommandsDirectly","canToggle","canPlay","canPause","canSkipPrevious","canSkipNext","canSeek"] { if let value=row[key] as? Bool { nativeCapabilities[key]=value } }
       if playback.source != next.source, let url=NSRunningApplication(processIdentifier:source.pid)?.bundleURL { automation=PlaybackAutomationCapabilities.load(bundleURL:url) }
       next.actions=resolvedActions(state:next.state,duration:next.duration)

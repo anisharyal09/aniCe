@@ -25,21 +25,24 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
     val panel = navigation.featurePanel
     if (!favouritesOnly && (panel == AppFeature.Playback || panel == AppFeature.Files)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TextButton(onClick = navigation::closeFeature) { Text("Back to ${navigation.featureOrigin.label}") }
+            TextButton(onClick = navigation::closeFeature) {
+                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Back to ${navigation.featureOrigin.label}")
+            }
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             if (panel == AppFeature.Playback) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media)
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer)
         }
     } else if (!favouritesOnly && navigation.findDetails) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TextButton(onClick = navigation::closeFeature) { Text("Back to ${navigation.featureOrigin.label}") }
-            peers.forEach { record ->
-                if (findDevice.availableFor(record.peer)) {
-                    OutlinedButton(onClick = { findDevice.find(record.peer) }, enabled = findDevice.canFind(record.peer),
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Find ${record.peer.deviceName}") }
-                }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            TextButton(onClick = navigation::closeFeature) {
+                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Back to ${navigation.featureOrigin.label}")
             }
-            FindDeviceSetup(findDevice)
+            Text(AppFeature.FindDevice.label, style = MaterialTheme.typography.titleMedium)
+            io.github.anisharyal09.anice.features.finddevice.FindDeviceView(findDevice, peers)
         }
     } else {
         LazyVerticalGrid(columns = GridCells.Fixed(1), contentPadding = PaddingValues(16.dp),
@@ -74,8 +77,7 @@ private fun FeatureEntry(feature: AppFeature, favourite: Boolean, onFavourite: (
         AppFeature.FindDevice -> "Alert a connected device"
     }
     Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(22.dp))

@@ -22,7 +22,7 @@ The Find Device timeout ran for 60.314 seconds in isolation and 64.796 seconds f
 ## Automated checks
 
 - Android: 218 JVM tests, zero failures/errors/skips; offline lint, Debug APK build and instrumentation compilation pass.
-- Mac: 197 hosted tests pass, six explicit manual skips; Debug build and native window-fixture rendering pass. Earlier universal Debug/Release and strict signature checks are recorded in the feature documentation; they were not rerun for the final About/version-only edit.
+- Mac: 205 hosted tests pass, six explicit manual skips; Debug build and native window-fixture rendering pass. Earlier universal Debug/Release and strict signature checks are recorded in the feature documentation; they were not rerun for the final About/version-only edit.
 - Native rendering covers six window sections and three feature panels at 720/1240-point widths in both themes, plus companion/player fixtures. These are hosted native renders, not live-device screenshots.
 - Repository dependency direction, documentation links, Xcode source membership and whitespace checks pass.
 - The normal offline Android Debug build includes freshly rebuilt pairing JNI libraries for arm64-v8a, armeabi-v7a and x86_64. Packaged ELF architecture and 16-KiB load-segment alignment checks pass. Persistent Cargo/Rustup and Android NDK r27d installations replace stale temporary paths; native PIN-pairing runtime acceptance remains separate.

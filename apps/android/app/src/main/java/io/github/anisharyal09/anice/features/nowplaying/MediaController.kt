@@ -355,10 +355,18 @@ class MediaController(private val dispatcher: CoroutineDispatcher=Dispatchers.Ma
         if(message.number(5)==0L && artTimeout==null) artTimeout=scope.launch { wait(10000); assembly.expire(clock()); artTimeout=null }
         if(buffer==null) return
         artTimeout?.cancel();artTimeout=null
-        val options=BitmapFactory.Options().apply { inJustDecodeBounds=true }
-        BitmapFactory.decodeByteArray(buffer,0,buffer.size,options)
-        if(options.outWidth !in 1..256 || options.outHeight !in 1..256 || options.outMimeType !in listOf("image/jpeg","image/png")) return
-        artwork=BitmapFactory.decodeByteArray(buffer,0,buffer.size);presentationChanged()
+        scope.launch(Dispatchers.Default) {
+            val options=BitmapFactory.Options().apply { inJustDecodeBounds=true }
+            BitmapFactory.decodeByteArray(buffer,0,buffer.size,options)
+            if(options.outWidth !in 1..256 || options.outHeight !in 1..256 || options.outMimeType !in listOf("image/jpeg","image/png")) return@launch
+            val bitmap=runCatching { BitmapFactory.decodeByteArray(buffer,0,buffer.size) }.getOrNull() ?: return@launch
+            withContext(Dispatchers.Main.immediate) {
+                val current=playback
+                if(current!=null && current.source==snapshot.source && current.revision==snapshot.revision && current.hash.contentEquals(hash)) {
+                    artwork=bitmap;presentationChanged()
+                }
+            }
+        }
     }
     fun command(action: Long, value: Long=0, target: RemotePlayback?=playback, selection: String="") {
         val snapshot=target ?: return

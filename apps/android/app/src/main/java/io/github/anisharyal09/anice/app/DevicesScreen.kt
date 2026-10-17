@@ -34,27 +34,21 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                         focusedPeer = navigation.focusedPeer, onFocusConsumed = { navigation.focusedPeer = null })
                 })
             } else {
-                Column(Modifier.fillMaxSize()) {
-                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text("Connections", style = MaterialTheme.typography.titleSmall)
-                        if (pairing.peers.isEmpty()) Text("No devices paired yet", style = MaterialTheme.typography.bodySmall)
-                        SessionPanel(session, pairing.peers,
-                            onDiscoveryCheck = { navigation.route = DeviceRoute.Discovery }, focusedPeer = navigation.focusedPeer,
-                            onFocusConsumed = { navigation.focusedPeer = null })
-                        HorizontalDivider()
-                        if (pairing.peers.isNotEmpty()) TextButton(onClick = navigation::pair,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text("Trust and saved devices", Modifier.weight(1f))
-                        }
-                        TextButton(onClick = { navigation.settingsRoute = SettingsRoute.Identity; navigation.destination = AppDestination.Settings },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text("This device", Modifier.weight(1f))
-                            Icon(androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Connections", style = MaterialTheme.typography.titleSmall)
+                    if (pairing.peers.isEmpty()) Text("No devices paired yet", style = MaterialTheme.typography.bodySmall)
+                    SessionPanel(session, pairing.peers,
+                        onDiscoveryCheck = { navigation.route = DeviceRoute.Discovery }, focusedPeer = navigation.focusedPeer,
+                        onFocusConsumed = { navigation.focusedPeer = null })
+                    HorizontalDivider()
+                    TextButton(onClick = { navigation.settingsRoute = SettingsRoute.Identity; navigation.destination = AppDestination.Settings },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text("This device", Modifier.weight(1f))
+                        Icon(androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                     TextButton(onClick = navigation::pair,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 48.dp)) {
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Text("Add device", Modifier.weight(1f))
                         Icon(androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
                     }

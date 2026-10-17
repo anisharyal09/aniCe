@@ -10,7 +10,7 @@ The pairing and transport foundations include P-256 identities, QR and OPAQUE PI
 
 **0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer and Find Device are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
 
-Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 218 Android JVM tests and 197 Mac hosted tests, with six explicit Mac skips. [Verification status](docs/VERIFICATION.md) records completed checks, measured results and the specific remaining gaps, including elevated CPU with optional Mac Now Playing display.
+Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 218 Android JVM tests and 205 Mac hosted tests, with six explicit Mac skips. [Verification status](docs/VERIFICATION.md) records completed checks, measured results and the specific remaining gaps, including elevated CPU with optional Mac Now Playing display.
 
 ---
 

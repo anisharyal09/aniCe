@@ -24,7 +24,14 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
     private var notificationKey: List<Any?>?=null
     private var providerKey: List<Any?>?=null
     private var provider: VolumeProvider?=null
+    private var lastPlaybackState: List<Any?>?=null
     private val actions=mutableListOf<PendingIntent>()
+    private val mainHandler=Handler(Looper.getMainLooper())
+    private var updateScheduled=false
+    private val updateRunnable=Runnable {
+        updateScheduled=false
+        performUpdate()
+    }
     init {
         manager.cancel(ID)
         manager.createNotificationChannel(NotificationChannel(CHANNEL,"Mac playback",NotificationManager.IMPORTANCE_LOW).apply {
@@ -32,28 +39,40 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         })
     }
     private fun clear() {
+        mainHandler.removeCallbacks(updateRunnable)
+        updateScheduled=false
         actions.forEach { it.cancel() };actions.clear()
-        session?.isActive=false;session?.release();session=null;provider=null;providerKey=null;notificationKey=null;manager.cancel(ID)
+        session?.isActive=false;session?.release();session=null;provider=null;providerKey=null;notificationKey=null
+        lastPlaybackState=null
+        manager.cancel(ID)
+    }
+    fun update() {
+        if(updateScheduled) return
+        updateScheduled=true
+        mainHandler.post(updateRunnable)
     }
     // MediaStyle notifications attached to a MediaSession are exempt from POST_NOTIFICATIONS.
     @android.annotation.SuppressLint("NotificationPermission")
-    fun update() {
+    private fun performUpdate() {
         val target=owner.playback
         if(!owner.compactVisible || target==null || target.source.isEmpty() || target.state !in 1L..2L) { clear();return }
-        val current=session ?: MediaSession(app,"aniCe Mac playback").also { session=it }
-        current.setCallback(object : MediaSession.Callback() {
-            override fun onPlay() { if(owner.playback?.state!=1L) owner.command(1,target=target) }
-            override fun onPause() { if(owner.playback?.state==1L) owner.command(1,target=target) }
-            override fun onSkipToPrevious() { owner.command(2,target=target) }
-            override fun onSkipToNext() { owner.command(3,target=target) }
-            override fun onSeekTo(pos: Long) { owner.command(4,pos,target) }
-        },Handler(Looper.getMainLooper()))
+        val current=session ?: MediaSession(app,"aniCe Mac playback").also { newSession ->
+            session=newSession
+            newSession.setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { if(owner.playback?.state!=1L) owner.command(1) }
+                override fun onPause() { if(owner.playback?.state==1L) owner.command(1) }
+                override fun onSkipToPrevious() { owner.command(2) }
+                override fun onSkipToNext() { owner.command(3) }
+                override fun onSeekTo(pos: Long) { owner.command(4,pos) }
+            },mainHandler)
+        }
         val output=owner.outputVolume
-        val nextProviderKey=listOf(target.message.string(0),output?.device,output?.revision,owner.canControlOutputVolume)
+        // Mac changes device and revision together (MacOutputVolume.swift:100); keyed on subscription/device/capability only.
+        val nextProviderKey=listOf(target.message.string(0),output?.device,owner.canControlOutputVolume)
         if(providerKey!=nextProviderKey) {
             provider=if(owner.canControlOutputVolume) object : VolumeProvider(VOLUME_CONTROL_ABSOLUTE,20,((owner.displayedOutputVolume ?: 0)+2)/5) {
-            override fun onSetVolumeTo(volume: Int) { Handler(Looper.getMainLooper()).post { owner.commandOutputVolume(volume*5,output) } }
-            override fun onAdjustVolume(direction: Int) { Handler(Looper.getMainLooper()).post { owner.adjustOutputVolume(direction,output) } }
+                override fun onSetVolumeTo(volume: Int) { mainHandler.post { owner.commandOutputVolume(volume*5,owner.outputVolume) } }
+                override fun onAdjustVolume(direction: Int) { mainHandler.post { owner.adjustOutputVolume(direction,owner.outputVolume) } }
             }
             else null
             provider?.let { current.setPlaybackToRemote(it) } ?: current.setPlaybackToLocal(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -66,11 +85,17 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         if(target.actions and 4L!=0L) supported=supported or PlaybackState.ACTION_SKIP_TO_NEXT
         if(target.actions and 8L!=0L && target.duration>0) supported=supported or PlaybackState.ACTION_SEEK_TO
         val presentation=owner.displayedPlayback ?: target
-        current.setPlaybackState(PlaybackState.Builder().setActions(supported)
-            .setState(if(target.state==1L) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-                presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f,presentation.sampledAt).build())
+        val nextPlaybackState=listOf(supported,if(target.state==1L) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+            presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f)
+        if(lastPlaybackState!=nextPlaybackState) {
+            lastPlaybackState=nextPlaybackState
+            current.setPlaybackState(PlaybackState.Builder().setActions(supported)
+                .setState(if(target.state==1L) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                    presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f,presentation.sampledAt).build())
+        }
+        val isNotificationActive=manager.activeNotifications.any { it.id==ID }
         val nextKey=listOf(target.message.string(0),target.source,target.revision,target.title,target.artist,target.player,target.state,target.actions,target.duration,owner.origin,owner.artwork)
-        if(notificationKey==nextKey) return
+        if(notificationKey==nextKey && isNotificationActive) return
         notificationKey=nextKey
         val metadata=MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE,target.title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST,target.artist)

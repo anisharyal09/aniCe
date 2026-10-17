@@ -2,35 +2,11 @@
 
 Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root changelog](../../CHANGELOG.md).
 
-## Unreleased
-
-### Fixed
-
-- Route transfer and Find Device notifications through one app delegate and register both category sets together, preserving both features’ native actions after integration.
-
-- Replace an existing Find Device notification for a fresh request instead of returning busy after its banner fades. Duplicate requests and stale dismissal callbacks cannot revive or clear the replacement.
-- Avoid materializing Find Device channel candidates and complete deadline inventories during routing and expiry scheduling. Preserve LAN preference, BLE fallback and existing alert deadlines.
-
-- Report transfer direction and destination in the file-transfer panel: name the peer and whether the batch is sending or receiving, report the model's actual received folder rather than a pending choice, enable Show in Finder for published files, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate rather than as 0%, and label progress for screen readers.
-
-- Publish received files under an available name instead of failing a verified batch: advance suffixes atomically when destination names are taken, publish by copying when destination volumes cannot hold hard links, report real POSIX error codes instead of unknown save errors, and preserve verified partials on finalization failure.
-
-- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered ingress queues, size read buffers to one whole record, and release session processing gates before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
-
-- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization.
-
-- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of credit; preserve standard BLE formats and live native identity/trust checks.
-
-- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
-
-- Retain the validated native Keychain key handle across fresh lookups to avoid repeated ACL integrity setup; re-read key presence, protection and identity/trust journals for every operation, including external deletion/replacement.
-
-- Enforce LAN-preferred file transfer routing with BLE fallback, exclusive partial staging, checked finalization, isolated reply correlation, bounded offer assembly, and event-driven capacity waits; interrupted batches require explicit resend.
+## [0.2.0]
 
 ### Added
 
 - Add Find Device to connected-peer actions and the companion, with localized UserNotifications, explicit local permission setup, identifier-bound dismissal and application-owned expiry/cleanup.
-
 - Native file transfer notifications (`MacTransferNotifier`, `UNUserNotificationCenter`) with interactive Accept (saving to `~/Downloads`), Choose folder… (raising the offer in the main app), Decline, and completion notice with Show in Finder.
 - Compact file-transfer live activity and device presentation in the menu bar companion (`CompanionView`, `TransferView(compact: true)`): two-activity paging (`1 of 2`), page indicators with attention affordance for incoming offers without stealing selection, swipe isolated to transfer card, connected-only device filtering when active peers exist, card-styled `Send files…` action hidden during active transfers, relaxed non-congested result/cancellation notices, persistent popover retention during file/folder selection, and centered Open aniCe navigation.
 - Bidirectional local file transfer engine and UI (`MacTransferModel`, `TransferView`, `TransferWire`) with 64-chunk cumulative credit flow control, sequential multi-file batch streaming, exclusive partial staging with checked non-overwriting finalization, sleep assertion management, full-duplex flow-control ACK submission, and integration into Features and Home live-activity.
@@ -43,21 +19,35 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Follow the original aniCe reference design with its sidebar grouping and fluid, content-sized activity panels in at most two columns. Add dedicated feature panels and separate Devices, Favourites and About; retain full player selection and permission/verification actions.
 - Group direct Bluetooth/LAN and automatic controls by connected peer, keep trust management separate, make disclosure labels clickable and route companion device clicks to Devices. Preserve direct Disconnect menu actions and omit empty companion dividers.
-- Add activity navigation chevrons, reserve artwork space, constrain Settings/About reading widths and keep About concise with the installed version, purpose, @anisharyal09 website credit, source and license links. Keep Find Device peers visible with truthful disconnected/capability states.
+- Add activity navigation chevrons, reserve artwork space, constrain Settings/About reading widths. Keep Find Device peers visible with truthful disconnected/capability states.
 - Set marketing version 0.2.0, development channel dev and build number 2; About displays 0.2.0-dev. Record completed application/native testing separately from remaining runtime and performance coverage.
-
-
 - Move LAN socket delivery, sliced frame parsing, bounded write accounting and independent assembly watchdogs off the main actor; exercise the production transport in native interchange.
-
 - Remove per-record copies from the authenticated record path: assemble records and TCP frames into single reserved buffers and decode sliced buffers without re-basing the input. Wire bytes, bounds and live native validation are unchanged.
-
 - Separate MacPlaybackModel, MediaProcessBridge and MediaSessionLink; group connection owners under Connections, register feature-neutral DATA handling in App, and split hosted suites with shared independent fixtures.
-
 - Disable App Sandbox while retaining hardened runtime, signing defaults and original identity/trust journal locations; unsupported player targeting remains disabled.
 - Compact Home/companion rows open Devices with peer context before restoring the main window; clicking names/status also opens device management.
 - Add an aniCe sidebar heading with breathing room and consistent header backgrounds/dividers across Home, Devices, Features and Settings.
 - Move local identity behind a full-width This device Settings entry with Back navigation, explicit name editing and clickable Advanced disclosure.
 - Apply the selected appearance to native window/sheet backgrounds, text and controls together; System tracks macOS independently of a forced window theme. Retain shared transport owners.
+
+### Fixed
+
+- Retain `nativeCapabilities` across context and track changes in `MacPlaybackModel` when the active source process remains unchanged, eliminating transient action mask clears and preventing playback controls from disappearing on connected devices.
+- Opportunistically merge resolved capabilities into initial Now Playing metadata snapshots in `NowPlayingAdapter` and `PlaybackCommand`.
+- Declutter `FindDeviceView`: hide setup action button and explanation when local permission is already granted (`find_local_allowed`), display a quiet settings link, and suppress `"find_idle"` message when peers are connected.
+- Route transfer and Find Device notifications through one app delegate and register both category sets together, preserving both features’ native actions after integration.
+- Replace an existing Find Device notification for a fresh request instead of returning busy after its banner fades. Duplicate requests and stale dismissal callbacks cannot revive or clear the replacement.
+- Avoid materializing Find Device channel candidates and complete deadline inventories during routing and expiry scheduling. Preserve LAN preference, BLE fallback and existing alert deadlines.
+- Report transfer direction and destination in the file-transfer panel: name the peer and whether the batch is sending or receiving, report the model's actual received folder rather than a pending choice, enable Show in Finder for published files, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate rather than as 0%, and label progress for screen readers.
+- Publish received files under an available name instead of failing a verified batch: advance suffixes atomically when destination names are taken, publish by copying when destination volumes cannot hold hard links, report real POSIX error codes instead of unknown save errors, and preserve verified partials on finalization failure.
+- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered ingress queues, size read buffers to one whole record, and release session processing gates before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
+- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display during finalization.
+- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of credit; preserve standard BLE formats and live native identity/trust checks.
+- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
+- Retain the validated native Keychain key handle across fresh lookups to avoid repeated ACL integrity setup; re-read key presence, protection and identity/trust journals for every operation, including external deletion/replacement.
+- Enforce LAN-preferred file transfer routing with BLE fallback, exclusive partial staging, checked finalization, isolated reply correlation, bounded offer assembly, and event-driven capacity waits; interrupted batches require explicit resend.
+
+Release 0.2.0 introduces native Now Playing host support, bidirectional Local File Transfer with LAN preference, Find Device native notifications, and a redesigned sidebar and menu-bar companion.
 
 ## [0.1.0]
 

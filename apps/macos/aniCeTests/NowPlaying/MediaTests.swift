@@ -304,6 +304,28 @@ final class CapabilityRepairTests: XCTestCase {
     model.read(try JSONSerialization.data(withJSONObject:stale));XCTAssertEqual(model.playback,beforeStale)
     model.refreshCapabilities();XCTAssertEqual(model.playback.source,confirmed.source)
   }
+  @MainActor func testSameSourceRecordingChangeRetainsCapabilitiesWithoutActionFlicker() throws {
+    let model=MacPlaybackModel(requestSink:{ _ in true }), pid=ProcessInfo.processInfo.processIdentifier
+    let firstRecording=UUID()
+    let initialRow: [String:Any]=["pid":pid,"playbackRevision":firstRecording.uuidString,"sources":[["pid":pid,"bundleIdentifier":"test.player","isMusicApp":false,"isPlaying":true,"hasTrack":true]],"kMRMediaRemoteNowPlayingInfoTitle":"Track 1","kMRMediaRemoteNowPlayingInfoDuration":100,"kMRMediaRemoteNowPlayingInfoElapsedTime":10,"isPlaying":true,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true,"capabilityState":"ready"]
+    model.read(try JSONSerialization.data(withJSONObject:initialRow))
+    XCTAssertEqual(model.playback.actions,9)
+    let firstTrackRevision=model.playback.revision
+    let secondRecording=UUID()
+    let nextTrackRow: [String:Any]=["pid":pid,"playbackRevision":secondRecording.uuidString,"sources":[["pid":pid,"bundleIdentifier":"test.player","isMusicApp":false,"isPlaying":true,"hasTrack":true]],"kMRMediaRemoteNowPlayingInfoTitle":"Track 2","kMRMediaRemoteNowPlayingInfoDuration":200,"kMRMediaRemoteNowPlayingInfoElapsedTime":0,"isPlaying":true,"canSendCommandsDirectly":true,"capabilityState":"discovering"]
+    model.read(try JSONSerialization.data(withJSONObject:nextTrackRow))
+    XCTAssertEqual(model.playback.actions,9)
+    XCTAssertNotEqual(model.playback.revision, firstTrackRevision)
+    let secondTrackRevision=model.playback.revision
+    let capabilitiesOnly: [String:Any]=["capabilitiesOnly":true,"pid":pid,"playbackRevision":secondRecording.uuidString,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true,"capabilityState":"ready"]
+    model.read(try JSONSerialization.data(withJSONObject:capabilitiesOnly))
+    XCTAssertEqual(model.playback.actions,9)
+    XCTAssertEqual(model.playback.revision, secondTrackRevision)
+    let otherPID: Int32 = 99999
+    let otherSourceRow: [String:Any]=["pid":otherPID,"playbackRevision":UUID().uuidString,"sources":[["pid":otherPID,"bundleIdentifier":"other.player","isMusicApp":false,"isPlaying":true,"hasTrack":true]],"kMRMediaRemoteNowPlayingInfoTitle":"Other Track","isPlaying":true,"canSendCommandsDirectly":true,"capabilityState":"discovering"]
+    model.read(try JSONSerialization.data(withJSONObject:otherSourceRow))
+    XCTAssertEqual(model.playback.actions,0)
+  }
   func testTransientReadRecoversWithoutReverificationOrPermissionPrompt() {
     var state=PlayerVolumeState()
     XCTAssertFalse(state.canRead(permitted:true));XCTAssertFalse(state.supported)

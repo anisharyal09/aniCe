@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents local notification setup and truthful request feedback using Android resources.
+// Presents peer-scoped Find Device actions and local notification setup using Android resources.
 package io.github.anisharyal09.anice.features.finddevice
 
 import android.Manifest
@@ -16,8 +16,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
-@Composable fun FindDeviceSetup(owner: FindDeviceController) {
+@Composable
+fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val native = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).findDeviceNotification
     var permitted by remember { mutableStateOf(native.permitted()) }
@@ -30,25 +32,85 @@ import io.github.anisharyal09.anice.R
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.find_title), style = MaterialTheme.typography.titleMedium)
-        Text(stringResource(R.string.find_explanation))
-        Text(stringResource(R.string.find_ring_explanation), style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = {
-            if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-        }) { Text(stringResource(R.string.find_permission)) }
-        TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL)) }) {
-            Text(stringResource(R.string.find_settings))
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(stringResource(R.string.find_explanation), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (permitted) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(stringResource(R.string.find_local_allowed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false))
+                TextButton(
+                    onClick = {
+                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 32.dp)
+                ) {
+                    Text(stringResource(R.string.find_settings), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    OutlinedButton(onClick = {
+                        if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                    }) { Text(stringResource(R.string.find_permission)) }
+                    TextButton(onClick = {
+                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
+                    }) {
+                        Text(stringResource(R.string.find_settings))
+                    }
+                }
+            }
         }
-        Text(stringResource(if (permitted) R.string.find_local_allowed else R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall)
-        if (!owner.compatible) Text(stringResource(if (owner.connected) R.string.find_not_advertised else R.string.find_connect_first), style = MaterialTheme.typography.bodySmall)
-        owner.feedbackPeer?.let { Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }
-        FindDeviceFeedback(owner)
+        if (peers.isEmpty()) {
+            Text(stringResource(R.string.find_pair_first), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            HorizontalDivider()
+            peers.forEach { record ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(record.peer.deviceName, style = MaterialTheme.typography.titleSmall)
+                        val status = if (!owner.supports(record.peer)) {
+                            if (owner.connected(record.peer)) stringResource(R.string.find_not_advertised)
+                            else stringResource(R.string.find_connect_first)
+                        } else if (owner.connected(record.peer)) {
+                            "Connected"
+                        } else {
+                            stringResource(R.string.find_connect_first)
+                        }
+                        Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(
+                        onClick = { owner.find(record.peer) },
+                        enabled = owner.canFind(record.peer),
+                        modifier = Modifier.heightIn(min = 40.dp)
+                    ) {
+                        Text(stringResource(R.string.find_title))
+                    }
+                }
+            }
+        }
+        owner.feedbackPeer?.let { if (owner.feedbackKey != "find_idle") Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }
+        val showIdle = owner.feedbackKey == "find_idle" && peers.isEmpty()
+        if (showIdle || (owner.feedbackKey != "find_idle" && owner.feedbackKey.isNotEmpty())) {
+            FindDeviceFeedback(owner)
+        }
     }
 }
-@Composable fun FindDeviceFeedback(owner: FindDeviceController) {
+
+@Composable fun FindDeviceSetup(owner: FindDeviceController, hasAvailablePeer: Boolean = false) {
+    FindDeviceView(owner, emptyList())
+}
+
+@Composable fun FindDeviceFeedback(owner: FindDeviceController, hasAvailablePeer: Boolean = false) {
+    if (owner.feedbackKey == "find_idle" && hasAvailablePeer) return
     val resource = when (owner.feedbackKey) {
         "find_waiting" -> R.string.find_waiting
         "find_submitted" -> R.string.find_submitted
@@ -60,5 +122,5 @@ import io.github.anisharyal09.anice.R
         "find_disconnected" -> R.string.find_disconnected
         else -> R.string.find_idle
     }
-    Text(stringResource(resource), style = MaterialTheme.typography.bodySmall)
+    Text(stringResource(resource), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

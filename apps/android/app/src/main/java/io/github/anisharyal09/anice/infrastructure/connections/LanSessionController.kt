@@ -113,22 +113,17 @@ class LanSessionController(private val app: AniCeApplication,
 
     fun connectPreferred(): Boolean {
         if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) return true
-        val target = selected
-            ?: app.sessionController.selected
-            ?: runCatching {
-                val local = app.identityService.getOrCreateIdentity().identity
-                val macs = app.trustStore.list(local.fingerprint).map { it.peer }.filter { it.platform == "macos" }
-                if (macs.size == 1) macs.first() else null
-            }.getOrNull()
+        val target = selected ?: app.sessionController.selected
         if (target != null) {
             connect(target)
             return true
         }
-        return false
+        connect(null)
+        return true
     }
 
-    fun connect(peer: DeviceIdentity) {
-        if (!app.sessionPeers.permits(peer)) {
+    fun connect(peer: DeviceIdentity? = null) {
+        if (peer != null && !app.sessionPeers.permits(peer)) {
             status = "Disconnect the other device before connecting to this Mac."
             return
         }
@@ -141,15 +136,31 @@ class LanSessionController(private val app: AniCeApplication,
         worker =
             scope.launch {
                 try {
-                    val local =
+                    val (local, target) =
                         withContext(Dispatchers.IO) {
-                            app.identityService.getOrCreateIdentity().identity
+                            val localId = app.identityService.getOrCreateIdentity().identity
+                            val candidate = peer ?: run {
+                                val macs = app.trustStore.list(localId.fingerprint).map { it.peer }.filter { it.platform == "macos" }
+                                if (macs.size == 1) macs.first() else null
+                            }
+                            localId to candidate
                         }
                     ensureActive()
+                    if (target == null) {
+                        state = ConnectionState.DISCONNECTED
+                        status = "Connect from Devices or pair your Mac first."
+                        return@launch
+                    }
+                    if (!app.sessionPeers.permits(target)) {
+                        state = ConnectionState.DISCONNECTED
+                        status = "Disconnect the other device before connecting to this Mac."
+                        return@launch
+                    }
+                    selected = target
                     if (
                         !app.sessionPeers.acquire(
                             this@LanSessionController,
-                            peer,
+                            target,
                             local.fingerprint,
                         )
                     )
@@ -180,13 +191,15 @@ class LanSessionController(private val app: AniCeApplication,
                                 changed: Network,
                                 properties: LinkProperties,
                             ) {
-                                if (
-                                    changed == network &&
-                                        (properties.interfaceName == null ||
-                                            properties.interfaceName != initial?.interfaceName ||
-                                            properties.linkAddresses.toSet() !=
-                                                initial?.linkAddresses?.toSet())
-                                )
+                                val interfaceLost =
+                                    properties.interfaceName == null ||
+                                        properties.interfaceName != initial?.interfaceName
+                                val initialAddrs =
+                                    initial?.linkAddresses?.map { it.address }?.toSet().orEmpty()
+                                val currentAddrs = properties.linkAddresses.map { it.address }.toSet()
+                                val allAddrsLost =
+                                    initialAddrs.isNotEmpty() && currentAddrs.intersect(initialAddrs).isEmpty()
+                                if (changed == network && (interfaceLost || allAddrsLost))
                                     scope.launch {
                                         if (op == generation)
                                             this@LanSessionController.cancel(
@@ -240,7 +253,7 @@ class LanSessionController(private val app: AniCeApplication,
                                 SessionHandshakeEngine.initiator(
                                     app.identityService,
                                     app.trustStore,
-                                    peer,
+                                    target,
                                     SystemClock::elapsedRealtime,
                                 )
                             }

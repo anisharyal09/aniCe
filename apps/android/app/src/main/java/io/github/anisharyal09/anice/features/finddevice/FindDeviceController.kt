@@ -51,6 +51,8 @@ class FindDeviceController(
     private fun selected(peer: DeviceIdentity) = sequenceOf("lan", "ble").mapNotNull { links[it] }.firstOrNull {
         it.capable && it.channel.descriptor.peer.deviceId == peer.deviceId && it.channel.descriptor.peer.fingerprint == peer.fingerprint
     }
+    fun connected(peer: DeviceIdentity) = links.values.any { it.channel.descriptor.peer.deviceId == peer.deviceId && it.channel.descriptor.peer.fingerprint == peer.fingerprint }
+    fun supports(peer: DeviceIdentity) = selected(peer) != null
     fun canFind(peer: DeviceIdentity) = !busy && selected(peer) != null
     override fun available(channel: SecuredChannel) {
         val d = channel.descriptor

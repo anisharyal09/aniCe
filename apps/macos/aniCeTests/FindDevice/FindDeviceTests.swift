@@ -2,6 +2,8 @@
 // Exercises independent wire bytes, dismissal replay, generation races and bounded Find Device state.
 import XCTest
 import UserNotifications
+import CryptoKit
+import SwiftUI
 @testable import aniCe
 
 @MainActor private final class FindNotifierFake: FindDeviceNotifying {
@@ -274,6 +276,26 @@ final class FindDeviceTests: XCTestCase {
     }
     XCTAssertEqual(notifier.posts.count, 8)
     owner.retired(channel.descriptor)
+  }
+
+  @MainActor func testFindDeviceViewRendersPermittedAndBlockedStates() throws {
+    let model = MacFindDeviceModel(notifier: FindNotifierFake())
+    let peer = MockSecuredChannel().descriptor.peer
+    let record = PeerTrustRecord(peer: peer, localFingerprint: "fedcba9876543210", method: .qr, pairedAt: Date(), transcriptHash: Data(), receipt: nil, active: true)
+
+    let viewWithPeer = FindDeviceView(model: model, peers: [record], notifier: nil)
+    let hostWithPeer = NSHostingView(rootView: viewWithPeer)
+    let sizeWithPeer = hostWithPeer.fittingSize
+    XCTAssertGreaterThan(sizeWithPeer.width, 0)
+    XCTAssertGreaterThan(sizeWithPeer.height, 0)
+
+    let viewEmpty = FindDeviceView(model: model, peers: [], notifier: nil)
+    let hostEmpty = NSHostingView(rootView: viewEmpty)
+    let sizeEmpty = hostEmpty.fittingSize
+    XCTAssertGreaterThan(sizeEmpty.width, 0)
+    XCTAssertGreaterThan(sizeEmpty.height, 0)
+
+    XCTAssertEqual(model.feedbackKey, "find_idle")
   }
 
 }

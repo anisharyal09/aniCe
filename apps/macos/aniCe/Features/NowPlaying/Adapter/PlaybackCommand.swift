@@ -195,6 +195,10 @@ final class RecordingCapabilities: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard !completed else { return nil };completed=true;delivered=false;self.values=values;return take()
     }
+    var currentValues: [String: Any]? {
+        lock.lock(); defer { lock.unlock() }
+        return values
+    }
 }
 
 /// Late command discovery updates support without overwriting a newer playback state.
