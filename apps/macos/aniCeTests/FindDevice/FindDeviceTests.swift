@@ -36,6 +36,25 @@ final class FindDeviceTests: XCTestCase {
     XCTAssertEqual(result, .handled)
     await Task.yield()
   }
+  @MainActor func testConnectionPresenceDoesNotImplyAdvertisedSupportAndIgnoresStaleRetirement() async throws {
+    let owner = MacFindDeviceModel(notifier: FindNotifierFake())
+    let first = MockSecuredChannel(instance: "first")
+    let peer = first.descriptor.peer
+    XCTAssertFalse(owner.connected(peer))
+    owner.available(first)
+    XCTAssertTrue(owner.connected(peer))
+    XCTAssertFalse(owner.supports(peer))
+    XCTAssertFalse(owner.connected(MockSecuredChannel().descriptor.peer))
+    let replacement = MockSecuredChannel(instance: "replacement", peer: peer)
+    owner.available(replacement)
+    owner.retired(first.descriptor)
+    XCTAssertTrue(owner.connected(peer))
+    try await ready(owner, replacement)
+    XCTAssertTrue(owner.supports(peer))
+    owner.retired(replacement.descriptor)
+    XCTAssertFalse(owner.connected(peer))
+    XCTAssertFalse(owner.supports(peer))
+  }
   @MainActor func testDismissDuplicateCacheEvictionAndAbsoluteExpiry() async throws {
     var time = 0.0
     let notifier = FindNotifierFake(), channel = MockSecuredChannel()

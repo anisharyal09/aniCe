@@ -51,4 +51,14 @@ class ConnectionSummaryTests {
         assertEquals("Disconnect", waiting.action)
         assertEquals("Disconnect", connectionSummary(ConnectionState.DISCONNECTED, ConnectionState.SECURED, true).action)
     }
+    @Test fun primaryPeerListRequiresReadinessAndFallsBackWhenNoneAreConnected() {
+        val peers = listOf(Triple("a", ConnectionState.SECURED, ConnectionState.FAILED),
+            Triple("b", ConnectionState.CONNECTING, ConnectionState.DISCONNECTED),
+            Triple("c", ConnectionState.DISCONNECTED, ConnectionState.SECURED))
+        assertEquals(listOf("a", "c"), primaryPeers(peers) { connectionSummary(it.second, it.third).state == ConnectionState.SECURED }.map { it.first })
+        assertEquals(peers, primaryPeers(peers) { false })
+        assertEquals(peers, primaryPeers(peers) { true })
+        assertTrue(primaryPeers(emptyList<String>()) { true }.isEmpty())
+    }
+
 }

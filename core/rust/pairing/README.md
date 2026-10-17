@@ -36,7 +36,7 @@ Every `input` payload consists of `uint32` big-endian length-prefixed fields: `f
 
 The native builder resolves Cargo from `CARGO_HOME/bin/cargo`, then `PATH`; the default Cargo home is `~/.cargo`. Android NDK lookup uses `ANICE_NDK`, `ANDROID_NDK_HOME`, private `ndk.dir`, then the SDK's `ndk/27.3.13750724`. The SDK comes from `ANDROID_HOME`, `ANDROID_SDK_ROOT` or private `sdk.dir`.
 
-For IDE builds with tools installed outside those defaults, configure `apps/android/local.properties` with `cargo.home`, `rustup.home` and `ndk.dir`. Environment variables take precedence; this file is ignored and contains only machine-local paths. `rustup.home` must point to the installed toolchain/targets, not the Cargo executable directory. Temporary paths must be updated if those installations are removed.
+For IDE builds with tools installed outside those defaults, configure `apps/android/local.properties` with `cargo.home`, `rustup.home` and `ndk.dir`. Environment variables take precedence; this file is ignored and contains only machine-local paths. `rustup.home` must point to the installed toolchain/targets, not the Cargo executable directory. Keep these installations in persistent directories: `~/.cargo`, `~/.rustup` and the Android SDK’s `ndk/27.3.13750724`. Do not point IDE builds at temporary tool installations; cached native outputs may hide missing tools until the next rebuild.
 
 ### Build Commands
 

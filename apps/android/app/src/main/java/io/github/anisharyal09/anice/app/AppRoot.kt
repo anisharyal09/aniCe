@@ -48,16 +48,22 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 }
             })
     }
-    val navigation = rememberSaveable(saver = AppNavigation.saver) { AppNavigation() }
+    val context = LocalContext.current
+    val uiPreferences = remember { context.getSharedPreferences("ui_preferences", android.content.Context.MODE_PRIVATE) }
+    val navigation = rememberSaveable(saver = AppNavigation.saver) {
+        AppNavigation().also { it.favouriteFeatures = uiPreferences.getString("favourite_features", "").orEmpty() }
+    }
+    LaunchedEffect(navigation.favouriteFeatures) {
+        uiPreferences.edit().putString("favourite_features", navigation.favouriteFeatures).apply()
+    }
     LaunchedEffect(session.media.openWorkspaceRequest) {
-        if(session.media.openWorkspaceRequest) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true;session.media.workspaceOpened() }
+        if(session.media.openWorkspaceRequest) { navigation.openFeature(AppFeature.Playback);session.media.workspaceOpened() }
     }
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {
         if (identity.state.snapshot != null) pairing.refresh()
     }
 
     var automaticAfterPairing by rememberSaveable { mutableStateOf(true) }
-    val context = LocalContext.current
     val nearbyOwner = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(LocalContext.current)
     LaunchedEffect(pairing.busy) {
         if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
@@ -78,30 +84,39 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val snackbars = remember { SnackbarHostState() }
     val pageState = rememberSaveableStateHolder()
     fun back() { navigation.back() }
-    BackHandler(navigation.destination != AppDestination.Home) { back() }
+    BackHandler(navigation.destination != AppDestination.Home || navigation.mediaDetails) { back() }
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(title = { Text(if (navigation.destination == AppDestination.Devices && navigation.route != DeviceRoute.Overview)
                 if (navigation.route == DeviceRoute.Pairing) "Manage devices" else "Nearby discovery"
                 else if (navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.Identity) "This device"
-                else if (navigation.destination == AppDestination.Settings) "aniCe Settings" else "aniCe",
-                style = MaterialTheme.typography.titleMedium) }, navigationIcon = {
+                else if (navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.About) "About aniCe"
+                else if (navigation.destination == AppDestination.About) "About aniCe"
+                else if (navigation.destination == AppDestination.Home) "aniCe"
+                else if (navigation.destination == AppDestination.Settings) "aniCe Settings"
+                else navigation.featurePanel?.takeIf { navigation.destination == AppDestination.Features }?.label ?: navigation.destination.label,
+                style = MaterialTheme.typography.titleSmall) }, navigationIcon = {
                 if ((navigation.destination == AppDestination.Devices && navigation.route != DeviceRoute.Overview) ||
-                    (navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.Identity)) {
+                    (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
+                    (navigation.destination == AppDestination.Features && navigation.featurePanel != null)) {
                     IconButton(onClick = { back() }) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
                     }
+                }
+            }, actions = {
+                if (navigation.destination == AppDestination.Home || navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.Overview) {
+                    TextButton(onClick = { navigation.select(AppDestination.About, pairing.peers.isEmpty()) }) { Text("About", style = MaterialTheme.typography.labelMedium) }
                 }
             }, expandedHeight = maxOf(48.dp, (24 * LocalDensity.current.fontScale + 16).dp),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface))
         }, bottomBar = {
             NavigationBar {
-                AppDestination.entries.forEach { page ->
+                AppDestination.primary.forEach { page ->
                     NavigationBarItem(selected = navigation.destination == page,
                         onClick = { navigation.select(page, pairing.peers.isEmpty()) },
-                        icon = { Icon(painterResource(when(page) { AppDestination.Home -> R.drawable.ic_home; AppDestination.Devices -> R.drawable.ic_devices; AppDestination.Features -> R.drawable.ic_features; AppDestination.Settings -> R.drawable.ic_settings }), contentDescription = null) },
-                        label = { Text(page.label) })
+                        icon = { Icon(painterResource(when(page) { AppDestination.Home -> R.drawable.ic_home; AppDestination.Devices -> R.drawable.ic_devices; AppDestination.Features -> R.drawable.ic_features; AppDestination.Favourites -> R.drawable.ic_star; AppDestination.About -> R.drawable.ic_settings; AppDestination.Settings -> R.drawable.ic_settings }), contentDescription = null) },
+                        label = { Text(page.label, style = MaterialTheme.typography.labelSmall, maxLines = 1) })
                 }
             }
         }, snackbarHost = { SnackbarHost(snackbars) }
@@ -110,26 +125,12 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         Box(content) {
             pageState.SaveableStateProvider(navigation.destination.name) {
                 when (navigation.destination) {
-                    AppDestination.Home -> HomeScreen(pairing.peers.isNotEmpty(), onPair = {
-                        navigation.pair()
-                    }, compact = true, attention = {
-                        if (session.transfer.state !is io.github.anisharyal09.anice.features.transfer.TransferState.Idle) {
-                            io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer)
-                        }
-                        if (session.media.compactVisible) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media,compact=true) { navigation.destination=AppDestination.Features;navigation.mediaDetails=true }
-                        if (pairing.busy) {
-                            Text(pairing.status, style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = { navigation.pair() }) { Text("Review pairing") }
-                        }
-                    }, sessions = {
-                        SessionPanel(session, pairing.peers, onDiscoveryCheck = {}, compact = true,
-                            onOpenDevice = { id -> navigation.openDevice(id) })
-                    })
-                    AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
-                        DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing) { automaticAfterPairing=it }
+                    AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
+                        DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it })
                     }
-                    AppDestination.Features -> FeaturesScreen(session.media, session.transfer, session.findDevice, navigation)
-                    AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context)
+                    AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
+                    AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)
+                    AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context)
                 }
             }
         }

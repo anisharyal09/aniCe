@@ -1,30 +1,86 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents phone playback capability and explicit local permission actions.
+// Presents feature-specific panels and locally saved launcher shortcuts through shared owners.
 import SwiftUI
 
 struct FeaturesView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
   let findDevice: MacFindDeviceModel
-  let findNotifier: MacFindDeviceNotifier
+  let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
+  @Bindable var navigation: ConnectionNavigation
+  var favouritesOnly = false
+  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
   @Environment(\.colorScheme) private var colorScheme
   var body: some View {
+    GeometryReader { geometry in
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
-        TransferView(model: transfer)
-        Text("Phone controls").font(.title2.weight(.semibold))
-        MediaView(model: playback, compact: false, visible: true)
-        phoneControlsCard
+        if !favouritesOnly, let panel = navigation.featurePanel {
+          Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
+            .buttonStyle(.plain).foregroundStyle(AniCePalette.accent(colorScheme))
+          Text(panel.title).font(.title2.weight(.semibold))
+          switch panel {
+          case .playback:
+            MediaView(model: playback, visible: playback.mainVisible)
+            DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
+          case .files: TransferView(model: transfer)
+          case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
+          }
+        } else {
+          Text(favouritesOnly ? "Favourites" : "Features").font(.title2.weight(.semibold))
+          Text(favouritesOnly ? "Your selected shortcuts. Edit them with the stars in Features." : "Choose a feature, or star it to keep it in Favourites.")
+            .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          if favouritesOnly && AppFeature.favourites(in: favouriteFeatures).isEmpty {
+            Button("Choose favourites") { navigation.show(.features) }.buttonStyle(.bordered)
+          }
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 700 ? 2 : 1), alignment: .leading, spacing: 16) {
+            ForEach(favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.allCases) { item in
+              feature(item, detail: item == .playback ? "Playback on this Mac" : item == .files ? "Send to your connected device" : "Alert a connected device")
+            }
+          }
+        }
+
       }
-      .frame(maxWidth: 760, alignment: .leading)
       .padding(24)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
+    }
   }
 
-  private var phoneControlsCard: some View {
+  private func feature(_ feature: AppFeature, detail: String) -> some View {
+    let selected = AppFeature.favourites(in: favouriteFeatures).contains(feature)
+    return VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Image(systemName: feature.symbol).font(.title3).foregroundStyle(AniCePalette.accent(colorScheme)).accessibilityHidden(true)
+        Spacer()
+        Button { favouriteFeatures = feature.toggled(in: favouriteFeatures) } label: {
+          Image(systemName: selected ? "star.fill" : "star").frame(width: 28, height: 28)
+        }.buttonStyle(.plain).foregroundStyle(AniCePalette.accent(colorScheme))
+          .accessibilityLabel((selected ? "Remove " : "Add ") + feature.title + (selected ? " from favourites" : " to favourites"))
+      }
+      Button { navigation.openFeature(feature) } label: {
+        HStack(spacing: 16) {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(feature.title).font(.headline)
+            Text(detail).font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          Spacer(minLength: 8)
+          Image(systemName: "chevron.right").foregroundStyle(AniCePalette.accent(colorScheme)).accessibilityHidden(true)
+        }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+      }.buttonStyle(.plain)
+    }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+    .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+    .overlay { RoundedRectangle(cornerRadius: 10).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5) }
+  }
+
+}
+
+// Keeps playback permissions beside player setup rather than exposing another feature launcher.
+struct PlaybackSetupView: View {
+  let playback: MacPlaybackModel
+  @Environment(\.colorScheme) private var colorScheme
+  var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack {
         Label(

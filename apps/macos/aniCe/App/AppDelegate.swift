@@ -66,8 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.openMainFromCompanion()
         }, onManage: { [weak self] in
             navigation.open(.devices, route: .pairing) { self?.openMainFromCompanion() }
-        }, onDetails: { [weak self] in
-            navigation.details = true
+        }, onDevices: { [weak self] in
             navigation.diagnostics = false
             navigation.open(.devices) { self?.openMainFromCompanion() }
         })

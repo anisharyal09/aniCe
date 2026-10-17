@@ -20,35 +20,28 @@ fun HomeScreen(
   sessions: @Composable () -> Unit,
   modifier: Modifier = Modifier,
   compact: Boolean = false,
+  showManagement: Boolean = false,
   attention: @Composable () -> Unit = {},
 ) {
   Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
-      Modifier.widthIn(max = 640.dp)
-        .fillMaxWidth()
+      Modifier.fillMaxWidth()
         .verticalScroll(rememberScrollState())
-        .padding(horizontal = 24.dp, vertical = if (compact) 24.dp else 12.dp),
+        .padding(horizontal = 16.dp, vertical = if (compact) 24.dp else 12.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-          if (compact) "Home" else "Devices",
-          modifier = Modifier.weight(1f).semantics { heading() },
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (hasTrustedDevices && !compact)
-          TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Manage devices")
-          }
+      if (hasTrustedDevices && showManagement) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+          TextButton(onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage devices") }
+        }
       }
       if (hasTrustedDevices) sessions()
       else {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-          Text("No devices paired yet", style = MaterialTheme.typography.titleLarge)
+          Text("No devices paired yet", style = MaterialTheme.typography.titleSmall)
           Text(
             "Scan its QR code or enter the six-digit code.",
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) {

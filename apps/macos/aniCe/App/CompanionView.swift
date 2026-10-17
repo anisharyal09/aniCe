@@ -10,23 +10,55 @@ struct CompanionView: View {
   let session: MacSessionModel
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
-  let findDevice: MacFindDeviceModel
   let transfer: MacTransferModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
-  var dismissCompanion: () -> Void = {}
-  @State private var selectedActivityIndex = 0
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      if pairing.peers.count > 3 { ScrollView { deviceContent }.frame(maxHeight: 520) }
-      else { deviceContent }
-      FindDeviceView(model: findDevice, peers: pairing.peers)
-      liveActivitySection
+      HStack {
+        Text("aniCe").font(.headline)
+        Spacer()
+        Menu {
+          if session.state == "Secured" || lan.state == "Secured" {
+            Button("Disconnect device") { session.disconnect(); lan.disconnect() }
+          }
+          Button("Manage devices") { navigation.open(.devices, route: .pairing, present: openMain) }
+          Button("Settings") { navigation.open(.settings, present: openMain) }
+          Button("Quit aniCe") { NSApp.terminate(nil) }
+        } label: { Image(systemName: "ellipsis") }
+          .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("More options")
+      }
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          deviceContent
+          if hasLiveActivity {
+            Divider()
+            liveActivitySection
+          }
+          if let sendFilesAction {
+            Divider()
+            Button(action: sendFilesAction) {
+              HStack(spacing: 12) {
+                Image(systemName: "paperplane").accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                  Text("Send files").font(.subheadline.weight(.medium))
+                  if let peer = transfer.activeChannel?.descriptor.peer {
+                    Text("Choose files for " + peer.deviceName).font(.caption)
+                      .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                  }
+                }
+                Spacer()
+                Image(systemName: "chevron.right").accessibilityHidden(true)
+              }.padding(.vertical, 8).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+          }
+        }
+      }.fixedSize(horizontal: false, vertical: true).frame(maxHeight: 520)
       footer
     }
-    .padding(24)
+    .padding(16)
     .frame(width: 350)
     .background(AniCePalette.surface(colorScheme))
     .tint(AniCePalette.primaryText(colorScheme))
@@ -61,8 +93,7 @@ struct CompanionView: View {
         MacSessionView(peers: pairing.peers, model: session, lan: lan,
           details: .constant(false), diagnostics: .constant(false), compact: true,
           onManageDevices: { navigation.open(.devices, present: openMain) },
-          onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) },
-          onSendFiles: sendFilesAction)
+          onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })
       } else {
         VStack(alignment: .leading, spacing: 8) {
           Text("No devices paired yet")
@@ -75,129 +106,36 @@ struct CompanionView: View {
     }
   }
 
-  private enum ActivityKind: Equatable {
-    case transfer
-    case playback
-  }
-
-  private var presentActivities: [ActivityKind] {
-    var list: [ActivityKind] = []
-    if transfer.state != .idle {
-      list.append(.transfer)
-    }
-    if playback.showOnMac && playback.compactVisible {
-      list.append(.playback)
-    }
-    return list
+  private var hasLiveActivity: Bool {
+    transfer.preparing || transfer.state != .idle || (playback.showOnMac && playback.compactVisible)
   }
 
   @ViewBuilder
   private var liveActivitySection: some View {
-    let activities = presentActivities
-    if !activities.isEmpty {
-      let currentIndex = min(selectedActivityIndex, activities.count - 1)
-      let current = activities[currentIndex]
-      VStack(alignment: .leading, spacing: 8) {
-        if activities.count > 1 {
-          HStack {
-            HStack(spacing: 6) {
-              ForEach(0..<activities.count, id: \.self) { idx in
-                let isTransfer = activities[idx] == .transfer
-                let hasAttention = isTransfer && transfer.pendingOffer != nil
-                Circle()
-                  .fill(idx == currentIndex
-                        ? AniCePalette.primaryText(colorScheme)
-                        : (hasAttention ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme)))
-                  .frame(width: 6, height: 6)
-                  .overlay(
-                    hasAttention && idx != currentIndex
-                      ? Circle().stroke(AniCePalette.accent(colorScheme), lineWidth: 1.5).scaleEffect(1.8)
-                      : nil
-                  )
-              }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Activity page \(currentIndex + 1) of \(activities.count)\(transfer.pendingOffer != nil ? ", incoming transfer offer waiting" : "")")
-
-            Spacer()
-
-            Text("\(currentIndex + 1) of \(activities.count)")
-              .font(.caption2)
-              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-
-            Button {
-              selectedActivityIndex = (currentIndex - 1 + activities.count) % activities.count
-            } label: {
-              Image(systemName: "chevron.left")
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .accessibilityLabel("Previous activity")
-
-            Button {
-              selectedActivityIndex = (currentIndex + 1) % activities.count
-            } label: {
-              Image(systemName: "chevron.right")
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .accessibilityLabel("Next activity")
-          }
+    if hasLiveActivity {
+      VStack(alignment: .leading, spacing: 16) {
+        if playback.showOnMac && playback.compactVisible {
+          MediaView(model: playback, compact: true, visible: playback.companionVisible)
         }
-
-        switch current {
-        case .transfer:
+        if transfer.preparing || transfer.state != .idle {
+          if playback.showOnMac && playback.compactVisible { Divider() }
           TransferView(model: transfer, compact: true)
-            .gesture(
-              activities.count > 1
-                ? DragGesture(minimumDistance: 25)
-                    .onEnded { value in
-                      if value.translation.width < -30 {
-                        selectedActivityIndex = (currentIndex + 1) % activities.count
-                      } else if value.translation.width > 30 {
-                        selectedActivityIndex = (currentIndex - 1 + activities.count) % activities.count
-                      }
-                    }
-                : nil
-            )
-        case .playback:
-          // Seek/volume sliders inside MediaView require swipe to be disabled per DESIGN.md §Live activities.
-          MediaView(model: playback, compact: true, visible: playback.companionVisible, playerPicker: false) {
-            navigation.open(.features, present: openMain)
-          }
         }
       }
     }
   }
 
   private var footer: some View {
-    ZStack {
-      Button("Open aniCe") {
-        openMain()
-      }
-      .buttonStyle(.borderedProminent)
-      .foregroundStyle(AniCePalette.onAccent(colorScheme))
-
-      HStack {
-        Spacer()
-        Menu {
-          Button("Settings") {
-            navigation.open(.settings, present: openMain)
-          }
-          Button("Quit aniCe") { NSApp.terminate(nil) }
-        } label: {
-          Image(systemName: "ellipsis")
-            .font(.body)
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            .padding(6)
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .accessibilityLabel("More options")
-      }
+    VStack(spacing: 12) {
+      Divider()
+      Button(action: openMain) {
+        HStack {
+          Text("Open aniCe")
+          Spacer()
+          Image(systemName: "arrow.up.right").accessibilityHidden(true)
+        }.contentShape(Rectangle())
+      }.buttonStyle(.plain).foregroundStyle(AniCePalette.accent(colorScheme))
     }
-    .frame(maxWidth: .infinity)
   }
 }
 
@@ -211,19 +149,17 @@ struct CompanionView: View {
   private let playback: MacPlaybackModel
   private let onOpen: () -> Void
   private let onManage: () -> Void
-  private let onDetails: () -> Void
+  private let onDevices: () -> Void
 
   init(content: CompanionView, onOpen: @escaping () -> Void,
-    onManage: @escaping () -> Void, onDetails: @escaping () -> Void) {
+    onManage: @escaping () -> Void, onDevices: @escaping () -> Void) {
     self.playback = content.playback
     self.onOpen = onOpen
     self.onManage = onManage
-    self.onDetails = onDetails
+    self.onDevices = onDevices
     super.init()
     Self.currentHost = self
-    var hostedContent = content
-    hostedContent.dismissCompanion = { [weak self] in self?.close() }
-    let controller = CompanionHostingController(rootView: hostedContent)
+    let controller = CompanionHostingController(rootView: content)
     controller.onCancel = { [weak self] in self?.close() }
     controller.sizingOptions = [.preferredContentSize]
     popover.contentViewController = controller
@@ -262,7 +198,7 @@ struct CompanionView: View {
   static func makeMenu(target: AnyObject) -> NSMenu {
     let menu = NSMenu()
     for (title, action) in [("Open aniCe", #selector(openMain)),
-                             ("Connection details", #selector(openDetails)),
+                             ("Devices", #selector(openDevices)),
                              ("Manage devices", #selector(manageDevices))] {
       let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
       entry.target = target
@@ -281,10 +217,10 @@ struct CompanionView: View {
     onOpen()
   }
 
-  @objc private func openDetails() {
+  @objc private func openDevices() {
     popover.performClose(nil)
     NSApp.activate(ignoringOtherApps: true)
-    onDetails()
+    onDevices()
   }
 
   @objc private func manageDevices() {

@@ -70,14 +70,97 @@ class AppNavigationTest {
         assertNull(restoredEmpty!!.focusedPeer)
     }
     @Test fun featuresBackAndSavedWorkspacePreserveOtherRoutes() {
-        assertEquals(listOf("Home","Devices","Features","Settings"),AppDestination.entries.map { it.label })
+        assertEquals(listOf("Home", "Devices", "Features", "Favourites", "Settings"), AppDestination.primary.map { it.label })
         val state=AppNavigation(AppDestination.Features,DeviceRoute.Discovery,"mac-x")
-        state.mediaDetails=true
+        state.findDetails=true
         val scope=androidx.compose.runtime.saveable.SaverScope { true }
         val saved=with(AppNavigation.saver) { scope.save(state) }!!
         val restored=AppNavigation.saver.restore(saved)!!
-        assertTrue(restored.mediaDetails);restored.back();assertEquals(AppDestination.Features,restored.destination);assertFalse(restored.mediaDetails)
+        assertTrue(restored.findDetails);restored.back();assertEquals(AppDestination.Features,restored.destination);assertFalse(restored.findDetails)
         restored.back();assertEquals(AppDestination.Home,restored.destination);assertEquals(DeviceRoute.Discovery,restored.route);assertEquals("mac-x",restored.focusedPeer)
+    }
+
+    @Test fun workspaceEntryExitsManagementWithoutLosingPeerOrExpandedPlayback() {
+        val state = AppNavigation(AppDestination.Devices, DeviceRoute.Pairing, "mac-a")
+        state.mediaDetails = true
+        state.select(AppDestination.Home, false)
+        assertEquals(DeviceRoute.Overview, state.route)
+        assertEquals("mac-a", state.focusedPeer)
+        state.back()
+        assertFalse(state.mediaDetails)
+        assertEquals(AppDestination.Home, state.destination)
+        state.back()
+        assertEquals("mac-a", state.focusedPeer)
+        assertEquals(AppDestination.Home, state.destination)
+    }
+
+    @Test fun olderSavedNavigationWithoutFindDetailsRestoresAndNestedBackStaysLocal() {
+        val restored = AppNavigation.saver.restore(listOf("Features", "Discovery", "mac-a", "Overview", "false"))!!
+        assertFalse(restored.findDetails)
+        restored.findDetails = true
+        restored.back()
+        assertFalse(restored.findDetails)
+        assertEquals(AppDestination.Features, restored.destination)
+        assertEquals(DeviceRoute.Discovery, restored.route)
+        assertEquals("mac-a", restored.focusedPeer)
+    }
+
+    @Test fun favouritesAreBoundedToKnownFeaturesAndToggleWithoutDuplicates() {
+        assertEquals(listOf(AppFeature.Playback, AppFeature.Files), AppFeature.favourites("Files,Files,unknown,Playback"))
+        assertTrue(AppFeature.favourites("unknown").isEmpty())
+        assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
+        assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
+        assertEquals(3, AppFeature.entries.size)
+        AppFeature.entries.forEach { feature ->
+            assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
+            assertEquals("", feature.toggled(feature.toggled("")))
+        }
+    }
+
+    @Test fun favouriteRoutingAndAboutBackPreservePeerAndSavedPreferences() {
+        val state = AppNavigation(AppDestination.Devices, DeviceRoute.Discovery, "mac-a")
+        state.favouriteFeatures = "Playback,FindDevice"
+        state.openFeature(AppFeature.FindDevice)
+        assertTrue(state.findDetails)
+        state.back()
+        assertEquals(AppDestination.Features, state.destination)
+        state.openFeature(AppFeature.Playback)
+        assertEquals(AppDestination.Features, state.destination)
+        assertEquals(DeviceRoute.Discovery, state.route)
+        assertEquals(AppFeature.Playback, state.featurePanel)
+        state.select(AppDestination.Settings, false)
+        state.settingsRoute = SettingsRoute.About
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(state) }!!
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals("Playback,FindDevice", restored.favouriteFeatures)
+        assertEquals(SettingsRoute.About, restored.settingsRoute)
+        restored.back()
+        assertEquals(SettingsRoute.Overview, restored.settingsRoute)
+        assertEquals("mac-a", restored.focusedPeer)
+        assertEquals("Playback,FindDevice", restored.favouriteFeatures)
+    }
+
+    @Test fun featurePanelsReturnToTheirOwnSectionAndSurviveRestoration() {
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        for (origin in listOf(AppDestination.Features, AppDestination.Favourites)) {
+            for (feature in AppFeature.entries) {
+                val state = AppNavigation(origin, DeviceRoute.Discovery, "mac-a")
+                state.openFeature(feature)
+                assertEquals(AppDestination.Features, state.destination)
+                assertEquals(feature, state.featurePanel)
+                val saved = with(AppNavigation.saver) { scope.save(state) }!!
+                val restored = AppNavigation.saver.restore(saved)!!
+                assertEquals(feature, restored.featurePanel)
+                restored.back()
+                assertEquals(origin, restored.destination)
+                assertNull(restored.featurePanel)
+                assertEquals("mac-a", restored.focusedPeer)
+                assertEquals(DeviceRoute.Discovery, restored.route)
+            }
+        }
+        val older = AppNavigation.saver.restore(listOf("Features", "Overview", "", "Overview", "false", "false", ""))!!
+        assertNull(older.featurePanel)
     }
 
 }

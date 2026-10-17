@@ -133,7 +133,6 @@ class HomeVisualReviewTest {
                                                     case.state?.let {
                                                         DeviceSessionCard(
                                                             case.name,
-                                                            "abcdef0123456789",
                                                             it,
                                                             case.status,
                                                             true,
@@ -161,31 +160,14 @@ class HomeVisualReviewTest {
                 runner.uiAutomation.waitForIdle(250, 5000)
                 val root = runner.uiAutomation.rootInActiveWindow
                 assertNotNull("Missing native accessibility tree: ${case.id}", root)
-                val expected = if (case.state == null) "No devices paired yet" else "abcd ef01"
+                val expected = if (case.state == null) "No devices paired yet" else case.name
                 assertTrue("Missing device context: ${case.id}", findText(root, expected) != null)
                 capture(activity, case.id)
                 if (case.state == ConnectionState.SECURED) {
                     assertTrue(findText(root, "Connected") != null || findText(root, "Secured") != null)
                     val tools = findText(root, "Connection details") ?: findText(root, "More")
                     assertNotNull("Missing accessible More action", tools)
-                    var button: AccessibilityNodeInfo? = tools
-                    while (button != null && !button.isClickable) button = button.parent
-                    assertNotNull("Connection tools must be accessible", button)
-                    assertTrue(button!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-                    val expanded = CountDownLatch(1)
-                    runner.runOnMainSync {
-                        activity.window.decorView.postOnAnimation {
-                            activity.window.decorView.postOnAnimation { expanded.countDown() }
-                        }
-                    }
-                    assertTrue(expanded.await(10, TimeUnit.SECONDS))
-                    runner.waitForIdleSync()
-                    runner.uiAutomation.waitForIdle(250, 5000)
-                    assertTrue(
-                        findText(runner.uiAutomation.rootInActiveWindow, "Send connection check") !=
-                            null
-                    )
-                    capture(activity, "${case.id}-menu")
+
                 }
             } finally {
                 runner.runOnMainSync { activity.finish() }

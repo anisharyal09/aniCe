@@ -29,3 +29,6 @@ internal fun connectionSummary(
         else -> ConnectionSummary(ConnectionState.DISCONNECTED, "Disconnected", "Connect")
     }
 }
+
+internal fun <T> primaryPeers(peers: List<T>, connected: (T) -> Boolean): List<T> =
+    peers.filter(connected).ifEmpty { peers }

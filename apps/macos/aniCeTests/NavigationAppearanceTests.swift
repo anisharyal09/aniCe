@@ -32,13 +32,72 @@ extension SessionTests {
     navigation.settingsRoute = .overview
     navigation.show(.devices)
     XCTAssertEqual(navigation.focusedPeer, "phone-a")
-    XCTAssertTrue(navigation.details)
+    XCTAssertFalse(navigation.details)
     XCTAssertFalse(navigation.diagnostics)
     navigation.open(.devices, route: .pairing) {
       presentations += 1
       XCTAssertEqual(navigation.deviceRoute, .pairing)
     }
     XCTAssertEqual(presentations, 2)
+  }
+
+  @MainActor func testWorkspaceNavigationExposesSectionsAndRetainsSecurityContext() {
+    XCTAssertEqual(AppDestination.primary, [.home, .devices, .features, .favourites, .settings, .about])
+    let navigation = ConnectionNavigation()
+    navigation.show(.devices, peer: "phone-b", route: .pairing)
+    XCTAssertEqual(navigation.destination, .devices)
+    XCTAssertFalse(navigation.details)
+    navigation.show(.devices, peer: "phone-a")
+    XCTAssertEqual(navigation.destination, .devices)
+    XCTAssertFalse(navigation.details)
+    XCTAssertEqual(navigation.focusedPeer, "phone-a")
+    navigation.show(.features)
+    XCTAssertEqual(navigation.focusedPeer, "phone-a")
+    navigation.show(.devices, route: .pairing)
+    XCTAssertFalse(navigation.details)
+    XCTAssertEqual(navigation.focusedPeer, "phone-a")
+  }
+
+  @MainActor func testFavouritesIgnoreUnknownEntriesAndRouteWithoutChangingDeviceContext() {
+    XCTAssertEqual(AppFeature.favourites(in: "files,files,unknown,playback"), [.playback, .files])
+    XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
+    XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
+    XCTAssertEqual(AppFeature.findDevice.toggled(in: "files,files"), "files,findDevice")
+    XCTAssertEqual(AppFeature.allCases.count, 3)
+    for feature in AppFeature.allCases {
+      XCTAssertEqual(AppFeature.favourites(in: feature.toggled(in: "")), [feature])
+      XCTAssertEqual(feature.toggled(in: feature.toggled(in: "")), "")
+    }
+    let navigation = ConnectionNavigation()
+    navigation.focusedPeer = "phone-a"
+    navigation.diagnostics = true
+    for origin in [AppDestination.features, .favourites] {
+      for feature in AppFeature.allCases {
+        navigation.show(origin)
+        navigation.openFeature(feature)
+        XCTAssertEqual(navigation.destination, .features)
+        XCTAssertEqual(navigation.featurePanel, feature)
+        XCTAssertEqual(navigation.focusedPeer, "phone-a")
+        XCTAssertTrue(navigation.diagnostics)
+        navigation.closeFeature()
+        XCTAssertEqual(navigation.destination, origin)
+        XCTAssertNil(navigation.featurePanel)
+      }
+    }
+    navigation.settingsRoute = .about
+    navigation.show(.settings)
+    XCTAssertEqual(navigation.settingsRoute, .about)
+  }
+
+  func testPrimaryPeerListShowsOnlyReadyDevicesAndFallsBackWhenDisconnected() {
+    let peers = [("a", "Secured", "Failed"), ("b", "Connecting", "Disconnected"), ("c", "Disconnected", "Secured")]
+    let selected = ConnectionPresentation.primaryPeers(peers) { row in
+      ConnectionPresentation(bluetooth: row.1, lan: row.2, bluetoothAllowing: false, lanAllowing: false, automatic: false).connected
+    }
+    XCTAssertEqual(selected.map { $0.0 }, ["a", "c"])
+    XCTAssertEqual(ConnectionPresentation.primaryPeers(peers) { _ in false }.map { $0.0 }, ["a", "b", "c"])
+    XCTAssertEqual(ConnectionPresentation.primaryPeers(peers) { _ in true }.count, 3)
+    XCTAssertTrue(ConnectionPresentation.primaryPeers([String]()) { _ in true }.isEmpty)
   }
 
   func testWindowAppearanceResolvesForcedAndSystemColors() {
@@ -96,7 +155,7 @@ extension SessionTests {
     let target = NSObject()
     let items = CompanionHost.makeMenu(target: target).items
     XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Connection details", "Manage devices", "Quit aniCe"])
+      ["Open aniCe", "Devices", "Manage devices", "Quit aniCe"])
     XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
     for item in items where !item.isSeparatorItem {
       XCTAssertTrue(item.target === target)

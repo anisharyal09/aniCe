@@ -145,3 +145,10 @@ Caching this validation is prohibited. See rule 2 in section 6.
 | Physical | `scripts/verify-lan-interchange.py --benchmark-mib 16\|100\|1024 --window 32\|64` | Socket and radio throughput, process CPU, RSS, allocation counters |
 
 Physical runs are the only tier that may be cited for the 8 MiB/s gate. Debug instrumentation is the only configuration measured so far. Release, battery, minimum-OS, Intel-runtime, and responsiveness acceptance remain separate requirements.
+
+## Active Now Playing observation
+
+Enabling optional Mac Home/companion Now Playing display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer. These are interactive Debug runtime observations, not a controlled Release profile or battery measurement. Connected-idle results do not describe this workload. A visible/hidden playback comparison and CPU call-tree capture are needed before attributing the cost to rendering, artwork decoding, metadata delivery or record processing. 
+
+
+[Verification status](VERIFICATION.md) keeps completed device tests and open performance measurements separate.

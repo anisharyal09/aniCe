@@ -10,8 +10,8 @@ struct FindDeviceView: View {
   @State private var permissionKey = "find_local_unknown"
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
+      if peers.isEmpty { Text("find_pair_first", tableName: "FindDevice").font(.callout).foregroundStyle(.secondary) }
       if let notifier {
-        Text("find_title", tableName: "FindDevice").font(.headline)
         Text("find_explanation", tableName: "FindDevice").font(.callout)
         Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }
         Text(MacFindDeviceNotifier.text(permissionKey)).font(.caption).foregroundStyle(.secondary)
@@ -20,17 +20,18 @@ struct FindDeviceView: View {
         }
       }
       ForEach(peers) { record in
-        if model.supports(record.peer) {
+        VStack(alignment: .leading, spacing: 4) {
           HStack {
-            Text(record.peer.deviceName).lineLimit(2)
+            Text(record.peer.deviceName).fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button(MacFindDeviceNotifier.text("find_title")) { model.find(record.peer) }
               .disabled(!model.canFind(record.peer)).buttonStyle(.bordered)
           }
+          if !model.supports(record.peer) {
+            Text(MacFindDeviceNotifier.text(model.connected(record.peer) ? "find_not_advertised" : "find_connect_first"))
+              .font(.caption).foregroundStyle(.secondary)
+          }
         }
-      }
-      if notifier != nil && !peers.contains(where: { model.supports($0.peer) }) {
-        Text("find_unsupported", tableName: "FindDevice").font(.caption).foregroundStyle(.secondary)
       }
       if let peer = model.feedbackPeer, model.feedbackKey != "find_idle" {
         Text(peer.deviceName).font(.caption)

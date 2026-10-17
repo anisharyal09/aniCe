@@ -7,10 +7,10 @@
 | **Independent Bluetooth Low Energy (BLE)** | Compatibility discovery, EDHOC session handshake, AES-GCM records, GATT framing | Implemented |
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
-| **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Recovery, renewal and physical acceptance pending |
-| **Application continuity** | Now Playing implemented; More features and platform support coming soon. | In progress |
+| **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
+| **Application continuity** | Now Playing, File Transfer and Find Device implemented; native UI overhaul in 0.2.0-dev. | In progress |
 
-Automated unit, hosted, and cross-platform interchange test suites validate cryptographic, transport, and session protocol contracts.
+Manual feature/UI tests, physical transfer measurements, native ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. [Verification status](VERIFICATION.md) lists completed checks and remaining matrices. Current milestone: 0.2.0-dev, build 2.
 
 ---
 
@@ -19,7 +19,7 @@ Automated unit, hosted, and cross-platform interchange test suites validate cryp
 ### 1. Identity & Cryptographic Bootstrap
 - **Platform Identity:** Actor-isolated P-256 keys in `AndroidKeyStore` and macOS Keychain with ASN.1 DER boundary signatures and JSON Schema v1 public records. Ordinary reads avoid signing; creation and reset retain cryptographic signing proof. See [ADR 0001](decisions/0001-provisional-device-identity.md).
 - **Pairing Bootstrap:** Ephemeral P-256 ECDH QR code pairing with SHA-256 fingerprint commitments. 6-digit manual PIN pairing using an isolated in-memory OPAQUE bridge (`opaque-ke 4.0.1`, Argon2id). See [Pairing Contract](../protocol/pairing/README.md) and [ADR 0003](decisions/0003-provisional-pairing-and-trust.md).
-- **Mutual Trust:** Explicit on-screen approval on both devices before trust activation, persisted atomically in local trust journals. Trusted peer management includes renaming and forgetting devices.
+- **Mutual Trust:** Explicit on-screen approval on both devices before trust activation, persisted atomically in local trust journals. Trusted peer management includes selectable credentials and confirmed forgetting; local device names can be edited without replacing identity.
 
 ### 2. Independent Bluetooth Low Energy (BLE) Sessions
 - **Handshake & Record Channel:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) with mandatory message 4 authenticating pinned active trust. Directional AES-256-GCM application records with 64-bit sequence counters, 4,000-byte plaintext limit, one-hour lifetime, and hard cap of `2^20` records. Strict bidirectional `ready` / `readyAck` confirmation before payload delivery. See [Session Contract](../protocol/session/README.md) and [ADR 0005](decisions/0005-edhoc-secure-sessions.md).
@@ -40,5 +40,9 @@ Automated unit, hosted, and cross-platform interchange test suites validate cryp
 - **Now Playing:** Remote Mac playback, source selection, seek previews, native Android notifications (`MediaSession` / `Notification.MediaStyle`), and player/output volume controls are implemented. Mac Home/companion display is optional. See [Now Playing](features/NOW_PLAYING.md), [ADR 0007](decisions/0007-macos-unsandboxed-playback-prototype.md), and [ADR 0009](decisions/features/now-playing/0009-remote-playback-presentation.md).
 
 - **Local File Transfer:** Bidirectional sequential batch streaming (1..128 files) over authenticated LAN DATA records with cumulative credit flow control (64-chunk window / 3,072-byte chunks), recipient offer approval, exclusive partial staging with checked SHA-256 verification and finalization, on-demand connection, and presentation across Features and Home live-activity. See [Local File Transfer](features/FILE_TRANSFER.md) and [Transfer Contract](../protocol/transfer/README.md).
+
+- **Find Device:** Native peer alerts, Android alarm playback with Stop and sixty-second expiry, Mac notifications and explicit notification setup. Samsung native ringing/Stop/timeout checks pass. See [Find Device](features/FIND_DEVICE.md).
+
+- **Native UI:** Dedicated feature panels, Favourites and About, compact phone Home, direct transport controls in Devices, accessible disclosure labels and responsive Mac activity panels.
 
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.

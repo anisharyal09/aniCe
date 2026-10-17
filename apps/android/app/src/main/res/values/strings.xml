@@ -46,4 +46,7 @@
     <string name="find_ringing_title">Your device is being located</string>
     <string name="find_stop_ringing">Stop ringing</string>
     <string name="find_ring_explanation">This phone rings for up to 60 seconds when a connected trusted device looks for it, even in Silent or Vibrate mode. Ringing uses your alarm volume and respects Do Not Disturb. Stop it here or in its notification.</string>
+    <string name="find_pair_first">Pair a device in Devices to use Find Device.</string>
+    <string name="find_connect_first">Disconnected. Connect this device in Devices to use Find Device.</string>
+    <string name="find_not_advertised">Find Device support has not been advertised by this device.</string>
 </resources>

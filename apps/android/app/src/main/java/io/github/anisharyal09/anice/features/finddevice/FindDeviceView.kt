@@ -43,7 +43,7 @@ import io.github.anisharyal09.anice.R
             Text(stringResource(R.string.find_settings))
         }
         Text(stringResource(if (permitted) R.string.find_local_allowed else R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall)
-        if (!owner.compatible) Text(stringResource(R.string.find_unsupported), style = MaterialTheme.typography.bodySmall)
+        if (!owner.compatible) Text(stringResource(if (owner.connected) R.string.find_not_advertised else R.string.find_connect_first), style = MaterialTheme.typography.bodySmall)
         owner.feedbackPeer?.let { Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }
         FindDeviceFeedback(owner)
     }

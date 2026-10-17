@@ -49,6 +49,9 @@ import Observation
   }
   private func peerKey(_ d: ChannelDescriptor) -> String { d.peer.deviceId + ":" + d.peer.fingerprint }
   private func live(_ d: ChannelDescriptor) -> Bool { links[d.transport]?.channel.descriptor == d }
+  func connected(_ peer: DeviceIdentity) -> Bool {
+    links.values.contains { $0.channel.descriptor.peer.deviceId == peer.deviceId && $0.channel.descriptor.peer.fingerprint == peer.fingerprint }
+  }
   func supports(_ peer: DeviceIdentity) -> Bool { selected(peer) != nil }
   func canFind(_ peer: DeviceIdentity) -> Bool { selected(peer) != nil && !busy }
   private func selected(_ peer: DeviceIdentity) -> Link? {

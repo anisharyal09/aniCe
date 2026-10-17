@@ -41,7 +41,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Streamline Now Playing presentation across Home and main Features workspace: reduce compact card height on Home with tighter spacing, padding, and artwork; hide redundant player selection and player volume slider in compact mode; turn the compact header label and icon into a unified navigation button that opens the full player in Features; embed the complete playback player with timeline scrubber and volume controls into Features alongside structured phone controls, permission actions, and output volume information.
+- Follow the original aniCe reference design with its sidebar grouping and fluid, content-sized activity panels in at most two columns. Add dedicated feature panels and separate Devices, Favourites and About; retain full player selection and permission/verification actions.
+- Group direct Bluetooth/LAN and automatic controls by connected peer, keep trust management separate, make disclosure labels clickable and route companion device clicks to Devices. Preserve direct Disconnect menu actions and omit empty companion dividers.
+- Add activity navigation chevrons, reserve artwork space, constrain Settings/About reading widths and keep About concise with the installed version, purpose, @anisharyal09 website credit, source and license links. Keep Find Device peers visible with truthful disconnected/capability states.
+- Set marketing version 0.2.0, development channel dev and build number 2; About displays 0.2.0-dev. Record completed application/native testing separately from remaining runtime and performance coverage.
+
 
 - Move LAN socket delivery, sliced frame parsing, bounded write accounting and independent assembly watchdogs off the main actor; exercise the production transport in native interchange.
 

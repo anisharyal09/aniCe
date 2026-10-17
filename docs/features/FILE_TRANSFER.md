@@ -1,12 +1,12 @@
 # Local File Transfer
 
-Send batches of 1–128 files from Features → Local file transfer over an already-authenticated local-network or Bluetooth connection. Local network has priority whenever it is secured. The peer must advertise transfer support. Bluetooth is available when local network is disconnected; it is slower and uses the existing secured BLE session. The receiver approves each batch; files transfer sequentially with bounded cumulative credit.
+Send batches of 1–128 files from the device overview over an already-authenticated local-network or Bluetooth connection. Local network has priority whenever it is secured. The peer must advertise transfer support. Bluetooth is available when local network is disconnected; it is slower and uses the existing secured BLE session. The receiver approves each batch; files transfer sequentially with bounded cumulative credit.
 
 Updated Android and Mac apps use bounded 128-KiB LAN chunks with an authenticated 256-KiB record profile. Bluetooth retains 3-KiB chunks. Both apps must be updated to use LAN revision 2; Android can still connect to an older Mac using the original smaller LAN records. Native identity and trust checks remain live. See the [LAN profile contract](../../protocol/lan/TRANSFER_PROFILE.md).
 
 ## Connection changes
 
-On Android, the idle Local file transfer panel exposes **Connect LAN** whenever local network is disconnected, including while Bluetooth is connected. It starts the existing trusted-Mac LAN connection flow.
+On Android, Connection details exposes local-network connection controls. The idle file panel presents Send files; when disconnected, that action can start the existing trusted-Mac LAN flow. Automatic LAN upgrades are not implemented.
 
 Both transports must belong to the same authenticated device. Support and negotiated limits are checked separately on each connection. A new batch uses local network whenever it is secured, regardless of which connection became ready first. A batch already running on Bluetooth finishes on that connection; the next batch uses local network.
 
@@ -32,14 +32,17 @@ Android starts a connected-device foreground service after a visible user starts
 
 Notification permission controls progress, incoming offer alerts, and cancel actions in the notification drawer; it does not gate the foreground service. Android posts a high-priority notification with file count and size when an incoming offer arrives, with tap-to-open and a Decline action. When permission is denied, Android retains its foreground-service notice in the system Task Manager. The permission setting is not changed automatically. A failed service start or service loss retires unowned background work. Idle LAN follows the configured background timeout after approved work finishes. Mac idle-sleep assertions belong to the active job. See [Android notification permission](https://developer.android.com/develop/ui/compose/notifications/notification-permission).
 
-Mac posts native notifications (`UNUserNotificationCenter`) on incoming offers with interactive **Accept** (saving by default to `~/Downloads`), **Choose folder…** (activating aniCe with the offer visible for custom destination selection), and **Decline**, plus a completion notice with **Show in Finder**. Notification permission is requested lazily on first need; when denied or dismissed, the offer remains interactive in the menu-bar companion and main window without gating transfer execution. The companion hosts a compact transfer live activity with rate/progress, cancel, and page navigation alongside Now Playing, falling back to in-app presentation when unattended banners are disabled.
+Mac posts native notifications (`UNUserNotificationCenter`) on incoming offers with interactive **Accept** (saving by default to `~/Downloads`), **Choose folder…** (activating aniCe with the offer visible for custom destination selection), and **Decline**, plus a completion notice with **Show in Finder**. Notification permission is requested lazily on first need; when denied or dismissed, the offer remains interactive in the menu-bar companion and main window without gating transfer execution. The companion hosts a compact transfer live activity with rate/progress and cancel, shown alongside Now Playing with visible supported seek, falling back to in-app presentation when unattended banners are disabled.
+
+## Verification
+
+Manual application testing covers transfers in both directions and playback during Phone→Mac transfer. Physical application transfer over a 5 GHz mobile hotspot (external AP) measures 7.0–10.5 MB/s (average ~8.0 MB/s) Mac→Phone, and 3.0–5.2 MB/s (average ~4.0 MB/s) Phone→Mac; an attenuated 2.4 GHz router (3–5m range) measures ~1.0 MB/s symmetrically. Bounded ingress queues and off-main chunk decoding resolve previous progress and rate presentation stuttering. The 1-GiB, concurrent Now Playing latency, CPU/battery, and phone-hosted hotspot loopback routing gates remain open. See [Verification status](../VERIFICATION.md) for current automated checks and the separate active-playback CPU observation.
 
 ## Current limits
 
 - Resume journals, durable checkpoints, finalization-intent recovery and coordinated LAN renewal are not implemented. Disconnect ends the job and removes its current partial. Restarting transfer is a new explicit action on the remaining connection, with LAN preferred again after reconnection.
 - Resume requests receive unavailable status; accepting capability v1 does not establish resumable large-file support.
 - Provider revocation, rename behavior and background phone-lock continuity need physical acceptance. SAF cannot guarantee non-overwriting atomic publication across every provider.
-- Physical application transfer over a 5 GHz mobile hotspot (external AP) measures 7.0–10.5 MB/s (average ~8.0 MB/s) Mac→Phone, meeting the 8 MiB/s throughput gate, and 3.0–5.2 MB/s (average ~4.0 MB/s) Phone→Mac; an attenuated 2.4 GHz router (3–5m range) measures ~1.0 MB/s symmetrically. Bounded ingress queues and off-main chunk decoding resolve previous progress and rate presentation stuttering. The 1-GiB, concurrent Now Playing latency, CPU/battery, and phone-hosted hotspot loopback routing gates remain open.
 
 ## Implementation
 

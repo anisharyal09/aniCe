@@ -36,7 +36,7 @@ import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
-fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {}) {
+fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, overview: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var automaticChanging by remember { mutableStateOf(false) }
@@ -66,7 +66,12 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
         }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        peers.forEachIndexed { index, record ->
+        val primary = primaryPeers(peers) { record ->
+            (model.state == ConnectionState.SECURED && model.selected?.deviceId == record.peer.deviceId && model.selected?.fingerprint == record.peer.fingerprint) ||
+                (lan.state == ConnectionState.SECURED && lan.selected?.deviceId == record.peer.deviceId && lan.selected?.fingerprint == record.peer.fingerprint)
+        }
+        val visiblePeers = if (overview) primary.take(1) else primary
+        visiblePeers.forEachIndexed { index, record ->
             key(record.peer.deviceId, record.peer.fingerprint) {
                 val bleSelected = model.selected?.deviceId == record.peer.deviceId &&
                     model.selected?.fingerprint == record.peer.fingerprint
@@ -88,16 +93,12 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     if (!canUsePeer) add("Disconnect your current Mac to connect to this one.")
                     if (!active && !waiting && isEmpty()) add("Tap Connect on both devices.")
                 }.joinToString("\n")
-                DeviceSessionCard(record.peer.deviceName, record.peer.fingerprint, summary.state,
+                Column(Modifier.fillMaxWidth().padding(vertical = if (compact) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 8.dp)) {
+                DeviceSessionCard(record.peer.deviceName, summary.state,
                     if (compact) "" else feedback, canUsePeer, { connect(record) }, model::disconnect,
                     onConnectionDetails = { if (compact) onOpenDevice(record.peer.deviceId) else { diagnostics = false; showEvents = false; details = if (details == record.peer.deviceId + ":" + record.peer.fingerprint) null else record.peer.deviceId + ":" + record.peer.fingerprint } },
                     summary = summary.text, action = summary.action,
-                    detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact)
-                if (model.findDevice.availableFor(record.peer)) {
-                    OutlinedButton(onClick = { model.findDevice.find(record.peer) }, enabled = !model.findDevice.busy,
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text(androidx.compose.ui.res.stringResource(R.string.find_title)) }
-                }
-                if (model.findDevice.feedbackKey != "find_idle" && model.findDevice.feedbackPeer?.deviceId == record.peer.deviceId && model.findDevice.feedbackPeer?.fingerprint == record.peer.fingerprint) io.github.anisharyal09.anice.features.finddevice.FindDeviceFeedback(model.findDevice)
+                    detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact, showDetailsAction = false, showConnectionAction = compact)
                 if (!compact && nearby.available) {
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint
@@ -120,6 +121,24 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                 .putExtra("peer", record.peer.deviceId).putExtra("enable", true))
                         })
                 }
+                if (!compact) {
+                    HorizontalDivider()
+                    TransportDetails("Bluetooth", bleState, if (bleSelected) model.status else "",
+                        canConnect = canUsePeer,
+                        onConnect = { connect(record) }, onDisconnect = model::disconnectBluetooth)
+                    TransportDetails("Local network", lanState, if (lanSelected) lan.status else "",
+                        canConnect = canUsePeer,
+                        onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect)
+                }
+                if (!compact) {
+                    TextButton(onClick = { diagnostics = false; showEvents = false; details = if (detailRecord?.peer?.deviceId == record.peer.deviceId) null else record.peer.deviceId + ":" + record.peer.fingerprint },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { stateDescription = if (detailRecord?.peer?.deviceId == record.peer.deviceId) "Expanded" else "Collapsed" }) {
+                        Text("Security and diagnostics", Modifier.weight(1f))
+                        val expandedAngle = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -90f else 90f
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = null,
+                            modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = if (detailRecord?.peer?.deviceId == record.peer.deviceId) expandedAngle else 180f))
+                    }
+                }
                 if (!compact && detailRecord?.peer?.deviceId == record.peer.deviceId) {
                     Column(Modifier.fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium)
@@ -131,13 +150,16 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                             }
                         }
-                        TransportDetails("Bluetooth", bleState, if (bleSelected) model.status else "",
-                            canConnect = canUsePeer,
-                            onConnect = { connect(record) }, onDisconnect = model::disconnectBluetooth)
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Security fingerprint", style = MaterialTheme.typography.labelMedium)
+                                Text(record.peer.fingerprint, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        if (summary.state == ConnectionState.SECURED || summary.state == ConnectionState.CONNECTING) {
+                            TextButton(onClick = model::disconnect) { Text("Disconnect device") }
+                        }
                         HorizontalDivider()
-                        TransportDetails("Local network", lanState, if (lanSelected) lan.status else "",
-                            canConnect = canUsePeer,
-                            onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect)
                         TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { diagnostics = !diagnostics; showEvents = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .semantics { stateDescription = if (diagnostics) "Expanded" else "Collapsed" }) {
                             Text(if (diagnostics) "Hide diagnostics" else "Diagnostics", modifier = Modifier.fillMaxWidth())
@@ -184,8 +206,9 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         }
                     }
                 }
+                }
             }
-            if (index < peers.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (index < visiblePeers.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
 }
@@ -219,12 +242,12 @@ private fun TransportDetails(name: String, state: ConnectionState, status: Strin
 }
 
 @Composable
-fun DeviceSessionCard(name: String, fingerprint: String, state: ConnectionState, status: String,
+fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
     canConnect: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit,
     onConnectionDetails: () -> Unit,
     summary: String = stateLabel(state),
     action: String = connectionSummary(state, ConnectionState.DISCONNECTED).action,
-    detailsExpanded: Boolean = false, compact: Boolean = false) {
+    detailsExpanded: Boolean = false, compact: Boolean = false, showDetailsAction: Boolean = true, showConnectionAction: Boolean = true) {
     val statusColor = when (state) {
         ConnectionState.SECURED -> MaterialTheme.colorScheme.tertiary
         ConnectionState.FAILED -> MaterialTheme.colorScheme.error
@@ -243,29 +266,32 @@ fun DeviceSessionCard(name: String, fingerprint: String, state: ConnectionState,
                 shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
                 modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
             IconButton(onClick = onConnectionDetails) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = "Open devices for $name",
-                    modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = 180f })
+                Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = "Open devices for $name",
+                    modifier = Modifier.size(18.dp))
             }
         }
         return
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(name, modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium)
-        Text(summary + " · " + fingerprint.take(8).chunked(4).joinToString(" "),
-            modifier = Modifier.semantics { contentDescription = "$summary. Fingerprint ${fingerprint.take(8)}" },
-            style = MaterialTheme.typography.bodyMedium, color = statusColor)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
+                Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                Text(if (state == ConnectionState.SECURED) "Connected" else summary,
+                    style = MaterialTheme.typography.bodySmall, color = statusColor)
+            }
+            if (showConnectionAction) OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
+                enabled = action == "Disconnect" || action == "Cancel" || canConnect,
+                modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
+        }
         if (status.isNotBlank()) Text(status,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state == ConnectionState.CONNECTING) LinearProgressIndicator(Modifier.fillMaxWidth())
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp), onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
-                enabled = action == "Disconnect" || action == "Cancel" || canConnect,
-                modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
-        }
         val expandedAngle = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -90f else 90f
-        TextButton(onClick = onConnectionDetails, shape = MaterialTheme.shapes.small,
+        if (showDetailsAction) TextButton(onClick = onConnectionDetails, shape = MaterialTheme.shapes.small,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 .semantics { stateDescription = if (detailsExpanded) "Expanded" else "Collapsed" }) {

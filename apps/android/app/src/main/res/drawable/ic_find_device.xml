@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Provides a monochrome native feature glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FF000000" android:strokeWidth="1.6" android:strokeLineJoin="round" android:strokeLineCap="round" android:pathData="M6,16 H18 L16,13 V9 C16,3 8,3 8,9 V13 Z M10,20 H14 M12,2 V4" />
+</vector>

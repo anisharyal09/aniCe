@@ -43,6 +43,7 @@ class FindDeviceController(
     var incomingAlert by mutableStateOf<IncomingFindAlert?>(null); private set
     var feedbackKey by mutableStateOf("find_idle"); private set
     var feedbackPeer by mutableStateOf<DeviceIdentity?>(null); private set
+    val connected get() = links.isNotEmpty()
     val compatible get() = links.values.any { it.capable }
     val busy get() = pending != null
     private fun peerKey(d: ChannelDescriptor) = d.peer.deviceId + ":" + d.peer.fingerprint

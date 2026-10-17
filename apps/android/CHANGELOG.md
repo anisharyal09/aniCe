@@ -39,6 +39,12 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Document persistent Cargo/Rustup and Android SDK NDK locations for native pairing builds; incremental outputs must not conceal missing temporary tool installations.
+
+- Rework phone navigation with branded compact Home, dedicated feature panels, separate Favourites/About and one fluid feature card per row. Keep player/source selection, compact Home volume and native scalable typography; automatic connection preferences stay in Devices to simplify Home.
+- Present direct Bluetooth/LAN actions and automatic preference in Devices. Prefer connected peers, place a quiet Add device action in the persistent Devices footer, expose local identity and saved trust separately, and show clickable fingerprint disclosures with visible expansion cues. Keep Disconnect accessible on Home and add mirrored navigation chevrons, stable artwork spacing and slate playback controls.
+- Keep About concise with installed version, a short purpose line, source and license links, followed by only @anisharyal09 linked to the personal website. Set version 0.2.0-dev and version code 2; document completed manual/native checks alongside the remaining test matrix.
+
 - Parse LAN receive buffers in bounded slices with one clock sample per read; add native cumulative-credit benchmarking with payload validation, CPU/GC and socket/delivery timing. The isolated bulk probe uses bounded larger records and Debug-only Wi-Fi power ownership; production DATA and Release permissions remain unchanged.
 
 - Remove per-record allocations and copies from the authenticated record path: one AES-GCM provider cipher, key spec and authentication suffix per direction, record headers written into the record buffer, exact-size deterministic CBOR encoding, single-copy chunk framing out of the reused transfer buffer, TCP framing into transport-owned scratch space, and one compiled device-ID pattern for journal validation. Receive validates native identity and trust after synchronous tag verification so unauthenticated records never reach Keystore. Wire bytes, bounds and typed failures are unchanged.

@@ -134,7 +134,7 @@ struct AniCeApp: App {
             delegate.onTerminate = { findNotifier.clearAll() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, findDevice: findDevice, transfer: transfer, navigation: navigation,
+                session: session, lan: lan, playback: playback, transfer: transfer, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }

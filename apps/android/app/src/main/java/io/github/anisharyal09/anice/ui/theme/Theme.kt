@@ -7,6 +7,8 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Typography
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -129,6 +131,14 @@ fun AniCeTheme(content: @Composable () -> Unit) {
     val palette = if (dark) DarkColors else LightColors
     MaterialTheme(
         colorScheme = palette.copy(primary = palette.onSurface),
+        typography = Typography().let { type -> type.copy(
+            titleLarge = type.titleLarge.copy(fontSize = 20.sp, lineHeight = 26.sp),
+            titleMedium = type.titleMedium.copy(fontSize = 16.sp, lineHeight = 22.sp),
+            titleSmall = type.titleSmall.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            bodyLarge = type.bodyLarge.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            bodyMedium = type.bodyMedium.copy(fontSize = 13.sp, lineHeight = 19.sp),
+            bodySmall = type.bodySmall.copy(fontSize = 12.sp, lineHeight = 17.sp)
+        ) },
         shapes = Shapes(small = RoundedCornerShape(8.dp)),
         content = content,
     )

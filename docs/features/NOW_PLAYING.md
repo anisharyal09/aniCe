@@ -2,9 +2,9 @@
 
 ## Using playback controls
 
-Android Home shows playback from the connected trusted Mac, including Auto/player selection and supported play/pause, previous/next and seek controls. Features → Mac controls → Now Playing opens the full workspace with artwork and the originating Mac. Device summaries stay above playback.
+Android Home shows playback from the connected trusted Mac, including Auto/player selection and supported play/pause, previous/next and seek controls. Features → Now Playing opens the dedicated full player with artwork and the originating Mac. Device summaries stay above playback.
 
-Mac Features → Phone controls shows the active subscription and explicit permission actions. Settings → Show Now Playing on this Mac optionally adds playback to Mac Home and the companion; it is off by default and does not affect phone controls.
+Mac Features → Now Playing → Playback setup shows the active subscription and explicit permission actions. Full Now Playing exposes Auto/manual player selection directly. Its options retain refresh and existing permission/verification actions. Settings → Show Now Playing on this Mac optionally adds playback to Mac Overview and the companion; it is off by default and does not affect phone controls.
 
 Auto follows playing sources before paused ones, retains the current source among equals, then prefers system current and stable PID order. Manual selection lasts until the player exits or observation stops. Temporary metadata gaps disable controls without changing the selection. Available actions depend on the selected player; metadata alone does not establish control support.
 
@@ -20,7 +20,7 @@ Supported native playback controls are automatic. Scripting controls require an 
 
 ### Notifications and background use
 
-Android uses a silent native media notification and lock-screen controls. Tapping opens Now Playing. Pausing starts a fixed 90-second grace period, after which compact cards and system media presentation disappear; Features retains paused controls. Resuming restores presentation.
+Android uses a silent native media notification and lock-screen controls. Tapping opens Now Playing. Pausing starts a fixed 90-second grace period, after which compact cards and system media presentation disappear; explicit Now Playing access retains paused controls. Resuming restores presentation.
 
 Foreground Android subscribes automatically. Background controls require existing companion ownership and an already-secured BLE connection. Without that ownership, including API 29–30, background playback presentation stops. Disconnect, player exit, trust removal or identity/session replacement clears remote state.
 
@@ -46,10 +46,12 @@ Detailed contracts and decisions:
 
 aniCe implements the application-scoped playback owner, authenticated transport integration, media contracts, Android controls, notification lifecycle and Mac output-volume extension around that adapter.
 
+## Verification
+
+Manual application testing exercises playback controls, player selection and presentation on the current phone/Mac setup, including playback alongside Phone→Mac transfer. Packaged WebKit controls, native API checks and Mac output writes have also been exercised on Apple Silicon macOS. Offline Android tests/lint/builds and Mac hosted tests pass; earlier universal builds are recorded separately. Current totals and test tiers are listed in [Verification status](../VERIFICATION.md).
+
 ## Known limitations
 
-Offline Android tests/lint/builds, Mac hosted tests/universal builds and native API checks pass. Packaged WebKit playback controls and Mac output writes have been exercised on current Apple Silicon macOS.
-
-Physical phone-button/lock-screen behavior, Music/Spotify volume and permission denial, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery behavior remain pending. Playback stutter remains unresolved. macOS 14, Intel runtime and certificate-signed Debug acceptance are also pending; universal compilation does not establish runtime support.
+The remaining matrix includes extended phone-button/lock-screen lifecycle, Music/Spotify permission and volume combinations, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery measurements. Optional Mac Home/companion display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer; profiling is still required to identify the cause and quantify control latency. macOS 14, Intel runtime and certificate-signed Debug coverage remain open; universal compilation does not establish runtime support.
 
 Audio streaming, a separate media background service, automatic LAN activation, shuffle, lyrics and queues are outside this feature. Discovery-disconnect recovery remains separate.

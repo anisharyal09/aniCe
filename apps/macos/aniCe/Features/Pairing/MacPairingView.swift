@@ -213,14 +213,15 @@ struct MacPairingView: View {
             HStack(spacing: 12) {
               Image(systemName: "phone")
                 .foregroundStyle(AniCePalette.accent(scheme))
-              VStack(alignment: .leading, spacing: 2) {
-                Text(record.peer.deviceName)
-                  .font(.subheadline.weight(.medium))
-                  .fixedSize(horizontal: false, vertical: true)
+              DisclosureGroup {
                 Text(record.peer.groupedFingerprint)
                   .font(.caption2.monospaced())
                   .foregroundStyle(AniCePalette.secondaryText(scheme))
                   .textSelection(.enabled)
+              } label: {
+                Text(record.peer.deviceName)
+                  .font(.subheadline.weight(.medium))
+                  .fixedSize(horizontal: false, vertical: true)
               }
               Spacer()
               Button("Forget…") {

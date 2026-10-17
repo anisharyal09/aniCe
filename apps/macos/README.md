@@ -1,10 +1,14 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Comprehensive manual/radio acceptance, minimum-OS coverage and independent integration security review remain pending.
+Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup. See [Verification status](../../docs/VERIFICATION.md) for completed tests, measured results and the remaining minimum-OS, lifecycle and security-review coverage.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Current-build background radio endurance, minimum-OS baseline coverage, and independent security review remain pending. Manual Connect retains its 120-second admission window.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Physical BLE idle/lifecycle checks and bidirectional application transfers are recorded in the verification page. Extended background endurance, minimum-OS runtime coverage and independent security review remain open. Manual Connect retains its 120-second admission window.
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records acceptance gates.
+
+## Development version and verification
+
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. The [verification record](../../docs/VERIFICATION.md) separates real application tests, native instrumentation, hosted/unit checks and untested combinations. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -75,18 +79,18 @@ Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac 
 
 Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
 
-Home, Devices, Features and Settings use a native sidebar. Home and the companion show compact device summaries; companion arrows select Devices and its peer before restoring the main window. Settings has a compact This device entry opening local identity and explicit name editing, alongside saved Window appearance; System resolves application appearance; the main window and connection-details sheet apply the resolved native presentation scheme. The companion and context menus follow macOS appearance independently.
+Overview, Devices, Features, Favourites, Settings and About use a native sidebar. Overview owns a compact device/status header, file controls and playback; Devices retains connection and trust management, with direct LAN access; security details remain nested. Companion arrows select the peer and open its details in Devices before restoring the main window. Settings has a compact This device entry opening local identity and explicit name editing, alongside saved Window appearance; System resolves application appearance; the main window and connection-details sheet apply the resolved native presentation scheme. The companion and context menus follow macOS appearance independently. Feature boxes use trailing chevrons and stars for local favourites on a separate Favourites page. Cards expand with the window and use at most two columns. About aniCe shows the installed version, license and source link.
 
 ## Now Playing
 
-Features → Phone controls provides remote playback to Android. Local Home/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
+Features → Now Playing → Playback setup provides remote playback to Android. Local Overview/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
 
 ## Local File Transfer
 
-Features → Local file transfer and Home live-activity provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and the companion provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Resume and coordinated renewal remain unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 
 ## Find Device
 
-Connected trusted-device actions can request a native notification on the peer. Features provides local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, platform limits and pending physical acceptance.
+Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.

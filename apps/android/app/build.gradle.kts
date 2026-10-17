@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Configures the native Android app, development version and build inputs.
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -13,8 +14,8 @@ android {
         applicationId = "io.github.anisharyal09.anice"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.0-dev"
+        versionCode = 2
+        versionName = "0.2.0-dev"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {

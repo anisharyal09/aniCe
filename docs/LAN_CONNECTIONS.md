@@ -51,9 +51,11 @@ The verifier compiles the Mac native interchange tool, creates isolated Keystore
 
 Native Android owner regressions inject Wi-Fi loss and interface change, call Disconnect, and exercise overlapping presentation stops. All four cases verify worker cancellation, network-callback release and peer-reservation release; callbacks from the retired generation cannot close a new attempt. These automated injections do not measure physical Wi-Fi-switch detection latency. Mac hosted tests additionally assert bounded keepalive/retransmission settings; actual black-hole timeout latency remains unverified.
 
-## Acceptance still required
+## Recorded application checks and remaining matrix
 
-Packaged-app Bonjour discovery and permission denial; simultaneous physical BLE/LAN and independent Disconnect; Bluetooth-disabled operation; locked/background Android retirement; Mac sleep/Quit; network/address changes; accessible native controls; API 29/macOS 14 runtime coverage; signed hardware identity protection; independent security review. Native socket interchange does not close those gates. Existing BLE Release acceptance gaps remain open.
+Real packaged-app transfers over an external 5 GHz hotspot and a 2.4 GHz router verify authenticated application traffic in both directions. Native IPv4/scoped-IPv6 interchange and owner cleanup regressions provide additional coverage. [Verification status](VERIFICATION.md) records the measured rates and test tiers.
+
+The remaining matrix includes permission denial; simultaneous physical BLE/LAN and independent Disconnect; Bluetooth-disabled operation; locked/background Android retirement; Mac sleep/Quit; network/address changes; accessible native controls; API 29/macOS 14 runtime coverage; signed hardware identity protection; independent security review. These combinations are distinct from the completed app transfers and isolated native interchange checks. Existing BLE Release coverage gaps remain open.
 
 References: [RFC 6763 — DNS-Based Service Discovery](https://www.rfc-editor.org/rfc/rfc6763.html), [Network.framework](https://developer.apple.com/documentation/network), [Android NsdManager](https://developer.android.com/reference/android/net/nsd/NsdManager), [LAN wire contract](../protocol/lan/README.md).
 

@@ -3,6 +3,8 @@
 import CryptoKit
 import Foundation
 import XCTest
+import SwiftUI
+import AppKit
 
 @testable import aniCe
 
@@ -43,6 +45,11 @@ import XCTest
   func resumeSessionAdvertising() { resumes += 1 }
   func tickSessionTransport() throws {}
 }
+@MainActor private final class VisualFindNotifier: FindDeviceNotifying {
+  var posts = 0
+  func post(identifier: String, peerName: String) async -> FindResult { posts += 1; return .failed }
+  func clear(identifier: String) {}
+}
 @MainActor private final class SessionRecoveryWait {
   var delays = [TimeInterval]()
   var continuation: CheckedContinuation<Void, Never>?
@@ -53,6 +60,174 @@ import XCTest
   func release() { continuation?.resume(); continuation = nil }
 }
 @MainActor final class SessionLifecycleTests: XCTestCase {
+  func testCompanionFitsInlineDeviceStatusAndIncomingOffersWithoutStartingWork() async throws {
+    XCTAssertTrue(IdentityView.isTesting)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let service = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Fixture Mac", tagPrefix: "visual.test.")
+    let radio = SessionRadioFake(), discovery = MacDiscoveryModel(adapter: radio)
+    let pairing = MacPairingModel(identity: service, discovery: discovery, makeStore: { trust })
+    let reservation = SessionPeerReservation()
+    let session = MacSessionModel(identity: service, adapter: radio, store: { trust }, peers: reservation)
+    let lan = MacLanSessionModel(identity: service, peers: reservation, store: { trust })
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: "anice.companion.visual." + UUID().uuidString))
+    preferences.set(true, forKey: "media.showOnMac")
+    var commands = 0
+    let playback = MacPlaybackModel(preferences: preferences, requestSink: { _ in commands += 1; return true })
+    let quietPreferences = try XCTUnwrap(UserDefaults(suiteName: "anice.companion.quiet." + UUID().uuidString))
+    let quietPlayback = MacPlaybackModel(preferences: quietPreferences, requestSink: { _ in commands += 1; return true })
+    let pid = ProcessInfo.processInfo.processIdentifier
+    playback.read(try JSONSerialization.data(withJSONObject: [
+      "pid": pid, "playbackRevision": UUID().uuidString, "sourceIsAutomatic": true,
+      "sources": [["pid": pid, "bundleIdentifier": Bundle.main.bundleIdentifier!, "displayName": "Fixture player",
+        "isMusicApp": false, "isPlaying": true, "hasTrack": true]],
+      "kMRMediaRemoteNowPlayingInfoTitle": "A Walk Home", "kMRMediaRemoteNowPlayingInfoArtist": "The Evening Hours",
+      "kMRMediaRemoteNowPlayingInfoDuration": 236, "kMRMediaRemoteNowPlayingInfoElapsedTime": 92,
+      "isPlaying": true, "canSendCommandsDirectly": true, "canToggle": true, "canSeek": true]))
+    XCTAssertTrue(playback.compactVisible)
+    let folder = URL(fileURLWithPath: "/private/tmp/aniCe-reference-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var renders = 0
+    for (index, name) in ["Pixel 9", "Alexandra’s Android phone for work and travel"].enumerated() {
+      let key = P256.Signing.PrivateKey()
+      let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+        "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+        "deviceId": UUID().uuidString.lowercased(), "deviceName": name,
+        "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+        "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation)]))
+      pairing.peers = [PeerTrustRecord(peer: peer, localFingerprint: "fixture", method: .qr,
+        pairedAt: Date(), transcriptHash: Data(repeating: 0, count: 32), active: true)]
+      session.selectedPeer = peer
+      session.state = "Secured"
+      let transfer = MacTransferModel(), channel = MockSecuredChannel(peer: peer)
+      transfer.available(channel)
+      _ = await transfer.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+      for incoming in [false, true] {
+        if incoming {
+          let offer = TransferMessage.offer(batch: UUID().uuidString.lowercased(), sliceIndex: 0,
+            totalSlices: 1, totalFiles: 1, totalBytes: 0,
+            files: [.array([.text(UUID().uuidString.lowercased()), .text("Trip notes.pdf"), .integer(0), .bytes(Data(SHA256.hash(data: Data())))])])
+          _ = await transfer.handle(try offer.encode(), on: channel.descriptor)
+          XCTAssertNotNil(transfer.pendingOffer)
+        }
+        for scheme: ColorScheme in [.light, .dark] {
+          for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
+          let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
+            pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer,
+            navigation: ConnectionNavigation(), openMainWindow: { XCTFail("Rendering opened the main window") })
+            .environment(\.colorScheme, scheme)
+          let host = NSHostingView(rootView: view)
+          let size = host.fittingSize
+          XCTAssertEqual(size.width, 350, accuracy: 1)
+          XCTAssertGreaterThan(size.height, showPlayback ? 250 : 150)
+          XCTAssertLessThanOrEqual(size.height, 680)
+          host.frame = NSRect(origin: .zero, size: size)
+          host.layoutSubtreeIfNeeded()
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          XCTAssertGreaterThan(bytes.count, 1000)
+          try bytes.write(to: folder.appendingPathComponent("companion-\(index)-\(incoming ? "offer" : "idle")\(showPlayback ? "" : "-no-media")-\(scheme == .light ? "light" : "dark").png"))
+          renders += 1
+          }
+        }
+      }
+      transfer.retired(channel.descriptor)
+    }
+    XCTAssertEqual(renders, 10)
+    XCTAssertFalse(radio.started)
+    XCTAssertTrue(radio.sent.isEmpty)
+    XCTAssertFalse(lan.allowing)
+    XCTAssertEqual(commands, 0)
+    XCTAssertTrue(trust.list(localFingerprint: "fixture").isEmpty)
+  }
+
+  func testWindowSectionsRenderAtNarrowAndWideSizesWithoutStartingWork() async throws {
+    XCTAssertTrue(IdentityView.isTesting)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let service = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Fixture Mac", tagPrefix: "window.visual.")
+    let radio = SessionRadioFake(), discovery = MacDiscoveryModel(adapter: radio)
+    let pairing = MacPairingModel(identity: service, discovery: discovery, makeStore: { trust })
+    let reservation = SessionPeerReservation()
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: "anice.window.visual." + UUID().uuidString))
+    preferences.set(true, forKey: "media.showOnMac")
+    let session = MacSessionModel(identity: service, adapter: radio, store: { trust }, preferences: preferences, peers: reservation)
+    let lan = MacLanSessionModel(identity: service, peers: reservation, store: { trust })
+    var commands = 0
+    let playback = MacPlaybackModel(preferences: preferences, requestSink: { _ in commands += 1; return true })
+    let pid = ProcessInfo.processInfo.processIdentifier
+    playback.read(try JSONSerialization.data(withJSONObject: [
+      "pid": pid, "playbackRevision": UUID().uuidString, "sourceIsAutomatic": true,
+      "sources": [["pid": pid, "bundleIdentifier": Bundle.main.bundleIdentifier!, "displayName": "Fixture player",
+        "isMusicApp": false, "isPlaying": true, "hasTrack": true]],
+      "kMRMediaRemoteNowPlayingInfoTitle": "A Walk Home", "kMRMediaRemoteNowPlayingInfoArtist": "The Evening Hours",
+      "kMRMediaRemoteNowPlayingInfoDuration": 236, "kMRMediaRemoteNowPlayingInfoElapsedTime": 92,
+      "isPlaying": true, "canSendCommandsDirectly": true, "canToggle": true, "canSeek": true]))
+    let transfer = MacTransferModel(), notifier = VisualFindNotifier()
+    let find = MacFindDeviceModel(notifier: notifier)
+    let key = P256.Signing.PrivateKey()
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Alexandra’s Android phone for work and travel",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation)]))
+    pairing.peers = [PeerTrustRecord(peer: peer, localFingerprint: "fixture", method: .qr,
+      pairedAt: Date(), transcriptHash: Data(repeating: 0, count: 32), active: true)]
+    session.selectedPeer = peer
+    session.state = "Secured"
+    let channel = MockSecuredChannel(peer: peer)
+    transfer.available(channel)
+    _ = await transfer.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+
+    let folder = URL(fileURLWithPath: "/private/tmp/aniCe-reference-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var renders = 0
+    for appearance in ["Light", "Dark"] {
+      preferences.set(appearance, forKey: "window.appearance")
+      preferences.set("playback,files", forKey: "ui.favouriteFeatures")
+      for width in [720.0, 1240.0] {
+        let routes: [(AppDestination, AppFeature?)] = AppDestination.primary.map { ($0, nil) } + AppFeature.allCases.map { (.features, $0) }
+        for (destination, feature) in routes {
+          let navigation = ConnectionNavigation()
+          navigation.show(destination)
+          if let feature { navigation.openFeature(feature) }
+          let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
+            discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
+            transfer: transfer, findDevice: find, findNotifier: nil, navigation: navigation)
+            .defaultAppStorage(preferences)
+            .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
+            .frame(width: width, height: 800)
+          let host = NSHostingView(rootView: view)
+          let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 800),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+          window.appearance = NSAppearance(named: appearance == "Light" ? .aqua : .darkAqua)
+          window.contentView = host
+          host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
+          try await Task.sleep(for: .milliseconds(50))
+          host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          XCTAssertGreaterThan(bytes.count, 1000)
+          try bytes.write(to: folder.appendingPathComponent("window-\(feature?.rawValue ?? destination.rawValue.lowercased())-\(Int(width))-\(appearance.lowercased()).png"))
+          renders += 1
+          XCTAssertFalse(navigation.details, "Changing sections must not open a modal")
+        }
+      }
+    }
+    XCTAssertEqual(renders, 36)
+    XCTAssertFalse(radio.started)
+    XCTAssertTrue(radio.sent.isEmpty)
+    XCTAssertFalse(lan.allowing)
+    XCTAssertEqual(commands, 0)
+    XCTAssertEqual(notifier.posts, 0)
+    XCTAssertTrue(trust.list(localFingerprint: "fixture").isEmpty)
+  }
+
   func testLatePairingCleanupRespectsDiscoveryPairingAndStop() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

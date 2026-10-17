@@ -26,13 +26,16 @@ import SwiftUI
 struct TransferView: View {
   let model: MacTransferModel
   var compact: Bool = false
+  var open: (() -> Void)? = nil
   @Environment(\.colorScheme) private var colorScheme
   @State private var selectedFolder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory())
 
   var body: some View {
     VStack(alignment: .leading, spacing: compact ? 8 : 12) {
       if !compact {
-        Text("Local file transfer").font(.headline)
+        if let open {
+          Button(action: open) { HStack { Text("Files"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.contentShape(Rectangle()) }.font(.headline).buttonStyle(.plain).accessibilityLabel("Open file transfer")
+        } else { Text("Files").font(.headline) }
       }
 
       if model.preparing {
@@ -65,12 +68,13 @@ struct TransferView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(compact ? 12 : 16)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: compact ? 10 : 12))
+    .padding(compact ? 0 : 20)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .background(compact ? Color.clear : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 12))
     .overlay(
-      RoundedRectangle(cornerRadius: compact ? 10 : 12)
-        .stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5)
+      Group {
+        if !compact { RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5) }
+      }
     )
   }
 
@@ -90,11 +94,12 @@ struct TransferView: View {
         .controlSize(.small)
         .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
       }
+      if !model.peerConnected {
+        Text("Connect your phone to send files.").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      } else if !model.peerCompatible {
+        Text("File transfer is unavailable on this device.").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      }
     } else {
-      Text("Send files over local network, with Bluetooth available when local network is disconnected.")
-        .font(.callout)
-        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-
       if let channel = model.activeChannel {
         Text(channel.descriptor.transport == "lan" ? "Using local network" : "Using Bluetooth")
           .font(.caption)
@@ -102,7 +107,7 @@ struct TransferView: View {
       }
 
       if !model.peerConnected {
-        Text("Connect your trusted Android device over local network or Bluetooth to transfer files.")
+        Text("Connect your phone to send files.")
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }

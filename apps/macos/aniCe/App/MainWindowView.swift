@@ -14,7 +14,7 @@ struct MainWindowView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
   let findDevice: MacFindDeviceModel
-  let findNotifier: MacFindDeviceNotifier
+  let findNotifier: MacFindDeviceNotifier?
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
@@ -23,7 +23,8 @@ struct MainWindowView: View {
   }
 
   private var mediaSurfaceVisible: Bool {
-    navigation.destination == .features || (navigation.destination == .home && playback.showOnMac)
+    (navigation.destination == .home && playback.showOnMac) ||
+      (navigation.destination == .features && navigation.featurePanel == .playback)
   }
 
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
@@ -31,26 +32,35 @@ struct MainWindowView: View {
   var body: some View {
     NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
-        Text("aniCe").font(.title3.weight(.semibold)).padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
-        List(AppDestination.allCases, selection: $navigation.destination) { destination in
-          Label(destination.rawValue, systemImage: destination.symbol).tag(destination)
-        }
-      }.navigationSplitViewColumnWidth(min: 140, ideal: 160)
+        Text("aniCe").font(.system(size: 22, weight: .semibold))
+          .foregroundStyle(AniCePalette.primaryText(colorScheme)).padding(.top, 24).padding(.bottom, 24).padding(.horizontal, 14)
+        Text("Workspace").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .padding(.horizontal, 14).padding(.bottom, 12)
+        ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
+        Spacer(minLength: 24)
+        sidebarItem(.settings)
+        sidebarItem(.about)
+      }.padding(.horizontal, 14).padding(.bottom, 24)
+        .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
+        .background(AniCePalette.secondarySurface(colorScheme))
     } detail: {
       Group {
         switch navigation.destination {
         case .home: homeContent
         case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers)
+        case .features: FeaturesView(playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
+        case .favourites: FeaturesView(playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
+        case .about: aboutContent
         case .settings: settingsContent
 
         }
-      }.navigationTitle(navigation.destination.rawValue)
+      }.navigationTitle("aniCe")
         .toolbarBackground(AniCePalette.surface(colorScheme), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .background(AniCePalette.background(colorScheme))
         .overlay(alignment: .top) { Divider() }
     }
+    .disclosureGroupStyle(ClickableDisclosureStyle())
     .preferredColorScheme(colorScheme)
     .frame(minWidth: 620, minHeight: 420)
     .tint(AniCePalette.primaryText(colorScheme))
@@ -67,6 +77,7 @@ struct MainWindowView: View {
       }
     }
     .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
+    .onChange(of:navigation.featurePanel) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
     .onChange(of:playback.showOnMac) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
     .onDisappear { playback.presented("main",false) }
     .onAppear {
@@ -81,6 +92,40 @@ struct MainWindowView: View {
         NSApp.activate()
         playback.presented("main",mediaSurfaceVisible)
       }
+    }
+  }
+  private func sidebarItem(_ destination: AppDestination) -> some View {
+    let selected = navigation.destination == destination
+    return Button {
+      if destination == .features || destination == .favourites { navigation.featurePanel = nil; navigation.findDetails = false }
+      navigation.show(destination)
+    } label: {
+      HStack(spacing: 12) {
+        Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
+        Text(destination.rawValue).font(.body)
+        Spacer(minLength: 0)
+      }.foregroundStyle(selected ? AniCePalette.accent(colorScheme) : AniCePalette.primaryText(colorScheme))
+        .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
+        .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+    }.buttonStyle(.plain).accessibilityAddTraits(selected ? [.isSelected] : [])
+      .padding(.bottom, 4)
+  }
+
+}
+
+struct ClickableDisclosureStyle: DisclosureGroupStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Button { configuration.isExpanded.toggle() } label: {
+        HStack {
+          Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.forward")
+            .font(.caption).accessibilityHidden(true)
+          configuration.label
+          Spacer(minLength: 0)
+        }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+      }.buttonStyle(.plain)
+        .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+      if configuration.isExpanded { configuration.content }
     }
   }
 }

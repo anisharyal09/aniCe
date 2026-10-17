@@ -11,6 +11,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontFamily
@@ -20,6 +22,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.LayoutDirection
+import io.github.anisharyal09.anice.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -32,7 +39,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
     automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
+    val expandedAngle = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 90f else -90f
     var camera by remember { mutableStateOf(false) }
+    var trustedExpanded by rememberSaveable { mutableStateOf(true) }
+    var credentialPeer by rememberSaveable { mutableStateOf<String?>(null) }
     var addingDevice by rememberSaveable { mutableStateOf(false) }
     val showPairing = model.peers.isEmpty() || model.busy || addingDevice
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -225,22 +235,43 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
         }
         if (!model.busy && model.peers.isNotEmpty()) {
             HorizontalDivider()
-            Text("Trusted devices", style = MaterialTheme.typography.titleMedium)
-            model.peers.forEach { r ->
+            TextButton(onClick = { trustedExpanded = !trustedExpanded },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {
+                    stateDescription = if (trustedExpanded) "Expanded" else "Collapsed"
+                }) {
+                Text("Trusted devices", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                    modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = if (trustedExpanded) expandedAngle else 0f))
+            }
+            if (trustedExpanded) model.peers.forEach { r ->
                 Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surface) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text(r.peer.deviceName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                            TextButton(onClick = {
+                                credentialPeer = if (credentialPeer == r.peer.deviceId) null else r.peer.deviceId
+                            }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics {
+                                stateDescription = if (credentialPeer == r.peer.deviceId) "Expanded" else "Collapsed"
+                            }) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(r.peer.deviceName, style = MaterialTheme.typography.titleSmall)
+                                    Text("Security fingerprint", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                                    modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = if (credentialPeer == r.peer.deviceId) expandedAngle else 0f))
+                            }
                             TextButton(shape = MaterialTheme.shapes.small,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 onClick = { forget = r.peer.deviceId }) { Text("Forget…") }
                         }
-                        Text("Mac fingerprint", style = MaterialTheme.typography.labelMedium,
+                        if (credentialPeer == r.peer.deviceId) {
+                            Text("Mac fingerprint", style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        SelectionContainer {
-                            Text(r.peer.fingerprint.chunked(4).joinToString(" "),
+                            SelectionContainer {
+                                Text(r.peer.fingerprint.chunked(4).joinToString(" "),
                                 style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                            }
                         }
                     }
                 }

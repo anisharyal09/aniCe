@@ -20,3 +20,6 @@
 "find_local_blocked" = "Notifications are not allowed on this device. Enable them in notification settings to receive Find Device alerts.";
 "find_local_unknown" = "Checking notification settings…";
 "find_local_error" = "Notification permission could not be requested. Check notification settings.";
+"find_pair_first" = "Pair a device in Devices to use Find Device.";
+"find_connect_first" = "Disconnected. Connect this device in Devices to use Find Device.";
+"find_not_advertised" = "Find Device support has not been advertised by this device.";

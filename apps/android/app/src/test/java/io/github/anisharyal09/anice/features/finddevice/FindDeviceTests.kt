@@ -124,6 +124,19 @@ class FindDeviceTests {
         assertFalse(c.sent.any { it.kind == 2L }); assertFalse(h.owner.busy)
         h.owner.retired(c.descriptor)
     }
+    @Test fun connectionPresenceIsSeparateFromCapabilityAndStaleRetirement() = runBlocking {
+        val h = Harness(); val first = Channel()
+        assertFalse(h.owner.connected)
+        h.owner.available(first)
+        assertTrue(h.owner.connected); assertFalse(h.owner.compatible)
+        val replacement = Channel(peer = first.descriptor.peer)
+        h.owner.available(replacement); h.owner.retired(first.descriptor)
+        assertTrue(h.owner.connected); assertFalse(h.owner.compatible)
+        h.ready(replacement)
+        assertTrue(h.owner.compatible)
+        h.owner.retired(replacement.descriptor)
+        assertFalse(h.owner.connected); assertFalse(h.owner.compatible)
+    }
     @Test fun unadvertisedFeatureIsUnavailableAndFailureIsNotSubmission() = runBlocking {
         val h = Harness(); val c = Channel(); h.owner.available(c)
         h.owner.find(c.descriptor.peer); assertFalse(h.owner.busy)

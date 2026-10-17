@@ -39,6 +39,12 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Record full offline Android native rebuild and packaged ABI/alignment verification after restoring persistent build prerequisites.
+
+- Prepare the unreleased 0.2.0-dev milestone, build 2, covering Now Playing, Local File Transfer, Find Device and the native UI overhaul following 0.1.0.
+- Document completed manual feature/UI testing, physical connection and transfer measurements, native Find Device ringing/Stop/expiry tests and current automated checks in the verification record. Replace blanket pending-acceptance wording with specific remaining platform, lifecycle, accessibility and performance coverage.
+- Align native navigation around compact Home activity, dedicated feature panels, Devices, Favourites, Settings and About. Keep phone automatic preferences in Devices, Add device in a quiet footer and the About username link last. Preserve application-scoped connection and feature owners; document the reference layout and truthful availability states.
+
 - Add production-transport LAN bulk benchmarking and isolated throughput verification tools.
 
 - Remove per-record allocations and copies from the authenticated record path: one AES-GCM provider cipher, key spec and authentication suffix per session direction, record headers written into the record buffer instead of concatenated onto it, exact-size deterministic CBOR encoding, single-copy chunk slicing out of the reused transfer buffer, TCP framing into transport-owned scratch space, and one compiled device-ID pattern for journal validation. macOS assembles records and frames into single reserved buffers and decodes sliced buffers without a re-basing copy. Wire bytes, bounds, typed failures and live native validation are unchanged.

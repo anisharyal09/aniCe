@@ -10,6 +10,56 @@ import Observation
 @testable import aniCe
 
 final class MediaTests: XCTestCase {
+  @MainActor func testReferencePlayerLayoutRendersBothThemesAndUnavailableStatesWithoutCommands() throws {
+    var requests = 0
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: "anice.visual." + UUID().uuidString))
+    let model = MacPlaybackModel(preferences: preferences, requestSink: { _ in requests += 1; return true })
+    let pid = ProcessInfo.processInfo.processIdentifier
+    let sample: [String: Any] = ["pid": pid, "playbackRevision": UUID().uuidString,
+      "sourceIsAutomatic": true,
+      "sources": [["pid": pid, "bundleIdentifier": Bundle.main.bundleIdentifier!, "displayName": "Fixture player",
+        "isMusicApp": false, "isPlaying": true, "hasTrack": true]],
+      "kMRMediaRemoteNowPlayingInfoTitle": "A Walk Home — a long title that must wrap at companion width",
+      "kMRMediaRemoteNowPlayingInfoArtist": "The Evening Hours",
+      "kMRMediaRemoteNowPlayingInfoDuration": 236,
+      "kMRMediaRemoteNowPlayingInfoElapsedTime": 92, "kMRMediaRemoteNowPlayingInfoPlaybackRate": 1,
+      "isPlaying": true, "canSendCommandsDirectly": true, "canToggle": true, "canSeek": true]
+    model.read(try JSONSerialization.data(withJSONObject: sample))
+    XCTAssertFalse(model.playback.source.isEmpty)
+    let folder = URL(fileURLWithPath: "/private/tmp/aniCe-reference-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var renders = 0
+    for scheme: ColorScheme in [.light, .dark] {
+      for compact in [true, false] {
+        let width: CGFloat = compact ? 314 : 360
+        let view = MediaView(model: model, compact: compact, visible: false)
+          .frame(width: width).fixedSize(horizontal: false, vertical: true)
+          .environment(\.colorScheme, scheme)
+          .background(AniCePalette.surface(scheme))
+        let host = NSHostingView(rootView: view)
+        let size = host.fittingSize
+        XCTAssertEqual(size.width, width, accuracy: 1)
+        XCTAssertGreaterThan(size.height, 140)
+        XCTAssertLessThan(size.height, 600)
+        host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        XCTAssertGreaterThan(bytes.count, 1000)
+        try bytes.write(to: folder.appendingPathComponent("music-\(compact ? "companion" : "overview")-\(scheme == .light ? "light" : "dark").png"))
+        renders += 1
+      }
+    }
+    XCTAssertEqual(renders, 4)
+    model.read(Data("{\"error\":\"fixture unavailable\"}".utf8))
+    XCTAssertTrue(model.playback.source.isEmpty)
+    let unavailable = NSHostingView(rootView: MediaView(model: model, visible: false).frame(width: 314).fixedSize(horizontal: false, vertical: true))
+    XCTAssertGreaterThan(unavailable.fittingSize.height, 40)
+    XCTAssertLessThan(unavailable.fittingSize.height, 600)
+    XCTAssertEqual(requests, 0, "Rendering presentation must not issue commands or launch observation")
+  }
+
   func testProgressScheduleBoundsAndStopsWhenInactive() {
     let start=Date(timeIntervalSince1970:100)
     let active=Array(MediaProgressSchedule(active:true).entries(from:start,mode:.normal).prefix(5))
