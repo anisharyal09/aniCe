@@ -100,6 +100,13 @@ ScrollView {
               }
               Link("Source code", destination: URL(string: "https://github.com/anisharyal09/aniCe")!)
               Link("License · GPL-3.0-or-later", destination: URL(string: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")!)
+              Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+                Image(systemName: "heart")
+                  .foregroundStyle(AniCePalette.secondaryText(colorScheme).opacity(0.8))
+                  .frame(width: 32, height: 32)
+                  .frame(maxWidth: .infinity)
+              }.buttonStyle(.plain).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                .accessibilityLabel("Support aniCe").help("Support aniCe")
               Spacer()
             }.padding(24).frame(maxWidth: 680, alignment: .leading)
               .frame(maxWidth: .infinity, alignment: .leading)

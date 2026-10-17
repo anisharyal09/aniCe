@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Routes feature launchers to shared device controls or explicit Find Device setup.
+// Routes feature launchers to shared device controls or Find Device.
 package io.github.anisharyal09.anice.app
 
 import androidx.compose.foundation.*
@@ -16,7 +16,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.finddevice.FindDeviceController
-import io.github.anisharyal09.anice.features.finddevice.FindDeviceSetup
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable

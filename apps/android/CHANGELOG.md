@@ -6,48 +6,52 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Add Find Device requests and localized alerts with a bounded alarm-stream ringing service, Stop notification/in-app dialog, permission checks, dismissal/disconnect/focus/timeout cleanup, deferred context-backed initialization and existing companion BLE ownership. Silent/Vibrate is supported without changing sound mode or alarm volume; DND and native audio policy remain authoritative.
-- Bidirectional local file transfer controller and Compose UI (`TransferController`, `TransferView`, `TransferWire`, `TransferNotification`, `TransferActionReceiver`) with cumulative credit flow control, sequential multi-file streaming, Storage Access Framework document picker support, exclusive job-owned partial documents and checked provider finalization, full-duplex flow-control ACK submission, high-priority heads-up incoming transfer notifications with tap-to-open and Decline actions, and integration into Features and Home live-activity.
-- Optimize LAN streaming throughput: pre-allocate 2-MiB TCP send/receive socket buffers before connect and size the read loop to one whole record, with the socket read decoupled from record delivery by a bounded ordered queue; cache validation and `kid` digest on immutable `DeviceIdentity` instances to eliminate repeated BigInteger curve point verification and `KeyFactory` JNI instantiation per record; decouple `sendOperation` and `receive` locking in `SessionConnection` so recipient flow-control ACKs stream concurrently over full-duplex TCP; pipeline flow-control ACKs every 8 chunks with multi-waiter `capacityWaiters` backpressure tracking.
-- Now Playing Home controls/player picker and Features workspace over one secured LAN/BLE subscription, with source-bound commands, atomic seek/elapsed previews and LAN-only artwork. Silent native media notifications use a fixed 90-second pause grace and existing companion-owned background BLE. Verified player volume and separately advertised Mac output volume support sliders and phone/system volume controls; bounded latest-intent handling confirms previews and never replays uncertain commands.
-- Home/Devices/Features/Settings bottom navigation and saved System/Light/Dark appearance across app and setup screens; use compact aniCe titles and top bars across main destinations.
-- Adversarial test coverage for maximum profile-3 bounds, cipher tampering rejection, buffer independence across encryption directions, exact CBOR payload sizing, scratch framing identity, and single-copy chunk framing.
+- **Find Device**:
+  - Request and receive Find Device alerts with bounded alarm-stream ringing service that plays even in Silent/Vibrate mode.
+  - Dedicated in-app dialog and high-priority notification with explicit "Stop ringing" action.
+  - Localized `find_connected` status and peer-specific accessibility action labels (`find_peer_action` -> "Find %1$s").
+  - Automatic 60-second alert timeout, audio-focus handling, and companion BLE background ownership.
+- **Local File Transfer**:
+  - Full bidirectional transfer controller and Compose UI (`TransferController`, `TransferView`, `TransferWire`).
+  - 64-chunk cumulative credit flow control, sequential multi-file batch streaming, and incremental SHA-256 validation.
+  - Storage Access Framework (SAF) document picker integration, exclusive partial staging, and checked non-overwriting renames.
+  - High-priority heads-up transfer notifications with tap-to-open and Decline actions.
+  - LAN throughput optimization: pre-allocated 2-MiB TCP send/receive socket buffers, decoupled record delivery via bounded queue, cached `DeviceIdentity` cryptographic verification, concurrent recipient ACKs over full-duplex TCP, and pipelined flow-control ACKs every 8 chunks.
+- **Now Playing & Media Controls**:
+  - Remote playback controls, player selector, and Features workspace over secured LAN/BLE.
+  - Source-bound commands, atomic seek and elapsed previews, and LAN-only artwork fetching.
+  - Silent media notifications with 90-second pause grace and background BLE lease.
+  - Verified player volume and separately advertised Mac output volume controls.
+- **Native Navigation & Appearance**:
+  - Bottom navigation bar with Home, Devices, Features, and Settings destinations.
+  - Branded compact aniCe top bar and System/Light/Dark theme selector with persistent state.
+  - Dedicated About screen with installed version, project credits, source repository, and quiet support link (`ic_heart`).
+- **Test & Conformance Coverage**:
+  - 218 automated JVM unit tests with 0 failures and 0 skips.
+  - Adversarial test coverage for LAN profile 3 bounds, cipher tampering rejection, buffer independence, exact CBOR sizing, and single-copy framing.
 
 ### Changed
 
-- Document persistent Cargo/Rustup and Android SDK NDK locations for native pairing builds; incremental outputs must not conceal missing temporary tool installations.
-- Rework phone navigation with branded compact Home, dedicated feature panels, separate Favourites/About and one fluid feature card per row. Keep player/source selection, compact Home volume and native scalable typography; automatic connection preferences stay in Devices to simplify Home.
-- Present direct Bluetooth/LAN actions and automatic preference in Devices. Prefer connected peers, place a quiet Add device action in the persistent Devices footer, expose local identity and saved trust separately, and show clickable fingerprint disclosures with visible expansion cues. Keep Disconnect accessible on Home and add mirrored navigation chevrons, stable artwork spacing and slate playback controls.
-- Keep About concise with installed version, a short purpose line, source and license links, followed by only @anisharyal09 linked to the personal website. Set version 0.2.0-dev and version code 2; document completed manual/native checks alongside the remaining test matrix.
-- Parse LAN receive buffers in bounded slices with one clock sample per read; add native cumulative-credit benchmarking with payload validation, CPU/GC and socket/delivery timing. The isolated bulk probe uses bounded larger records and Debug-only Wi-Fi power ownership; production DATA and Release permissions remain unchanged.
-- Remove per-record allocations and copies from the authenticated record path: one AES-GCM provider cipher, key spec and authentication suffix per direction, record headers written into the record buffer, exact-size deterministic CBOR encoding, single-copy chunk framing out of the reused transfer buffer, TCP framing into transport-owned scratch space, and one compiled device-ID pattern for journal validation. Receive validates native identity and trust after synchronous tag verification so unauthenticated records never reach Keystore. Wire bytes, bounds and typed failures are unchanged.
-- Group Now Playing code and matching tests under features/nowplaying; move application BLE/LAN owners, connection feedback and nearby policy into Connections; preserve manifest entry points and stored association keys, and register media through feature-neutral secured DATA dispatch.
-- Keep Home device rows compact and clickable; move full connections, pairing and diagnostics to Devices with an explicit Connection details disclosure.
-- Use smaller aniCe titles on Home/Devices and aniCe Settings on Settings. Reduce top bars to 48 dp at normal text size, allow growth for large text and tighten spacing above the Devices label.
-- Move local identity behind a full-width This device Settings entry; keep reset under Advanced with a compact neutral entry and destructive confirmation.
-- Preserve peer/nested-route state across tabs and native Back behavior; completed pairing returns Home through the guarded connection handoff.
+- **Navigation & Layout**: Reworked phone navigation with branded compact Home, dedicated feature panels, fluid card rows, and isolated Devices view.
+- **Device Management**: Grouped Bluetooth and LAN actions by connected peer in Devices, separated local identity from saved trust, and added clickable fingerprint disclosures.
+- **Record Pipeline & Zero-Copy**: Reused AES-GCM provider ciphers and key specs per direction; encoded CBOR directly into exact-size buffers and eliminated intermediate byte copies during chunk framing.
+- **Code Organization**: Grouped Now Playing under `features/nowplaying`, isolated connection owners under `infrastructure/connections`, and moved media dispatch into secured data handlers.
+- **Code Hygiene**: Formatted `MediaController.kt` to idiomatic Kotlin by unpacking multi-statement lines, standardizing operator spacing, and removing semicolons without changing coroutine flow or logic.
+- **Find Device Cleanup**: Removed dead `FindDeviceSetup` wrapper, removed stale import in `FeaturesScreen.kt`, and dropped unused `hasAvailablePeer` parameter and dead early return in `FindDeviceFeedback`.
+- **Tooling & Prerequisites**: Documented persistent Cargo/Rustup and Android NDK paths for offline native JNI pairing rebuilds (arm64-v8a, armeabi-v7a, x86_64) with 16-KiB alignment checks.
 
 ### Fixed
 
-- De-churn `MediaNotification`: eliminate notification rebuild loops on every track and volume change by installing a single persistent `MediaSession.Callback` delegating dynamically to the active playback model, coalescing notification updates, deduplicating playback state changes, removing output revision churn from `providerKey`, and recovering dismissed notifications.
-- Decode media artwork off the main thread in `MediaController` on `Dispatchers.Default` protected by a generation/revision/hash fence to prevent UI jank.
-- Move Keystore and trust-store disk lookups during `connectPreferred()` in `LanSessionController` to background IO coroutines.
-- Prevent premature LAN session cancellation during IPv6 SLAAC privacy address rotations by verifying interface presence and address retention before triggering Wi-Fi change cancellation.
-- Declutter Find Device UX: replace heavy card borders with clean native peer rows, suppress redundant `"find_idle"` message when peers are connected, provide quiet permission guidance, and show truthful connection state for all paired devices.
-- Integrate `"This device >"` and `"Add device >"` as sequential rows directly within the primary scrollable column on Devices screen, eliminating pinned bottom bars and duplicate trust rows.
-- Align About screen design with macOS layout: configure 24 dp padding, exact website attribution link, and clean license/source navigation.
-- Avoid materializing Find Device channel candidates and complete deadline inventories during routing and expiry scheduling. Preserve LAN preference, BLE fallback and existing alert deadlines.
-- Report transfer direction and finalization in the file-transfer panel and its progress notification: name the peer and whether the batch is sending or receiving, state that a fully received file is being verified and saved instead of leaving the bar at 100% with no rate, mark an unavailable rate as unavailable instead of dropping the row, report an empty batch as indeterminate progress rather than as 0%, label progress for screen readers, and correct the completion notification's file count. Remove the unused transfer-panel parameters and raise the notification-permission and preparing controls to the 48 dp minimum.
-- Publish received files under an available name instead of failing a verified batch: resolve taken destination names by suffixing (`name (1).ext`), confirm destination-provider renames, fall back to copying when folders cannot hold hard links, and preserve verified partials on finalization failure.
-- Keep local-network sockets readable while earlier records are being processed: decouple socket reads from delivery via bounded ordered queues, size read buffers to one whole record, decode received chunks off presentation threads, and release session operation mutexes before application delivery to allow full-duplex control flushes and prevent stall amplification. Record order, admission bounds and per-record native validation are unchanged.
-- Report transfer rates over a bounded rolling window instead of lifetime averages, decaying promptly on stalls and omitting rate display from notifications and finalization.
-- Amortize live native validation with explicitly selected LAN profile 3: domain-separated 256-KiB records, advertised 128-KiB file chunks and at most 1 MiB of transfer credit; preserve standard BLE formats and live native identity/trust checks. On Android, remove duplicate native reads around synchronous cryptography while validating before delivery and retaining generation/deadline fences.
-- Keep Android’s Connect LAN action visible in the file-transfer panel when Bluetooth is connected and LAN is disconnected.
-- Replace per-byte fingerprint formatters with direct canonical lowercase hex encoding during record validation; independent SHA-256 and identity fixtures preserve existing fingerprint bytes.
-- Retain the native Keystore provider connection while re-reading live aliases, public keys and key protection on every identity check; detect external deletion and same-alias replacement.
-- Enforce LAN-preferred file transfer routing with BLE fallback, background lifecycle ownership, exclusive partial staging, checked finalization, and isolated reply correlation. Notification denial no longer blocks approved foreground transfers; release idle leases and stale timers deterministically, preserve approved BLE work during screen lock, and require explicit resend for interrupted batches.
-
-Release 0.2.0 introduces remote Now Playing media controls, bidirectional LAN-preferred Local File Transfer with BLE fallback, Find Device alarm-stream ringing, and a redesigned navigation system.
+- **Now Playing Playback**: Eliminated seekbar thumb jumps during drag gestures, reserved stable artwork dimensions to prevent layout shift, and retained controls across track metadata changes.
+- **Media Controller**: Deduplicated playback state, coalesced notification updates, ignored output-only provider churn, and properly restored dismissed notifications.
+- **Find Device Routing**: Avoided materializing candidate channels and full deadline lists during route resolution; preserved LAN preference with BLE fallback.
+- **Transfer Publication**: Suffix duplicate destination file names atomically (`name (1).ext`), confirmed SAF provider renames, fell back to copying when folders reject hard links, and preserved verified partials on disk if finalization fails.
+- **LAN Ingress**: Decoupled socket reads from delivery through bounded queues, sized read buffers to whole records, and released session mutexes before application delivery to allow concurrent full-duplex ACKs and prevent stalls.
+- **Transfer Rates & Progress**: Calculated transfer speed using a bounded rolling sample window that decays promptly on stalls, marked unavailable rates explicitly, labeled progress for screen readers, and corrected notification counts.
+- **LAN Profile 3 Negotiation**: Correctly negotiated domain-separated 256-KiB LAN records with 128-KiB chunks and up to 1 MiB credit while maintaining live native validation.
+- **Connection Retention**: Retained active Android LAN sessions during temporary IPv6 address rotation when interface addresses remain valid, and kept Connect LAN visible when only Bluetooth is connected.
+- **Keystore & Identity**: Reused Keystore provider instances while re-validating live aliases, public keys, and key protection on every operation to catch external deletions or replacements.
+- **Transfer Lifecycle**: Enforced LAN preference with BLE fallback, exclusive partial staging, and deterministic timer releases so notification denial never halts approved foreground transfers.
 
 ## [0.1.0]
 

@@ -2,6 +2,7 @@
 // Probes Find Device replay floors, permission failures, retirement races and independent wire inventories.
 package io.github.anisharyal09.anice.features.finddevice
 
+import io.github.anisharyal09.anice.features.session.primaryPeers
 import io.github.anisharyal09.anice.infrastructure.connections.*
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.*
@@ -123,6 +124,28 @@ class FindDeviceTests {
         h.time = 10000; h.owner.expire(); c.blocked = false; h.owner.capacityAvailable(c.descriptor)
         assertFalse(c.sent.any { it.kind == 2L }); assertFalse(h.owner.busy)
         h.owner.retired(c.descriptor)
+    }
+    @Test fun primaryPeersHideDisconnectedDevicesUntilAllConnectionsRetire() = runBlocking {
+        val h = Harness()
+        val lan = Channel()
+        val ble = Channel("ble", peer = lan.descriptor.peer.copy(deviceId = "other", fingerprint = "other"))
+        val peers = listOf(ble.descriptor.peer, lan.descriptor.peer)
+        fun displayed() = primaryPeers(peers) { h.owner.connected(it) }
+        assertEquals(peers, displayed())
+        assertTrue(primaryPeers(emptyList<DeviceIdentity>()) { h.owner.connected(it) }.isEmpty())
+        h.owner.available(lan)
+        assertFalse(h.owner.canFind(lan.descriptor.peer))
+        assertEquals(listOf(lan.descriptor.peer), displayed())
+        h.owner.available(ble)
+        assertEquals(peers, displayed())
+        val replacement = Channel(peer = lan.descriptor.peer)
+        h.owner.available(replacement)
+        h.owner.retired(lan.descriptor)
+        assertEquals(peers, displayed())
+        h.owner.retired(replacement.descriptor)
+        assertEquals(listOf(ble.descriptor.peer), displayed())
+        h.owner.retired(ble.descriptor)
+        assertEquals(peers, displayed())
     }
     @Test fun connectionPresenceIsSeparateFromCapabilityAndStaleRetirement() = runBlocking {
         val h = Harness(); val first = Channel()

@@ -14,8 +14,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.features.session.primaryPeers
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
@@ -43,7 +46,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 32.dp)
+                    modifier = Modifier.heightIn(min = 48.dp)
                 ) {
                     Text(stringResource(R.string.find_settings), style = MaterialTheme.typography.bodySmall)
                 }
@@ -51,7 +54,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(stringResource(R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick = {
                         if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
@@ -69,7 +72,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
             Text(stringResource(R.string.find_pair_first), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             HorizontalDivider()
-            peers.forEach { record ->
+            primaryPeers(peers) { owner.connected(it.peer) }.forEach { record ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -81,16 +84,17 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                             if (owner.connected(record.peer)) stringResource(R.string.find_not_advertised)
                             else stringResource(R.string.find_connect_first)
                         } else if (owner.connected(record.peer)) {
-                            "Connected"
+                            stringResource(R.string.find_connected)
                         } else {
                             stringResource(R.string.find_connect_first)
                         }
                         Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    val findLabel = stringResource(R.string.find_peer_action, record.peer.deviceName)
                     OutlinedButton(
                         onClick = { owner.find(record.peer) },
                         enabled = owner.canFind(record.peer),
-                        modifier = Modifier.heightIn(min = 40.dp)
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = findLabel }
                     ) {
                         Text(stringResource(R.string.find_title))
                     }
@@ -105,12 +109,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
     }
 }
 
-@Composable fun FindDeviceSetup(owner: FindDeviceController, hasAvailablePeer: Boolean = false) {
-    FindDeviceView(owner, emptyList())
-}
-
-@Composable fun FindDeviceFeedback(owner: FindDeviceController, hasAvailablePeer: Boolean = false) {
-    if (owner.feedbackKey == "find_idle" && hasAvailablePeer) return
+@Composable fun FindDeviceFeedback(owner: FindDeviceController) {
     val resource = when (owner.feedbackKey) {
         "find_waiting" -> R.string.find_waiting
         "find_submitted" -> R.string.find_submitted

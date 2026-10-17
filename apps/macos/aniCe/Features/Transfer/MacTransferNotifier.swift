@@ -189,12 +189,14 @@ struct TransferNotificationContent: Equatable {
   }
 
   // Fences action execution against stale offers: verifies pendingOffer != nil before dispatching.
-  // Stale actions post an explicit notice rather than silently no-oping.
-  func handleAction(_ actionIdentifier: String) {
+  func handleAction(_ actionIdentifier: String, identifier: String? = nil) {
+    if let identifier {
+      center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    }
     switch actionIdentifier {
     case Action.accept:
+      clearActiveOffer()
       guard let model, model.pendingOffer != nil else {
-        post(TransferNotificationContent.staleOfferNotice())
         return
       }
       let destination = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -204,11 +206,12 @@ struct TransferNotificationContent: Equatable {
       }
 
     case Action.choose:
+      clearActiveOffer()
       openMainWindow()
 
     case Action.decline:
+      clearActiveOffer()
       guard let model, model.pendingOffer != nil else {
-        post(TransferNotificationContent.staleOfferNotice())
         return
       }
       Task { [weak model] in

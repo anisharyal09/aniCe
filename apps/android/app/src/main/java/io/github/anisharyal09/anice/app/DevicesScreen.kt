@@ -36,7 +36,6 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
             } else {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Connections", style = MaterialTheme.typography.titleSmall)
                     if (pairing.peers.isEmpty()) Text("No devices paired yet", style = MaterialTheme.typography.bodySmall)
                     SessionPanel(session, pairing.peers,
                         onDiscoveryCheck = { navigation.route = DeviceRoute.Discovery }, focusedPeer = navigation.focusedPeer,

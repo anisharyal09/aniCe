@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if category == MacFindDeviceNotifier.category {
             findNotifier?.handleAction(action, identifier: identifier)
         } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result {
-            notifier?.handleAction(action)
+            notifier?.handleAction(action, identifier: identifier)
         }
     }
 

@@ -38,6 +38,30 @@ final class FindDeviceTests: XCTestCase {
     XCTAssertEqual(result, .handled)
     await Task.yield()
   }
+  @MainActor func testPrimaryPeersHideDisconnectedDevicesUntilAllConnectionsRetire() {
+    let owner = MacFindDeviceModel(notifier: FindNotifierFake())
+    let lan = MockSecuredChannel(transport: "lan")
+    let ble = MockSecuredChannel(transport: "ble")
+    let peers = [ble.descriptor.peer, lan.descriptor.peer]
+    func displayed() -> [DeviceIdentity] {
+      ConnectionPresentation.primaryPeers(peers, connected: { owner.connected($0) })
+    }
+    XCTAssertEqual(displayed(), peers)
+    XCTAssertTrue(ConnectionPresentation.primaryPeers([DeviceIdentity](), connected: { owner.connected($0) }).isEmpty)
+    owner.available(lan)
+    XCTAssertFalse(owner.canFind(lan.descriptor.peer))
+    XCTAssertEqual(displayed(), [lan.descriptor.peer])
+    owner.available(ble)
+    XCTAssertEqual(displayed(), peers)
+    let replacement = MockSecuredChannel(instance: "replacement", transport: "lan", peer: lan.descriptor.peer)
+    owner.available(replacement)
+    owner.retired(lan.descriptor)
+    XCTAssertEqual(displayed(), peers)
+    owner.retired(replacement.descriptor)
+    XCTAssertEqual(displayed(), [ble.descriptor.peer])
+    owner.retired(ble.descriptor)
+    XCTAssertEqual(displayed(), peers)
+  }
   @MainActor func testConnectionPresenceDoesNotImplyAdvertisedSupportAndIgnoresStaleRetirement() async throws {
     let owner = MacFindDeviceModel(notifier: FindNotifierFake())
     let first = MockSecuredChannel(instance: "first")
@@ -278,7 +302,16 @@ final class FindDeviceTests: XCTestCase {
     owner.retired(channel.descriptor)
   }
 
-  @MainActor func testFindDeviceViewRendersPermittedAndBlockedStates() throws {
+  // Tests presentation policy without requesting OS authorization or rendering permission controls.
+  @MainActor func testFindDevicePermissionPresentationPolicy() {
+    XCTAssertEqual(FindDeviceView.permissionPresentationPolicy(for: "find_local_allowed"), .allowed)
+    XCTAssertEqual(FindDeviceView.permissionPresentationPolicy(for: "find_local_blocked"), .blocked)
+    XCTAssertEqual(FindDeviceView.permissionPresentationPolicy(for: "find_local_unknown"), .unknown)
+    XCTAssertEqual(FindDeviceView.permissionPresentationPolicy(for: "find_local_error"), .error)
+    XCTAssertEqual(FindDeviceView.permissionPresentationPolicy(for: "unexpected_status"), .unknown)
+  }
+
+  @MainActor func testFindDeviceViewRendersNonemptyLayoutWithAndWithoutPeers() throws {
     let model = MacFindDeviceModel(notifier: FindNotifierFake())
     let peer = MockSecuredChannel().descriptor.peer
     let record = PeerTrustRecord(peer: peer, localFingerprint: "fedcba9876543210", method: .qr, pairedAt: Date(), transcriptHash: Data(), receipt: nil, active: true)

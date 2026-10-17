@@ -26,6 +26,8 @@
     <string name="identity_inconsistent">The saved identity could not be read consistently. Try again, or reset it to create a replacement.</string>
     <string name="identity_crypto_failure">The identity could not complete its signing check. Try again, or reset it to create a replacement.</string>
     <string name="find_title">Find Device</string>
+    <string name="find_connected">Connected</string>
+    <string name="find_peer_action">Find %1$s</string>
     <string name="find_notification_body">Your paired device %1$s is looking for you.</string>
     <string name="find_dismiss">Dismiss</string>
     <string name="find_idle">Connect a trusted device to send a notification.</string>
@@ -49,4 +51,5 @@
     <string name="find_pair_first">Pair a device in Devices to use Find Device.</string>
     <string name="find_connect_first">Disconnected. Connect this device in Devices to use Find Device.</string>
     <string name="find_not_advertised">Find Device support has not been advertised by this device.</string>
+    <string name="about_support">Support aniCe</string>
 </resources>

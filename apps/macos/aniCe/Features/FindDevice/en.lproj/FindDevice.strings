@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Localizes Find Device notification content and native controls.
 "find_title" = "Find Device";
+"find_connected" = "Connected";
+"find_peer_action" = "Find %@";
 "find_notification_body" = "Your paired device %@ is looking for you.";
 "find_dismiss" = "Dismiss";
 "find_idle" = "Connect a trusted device to send a notification.";

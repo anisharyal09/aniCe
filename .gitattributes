@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Normalizes text line endings and preserves binary assets and compiled artifacts.
+
+# Default to LF for all text files
+* text=auto eol=lf
+
+# Windows batch scripts require CRLF
+*.bat text eol=crlf
+
+# PEM certificates are text with LF
+*.pem text eol=lf
+
+# Binary image assets (macOS & Android icons)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.icns binary
+
+# Find Device audio alerts
+*.wav binary
+*.mp3 binary
+*.ogg binary
+
+# Protocol test vectors and payloads
+*.bin binary
+*.cbor binary
+
+# Cryptographic keystores and binary certificates
+*.keystore binary
+*.jks binary
+*.der binary
+
+# Native libraries and Gradle wrapper
+*.jar binary
+*.so binary
+*.dylib binary
+*.a binary

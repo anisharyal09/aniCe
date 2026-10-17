@@ -35,8 +35,14 @@ fun HomeScreen(
           TextButton(onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage devices") }
         }
       }
-      if (hasTrustedDevices) sessions()
-      else {
+      if (hasTrustedDevices) {
+        Column(
+          Modifier.fillMaxWidth().padding(vertical = 8.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+          sessions()
+        }
+      } else {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
           Text("No devices paired yet", style = MaterialTheme.typography.titleSmall)
           Text(
