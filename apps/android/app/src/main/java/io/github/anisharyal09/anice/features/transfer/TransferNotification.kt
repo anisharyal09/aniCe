@@ -114,6 +114,46 @@ class TransferNotification(private val context: Context, private val controller:
 
                 manager.notify(NOTIFICATION_ID, notification)
             }
+            is TransferState.Paused -> {
+                lastNotifyTime = 0L
+                val determinate = state.batch.totalBytes > 0
+                val percent = if (determinate) {
+                    ((state.totalBytes * 100) / state.batch.totalBytes).toInt().coerceIn(0, 100)
+                } else 0
+                val openIntent = PendingIntent.getActivity(
+                    context,
+                    0,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val cancelIntent = PendingIntent.getBroadcast(
+                    context,
+                    1,
+                    Intent(context, TransferActionReceiver::class.java).setAction(TransferActionReceiver.ACTION_CANCEL),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val resumeIntent = PendingIntent.getBroadcast(
+                    context,
+                    2,
+                    Intent(context, TransferActionReceiver::class.java).setAction(TransferActionReceiver.ACTION_RESUME_BLE),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_launcher)
+                    .setContentTitle(if (controller.receiving) "Receiving paused" else "Sending paused")
+                    .setContentText(
+                        "${state.fileName} (${state.fileIndex}/${state.batch.files.size}) • ${state.reason}"
+                    )
+                    .setProgress(100, percent, !determinate)
+                    .setContentIntent(openIntent)
+                    .setOngoing(true)
+                    .setOnlyAlertOnce(true)
+                if (state.canResumeOverBle) {
+                    builder.addAction(android.R.drawable.ic_menu_share, "Continue over Bluetooth", resumeIntent)
+                }
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
+                manager.notify(NOTIFICATION_ID, builder.build())
+            }
             is TransferState.Completed -> {
                 lastNotifyTime = 0L
                 val files = "${state.fileCount} file${if (state.fileCount == 1) "" else "s"}"

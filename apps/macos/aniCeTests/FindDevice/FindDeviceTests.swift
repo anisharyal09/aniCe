@@ -200,7 +200,8 @@ final class FindDeviceTests: XCTestCase {
     XCTAssertTrue(center.delegate === delegate)
     let categories = AppDelegate.notificationCategories
     XCTAssertEqual(Set(categories.map(\.identifier)), [MacFindDeviceNotifier.category,
-      MacTransferNotifier.Category.offer, MacTransferNotifier.Category.result])
+      MacTransferNotifier.Category.offer, MacTransferNotifier.Category.result,
+      MacTransferNotifier.Category.paused, MacTransferNotifier.Category.pausedSender])
     XCTAssertTrue(categories.first { $0.identifier == MacFindDeviceNotifier.category }!.options.contains(.customDismissAction))
     delegate.handleNotificationAction(category: MacFindDeviceNotifier.category,
       action: UNNotificationDismissActionIdentifier, identifier: "find-exact-id")

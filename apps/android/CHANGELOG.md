@@ -6,11 +6,15 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Resilient file transfers: a mid-stream LAN or Bluetooth loss now pauses with retained partial storage, frozen progress and a paused ongoing notification. A reconnected LAN to the same peer resumes automatically at the verified offset; either device can explicitly continue over Bluetooth when LAN stays down, with the receiver asking the sender to validate the prefix it holds. Cancel deletes the partial, and a 15-minute pause timeout fails and cleans it up.
+- A receiver-initiated Bluetooth continuation now works end to end: the receiving device hashes its retained bytes, sends the resume request itself, and the sender answers with the validated offset. A live LAN that becomes capable during a Bluetooth stream upgrades the active transfer in place, so the stream moves off Bluetooth as soon as Wi-Fi reconnects.
 - Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE readiness coordination permits one bounded foreground Wi-Fi initiation on BLE/eligibility events, successful BLE feature traffic, file selection, companion media demand or explicit transfer demand, without independent LAN retries. The background idle timeout defaults to Never while preserving saved finite choices.
 - Background companion playback holds a bounded media demand lease while playing or inside the paused grace, so Now Playing can request and retain LAN (and receive artwork) in the background.
 
 ### Fixed
 
+- A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and paused batches keep the transfer foreground service, LAN work lease and a secured BLE fallback lease so automatic LAN or explicit Bluetooth continuation can resume them.
+- Continuing over Bluetooth no longer causes the BLE channel to connect and disconnect repeatedly, and the paused card/notification offers Continue over Bluetooth on the receiving device as well as the sender.
 - Selecting files or starting a send no longer retires a secured BLE channel: picker leases follow secured transports instead of the transfer's transiently selected channel, and a LAN attempt preserves existing transfer leases.
 - A failed LAN demand now fails a waiting send immediately instead of waiting for the connect timeout; a send with an already-secured compatible channel proceeds on it without waiting for LAN.
 - Feature traffic and playback demand no longer clear an explicit LAN Disconnect; manual reconnect or a preference change resumes automation.

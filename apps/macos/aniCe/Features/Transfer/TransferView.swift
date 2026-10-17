@@ -58,6 +58,8 @@ struct TransferView: View {
         incomingOfferContent(batch: batch)
       case .transferring(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let speedBps):
         transferringContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, speedBps: speedBps)
+      case .paused(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let reason, let canResumeOverBle):
+        pausedContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, reason: reason, canResumeOverBle: canResumeOverBle)
       case .completed(let batchId, let fileCount, let totalBytes):
         completedContent(batchId: batchId, fileCount: fileCount, totalBytes: totalBytes)
       case .rejected:
@@ -257,6 +259,67 @@ struct TransferView: View {
       }
       .buttonStyle(.bordered)
       .controlSize(.small)
+    }
+  }
+
+  @ViewBuilder
+  private func pausedContent(batch: TransferBatch, fileIndex: Int, fileName: String, fileBytes: Int64, fileSize: Int64, totalBytes: Int64, reason: String, canResumeOverBle: Bool) -> some View {
+    let activity = model.receiving ? "Receiving" : "Sending"
+    let hasTotal = batch.totalBytes > 0
+    VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+      HStack {
+        Image(systemName: "pause.circle.fill")
+          .font(.subheadline)
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .accessibilityHidden(true)
+        Text("\(activity) paused").font(.callout.weight(.medium))
+        Spacer()
+        Text("\(fileIndex) of \(batch.files.count)").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      }
+
+      Text(reason)
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+
+      // Progress is frozen at the last verified offset until a channel resumes the batch.
+      if hasTotal {
+        ProgressView(value: Double(min(totalBytes, batch.totalBytes)), total: Double(batch.totalBytes))
+          .accessibilityLabel("\(activity) paused at \(Int(Double(totalBytes) / Double(batch.totalBytes) * 100)) percent")
+      } else {
+        ProgressView(value: fileSize > 0 ? Double(fileBytes) / Double(fileSize) : 0)
+          .accessibilityLabel("\(activity) paused")
+      }
+
+      Text(hasTotal
+        ? "\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: batch.totalBytes, countStyle: .file))"
+        : "\(fileName) · \(ByteCountFormatter.string(fromByteCount: fileBytes, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .lineLimit(1)
+        .truncationMode(.middle)
+
+      Text(canResumeOverBle
+        ? "Waiting for a connection, or continue over Bluetooth."
+        : model.receiving
+          ? "Waiting for the local network to reconnect. Receiving continues automatically."
+          : "Waiting for \(batch.peerName) to reconnect.")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+
+      HStack(spacing: 8) {
+        if canResumeOverBle {
+          Button("Continue over Bluetooth") {
+            model.resumeOverBluetooth()
+          }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.small)
+        }
+        Button("Cancel", role: .cancel) {
+          model.cancelTransfer(local: true)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
     }
   }
 

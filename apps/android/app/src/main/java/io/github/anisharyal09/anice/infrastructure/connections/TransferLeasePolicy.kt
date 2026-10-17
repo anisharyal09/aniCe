@@ -13,6 +13,11 @@ internal data class TransferLeases(
  * Picker leases follow the transports that are actually secured, not the transfer's currently
  * selected channel. Opening the document picker stops the Activity; without the BLE lease a
  * null or temporarily LAN-selected transfer channel would retire a healthy companion session.
+ *
+ * A secured BLE session also keeps its work lease while a batch is active or paused, because it is
+ * the fallback that "Continue over Bluetooth" and a lost LAN depend on. Without it the session is
+ * retired as soon as LAN becomes the active transport, and re-establishing it mid-batch shows up as
+ * a connect/disconnect flicker with nothing moving.
  */
 internal fun transferLeases(
     activeTransport: String?,
@@ -20,9 +25,14 @@ internal fun transferLeases(
     backgroundAllowed: Boolean,
     selectingFiles: Boolean,
     bleSecured: Boolean,
+    paused: Boolean = false,
+    busy: Boolean = false,
 ): TransferLeases = TransferLeases(
-    lanWork = backgroundAllowed && (activeTransport == "lan" || connecting),
+    // A paused LAN batch keeps its LAN lease: automatic LAN is what makes resuming possible.
+    lanWork = backgroundAllowed && (activeTransport == "lan" || connecting || paused),
     lanPicker = selectingFiles,
-    bleWork = backgroundAllowed && (activeTransport == "ble" || (activeTransport == null && bleSecured)),
+    bleWork = backgroundAllowed && (
+        activeTransport == "ble" || (bleSecured && (activeTransport == null || busy || paused))
+    ),
     blePicker = selectingFiles && bleSecured,
 )

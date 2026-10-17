@@ -2,6 +2,7 @@
 // Verifies native notification formatting, action dispatch, event sink emissions and multi-device ordering.
 import XCTest
 import CryptoKit
+import UserNotifications
 @testable import aniCe
 
 @MainActor
@@ -159,6 +160,75 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertTrue(windowOpened)
   }
 
+  func testPausedContentAndActionsFollowContinuationAvailability() throws {
+    let batch = makeBatch(count: 2)
+    let waitingContent = TransferNotificationContent.paused(
+      batch: batch, reason: "Local network connection lost", canResumeOverBle: false)
+    XCTAssertEqual(waitingContent.identifier, "transfer-paused-\(batch.idString)")
+    XCTAssertEqual(waitingContent.categoryIdentifier, MacTransferNotifier.Category.paused)
+    XCTAssertEqual(waitingContent.title, "Transfer paused")
+    XCTAssertTrue(waitingContent.body.contains("Pixel 9"))
+    XCTAssertTrue(waitingContent.body.contains("2 files"))
+    XCTAssertTrue(waitingContent.body.contains("Local network connection lost"))
+    XCTAssertEqual(waitingContent.userInfo["batchId"], batch.idString)
+
+    let continuableContent = TransferNotificationContent.paused(
+      batch: batch, reason: "Local network connection lost", canResumeOverBle: true)
+    XCTAssertEqual(continuableContent.categoryIdentifier, MacTransferNotifier.Category.pausedSender)
+
+    let categories = MacTransferNotifier.notificationCategories()
+    let paused = try XCTUnwrap(categories.first { $0.identifier == MacTransferNotifier.Category.paused })
+    XCTAssertEqual(paused.actions.map(\.identifier), [MacTransferNotifier.Action.cancelTransfer])
+    let pausedSender = try XCTUnwrap(categories.first { $0.identifier == MacTransferNotifier.Category.pausedSender })
+    XCTAssertEqual(pausedSender.actions.map(\.identifier),
+      [MacTransferNotifier.Action.continueOverBluetooth, MacTransferNotifier.Action.cancelTransfer])
+    XCTAssertTrue(try XCTUnwrap(pausedSender.actions.last).options.contains(.destructive))
+  }
+
+  func testPausedNotificationIsClearedOnResumeAndTerminalEvents() {
+    let model = MacTransferModel()
+    let center = SpyNotificationCenter()
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center)
+    let batch = makeBatch(count: 1)
+
+    notifier.handle(.paused(batch: batch, reason: "Local network connection lost", canResumeOverBle: true))
+    let identifier = "transfer-paused-\(batch.idString)"
+    XCTAssertTrue(center.requestedAuthorization)
+    XCTAssertEqual(center.added.map(\.identifier), [identifier])
+    XCTAssertEqual(center.added.first?.content.categoryIdentifier, MacTransferNotifier.Category.pausedSender)
+
+    notifier.handle(.resumed)
+    XCTAssertEqual(center.removedDelivered, [identifier])
+    XCTAssertEqual(center.removedPending, [identifier])
+
+    notifier.handle(.completed(fileCount: 1, totalBytes: 10))
+    XCTAssertEqual(center.removedDelivered, [identifier], "A resumed batch has no paused banner left to clear")
+  }
+
+  func testPausedActionsAreIgnoredUnlessTheBatchIsStillPaused() {
+    let model = MacTransferModel()
+    let center = SpyNotificationCenter()
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center)
+
+    notifier.handleAction(MacTransferNotifier.Action.continueOverBluetooth)
+    notifier.handleAction(MacTransferNotifier.Action.cancelTransfer)
+
+    XCTAssertEqual(model.state, .idle)
+    XCTAssertTrue(center.removedDelivered.isEmpty)
+  }
+
+  private func makeBatch(count: Int) -> TransferBatch {
+    TransferBatch(
+      id: UUID(),
+      files: (0..<count).map { index in
+        TransferFile(id: UUID(), name: "file\(index).bin", size: 1024,
+          sha256: Data(repeating: UInt8(index), count: 32), localURL: nil)
+      },
+      totalBytes: Int64(count) * 1024,
+      peerName: "Pixel 9"
+    )
+  }
+
   func testMultiDeviceOrderingStablePartition() {
     let idA = UUID().uuidString.lowercased()
     let idB = UUID().uuidString.lowercased()
@@ -199,5 +269,30 @@ final class TransferNotifierTests: XCTestCase {
     }
     let fallback = orderedNoneConnected(peers)
     XCTAssertEqual(fallback.map { $0.peer.deviceId }, [idA, idB, idC])
+  }
+}
+
+private final class SpyNotificationCenter: TransferNotificationCenter, @unchecked Sendable {
+  var requestedAuthorization = false
+  var added: [UNNotificationRequest] = []
+  var removedDelivered: [String] = []
+  var removedPending: [String] = []
+
+  func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void) {
+    requestedAuthorization = true
+    completionHandler(true, nil)
+  }
+
+  func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?) {
+    added.append(request)
+    completionHandler?(nil)
+  }
+
+  func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {
+    removedDelivered.append(contentsOf: identifiers)
+  }
+
+  func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {
+    removedPending.append(contentsOf: identifiers)
   }
 }

@@ -30,6 +30,9 @@ enum TransferState: Equatable {
   case waitingForPeerApproval(batch: TransferBatch)
   case incomingOffer(batch: TransferBatch)
   case transferring(batch: TransferBatch, fileIndex: Int, fileName: String, fileBytes: Int64, fileSize: Int64, totalBytes: Int64, speedBps: Double)
+  /// The secured channel retired mid-stream. The verified prefix and destination stay retained in
+  /// memory for `pauseTimeout`, so a reconnected channel can continue instead of restarting.
+  case paused(batch: TransferBatch, fileIndex: Int, fileName: String, fileBytes: Int64, fileSize: Int64, totalBytes: Int64, reason: String, canResumeOverBle: Bool)
   case completed(batchId: UUID, fileCount: Int, totalBytes: Int64)
   case rejected(batchId: UUID, reason: Int64)
   case failed(reason: String)
@@ -38,6 +41,10 @@ enum TransferState: Equatable {
 
 enum TransferEvent: Equatable {
   case incomingOffer(TransferBatch)
+  /// A paused batch, emitted for both directions so the notification can offer Cancel; the
+  /// Bluetooth continuation is a sender-only action.
+  case paused(batch: TransferBatch, reason: String, canResumeOverBle: Bool)
+  case resumed
   case completed(fileCount: Int, totalBytes: Int64)
   case failed(reason: String)
 }
@@ -71,7 +78,7 @@ enum TransferEvent: Equatable {
   private var isBusy: Bool {
     if preparing || offerAssembly != nil { return true }
     switch state {
-    case .incomingOffer, .waitingForPeerApproval, .transferring: return true
+    case .incomingOffer, .waitingForPeerApproval, .transferring, .paused: return true
     default: return false
     }
   }
@@ -91,13 +98,48 @@ enum TransferEvent: Equatable {
   // Sender flow-control & backpressure
   private var sentBytes: Int64 = 0
   private var acknowledgedBytes: Int64 = 0
+  /// When the last cumulative ACK arrived; a receiver-initiated BLE fallback yields to a live LAN.
+  private var lastAckAt: TimeInterval?
+  /// When the current sender stream started, used to give a fresh LAN resume time to produce ACKs.
+  private var streamStartedAt: TimeInterval?
   private var creditResume: (() -> Void)?
   private var capacityWaiters: [UUID: () -> Void] = [:]
   private var fileResultContinuation: CheckedContinuation<TransferMessage, Error>?
   private var receivedFileResult: TransferMessage?
   private var sendingFile: TransferFile?
+  private var senderFileIndex = 0
   private var epoch = UUID()
   private var capacityRevision = 0
+
+  // Pause/resume retention. Everything here lives for the current process only; a process death
+  // ends the batch and may leave a stale partial, exactly as an uncaught loss did before.
+  private let pauseTimeout: Duration
+  private var pausedTransport: String?
+  private var pausedFileIndex = 0
+  private var pausedFileOffset: Int64 = 0
+  private var pausedCompletedBytes: Int64 = 0
+  private var pauseTimerTask: Task<Void, Never>?
+  private var resumeTask: Task<Void, Never>?
+  private var upgradeTask: Task<Void, Never>?
+  private var statusWaiter: ((TransferMessage?) -> Void)?
+  private var statusWaiterToken: UUID?
+  private var statusTimeoutTask: Task<Void, Never>?
+  private var allowBleResume = false
+  private var transferPeerDeviceId: String?
+  private var transferPeerFingerprint: String?
+
+  private struct RetainedFileResult {
+    let batchId: String
+    let fileId: String
+    let fileSize: Int64
+    let result: TransferMessage
+  }
+  /// The last verified result this receiver sent, replayable when a resume lands after the file.
+  private var retainedFileResult: RetainedFileResult?
+
+  init(pauseTimeout: Duration = .seconds(900)) {
+    self.pauseTimeout = pauseTimeout
+  }
 
   /// True from the moment a received file's last chunk lands until it is hashed and published.
   private(set) var finalizing = false
@@ -144,9 +186,13 @@ enum TransferEvent: Equatable {
   func available(_ channel: any SecuredChannel) {
     let transport = channel.descriptor.transport
     guard transport == "lan" || transport == "ble" else { return }
-    if let peer = activeChannel?.descriptor.peer {
-      guard peer.deviceId == channel.descriptor.peer.deviceId,
-            peer.fingerprint == channel.descriptor.peer.fingerprint else { return }
+    // A paused batch has no active channel, so its peer identity must outlive the channel that
+    // paused it; otherwise a different peer's channel could be rebound to the retained prefix.
+    let peerId = activeChannel?.descriptor.peer.deviceId ?? transferPeerDeviceId
+    let peerFingerprint = activeChannel?.descriptor.peer.fingerprint ?? transferPeerFingerprint
+    if let peerId, let peerFingerprint {
+      guard peerId == channel.descriptor.peer.deviceId,
+            peerFingerprint == channel.descriptor.peer.fingerprint else { return }
     }
     guard channels[transport]?.descriptor != channel.descriptor else { return }
     if let old = channels[transport] { retired(old.descriptor) }
@@ -159,9 +205,16 @@ enum TransferEvent: Equatable {
     }
   }
 
+  var isPaused: Bool {
+    if case .paused = state { return true }
+    return false
+  }
+
   private func selectPreferredChannel() {
-    // A live batch remains bound to its channel generation until cleanup.
-    guard activeChannel == nil || !isBusy else { return }
+    // A live batch remains bound to its channel generation. A paused batch, by contrast, must
+    // adopt a newly secured channel so the retained prefix can continue there.
+    let canRebind = !isBusy || isPaused
+    guard activeChannel == nil || canRebind else { return }
     let preferred = channels["lan"] ?? channels["ble"]
     activeChannel = preferred
     peerConnected = preferred != nil
@@ -170,6 +223,11 @@ enum TransferEvent: Equatable {
     peerMaxWindow = 64
     clearOfferAssembly()
     if let preferred, let capability = capabilities[preferred.descriptor.transport] { applyCapability(capability) }
+    refreshPausedCapability()
+    if isPaused, activeChannel != nil, peerCompatible {
+      // The sender drives LAN auto-resume; the receiver only asks after an explicit opt-in.
+      if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
+    }
   }
 
   private func applyCapability(_ message: TransferMessage) {
@@ -183,12 +241,26 @@ enum TransferEvent: Equatable {
     channels.removeValue(forKey: descriptor.transport)
     capabilities.removeValue(forKey: descriptor.transport)
     clearCapacityWaiters()
-    guard descriptor == activeChannel?.descriptor else { return }
+    guard descriptor == activeChannel?.descriptor else {
+      refreshPausedCapability()
+      return
+    }
+    let previous = state
     activeChannel = nil
     peerConnected = false
     peerCompatible = false
-    if isBusy { state = .failed(reason: "Connection closed. Send the files again using the remaining connection.") }
-    cleanupActiveTransfer()
+    if case .transferring(let batch, _, _, _, _, _, _) = previous, !finalizing {
+      pauseTransfer(batch: batch, transport: descriptor.transport)
+    } else if case .paused = previous {
+      // A resume attempt lost its channel before it completed; keep the retained prefix.
+      resumeTask?.cancel(); resumeTask = nil
+      abandonStatus()
+    } else if isBusy {
+      state = .failed(reason: "Connection closed. Send the files again using the remaining connection.")
+      cleanupActiveTransfer()
+    } else {
+      cleanupActiveTransfer()
+    }
     selectPreferredChannel()
   }
 
@@ -219,9 +291,32 @@ enum TransferEvent: Equatable {
       capabilities[descriptor.transport] = message
       if descriptor == activeChannel?.descriptor {
         peerCompatible = true
-        if case .transferring = state { return .handled }
-        if transferTask == nil { applyCapability(message) }
+        if !isTransferring, transferTask == nil { applyCapability(message) }
+        if isPaused {
+          refreshPausedCapability()
+          if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
+        }
+      } else if isPaused {
+        refreshPausedCapability()
+      } else if descriptor.transport == "lan", isTransferring {
+        // LAN is preferred even after a deliberate Bluetooth continuation. The receiver answers
+        // the resume while it is still transferring, so the stream can switch without a pause.
+        maybeUpgradeToLan(descriptor)
       }
+      return .handled
+    }
+    // Resume and status may name the batch a new channel is taking over, so they are routed
+    // before the active-descriptor guard. A resume for an unknown batch still receives a status.
+    if message.kind == 10 {
+      await handleResume(message, on: descriptor)
+      return .handled
+    }
+    if message.kind == 11 {
+      if message.string(0) == currentBatch?.idString { handleStatus(message) }
+      return .handled
+    }
+    if message.kind == 9, message.string(0) == currentBatch?.idString {
+      await processMessage(message, peerName: descriptor.peer.deviceName)
       return .handled
     }
     guard descriptor == activeChannel?.descriptor else { return .discarded }
@@ -258,11 +353,8 @@ enum TransferEvent: Equatable {
       // File results are authoritative; a batch result cannot bypass storage verification.
       break
     case 10, 11:
-      // Recovery is not advertised by this implementation; do not silently accept a resume.
-      if message.kind == 10 {
-        guard let channel = activeChannel else { return }
-        Task { try? await self.sendWithBackpressure(TransferMessage.status(batch: message.string(0), file: message.string(1), bytesTransferred: 0, state: 4).encode(), on: channel, jobBound: false) }
-      }
+      // Routed before the active-channel guard so a new channel can take over a paused batch.
+      break
     case 9:
       guard let batch = currentBatch, message.string(0) == batch.idString,
         message.string(1).isEmpty || message.string(1) == sendingFile?.idString ||
@@ -272,6 +364,606 @@ enum TransferEvent: Equatable {
     default:
       break
     }
+  }
+
+  // MARK: - Pause and Resume
+
+  private var isTransferring: Bool {
+    if case .transferring = state { return true }
+    return false
+  }
+
+  /// Retains a mid-stream batch after its active channel retired. Nothing is published, discarded
+  /// or released here: the partial, destination and sleep assertion stay alive for `pauseTimeout`,
+  /// and only an explicit Cancel, a resume failure or the timer ends them.
+  private func pauseTransfer(batch: TransferBatch, transport: String) {
+    let fileIndex = receiving ? receiverCurrentFileIndex : senderFileIndex
+    guard batch.files.indices.contains(fileIndex) else {
+      failTransfer(reason: "Connection closed. Send the files again using the remaining connection.")
+      return
+    }
+    let file = batch.files[fileIndex]
+    if receiving, receiverStorage == nil {
+      failTransfer(reason: "Connection closed while saving \(file.name). Send the files again.")
+      return
+    }
+    pausedTransport = transport
+    pausedFileIndex = fileIndex
+    pausedFileOffset = max(0, min(receiving ? receiverWrittenBytes : acknowledgedBytes, file.size))
+    pausedCompletedBytes = receiving
+      ? max(receiverTotalTransferred - receiverWrittenBytes, 0)
+      : batch.files.prefix(fileIndex).reduce(0) { $0 + $1.size }
+    allowBleResume = false
+    transferTask?.cancel(); transferTask = nil
+    fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
+    fileResultContinuation = nil
+    ackTask = nil
+    ackTimerTask?.cancel(); ackTimerTask = nil
+    creditResume?(); creditResume = nil
+    clearCapacityWaiters()
+    resumeTask?.cancel(); resumeTask = nil
+    upgradeTask?.cancel(); upgradeTask = nil
+    abandonStatus()
+    // Old-channel callbacks must not touch the retained batch after the channel is gone.
+    epoch = UUID()
+    let reason = transport == "lan" ? "Local network connection lost" : "Bluetooth connection lost"
+    state = .paused(
+      batch: batch,
+      fileIndex: fileIndex + 1,
+      fileName: file.name,
+      fileBytes: pausedFileOffset,
+      fileSize: file.size,
+      totalBytes: pausedCompletedBytes + pausedFileOffset,
+      reason: reason,
+      canResumeOverBle: false
+    )
+    startPauseTimer()
+    // Automatic LAN policy decides whether a new window may open; an explicit Disconnect still
+    // wins, so a paused batch never forces LAN back on by itself.
+    onLanRequired()
+    onEvent?(.paused(batch: batch, reason: reason, canResumeOverBle: false))
+  }
+
+  private func startPauseTimer() {
+    pauseTimerTask?.cancel()
+    let operation = epoch
+    let timeout = pauseTimeout
+    pauseTimerTask = Task { [weak self] in
+      do { try await Task.sleep(for: timeout) } catch { return }
+      guard let self, self.epoch == operation, self.isPaused else { return }
+      self.failTransfer(reason: "Transfer paused for too long without a connection. Send the files again.")
+    }
+  }
+
+  /// Explicit Bluetooth continuation for either side. The sender asks the receiver to continue at
+  /// its acknowledged offset; the receiver asks the sender to validate the prefix it already holds
+  /// and stream the rest over BLE. Both use the same resume/status kinds with no framing change.
+  func resumeOverBluetooth() {
+    guard case .paused = state, pausedTransport == "lan" else { return }
+    allowBleResume = true
+    if let ble = channels["ble"], activeChannel?.descriptor != ble.descriptor {
+      activeChannel = ble
+      peerConnected = true
+      peerCompatible = false
+      peerMaxChunkBytes = 3072
+      peerMaxWindow = 64
+      if let capability = capabilities["ble"] { applyCapability(capability) }
+    }
+    refreshPausedCapability()
+    guard peerCompatible else { return }
+    if receiving { requestPeerContinuation() } else { attemptResume() }
+  }
+
+  private func refreshPausedCapability() {
+    guard case .paused(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let reason, let canBle) = state else { return }
+    let canResume = !allowBleResume && pausedTransport == "lan" &&
+      channels["lan"] == nil && channels["ble"] != nil && capabilities["ble"] != nil
+    guard canResume != canBle else { return }
+    state = .paused(
+      batch: batch,
+      fileIndex: fileIndex,
+      fileName: fileName,
+      fileBytes: fileBytes,
+      fileSize: fileSize,
+      totalBytes: totalBytes,
+      reason: reason,
+      canResumeOverBle: canResume
+    )
+    onEvent?(.paused(batch: batch, reason: reason, canResumeOverBle: canResume))
+  }
+
+  /// Sender-initiated handshake. The prefix hash proves the receiver's retained bytes are the ones
+  /// this source would have sent; the receiver's answer is authoritative for the continue offset.
+  private func attemptResume() {
+    guard case .paused(let batch, _, _, _, _, _, _, _) = state else { return }
+    guard !receiving, resumeTask == nil, let channel = activeChannel, peerCompatible else { return }
+    let transport = channel.descriptor.transport
+    let allowed = transport == "lan" || pausedTransport != "lan" || allowBleResume
+    guard allowed else { refreshPausedCapability(); return }
+    let fileIndex = pausedFileIndex
+    guard batch.files.indices.contains(fileIndex) else { return }
+    let file = batch.files[fileIndex]
+    let completedBefore = pausedCompletedBytes
+    let operation = epoch
+    let initialOffset = pausedFileOffset
+
+    resumeTask = Task { [weak self] in
+      guard let self else { return }
+      var offset = initialOffset
+      var retriedOffset = false
+      var restarted = false
+      var accepted = false
+      do {
+        while !accepted {
+          guard self.epoch == operation, !Task.isCancelled else { return }
+          let prefix = try await self.filePrefixDigest(file, length: offset)
+          guard self.epoch == operation, !Task.isCancelled else { return }
+          let message = TransferMessage.resume(batch: batch.idString, file: file.idString, offset: offset, prefixHash: prefix)
+          guard let request = try? message.encode(maximumChunkBytes: self.chunkLimit(channel.descriptor)) else {
+            self.failTransfer(reason: "Failed encoding resume request")
+            return
+          }
+          guard let status = await self.requestStatus(request, on: channel) else {
+            if self.epoch == operation, !Task.isCancelled {
+              self.failTransfer(reason: "The other device did not answer the resume request.")
+            }
+            return
+          }
+          guard self.epoch == operation, !Task.isCancelled else { return }
+          switch status.number(3) {
+          case 0:
+            offset = max(0, min(status.number(2), file.size))
+            accepted = true
+          case 1:
+            if retriedOffset {
+              self.failTransfer(reason: "The other device keeps reporting a different transfer offset.")
+              return
+            }
+            retriedOffset = true
+            offset = max(0, min(status.number(2), file.size))
+          case 2:
+            if restarted {
+              self.failTransfer(reason: "The retained file no longer matches. Send the files again.")
+              return
+            }
+            restarted = true
+            offset = 0
+          default:
+            self.failTransfer(reason: "The other device cannot continue this transfer. Send the files again.")
+            return
+          }
+        }
+        guard self.epoch == operation, !Task.isCancelled else { return }
+        self.pauseTimerTask?.cancel(); self.pauseTimerTask = nil
+        self.resumeTask = nil
+        self.state = .transferring(
+          batch: batch,
+          fileIndex: fileIndex + 1,
+          fileName: file.name,
+          fileBytes: offset,
+          fileSize: file.size,
+          totalBytes: completedBefore + offset,
+          speedBps: 0
+        )
+        self.onEvent?(.resumed)
+        let streamOperation = self.epoch
+        self.transferTask = Task { [weak self] in
+          guard let self, streamOperation == self.epoch, self.activeChannel != nil else { return }
+          await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: offset, completedBefore: completedBefore)
+        }
+      } catch is CancellationError {
+        return
+      } catch {
+        if self.epoch == operation, !Task.isCancelled {
+          self.failTransfer(reason: "Cannot read \(file.name) to resume: \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
+  /// Receiver-initiated continuation. The receiver hashes what it retained and asks the sender;
+  /// the sender validates its own source prefix and, when it matches, starts streaming from the
+  /// retained offset. The request follows the currently preferred channel, so a LAN that returns
+  /// while the user is opting into Bluetooth wins instead of racing the sender.
+  private func requestPeerContinuation() {
+    guard case .paused(let batch, _, _, _, _, _, _, _) = state, receiving,
+      allowBleResume, resumeTask == nil, activeChannel != nil, peerCompatible else { return }
+    let fileIndex = receiverCurrentFileIndex
+    guard batch.files.indices.contains(fileIndex) else { return }
+    let file = batch.files[fileIndex]
+    let operation = epoch
+    resumeTask = Task { [weak self] in
+      guard let self else { return }
+      var restarted = false
+      defer {
+        self.allowBleResume = false
+        if self.epoch == operation, self.isPaused { self.refreshPausedCapability() }
+        self.resumeTask = nil
+      }
+      loop: while true {
+        guard self.epoch == operation, !Task.isCancelled else { return }
+        guard let channel = self.activeChannel, self.peerCompatible,
+          let storage = self.receiverStorage else { break loop }
+        let offset = max(0, min(self.receiverWrittenBytes, file.size))
+        guard let prefix = try? await storage.prefixDigest(offset),
+          self.epoch == operation, !Task.isCancelled else { break loop }
+        let message = TransferMessage.resume(
+          batch: batch.idString, file: file.idString, offset: offset, prefixHash: prefix)
+        guard let request = try? message.encode(
+          maximumChunkBytes: self.chunkLimit(channel.descriptor)) else { break loop }
+        guard let status = await self.requestStatus(request, on: channel),
+          self.epoch == operation, !Task.isCancelled else { break loop }
+        switch status.number(3) {
+        case 0:
+          // The sender streams on the channel that carried the request. If the preferred channel
+          // changed meanwhile, ask again there so both sides converge.
+          guard self.activeChannel?.descriptor == channel.descriptor else { continue }
+          guard self.isPaused else { return }
+          self.pauseTimerTask?.cancel(); self.pauseTimerTask = nil
+          self.lastAckedWrittenBytes = self.receiverWrittenBytes
+          self.state = .transferring(
+            batch: batch,
+            fileIndex: fileIndex + 1,
+            fileName: file.name,
+            fileBytes: self.receiverWrittenBytes,
+            fileSize: file.size,
+            totalBytes: self.receiverTotalTransferred,
+            speedBps: 0
+          )
+          self.onEvent?(.resumed)
+          return
+        case 2:
+          guard !restarted else { break loop }
+          restarted = true
+          guard await self.resetReceiverFile(batch, file) else { break loop }
+          if case .paused(let currentBatch, let pausedIndex, let pausedName, _, let pausedSize,
+            _, let reason, let canBle) = self.state {
+            self.state = .paused(
+              batch: currentBatch,
+              fileIndex: pausedIndex,
+              fileName: pausedName,
+              fileBytes: 0,
+              fileSize: pausedSize,
+              totalBytes: self.receiverTotalTransferred,
+              reason: reason,
+              canResumeOverBle: canBle
+            )
+          }
+        default:
+          break loop
+        }
+      }
+    }
+  }
+
+  private func requestStatus(_ request: Data, on channel: any SecuredChannel) async -> TransferMessage? {
+    let operation = epoch
+    let token = UUID()
+    return await withCheckedContinuation { (continuation: CheckedContinuation<TransferMessage?, Never>) in
+      let finish: (TransferMessage?) -> Void = { [weak self] message in
+        guard let self, self.statusWaiterToken == token else { return }
+        self.statusWaiter = nil
+        self.statusWaiterToken = nil
+        self.statusTimeoutTask?.cancel()
+        self.statusTimeoutTask = nil
+        continuation.resume(returning: message)
+      }
+      statusWaiter = finish
+      statusWaiterToken = token
+      statusTimeoutTask = Task { [weak self] in
+        do { try await Task.sleep(for: .seconds(15)) } catch { return }
+        guard let self, self.epoch == operation else { return }
+        finish(nil)
+      }
+      Task { [weak self] in
+        guard let self else { return }
+        do { try await self.sendWithBackpressure(request, on: channel, jobBound: false) }
+        catch { finish(nil) }
+      }
+    }
+  }
+
+  private func handleStatus(_ message: TransferMessage) {
+    guard let batch = currentBatch, message.string(0) == batch.idString else { return }
+    // The waiter belongs to whichever side initiated the handshake: the sender after its own
+    // resume, or the receiver after a receiver-initiated Bluetooth continuation.
+    let index = receiving ? receiverCurrentFileIndex : senderFileIndex
+    guard batch.files.indices.contains(index),
+      message.string(1) == batch.files[index].idString else { return }
+    statusWaiter?(message)
+  }
+
+  private func abandonStatus() {
+    let waiter = statusWaiter
+    statusWaiter = nil
+    statusWaiterToken = nil
+    statusTimeoutTask?.cancel(); statusTimeoutTask = nil
+    waiter?(nil)
+  }
+
+  /// Receiver side of the handshake: verify the retained prefix, rebind to the sender's chosen
+  /// channel and answer with the offset the sender must continue from.
+  private func handleResume(_ message: TransferMessage, on descriptor: ChannelDescriptor) async {
+    guard let channel = channels[descriptor.transport], channel.descriptor == descriptor else { return }
+    let batchId = message.string(0)
+    let fileId = message.string(1)
+    let offset = message.number(2)
+    let prefix = message.bytes(3)
+
+    if let retained = retainedFileResult, retained.batchId == batchId, retained.fileId == fileId {
+      // The file was already verified before the channel died. Replaying its result lets the
+      // sender skip the last-chunk wait instead of failing on a resume for a closed file.
+      bindResumeChannel(channel)
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: retained.fileSize, state: 0)
+      try? await sendWithBackpressure(retained.result.encode(), on: channel, jobBound: false)
+      continueAfterRetainedReplay()
+      return
+    }
+
+    // A resume from the data receiver asks this device, the sender, to continue over the channel
+    // the receiver chose. It uses the same kinds and is validated against our source.
+    if !receiving {
+      await handlePeerResume(batchId: batchId, fileId: fileId, offset: offset, prefix: prefix, channel: channel)
+      return
+    }
+
+    guard let batch = currentBatch, batch.idString == batchId, receiving,
+      isPaused || isTransferring else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4)
+      return
+    }
+    guard let fileIndex = batch.files.firstIndex(where: { $0.idString == fileId }),
+      fileIndex == receiverCurrentFileIndex else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: receiverWrittenBytes, state: 3)
+      return
+    }
+    let file = batch.files[fileIndex]
+    guard let storage = receiverStorage else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: finalizing ? 3 : 4)
+      return
+    }
+    if offset > receiverWrittenBytes {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: receiverWrittenBytes, state: 1)
+      return
+    }
+    var matches = false
+    if offset >= 0 { matches = (try? await storage.matchesPrefix(offset, expected: prefix)) == true }
+    if !matches {
+      guard await resetReceiverFile(batch, file) else {
+        await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4)
+        return
+      }
+      bindResumeChannel(channel)
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 2)
+      return
+    }
+    bindResumeChannel(channel)
+    pauseTimerTask?.cancel(); pauseTimerTask = nil
+    lastAckedWrittenBytes = receiverWrittenBytes
+    state = .transferring(
+      batch: batch,
+      fileIndex: fileIndex + 1,
+      fileName: file.name,
+      fileBytes: receiverWrittenBytes,
+      fileSize: file.size,
+      totalBytes: receiverTotalTransferred,
+      speedBps: 0
+    )
+    onEvent?(.resumed)
+    await replyStatus(channel, batch: batchId, file: fileId, bytes: receiverWrittenBytes, state: 0)
+    if receiverWrittenBytes == file.size { await finalizeReceiverFile(batch) }
+  }
+
+  private func bindResumeChannel(_ channel: any SecuredChannel) {
+    activeChannel = channel
+    peerConnected = true
+    peerCompatible = true
+    peerMaxChunkBytes = 3072
+    peerMaxWindow = 64
+    if let capability = capabilities[channel.descriptor.transport] { applyCapability(capability) }
+  }
+
+  /// Sender side of a receiver-initiated continuation. The receiver asks over the channel it
+  /// prefers; we prove our source still begins with its retained prefix and then stream the rest
+  /// from its offset. A reliable LAN is not pulled down to BLE, but a stalled one yields.
+  private func handlePeerResume(
+    batchId: String, fileId: String, offset: Int64, prefix: Data, channel: any SecuredChannel
+  ) async {
+    guard let batch = currentBatch, batch.idString == batchId else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4)
+      return
+    }
+    guard let fileIndex = batch.files.firstIndex(where: { $0.idString == fileId }) else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3)
+      return
+    }
+    let file = batch.files[fileIndex]
+    let currentIndex: Int
+    let paused: Bool
+    switch state {
+    case .paused: currentIndex = pausedFileIndex; paused = true
+    case .transferring: currentIndex = senderFileIndex; paused = false
+    default:
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4)
+      return
+    }
+    guard fileIndex == currentIndex else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3)
+      return
+    }
+
+    // A receiver can only ask us to leave LAN when its own LAN is gone. Give a freshly resumed
+    // LAN stream a few seconds to start producing ACKs before treating it as stalled.
+    if channel.descriptor.transport == "ble", !paused, activeChannel?.descriptor.transport == "lan" {
+      let now = ProcessInfo.processInfo.systemUptime
+      let acking = lastAckAt.map { now - $0 < 3 } ?? false
+      let fresh = lastAckAt == nil && streamStartedAt.map { now - $0 < 3 } == true &&
+        sentBytes > acknowledgedBytes
+      if acking || fresh {
+        await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3)
+        return
+      }
+    }
+
+    let sent = max(0, min(sentBytes, file.size))
+    guard offset >= 0, offset <= sent else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: sent, state: 1)
+      return
+    }
+    let matches = ((try? await filePrefixDigest(file, length: offset)) ?? Data()) == prefix
+    guard matches else {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 2)
+      return
+    }
+
+    let completedBefore = paused
+      ? pausedCompletedBytes
+      : batch.files.prefix(fileIndex).reduce(0) { $0 + $1.size }
+    // Fence the current stream before binding the requested channel. The receiver already
+    // validated its retained prefix; anything still in flight on the old transport is discarded
+    // there once it rebinds.
+    transferTask?.cancel(); transferTask = nil
+    resumeTask?.cancel(); resumeTask = nil
+    upgradeTask?.cancel(); upgradeTask = nil
+    abandonStatus()
+    fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
+    fileResultContinuation = nil
+    creditResume?(); creditResume = nil
+    clearCapacityWaiters()
+    pauseTimerTask?.cancel(); pauseTimerTask = nil
+    epoch = UUID()
+    let operation = epoch
+    bindResumeChannel(channel)
+    state = .transferring(
+      batch: batch,
+      fileIndex: fileIndex + 1,
+      fileName: file.name,
+      fileBytes: offset,
+      fileSize: file.size,
+      totalBytes: completedBefore + offset,
+      speedBps: 0
+    )
+    onEvent?(.resumed)
+    await replyStatus(channel, batch: batchId, file: fileId, bytes: offset, state: 0)
+    transferTask = Task { [weak self] in
+      guard let self, operation == self.epoch, self.activeChannel != nil else { return }
+      await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: offset, completedBefore: completedBefore)
+    }
+  }
+
+  /// Sender-side transport upgrade. A capable LAN channel arriving during a Bluetooth stream
+  /// triggers the existing resume handshake; the receiver accepts while transferring, reports its
+  /// actual written offset, and both sides switch without a visible pause.
+  private func maybeUpgradeToLan(_ descriptor: ChannelDescriptor) {
+    guard descriptor.transport == "lan", !receiving, isTransferring else { return }
+    guard let active = activeChannel, active.descriptor.transport == "ble",
+      let lan = channels["lan"], lan.descriptor == descriptor, capabilities["lan"] != nil else { return }
+    guard upgradeTask == nil, resumeTask == nil, statusWaiter == nil,
+      let batch = currentBatch, batch.files.indices.contains(senderFileIndex) else { return }
+    let fileIndex = senderFileIndex
+    let file = batch.files[fileIndex]
+    // At the file-result boundary the stream is idle; wait for the next file's start.
+    guard fileResultContinuation == nil, sentBytes < file.size else { return }
+    let completedBefore = batch.files.prefix(fileIndex).reduce(0) { $0 + $1.size }
+    let offset = max(0, min(acknowledgedBytes, file.size))
+    let streamEpoch = epoch
+    upgradeTask = Task { [weak self] in
+      guard let self else { return }
+      defer { self.upgradeTask = nil }
+      guard let prefix = try? await self.filePrefixDigest(file, length: offset),
+        self.epoch == streamEpoch, !Task.isCancelled else { return }
+      let message = TransferMessage.resume(
+        batch: batch.idString, file: file.idString, offset: offset, prefixHash: prefix)
+      guard let request = try? message.encode(
+        maximumChunkBytes: self.chunkLimit(lan.descriptor)) else { return }
+      let status = await self.requestStatus(request, on: lan)
+      guard self.epoch == streamEpoch, !Task.isCancelled else { return }
+      guard let status else {
+        // Ambiguous: the receiver may already have rebound. Pause and let the preferred-channel
+        // policy resume deterministically instead of streaming into a lost stream.
+        guard self.isTransferring else { return }
+        self.pauseTransfer(batch: batch, transport: active.descriptor.transport)
+        self.selectPreferredChannel()
+        return
+      }
+      let code = status.number(3)
+      guard code == 0 || code == 2 else { return } // The receiver kept the Bluetooth stream.
+      let startOffset = code == 2 ? 0 : max(0, min(status.number(2), file.size))
+      guard self.epoch == streamEpoch, self.isTransferring else { return }
+      self.transferTask?.cancel(); self.transferTask = nil
+      self.fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
+      self.fileResultContinuation = nil
+      self.creditResume?(); self.creditResume = nil
+      self.clearCapacityWaiters()
+      self.epoch = UUID()
+      let operation = self.epoch
+      self.bindResumeChannel(lan)
+      self.state = .transferring(
+        batch: batch,
+        fileIndex: fileIndex + 1,
+        fileName: file.name,
+        fileBytes: startOffset,
+        fileSize: file.size,
+        totalBytes: completedBefore + startOffset,
+        speedBps: 0
+      )
+      self.onEvent?(.resumed)
+      self.transferTask = Task { [weak self] in
+        guard let self, operation == self.epoch, self.activeChannel != nil else { return }
+        await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: startOffset, completedBefore: completedBefore)
+      }
+    }
+  }
+
+  /// When the replayed file was the one before the receiver's current file, the sender resumes the
+  /// next file at zero; the receiver must already be accepting it, with no second handshake.
+  private func continueAfterRetainedReplay() {
+    guard receiving, isPaused, let batch = currentBatch,
+      receiverStorage != nil, receiverWrittenBytes == 0,
+      batch.files.indices.contains(receiverCurrentFileIndex) else { return }
+    let file = batch.files[receiverCurrentFileIndex]
+    if retainedFileResult?.fileId == file.idString { return }
+    pauseTimerTask?.cancel(); pauseTimerTask = nil
+    lastAckedWrittenBytes = 0
+    state = .transferring(
+      batch: batch,
+      fileIndex: receiverCurrentFileIndex + 1,
+      fileName: file.name,
+      fileBytes: 0,
+      fileSize: file.size,
+      totalBytes: receiverTotalTransferred,
+      speedBps: 0
+    )
+    onEvent?(.resumed)
+  }
+
+  /// Recreates the current file from zero after the retained prefix failed verification.
+  private func resetReceiverFile(_ batch: TransferBatch, _ file: TransferFile) async -> Bool {
+    let previous = receiverStorage
+    receiverStorage = nil
+    receiverPartFileURL = nil
+    await previous?.discard()
+    receiverTotalTransferred = max(receiverTotalTransferred - receiverWrittenBytes, 0)
+    receiverWrittenBytes = 0
+    lastAckedWrittenBytes = 0
+    let operation = epoch
+    do {
+      try await prepareReceiverForFile(at: receiverCurrentFileIndex, in: batch)
+      return operation == epoch
+    } catch {
+      return false
+    }
+  }
+
+  private func replyStatus(_ channel: any SecuredChannel, batch: String, file: String, bytes: Int64, state: Int64) async {
+    if let encoded = try? TransferMessage.status(batch: batch, file: file, bytesTransferred: bytes, state: state).encode() {
+      try? await sendWithBackpressure(encoded, on: channel, jobBound: false)
+    }
+  }
+
+  private func filePrefixDigest(_ file: TransferFile, length: Int64) async throws -> Data {
+    guard length >= 0, length <= file.size, let url = file.localURL else { throw CocoaError(.fileReadUnknown) }
+    return try await TransferSendStorage.prefixDigest(url, length: length)
   }
 
   // MARK: - Sender Flow
@@ -368,6 +1060,9 @@ enum TransferEvent: Equatable {
     let batch = TransferBatch(id: batchId, files: files, totalBytes: totalBytes, peerName: channel.descriptor.peer.deviceName)
     currentBatch = batch
     receiving = false
+    transferPeerDeviceId = channel.descriptor.peer.deviceId
+    transferPeerFingerprint = channel.descriptor.peer.fingerprint
+    retainedFileResult = nil
     state = .waitingForPeerApproval(batch: batch)
     acquireSleepAssertion()
 
@@ -418,29 +1113,48 @@ enum TransferEvent: Equatable {
   }
 
   private func streamAcceptedBatch(_ batch: TransferBatch) async {
-    guard activeChannel != nil else { return }
+    await streamBatchFrom(batch, startFileIndex: 0, startOffset: 0, completedBefore: 0)
+  }
+
+  /// Streams from `startFileIndex` at `startOffset`, where the receiver already retains
+  /// `startOffset` bytes of that file and `completedBefore` complete bytes precede it.
+  private func streamBatchFrom(_ batch: TransferBatch, startFileIndex: Int, startOffset: Int64, completedBefore: Int64) async {
+    guard activeChannel != nil, batch.files.indices.contains(startFileIndex) else { return }
     let operation = epoch
-    var totalTransferred: Int64 = 0
+    let initialOffset = max(0, min(startOffset, batch.files[startFileIndex].size))
+    var totalTransferred = completedBefore + initialOffset
     var rate = TransferRate()
     var lastUiUpdate: TimeInterval = 0
 
-    for (fileIndex, file) in batch.files.enumerated() {
+    for fileIndex in startFileIndex..<batch.files.count {
       guard operation == epoch else { return }
+      let file = batch.files[fileIndex]
+      let initial = fileIndex == startFileIndex ? initialOffset : 0
       guard let url = file.localURL else {
         failTransfer(reason: "Failed reading local file \(file.name)")
         return
       }
 
       let source: TransferSendStorage
-      do { source = try await TransferSendStorage.open(url) }
+      do { source = try await TransferSendStorage.open(url, skipping: initial) }
       catch { if operation == epoch { failTransfer(reason: "Cannot open source file") }; return }
       guard operation == epoch else { await source.close(); return }
 
       sendingFile = file
-      receivedFileResult = nil
-      sentBytes = 0
-      acknowledgedBytes = 0
-      var fileBytesSent: Int64 = 0
+      senderFileIndex = fileIndex
+      // A result that arrived just before this file was re-entered belongs to this file.
+      if let pending = receivedFileResult, pending.string(0) != batch.idString || pending.string(1) != file.idString {
+        receivedFileResult = nil
+      }
+      sentBytes = initial
+      acknowledgedBytes = initial
+      lastAckAt = nil
+      streamStartedAt = ProcessInfo.processInfo.systemUptime
+      var fileBytesSent: Int64 = initial
+      // A LAN capability that arrived while the previous file was finalizing is retried here,
+      // at the new file's start, where the stream is no longer waiting on a file result.
+      if !receiving, let lan = channels["lan"] { maybeUpgradeToLan(lan.descriptor) }
+      var upgradeChecked = false
 
       while fileBytesSent < file.size {
         // Enforce credit flow control: at most maxWindow unacknowledged chunks
@@ -504,6 +1218,10 @@ enum TransferEvent: Equatable {
               speedBps: speed
             )
           }
+          if !upgradeChecked {
+            upgradeChecked = true
+            if !receiving, let lan = channels["lan"] { maybeUpgradeToLan(lan.descriptor) }
+          }
         } catch {
           await source.close()
           if !Task.isCancelled && operation == epoch { failTransfer(reason: "Failed sending chunk: \(error.localizedDescription)") }
@@ -555,6 +1273,7 @@ enum TransferEvent: Equatable {
     let written = message.number(2)
     guard written >= acknowledgedBytes, written <= sentBytes, written <= file.size else { return }
     acknowledgedBytes = written
+    lastAckAt = ProcessInfo.processInfo.systemUptime
     checkCreditAndResume()
   }
 
@@ -633,7 +1352,7 @@ enum TransferEvent: Equatable {
 
       let isBusy: Bool
       switch state {
-      case .waitingForPeerApproval, .incomingOffer, .transferring:
+      case .waitingForPeerApproval, .incomingOffer, .transferring, .paused:
         isBusy = true
       default:
         isBusy = false
@@ -675,6 +1394,9 @@ enum TransferEvent: Equatable {
     receiveFolder = destination
     publishedURLs.removeAll()
     receiving = true
+    transferPeerDeviceId = channel.descriptor.peer.deviceId
+    transferPeerFingerprint = channel.descriptor.peer.fingerprint
+    retainedFileResult = nil
     receiverCurrentFileIndex = 0
     receiverWrittenBytes = 0
     receiverTotalTransferred = 0
@@ -861,6 +1583,13 @@ enum TransferEvent: Equatable {
       return
     }
     guard operation == epoch, receiverStorage === storage else { return }
+    // Kept across completion so a resume that lands after the last chunk can still be answered.
+    retainedFileResult = RetainedFileResult(
+      batchId: batch.idString,
+      fileId: file.idString,
+      fileSize: file.size,
+      result: TransferMessage.fileResult(batch: batch.idString, file: file.idString, result: 0, hash: digest)
+    )
     receiverStorage = nil
     receiverPartFileURL = nil
     Task { [weak self] in
@@ -905,6 +1634,7 @@ enum TransferEvent: Equatable {
         }
       }
     }
+    retainedFileResult = nil
     state = .cancelled
     cleanupActiveTransfer()
   }
@@ -913,12 +1643,18 @@ enum TransferEvent: Equatable {
     receiving = false
     publishedURLs.removeAll()
     receiveFolder = nil
+    retainedFileResult = nil
     state = .idle
     cleanupActiveTransfer()
   }
 
   private func failTransfer(reason: String) {
-    if let batch = currentBatch, receiverPartFileURL != nil, batch.files.indices.contains(receiverCurrentFileIndex), let channel = activeChannel {
+    if case .completed = state { return }
+    if case .cancelled = state { return }
+    // A paused batch has no channel to report through; the retained prefix is discarded below.
+    if !isPaused,
+      let batch = currentBatch, receiverPartFileURL != nil,
+      batch.files.indices.contains(receiverCurrentFileIndex), let channel = activeChannel {
       let file = batch.files[receiverCurrentFileIndex]
       let result = TransferMessage.fileResult(batch: batch.idString, file: file.idString, result: 2, hash: Data(repeating: 0, count: 32))
       Task { [weak self] in
@@ -926,6 +1662,7 @@ enum TransferEvent: Equatable {
         try? await self.sendWithBackpressure(result.encode(), on: channel, jobBound: false)
       }
     }
+    retainedFileResult = nil
     state = .failed(reason: reason)
     let wasReceiving = receiving
     cleanupActiveTransfer()
@@ -935,6 +1672,17 @@ enum TransferEvent: Equatable {
   private func cleanupActiveTransfer(selectChannel: Bool = true) {
     preparation?.cancel(); preparation = nil; preparing = false
     clearOfferAssembly()
+    pauseTimerTask?.cancel(); pauseTimerTask = nil
+    resumeTask?.cancel(); resumeTask = nil
+    abandonStatus()
+    allowBleResume = false
+    pausedTransport = nil
+    pausedFileIndex = 0
+    pausedFileOffset = 0
+    pausedCompletedBytes = 0
+    transferPeerDeviceId = nil
+    transferPeerFingerprint = nil
+    senderFileIndex = 0
     epoch = UUID()
     // Retire logical work; an already-sealed submission must finish without cancelling the shared socket.
     transferTask = nil
@@ -1158,6 +1906,32 @@ private actor TransferReceiveStorage {
     hasher.update(data: data)
   }
 
+  /// Flushes and hashes exactly `length` bytes of the retained partial. The receiver sends this
+  /// digest so the sender can prove its own source prefix before switching transports.
+  func prefixDigest(_ length: Int64) throws -> Data {
+    assert(!Thread.isMainThread)
+    guard length >= 0, let handle, let partial else { throw CocoaError(.fileReadUnknown) }
+    try handle.synchronize()
+    let reader = try FileHandle(forReadingFrom: partial)
+    defer { try? reader.close() }
+    var digest = SHA256()
+    var remaining = length
+    while remaining > 0 {
+      guard let block = try reader.read(upToCount: Int(min(remaining, 1 << 20))), !block.isEmpty else {
+        throw CocoaError(.fileReadUnknown)
+      }
+      digest.update(data: block)
+      remaining -= Int64(block.count)
+    }
+    return Data(digest.finalize())
+  }
+
+  /// Flushes the retained prefix and verifies that exactly `length` bytes on disk match
+  /// `expected`. The sender's resume hash proves its source and this receiver's partial agree.
+  func matchesPrefix(_ length: Int64, expected: Data) throws -> Bool {
+    try prefixDigest(length) == expected
+  }
+
   func finish(name: String, expected: Data) throws -> (digest: Data, url: URL) {
     assert(!Thread.isMainThread)
     guard let handle, let partial, let folder else { throw CocoaError(.fileWriteUnknown) }
@@ -1186,8 +1960,38 @@ private actor TransferReceiveStorage {
 private actor TransferSendStorage {
   private let handle: FileHandle
   private init(_ url: URL) throws { handle = try FileHandle(forReadingFrom: url) }
-  static func open(_ url: URL) async throws -> TransferSendStorage {
-    try await Task.detached { try TransferSendStorage(url) }.value
+  static func open(_ url: URL, skipping offset: Int64 = 0) async throws -> TransferSendStorage {
+    let storage = try await Task.detached { try TransferSendStorage(url) }.value
+    if offset > 0 { try await storage.skip(offset) }
+    return storage
+  }
+  private func skip(_ offset: Int64) throws {
+    assert(!Thread.isMainThread)
+    var remaining = offset
+    while remaining > 0 {
+      guard let block = try handle.read(upToCount: Int(min(remaining, 1 << 20))), !block.isEmpty else {
+        throw CocoaError(.fileReadCorruptFile)
+      }
+      remaining -= Int64(block.count)
+    }
+  }
+  /// SHA-256 over exactly the first `length` source bytes, used to prove a resume prefix.
+  static func prefixDigest(_ url: URL, length: Int64) async throws -> Data {
+    try await Task.detached(priority: .utility) {
+      guard length >= 0 else { throw CocoaError(.fileReadUnknown) }
+      let handle = try FileHandle(forReadingFrom: url)
+      defer { try? handle.close() }
+      var digest = SHA256()
+      var remaining = length
+      while remaining > 0 {
+        guard let block = try handle.read(upToCount: Int(min(remaining, 1 << 20))), !block.isEmpty else {
+          throw CocoaError(.fileReadCorruptFile)
+        }
+        digest.update(data: block)
+        remaining -= Int64(block.count)
+      }
+      return Data(digest.finalize())
+    }.value
   }
   func read(_ count: Int) throws -> Data {
     assert(!Thread.isMainThread)

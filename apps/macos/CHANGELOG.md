@@ -6,10 +6,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Resilient file transfers: a mid-stream LAN or Bluetooth loss now pauses with retained partial storage, frozen progress in the transfer panel and menu-bar companion, and a native paused notification. A reconnected LAN to the same peer resumes automatically at the verified offset; either device can explicitly continue over Bluetooth from the panel or notification when LAN stays down, with the receiver asking the sender to validate the prefix it holds. Cancel deletes the partial, and a 15-minute pause timeout fails and cleans it up.
+- A live LAN that becomes capable during a Bluetooth stream upgrades the active transfer in place through the resume handshake, so a Bluetooth continuation moves back to local network as soon as Wi-Fi reconnects.
 - Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE admission coordination opens bounded Allow windows on connection events, successful BLE feature traffic, media demand or file-transfer demand; coordination traffic cannot initiate another window.
 
 ### Fixed
 
+- A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and a paused batch keeps its sleep assertion, destination and secured Bluetooth fallback so automatic LAN or explicit Bluetooth continuation can finish it. The paused notification offers Continue over Bluetooth on the receiving device as well as the sender.
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected, even on fresh installs with no stored preference.
 - Feature traffic no longer resumes LAN after an explicit Disconnect; manual Allow/Connect or a preference change resumes automation.
 

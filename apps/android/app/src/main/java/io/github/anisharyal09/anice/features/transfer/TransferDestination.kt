@@ -59,6 +59,9 @@ internal class TransferDestination(private val context: Context, private val tre
     fun descriptor(uri: Uri): ParcelFileDescriptor = resolver.openFileDescriptor(uri, "rw")
         ?: throw IOException("Cannot open the received document.")
 
+    fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
+        ?: throw IOException("Cannot read the received document.")
+
     fun finish(uri: Uri, name: String): Uri {
         val taken = existingNames()
         var suffix = 0

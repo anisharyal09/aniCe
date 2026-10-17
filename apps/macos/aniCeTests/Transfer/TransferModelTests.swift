@@ -83,7 +83,7 @@ final class TransferModelTests: XCTestCase {
     owner.dismiss()
   }
 
-  func testLANLossRetiresPartialAndRejectsOldChunksBeforeBLERetry() async throws {
+  func testLANLossPausesReceiverRetainsPartialAndResumesOverBLE() async throws {
     let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
     let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
     for channel in [lan, ble] {
@@ -95,21 +95,467 @@ final class TransferModelTests: XCTestCase {
     await owner.acceptIncomingOffer(destination: tempDir)
     _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
       offset: 0, data: Data([0])).encode(), on: lan.descriptor)
+
     owner.retired(lan.descriptor)
-    guard case .failed = owner.state else { return XCTFail("Interrupted batch must fail") }
+    guard case .paused(_, _, _, let fileBytes, _, _, _, let canResumeOverBle) = owner.state else {
+      return XCTFail("LAN loss must pause, not fail: \(owner.state)")
+    }
+    XCTAssertEqual(fileBytes, 1)
+    XCTAssertTrue(canResumeOverBle, "A receiver with only a capable BLE channel may continue over it")
     XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
-    XCTAssertTrue(owner.peerCompatible)
+    XCTAssertEqual(try partialNames(in: tempDir).count, 1, "The verified prefix must survive the pause")
+
+    // Old-channel chunks are discarded; the retained prefix is untouched.
+    let stale = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 1, data: Data(repeating: 0, count: 9)).encode(), on: lan.descriptor)
+    XCTAssertEqual(stale, .discarded)
+    XCTAssertTrue(owner.isPaused)
+
+    // The sender resumes over BLE at the receiver's retained length.
+    let prefix = Data(SHA256.hash(data: Data([0])))
+    _ = await owner.handle(try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 1, prefixHash: prefix).encode(), on: ble.descriptor)
+    let status = try XCTUnwrap(statuses(ble).last)
+    XCTAssertEqual(status.number(3), 0)
+    XCTAssertEqual(status.number(2), 1)
+
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 1, data: Data(repeating: 0, count: 9)).encode(), on: ble.descriptor)
     for _ in 0..<200 {
-      if try FileManager.default.contentsOfDirectory(atPath: tempDir.path).isEmpty { break }
+      if case .completed = owner.state { break }
       try await Task.sleep(for: .milliseconds(5))
     }
-    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: tempDir.path).isEmpty)
-    let handlingResult2 = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
-      offset: 1, data: Data(repeating: 0, count: 9)).encode(), on: lan.descriptor)
-    XCTAssertEqual(handlingResult2, .discarded)
-    try await offer(owner, ble)
-    guard case .incomingOffer = owner.state else { return XCTFail("BLE retry unavailable") }
+    guard case .completed = owner.state else { return XCTFail("Resumed batch did not complete: \(owner.state)") }
+    XCTAssertEqual(try Data(contentsOf: tempDir.appendingPathComponent("empty.bin")), Data(repeating: 0, count: 10))
+    XCTAssertTrue(try partialNames(in: tempDir).isEmpty)
     owner.dismiss()
+  }
+
+  func testPauseTimeoutRemovesPartialAndFails() async throws {
+    let owner = MacTransferModel(pauseTimeout: .milliseconds(25))
+    let channel = MockSecuredChannel(instance: "lan")
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    try await offer(owner, channel, size: 10)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data([0])).encode(), on: channel.descriptor)
+    owner.retired(channel.descriptor)
+    XCTAssertTrue(owner.isPaused)
+
+    for _ in 0..<400 {
+      if case .failed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .failed(let reason) = owner.state else { return XCTFail("Pause must time out: \(owner.state)") }
+    XCTAssertTrue(reason.contains("paused for too long"))
+    for _ in 0..<400 {
+      if try partialNames(in: tempDir).isEmpty { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(try partialNames(in: tempDir).isEmpty, "The timed-out partial must be deleted")
+    owner.dismiss()
+  }
+
+  func testCancelWhilePausedDeletesPartial() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    try await offer(owner, channel, size: 10)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data([0])).encode(), on: channel.descriptor)
+    owner.retired(channel.descriptor)
+    XCTAssertTrue(owner.isPaused)
+
+    owner.cancelTransfer()
+    XCTAssertEqual(owner.state, .cancelled)
+    for _ in 0..<400 {
+      if try partialNames(in: tempDir).isEmpty { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(try partialNames(in: tempDir).isEmpty, "Cancel must delete the paused partial")
+  }
+
+  func testResumeOffsetMismatchAndPrefixMismatchRecover() async throws {
+    let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    for channel in [lan, ble] {
+      owner.available(channel)
+      _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    }
+    try await offer(owner, lan, size: 10)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data(repeating: 0, count: 4)).encode(), on: lan.descriptor)
+    owner.retired(lan.descriptor)
+    XCTAssertTrue(owner.isPaused)
+
+    // A requested offset beyond the retained length reports the real length.
+    _ = await owner.handle(try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 9, prefixHash: Data(SHA256.hash(data: Data(repeating: 0, count: 9)))).encode(), on: ble.descriptor)
+    XCTAssertEqual(try XCTUnwrap(statuses(ble).last).number(3), 1)
+    XCTAssertEqual(try XCTUnwrap(statuses(ble).last).number(2), 4)
+
+    // A prefix that does not match discards the retained bytes and restarts from zero.
+    _ = await owner.handle(try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 4, prefixHash: Data(repeating: 0, count: 32)).encode(), on: ble.descriptor)
+    XCTAssertEqual(try XCTUnwrap(statuses(ble).last).number(3), 2)
+    let parts = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+      .filter { $0.lastPathComponent.hasPrefix(".anice-") }
+    XCTAssertEqual(parts.count, 1)
+    XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(parts.first)).count, 0)
+
+    _ = await owner.handle(try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, prefixHash: Data(SHA256.hash(data: Data()))).encode(), on: ble.descriptor)
+    XCTAssertEqual(try XCTUnwrap(statuses(ble).last).number(3), 0)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data(repeating: 0, count: 10)).encode(), on: ble.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = owner.state else { return XCTFail("Restarted batch did not complete: \(owner.state)") }
+    XCTAssertEqual(try Data(contentsOf: tempDir.appendingPathComponent("empty.bin")), Data(repeating: 0, count: 10))
+    owner.dismiss()
+  }
+
+  func testLastChunkPauseReplaysVerifiedFileResult() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    try await offer(owner, channel, size: 4)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data(repeating: 0, count: 4)).encode(), on: channel.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = owner.state else { return XCTFail("File did not complete") }
+    let resultsBefore = channel.sentData.compactMap { try? TransferMessage.decode($0) }.filter { $0.kind == 7 }.count
+
+    // The sender reconnects after the final chunk was acknowledged but before it saw the result.
+    _ = await owner.handle(try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 4, prefixHash: Data(SHA256.hash(data: Data(repeating: 0, count: 4)))).encode(), on: channel.descriptor)
+    let status = try XCTUnwrap(statuses(channel).last)
+    XCTAssertEqual(status.number(3), 0)
+    XCTAssertEqual(status.number(2), 4)
+    let resultsAfter = channel.sentData.compactMap { try? TransferMessage.decode($0) }.filter { $0.kind == 7 }.count
+    XCTAssertGreaterThan(resultsAfter, resultsBefore, "The verified file result must be replayed")
+    owner.dismiss()
+  }
+
+  func testAsymmetricReceiverAcceptsResumeWhileStillTransferring() async throws {
+    let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    for channel in [lan, ble] {
+      owner.available(channel)
+      _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    }
+    try await offer(owner, lan, size: 10)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data([0])).encode(), on: lan.descriptor)
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+
+    // Only the sender lost its channel; the receiver is still transferring but must accept the
+    // sender's resume on the new channel and rebind to it.
+    _ = await owner.handle(try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 1, prefixHash: Data(SHA256.hash(data: Data([0])))).encode(), on: ble.descriptor)
+    XCTAssertEqual(try XCTUnwrap(statuses(ble).last).number(3), 0)
+    XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+
+    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 1, data: Data(repeating: 0, count: 9)).encode(), on: ble.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = owner.state else { return XCTFail("Asymmetric resume did not complete: \(owner.state)") }
+    XCTAssertEqual(try Data(contentsOf: tempDir.appendingPathComponent("empty.bin")), Data(repeating: 0, count: 10))
+    owner.dismiss()
+  }
+
+  func testLANPauseAutoResumesWhenLanReconnects() async throws {
+    let sender = MacTransferModel(), receiver = MacTransferModel()
+    let senderLan = MockSecuredChannel(instance: "sender-lan", deviceName: "MacBook")
+    let receiverLan = MockSecuredChannel(instance: "receiver-lan", deviceName: "Phone")
+    let capability = try TransferMessage.capability().encode()
+    sender.available(senderLan); _ = await sender.handle(capability, on: senderLan.descriptor)
+    receiver.available(receiverLan); _ = await receiver.handle(capability, on: receiverLan.descriptor)
+
+    var gateReached = false
+    senderLan.onSendData = { bytes in
+      if let message = try? TransferMessage.decode(bytes), !gateReached,
+        message.kind == 5, message.number(2) == 6144 {
+        gateReached = true
+        // Suspends the stream until the pause cancels it, so the third chunk never reaches the peer.
+        try await Task.sleep(for: .seconds(600))
+      }
+      _ = await receiver.handle(bytes, on: receiverLan.descriptor)
+    }
+    receiverLan.onSendData = { bytes in _ = await sender.handle(bytes, on: senderLan.descriptor) }
+
+    let data = Data((0..<20_000).map { UInt8($0 % 251) })
+    let source = tempDir.appendingPathComponent("source.bin")
+    try data.write(to: source)
+    let dest = tempDir.appendingPathComponent("dest")
+    try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+
+    await sender.sendFiles(urls: [source])
+    guard case .incomingOffer = receiver.state else { return XCTFail("Missing offer") }
+    await receiver.acceptIncomingOffer(destination: dest)
+    for _ in 0..<400 {
+      if gateReached { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(gateReached)
+
+    sender.retired(senderLan.descriptor)
+    XCTAssertTrue(sender.isPaused, "A lost LAN channel must pause the sender")
+    XCTAssertFalse(receiver.isPaused, "The receiver's partial must survive the sender's pause")
+
+    // The same peer answers on a fresh LAN channel; the sender resumes automatically.
+    let senderLan2 = MockSecuredChannel(instance: "sender-lan-2", deviceName: "MacBook", peer: senderLan.descriptor.peer)
+    senderLan2.onSendData = { bytes in _ = await receiver.handle(bytes, on: receiverLan.descriptor) }
+    receiverLan.onSendData = { bytes in _ = await sender.handle(bytes, on: senderLan2.descriptor) }
+    sender.available(senderLan2)
+    _ = await sender.handle(capability, on: senderLan2.descriptor)
+
+    for _ in 0..<800 {
+      if case .completed = sender.state, case .completed = receiver.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = sender.state, case .completed = receiver.state else {
+      return XCTFail("Auto-resume did not complete; sender: \(sender.state), receiver: \(receiver.state)")
+    }
+    XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("source.bin")), data)
+    XCTAssertTrue(try partialNames(in: dest).isEmpty)
+    XCTAssertTrue(senderLan2.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 10 },
+      "A reconnected LAN channel must trigger a resume request")
+    sender.dismiss(); receiver.dismiss()
+  }
+
+  func testBLEContinuationRequiresExplicitOptIn() async throws {
+    let sender = MacTransferModel(), receiver = MacTransferModel()
+    let senderLan = MockSecuredChannel(instance: "sender-lan", deviceName: "MacBook")
+    let receiverLan = MockSecuredChannel(instance: "receiver-lan", deviceName: "Phone")
+    let senderBle = MockSecuredChannel(instance: "sender-ble", transport: "ble", deviceName: "MacBook", peer: senderLan.descriptor.peer)
+    let receiverBle = MockSecuredChannel(instance: "receiver-ble", transport: "ble", deviceName: "Phone", peer: receiverLan.descriptor.peer)
+    let capability = try TransferMessage.capability().encode()
+    for channel in [senderLan, senderBle] {
+      sender.available(channel)
+      _ = await sender.handle(capability, on: channel.descriptor)
+    }
+    for channel in [receiverLan, receiverBle] {
+      receiver.available(channel)
+      _ = await receiver.handle(capability, on: channel.descriptor)
+    }
+
+    var gateReached = false
+    senderLan.onSendData = { bytes in
+      if let message = try? TransferMessage.decode(bytes), !gateReached,
+        message.kind == 5, message.number(2) == 6144 {
+        gateReached = true
+        try await Task.sleep(for: .seconds(600))
+      }
+      _ = await receiver.handle(bytes, on: receiverLan.descriptor)
+    }
+    senderBle.onSendData = { bytes in _ = await receiver.handle(bytes, on: receiverBle.descriptor) }
+    receiverLan.onSendData = { bytes in _ = await sender.handle(bytes, on: senderLan.descriptor) }
+    receiverBle.onSendData = { bytes in _ = await sender.handle(bytes, on: senderBle.descriptor) }
+
+    let data = Data((0..<20_000).map { UInt8($0 % 251) })
+    let source = tempDir.appendingPathComponent("source.bin")
+    try data.write(to: source)
+    let dest = tempDir.appendingPathComponent("dest")
+    try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+
+    await sender.sendFiles(urls: [source])
+    guard case .incomingOffer = receiver.state else { return XCTFail("Missing offer") }
+    await receiver.acceptIncomingOffer(destination: dest)
+    for _ in 0..<400 {
+      if gateReached { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(gateReached)
+
+    sender.retired(senderLan.descriptor)
+    receiver.retired(receiverLan.descriptor)
+    XCTAssertTrue(sender.isPaused)
+    XCTAssertTrue(receiver.isPaused)
+    guard case .paused(_, _, _, _, _, _, _, let canResume) = sender.state else {
+      return XCTFail("Sender must be paused")
+    }
+    XCTAssertTrue(canResume, "A LAN pause with a capable BLE channel must offer continuation")
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(senderBle.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 10 },
+      "BLE must not resume a LAN pause before opt-in")
+
+    let chunksBefore = senderBle.sentData.count
+    sender.resumeOverBluetooth()
+    for _ in 0..<800 {
+      if case .completed = sender.state, case .completed = receiver.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = sender.state, case .completed = receiver.state else {
+      return XCTFail("BLE continuation did not complete; sender: \(sender.state), receiver: \(receiver.state)")
+    }
+    XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("source.bin")), data)
+    XCTAssertTrue(try partialNames(in: dest).isEmpty)
+    let resumedChunks = senderBle.sentData.dropFirst(chunksBefore).compactMap { try? TransferMessage.decode($0) }
+      .filter { $0.kind == 5 }
+    XCTAssertFalse(resumedChunks.isEmpty, "Continuation must send chunks over BLE")
+    for chunk in resumedChunks {
+      XCTAssertLessThanOrEqual(try XCTUnwrap(chunk.bytes(3)).count, 3072)
+    }
+    sender.dismiss(); receiver.dismiss()
+  }
+
+  func testReceiverCanAskTheSenderToContinueOverBluetooth() async throws {
+    let sender = MacTransferModel(), receiver = MacTransferModel()
+    let senderLan = MockSecuredChannel(instance: "sender-lan", deviceName: "MacBook")
+    let receiverLan = MockSecuredChannel(instance: "receiver-lan", deviceName: "Phone")
+    let senderBle = MockSecuredChannel(instance: "sender-ble", transport: "ble", deviceName: "MacBook", peer: senderLan.descriptor.peer)
+    let receiverBle = MockSecuredChannel(instance: "receiver-ble", transport: "ble", deviceName: "Phone", peer: receiverLan.descriptor.peer)
+    let capability = try TransferMessage.capability().encode()
+    for channel in [senderLan, senderBle] {
+      sender.available(channel)
+      _ = await sender.handle(capability, on: channel.descriptor)
+    }
+    for channel in [receiverLan, receiverBle] {
+      receiver.available(channel)
+      _ = await receiver.handle(capability, on: channel.descriptor)
+    }
+
+    var gateReached = false
+    senderLan.onSendData = { bytes in
+      if let message = try? TransferMessage.decode(bytes), !gateReached,
+        message.kind == 5, message.number(2) == 6144 {
+        gateReached = true
+        try await Task.sleep(for: .seconds(600))
+      }
+      _ = await receiver.handle(bytes, on: receiverLan.descriptor)
+    }
+    senderBle.onSendData = { bytes in _ = await receiver.handle(bytes, on: receiverBle.descriptor) }
+    receiverLan.onSendData = { bytes in _ = await sender.handle(bytes, on: senderLan.descriptor) }
+    receiverBle.onSendData = { bytes in _ = await sender.handle(bytes, on: senderBle.descriptor) }
+
+    let data = Data((0..<20_000).map { UInt8($0 % 251) })
+    let source = tempDir.appendingPathComponent("source.bin")
+    try data.write(to: source)
+    let dest = tempDir.appendingPathComponent("dest")
+    try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+
+    await sender.sendFiles(urls: [source])
+    guard case .incomingOffer = receiver.state else { return XCTFail("Missing offer") }
+    await receiver.acceptIncomingOffer(destination: dest)
+    for _ in 0..<400 {
+      if gateReached { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(gateReached)
+
+    sender.retired(senderLan.descriptor)
+    receiver.retired(receiverLan.descriptor)
+    guard case .paused(_, _, _, _, _, _, _, let canResume) = receiver.state else {
+      return XCTFail("Receiver must be paused")
+    }
+    XCTAssertTrue(canResume, "The receiver with a capable BLE channel must offer continuation")
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertFalse(receiverBle.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 10 },
+      "No continuation happens before the explicit opt-in")
+
+    // The receiving device, not the sender, initiates the resume over Bluetooth.
+    receiver.resumeOverBluetooth()
+    for _ in 0..<800 {
+      if case .completed = sender.state, case .completed = receiver.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = sender.state, case .completed = receiver.state else {
+      return XCTFail("Receiver-initiated continuation did not complete; sender: \(sender.state), receiver: \(receiver.state)")
+    }
+    XCTAssertTrue(receiverBle.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 10 },
+      "The receiver must send the resume request")
+    XCTAssertTrue(senderBle.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 11 },
+      "The sender must answer over the same channel")
+    XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("source.bin")), data)
+    XCTAssertTrue(try partialNames(in: dest).isEmpty)
+    sender.dismiss(); receiver.dismiss()
+  }
+
+  func testLANReconnectUpgradesAnActiveBluetoothStream() async throws {
+    let sender = MacTransferModel(), receiver = MacTransferModel()
+    let senderBle = MockSecuredChannel(instance: "sender-ble", transport: "ble", deviceName: "MacBook")
+    let receiverBle = MockSecuredChannel(instance: "receiver-ble", transport: "ble", deviceName: "Phone",
+      peer: senderBle.descriptor.peer)
+    let capability = try TransferMessage.capability().encode()
+    for channel in [senderBle] {
+      sender.available(channel)
+      _ = await sender.handle(capability, on: channel.descriptor)
+    }
+    for channel in [receiverBle] {
+      receiver.available(channel)
+      _ = await receiver.handle(capability, on: channel.descriptor)
+    }
+
+    var gateReached = false
+    senderBle.onSendData = { bytes in
+      if let message = try? TransferMessage.decode(bytes), !gateReached,
+        message.kind == 5, message.number(2) == 6144 {
+        gateReached = true
+        try await Task.sleep(for: .seconds(600))
+      }
+      _ = await receiver.handle(bytes, on: receiverBle.descriptor)
+    }
+    receiverBle.onSendData = { bytes in _ = await sender.handle(bytes, on: senderBle.descriptor) }
+
+    let data = Data((0..<20_000).map { UInt8($0 % 251) })
+    let source = tempDir.appendingPathComponent("source.bin")
+    try data.write(to: source)
+    let dest = tempDir.appendingPathComponent("dest")
+    try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+
+    await sender.sendFiles(urls: [source])
+    guard case .incomingOffer = receiver.state else { return XCTFail("Missing offer") }
+    await receiver.acceptIncomingOffer(destination: dest)
+    for _ in 0..<400 {
+      if gateReached { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(gateReached)
+
+    // A live LAN appears while the Bluetooth stream is still in flight.
+    let senderLan = MockSecuredChannel(instance: "sender-lan", deviceName: "MacBook", peer: senderBle.descriptor.peer)
+    let receiverLan = MockSecuredChannel(instance: "receiver-lan", deviceName: "Phone", peer: receiverBle.descriptor.peer)
+    senderLan.onSendData = { bytes in _ = await receiver.handle(bytes, on: receiverLan.descriptor) }
+    receiverLan.onSendData = { bytes in _ = await sender.handle(bytes, on: senderLan.descriptor) }
+    receiver.available(receiverLan)
+    _ = await receiver.handle(capability, on: receiverLan.descriptor)
+    sender.available(senderLan)
+    _ = await sender.handle(capability, on: senderLan.descriptor)
+
+    for _ in 0..<800 {
+      if case .completed = sender.state, case .completed = receiver.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = sender.state, case .completed = receiver.state else {
+      return XCTFail("LAN upgrade did not complete; sender: \(sender.state), receiver: \(receiver.state)")
+    }
+    let lanMessages = senderLan.sentData.compactMap { try? TransferMessage.decode($0) }
+    XCTAssertTrue(lanMessages.contains { $0.kind == 10 },
+      "The sender must hand the stream over through the resume handshake")
+    XCTAssertTrue(lanMessages.contains { $0.kind == 5 },
+      "The remainder must continue over LAN, not Bluetooth")
+    XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("source.bin")), data)
+    XCTAssertTrue(try partialNames(in: dest).isEmpty)
+    sender.dismiss(); receiver.dismiss()
   }
 
   func testActiveBLEBatchKeepsItsGenerationUntilCleanupThenPrefersLAN() async throws {
@@ -298,6 +744,14 @@ final class TransferModelTests: XCTestCase {
       totalSlices: 1, totalFiles: 1, totalBytes: size,
       files: [.array([.text(UUID().uuidString.lowercased()), .text("empty.bin"), .integer(size), .bytes(digest)])])
     _ = await owner.handle(try message.encode(), on: channel.descriptor)
+  }
+
+  private func statuses(_ channel: MockSecuredChannel) -> [TransferMessage] {
+    channel.sentData.compactMap { try? TransferMessage.decode($0) }.filter { $0.kind == 11 }
+  }
+
+  private func partialNames(in folder: URL) throws -> [String] {
+    try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix(".anice-") }
   }
 
   func testCancellationRetiresAckEffectsAndKeepsNextOfferUsable() async throws {

@@ -124,7 +124,7 @@ class TransferControllerTests {
         owner.dismiss()
     }
 
-    @Test fun lanLossRetiresPartialAndRejectsOldChunksBeforeBleRetry() = runBlocking {
+    @Test fun lanLossPausesReceiverAndRetainsPartialUntilResume() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val lan = MockAndroidSecuredChannel(instance = "lan")
         val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
@@ -133,16 +133,358 @@ class TransferControllerTests {
         owner.acceptIncomingOffer(tempDir)
         owner.handle(lan.descriptor, TransferMessage.chunk(batch, file, 0, byteArrayOf(0)).encode())
         owner.retired(lan.descriptor)
-        assertTrue(owner.state is TransferState.Failed)
+        val paused = owner.state as? TransferState.Paused
+        assertNotNull("LAN loss must pause, not fail", paused)
+        assertEquals(1L, paused!!.fileBytes)
         assertSame(ble, owner.activeChannel)
-        assertTrue(owner.peerCompatible)
-        kotlinx.coroutines.withTimeout(2000) { while (tempDir.listFiles()!!.isNotEmpty()) delay(5) }
-        assertTrue(tempDir.listFiles()!!.isEmpty())
+        assertEquals(1, tempDir.listFiles()!!.count { it.name.startsWith(".anice-") })
+
+        // Old-channel chunks are discarded; the retained prefix is untouched.
         owner.handle(lan.descriptor, TransferMessage.chunk(batch, file, 1, ByteArray(9)).encode())
-        assertTrue(owner.state is TransferState.Failed)
-        offered(owner, ble)
-        assertTrue(owner.state is TransferState.IncomingOffer)
+        assertEquals(paused, owner.state)
+
+        // The sender resumes over BLE at the receiver's retained length.
+        val prefix = MessageDigest.getInstance("SHA-256").digest(byteArrayOf(0))
+        owner.handle(ble.descriptor, TransferMessage.resume(batch, file, 1, prefix).encode())
+        val status = ble.sentData.mapNotNull { TransferMessage.decode(it) }.last { it.kind == 11L }
+        assertEquals(0L, status.number(3))
+        assertEquals(1L, status.number(2))
+
+        owner.handle(ble.descriptor, TransferMessage.chunk(batch, file, 1, ByteArray(9)).encode())
+        kotlinx.coroutines.withTimeout(2000) { while (owner.state !is TransferState.Completed) delay(5) }
+        assertArrayEquals(ByteArray(10), File(tempDir, "empty.bin").readBytes())
+        assertTrue(tempDir.listFiles()!!.none { it.name.startsWith(".anice-") })
         owner.dismiss()
+    }
+
+    @Test fun pausedTimeoutRemovesPartialAndFails() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined, pauseTimeoutMillis = 25)
+        val lan = MockAndroidSecuredChannel(instance = "lan")
+        owner.available(lan)
+        owner.handle(lan.descriptor, TransferMessage.capability().encode())
+        val (batch, file) = offered(owner, lan, 10)
+        owner.acceptIncomingOffer(tempDir)
+        owner.handle(lan.descriptor, TransferMessage.chunk(batch, file, 0, byteArrayOf(0)).encode())
+        owner.retired(lan.descriptor)
+        assertTrue(owner.state is TransferState.Paused)
+        kotlinx.coroutines.withTimeout(2000) { while (owner.state !is TransferState.Failed) delay(5) }
+        kotlinx.coroutines.withTimeout(2000) { while (tempDir.listFiles()!!.isNotEmpty()) delay(5) }
+        owner.dismiss()
+    }
+
+    @Test fun cancelWhilePausedDeletesPartial() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val channel = MockAndroidSecuredChannel()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        val (batch, file) = offered(owner, channel, 10)
+        owner.acceptIncomingOffer(tempDir)
+        owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 0, byteArrayOf(0)).encode())
+        owner.retired(channel.descriptor)
+        assertTrue(owner.state is TransferState.Paused)
+        owner.cancelTransfer()
+        assertEquals(TransferState.Cancelled, owner.state)
+        kotlinx.coroutines.withTimeout(2000) { while (tempDir.listFiles()!!.isNotEmpty()) delay(5) }
+    }
+
+    @Test fun resumeOffsetMismatchAndPrefixMismatchRecover() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val lan = MockAndroidSecuredChannel(instance = "lan")
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        listOf(lan, ble).forEach { owner.available(it); owner.handle(it.descriptor, TransferMessage.capability().encode()) }
+        val (batch, file) = offered(owner, lan, 10)
+        owner.acceptIncomingOffer(tempDir)
+        owner.handle(lan.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(4)).encode())
+        owner.retired(lan.descriptor)
+        assertTrue(owner.state is TransferState.Paused)
+
+        fun latestStatus() = ble.sentData.mapNotNull { TransferMessage.decode(it) }.last { it.kind == 11L }
+
+        // A requested offset beyond the retained length reports the real length.
+        owner.handle(ble.descriptor,
+            TransferMessage.resume(batch, file, 9, MessageDigest.getInstance("SHA-256").digest(ByteArray(9))).encode())
+        assertEquals(1L, latestStatus().number(3))
+        assertEquals(4L, latestStatus().number(2))
+
+        // A prefix that does not match discards the retained bytes and restarts from zero.
+        owner.handle(ble.descriptor, TransferMessage.resume(batch, file, 4, ByteArray(32)).encode())
+        assertEquals(2L, latestStatus().number(3))
+        val parts = tempDir.listFiles()!!.filter { it.name.startsWith(".anice-") }
+        assertEquals(1, parts.size)
+        assertEquals(0L, parts.single().length())
+
+        owner.handle(ble.descriptor,
+            TransferMessage.resume(batch, file, 0, MessageDigest.getInstance("SHA-256").digest()).encode())
+        assertEquals(0L, latestStatus().number(3))
+        owner.handle(ble.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(10)).encode())
+        kotlinx.coroutines.withTimeout(2000) { while (owner.state !is TransferState.Completed) delay(5) }
+        assertArrayEquals(ByteArray(10), File(tempDir, "empty.bin").readBytes())
+        owner.dismiss()
+    }
+
+    @Test fun lastChunkPauseReplaysVerifiedFileResult() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val channel = MockAndroidSecuredChannel()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        val (batch, file) = offered(owner, channel, 4)
+        owner.acceptIncomingOffer(tempDir)
+        owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(4)).encode())
+        kotlinx.coroutines.withTimeout(2000) { while (owner.state !is TransferState.Completed) delay(5) }
+        val resultsBefore = channel.sentData.mapNotNull { TransferMessage.decode(it) }.count { it.kind == 7L }
+
+        val prefix = MessageDigest.getInstance("SHA-256").digest(ByteArray(4))
+        owner.handle(channel.descriptor, TransferMessage.resume(batch, file, 4, prefix).encode())
+        val sent = channel.sentData.mapNotNull { TransferMessage.decode(it) }
+        val status = sent.last { it.kind == 11L }
+        assertEquals(0L, status.number(3))
+        assertEquals(4L, status.number(2))
+        assertTrue(sent.count { it.kind == 7L } > resultsBefore)
+        owner.dismiss()
+    }
+
+    @Test fun asymmetricReceiverAcceptsResumeWhileStillTransferring() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val lan = MockAndroidSecuredChannel(instance = "lan")
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        listOf(lan, ble).forEach { owner.available(it); owner.handle(it.descriptor, TransferMessage.capability().encode()) }
+        val (batch, file) = offered(owner, lan, 10)
+        owner.acceptIncomingOffer(tempDir)
+        owner.handle(lan.descriptor, TransferMessage.chunk(batch, file, 0, byteArrayOf(0)).encode())
+        assertSame(lan, owner.activeChannel)
+        assertTrue(owner.state is TransferState.Transferring)
+
+        // Only the sender lost its channel; the receiver is still transferring but must accept the
+        // sender's resume on the new channel and rebind to it.
+        val prefix = MessageDigest.getInstance("SHA-256").digest(byteArrayOf(0))
+        owner.handle(ble.descriptor, TransferMessage.resume(batch, file, 1, prefix).encode())
+        val status = ble.sentData.mapNotNull { TransferMessage.decode(it) }.last { it.kind == 11L }
+        assertEquals(0L, status.number(3))
+        assertEquals(1L, status.number(2))
+        assertSame(ble, owner.activeChannel)
+
+        owner.handle(ble.descriptor, TransferMessage.chunk(batch, file, 1, ByteArray(9)).encode())
+        kotlinx.coroutines.withTimeout(2000) { while (owner.state !is TransferState.Completed) delay(5) }
+        assertArrayEquals(ByteArray(10), File(tempDir, "empty.bin").readBytes())
+        owner.dismiss()
+    }
+
+    @Test fun lanPauseAutoResumesWhenLanReconnects() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderLan = MockAndroidSecuredChannel(instance = "sender-lan", deviceName = "Phone")
+        val receiverLan = MockAndroidSecuredChannel(instance = "receiver-lan", deviceName = "MacBook")
+        val capability = TransferMessage.capability().encode()
+        sender.available(senderLan); sender.handle(senderLan.descriptor, capability)
+        receiver.available(receiverLan); receiver.handle(receiverLan.descriptor, capability)
+
+        val gateReached = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var blocked = false
+        senderLan.onSendData = { bytes ->
+            val message = TransferMessage.decode(bytes)
+            if (!blocked && message?.kind == 5L && message.number(2) == 6144L) {
+                blocked = true
+                gateReached.complete(Unit)
+                gate.await()
+            }
+            receiver.handle(receiverLan.descriptor, bytes)
+        }
+        receiverLan.onSendData = { sender.handle(senderLan.descriptor, it) }
+
+        val data = ByteArray(20_000) { (it % 251).toByte() }
+        val source = File(tempDir, "source.bin").apply { writeBytes(data) }
+        val dest = File(tempDir, "dest").apply { mkdirs() }
+        sender.sendFiles(listOf(source))
+        kotlinx.coroutines.withTimeout(2000) { while (receiver.state !is TransferState.IncomingOffer) delay(5) }
+        receiver.acceptIncomingOffer(dest)
+        kotlinx.coroutines.withTimeout(2000) { gateReached.await() }
+
+        sender.retired(senderLan.descriptor)
+        val paused = sender.state as? TransferState.Paused
+        assertNotNull(paused)
+        assertTrue("The partial must survive the pause", receiver.state is TransferState.Transferring)
+
+        // The same peer answers on a fresh LAN channel; the resumed sender adopts the receiver's length.
+        val senderLan2 = MockAndroidSecuredChannel(instance = "sender-lan-2", deviceName = "Phone")
+        senderLan2.onSendData = { receiver.handle(receiverLan.descriptor, it) }
+        receiverLan.onSendData = { sender.handle(senderLan2.descriptor, it) }
+        sender.available(senderLan2)
+        sender.handle(senderLan2.descriptor, capability)
+
+        kotlinx.coroutines.withTimeout(4000) {
+            while (sender.state !is TransferState.Completed || receiver.state !is TransferState.Completed) delay(5)
+        }
+        assertArrayEquals(data, File(dest, "source.bin").readBytes())
+        assertTrue(dest.listFiles()!!.none { it.name.startsWith(".anice-") })
+        assertTrue(senderLan2.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 10L })
+        sender.dismiss(); receiver.dismiss()
+    }
+
+    @Test fun bleContinuationRequiresExplicitOptIn() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderLan = MockAndroidSecuredChannel(instance = "sender-lan", deviceName = "Phone")
+        val receiverLan = MockAndroidSecuredChannel(instance = "receiver-lan", deviceName = "MacBook")
+        val senderBle = MockAndroidSecuredChannel(instance = "sender-ble", transport = "ble", deviceName = "Phone")
+        val receiverBle = MockAndroidSecuredChannel(instance = "receiver-ble", transport = "ble", deviceName = "MacBook")
+        val capability = TransferMessage.capability().encode()
+        listOf(senderLan, senderBle).forEach { sender.available(it); sender.handle(it.descriptor, capability) }
+        listOf(receiverLan, receiverBle).forEach { receiver.available(it); receiver.handle(it.descriptor, capability) }
+
+        val gateReached = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var blocked = false
+        senderLan.onSendData = { bytes ->
+            val message = TransferMessage.decode(bytes)
+            if (!blocked && message?.kind == 5L && message.number(2) == 6144L) {
+                blocked = true
+                gateReached.complete(Unit)
+                gate.await()
+            }
+            receiver.handle(receiverLan.descriptor, bytes)
+        }
+        senderBle.onSendData = { receiver.handle(receiverBle.descriptor, it) }
+        receiverLan.onSendData = { sender.handle(senderLan.descriptor, it) }
+        receiverBle.onSendData = { sender.handle(senderBle.descriptor, it) }
+
+        val data = ByteArray(20_000) { (it % 251).toByte() }
+        val source = File(tempDir, "source.bin").apply { writeBytes(data) }
+        val dest = File(tempDir, "dest").apply { mkdirs() }
+        sender.sendFiles(listOf(source))
+        kotlinx.coroutines.withTimeout(2000) { while (receiver.state !is TransferState.IncomingOffer) delay(5) }
+        receiver.acceptIncomingOffer(dest)
+        kotlinx.coroutines.withTimeout(2000) { gateReached.await() }
+
+        sender.retired(senderLan.descriptor)
+        receiver.retired(receiverLan.descriptor)
+        assertTrue(sender.state is TransferState.Paused)
+        assertTrue(receiver.state is TransferState.Paused)
+        delay(50)
+        assertFalse("BLE must not resume a LAN pause before opt-in",
+            senderBle.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 10L })
+
+        val chunksBefore = senderBle.sentData.size
+        sender.resumeOverBluetooth()
+        kotlinx.coroutines.withTimeout(4000) {
+            while (sender.state !is TransferState.Completed || receiver.state !is TransferState.Completed) delay(5)
+        }
+        assertArrayEquals(data, File(dest, "source.bin").readBytes())
+        val resumedChunks = senderBle.sentData.drop(chunksBefore).mapNotNull { TransferMessage.decode(it) }
+            .filter { it.kind == 5L }
+        assertTrue(resumedChunks.isNotEmpty())
+        assertTrue("BLE continuation must use BLE-sized chunks", resumedChunks.all { it.bytes(3).size <= 3072 })
+        sender.dismiss(); receiver.dismiss()
+    }
+
+    @Test fun receiverCanAskTheSenderToContinueOverBluetooth() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderLan = MockAndroidSecuredChannel(instance = "sender-lan", deviceName = "Phone")
+        val receiverLan = MockAndroidSecuredChannel(instance = "receiver-lan", deviceName = "MacBook")
+        val senderBle = MockAndroidSecuredChannel(instance = "sender-ble", transport = "ble", deviceName = "Phone")
+        val receiverBle = MockAndroidSecuredChannel(instance = "receiver-ble", transport = "ble", deviceName = "MacBook")
+        val capability = TransferMessage.capability().encode()
+        listOf(senderLan, senderBle).forEach { sender.available(it); sender.handle(it.descriptor, capability) }
+        listOf(receiverLan, receiverBle).forEach { receiver.available(it); receiver.handle(it.descriptor, capability) }
+
+        val gateReached = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var blocked = false
+        senderLan.onSendData = { bytes ->
+            val message = TransferMessage.decode(bytes)
+            if (!blocked && message?.kind == 5L && message.number(2) == 6144L) {
+                blocked = true
+                gateReached.complete(Unit)
+                gate.await()
+            }
+            receiver.handle(receiverLan.descriptor, bytes)
+        }
+        senderBle.onSendData = { receiver.handle(receiverBle.descriptor, it) }
+        receiverLan.onSendData = { sender.handle(senderLan.descriptor, it) }
+        receiverBle.onSendData = { sender.handle(senderBle.descriptor, it) }
+
+        val data = ByteArray(20_000) { (it % 251).toByte() }
+        val source = File(tempDir, "source.bin").apply { writeBytes(data) }
+        val dest = File(tempDir, "dest").apply { mkdirs() }
+        sender.sendFiles(listOf(source))
+        kotlinx.coroutines.withTimeout(2000) { while (receiver.state !is TransferState.IncomingOffer) delay(5) }
+        receiver.acceptIncomingOffer(dest)
+        kotlinx.coroutines.withTimeout(2000) { gateReached.await() }
+
+        sender.retired(senderLan.descriptor)
+        receiver.retired(receiverLan.descriptor)
+        val paused = receiver.state as? TransferState.Paused
+        assertNotNull(paused)
+        assertTrue("The receiver with a capable BLE channel must offer continuation", paused!!.canResumeOverBle)
+        delay(30)
+        assertFalse("No continuation happens before the explicit opt-in",
+            receiverBle.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 10L })
+
+        // The receiving device, not the sender, initiates the resume over Bluetooth.
+        receiver.resumeOverBluetooth()
+        kotlinx.coroutines.withTimeout(4000) {
+            while (sender.state !is TransferState.Completed || receiver.state !is TransferState.Completed) delay(5)
+        }
+        assertTrue("The receiver must send the resume request",
+            receiverBle.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 10L })
+        assertTrue("The sender must answer over the same channel",
+            senderBle.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 11L })
+        assertArrayEquals(data, File(dest, "source.bin").readBytes())
+        assertTrue(dest.listFiles()!!.none { it.name.startsWith(".anice-") })
+        sender.dismiss(); receiver.dismiss()
+    }
+
+    @Test fun lanReconnectUpgradesAnActiveBluetoothStream() = runBlocking {
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
+        val senderBle = MockAndroidSecuredChannel(instance = "sender-ble", transport = "ble", deviceName = "Phone")
+        val receiverBle = MockAndroidSecuredChannel(instance = "receiver-ble", transport = "ble", deviceName = "MacBook")
+        val capability = TransferMessage.capability().encode()
+        listOf(senderBle).forEach { sender.available(it); sender.handle(it.descriptor, capability) }
+        listOf(receiverBle).forEach { receiver.available(it); receiver.handle(it.descriptor, capability) }
+
+        val gateReached = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var blocked = false
+        senderBle.onSendData = { bytes ->
+            val message = TransferMessage.decode(bytes)
+            if (!blocked && message?.kind == 5L && message.number(2) == 6144L) {
+                blocked = true
+                gateReached.complete(Unit)
+                gate.await()
+            }
+            receiver.handle(receiverBle.descriptor, bytes)
+        }
+        receiverBle.onSendData = { sender.handle(senderBle.descriptor, it) }
+
+        val data = ByteArray(20_000) { (it % 251).toByte() }
+        val source = File(tempDir, "source.bin").apply { writeBytes(data) }
+        val dest = File(tempDir, "dest").apply { mkdirs() }
+        sender.sendFiles(listOf(source))
+        kotlinx.coroutines.withTimeout(2000) { while (receiver.state !is TransferState.IncomingOffer) delay(5) }
+        receiver.acceptIncomingOffer(dest)
+        kotlinx.coroutines.withTimeout(2000) { gateReached.await() }
+
+        // A live LAN appears while the Bluetooth stream is still in flight.
+        val senderLan = MockAndroidSecuredChannel(instance = "sender-lan", deviceName = "Phone")
+        val receiverLan = MockAndroidSecuredChannel(instance = "receiver-lan", deviceName = "MacBook")
+        senderLan.onSendData = { receiver.handle(receiverLan.descriptor, it) }
+        receiverLan.onSendData = { sender.handle(senderLan.descriptor, it) }
+        receiver.available(receiverLan); receiver.handle(receiverLan.descriptor, capability)
+        sender.available(senderLan); sender.handle(senderLan.descriptor, capability)
+
+        kotlinx.coroutines.withTimeout(4000) {
+            while (sender.state !is TransferState.Completed || receiver.state !is TransferState.Completed) delay(5)
+        }
+        val lanMessages = senderLan.sentData.mapNotNull { TransferMessage.decode(it) }
+        assertTrue("The sender must hand the stream over through the resume handshake",
+            lanMessages.any { it.kind == 10L })
+        assertTrue("The remainder must continue over LAN, not Bluetooth",
+            lanMessages.any { it.kind == 5L })
+        assertArrayEquals(data, File(dest, "source.bin").readBytes())
+        assertTrue(dest.listFiles()!!.none { it.name.startsWith(".anice-") })
+        sender.dismiss(); receiver.dismiss()
     }
 
     @Test fun activeBleBatchKeepsItsGenerationUntilCleanupThenPrefersLan() = runBlocking {

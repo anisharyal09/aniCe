@@ -5,6 +5,7 @@ package io.github.anisharyal09.anice.features.transfer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.AccessDeniedException
@@ -56,6 +57,45 @@ internal class TransferReceiveStorage(
             digest.update(bytes)
         }
     }
+
+    /** Pushes retained bytes to the provider before they are read back for resume verification. */
+    suspend fun flush() = withContext(Dispatchers.IO) {
+        mutex.withLock { stream?.fd?.sync() }
+    }
+
+    /**
+     * Hashes exactly [length] bytes of the retained partial after flushing it. The partial is read
+     * back rather than trusted from memory so a provider that lost or reordered bytes cannot be
+     * resumed from a corrupt offset. A receiver-initiated continuation sends this digest so the
+     * sender can prove its own source prefix before switching transports.
+     */
+    suspend fun prefixDigest(length: Long): ByteArray = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val output = stream ?: throw IOException("Received file is closed")
+            output.fd.sync()
+            val input = partial?.let { FileInputStream(it) }
+                ?: document?.let { destination!!.read(it) }
+                ?: throw IOException("Received file is closed")
+            val actual = MessageDigest.getInstance("SHA-256")
+            input.use { source ->
+                var remaining = length
+                val buffer = ByteArray(8192)
+                while (remaining > 0) {
+                    val count = source.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                    if (count < 0) throw IOException("Partial ended before the retained offset")
+                    if (count == 0) throw IOException("Partial file made no progress")
+                    actual.update(buffer, 0, count)
+                    remaining -= count
+                }
+            }
+            actual.digest()
+        }
+    }
+
+    /** Verifies that the retained partial still begins with the sender's [length]-byte prefix. */
+    suspend fun matchesPrefix(length: Long, expected: ByteArray): Boolean =
+        try { prefixDigest(length).contentEquals(expected) }
+        catch (_: IOException) { false }
 
     suspend fun finish(name: String, expected: ByteArray): ByteArray = withContext(Dispatchers.IO) {
         mutex.withLock {

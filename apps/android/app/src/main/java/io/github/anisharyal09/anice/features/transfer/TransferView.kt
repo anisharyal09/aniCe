@@ -312,6 +312,91 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         Text("Cancel")
                     }
                 }
+                is TransferState.Paused -> {
+                    val activity = if (controller.receiving) "Receiving" else "Sending"
+                    val target = if (controller.receiving) "from" else "to"
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "$activity ${current.fileName} $target ${current.batch.peerName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Text(
+                            "${current.fileIndex} of ${current.batch.files.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        "Paused: ${current.reason}. Progress is kept.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val hasTotal = current.batch.totalBytes > 0
+                    val fraction = if (hasTotal)
+                        (current.totalBytes.toFloat() / current.batch.totalBytes.toFloat()).coerceIn(0f, 1f)
+                    else 0f
+                    if (hasTotal) {
+                        LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .semantics { contentDescription = "$activity ${current.fileName} paused, ${(fraction * 100).toInt()} percent" }
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .semantics { contentDescription = "$activity ${current.fileName} paused" }
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            if (hasTotal)
+                                "${Formatter.formatFileSize(context, current.totalBytes)} of ${Formatter.formatFileSize(context, current.batch.totalBytes)}"
+                            else "${Formatter.formatFileSize(context, current.totalBytes)} transferred",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            when {
+                                current.canResumeOverBle -> "Waiting, or continue over Bluetooth"
+                                controller.receiving -> "Waiting for the connection"
+                                else -> "Will resume automatically"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (current.canResumeOverBle) {
+                            Button(
+                                onClick = { controller.resumeOverBluetooth() },
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text("Continue over Bluetooth")
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { controller.cancelTransfer(local = true) },
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
+                            Text("Cancel transfer")
+                        }
+                    }
+                }
                 is TransferState.Completed -> {
                     val files = "${current.fileCount} file${if (current.fileCount == 1) "" else "s"} (${Formatter.formatFileSize(context, current.totalBytes)})"
                     Text(

@@ -6,6 +6,7 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- Activated the reserved Local File Transfer `resume` (10) and `status` (11) messages for in-memory pause/resume after a channel change. Either side can initiate a resume: the sender proposes its acknowledged offset, or the receiver proposes the prefix it retains when the user explicitly continues over Bluetooth; the receiving side validates the offset and prefix hash and answers with states 0–4. A live LAN that becomes capable during a BLE stream runs the same handshake and upgrades the active stream in place. The verified partial is retained for 15 minutes and a resume at the final length replays the verified file result. CDDL, framing, bounds and fixture bytes are unchanged.
 - Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
 
 ## [0.2.0]

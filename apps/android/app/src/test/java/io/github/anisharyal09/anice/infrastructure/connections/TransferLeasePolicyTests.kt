@@ -49,4 +49,37 @@ class TransferLeasePolicyTests {
             transferLeases("lan", connecting = false, backgroundAllowed = false,
                 selectingFiles = false, bleSecured = true))
     }
+
+    @Test fun pausedTransferKeepsLanWorkSoAutomaticLanCanResume() {
+        assertEquals(TransferLeases(true, false, false, false),
+            transferLeases(null, connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = false, paused = true))
+        assertEquals(TransferLeases(true, false, false, false),
+            transferLeases("lan", connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = false, paused = true))
+        // A still-secured BLE channel keeps its fallback lease while the batch waits.
+        assertEquals(TransferLeases(true, false, true, false),
+            transferLeases(null, connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = true, paused = true))
+        assertEquals(TransferLeases(false, false, false, false),
+            transferLeases("lan", connecting = false, backgroundAllowed = false,
+                selectingFiles = false, bleSecured = false, paused = true))
+    }
+
+    @Test fun activeBatchKeepsASecuredBleFallbackWhileLanStreams() {
+        // The BLE session is what "Continue over Bluetooth" and a lost LAN fall back to; retiring it
+        // when LAN becomes active turns a mid-batch fallback into a reconnect flicker.
+        assertEquals(TransferLeases(true, false, true, false),
+            transferLeases("lan", connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = true, busy = true))
+        assertEquals(TransferLeases(false, false, true, false),
+            transferLeases(null, connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = true, busy = true))
+        assertEquals(TransferLeases(true, false, false, false),
+            transferLeases("lan", connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = false, busy = true))
+        assertEquals(TransferLeases(false, false, false, false),
+            transferLeases("lan", connecting = false, backgroundAllowed = false,
+                selectingFiles = false, bleSecured = true, busy = true))
+    }
 }

@@ -4,6 +4,16 @@ import AppKit
 import Foundation
 import UserNotifications
 
+// Narrow seam over UNUserNotificationCenter so pause/resume delivery and cleanup are testable.
+protocol TransferNotificationCenter: AnyObject {
+  func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void)
+  func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?)
+  func removeDeliveredNotifications(withIdentifiers identifiers: [String])
+  func removePendingNotificationRequests(withIdentifiers identifiers: [String])
+}
+
+extension UNUserNotificationCenter: TransferNotificationCenter {}
+
 // Pure notification payload builder decoupled from UNUserNotificationCenter for deterministic unit testing.
 struct TransferNotificationContent: Equatable {
   let identifier: String
@@ -51,6 +61,20 @@ struct TransferNotificationContent: Equatable {
     )
   }
 
+  // Reports a paused batch with its progress context. Either side may continue over Bluetooth when
+  // the retained batch offers it, so the category changes with that availability.
+  static func paused(batch: TransferBatch, reason: String, canResumeOverBle: Bool) -> TransferNotificationContent {
+    let countStr = "\(batch.files.count) file\(batch.files.count == 1 ? "" : "s")"
+    let sizeStr = ByteCountFormatter.string(fromByteCount: batch.totalBytes, countStyle: .file)
+    return TransferNotificationContent(
+      identifier: "transfer-paused-\(batch.idString)",
+      categoryIdentifier: canResumeOverBle ? MacTransferNotifier.Category.pausedSender : MacTransferNotifier.Category.paused,
+      title: "Transfer paused",
+      body: "\(batch.peerName) · \(countStr) (\(sizeStr)) · \(reason)",
+      userInfo: ["batchId": batch.idString]
+    )
+  }
+
   // Shown when an action is clicked on a banner whose offer was already cancelled or expired.
   static func staleOfferNotice() -> TransferNotificationContent {
     return TransferNotificationContent(
@@ -67,6 +91,8 @@ struct TransferNotificationContent: Equatable {
   enum Category {
     static let offer = "FILE_TRANSFER_OFFER"
     static let result = "TRANSFER_RESULT"
+    static let paused = "FILE_TRANSFER_PAUSED"
+    static let pausedSender = "FILE_TRANSFER_PAUSED_SENDER"
   }
 
   enum Action {
@@ -74,15 +100,18 @@ struct TransferNotificationContent: Equatable {
     static let choose = "CHOOSE_ACTION"
     static let decline = "DECLINE_ACTION"
     static let showInFinder = "SHOW_IN_FINDER"
+    static let continueOverBluetooth = "CONTINUE_OVER_BLUETOOTH"
+    static let cancelTransfer = "CANCEL_TRANSFER"
   }
 
   private weak var model: MacTransferModel?
   private let openMainWindow: () -> Void
-  private let center: UNUserNotificationCenter
+  private let center: any TransferNotificationCenter
   private var hasRequestedAuth = false
   private var activeOfferIdentifier: String?
+  private var activePausedIdentifier: String?
 
-  init(model: MacTransferModel, openMainWindow: @escaping () -> Void, center: UNUserNotificationCenter = .current()) {
+  init(model: MacTransferModel, openMainWindow: @escaping () -> Void, center: any TransferNotificationCenter = UNUserNotificationCenter.current()) {
     self.model = model
     self.openMainWindow = openMainWindow
     self.center = center
@@ -125,7 +154,30 @@ struct TransferNotificationContent: Equatable {
       options: []
     )
 
-    return [offerCategory, resultCategory]
+    let continueAction = UNNotificationAction(
+      identifier: Action.continueOverBluetooth,
+      title: "Continue over Bluetooth",
+      options: []
+    )
+    let cancelTransferAction = UNNotificationAction(
+      identifier: Action.cancelTransfer,
+      title: "Cancel transfer",
+      options: [.destructive]
+    )
+    let pausedCategory = UNNotificationCategory(
+      identifier: Category.paused,
+      actions: [cancelTransferAction],
+      intentIdentifiers: [],
+      options: []
+    )
+    let pausedSenderCategory = UNNotificationCategory(
+      identifier: Category.pausedSender,
+      actions: [continueAction, cancelTransferAction],
+      intentIdentifiers: [],
+      options: []
+    )
+
+    return [offerCategory, resultCategory, pausedCategory, pausedSenderCategory]
   }
 
   func handle(_ event: TransferEvent) {
@@ -136,8 +188,18 @@ struct TransferNotificationContent: Equatable {
       activeOfferIdentifier = content.identifier
       post(content)
 
+    case .paused(let batch, let reason, let canResumeOverBle):
+      requestAuthIfNeeded()
+      let content = TransferNotificationContent.paused(batch: batch, reason: reason, canResumeOverBle: canResumeOverBle)
+      activePausedIdentifier = content.identifier
+      post(content)
+
+    case .resumed:
+      clearActivePaused()
+
     case .completed(let fileCount, let totalBytes):
       clearActiveOffer()
+      clearActivePaused()
       let content = TransferNotificationContent.completed(
         fileCount: fileCount,
         totalBytes: totalBytes,
@@ -147,8 +209,17 @@ struct TransferNotificationContent: Equatable {
 
     case .failed(let reason):
       clearActiveOffer()
+      clearActivePaused()
       let content = TransferNotificationContent.failed(reason: reason)
       post(content)
+    }
+  }
+
+  private func clearActivePaused() {
+    if let id = activePausedIdentifier {
+      center.removeDeliveredNotifications(withIdentifiers: [id])
+      center.removePendingNotificationRequests(withIdentifiers: [id])
+      activePausedIdentifier = nil
     }
   }
 
@@ -224,6 +295,15 @@ struct TransferNotificationContent: Equatable {
       } else if let folder = model?.receiveFolder {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
       }
+
+    case Action.continueOverBluetooth:
+      // Fenced against a resume or terminal state that raced the banner tap.
+      guard let model, model.isPaused else { return }
+      model.resumeOverBluetooth()
+
+    case Action.cancelTransfer:
+      guard let model, model.isPaused else { return }
+      model.cancelTransfer()
 
     case UNNotificationDefaultActionIdentifier:
       openMainWindow()
