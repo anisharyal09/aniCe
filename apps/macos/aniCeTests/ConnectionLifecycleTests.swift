@@ -114,7 +114,7 @@ import AppKit
         for scheme: ColorScheme in [.light, .dark] {
           for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
           let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
-            pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer,
+            pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
             navigation: ConnectionNavigation(), openMainWindow: { XCTFail("Rendering opened the main window") })
             .environment(\.colorScheme, scheme)
           let host = NSHostingView(rootView: view)
@@ -196,7 +196,7 @@ import AppKit
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
             discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
-            transfer: transfer, findDevice: find, findNotifier: nil, navigation: navigation)
+            transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil, navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: 800)
@@ -219,7 +219,7 @@ import AppKit
         }
       }
     }
-    XCTAssertEqual(renders, 36)
+    XCTAssertEqual(renders, 40)
     XCTAssertFalse(radio.started)
     XCTAssertTrue(radio.sent.isEmpty)
     XCTAssertFalse(lan.allowing)

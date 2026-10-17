@@ -67,7 +67,7 @@ The companion is for checking a device and taking a quick action. Browsing and c
 - Show Send files only for the actual ready, compatible transfer target and hide it during preparation or an active/result transfer. Do not attach a global transfer command to an unrelated connected peer.
 - Use the original companion hierarchy: compact aniCe heading with overflow, device header, then content separated by quiet dividers only between populated sections. Do not place filled activity cards inside the companion surface. Playback and transfer remain discoverable together without paging, page counters or swipe gestures. Incoming offers remain immediately discoverable.
 - Music has a Now playing heading and On this Mac origin. Keep artwork when available, title/artist, supported seek with elapsed/duration and balanced native transport buttons visible. Play/pause is a circular accent control. Full playback keeps the Player selector visible with Auto and advertised sources. The companion also shows it when multiple players exist; More playback controls reveals compact player volume; it does not hide ordinary seek controls. Missing artwork stays absent.
-- Find Device is absent. Clipboard, battery and charging remain absent until their data and behavior exist. No disabled future-feature placeholders or permanent Quick actions heading.
+- Find Device remains in its feature panel. Clipboard opens its native text-sharing panel; battery and charging remain absent until their data and behavior exist. No disabled future-feature placeholders or permanent Quick actions heading.
 - Send files is a quiet labeled row naming its target, below the current activity. The footer is a quiet Open aniCe route with a trailing arrow; Settings, Manage devices and Quit live in the header overflow. Modal pickers retain the companion and restore focus. Dismissal never means cancellation.
 - Bound content to the screen with scrolling and a persistent footer. Native Escape/outside-click dismissal, keyboard access and VoiceOver must be verified. Sharing owners with the main window prevents a separate capability or transport model.
 
@@ -99,11 +99,13 @@ Settings and pairing expose **Use local network automatically** on both platform
 
 ## Clipboard preference
 
+Clipboard v1 behavior and platform acceptance gates are recorded in [Clipboard](../features/CLIPBOARD.md). Automatic Android reading requires actual focus; background incoming writes replace the clipboard without conflict detection. Mac automatic reading respects supported pasteboard access behavior. Manual receiving remains available when automatic mode is off.
+
 Settings presents **Automatic clipboard sharing** as a toggle. It is off by default: off means manual sharing, with an explicit Send action. On means automatic sharing for the selected trusted-device relationship when the platform and permissions support it.
 
 Keep the choice scoped to the paired device and synchronized across its app surfaces. Reflect the current mode in the clipboard panel and quick action; turning automatic sharing off immediately returns the interface to manual sharing. Do not label a requested mode as active if a required permission or platform capability is unavailable. Show the reason and available manual route.
 
-Native implementation must establish clipboard access, direction, loop prevention, and private-content handling before enabling automatic sharing. The browser sample changes only its sample preference and labels; it never accesses the clipboard.
+Native implementation must establish clipboard access, direction, loop prevention, and private-content handling before enabling automatic sharing. Native Clipboard v1 uses metadata-only preview with explicit Reveal, direct native clipboard delivery, manual Send and one per-credential automatic preference controlling sending and automatic receiving. The browser sample never accesses the clipboard.
 
 Android 10+ restricts clipboard reading to the app that currently has input focus or the default input method editor (IME) ([clipboard privacy restrictions](https://developer.android.com/about/versions/10/privacy/changes#clipboard-data)). For aniCe's ordinary app, automatic reading must be limited to periods when it has focus; do not implement continuous background clipboard monitoring or assume a foreground service grants access. A quick-settings tile or notification action may provide an entry to a focused, explicit sharing flow, but is not itself a clipboard-access exemption. Validate that flow on supported Android versions before promising it. Do not introduce an IME or sandbox bypass merely to enable clipboard sharing.
 

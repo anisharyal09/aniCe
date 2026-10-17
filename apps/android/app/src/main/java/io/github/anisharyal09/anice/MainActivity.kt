@@ -60,6 +60,8 @@ class MainActivity : ComponentActivity() {
             pairing.cancel()
         }
         identity.onIdentityReset = {
+            (application as AniCeApplication).clipboard.preferences.clear()
+            (application as AniCeApplication).clipboard.invalidate()
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this).stop("Identity changed. Set up automatic connection again.")
             session.cancel()
             pairing.cancel()
@@ -95,9 +97,15 @@ class MainActivity : ComponentActivity() {
         if (::session.isInitialized) session.foreground(this)
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        (application as AniCeApplication).clipboard.focus(hasFocus, this)
+    }
+
     override fun onStop() {
         remoteVolumeKeys.clear()
         super.onStop()
+        (application as AniCeApplication).clipboard.focus(false, this)
         if (!isChangingConfigurations && ::discovery.isInitialized) discovery.background()
         if (!isChangingConfigurations && ::pairing.isInitialized) pairing.background()
         if (::session.isInitialized) session.background(this, isChangingConfigurations)

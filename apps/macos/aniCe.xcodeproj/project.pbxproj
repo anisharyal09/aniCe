@@ -102,6 +102,12 @@
 		9DF815E709C26EE3E825817A = {isa = PBXBuildFile; fileRef = F4295D8EB600679BAA3D0AEF; };
 		B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000007; };
 		B10100000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000008; };
+		1461CEF5CC2F331A3A440620 = {isa = PBXBuildFile; fileRef = BCE5D6794FFC5A0FC2BE45B9; };
+		CE151FC717CC5D74B9C2C7C0 = {isa = PBXBuildFile; fileRef = E413A30F3969ABF8F21985CF; };
+		5DA2BC6FB9846DFE4FFAC736 = {isa = PBXBuildFile; fileRef = 1D4B97D6ECC3B2435E9B143A; };
+		E358D2436EC54F89A980C517 = {isa = PBXBuildFile; fileRef = D7F2A1210EAF55185006B8AA; };
+		6AE43DA801F81EEA732F8305 = {isa = PBXBuildFile; fileRef = 7886F9180923AA3BA021362F; };
+		7BF06424CFA331AA5DC65AD5 = {isa = PBXBuildFile; fileRef = 76FCD82333FFE32A403584EC; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -213,6 +219,12 @@
 		F4295D8EB600679BAA3D0AEF = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/find-device/find-device-vectors.json"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferNotifier.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000008 /* aniCeTests/Transfer/TransferNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Transfer/TransferNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
+		BCE5D6794FFC5A0FC2BE45B9 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/ClipboardView.swift"; sourceTree = SOURCE_ROOT; };
+		E413A30F3969ABF8F21985CF = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/ClipboardWire.swift"; sourceTree = SOURCE_ROOT; };
+		1D4B97D6ECC3B2435E9B143A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/MacClipboard.swift"; sourceTree = SOURCE_ROOT; };
+		D7F2A1210EAF55185006B8AA = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/MacClipboardModel.swift"; sourceTree = SOURCE_ROOT; };
+		7886F9180923AA3BA021362F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Clipboard/ClipboardTests.swift"; sourceTree = SOURCE_ROOT; };
+		76FCD82333FFE32A403584EC = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/clipboard/clipboard-vectors.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -236,6 +248,12 @@
 		00000000000000000000000B = {
 			isa = PBXGroup;
 			children = (
+				76FCD82333FFE32A403584EC,
+				7886F9180923AA3BA021362F,
+				D7F2A1210EAF55185006B8AA,
+				1D4B97D6ECC3B2435E9B143A,
+				E413A30F3969ABF8F21985CF,
+				BCE5D6794FFC5A0FC2BE45B9,
 				F4295D8EB600679BAA3D0AEF,
 				F59E511361C133E8CC2EB410,
 				CDA20BB9D9A904058EB42454,
@@ -551,6 +569,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7BF06424CFA331AA5DC65AD5,
 				9DF815E709C26EE3E825817A,
 				B267B0535D61B78766EECCF5,
 				ABCA12000000000000000002,
@@ -589,6 +608,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E358D2436EC54F89A980C517,
+				5DA2BC6FB9846DFE4FFAC736,
+				CE151FC717CC5D74B9C2C7C0,
+				1461CEF5CC2F331A3A440620,
 				65B514A7C11CA38D4097E903,
 				7B88E2DA9E74AC684276032A,
 				3398E971825802A705E9A67B,
@@ -658,6 +681,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6AE43DA801F81EEA732F8305,
 				251558678B0CAD9ADEE2BCAD,
 				A420E9395D8F99F11FF1B3B5,
 				37D4295E83741498D4CCD68B,

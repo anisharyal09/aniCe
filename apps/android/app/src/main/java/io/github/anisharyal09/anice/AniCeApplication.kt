@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice
 
 import android.app.Application
+import kotlinx.coroutines.launch
 import android.os.Build
 import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityKeys
 import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetadata
@@ -88,6 +89,13 @@ class AniCeApplication : Application() {
         if (bleOwner.isInitialized()) bleOwner.value.onWorkServiceStopped()
     }
 
+    private val clipboardOwner = lazy {
+        io.github.anisharyal09.anice.features.clipboard.ClipboardController(
+            io.github.anisharyal09.anice.features.clipboard.AndroidClipboard(this),
+            io.github.anisharyal09.anice.features.clipboard.ClipboardPreferences(getSharedPreferences("clipboard_preferences", MODE_PRIVATE))
+        ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
+    }
+    val clipboard get() = clipboardOwner.value
     val findDeviceNotification by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceNotification(this) }
     val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
@@ -101,6 +109,7 @@ class AniCeApplication : Application() {
             it.register(nowPlaying)
             it.register(transfer)
             it.register(findDevice)
+            it.register(clipboard)
         }
     }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
@@ -114,6 +123,18 @@ class AniCeApplication : Application() {
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
         nowPlaying.invalidate()
+        if (clipboardOwner.isInitialized()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                clipboard.invalidate()
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    val peers = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        try { trustStore.list(identityService.getOrCreateIdentity().identity.fingerprint).map { it.peer } }
+                        catch (_: Exception) { null }
+                    }
+                    if (peers != null) clipboard.prune(peers) else clipboard.select(null)
+                }
+            }
+        }
         if (bleOwner.isInitialized()) bleOwner.value.securityInvalidated()
         if (lanOwner.isInitialized()) lanOwner.value.securityInvalidated()
     }

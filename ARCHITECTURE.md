@@ -105,3 +105,7 @@ App registers media and transfer FeatureHandlers before DATA delivery. Android f
 Native navigation types and Features destination content are separated from app shells. MacPlaybackModel is the sole playback authority; its owned process bridge fences native delivery by launch generation, and its session link coalesces logical snapshots before sealing. The fixture generator lives beside the media fixture; native and interchange scripts remain supported entry points. `python3 scripts/check-structure.py` checks dependency direction, local documentation links and explicit Xcode membership.
 
 Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Recovery journals, provider crash reconciliation and coordinated LAN renewal remain unimplemented.
+
+## Clipboard
+
+Application-scoped native clipboard owners register with FeatureDispatch and share authenticated LAN/BLE channels. Clipboard v1 bounds text to 64 KiB, applies complete items to native clipboards, and shares in-memory deduplication/revision floors across transports. Automatic consent is credential-scoped and off by default; Android reads require actual input focus, while Mac observation respects native pasteboard access behavior. See [feature behavior](docs/features/CLIPBOARD.md) and the [wire contract](protocol/clipboard/README.md).

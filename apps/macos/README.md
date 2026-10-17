@@ -94,3 +94,7 @@ Debug/Release disable App Sandbox for the whole app. Journals retain their exist
 ## Find Device
 
 Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.
+
+## Clipboard
+
+Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior and physical acceptance gates](../../docs/features/CLIPBOARD.md) describe the background-overwrite limitation and verification still required.

@@ -18,6 +18,7 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **Player volume** | `1` | Capability gated; player acceptance pending | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented; physical acceptance pending | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
+| **Clipboard** | `1` | Implemented; physical acceptance pending | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **File Transfer** | `1` | Implemented; acceptance pending | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---
@@ -167,3 +168,7 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## Find Device
 
 [Find Device v1](find-device/README.md) defines bidirectional notification requests and correlated OS-submission results over existing authenticated DATA.
+
+## Clipboard
+
+[Clipboard v1](clipboard/README.md) defines bounded text fragments, per-peer automatic consent, live-process idempotent application and one cross-transport retry. [CDDL](clipboard/clipboard.cddl) and [independent fixtures](test-vectors/clipboard/clipboard-vectors.json) specify canonical DATA messages.

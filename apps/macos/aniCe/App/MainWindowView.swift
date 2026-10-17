@@ -13,6 +13,7 @@ struct MainWindowView: View {
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
+  let clipboard: MacClipboardModel
   let findDevice: MacFindDeviceModel
   let findNotifier: MacFindDeviceNotifier?
   @Bindable var navigation: ConnectionNavigation
@@ -48,8 +49,8 @@ struct MainWindowView: View {
         switch navigation.destination {
         case .home: homeContent
         case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
-        case .favourites: FeaturesView(playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
+        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
+        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
         case .about: aboutContent
         case .settings: settingsContent
 

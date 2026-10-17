@@ -1,0 +1,12 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Defines bounded clipboard messages carried by secured DATA records.
+clipboard = ["aniCe clipboard", 1, (capability / settings / begin / fragment / commit / result / cancel)]
+capability = (1, [uuid, 65536, 3072])
+settings = (2, [revision, bool])
+begin = (3, [uuid, revision, uuid, 0..1, bool, 1..65536, 1..22, bstr .size 32])
+fragment = (4, [uuid, 0..21, bstr .size (1..3072)])
+commit = (5, [uuid])
+result = (6, [uuid, 0..7])
+cancel = (7, [uuid])
+revision = 1..4294967295
+uuid = tstr .regexp "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"

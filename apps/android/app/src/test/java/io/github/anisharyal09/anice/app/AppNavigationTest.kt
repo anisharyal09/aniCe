@@ -110,7 +110,7 @@ class AppNavigationTest {
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
         assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
-        assertEquals(3, AppFeature.entries.size)
+        assertEquals(4, AppFeature.entries.size)
         AppFeature.entries.forEach { feature ->
             assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
             assertEquals("", feature.toggled(feature.toggled("")))

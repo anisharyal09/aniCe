@@ -11,6 +11,7 @@ struct CompanionView: View {
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
+  let clipboard: MacClipboardModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
   @Environment(\.colorScheme) private var colorScheme
@@ -25,6 +26,11 @@ struct CompanionView: View {
             Button("Disconnect device") { session.disconnect(); lan.disconnect() }
           }
           Button("Manage devices") { navigation.open(.devices, route: .pairing, present: openMain) }
+          if let peer = clipboard.selected, clipboard.supports(peer) {
+            Button(clipboard.automatic ? (clipboard.automaticAccessAllowed ? "Clipboard · Automatic" : "Clipboard · Automatic unavailable") : "Clipboard · Manual") {
+              navigation.openFeature(.clipboard); openMainWindow()
+            }
+          }
           Button("Settings") { navigation.open(.settings, present: openMain) }
           Button("Quit aniCe") { NSApp.terminate(nil) }
         } label: { Image(systemName: "ellipsis") }

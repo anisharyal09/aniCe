@@ -132,7 +132,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     }
                     AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
                     AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)
-                    AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context)
+                    AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
                 }
             }
         }

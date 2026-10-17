@@ -8,7 +8,7 @@
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
 | **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
-| **Application continuity** | Now Playing, File Transfer and Find Device implemented; native UI overhaul in 0.2.0-dev. | In progress |
+| **Application continuity** | Now Playing, File Transfer, Find Device and text Clipboard implemented; native UI overhaul in 0.2.0-dev. | In progress |
 
 Manual feature/UI tests, physical transfer measurements, native ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current milestone: 0.2.0-dev, build 2.
 
@@ -47,3 +47,7 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 - **Native UI:** Dedicated feature panels, Favourites and About, compact phone Home, direct transport controls in Devices, accessible disclosure labels and responsive Mac activity panels.
 
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.
+
+## Text Clipboard
+
+[Clipboard v1](features/CLIPBOARD.md) implements native manual text sharing, opt-in focus-limited Android observation, permission-aware Mac observation and LAN-preferred/BLE-fallback delivery. Physical cross-app paste, background receipt and OS-permission acceptance remain pending.

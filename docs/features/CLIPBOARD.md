@@ -1,0 +1,25 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Describes native text clipboard sharing and its platform lifecycle limits. -->
+# Clipboard
+
+Clipboard shares one plain-text item or link with a selected trusted device. Open Features → Clipboard, inspect metadata or reveal text, then Send. An explicit Paste field provides a native manual route when programmatic clipboard reading is unavailable. Sensitive-marked content requires confirmation of the exact captured item. Receiving writes directly to the system clipboard; use ordinary Paste in another application.
+
+Automatic clipboard sharing defaults off and is stored locally per device ID and fingerprint. The same preference appears in Settings and the feature panel. It controls both outgoing automatic observation and acceptance of automatic input; enable it on both devices for automatic exchange. Manual incoming items are accepted from a trusted compatible peer even with automatic off. Turning automatic sharing off cancels pending automatic preparation immediately. Already captured manual sends continue while a compatible secured channel survives; automatic copy events do not replace them. Incoming content replaces the native clipboard without a separate approval dialog.
+
+Android 10+ reads require actual input focus. Copy in another app, focus aniCe, then paste on the Mac. Observation exists only while aniCe has focus and a compatible peer is connected. If capability negotiation or peer receiving consent arrives after focus, the one focus-triggered sample waits for readiness. Losing focus cancels that sample; reconnection after a completed sample does not replay clipboard content. No foreground-service exemption, IME or background clipboard reader is installed. Background incoming items use an existing live connection and write immediately: aniCe cannot detect an intervening local copy while unfocused. Focused Android and Mac preserve newer local copies when they change during incoming assembly.
+
+On Mac, an eligible opted-in connection enables a 500-ms changeCount observer; content is read only after a change. Supported OS versions expose pasteboard access behavior; automatic reading requires Always Allow. Inspect clipboard provides an explicit read/setup action, and the native Paste field remains available without automatic access. Access denial stops automatic reading without repeated prompts. Sleep, disconnect and disabling stop observation. The menu-bar Clipboard action opens the same feature panel.
+
+## Delivery
+
+A send requires an already-secured clipboard-capable peer. LAN is preferred; BLE is used immediately when LAN is unavailable. Normal BLE feature activity may request LAN through existing automation without delaying delivery or clearing a manual Disconnect pause. No additional connection retry timer exists.
+
+Items are limited to 65,536 UTF-8 bytes with fragments of at most 3,072 bytes. Oversized items are rejected rather than truncated. An item has a fixed 30-second submission deadline. On channel loss or a missing result two seconds after commit, one retry can use the other already-secured transport. Shared UUID results and sender revisions prevent duplicate application and stale overwrites. Delivery unconfirmed means no conclusive native-write acknowledgement was received; it does not mean the clipboard was unchanged. Cancel cannot undo an already-applied write.
+
+Native writes are acknowledged after the platform reports success; Android success means the call returned without throwing. No acknowledgement proves a later Paste. Deduplication is in memory, with 32 terminal results per peer retained for 60 seconds. Process death provides no durable delivery guarantee. Full session loss abandons outgoing and incomplete work; reconnection does not replay clipboard history.
+
+## Privacy and verification
+
+Only literal text is read: content/file URIs are never resolved and links are never fetched. Automatic observation skips recognized sensitive, transient, generated and remote markers. Received items carry remote/generated markers to prevent echoes and preserve sensitivity. Unmarked secrets cannot be detected reliably. Content never enters history, persistent preferences, notifications, logs or saved UI state.
+
+The [wire contract](../../protocol/clipboard/README.md) defines exact bounds and terminal results. Native tests use fake clipboards, independent Python wire fixtures and injected failures. Controlled monotonic clocks exercise acknowledgement and submission deadlines without waiting for wall-clock time. State tests send validly encoded messages before begin, after cancellation and with mismatched results; rejected input must leave the clipboard intact and permit the next valid item. Physical acceptance remains required for cross-app Paste, Android background writes, OS pasteboard access prompts, BLE timing, native accessibility/layout and startup responsiveness alongside file transfer and Now Playing. Images, rich text and continuous Android background reading are excluded.

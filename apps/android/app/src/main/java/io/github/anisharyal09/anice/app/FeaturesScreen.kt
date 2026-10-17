@@ -22,7 +22,7 @@ import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.SessionViewModel, peers: List<PeerTrustRecord>, navigation: AppNavigation, favouritesOnly: Boolean = false) {
     val findDevice = session.findDevice
     val panel = navigation.featurePanel
-    if (!favouritesOnly && (panel == AppFeature.Playback || panel == AppFeature.Files)) {
+    if (!favouritesOnly && (panel == AppFeature.Playback || panel == AppFeature.Files || panel == AppFeature.Clipboard)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             TextButton(onClick = navigation::closeFeature) {
                 Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
@@ -31,6 +31,7 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
             }
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             if (panel == AppFeature.Playback) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media)
+            else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(session.clipboard, peers)
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer)
         }
     } else if (!favouritesOnly && navigation.findDetails) {
@@ -69,11 +70,12 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
 
 @Composable
 private fun FeatureEntry(feature: AppFeature, favourite: Boolean, onFavourite: () -> Unit, onClick: () -> Unit) {
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device }
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard }
     val detail = when (feature) {
         AppFeature.Playback -> "Playback from your Mac"
         AppFeature.Files -> "Send to your connected device"
         AppFeature.FindDevice -> "Alert a connected device"
+        AppFeature.Clipboard -> "Share text with your connected device"
     }
     Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer) {

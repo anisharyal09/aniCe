@@ -63,7 +63,7 @@ extension SessionTests {
     XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
     XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
     XCTAssertEqual(AppFeature.findDevice.toggled(in: "files,files"), "files,findDevice")
-    XCTAssertEqual(AppFeature.allCases.count, 3)
+    XCTAssertEqual(AppFeature.allCases.count, 4)
     for feature in AppFeature.allCases {
       XCTAssertEqual(AppFeature.favourites(in: feature.toggled(in: "")), [feature])
       XCTAssertEqual(feature.toggled(in: feature.toggled(in: "")), "")

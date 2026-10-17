@@ -13,7 +13,7 @@ enum class SettingsRoute { Overview, Identity, About }
 
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
-    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device");
+    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device"), Clipboard("Clipboard");
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableSet()
         if (!saved.add(this)) saved.remove(this)

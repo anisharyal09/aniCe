@@ -182,8 +182,14 @@ class CompanionProbeActivity : ComponentActivity() {
     app.lanSessionController.foreground(this)
   }
 
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    (application as AniCeApplication).clipboard.focus(hasFocus, this)
+  }
+
   override fun onStop() {
     super.onStop()
+        (application as AniCeApplication).clipboard.focus(false, this)
     val app = application as AniCeApplication
     app.nowPlaying.background(this, isChangingConfigurations)
     app.sessionController.background(this, isChangingConfigurations)

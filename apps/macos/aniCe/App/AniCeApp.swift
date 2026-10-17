@@ -13,6 +13,7 @@ struct AniCeApp: App {
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
   @State private var playback: MacPlaybackModel
+  @State private var clipboard: MacClipboardModel
   @State private var findDevice: MacFindDeviceModel
   private let findNotifier: MacFindDeviceNotifier
   @State private var transfer: MacTransferModel
@@ -20,6 +21,9 @@ struct AniCeApp: App {
   @State private var navigation: ConnectionNavigation
 
   init() {
+    let clipboard = MacClipboardModel(native: MacClipboard(), preferences: ClipboardPreferences(storage: .standard))
+    _clipboard = State(initialValue: clipboard)
+    clipboard.installLifecycle()
     let notifier = MacFindDeviceNotifier()
     findNotifier = notifier
     let findDevice = MacFindDeviceModel(notifier: notifier)
@@ -54,6 +58,7 @@ struct AniCeApp: App {
     let peers = SessionPeerReservation()
     let lan = MacLanSessionModel(identity: identity.service, peers: peers, preferences: .standard, store: { try await pairing.sessionStore() })
     _lan = State(initialValue: lan)
+    clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     transfer.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
@@ -64,6 +69,7 @@ struct AniCeApp: App {
     features.register(playback)
     features.register(transfer)
     features.register(findDevice)
+    features.register(clipboard)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
         features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
@@ -92,8 +98,12 @@ struct AniCeApp: App {
       session.setAutomatic(navigation.automaticAfterPairing)
       if !navigation.automaticAfterPairing { session.allow() }
     }
-    pairing.trustRemoved = { session.retireTrust(); lan.cancel() }
+    pairing.trustRemoved = {
+      session.retireTrust(); lan.cancel(); clipboard.invalidate()
+      Task { @MainActor in await pairing.refresh(); clipboard.prune(pairing.peers.map(\.peer)) }
+    }
     identity.onIdentityReset = {
+      clipboard.invalidate(); clipboard.preferences.clear()
       lan.cancel()
       session.retireTrust()
       pairing.cancel()
@@ -132,13 +142,13 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, findDevice: findDevice, findNotifier: findNotifier, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
-            delegate.onTerminate = { findNotifier.clearAll() }
+            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, transfer: transfer, navigation: navigation,
+                session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
               navigation: navigation)
           }

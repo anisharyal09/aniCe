@@ -32,7 +32,8 @@ fun SettingsScreen(
     identity: DeviceIdentityViewModel,
     snackbars: SnackbarHostState,
     navigation: AppNavigation,
-    context: Context
+    context: Context,
+    peers: List<io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord> = emptyList()
 ) {
 
     if (navigation.destination != AppDestination.About && navigation.settingsRoute == SettingsRoute.Identity) {
@@ -120,6 +121,9 @@ fun SettingsScreen(
                     onClick = { saveAppearance(context, mode) }, label = { Text(mode.name) })
             }
         }
+        HorizontalDivider()
+        val clipboardApp = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
+        io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(clipboardApp.clipboard, peers)
         HorizontalDivider()
         Text("Local network (LAN)", style = MaterialTheme.typography.titleSmall)
         val lan = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).lanSessionController

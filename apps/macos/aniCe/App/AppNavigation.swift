@@ -14,10 +14,10 @@ enum DeviceRoute { case overview, pairing }
 enum SettingsRoute { case overview, identity, about }
 // Stable identifiers belong to local presentation preferences, never peer capabilities.
 enum AppFeature: String, CaseIterable, Identifiable {
-  case playback, files, findDevice
+  case playback, files, findDevice, clipboard
   var id: Self { self }
-  var title: String { switch self { case .playback: "Now Playing"; case .files: "Send files"; case .findDevice: "Find Device" } }
-  var symbol: String { switch self { case .playback: "music.note"; case .files: "arrow.up.doc"; case .findDevice: "bell" } }
+  var title: String { switch self { case .playback: "Now Playing"; case .files: "Send files"; case .findDevice: "Find Device"; case .clipboard: "Clipboard" } }
+  var symbol: String { switch self { case .playback: "music.note"; case .files: "arrow.up.doc"; case .findDevice: "bell"; case .clipboard: "doc.on.clipboard" } }
   static func favourites(in value: String) -> [Self] {
     let saved = Set(value.split(separator: ",").map(String.init))
     return allCases.filter { saved.contains($0.rawValue) }
