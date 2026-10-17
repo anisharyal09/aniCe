@@ -200,15 +200,23 @@ class MediaTests {
         owner.receive("ble","b",playing.encode());assertTrue(owner.compactVisible)
         owner.companionOwnershipChanged(false);assertNull(owner.playback);assertFalse(owner.compactVisible);assertEquals(1,out.count { it.kind==4L });owner.invalidate()
     }
-    @Test fun backgroundHandoffUsesFreshExistingBleAndDropsUncertainIntent() {
-        val timer=TestClock();val owner=MediaController(Dispatchers.Unconfined,{timer.now},timer::wait);val ble=mutableListOf<MediaMessage>();val lan=mutableListOf<MediaMessage>()
+    @Test fun backgroundCompanionPlaybackStaysOnLanAndReleasesNetworkDemand() {
+        val timer=TestClock();val owner=MediaController(Dispatchers.Unconfined,{timer.now},timer::wait);val ble=mutableListOf<MediaMessage>();val lan=mutableListOf<MediaMessage>();val demand=mutableListOf<Boolean>()
+        owner.onNetworkDemand={ demand.add(it) }
         owner.foreground(this);owner.attach("ble","b","Mac") { ble.add(MediaMessage.decode(it)!!) };owner.receive("ble","b",fixture("capability").encode());subscribed(owner,"ble","b",ble)
         owner.attach("lan","l","Mac") { lan.add(MediaMessage.decode(it)!!) };owner.receive("lan","l",fixture("capability").encode());subscribed(owner,"lan","l",lan)
-        val old=owner.playback!!;owner.command(4,45000);owner.command(4,80000)
+        assertEquals(1,ble.count { it.kind==4L });assertEquals(0,lan.count { it.kind==4L })
+        val stopped=owner.playback!!.message.copy(fields=owner.playback!!.message.fields.toMutableList().also { it[6]=Cbor.Integer(0);it[9]=Cbor.Integer(0) })
+        val playing=stopped.copy(fields=stopped.fields.toMutableList().also { it[6]=Cbor.Integer(1);it[9]=Cbor.Integer(1000) })
+        owner.receive("lan","l",stopped.encode())
+        val beforePlay=demand.size
+        owner.receive("lan","l",playing.encode());assertEquals(beforePlay+1,demand.size);assertTrue(demand.last())
         owner.companionOwnershipChanged(true);owner.background(this,false)
-        assertNull(owner.playback);assertFalse(owner.busy);assertFalse(owner.compactVisible);assertEquals(1,lan.count { it.kind==4L })
-        assertEquals(2,ble.count { it.kind==2L });subscribed(owner,"ble","b",ble)
-        owner.command(4,60000,old);assertEquals(0,ble.count { it.kind==6L });assertEquals(1,lan.count { it.kind==6L });owner.invalidate()
+        assertNotNull(owner.playback);assertTrue(owner.compactVisible);assertEquals(0,lan.count { it.kind==4L })
+        val paused=playing.copy(fields=playing.fields.toMutableList().also { it[6]=Cbor.Integer(2);it[9]=Cbor.Integer(0) })
+        owner.receive("lan","l",paused.encode());assertTrue(owner.compactVisible);timer.advance(90000)
+        assertFalse(owner.compactVisible);assertNotNull(owner.playback);assertEquals(beforePlay+2,demand.size);assertFalse(demand.last())
+        owner.companionOwnershipChanged(false);assertNull(owner.playback);assertEquals(1,lan.count { it.kind==4L });owner.invalidate()
     }
 
 }

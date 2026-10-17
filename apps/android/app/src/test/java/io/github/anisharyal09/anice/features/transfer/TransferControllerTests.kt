@@ -187,6 +187,28 @@ class TransferControllerTests {
         assertFalse(lan.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 9L })
     }
 
+    @Test fun capacityNotificationDoesNotDrainWaitersAddedByItsOwnCallbacks() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        var attempts = 0
+        var blocked = true
+        ble.onSendData = {
+            attempts++
+            // Cap the broken implementation so this regression fails instead of hanging the suite.
+            if (blocked && attempts < 8) throw SessionBackpressure()
+        }
+        owner.available(ble)
+        assertEquals(1, attempts)
+        owner.capacityAvailable(ble.descriptor)
+        assertEquals("One capacity event must wake the pending sender only once", 2, attempts)
+        owner.capacityAvailable(ble.descriptor)
+        assertEquals(3, attempts)
+        blocked = false
+        owner.capacityAvailable(ble.descriptor)
+        assertEquals(4, attempts)
+        owner.retired(ble.descriptor)
+    }
+
     @Test fun standbyCapabilityWaitSurvivesJobCleanupAndUsesStandbyCapacity() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val lan = MockAndroidSecuredChannel(instance = "lan")
@@ -301,6 +323,32 @@ class TransferControllerTests {
         assertEquals(listOf(true), leases)
         owner.cancelTransfer(local = false)
         assertEquals(listOf(true, false), leases)
+    }
+
+    @Test fun lanFailureDoesNotDisturbASendAlreadyUsingSecuredBle() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(4096)) }
+        owner.sendFiles(listOf(source))
+        owner.onLanUnavailable("Local-network connection failed.")
+        kotlinx.coroutines.withTimeout(2000) {
+            while (owner.state !is TransferState.WaitingForPeerApproval && owner.state !is TransferState.Failed) delay(5)
+        }
+        assertTrue(owner.state is TransferState.WaitingForPeerApproval)
+        owner.dismiss()
+    }
+
+    @Test fun lanFailureWithoutAnotherChannelFailsThePendingSendImmediately() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        owner.onDemandLanConnection = { true }
+        val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(16)) }
+        owner.sendFiles(listOf(source))
+        assertTrue(owner.state is TransferState.Connecting)
+        owner.onLanUnavailable("No local network.")
+        assertEquals("No local network.", (owner.state as TransferState.Failed).reason)
+        owner.dismiss()
     }
 
     @Test fun retiringStandbyChannelReleasesItsCapacityWaitImmediately() = runBlocking {

@@ -151,4 +151,11 @@ Physical runs are the only tier that may be cited for the 8 MiB/s gate. Debug in
 Enabling optional Mac Home/companion Now Playing display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer. These are interactive Debug runtime observations, not a controlled Release profile or battery measurement. Connected-idle results do not describe this workload. A visible/hidden playback comparison and CPU call-tree capture are needed before attributing the cost to rendering, artwork decoding, metadata delivery or record processing. 
 
 
-[Verification status](VERIFICATION.md) keeps completed device tests and open performance measurements separate.
+
+## Android capacity notification reentrancy
+
+Physical startup sampling on the SM-A346E shows the main thread at 99–103% of one core while the rendering and IO workers are mostly idle. Two debugger snapshots identify `TransferController.clearCapacityWaiters` synchronously resuming `sendWithBackpressure`, which requeues a waiter after `SessionBackpressure`. Polling and completing in the same loop consumes those newly queued waiters indefinitely, starving UI and connection progress during capability exchange even without a user transfer.
+
+Capacity notification now drains existing waiters into a bounded-by-current-waiters snapshot before completing any continuation. Requeued waiters wait for a subsequent real notification; no retry polling or timer is introduced. Wire bytes, security validation and admission bounds are unchanged. The adversarial synchronous-resumption regression fails against the old loop (eight capped attempts for one event) and requires exactly one additional send attempt per capacity event.
+
+A full data-preserving Debug APK update removes the observed spin on the same phone: the main thread reports 0.0% CPU in three short idle samples, and `dumpsys gfxinfo` returns rather than timing out. A warm activity launch completes in 649 ms. Identity and trust journal SHA-256 hashes remain unchanged across installation. Initial Debug rendering still records slow frames (9/27 janky frames in the startup sample); this verifies removal of the indefinite main-thread spin, not full cold-start or sustained-frame acceptance. Android JVM tests (227), offline lint and Debug build pass.

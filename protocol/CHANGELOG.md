@@ -2,6 +2,12 @@
 
 Records shared communication-contract changes, compatibility implications, and protocol releases independently of application versions. Repository scaffolding and shared documentation are recorded in the [root changelog](../CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
+
 ## [0.2.0]
 
 ### Added

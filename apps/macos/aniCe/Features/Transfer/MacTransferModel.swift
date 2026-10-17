@@ -49,6 +49,7 @@ enum TransferEvent: Equatable {
   private(set) var peerCompatible = false
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
   var onEvent: ((TransferEvent) -> Void)?
+  var onLanRequired: () -> Void = {}
 
   /// Exposes the active incoming offer batch, or nil outside .incomingOffer.
   /// Fences background notification actions against stale or out-of-order execution without extra state.
@@ -308,6 +309,7 @@ enum TransferEvent: Equatable {
   }
 
   func sendFiles(urls: [URL]) async {
+    if !isBusy, (1...128).contains(urls.count), activeChannel?.descriptor.transport != "lan" { onLanRequired() }
     selectPreferredChannel()
     guard let channel = activeChannel, peerConnected else {
       state = .failed(reason: "No secured local-network or Bluetooth connection")

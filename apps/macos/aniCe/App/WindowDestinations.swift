@@ -43,8 +43,12 @@ ScrollView {
           if pairing.hasTrustedAndroid {
             Button { navigation.show(.devices) } label: { Label("Devices", systemImage: "chevron.backward") }
           }
-          Toggle("Connect automatically after pairing", isOn: $navigation.automaticAfterPairing)
+          Toggle("Connect automatically after pairing", isOn: Binding(
+            get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
+            set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
             .tint(AniCePalette.accent(colorScheme)).disabled(pairing.phase == "paired")
+          Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network.")
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           MacPairingView(model: pairing)
         } else {
           HStack {
@@ -129,6 +133,11 @@ if navigation.settingsRoute == .identity {
                 }.labelsHidden().pickerStyle(.menu).frame(width: 130)
               }.padding(.horizontal, 24).padding(.top, 20)
               Text("The menu-bar companion follows macOS appearance.")
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal, 24)
+              Divider().padding(.vertical, 12)
+              Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
+                .padding(.horizontal, 24)
+              Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network. Enable this on both devices.")
                 .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal, 24)
               Divider().padding(.vertical, 12)
               Toggle("Show Now Playing on this Mac",isOn:Binding(get:{playback.showOnMac},set:{playback.setShowOnMac($0)}))

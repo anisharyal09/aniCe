@@ -18,6 +18,7 @@ interface FeatureHandler {
     suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling
 }
 class FeatureDispatch {
+    var applicationActivity: (ChannelDescriptor, ByteArray) -> Unit = { _, _ -> }
     private val handlers = mutableListOf<FeatureHandler>()
     private val channels = mutableMapOf<String, SecuredChannel>()
     fun register(handler: FeatureHandler) { check(channels.isEmpty()); check(handler !in handlers); handlers.add(handler) }
@@ -31,6 +32,7 @@ class FeatureDispatch {
                 require(bytes.size <= descriptor.maximumDataBytes)
                 send(bytes)
                 if (channels[descriptor.transport] !== this) throw SessionException(SessionFailure.CANCELLED)
+                applicationActivity(descriptor, bytes)
             }
         }
         channels[descriptor.transport] = channel
@@ -41,7 +43,7 @@ class FeatureDispatch {
     suspend fun handle(transport: String, instance: String, bytes: ByteArray): DataHandling {
         val descriptor = channels[transport]?.descriptor ?: return DataHandling.DISCARDED
         if (descriptor.instance != instance) return DataHandling.DISCARDED
-        for (handler in handlers) { val result = handler.handle(descriptor, bytes); if (channels[transport]?.descriptor != descriptor) return DataHandling.DISCARDED; if (result != DataHandling.UNRECOGNIZED) return result }
+        for (handler in handlers) { val result = handler.handle(descriptor, bytes); if (channels[transport]?.descriptor != descriptor) return DataHandling.DISCARDED; if (result == DataHandling.HANDLED) applicationActivity(descriptor, bytes); if (result != DataHandling.UNRECOGNIZED) return result }
         return DataHandling.UNRECOGNIZED
     }
 }

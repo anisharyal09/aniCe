@@ -2,6 +2,17 @@
 
 Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE admission coordination opens bounded Allow windows on connection events, successful BLE feature traffic, media demand or file-transfer demand; coordination traffic cannot initiate another window.
+
+### Fixed
+
+- Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected, even on fresh installs with no stored preference.
+- Feature traffic no longer resumes LAN after an explicit Disconnect; manual Allow/Connect or a preference change resumes automation.
+
 ## [0.2.0]
 
 ### Added

@@ -47,7 +47,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Decisions: [ADR 0006 (Independent LAN Sessions)](docs/decisions/0006-independent-lan-sessions.md)
   - Vectors: [`lan-vectors.json`](protocol/test-vectors/lan/lan-vectors.json)
 - **Concurrent Coexistence:** Simultaneous BLE and LAN sessions to the same pinned peer with independent session keys, nonces, and counters under a shared reservation lock.
-- **Ownership:** Android idle LAN follows its configured background timeout after final activity stop or screen lock; bounded pickers and user-approved transfer-service leases retain active work. Network loss still retires the channel. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Automatic LAN reconnection remains deferred.
+- **Ownership:** Android idle LAN follows its configured background timeout after final activity stop or screen lock; bounded pickers and user-approved transfer-service leases retain active work. Network loss still retires the channel. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Opt-in authenticated BLE rendezvous coordinates bounded LAN admission on BLE connection events, live BLE feature activity and feature demand while Android is foreground and interactive.
 
 ---
 
@@ -55,7 +55,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 - **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG after 60 seconds without authenticated activity, with monotonic deadlines.
 - **Event-Driven Idle:** Connection maintenance replaced earlier periodic 1-second polling loops with absolute monotonic deadline waits and transport events. Quiet deadline evaluation performs zero storage or Keystore/Keychain reads; full native identity and active-trust validation are enforced on authenticated operations.
-- **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed. Manual LAN requires another Connect after expiry.
+- **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed. Manual LAN requires another Connect after expiry; automatic LAN waits for a connection event or feature demand before establishing another session through authenticated BLE rendezvous.
 - **Specifications & Decisions:** Keepalive envelopes, event-driven scheduling, and renewal thresholds are specified in the [Session Protocol Contract](protocol/session/README.md) and recorded in [ADR 0005 (EDHOC Secure Sessions)](docs/decisions/0005-edhoc-secure-sessions.md).
 
 ---

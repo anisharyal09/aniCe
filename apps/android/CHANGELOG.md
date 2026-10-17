@@ -2,6 +2,21 @@
 
 Changes to the aniCe Android app. Repository-wide changes are recorded in the [root changelog](../../CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE readiness coordination permits one bounded foreground Wi-Fi initiation on BLE/eligibility events, successful BLE feature traffic, file selection, companion media demand or explicit transfer demand, without independent LAN retries. The background idle timeout defaults to Never while preserving saved finite choices.
+- Background companion playback holds a bounded media demand lease while playing or inside the paused grace, so Now Playing can request and retain LAN (and receive artwork) in the background.
+
+### Fixed
+
+- Selecting files or starting a send no longer retires a secured BLE channel: picker leases follow secured transports instead of the transfer's transiently selected channel, and a LAN attempt preserves existing transfer leases.
+- A failed LAN demand now fails a waiting send immediately instead of waiting for the connect timeout; a send with an already-secured compatible channel proceeds on it without waiting for LAN.
+- Feature traffic and playback demand no longer clear an explicit LAN Disconnect; manual reconnect or a preference change resumes automation.
+- Snapshot blocked transfer senders before resuming capacity waiters, preventing startup capability exchange from spinning on the main thread when BLE remains busy.
+- Settings collapses the background-timeout choices into one row (default Never) and renames the LAN toggle to Use local network automatically.
+
 ## [0.2.0]
 
 ### Added

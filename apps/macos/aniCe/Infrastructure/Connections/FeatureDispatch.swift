@@ -23,6 +23,7 @@ struct ChannelDescriptor: Equatable {
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling
 }
 @MainActor final class FeatureDispatch {
+  var applicationActivity: (ChannelDescriptor, Data) -> Void = { _, _ in }
   private final class Channel: SecuredChannel {
     let descriptor: ChannelDescriptor
     weak var owner: FeatureDispatch?
@@ -33,6 +34,7 @@ struct ChannelDescriptor: Equatable {
       guard bytes.count <= descriptor.maximumDataBytes else { throw SessionFailure.malformed }
       try await submit(bytes)
       guard owner?.channels[descriptor.transport] === self else { throw SessionFailure.cancelled }
+      owner?.applicationActivity(descriptor, bytes)
     }
   }
   private var channels: [String:Channel] = [:]
@@ -48,7 +50,7 @@ struct ChannelDescriptor: Equatable {
   func capacityAvailable(_ transport: String) { if let channel=channels[transport] { for handler in handlers { handler.capacityAvailable(channel.descriptor) } } }
   func handle(_ bytes: Data, transport: String, instance: String?) async -> DataHandling {
     guard let descriptor=channels[transport]?.descriptor, descriptor.instance==instance else { return .discarded }
-    for handler in handlers { let result=await handler.handle(bytes,on:descriptor); guard channels[transport]?.descriptor == descriptor else { return .discarded }; if result != .unrecognized { return result } }
+    for handler in handlers { let result=await handler.handle(bytes,on:descriptor); guard channels[transport]?.descriptor == descriptor else { return .discarded }; if result == .handled { applicationActivity(descriptor, bytes) }; if result != .unrecognized { return result } }
     return .unrecognized
   }
 }

@@ -1,6 +1,6 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup. See [Verification status](../../docs/VERIFICATION.md) for completed tests, measured results and the remaining minimum-OS, lifecycle and security-review coverage.
+Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
 
 Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations. Physical API 36 verification covers authenticated BLE and LAN sockets, settings navigation, Pause/Resume and 190 seconds of quiet secured traffic after Recents removal. Locked-screen endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
 
@@ -8,7 +8,7 @@ Automatic nearby recovery uses an OS-bound companion lease and one device settin
 
 ## Development version and verification
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. The [verification record](../../docs/VERIFICATION.md) separates real application tests, native instrumentation, hosted/unit checks and untested combinations. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 

@@ -6,6 +6,19 @@ Repository-wide structure, documentation, and development conventions belong her
 - [macOS](apps/macos/CHANGELOG.md)
 - [Protocol](protocol/CHANGELOG.md)
 
+## [Unreleased]
+
+### Added
+
+- Automatic BLE-coordinated LAN initiation on connection events, secured BLE feature activity, companion media demand and file selection. Automation is on when no preference is stored, a stored off still wins, and pairing exposes one post-pairing toggle that sets both the Bluetooth and LAN choices.
+
+### Fixed
+
+- Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected. Android background Now Playing additionally requests and retains LAN (including artwork) while playing or inside the paused grace.
+- File selection and a pending send no longer retire a secured BLE channel; a send with a secured channel proceeds on it, and a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
+- Feature traffic no longer resumes LAN after an explicit Disconnect.
+- Settings and pairing are decluttered: one post-pairing toggle, one local-network preference, and a collapsed Background timeout row that still defaults to Never.
+
 ## [0.2.0]
 
 Development milestone: 0.2.0-dev, build 2.

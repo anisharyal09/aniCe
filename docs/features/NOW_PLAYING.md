@@ -32,7 +32,7 @@ One application-scoped `MacPlaybackModel` owns selection, revisions, permissions
 
 Commands validate the selected process/recording and never fall back to global playback commands.
 
-Each subscription uses one already-secured channel, preferring compatible LAN and otherwise BLE. Channel changes require a fresh subscription and snapshot; submitted commands never replay. Artwork is LAN-only, in memory, bounded to 256 pixels/64 KiB with 2 KiB chunks and a ten-second assembly deadline. LAN never activates automatically.
+Each subscription uses one already-secured channel, preferring compatible LAN and otherwise BLE. Channel changes require a fresh subscription and snapshot; submitted commands never replay. Artwork is LAN-only, in memory, bounded to 256 pixels/64 KiB with 2 KiB chunks and a ten-second assembly deadline. Companion-owned background playback holds a bounded media demand lease while it is playing or inside the paused grace, so LAN may be requested and retained in the background; the lease is released when playback stops, the grace expires, or companion ownership is lost.
 
 Detailed contracts and decisions:
 
@@ -48,10 +48,10 @@ aniCe implements the application-scoped playback owner, authenticated transport 
 
 ## Verification
 
-Manual application testing exercises playback controls, player selection and presentation on the current phone/Mac setup, including playback alongside Phone→Mac transfer. Packaged WebKit controls, native API checks and Mac output writes have also been exercised on Apple Silicon macOS. Offline Android tests/lint/builds and Mac hosted tests pass; earlier universal builds are recorded separately. Current totals and test tiers are listed in [Verification status](../VERIFICATION.md).
+Manual application testing exercises playback controls, player selection and presentation on the current phone/Mac setup, including playback alongside Phone→Mac transfer. Packaged WebKit controls, native API checks and Mac output writes have also been exercised on Apple Silicon macOS. Offline Android tests/lint/builds and Mac hosted tests pass; earlier universal builds are recorded separately.
 
 ## Known limitations
 
 The remaining matrix includes extended phone-button/lock-screen lifecycle, Music/Spotify permission and volume combinations, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery measurements. Optional Mac Home/companion display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer; profiling is still required to identify the cause and quantify control latency. macOS 14, Intel runtime and certificate-signed Debug coverage remain open; universal compilation does not establish runtime support.
 
-Audio streaming, a separate media background service, automatic LAN activation, shuffle, lyrics and queues are outside this feature. Discovery-disconnect recovery remains separate.
+Audio streaming, a separate media background service, shuffle, lyrics and queues are outside this feature. Discovery-disconnect recovery remains separate.

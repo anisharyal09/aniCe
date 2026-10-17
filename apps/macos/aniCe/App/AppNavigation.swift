@@ -67,6 +67,7 @@ enum WindowAppearance: String, CaseIterable {
   var featurePanel: AppFeature?
   var featureOrigin: AppDestination = .features
   var automaticAfterPairing = true
+  var automaticLanAfterPairing = true
 
   func openFeature(_ feature: AppFeature) {
     featureOrigin = destination == .favourites ? .favourites : .features

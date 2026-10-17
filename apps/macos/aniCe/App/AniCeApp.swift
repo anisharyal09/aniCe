@@ -52,12 +52,15 @@ struct AniCeApp: App {
     _discovery = State(initialValue: discovery)
     let pairing = MacPairingModel(identity: identity.service, discovery: discovery)
     let peers = SessionPeerReservation()
-    let lan = MacLanSessionModel(identity: identity.service, peers: peers, store: { try await pairing.sessionStore() })
+    let lan = MacLanSessionModel(identity: identity.service, peers: peers, preferences: .standard, store: { try await pairing.sessionStore() })
     _lan = State(initialValue: lan)
+    transfer.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
     let features=FeatureDispatch()
+    features.applicationActivity = { [weak lan] descriptor, bytes in lan?.onApplicationActivity(descriptor, bytes) }
+    features.register(lan.rendezvous)
     features.register(playback)
     features.register(transfer)
     features.register(findDevice)
@@ -80,8 +83,9 @@ struct AniCeApp: App {
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
     lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
-    pairing.onPaired = { [weak session, weak navigation] peer in
+    pairing.onPaired = { [weak session, weak navigation, weak lan] peer in
       guard let session, let navigation else { return }
+      lan?.setAutomatic(navigation.automaticLanAfterPairing)
       navigation.show(.home)
       navigation.details = false
       session.selectedPeer = peer

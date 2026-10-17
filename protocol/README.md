@@ -17,6 +17,7 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **Now Playing** | `1` | Implemented; acceptance pending | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated; player acceptance pending | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
+| **Automatic LAN rendezvous** | `1` | Implemented; physical acceptance pending | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **File Transfer** | `1` | Implemented; acceptance pending | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---

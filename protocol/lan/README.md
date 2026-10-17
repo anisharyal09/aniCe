@@ -2,6 +2,8 @@
 
 The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2, record profile 3 and transfer capability 2. Standard profile 1/BLE limits and fixture bytes remain unchanged.
 
+See [automatic LAN rendezvous](AUTOMATIC.md) for opt-in authenticated BLE coordination of bounded admission on connection events and feature demand. Run-to-run recovery remains owned by BLE. Manual behavior below remains available.
+
 ## Discovery and roles
 
 Android is TCP client and EDHOC initiator; macOS is TCP listener and EDHOC responder. Existing active trust is mandatory. LAN does not pair devices or modify identity/trust journals.
@@ -34,7 +36,7 @@ Mac admits one candidate and withdraws Bonjour advertising while it is occupied.
 
 Each transport owns its own EDHOC ephemerals, connection IDs, exporters, directional keys, IVs, counters, readiness and liveness. A shared reservation pins all pending/secured transport owners to the same full peer credential and local fingerprint. Display-name changes do not alter it. An unresolved Mac Any-phone BLE window is exclusive until authentication or cancellation; LAN freezes a concrete trusted phone.
 
-LAN requires fresh EDHOC and mandatory message 4, then encrypted ready/readyAck before application access. HELLO/ACK and PING/PONG use existing controls. Hard limits remain 4,000 plaintext bytes, one-hour lifetime, 120-second idle, ten-second readiness and `2^20` records per direction. Manual LAN has no automatic renewal/reconnection. Application features use the shared secured DATA dispatcher.
+LAN requires fresh EDHOC and mandatory message 4, then encrypted ready/readyAck before application access. HELLO/ACK and PING/PONG use existing controls. Hard limits remain 4,000 plaintext bytes, one-hour lifetime, 120-second idle, ten-second readiness and `2^20` records per direction. Manual LAN has no automatic renewal/reconnection; the opt-in rendezvous policy waits for a new connection event or feature demand after retirement. Application features use the shared secured DATA dispatcher.
 
 Android LAN work requires a started presentation; final background, screen lock and network loss retire it independently of BLE companion ownership. Mac window and companion share one LAN owner; sleep and Quit retire it. Transport Disconnect affects that transport; Disconnect all, trust removal and identity reset retire both. LAN operations do not acquire the exclusive BLE radio.
 

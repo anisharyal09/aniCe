@@ -64,6 +64,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     }
 
     var automaticAfterPairing by rememberSaveable { mutableStateOf(true) }
+    var automaticLanAfterPairing by rememberSaveable { mutableStateOf(true) }
     val nearbyOwner = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(LocalContext.current)
     LaunchedEffect(pairing.busy) {
         if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
@@ -72,6 +73,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         val paired = completedPairingPeer(pairing.phase, pairing.peer,
             identity.state.snapshot?.identity?.fingerprint, pairing.peers)
         if (paired != null) {
+            session.lan.setAutomaticEnabled(automaticLanAfterPairing)
             navigation.paired()
             pairing.cancel()
             if (automaticAfterPairing && nearbyOwner.available) {
@@ -126,7 +128,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             pageState.SaveableStateProvider(navigation.destination.name) {
                 when (navigation.destination) {
                     AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
-                        DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it })
+                        DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it })
                     }
                     AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
                     AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)

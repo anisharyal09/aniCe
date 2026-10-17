@@ -10,9 +10,11 @@ The pairing and transport foundations include P-256 identities, QR and OPAQUE PI
 
 **0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer and Find Device are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
 
-Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 219 Android JVM tests; the Mac hosted suite reports 207 tests, including six explicit skips, with zero failures. [Verification status](docs/VERIFICATION.md) records completed checks, measured results and the specific remaining gaps, including elevated CPU with optional Mac Now Playing display.
+Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 233 Android JVM tests; the Mac hosted suite reports 216 tests, including six explicit skips, with zero failures.
 
 ---
+
+Automatic LAN connection is available through an opt-in preference in Settings and pairing on both apps. It coordinates over secured Bluetooth; [LAN behavior and limits](docs/LAN_CONNECTIONS.md#automatic-connection-on-events-and-demand) describe eligibility and event-triggered initiation.
 
 ## Repository Structure
 
@@ -51,7 +53,7 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 - **Architecture Overview:** [Identity, trust, sessions and transports](ARCHITECTURE.md)
 - **Architecture Decisions:** [Shared foundations and feature decisions](docs/decisions/README.md)
 - **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
-- **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md) · [Verification](docs/VERIFICATION.md)
+- **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
 - **Features:** [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md) · [Find Device](docs/features/FIND_DEVICE.md)
 - **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
 

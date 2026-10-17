@@ -1,16 +1,72 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Owns explicit Bonjour admission and pinned LAN sessions shared by both Mac surfaces.
+// Owns manual and BLE-coordinated Bonjour admission and independently authenticated LAN sessions.
 import AppKit
 import Foundation
 @preconcurrency import Network
 import Observation
 
 @Observable @MainActor final class MacLanSessionModel {
-  private(set) var state = "Disconnected" { didSet { channelStateChanged() } }
+  private(set) var state = "Disconnected" { didSet { channelStateChanged(); scheduleAutomatic() } }
   private(set) var status = "Allow your trusted Android to connect over the local network."
   private(set) var allowing = false
   private(set) var receivedChecks = 0
   private(set) var authenticatedPeer: DeviceIdentity?
+  private(set) var automatic: Bool
+  private let preferences: UserDefaults?
+  let rendezvous = LanRendezvous()
+  private var automaticPaused = false
+  private var automaticAttempt = false
+  private var sleeping = false
+  private var quitting = false
+  private var registered = false
+  private var automaticTask: Task<Void, Never>?
+  private var automaticGate = LanAttemptGate()
+
+  func setAutomatic(_ enabled: Bool) {
+    automatic = enabled
+    preferences?.set(enabled, forKey: "lan.automatic")
+    automaticPaused = false
+    automaticGate.trigger()
+    if !enabled, automaticAttempt, state != "Secured" { end() }
+    scheduleAutomatic()
+  }
+  func onApplicationActivity(_ descriptor: ChannelDescriptor, _ bytes: Data) {
+    guard automatic, !automaticPaused, !sleeping, !quitting,
+      descriptor.transport == "ble", rendezvous.channel?.descriptor == descriptor,
+      state != "Secured", !allowing else { return }
+    guard (try? LanRendezvousWire.decode(bytes)) == nil else { return }
+    _ = requestAutomaticConnection()
+  }
+  func requestAutomaticConnection() -> Bool {
+    if state == "Secured" || allowing { return true }
+    guard automatic, !automaticPaused, !sleeping, !quitting,
+      rendezvous.channel != nil, rendezvous.remote != 0 else { return false }
+    automaticGate.trigger()
+    rendezvous.request()
+    scheduleAutomatic()
+    return true
+  }
+  private func scheduleAutomatic() {
+    automaticTask?.cancel()
+    automaticTask = Task { [weak self] in
+      await Task.yield()
+      guard let self, !Task.isCancelled else { return }
+      let eligible = self.automatic && !self.automaticPaused && !self.sleeping && !self.quitting
+      self.automaticGate.update(channel: self.rendezvous.channel?.descriptor.instance, eligible: eligible,
+        remoteEligible: self.rendezvous.remote != nil && self.rendezvous.remote != 0,
+        ready: false, requests: self.rendezvous.requests)
+      self.rendezvous.update(!eligible ? 0 : self.state == "Secured" ? 3 : self.registered ? 2 : 1)
+      guard eligible, let channel = self.rendezvous.channel, let remote = self.rendezvous.remote,
+        remote != 0 else {
+        if self.automaticAttempt, self.state != "Secured" { self.end() }
+        return
+      }
+      if self.state == "Secured" || self.allowing { _ = self.automaticGate.claim(); return }
+      guard self.automaticGate.claim() else { return }
+      self.allow(selected: channel.descriptor.peer, bluetoothAllowing: false, automatically: true)
+    }
+  }
+
   private let identity: IdentityService
   private let store: @MainActor () async throws -> PeerTrustStore
   private let peers: SessionPeerReservation
@@ -46,11 +102,16 @@ import Observation
   private var advertisement: NWListener.Service?
   init(
     identity: IdentityService, peers: SessionPeerReservation,
+    preferences: UserDefaults? = nil,
     store: @escaping @MainActor () async throws -> PeerTrustStore
   ) {
+    self.preferences = preferences
+    // Absent means the user never chose; an explicit stored false still disables automation.
+    self.automatic = preferences.map { ($0.object(forKey: "lan.automatic") as? Bool) ?? true } ?? false
     self.identity = identity
     self.peers = peers
     self.store = store
+    rendezvous.changed = { [weak self] in self?.scheduleAutomatic() }
     for (name, object) in [(IdentityService.invalidated, identity as AnyObject?),
                            (PeerTrustStore.invalidated, nil)] {
       observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) {
@@ -69,23 +130,32 @@ import Observation
       observers.append(
         NSWorkspace.shared.notificationCenter.addObserver(forName: event, object: nil, queue: .main)
         { [weak self] _ in
-          MainActor.assumeIsolated { self?.cancel() }
+          MainActor.assumeIsolated {
+            self?.sleeping = true
+            self?.end()
+          }
         })
     }
+    observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.sleeping = false; self?.scheduleAutomatic() }
+      })
     observers.append(
       NotificationCenter.default.addObserver(
         forName: NSApplication.willTerminateNotification, object: nil, queue: .main
       ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.cancel() }
+        MainActor.assumeIsolated { self?.quitting = true; self?.end() }
       })
   }
-  func allow(selected: DeviceIdentity?, bluetoothAllowing: Bool) {
+  func allow(selected: DeviceIdentity?, bluetoothAllowing: Bool, automatically: Bool = false) {
+    if !automatically { automaticPaused = false; automaticGate.trigger() }
     guard !bluetoothAllowing || peers.peer != nil else {
       status =
         "Finish or stop the current Bluetooth admission before allowing a local-network connection."
       return
     }
-    cancel()
+    end()
+    automaticAttempt = automatically
     allowing = true
     state = "Connecting"
     status = "Starting local-network availability…"
@@ -139,12 +209,15 @@ import Observation
             guard let self, op == self.generation else { return }
             defer { self.maintain() }
             if case .add = change {
+              self.registered = true
+              self.scheduleAutomatic()
               self.startupDeadline = nil
               self.admission.open(ProcessInfo.processInfo.systemUptime)
               if !self.admission.admitted {
                 self.state = "Disconnected"
-                self.status =
-                  "Waiting for \(target.deviceName). On that phone, connect over local network."
+                self.status = self.automaticAttempt
+                  ? "Waiting for \(target.deviceName) to connect automatically…"
+                  : "Waiting for \(target.deviceName). On that phone, connect over local network."
               }
             }
           }
@@ -170,6 +243,7 @@ import Observation
       socket.cancel()
       return
     }
+    registered = false
     listener?.service = nil
     state = "Connecting"
     status = "Authenticating your trusted Android…"
@@ -228,7 +302,7 @@ import Observation
   }
   private func peerClosed(_ op: Int, _ attempt: Int) {
     guard op == generation, attempt == candidate else { return }
-    cancel(message: "Your Android ended the local-network session.")
+    end(message: "Your Android ended the local-network session.")
   }
   private func capacity(_ size: Int, _ op: Int, _ attempt: Int) async -> Bool {
     guard op == generation, attempt == candidate, let transport else { return false }
@@ -286,7 +360,7 @@ import Observation
       return
     }
     if !admission.admitted, let deadline = admission.deadline, now >= deadline {
-      cancel(message: "Local-network Allow window expired.")
+      end(message: "Local-network Allow window expired.")
       return
     }
     if let handshakeDeadline, now >= handshakeDeadline {
@@ -335,7 +409,7 @@ import Observation
     }
   }
   private func failWindow(_ message: String) {
-    cancel(message: message)
+    end(message: message)
     state = "Failed"
   }
   func checkConnection() {
@@ -351,20 +425,28 @@ import Observation
     }
   }
   func disconnect() {
+    automaticPaused = true
+    scheduleAutomatic()
     let old = connection
     let op = generation
     state = "Disconnected"
     status = "Disconnecting local network…"
     Task {
       try? await old?.disconnect()
-      if op == generation { cancel() }
+      if op == generation { end() }
     }
     Task {
       try? await Task.sleep(for: .seconds(2))
-      if op == generation { cancel() }
+      if op == generation { end() }
     }
   }
   func cancel(message: String = "Disconnected. Allow local-network connections to reconnect.") {
+    automaticPaused = true
+    end(message: message)
+  }
+  private func end(message: String = "Disconnected. Allow local-network connections to reconnect.") {
+    automaticAttempt = false
+    registered = false
     generation += 1
     candidate += 1
     allowing = false

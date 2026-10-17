@@ -27,7 +27,9 @@ fun rememberSendFilesAction(controller: TransferController): () -> Unit {
         controller.endPicker()
     }
     return {
-        if (!controller.peerConnected) controller.onDemandLanConnection?.invoke()
+        // File selection is demand even when BLE is already secured; the current batch still
+        // uses the best already-secured channel and never migrates mid-batch.
+        controller.onDemandLanConnection?.invoke()
         controller.beginPicker()
         launcher.launch(arrayOf("*/*"))
     }

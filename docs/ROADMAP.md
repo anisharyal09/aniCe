@@ -10,7 +10,7 @@
 | **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
 | **Application continuity** | Now Playing, File Transfer and Find Device implemented; native UI overhaul in 0.2.0-dev. | In progress |
 
-Manual feature/UI tests, physical transfer measurements, native ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. [Verification status](VERIFICATION.md) lists completed checks and remaining matrices. Current milestone: 0.2.0-dev, build 2.
+Manual feature/UI tests, physical transfer measurements, native ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current milestone: 0.2.0-dev, build 2.
 
 ---
 
@@ -28,6 +28,7 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 
 ### 3. Independent Local Network (LAN) Transport
 - **Discovery & Framing:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and 5-byte TCP stream framing with bounded session envelopes (2–4,096 bytes). Native Wi-Fi socket binding, serialized legacy NSD resolution, and scoped IPv6 addressing. See [LAN Connections](LAN_CONNECTIONS.md), [LAN Contract](../protocol/lan/README.md), and [ADR 0006](decisions/0006-independent-lan-sessions.md).
+- **Automatic LAN:** Opt-in Settings/pairing controls on both platforms coordinate bounded Mac admission over secured BLE, Android foreground discovery on connection events, ordinary BLE feature activity or feature demand, without a separate LAN retry loop. Physical lifecycle acceptance remains pending. See [rendezvous](../protocol/lan/AUTOMATIC.md).
 - **Concurrent Coexistence:** Independent fresh sessions and key material over BLE and LAN to the same pinned peer, coordinated under a shared peer reservation lock.
 
 ### 4. Connected-Idle Performance Optimization

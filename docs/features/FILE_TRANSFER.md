@@ -6,7 +6,7 @@ Updated Android and Mac apps use bounded 128-KiB LAN chunks with an authenticate
 
 ## Connection changes
 
-On Android, Connection details exposes local-network connection controls. The idle file panel presents Send files; when disconnected, that action can start the existing trusted-Mac LAN flow. Automatic LAN upgrades are not implemented.
+On Android, Connection details exposes local-network connection controls. The idle file panel presents Send files; when disconnected, that action can start the existing trusted-Mac LAN flow. File selection on both devices requests automatic LAN setup through an existing secured BLE channel when enabled on both devices. The current batch still uses the best already-secured channel; switching an active transfer between BLE and LAN is not implemented.
 
 Both transports must belong to the same authenticated device. Support and negotiated limits are checked separately on each connection. A new batch uses local network whenever it is secured, regardless of which connection became ready first. A batch already running on Bluetooth finishes on that connection; the next batch uses local network.
 
@@ -36,7 +36,7 @@ Mac posts native notifications (`UNUserNotificationCenter`) on incoming offers w
 
 ## Verification
 
-Manual application testing covers transfers in both directions and playback during Phone→Mac transfer. Physical application transfer over a 5 GHz mobile hotspot (external AP) measures 7.0–10.5 MB/s (average ~8.0 MB/s) Mac→Phone, and 3.0–5.2 MB/s (average ~4.0 MB/s) Phone→Mac; an attenuated 2.4 GHz router (3–5m range) measures ~1.0 MB/s symmetrically. Bounded ingress queues and off-main chunk decoding resolve previous progress and rate presentation stuttering. The 1-GiB, concurrent Now Playing latency, CPU/battery, and phone-hosted hotspot loopback routing gates remain open. See [Verification status](../VERIFICATION.md) for current automated checks and the separate active-playback CPU observation.
+Manual application testing covers transfers in both directions and playback during Phone→Mac transfer. Physical application transfer over a 5 GHz mobile hotspot (external AP) measures 7.0–10.5 MB/s (average ~8.0 MB/s) Mac→Phone, and 3.0–5.2 MB/s (average ~4.0 MB/s) Phone→Mac; an attenuated 2.4 GHz router (3–5m range) measures ~1.0 MB/s symmetrically. Bounded ingress queues and off-main chunk decoding resolve previous progress and rate presentation stuttering. The 1-GiB, concurrent Now Playing latency, CPU/battery, and phone-hosted hotspot loopback routing gates remain open.
 
 ## Current limits
 

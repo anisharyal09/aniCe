@@ -1,14 +1,14 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup. See [Verification status](../../docs/VERIFICATION.md) for completed tests, measured results and the remaining minimum-OS, lifecycle and security-review coverage.
+Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Physical BLE idle/lifecycle checks and bidirectional application transfers are recorded in the verification page. Extended background endurance, minimum-OS runtime coverage and independent security review remain open. Manual Connect retains its 120-second admission window.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Extended background endurance, minimum-OS runtime coverage and independent security review remain open. Manual Connect retains its 120-second admission window.
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records acceptance gates.
 
 ## Development version and verification
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. The [verification record](../../docs/VERIFICATION.md) separates real application tests, native instrumentation, hosted/unit checks and untested combinations. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer and Find Device are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 

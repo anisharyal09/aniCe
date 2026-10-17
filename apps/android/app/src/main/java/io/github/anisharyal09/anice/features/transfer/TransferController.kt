@@ -82,6 +82,7 @@ class TransferController(
     var peerConnected by mutableStateOf(false); private set
     var peerCompatible by mutableStateOf(false); private set
     var onPickerChanged: (Boolean) -> Unit = {}
+    var onChannelChanged: () -> Unit = {}
     private var pickerTimeout: Job? = null
     var selectingFiles = false; private set
     internal val operationID get() = epoch
@@ -95,6 +96,18 @@ class TransferController(
         val wasPicking = selectingFiles
         selectingFiles = false; pickerTimeout?.cancel(); pickerTimeout = null
         if (wasPicking) onPickerChanged(false)
+    }
+
+    /**
+     * A failed LAN attempt must not leave a pending send spinning until the connect timeout.
+     * A send only waits here when no secured channel could accept it; a channel that arrives
+     * later resumes it through its capability message, so fail the wait immediately.
+     */
+    fun onLanUnavailable(reason: String) {
+        if (state !is TransferState.Connecting || pendingSend == null) return
+        connectTimeoutJob?.cancel(); connectTimeoutJob = null
+        pendingSend = null
+        failTransfer(reason)
     }
     var backgroundAllowed = false
         internal set
@@ -207,6 +220,7 @@ class TransferController(
         preferred?.let { channel ->
             capabilities[channel.descriptor.transport]?.let { applyCapability(it) }
         }
+        onChannelChanged()
     }
 
     private fun applyCapability(message: TransferMessage) {
@@ -238,10 +252,13 @@ class TransferController(
 
     private fun clearCapacityWaiters() {
         capacityRevision++
+        val pending = ArrayList<CompletableDeferred<Unit>>()
         while (true) {
             val waiter = capacityWaiters.poll() ?: break
-            waiter.complete(Unit)
+            pending.add(waiter)
         }
+        // Resumption can synchronously enqueue another waiter; it belongs to the next notification.
+        pending.forEach { it.complete(Unit) }
     }
 
     override fun capacityAvailable(descriptor: ChannelDescriptor) {

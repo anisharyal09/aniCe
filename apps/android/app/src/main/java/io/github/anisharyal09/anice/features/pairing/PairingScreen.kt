@@ -37,7 +37,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @Composable
 fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
-    automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {}) {
+    automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {},
+    automaticLan: Boolean = true, onAutomaticLanChanged: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     val expandedAngle = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 90f else -90f
     var camera by remember { mutableStateOf(false) }
@@ -84,8 +85,15 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
     ) {
         Text(if (showPairing) "Pair your Mac" else "Manage devices", style = MaterialTheme.typography.headlineSmall)
         if (showPairing) {
-            AutomaticConnectionToggle(checked = automaticAvailable && automatic,
-                enabled = automaticAvailable && model.phase != "paired", onCheckedChange = onAutomaticChanged)
+            AutomaticConnectionToggle(
+                checked = if (automaticAvailable) automatic && automaticLan else automaticLan,
+                enabled = model.phase != "paired",
+                onCheckedChange = { enabled ->
+                    if (automaticAvailable) onAutomaticChanged(enabled)
+                    onAutomaticLanChanged(enabled)
+                },
+                label = "Connect automatically after pairing")
+            Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network.", style = MaterialTheme.typography.bodySmall)
             if (!automaticAvailable) Text("Automatic Bluetooth is unavailable in this build.", style = MaterialTheme.typography.bodySmall)
             Text("On your Mac, open aniCe → Pair a device and show a QR code or six-digit code.")
             Text(model.status, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -563,6 +563,30 @@ import AppKit
 }
 
 @MainActor final class FeatureDispatchTests: XCTestCase {
+  func testActivityRequiresLiveSuccessfulSendOrHandledReceive() async throws {
+    let dispatch = FeatureDispatch(), handler = Handler(), peer = MockSecuredChannel().descriptor.peer
+    dispatch.register(handler)
+    var activity: [Data] = []
+    dispatch.applicationActivity = { descriptor, bytes in
+      XCTAssertEqual(descriptor.instance, "live")
+      activity.append(bytes)
+    }
+    dispatch.available(ChannelDescriptor(instance: "live", transport: "ble", peer: peer)) { _ in }
+    try await XCTUnwrap(handler.channel).sendData(Data([1]))
+    handler.result = .handled
+    let result = await dispatch.handle(Data([2]), transport: "ble", instance: "live")
+    XCTAssertEqual(result, .handled)
+    handler.result = .discarded
+    _ = await dispatch.handle(Data([3]), transport: "ble", instance: "live")
+    handler.result = .unrecognized
+    _ = await dispatch.handle(Data([4]), transport: "ble", instance: "live")
+    _ = await dispatch.handle(Data([5]), transport: "ble", instance: "stale")
+    XCTAssertEqual(activity, [Data([1]), Data([2])])
+    dispatch.available(ChannelDescriptor(instance: "failed", transport: "ble", peer: peer)) { _ in throw SessionBackpressure() }
+    do { try await XCTUnwrap(handler.channel).sendData(Data([6])); XCTFail("Refused submission succeeded") }
+    catch is SessionBackpressure {}
+    XCTAssertEqual(activity.count, 2)
+  }
   private final class Handler: FeatureHandler {
     var channel: (any SecuredChannel)?
     var retirement = 0, capacity = 0, received = 0

@@ -22,6 +22,24 @@ class FeatureDispatchTests {
         override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling { handled++; receive?.invoke(); return result }
     }
     private fun descriptor(id: String) = ChannelDescriptor(id,"ble",DeviceIdentity("fixture","Mac","macos","fixture-key","fixture-fingerprint"))
+    @Test fun activityRequiresSuccessfulLiveSubmissionOrHandledReception() = runBlocking {
+        val dispatch = FeatureDispatch(); val handler = Handler(); dispatch.register(handler)
+        val activity = mutableListOf<Byte>()
+        dispatch.applicationActivity = { descriptor, bytes -> assertEquals("live", descriptor.instance); activity.add(bytes.single()) }
+        dispatch.available(descriptor("live")) {}
+        handler.channel.sendData(byteArrayOf(1))
+        handler.result = DataHandling.HANDLED
+        assertEquals(DataHandling.HANDLED, dispatch.handle("ble", "live", byteArrayOf(2)))
+        handler.result = DataHandling.DISCARDED
+        dispatch.handle("ble", "live", byteArrayOf(3))
+        handler.result = DataHandling.UNRECOGNIZED
+        dispatch.handle("ble", "live", byteArrayOf(4))
+        dispatch.handle("ble", "stale", byteArrayOf(5))
+        assertEquals(listOf(1.toByte(), 2.toByte()), activity)
+        dispatch.available(descriptor("failed")) { throw SessionBackpressure() }
+        try { handler.channel.sendData(byteArrayOf(6)); fail("Refused send succeeded") } catch (_: SessionBackpressure) {}
+        assertEquals(2, activity.size)
+    }
     @Test fun retiresInstancesAndPreservesUnrecognizedFallback() = runBlocking {
         val dispatch=FeatureDispatch(); val handler=Handler(); dispatch.register(handler)
         var sends=0
@@ -62,11 +80,13 @@ class FeatureDispatchTests {
 
     @Test fun retirementDuringSubmissionDoesNotReplayUncertainData() = runBlocking {
         val dispatch=FeatureDispatch(); val handler=Handler(); dispatch.register(handler)
+        var activities = 0
+        dispatch.applicationActivity = { _, _ -> activities++ }
         val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); var sends=0
         dispatch.available(descriptor("first")) { sends++; entered.complete(Unit); release.await() }
         val old=handler.channel
         val work=async { try { old.sendData(byteArrayOf(1)); false } catch(error: SessionException) { error.reason==SessionFailure.CANCELLED } }
         entered.await(); dispatch.available(descriptor("second")) { sends++ }; release.complete(Unit)
-        assertTrue(work.await()); assertEquals(1,sends)
+        assertTrue(work.await()); assertEquals(1,sends); assertEquals(0,activities)
     }
 }

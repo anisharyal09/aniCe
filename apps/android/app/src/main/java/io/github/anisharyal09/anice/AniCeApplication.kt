@@ -20,8 +20,14 @@ class AniCeApplication : Application() {
                 transfer.cancelTransfer(); true
             } else false
         }
-        transfer.onPickerChanged = { updateTransferOwnership() }
+        lanSessionController.onDemandFailure = { reason -> transfer.onLanUnavailable(reason) }
+        nowPlaying.onNetworkDemand = lanSessionController::updateMediaLease
+        transfer.onPickerChanged = { picking ->
+            updateTransferOwnership()
+            if (picking) lanSessionController.requestAutomaticConnection()
+        }
         transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
+        transfer.onChannelChanged = { updateTransferOwnership() }
         transfer.onLeaseChanged = { approved ->
             transferNotification.update()
             if (approved) {
@@ -41,6 +47,7 @@ class AniCeApplication : Application() {
         }
         transfer.onStateChanged = { _ ->
             transferNotification.update()
+            updateTransferOwnership()
             if (!transfer.isBusy) {
                 lanSessionController.onWorkIdle()
             }
@@ -57,10 +64,17 @@ class AniCeApplication : Application() {
     private fun updateTransferOwnership() {
         val transport = transfer.activeChannel?.descriptor?.transport
         val connecting = transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting
-        lanSessionController.updateWorkLease(transfer.backgroundAllowed && (transport == "lan" || connecting),
-            transfer.selectingFiles && transport != "ble")
-        if (bleOwner.isInitialized()) bleOwner.value.updateWorkLease(
-            transfer.backgroundAllowed && transport == "ble", transfer.selectingFiles && transport == "ble")
+        val bleSecured = bleOwner.isInitialized() && bleOwner.value.state ==
+            io.github.anisharyal09.anice.infrastructure.connections.ConnectionState.SECURED
+        val leases = io.github.anisharyal09.anice.infrastructure.connections.transferLeases(
+            activeTransport = transport,
+            connecting = connecting,
+            backgroundAllowed = transfer.backgroundAllowed,
+            selectingFiles = transfer.selectingFiles,
+            bleSecured = bleSecured,
+        )
+        lanSessionController.updateWorkLease(leases.lanWork, leases.lanPicker)
+        if (bleOwner.isInitialized()) bleOwner.value.updateWorkLease(leases.bleWork, leases.blePicker)
     }
 
     internal fun transferServiceStopped() {
@@ -77,6 +91,8 @@ class AniCeApplication : Application() {
     // Notification adapters need the base context attached by Android after Application construction.
     val features by lazy {
         io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
+            it.applicationActivity = lanSessionController::onApplicationActivity
+            it.register(lanSessionController.rendezvous)
             it.register(nowPlaying)
             it.register(transfer)
             it.register(findDevice)

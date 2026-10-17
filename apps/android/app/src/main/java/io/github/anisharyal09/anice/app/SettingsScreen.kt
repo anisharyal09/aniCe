@@ -122,24 +122,42 @@ fun SettingsScreen(
         }
         HorizontalDivider()
         Text("Local network (LAN)", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "Disconnect after inactive in background",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        val lan = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).lanSessionController
+        io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
+            checked = lan.automatic, enabled = true, onCheckedChange = lan::setAutomaticEnabled,
+            label = "Use local network automatically")
+        Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network. Enable this on both devices.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val lanPrefs = remember { context.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE) }
-        var timeoutMinutes by remember { mutableIntStateOf(lanPrefs.getInt("lan_background_timeout_minutes", 3)) }
+        var timeoutMinutes by remember { mutableIntStateOf(lanPrefs.getInt("lan_background_timeout_minutes", 0)) }
+        var timeoutExpanded by remember { mutableStateOf(false) }
         val timeoutOptions = listOf(1 to "1 min", 3 to "3 min", 5 to "5 min", 10 to "10 min", 0 to "Never")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            timeoutOptions.forEach { (minutes, label) ->
-                FilterChip(
-                    selected = timeoutMinutes == minutes,
-                    onClick = {
-                        timeoutMinutes = minutes
-                        lanPrefs.edit().putInt("lan_background_timeout_minutes", minutes).apply()
-                    },
-                    label = { Text(label) }
-                )
+        Row(
+            Modifier.fillMaxWidth()
+                .clickable(role = androidx.compose.ui.semantics.Role.Button) { timeoutExpanded = !timeoutExpanded }
+                .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Background timeout · ${timeoutOptions.first { it.first == timeoutMinutes }.second}",
+                Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Icon(
+                painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = if (timeoutExpanded) 90f else 0f)
+            )
+        }
+        if (timeoutExpanded) {
+            Text("Disconnect after the phone has been inactive in the background.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                timeoutOptions.forEach { (minutes, label) ->
+                    FilterChip(
+                        selected = timeoutMinutes == minutes,
+                        onClick = {
+                            timeoutMinutes = minutes
+                            lanPrefs.edit().putInt("lan_background_timeout_minutes", minutes).apply()
+                        },
+                        label = { Text(label) }
+                    )
+                }
             }
         }
         HorizontalDivider()

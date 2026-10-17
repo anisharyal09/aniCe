@@ -1,0 +1,3 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Coordinates existing LAN admission through live authenticated BLE DATA, at most 64 bytes.
+lan-rendezvous = ["aniCe LAN", 1, 0 / 1 / 2 / 3 / 4]

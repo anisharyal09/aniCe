@@ -15,9 +15,9 @@ import io.github.anisharyal09.anice.features.session.*
 import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 
 @Composable
-internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewModel, session: SessionViewModel, navigation: AppNavigation, nearbyOwner: CompanionProbe, automaticAfterPairing: Boolean, onAutomatic: (Boolean)->Unit) {
+internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewModel, session: SessionViewModel, navigation: AppNavigation, nearbyOwner: CompanionProbe, automaticAfterPairing: Boolean, onAutomatic: (Boolean)->Unit, automaticLanAfterPairing: Boolean, onAutomaticLan: (Boolean)->Unit) {
     when (navigation.route) {
-        DeviceRoute.Pairing -> PairingScreen(pairing, nearbyOwner.available, automaticAfterPairing, onAutomatic)
+        DeviceRoute.Pairing -> PairingScreen(pairing, nearbyOwner.available, automaticAfterPairing, onAutomatic, automaticLanAfterPairing, onAutomaticLan)
         DeviceRoute.Discovery -> DiscoveryScreen(discovery)
         DeviceRoute.Overview -> {
             if (navigation.destination == AppDestination.Home) {

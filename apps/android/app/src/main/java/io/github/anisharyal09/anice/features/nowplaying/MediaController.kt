@@ -137,6 +137,8 @@ class MediaController(
         private set
     var openWorkspaceRequest by mutableStateOf(false)
         private set
+    var onNetworkDemand: (Boolean) -> Unit = {}
+    private var networkDemand = false
 
     fun openWorkspace() {
         openWorkspaceRequest = true
@@ -151,7 +153,21 @@ class MediaController(
         if (presentations.isEmpty()) {
             if (!available) retire() else choose()
         }
+        updateNetworkDemand()
         presentationChanged()
+    }
+
+    /**
+     * Background LAN stays eligible only while remote playback is actually presented: playing,
+     * or paused inside the existing ninety-second grace. MediaController owns the intent.
+     */
+    private fun updateNetworkDemand() {
+        val current = playback
+        val next = links.isNotEmpty() && current != null && current.state in 1L..2L &&
+            (current.state == 1L || compactVisible)
+        if (next == networkDemand) return
+        networkDemand = next
+        onNetworkDemand(next)
     }
 
     private fun refreshPresentation() {
@@ -175,10 +191,12 @@ class MediaController(
                 if (pauseDeadline == deadline) {
                     compactVisible = false
                     pauseJob = null
+                    updateNetworkDemand()
                     presentationChanged()
                 }
             }
         }
+        updateNetworkDemand()
         presentationChanged()
     }
 
@@ -319,7 +337,7 @@ class MediaController(
         supported = links.values.any { it.capable }
         if (presentations.isEmpty() && !companion) return
         val kind =
-            if (presentations.isNotEmpty() && links["lan"]?.capable == true) "lan" else if (links["ble"]?.capable == true) "ble" else null
+            if (links["lan"]?.capable == true) "lan" else if (links["ble"]?.capable == true) "ble" else null
         if (kind == active) return
         retire()
         if (kind != null) {
