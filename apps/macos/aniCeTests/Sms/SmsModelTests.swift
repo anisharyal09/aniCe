@@ -183,6 +183,53 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(spy.notes.count, 2)
   }
 
+  // Alphanumeric sender IDs (banks, alerts, service senders) are first-class conversations.
+  @MainActor func testAlphanumericSenderIDsKeepTheirOwnConversationsRowsAndNotifications() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    XCTAssertEqual(smsNormalizedAddress(" acme bank "), "ACME BANK")
+    XCTAssertEqual(smsNormalizedAddress("ACME BANK"), "ACME BANK")
+    XCTAssertEqual(smsNormalizedAddress("+1 (555) 123-4567"), "+15551234567")
+    XCTAssertNotEqual(smsNormalizedAddress("ACME BANK"), smsNormalizedAddress("AUTH XYZ"))
+    let firstId = "live:" + String(repeating: "c", count: 32)
+    let parts = try stream(UUID().uuidString.lowercased(), messageId: firstId, address: "ACME BANK", unread: true, body: "Your OTP is 42")
+    await deliver(model, channel, [parts.begin] + parts.fragments + [parts.commit])
+    await until("sender acknowledgement") { self.sent(channel, 9).count == 1 }
+    XCTAssertEqual(model.threads(peer).map(\.address), ["ACME BANK"])
+    XCTAssertEqual(model.threads(peer)[0].unreadCount, 1)
+    XCTAssertEqual(model.threads(peer)[0].snippet, "Your OTP is 42")
+    XCTAssertEqual(spy.notes.map(\.address), ["ACME BANK"])
+    XCTAssertEqual(spy.notes[0].threadIdentifier, "ACME BANK")
+    XCTAssertFalse(spy.notes[0].failure)
+    // An identical body and timestamp from another sender ID is a separate message, card and notification.
+    let secondId = "live:" + String(repeating: "d", count: 32)
+    let other = try stream(UUID().uuidString.lowercased(), messageId: secondId, address: "AUTH XYZ", unread: true, body: "Your OTP is 42")
+    await deliver(model, channel, [other.begin] + other.fragments + [other.commit])
+    await until("second sender acknowledgement") { self.sent(channel, 9).count == 2 }
+    XCTAssertEqual(model.threads(peer).map(\.address).sorted(), ["ACME BANK", "AUTH XYZ"])
+    XCTAssertEqual(spy.notes.count, 2)
+    XCTAssertEqual(model.messages(peer, address: "ACME BANK").map(\.messageId), [firstId])
+    XCTAssertEqual(model.messages(peer, address: "AUTH XYZ").map(\.messageId), [secondId])
+    // Provider history merges under the same address-form conversation and still wins over the live copy.
+    model.requestMessages(peer, address: "ACME BANK")
+    await until("sender history request") { self.sent(channel, 5).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 5))
+    XCTAssertEqual(request.text(1), "addr:ACME BANK")
+    XCTAssertEqual(request.number(4), Int64(SmsMessage.defaultPageSize))
+    let record = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:41",
+      threadId: "addr:ACME BANK", address: "acme bank", unread: true, body: "Your OTP is 42")
+    await deliver(model, channel, [record.begin] + record.fragments + [record.commit])
+    await deliver(model, channel, [try records(10, [.text(request.text(0)), .integer(0), .integer(0), .text("")])])
+    XCTAssertEqual(model.messages(peer, address: "ACME BANK").map(\.messageId), ["sms:41"])
+    XCTAssertEqual(spy.notes.count, 2)
+    // Replies keep the stored sender text and the address-form thread id.
+    model.send(peer, address: "ACME BANK", text: "thanks")
+    await until("sender reply") { self.sent(channel, 11).count == 1 }
+    let begin = try XCTUnwrap(try lastSent(channel, 11))
+    XCTAssertEqual(begin.text(1), "addr:ACME BANK"); XCTAssertEqual(begin.text(2), "ACME BANK")
+  }
+
   @MainActor func testFragmentIntegrityRejectsConflictsAndNeverAssemblesBadBodies() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let channel = MockSecuredChannel(transport: "lan")
@@ -271,6 +318,40 @@ final class SmsModelTests: XCTestCase {
     XCTAssertFalse(model.busy(peer))
   }
 
+  @MainActor func testThreadListRefreshReplacesSnapshotKeepsLiveCardsAndDropsLateRecords() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.requestThreads(peer)
+    await until("first request") { self.sent(channel, 2).count == 1 }
+    let first = try XCTUnwrap(try lastSent(channel, 2))
+    _ = await handle(model, try records(3, [.text(first.text(0)), .text("sms:42"), .text("+15551234567"),
+      .text("hi"), .integer(500), .integer(0)]), channel)
+    _ = await handle(model, try records(3, [.text(first.text(0)), .text("sms:7"), .text("AUTH XYZ"),
+      .text("alert"), .integer(400), .integer(1)]), channel)
+    _ = await handle(model, try records(4, [.text(first.text(0)), .integer(0)]), channel)
+    XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15551234567", "AUTH XYZ"])
+    // A card a live message created survives the next snapshot even when the phone does not report it.
+    let liveId = "live:" + String(repeating: "e", count: 32)
+    let live = try stream(UUID().uuidString.lowercased(), messageId: liveId, address: "ACME BANK", unread: true, body: "live only")
+    await deliver(model, channel, [live.begin] + live.fragments + [live.commit])
+    await until("live card") { model.threads(peer).contains { $0.key == "ACME BANK" } }
+    // The phone deleted the AUTH XYZ conversation: the refresh snapshot replaces the list.
+    model.requestThreads(peer)
+    await until("second request") { self.sent(channel, 2).count == 2 }
+    let second = try XCTUnwrap(try lastSent(channel, 2))
+    _ = await handle(model, try records(3, [.text(second.text(0)), .text("sms:42"), .text("+15551234567"),
+      .text("newest"), .integer(900), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(second.text(0)), .integer(0)]), channel)
+    XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15551234567", "ACME BANK"])
+    XCTAssertEqual(model.threads(peer).first { $0.key == "+15551234567" }?.snippet, "newest")
+    // A late record from the finished first request is discarded and cannot re-add the deleted card.
+    let late = await model.handle(try records(3, [.text(first.text(0)), .text("sms:7"), .text("AUTH XYZ"),
+      .text("late"), .integer(1000), .integer(0)]), on: channel.descriptor)
+    XCTAssertEqual(late, .discarded)
+    XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15551234567", "ACME BANK"])
+  }
+
   @MainActor func testHistoryPageMergesProviderCopyAndPrefersItOverLive() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let channel = MockSecuredChannel(transport: "lan")
@@ -348,7 +429,7 @@ final class SmsModelTests: XCTestCase {
     let older = try XCTUnwrap(try lastSent(channel, 5))
     XCTAssertEqual(older.number(2), 1_699_000_000_000)
     XCTAssertEqual(older.text(3), "sms:120")
-    XCTAssertEqual(older.number(4), 50)
+    XCTAssertEqual(older.number(4), Int64(SmsMessage.defaultPageSize))
     await deliver(model, channel, [try records(10, [.text(older.text(0)), .integer(0), .integer(0), .text("")])])
     XCTAssertFalse(model.more(peer, address: "+15551234567"))
     XCTAssertEqual(model.status(peer), "All messages loaded")
@@ -375,6 +456,50 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(stale, .discarded)
     XCTAssertFalse(model.more(peer, address: "+15551234567"))
     XCTAssertTrue(model.messages(peer, address: "+15551234567").isEmpty)
+  }
+
+  @MainActor func testReopeningConversationRefreshesNewestWithoutRewindingOlderPaging() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.requestThreads(peer)
+    await until("thread request") { self.sent(channel, 2).count == 1 }
+    let threads = try XCTUnwrap(try lastSent(channel, 2))
+    _ = await handle(model, try records(3, [.text(threads.text(0)), .text("sms:42"), .text("+15551234567"),
+      .text("hi"), .integer(1_700_000_000_000), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0)]), channel)
+    // First open: the request asks for the newest page and leaves an older-message cursor behind.
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("first open") { self.sent(channel, 5).count == 1 }
+    let first = try XCTUnwrap(try lastSent(channel, 5))
+    XCTAssertEqual(first.number(2), 0); XCTAssertEqual(first.text(3), "")
+    let older = try stream(UUID().uuidString.lowercased(), requestId: first.text(0), messageId: "sms:100",
+      threadId: "sms:42", dateMillis: 1_700_000_000_000, body: "older page")
+    await deliver(model, channel, [older.begin] + older.fragments + [older.commit])
+    await deliver(model, channel, [try records(10, [.text(first.text(0)), .integer(0), .integer(1_699_000_000_000), .text("sms:120")])])
+    XCTAssertTrue(model.more(peer, address: "+15551234567"))
+    // Reopening asks for the newest page again instead of the stored older cursor...
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("refresh request") { self.sent(channel, 5).count == 2 }
+    let refresh = try XCTUnwrap(try lastSent(channel, 5))
+    XCTAssertEqual(refresh.number(2), 0); XCTAssertEqual(refresh.text(3), "")
+    // ...so a message missed during the live relay shows up while the older cursor stays usable.
+    let missed = try stream(UUID().uuidString.lowercased(), requestId: refresh.text(0), messageId: "sms:600",
+      threadId: "sms:42", dateMillis: 1_700_000_500_000, body: "missed message")
+    await deliver(model, channel, [missed.begin] + missed.fragments + [missed.commit])
+    await deliver(model, channel, [try records(10, [.text(refresh.text(0)), .integer(0), .integer(1_699_999_999_000), .text("sms:610")])])
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.messageId).sorted(), ["sms:100", "sms:600"])
+    XCTAssertTrue(model.more(peer, address: "+15551234567"))
+    XCTAssertEqual(model.status(peer), "Older messages available")
+    // "Load older messages" still starts from the cursor the refresh must not have rewound.
+    model.requestMessages(peer, address: "+15551234567")
+    await until("older page request") { self.sent(channel, 5).count == 3 }
+    let page = try XCTUnwrap(try lastSent(channel, 5))
+    XCTAssertEqual(page.number(2), 1_699_000_000_000)
+    XCTAssertEqual(page.text(3), "sms:120")
+    await deliver(model, channel, [try records(10, [.text(page.text(0)), .integer(0), .integer(0), .text("")])])
+    XCTAssertFalse(model.more(peer, address: "+15551234567"))
+    XCTAssertEqual(model.status(peer), "All messages loaded")
   }
 
   @MainActor func testThreadPermissionAndStoreFailuresReportActionableText() async throws {
@@ -411,16 +536,18 @@ final class SmsModelTests: XCTestCase {
     let record = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:60",
       threadId: "sms:42", body: "partial")
     await deliver(model, lan, [record.begin] + record.fragments + [record.commit])
-    // The page dies with the link: no historyDone, so the cursor stays and the request is aborted.
+    // The page dies with the link: no historyDone, so the cursor stays, the request is aborted and the status is actionable.
     model.retired(lan.descriptor)
     XCTAssertTrue(model.connected(peer))
     XCTAssertFalse(model.busy(peer))
+    XCTAssertEqual(model.status(peer), "Connection lost while loading messages")
     XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
     model.requestMessages(peer, address: "+15551234567")
     await until("failover history request") { self.sent(ble, 5).count == 1 }
     let retry = try XCTUnwrap(try lastSent(ble, 5))
     XCTAssertEqual(retry.number(2), 0); XCTAssertEqual(retry.text(3), "")
     XCTAssertNotEqual(retry.text(0), request.text(0))
+    XCTAssertEqual(model.status(peer), "Loading messages…")
     // A late record from the aborted page cannot merge into the retry.
     let late = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:61",
       threadId: "sms:42", body: "late")

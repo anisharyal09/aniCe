@@ -15,6 +15,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Clarified SMS `historyDone` cursor semantics: a page with no older rows sends the terminal `(0, "")` cursor so clients never offer an empty "load older" request, and `unreadCount` counts unread incoming provider rows because the threads view's `read` column is an all-read flag, not a count. An `addr:` identity carries alphanumeric sender IDs as their trimmed uppercase text, so bank and service senders keep distinct conversation identities instead of one empty-string identity. Seven-bit SMS bodies decode to their declared septet count, so the octet padding never becomes a trailing character and the message digest matches the provider copy.
+
 - Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.
 
 - Clarified that optional device-local clipboard history is separate from process-local delivery state and shares native observation without changing wire messages.

@@ -12,7 +12,7 @@ import java.util.TimeZone
 /** One unique incoming SMS after multipart combination and NUL sanitization. */
 data class SmsLiveEvent(val address: String, val dateMillis: Long, val body: String) {
     val normalizedAddress: String get() = smsNormalizedAddress(address)
-    // Alphanumeric sender IDs normalize to nothing; the raw address keeps those senders distinct.
+    // The canonical conversation key keeps alphanumeric sender IDs as their own thread.
     val threadId: String get() = "addr:" + normalizedAddress.ifEmpty { address }
     val messageId: String get() = smsLiveMessageId(address, dateMillis, body)
 }
@@ -102,9 +102,9 @@ object SmsPduParser {
                     }
                     i += 2 + length
                 }
-                body = decodeBody(dcs, userData, headerLength + 1)
+                body = decodeBody(dcs, userData, headerLength + 1, userDataLength)
             } else {
-                body = decodeBody(dcs, userData, 0)
+                body = decodeBody(dcs, userData, 0, userDataLength)
             }
             if (body == null) return null
             // TS 23.040 9.2.3.24.1: concatenation sequence numbers are 1-based.
@@ -139,7 +139,7 @@ object SmsPduParser {
         return if (alphabet == 0x10) "+$text" else text
     }
 
-    private fun decodeBody(dcs: Int, userData: ByteArray, udhBytes: Int): String? {
+    private fun decodeBody(dcs: Int, userData: ByteArray, udhBytes: Int, declaredLength: Int): String? {
         if (dcs and 0x20 != 0) return null
         return when {
             dcs and 0x08 != 0 -> {
@@ -148,7 +148,9 @@ object SmsPduParser {
             }
             dcs and 0x04 != 0 -> null
             else -> {
-                val total = (userData.size * 8) / 7
+                // The declared length counts septets; the octet padding must never decode as an extra character.
+                val available = (userData.size * 8) / 7
+                val total = minOf(if (declaredLength > 0) declaredLength else available, available)
                 val headerSeptets = if (udhBytes > 0) (udhBytes * 8 + 6) / 7 else 0
                 if (total <= headerSeptets) null
                 else {

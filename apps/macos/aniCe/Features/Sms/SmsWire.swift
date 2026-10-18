@@ -10,6 +10,8 @@ struct SmsMessage: Equatable, Sendable {
   static let maxDate: Int64 = 9007199254740991
   static let maximumThreads = 50
   static let maximumMessages = 50
+  /** First page requested when a conversation is opened; older pages continue from its cursor. */
+  static let defaultPageSize = 20
   let kind: Int64
   let fields: [SessionCBOR]
   func text(_ i: Int) -> String { if case .text(let v) = fields[i] { return v }; preconditionFailure() }

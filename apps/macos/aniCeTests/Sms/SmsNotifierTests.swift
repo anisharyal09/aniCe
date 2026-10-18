@@ -83,6 +83,16 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertEqual(center.removedDelivered, [[smsNotificationPrefix + "two"]])
   }
 
+  @MainActor func testAuthorizationIsRequestedAtLaunchNotOnTheFirstMessage() async throws {
+    let center = SpySmsNotificationCenter(), peer = phone()
+    let notifier = MacSmsNotifier(preferences: preferences(), center: center)
+    XCTAssertEqual(center.authRequests, 1)
+    await notifier.post(note(peer))
+    await notifier.post(note(peer, identifier: smsNotificationPrefix + "sms:2"))
+    XCTAssertEqual(center.added.count, 2)
+    XCTAssertEqual(center.authRequests, 1)
+  }
+
   @MainActor func testDuplicateIdentifiersNeverPostTwice() async throws {
     let center = SpySmsNotificationCenter()
     let notifier = MacSmsNotifier(preferences: preferences(), center: center)

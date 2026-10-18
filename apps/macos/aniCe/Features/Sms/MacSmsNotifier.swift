@@ -61,6 +61,8 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
     self.preferences = preferences
     self.center = center
     super.init()
+    // Ask at launch so the first live message is never swallowed by the authorization prompt.
+    requestAuthIfNeeded()
     // Startup leftovers are process-local artifacts of a previous run; they are cleared by their reserved prefix.
     center.pendingIdentifiers { [weak self] identifiers in
       let reserved = identifiers.filter { $0.hasPrefix(smsNotificationPrefix) }

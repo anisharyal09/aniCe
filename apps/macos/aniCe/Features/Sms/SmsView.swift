@@ -92,7 +92,7 @@ struct SmsView: View {
         Button {
           address = card.key
           draft = ""
-          model.requestMessages(peer, address: card.address)
+          model.refreshMessages(peer, address: card.address)
         } label: {
           HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {

@@ -34,11 +34,13 @@ class SmsControllerTests {
     }
     private class FakeSender : SmsSender {
         var outcome = SmsSendOutcome(0, "sms:77", 55)
+        var pause: CompletableDeferred<Unit>? = null
         val addresses = mutableListOf<String>()
         val bodies = mutableListOf<String>()
         override suspend fun send(address: String, body: String): SmsSendOutcome {
             addresses += address
             bodies += body
+            pause?.await()
             return outcome
         }
     }
@@ -352,6 +354,54 @@ class SmsControllerTests {
         assertEquals(5L, lan.sent.first { it.kind == 14L && it.text(0) == timeout }.number(1))
     }
 
+    @Test fun replacedReplyRequestCancelsItsJobAndKeepsTheNewerSlot() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        fun begin(request: String, text: String) =
+            SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(text.toByteArray().size.toLong()), number(1), data(digest(text)))
+        // The first radio call parks; a replacement request arrives before it returns.
+        val first = request()
+        h.sender.pause = CompletableDeferred()
+        h.owner.handle(lan.descriptor, begin(first, "first").encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(first), number(0), data(utf8("first"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(first)).encode())
+        until { h.sender.bodies == listOf("first") }
+        val second = request()
+        h.owner.handle(lan.descriptor, begin(second, "second").encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(second), number(0), data(utf8("second"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(second)).encode())
+        until { h.sender.bodies.size == 2 }
+        h.sender.pause!!.complete(Unit)
+        until { lan.sent.any { it.kind == 14L } }
+        // The retired request reports nothing, and its late completion cannot erase the newer request's tracking.
+        assertTrue(lan.sent.none { it.kind == 14L && it.text(0) == first })
+        val result = lan.sent.single { it.kind == 14L }
+        assertEquals(second, result.text(0))
+        assertEquals(0L, result.number(1))
+        assertEquals(listOf("first", "second"), h.sender.bodies)
+    }
+
+    @Test fun expiryCancelsAnInFlightReplyAndReportsFailureOnce() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        val request = request()
+        h.sender.pause = CompletableDeferred()
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(4), number(1), data(digest("late"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(request), number(0), data(utf8("late"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(request)).encode())
+        until { h.sender.bodies == listOf("late") }
+        h.time += 30_001
+        h.owner.expire()
+        h.sender.pause!!.complete(Unit)
+        until { lan.sent.any { it.kind == 14L && it.text(0) == request } }
+        yield()
+        val results = lan.sent.filter { it.kind == 14L && it.text(0) == request }
+        assertEquals(1, results.size)
+        assertEquals(5L, results.single().number(1))
+    }
+
     @Test fun invalidAndForeignInputNeverMutatesState() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()
@@ -399,16 +449,80 @@ class SmsControllerTests {
         assertEquals(listOf("sms:201", "sms:200"), h.owner.conversation.map { it.messageId })
     }
 
+    @Test fun switchingConversationsMidLoadKeepsRowsAndCursorOfTheSelectedThread() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.store.pause = CompletableDeferred()
+        h.owner.select("42")
+        until { h.store.historyCalls.size == 1 }
+        h.owner.select("43")
+        until { h.store.historyCalls.size == 2 }
+        h.store.historyResult = SmsHistoryPage(listOf(SmsHistoryMessage("sms:300", "+15550000043", 1_700_000_000_000, 0, false, "second thread")), 0, "", false, 0)
+        h.store.pause!!.complete(Unit)
+        until { h.owner.conversation.any { it.messageId == "sms:300" } }
+        // The abandoned first load never appends its rows, replaces the cursor or clears the loading state.
+        assertEquals(listOf("42", "43"), h.store.historyCalls.map { it.first })
+        assertEquals(listOf("sms:300"), h.owner.conversation.map { it.messageId })
+        assertFalse(h.owner.conversationMore)
+        assertFalse(h.owner.loading)
+    }
+
+    @Test fun pendingSendEchoLeavesTheConversationWhenItsLifetimeEnds() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        // A success without a readable provider id renders as a pending echo until its lifetime ends.
+        h.sender.outcome = SmsSendOutcome(0, "", 1_700_000_000_000)
+        h.owner.send("+15551234567", "typed here")
+        until { h.owner.conversation.size == 1 }
+        assertTrue(h.owner.conversation.single().pending)
+        h.time += 600_001
+        h.owner.expire()
+        assertTrue(h.owner.conversation.isEmpty())
+    }
+
+    @Test fun sentAndLiveExtrasRenderOnlyInsideTheirOwnOpenThread() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.store.threadsResult = SmsThreadPage(
+            listOf(
+                SmsThreadRecord("42", "+15551234567", "hi", 1_700_000_000_000, 0),
+                SmsThreadRecord("43", "ACME BANK", "alert", 1_700_000_000_500, 0),
+            ),
+            0,
+        )
+        h.owner.loadThreads()
+        until { h.owner.threads?.size == 2 }
+        h.store.historyResult = SmsHistoryPage(listOf(SmsHistoryMessage("sms:200", "+15551234567", 1_700_000_000_000, 0, false, "hi")), 0, "", false, 0)
+        h.owner.select("42")
+        until { h.owner.conversation.any { it.messageId == "sms:200" } }
+        // A live message from another sender is relayed but never renders in the open thread.
+        h.owner.submitLive(listOf(SmsLiveEvent("ACME BANK", 1_700_000_002_000, "Your OTP is 42")))
+        until { lan.sent.any { it.kind == 6L } }
+        yield()
+        assertEquals(listOf("sms:200"), h.owner.conversation.map { it.messageId })
+        // Its own thread renders it once selected, and only there.
+        h.store.historyResult = SmsHistoryPage(emptyList(), 0, "", false, 0)
+        h.owner.select("43")
+        until { h.owner.conversation.any { it.messageId.startsWith("live:") } }
+        assertEquals(1, h.owner.conversation.size)
+        assertTrue(h.owner.conversation.single().unread)
+    }
+
     private class FakeProvider : SmsProvider {
         var conversations: (() -> List<SmsConversationRow>)? = null
         var canonical: ((List<Long>) -> Map<Long, String>)? = null
         var fallback: ((Long) -> SmsThreadFallback?)? = null
         var direct: ((Int) -> List<SmsConversationRow>)? = null
+        var unreadRows: (() -> Map<Long, Long>)? = null
         var sms: ((Long, Long?, Int) -> List<SmsRawMessage>)? = { _, _, _ -> emptyList() }
         var smsGroup: ((Long, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
         var mms: ((Long, Long?, Int) -> List<SmsRawMessage>)? = { _, _, _ -> emptyList() }
         var mmsGroup: ((Long, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
         override fun conversations() = conversations?.invoke() ?: throw SmsStoreException()
+        override fun unreadCounts() = unreadRows?.invoke() ?: throw SmsStoreException()
         override fun canonicalAddresses(ids: List<Long>) = canonical?.invoke(ids) ?: throw SmsStoreException()
         override fun newestThreadRow(threadId: Long) = fallback?.invoke(threadId)
         override fun directThreads(limit: Int) = direct?.invoke(limit) ?: throw SmsStoreException()
@@ -428,6 +542,11 @@ class SmsControllerTests {
         val direct = store.threads()!!
         assertEquals("+15550000007", direct.threads.single().address)
         assertEquals("7", direct.threads.single().threadId)
+        provider.conversations = { listOf(SmsConversationRow(8, 4, "sender id", emptyList(), 2, 0, address = "ACME BANK")) }
+        provider.unreadRows = { mapOf(8L to 2L) }
+        val sender = store.threads()!!
+        assertEquals("ACME BANK", sender.threads.single().address)
+        assertEquals(2L, sender.threads.single().unreadCount)
         provider.conversations = { listOf(SmsConversationRow(9, 6, "via ids", listOf(3), 4, 1)) }
         provider.canonical = { throw SecurityException("oem") }
         provider.fallback = { null }
@@ -435,6 +554,7 @@ class SmsControllerTests {
         assertTrue(skipped.threads.isEmpty())
         assertEquals(1, skipped.skipped)
         provider.fallback = { id -> if (id == 9L) SmsThreadFallback("+15550000009", 6, "fallback", true) else null }
+        provider.unreadRows = { mapOf(9L to 3L) }
         val resolved = store.threads()!!
         assertEquals("+15550000009", resolved.threads.single().address)
         assertEquals(3L, resolved.threads.single().unreadCount)
@@ -442,6 +562,23 @@ class SmsControllerTests {
         provider.direct = { emptyList() }
         assertTrue(store.threads()!!.threads.isEmpty())
         assertNull(store(provider, { false }).threads())
+    }
+
+    @Test fun threadUnreadCountComesFromUnreadRowsNotTheReadFlag() = runBlocking {
+        val provider = FakeProvider()
+        val store = store(provider, { true })
+        // `read` means "all messages read": subtracting it from 100 messages would report 99 unread.
+        provider.conversations = { listOf(SmsConversationRow(11, 20, "all read", emptyList(), 100, 1, address = "+15550000011")) }
+        provider.unreadRows = { emptyMap() }
+        assertEquals(0L, store.threads()!!.threads.single().unreadCount)
+        provider.unreadRows = { mapOf(11L to 3L) }
+        assertEquals(3L, store.threads()!!.threads.single().unreadCount)
+        // When the unread query fails, the newest-row fallback still answers with a boolean.
+        provider.unreadRows = { throw SecurityException("oem") }
+        provider.fallback = { SmsThreadFallback("+15550000011", 20, "fallback", true) }
+        assertEquals(1L, store.threads()!!.threads.single().unreadCount)
+        provider.fallback = { SmsThreadFallback("+15550000011", 20, "fallback", false) }
+        assertEquals(0L, store.threads()!!.threads.single().unreadCount)
     }
 
     @Test fun threadStoreTruncatesOnCodepointsAndSkipsUndecodableRows() = runBlocking {
@@ -455,6 +592,7 @@ class SmsControllerTests {
                 SmsConversationRow(4, -5, "neg", emptyList(), 2, 2, address = "+15550000004"),
             )
         }
+        provider.unreadRows = { mapOf(1L to 3L) }
         provider.fallback = { id -> if (id == 2L) SmsThreadFallback("+15550000002", 12, null, false) else null }
         val page = store.threads()!!
         assertEquals(3, page.threads.size)
@@ -489,8 +627,9 @@ class SmsControllerTests {
         assertEquals(0L, first.messages.last().dateMillis)
         assertEquals(3, first.skipped)
         assertFalse(first.more)
+        // A terminal page carries a terminal cursor so the Mac never offers empty "load older" requests.
         assertEquals(0L, first.nextBeforeMillis)
-        assertEquals("sms:95", first.nextBeforeMessageId)
+        assertEquals("", first.nextBeforeMessageId)
         // Byte-wise lexical ties: "sms:100" sorts before "sms:99", so the cursor below skips both.
         val passed = store.history("42", 1_000, "sms:100", 50)!!
         assertEquals(listOf("sms:95"), passed.messages.map { it.messageId })
@@ -501,6 +640,36 @@ class SmsControllerTests {
         provider.sms = { _, _, _ -> throw SecurityException("oem") }
         provider.mms = { _, _, _ -> throw SecurityException("oem") }
         try { store.history("42", 0, "", 50); fail("both sources") } catch (_: SmsStoreException) {}
+    }
+
+    @Test fun historySkipsUndisplayableBatchesAndStillFindsOlderMessages() = runBlocking {
+        val provider = FakeProvider()
+        val store = store(provider, { true })
+        // The newest raw batch is entirely unsupported; the older valid row must still load on the same page.
+        val dirt = (1..52).map { SmsRawMessage(it.toLong(), 1_000L - it, "+1555", "unsupported", 0, false, false) }
+        val older = listOf(SmsRawMessage(200, 500, "+1555", "older", 0, false, true))
+        provider.sms = { _, upper, limit -> (dirt + older).filter { upper == null || it.dateMillis <= upper }.sortedByDescending { it.dateMillis }.take(limit) }
+        val page = store.history("42", 0, "", 20)!!
+        assertEquals(listOf("sms:200"), page.messages.map { it.messageId })
+        assertEquals(52, page.skipped)
+        // A page whose source ran dry is terminal even when it was reached through skipped batches.
+        assertFalse(page.more)
+        assertEquals(0L, page.nextBeforeMillis)
+        assertEquals("", page.nextBeforeMessageId)
+    }
+
+    @Test fun historyScanStopsAtScanBudgetAndCarriesAContinuation() = runBlocking {
+        val provider = FakeProvider()
+        val store = store(provider, { true })
+        // Every batch is undisplayable for more rounds than the scan budget allows: the page stays empty but
+        // must still hand the Mac a strictly older cursor instead of a false "all messages loaded".
+        provider.sms = { _, upper, limit -> (1..limit).map { offset -> SmsRawMessage(offset.toLong(), ((upper ?: 100_000) - offset * 2).coerceAtLeast(2), "+1555", "unsupported", 0, false, false) } }
+        val page = store.history("42", 0, "", 20)!!
+        assertTrue(page.messages.isEmpty())
+        assertTrue(page.skipped > 0)
+        assertTrue(page.more)
+        assertTrue(page.nextBeforeMillis > 0)
+        assertEquals("", page.nextBeforeMessageId)
     }
 
     @Test fun pduParserDecodesSevenBitUcs2AlphanumericAndMultipart() {
@@ -514,6 +683,14 @@ class SmsControllerTests {
         assertEquals("héllo \uFFFD end", SmsPduParser.parse("3gpp", listOf(unicode)).single().body)
         val alpha = buildPdu(PduSpec(address = "BANK", text = "code 42", timeMillis = 1_700_000_000_000, offsetMinutes = -480, alphanumeric = true))
         assertEquals("BANK", SmsPduParser.parse("3gpp", listOf(alpha)).single().address)
+        // A declared septet count of 7 (mod 8) must not decode the octet padding as a trailing character.
+        val seven = buildPdu(PduSpec(address = "+15551234567", text = "code 42", timeMillis = 1_700_000_000_000, offsetMinutes = 0))
+        assertEquals("code 42", SmsPduParser.parse("3gpp", listOf(seven)).single().body)
+        val fifteen = buildPdu(PduSpec(address = "+15551234567", text = "0123456789abcde", timeMillis = 1_700_000_000_000, offsetMinutes = 0))
+        assertEquals("0123456789abcde", SmsPduParser.parse("3gpp", listOf(fifteen)).single().body)
+        val paddedHead = buildPdu(PduSpec(address = "+15551234567", text = "code 42", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 1)))
+        val paddedTail = buildPdu(PduSpec(address = "+15551234567", text = "tail", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 2)))
+        assertEquals("code 42tail", SmsPduParser.parse("3gpp", listOf(paddedHead, paddedTail)).single().body)
         val tail = buildPdu(PduSpec(address = "+15551234567", text = "two", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 2)))
         val head = buildPdu(PduSpec(address = "+15551234567", text = "one ", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 1)))
         assertEquals("one two", SmsPduParser.parse("3gpp", listOf(tail, head)).single().body)
@@ -529,8 +706,13 @@ class SmsControllerTests {
         assertNotEquals(a, smsLiveMessageId("+15551234567", 1_700_000_000_001, "hello"))
         assertTrue(a.matches(Regex("live:[0-9a-f]{32}")))
         assertEquals("+15551234567", smsNormalizedAddress(" +1 (555) 123-4567"))
-        assertEquals("", smsNormalizedAddress("BANK"))
+        assertEquals("BANK", smsNormalizedAddress("BANK"))
+        assertEquals("ACME BANK", smsNormalizedAddress(" acme bank "))
+        assertEquals("ACME BANK", smsNormalizedAddress("ACME BANK"))
+        assertNotEquals(smsNormalizedAddress("ACME BANK"), smsNormalizedAddress("AUTH XYZ"))
         assertEquals("addr:BANK", SmsLiveEvent("BANK", 1, "x").threadId)
+        assertEquals("addr:ACME BANK", SmsLiveEvent(" acme bank ", 1, "x").threadId)
+        assertNotEquals(SmsLiveEvent("ACME BANK", 1, "same").messageId, SmsLiveEvent("AUTH XYZ", 1, "same").messageId)
         assertEquals("addr:+15551234567", SmsLiveEvent("+1 (555) 123-4567", 1, "x").threadId)
         assertEquals("sms:99", listOf("sms:99", "sms:100").maxWithOrNull { x, y -> smsCompareMessageIds(x, y) })
         assertEquals(160, smsTruncate("é".repeat(200), 160).toByteArray().size)

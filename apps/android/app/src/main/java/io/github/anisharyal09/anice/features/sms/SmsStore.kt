@@ -18,6 +18,7 @@ import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 class SmsStoreException : Exception()
 
@@ -50,6 +51,8 @@ data class SmsRawMessage(val id: Long, val dateMillis: Long, val address: String
 /** Raw provider surface. Implementations throw on provider failure; the store owns sanitization and paging. */
 interface SmsProvider {
     fun conversations(): List<SmsConversationRow>
+    /** Unread incoming SMS rows per provider thread; the threads view's `read` flag is not a count. */
+    fun unreadCounts(): Map<Long, Long>
     fun canonicalAddresses(ids: List<Long>): Map<Long, String>
     fun newestThreadRow(threadId: Long): SmsThreadFallback?
     fun directThreads(limit: Int): List<SmsConversationRow>
@@ -59,10 +62,12 @@ interface SmsProvider {
     fun mmsDateGroup(threadId: Long, millis: Long): List<SmsRawMessage>
 }
 
-/** Digits with one optional leading `+`; alphanumeric sender IDs normalize to the empty string. */
+/** Canonical conversation key: digits with one optional leading `+`, or the trimmed uppercase text for alphanumeric sender IDs. */
 fun smsNormalizedAddress(raw: String): String {
-    val digits = raw.filter { it in '0'..'9' }
-    return if (digits.isNotEmpty() && raw.trimStart().startsWith("+")) "+$digits" else digits
+    val trimmed = raw.trim()
+    if (trimmed.any { it.isLetter() }) return trimmed.uppercase(Locale.ROOT)
+    val digits = trimmed.filter { it in '0'..'9' }
+    return if (digits.isNotEmpty() && trimmed.startsWith("+")) "+$digits" else digits
 }
 
 /** Clamps provider milliseconds into the contract's 0..2^53-1 range. */
@@ -109,6 +114,8 @@ fun smsCompareMessageIds(a: String, b: String): Int {
 private const val THREAD_LIMIT = 50
 private const val TIE_ALLOWANCE = 32
 private const val GROUP_CAP = 2048
+/** Raw batches examined while looking for a page's worth of displayable rows. */
+private const val SCAN_ROUNDS = 8
 
 class AndroidSmsStore(
     private val provider: SmsProvider,
@@ -158,11 +165,19 @@ class AndroidSmsStore(
             }
         }
         val threads = mutableListOf<SmsThreadRecord>()
+        // The threads view's `read` flag is "all messages read", never a count; unread comes from the SMS rows.
+        val unreadCounts = try {
+            provider.unreadCounts()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
         for (row in rows) {
             var address = row.address
             var date = row.dateMillis
             var snippet = row.snippet
-            var unread = row.unread ?: row.messageCount?.let { (it - (row.read ?: 0L)).coerceAtLeast(0) }
+            var unread = row.unread ?: unreadCounts?.get(row.threadId) ?: if (unreadCounts != null) 0L else null
             if (address.isNullOrEmpty()) {
                 address = try {
                     row.recipientIds.firstOrNull()?.let { provider.canonicalAddresses(listOf(it))[it] }
@@ -206,36 +221,12 @@ class AndroidSmsStore(
         val providerId = threadId.toLongOrNull() ?: return SmsHistoryPage(emptyList(), 0, "", false, 0)
         var skipped = 0
         var truncated = false
-
-        fun load(history: (Long?, Int) -> List<SmsRawMessage>, group: (Long) -> List<SmsRawMessage>): List<SmsRawMessage>? {
-            val fetch = limit + TIE_ALLOWANCE
-            val upper = beforeMillis.takeIf { it > 0 }
-            val initial = queryOrEmpty { history(upper, fetch) } ?: return null
-            val result = LinkedHashMap<Long, SmsRawMessage>()
-            initial.forEach { result[it.id] = it }
-            if (initial.size == fetch && initial.isNotEmpty()) {
-                val boundary = queryOrEmpty { group(initial.minOf { it.dateMillis }) }.orEmpty()
-                if (boundary.size >= GROUP_CAP) truncated = true
-                boundary.forEach { result[it.id] = it }
-            }
-            if (upper != null) {
-                val tie = queryOrEmpty { group(upper) }.orEmpty()
-                if (tie.size >= GROUP_CAP) truncated = true
-                tie.forEach { result[it.id] = it }
-            }
-            return result.values.toList()
-        }
-
-        val sms = load({ upper, fetch -> provider.smsHistory(providerId, upper, fetch) }, { provider.smsDateGroup(providerId, it) })
-        val mms = load({ upper, fetch -> provider.mmsHistory(providerId, upper, fetch) }, { provider.mmsDateGroup(providerId, it) })
-        if (sms == null && mms == null) throw SmsStoreException()
-        if (sms == null || mms == null) skipped++
+        var exhausted = false
 
         val comparator = Comparator<SmsHistoryMessage> { a, b ->
             val d = b.dateMillis.compareTo(a.dateMillis)
             if (d != 0) d else smsCompareMessageIds(b.messageId, a.messageId)
         }
-        val raw = sms.orEmpty() + mms.orEmpty()
         fun sanitize(row: SmsRawMessage, prefix: String): SmsHistoryMessage? {
             if (!row.supported) {
                 skipped++
@@ -257,19 +248,64 @@ class AndroidSmsStore(
                 text = text,
             )
         }
-        val messages = sms.orEmpty().mapNotNull { sanitize(it, "sms") } + mms.orEmpty().mapNotNull { sanitize(it, "mms") }
-        val page = messages
-            .filter { beforeMillis == 0L || it.dateMillis < beforeMillis || (it.dateMillis == beforeMillis && smsCompareMessageIds(it.messageId, beforeMessageId) < 0) }
-            .distinctBy { it.messageId }
-            .sortedWith(comparator)
-            .take(limit)
-        val more = messages.size > page.size || truncated
+
+        // One bounded raw batch per table for the current millis bound; null only when that table failed.
+        fun load(upper: Long?, history: (Long?, Int) -> List<SmsRawMessage>, group: (Long) -> List<SmsRawMessage>): Pair<List<SmsRawMessage>, Boolean>? {
+            val fetch = limit + TIE_ALLOWANCE
+            val initial = queryOrEmpty { history(upper, fetch) } ?: return null
+            val result = LinkedHashMap<Long, SmsRawMessage>()
+            initial.forEach { result[it.id] = it }
+            if (initial.size == fetch && initial.isNotEmpty()) {
+                val boundary = queryOrEmpty { group(initial.minOf { it.dateMillis }) }.orEmpty()
+                if (boundary.size >= GROUP_CAP) truncated = true
+                boundary.forEach { result[it.id] = it }
+            }
+            if (upper != null) {
+                val tie = queryOrEmpty { group(upper) }.orEmpty()
+                if (tie.size >= GROUP_CAP) truncated = true
+                tie.forEach { result[it.id] = it }
+            }
+            return result.values.toList() to (initial.size < fetch)
+        }
+
+        // Undisplayable rows never end paging on their own: keep scanning older batches until the page is
+        // full, the source is exhausted, or the bounded scan stops on a capped date group.
+        val accepted = LinkedHashMap<String, SmsHistoryMessage>()
+        var upper = beforeMillis.takeIf { it > 0 }
+        var oldestExamined = 0L
+        var rounds = 0
+        while (accepted.size < limit && !exhausted && !truncated && rounds < SCAN_ROUNDS) {
+            rounds++
+            val sms = load(upper, { bound, fetch -> provider.smsHistory(providerId, bound, fetch) }, { provider.smsDateGroup(providerId, it) })
+            val mms = load(upper, { bound, fetch -> provider.mmsHistory(providerId, bound, fetch) }, { provider.mmsDateGroup(providerId, it) })
+            if (sms == null && mms == null) throw SmsStoreException()
+            if (sms == null || mms == null) skipped++
+            exhausted = (sms?.second ?: true) && (mms?.second ?: true)
+            val smsRows = sms?.first.orEmpty()
+            val mmsRows = mms?.first.orEmpty()
+            val candidates = (smsRows.mapNotNull { sanitize(it, "sms") } + mmsRows.mapNotNull { sanitize(it, "mms") })
+                .filter { beforeMillis == 0L || it.dateMillis < beforeMillis || (it.dateMillis == beforeMillis && smsCompareMessageIds(it.messageId, beforeMessageId) < 0) }
+                .sortedWith(comparator)
+            for (message in candidates) {
+                accepted.putIfAbsent(message.messageId, message)
+            }
+            val examined = (smsRows + mmsRows).minOfOrNull { it.dateMillis }
+            if (examined == null || examined <= 1) {
+                exhausted = true
+                break
+            }
+            oldestExamined = examined
+            if (!exhausted) upper = examined - 1
+        }
+
+        val page = accepted.values.toList().take(limit)
+        // Rows in hand beyond the page, a capped date group, or an unexhausted source all mean older rows may exist.
+        val more = accepted.size > page.size || truncated || !exhausted
         val last = page.lastOrNull()
-        val rawMin = raw.minOfOrNull { it.dateMillis }
-        val skipAdvance = if (page.isEmpty() && more && rawMin != null && rawMin > 1) rawMin - 1 else null
-        val nextMillis = last?.dateMillis ?: skipAdvance ?: 0
-        val nextId = last?.messageId ?: ""
-        return SmsHistoryPage(page, nextMillis, nextId, more && (last != null || skipAdvance != null), skipped)
+        val nextMillis = last?.dateMillis ?: (oldestExamined - 1).coerceAtLeast(1)
+        // A page without a usable cursor or older rows is terminal: the client stops asking for older pages.
+        if (!more || nextMillis <= 0 || (last == null && oldestExamined <= 1)) return SmsHistoryPage(page, 0, "", false, skipped)
+        return SmsHistoryPage(page, nextMillis, last?.messageId ?: "", true, skipped)
     }
 }
 
@@ -309,6 +345,21 @@ internal class AndroidSmsProvider(context: Context) : SmsProvider {
                             read = if (read < 0 || it.isNull(read)) null else it.getLong(read),
                         )
                     )
+                }
+            }
+        }
+    }
+
+    override fun unreadCounts(): Map<Long, Long> {
+        val cursor = query(smsUri, arrayOf("thread_id"), "type = 1 AND read = 0", null, null) ?: throw SmsStoreException()
+        return cursor.use {
+            val thread = it.getColumnIndex("thread_id")
+            if (thread < 0) throw SmsStoreException()
+            buildMap {
+                while (it.moveToNext()) {
+                    if (it.isNull(thread)) continue
+                    val id = it.getLong(thread)
+                    put(id, (get(id) ?: 0L) + 1L)
                 }
             }
         }

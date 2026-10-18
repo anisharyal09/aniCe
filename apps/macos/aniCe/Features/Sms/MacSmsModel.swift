@@ -13,6 +13,8 @@ struct SmsThreadCard: Identifiable, Equatable {
   var snippet: String
   var dateMillis: Int64
   var unreadCount: Int64
+  /// Created or last refreshed by a live message rather than the provider list, so list refreshes keep it.
+  var live = false
   var id: String { key }
 }
 
@@ -50,10 +52,12 @@ struct SmsReplyRequest: Equatable {
   func post(_ note: SmsNotification) async
 }
 
-/** Digits plus one optional leading plus, used for grouping and dedupe rather than display. */
+/** Canonical conversation key: digits with one optional leading `+`, or the trimmed uppercase text for alphanumeric sender IDs. */
 func smsNormalizedAddress(_ raw: String) -> String {
-  let digits = raw.filter { $0 >= "0" && $0 <= "9" }
-  let leading = raw.drop(while: { $0 == " " || $0 == "\t" }).hasPrefix("+")
+  let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+  if trimmed.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) { return trimmed.uppercased() }
+  let leading = trimmed.hasPrefix("+")
+  let digits = trimmed.filter { $0 >= "0" && $0 <= "9" }
   return !digits.isEmpty && leading ? "+" + digits : digits
 }
 
@@ -97,12 +101,15 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var requestId = ""
     var transport = ""
     var deadline: TimeInterval = 0
+    /// The in-flight request asks for the newest page; its cursor must not disturb older-message paging.
+    var refreshing = false
   }
 
   @Observable final class PeerState {
     var capable = false
     var status = "Waiting for your phone"
     var threads: [SmsThreadCard] = []
+    var threadSeen: Set<String> = []
     var pendingThreads = false
     var threadRequest = ""
     var threadTransport = ""
@@ -252,7 +259,17 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     issueThreads(state, link, k)
   }
 
+  /// Opens a conversation at its newest page; the stored cursor keeps pointing at older history.
+  func refreshMessages(_ peer: DeviceIdentity, address: String) {
+    requestPage(peer, address: address, refreshing: true)
+  }
+
+  /// Loads the older page the conversation's cursor points at ("Load older messages").
   func requestMessages(_ peer: DeviceIdentity, address: String) {
+    requestPage(peer, address: address, refreshing: false)
+  }
+
+  private func requestPage(_ peer: DeviceIdentity, address: String, refreshing: Bool) {
     let k = key(peer)
     let state = state(k)
     let normalized = smsNormalizedAddress(address)
@@ -266,10 +283,12 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     conversation.requestId = requestId
     conversation.transport = link.channel.descriptor.transport
     conversation.deadline = now() + 30
+    conversation.refreshing = refreshing
     // Live-only threads fall back to the address form; the provider id replaces it once the thread list reports one.
     let threadId = conversation.threadId.isEmpty ? "addr:" + normalized : conversation.threadId
     enqueue(link, SmsMessage(kind: 5, fields: [.text(requestId), .text(threadId),
-      .integer(conversation.nextBeforeMillis), .text(conversation.nextBeforeMessageId), .integer(Int64(SmsMessage.maximumMessages))]))
+      .integer(refreshing ? 0 : conversation.nextBeforeMillis), .text(refreshing ? "" : conversation.nextBeforeMessageId),
+      .integer(Int64(SmsMessage.defaultPageSize))]))
     state.status = "Loading messages…"
     schedule()
   }
@@ -341,9 +360,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       // Mid-page loss aborts the page; the next request continues from the last completed cursor.
       if state.threadTransport == descriptor.transport {
         state.threadRequest = ""; state.threadTransport = ""; state.threadDeadline = 0
+        state.status = "Connection lost while loading conversations"
       }
       for conversation in state.conversations.values where conversation.transport == descriptor.transport {
         conversation.requestId = ""; conversation.transport = ""; conversation.deadline = 0
+        state.status = "Connection lost while loading messages"
       }
       state.assemblies = state.assemblies.filter { $0.value.descriptor != descriptor }
       if let send = state.send, send.descriptor == descriptor {
@@ -377,8 +398,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       return .handled
     case 3:
       guard state.capable else { return .discarded }
-      recordThread(state, message)
-      return .handled
+      return recordThread(state, message) ? .handled : .discarded
     case 4:
       guard state.capable else { return .discarded }
       return finishThreads(state, message) ? .handled : .discarded
@@ -419,6 +439,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       for conversation in state.conversations.values where !conversation.requestId.isEmpty && conversation.deadline <= time {
         conversation.requestId = ""; conversation.transport = ""
+        conversation.refreshing = false
         state.status = "Your phone did not answer"
       }
       if let send = state.send, send.deadline <= time {
@@ -445,24 +466,29 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     state.threadRequest = requestId
     state.threadTransport = link.channel.descriptor.transport
     state.threadDeadline = now() + 30
+    state.threadSeen = []
     state.status = "Loading conversations…"
     enqueue(link, SmsMessage(kind: 2, fields: [.text(requestId)]))
     schedule()
   }
 
-  private func recordThread(_ state: PeerState, _ m: SmsMessage) {
+  private func recordThread(_ state: PeerState, _ m: SmsMessage) -> Bool {
+    // Records are only accepted while their request is the active one; late records change nothing.
+    guard !state.threadRequest.isEmpty, m.text(0) == state.threadRequest else { return false }
     let normalized = smsNormalizedAddress(m.text(2))
-    guard !normalized.isEmpty else { return }
+    guard !normalized.isEmpty else { return false }
     let threadId = m.text(1)
-    let card = SmsThreadCard(key: normalized, threadId: threadId, address: m.text(2),
+    var card = SmsThreadCard(key: normalized, threadId: threadId, address: m.text(2),
       snippet: smsTruncate(smsSanitizeText(m.text(3)), maxBytes: 160),
       dateMillis: smsClampDate(m.number(4)), unreadCount: min(m.number(5), SmsMessage.maxDate))
+    card.live = false
+    state.threadSeen.insert(normalized)
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       state.threads[index] = card
     } else {
       state.threads.append(card)
     }
-    guard let conversation = conversation(state, normalized) else { return }
+    guard let conversation = conversation(state, normalized) else { return true }
     if conversation.threadId.isEmpty {
       conversation.threadId = threadId
     } else if conversation.threadId != threadId, conversation.requestId.isEmpty {
@@ -472,16 +498,23 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       conversation.nextBeforeMessageId = ""
       conversation.more = false
     }
+    return true
   }
 
   private func finishThreads(_ state: PeerState, _ m: SmsMessage) -> Bool {
     guard !state.threadRequest.isEmpty, m.text(0) == state.threadRequest else { return false }
     state.threadRequest = ""; state.threadTransport = ""; state.threadDeadline = 0
     switch m.number(1) {
-    case 0: state.status = state.threads.isEmpty ? "No conversations on your phone" : "\(state.threads.count) conversations"
+    case 0:
+      // A completed list is a snapshot: provider conversations it no longer reports disappear, while
+      // cards a live message created stay until a later snapshot adopts or replaces them.
+      let seen = state.threadSeen
+      state.threads.removeAll { !$0.live && !seen.contains($0.key) }
+      state.status = state.threads.isEmpty ? "No conversations on your phone" : "\(state.threads.count) conversations"
     case 1: state.status = "Allow SMS access on your phone to read conversations"
     default: state.status = "Conversations are unavailable"
     }
+    state.threadSeen = []
     schedule()
     return true
   }
@@ -590,17 +623,22 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
 
   private func finishHistory(_ state: PeerState, _ m: SmsMessage) -> Bool {
     guard let (_, conversation) = state.conversations.first(where: { $0.value.requestId == m.text(0) }) else { return false }
-    conversation.requestId = ""; conversation.transport = ""; conversation.deadline = 0
+    let refreshing = conversation.refreshing
+    conversation.requestId = ""; conversation.transport = ""; conversation.deadline = 0; conversation.refreshing = false
     guard m.number(1) == 0 else {
-      conversation.more = false
+      // A failed newest-page refresh leaves older paging state untouched; a failed older page stops offering more.
+      if !refreshing { conversation.more = false }
       state.status = m.number(1) == 1 ? "Allow SMS access on your phone to read messages" : "Messages are unavailable"
       schedule()
       return true
     }
     // Cursors advance only on success; a zero pair is the terminal page.
-    if m.number(2) == 0, m.text(3).isEmpty {
-      conversation.more = false
-    } else {
+    let terminal = m.number(2) == 0 && m.text(3).isEmpty
+    let unpaged = conversation.nextBeforeMillis == 0 && conversation.nextBeforeMessageId.isEmpty
+    if terminal {
+      if !refreshing || unpaged { conversation.more = false }
+    } else if !refreshing || unpaged {
+      // A newest-page refresh never rewinds an older-message cursor the user already paged to.
       conversation.nextBeforeMillis = m.number(2)
       conversation.nextBeforeMessageId = m.text(3)
       conversation.more = true
@@ -644,10 +682,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       if dateMillis >= card.dateMillis { card.snippet = text; card.dateMillis = dateMillis }
       card.address = address.isEmpty ? card.address : address
       card.unreadCount += unread
+      card.live = true
       state.threads[index] = card
     } else {
       state.threads.append(SmsThreadCard(key: normalized, threadId: "", address: address, snippet: text,
-        dateMillis: dateMillis, unreadCount: unread))
+        dateMillis: dateMillis, unreadCount: unread, live: true))
     }
   }
 
