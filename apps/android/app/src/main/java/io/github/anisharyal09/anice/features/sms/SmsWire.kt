@@ -29,7 +29,7 @@ data class SmsWireMessage(val kind: Long, val fields: List<Cbor>) {
         }
         try {
             when (kind) {
-                1L -> { requireWire(fields.size == 4); requireWire(number(0) == MAX_BODY_BYTES && number(1) == MAX_FRAGMENTS && number(2) == 50L && number(3) == 50L) }
+                1L -> { requireWire(fields.size == 4); requireWire(number(0) == MAX_BODY_BYTES && number(1) == MAX_FRAGMENTS && number(2) in 1..50 && number(3) in 1..50) }
                 2L -> { requireWire(fields.size == 1); uuid(0) }
                 3L -> { requireWire(fields.size == 6); uuid(0); threadId(1); address(2); snippet(3); millis(4); millis(5) }
                 4L -> { requireWire(fields.size == 2); uuid(0); result(1) }

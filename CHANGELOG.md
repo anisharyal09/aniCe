@@ -26,9 +26,11 @@ Repository-wide structure, documentation, and development conventions belong her
 ### Changed
 
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
+- SMS relay over Bluetooth now carries smaller thread lists and history pages (20 threads, 10 rows) with a 60-second request deadline instead of the local-network 50/50 and 30 seconds, the phone serves within the limits the Mac advertised on that link, and both panels report privacy-safe live relay counts so a missing notification can be traced to the phone or the Mac. Conversations open with ten rows and their composer directly above the newest message, with older pages behind a **Show older messages** action on both platforms.
 
 ### Fixed
 
+- SMS live relay no longer loses a notification when the panel already fetched the provider copy of that message: the live copy still announces it once, while a retry or redelivery never posts twice. A parked live event is offered again every few seconds inside its ten-minute window, the phone re-advertises its capability to a link that has not announced one and the Mac answers a capability record with its own, so a lost fragment, completion acknowledgement or capability hello costs seconds instead of the message.
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected. Android background Now Playing additionally requests and retains LAN (including artwork) while playing or inside the paused grace.
 - File selection and a pending send no longer retire a secured BLE channel; a send with a secured channel proceeds on it, and a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
 - Feature traffic no longer resumes LAN after an explicit Disconnect.

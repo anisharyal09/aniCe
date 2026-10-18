@@ -2,6 +2,7 @@
 // Delivers native SMS notifications with an inline reply and per-peer text preview control.
 import AppKit
 import Foundation
+import Observation
 import UserNotifications
 
 // Narrow seam over UNUserNotificationCenter so SMS delivery and startup cleanup are testable.
@@ -24,7 +25,7 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
 }
 
 // Per-peer opt-in for message text in banners; bodies stay hidden until the user enables preview.
-@MainActor final class SmsPreferences {
+@Observable @MainActor final class SmsPreferences {
   private let storage: UserDefaults?
   private var values: [String: Bool]
   init(storage: UserDefaults? = nil) {

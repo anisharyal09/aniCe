@@ -10,8 +10,11 @@ struct SmsMessage: Equatable, Sendable {
   static let maxDate: Int64 = 9007199254740991
   static let maximumThreads = 50
   static let maximumMessages = 50
-  /** First page requested when a conversation is opened; older pages continue from its cursor. */
-  static let defaultPageSize = 20
+  /** First page requested when a conversation is opened; the panel offers older pages from its cursor. */
+  static let defaultPageSize = 10
+  /** A Bluetooth link serves a smaller thread list so a slow link finishes inside its deadline. */
+  static let bluetoothThreads = 20
+  static let bluetoothMessages = 10
   let kind: Int64
   let fields: [SessionCBOR]
   func text(_ i: Int) -> String { if case .text(let v) = fields[i] { return v }; preconditionFailure() }
@@ -47,7 +50,7 @@ struct SmsMessage: Equatable, Sendable {
     switch kind {
     case 1:
       try check(fields.count == 4 && n(0) == Self.maxBodyBytes && n(1) == Self.maxFragments)
-      try check(n(2) == Int64(Self.maximumThreads) && n(3) == Int64(Self.maximumMessages))
+      try check((1...Int64(Self.maximumThreads)).contains(n(2)) && (1...Int64(Self.maximumMessages)).contains(n(3)))
     case 2:
       try check(fields.count == 1); try uuid(0)
     case 3:

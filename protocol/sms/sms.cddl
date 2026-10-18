@@ -1,7 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Defines bounded SMS relay messages carried by secured DATA records.
 sms = ["aniCe sms", 1, (capability / threadRequest / threadRecord / threadDone / historyRequest / messageBegin / messageFragment / messageCommit / messageResult / historyDone / sendBegin / sendFragment / sendCommit / sendResult)]
-capability = (1, [24576, 8, 50, 50])
+capability = (1, [24576, 8, 1..50, 1..50])
 threadRequest = (2, [uuid])
 threadRecord = (3, [uuid, threadId, address, snippet, dateMillis, unreadCount])
 threadDone = (4, [uuid, result])

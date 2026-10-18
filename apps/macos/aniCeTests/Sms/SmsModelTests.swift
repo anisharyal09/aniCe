@@ -123,6 +123,23 @@ final class SmsModelTests: XCTestCase {
     XCTAssertTrue(spy.notes.isEmpty)
   }
 
+  @MainActor func testCapabilityRecordIsAnsweredSoAPhoneThatMissedOurHelloRecovers() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    model.available(channel)
+    await until("advertised capability") { !sent(channel, 1).isEmpty }
+    // The phone re-advertises because it never saw our capability: answer it on that link, so a hello
+    // lost in transit costs a retry instead of parking live messages until the channel is rebuilt.
+    let answered = await model.handle(try capability(), on: channel.descriptor)
+    XCTAssertEqual(answered, .handled)
+    await until("capability answered") { sent(channel, 1).count == 2 }
+    let hello = try XCTUnwrap(try lastSent(channel, 1))
+    XCTAssertEqual(hello.number(0), 24576); XCTAssertEqual(hello.number(1), 8)
+    XCTAssertEqual(hello.number(2), 50); XCTAssertEqual(hello.number(3), 50)
+    XCTAssertTrue(model.supports(channel.descriptor.peer))
+    XCTAssertTrue(spy.notes.isEmpty)
+  }
+
   // MARK: - Live assembly and dedupe
 
   @MainActor func testLiveMessageIsAcknowledgedOnceNotifiedOnceAndDeduped() async throws {
@@ -158,6 +175,34 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(try lastSent(channel, 9)?.number(1), 0)
     XCTAssertEqual(spy.notes.count, 1)
     XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
+    let line = model.diagnostics(peer)
+    XCTAssertTrue(line.contains("Local network"), line)
+    XCTAssertTrue(line.contains("3 live received"), line)
+    XCTAssertTrue(line.contains("1 notified"), line)
+    XCTAssertTrue(line.contains("2 already seen"), line)
+  }
+
+  @MainActor func testBluetoothLinksAdvertiseSmallerCapsAndWaitLonger() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "ble")
+    let peer = try await ready(model, channel)
+    await until("advertised capability") { !sent(channel, 1).isEmpty }
+    let advertised = try XCTUnwrap(sent(channel, 1).first)
+    XCTAssertEqual(advertised.number(2), 20); XCTAssertEqual(advertised.number(3), 10)
+    let line = model.diagnostics(peer)
+    XCTAssertTrue(line.contains("Bluetooth"), line)
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 5))
+    // Every conversation opens at the 10-row first page; the panel offers older pages from its cursor.
+    XCTAssertEqual(request.number(4), 10)
+    // A Bluetooth page keeps its 60-second deadline where the local-network 30-second one would have expired.
+    clock.advance(31)
+    model.expire()
+    XCTAssertNotEqual(model.status(peer), "Your phone did not answer")
+    clock.advance(30)
+    model.expire()
+    XCTAssertEqual(model.status(peer), "Your phone did not answer")
   }
 
   @MainActor func testUnreadCountsNeverDecreaseAndAddressesNormalize() async throws {
@@ -401,6 +446,44 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
   }
 
+  // A live event that lands after the panel already fetched the provider copy still announces the message:
+  // only a delivered notification suppresses the next one, never a provider row.
+  @MainActor func testProviderCopyFirstStillAnnouncesTheLateLiveMessage() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.requestThreads(peer)
+    await until("thread request") { self.sent(channel, 2).count == 1 }
+    let threads = try XCTUnwrap(try lastSent(channel, 2))
+    _ = await handle(model, try records(3, [.text(threads.text(0)), .text("sms:42"), .text("+15551234567"),
+      .text("Your code is 4242"), .integer(1_700_000_000_000), .integer(1)]), channel)
+    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0)]), channel)
+    // The user opens the conversation: the provider row arrives before the relay's live copy does.
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 5))
+    let provider = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:77",
+      threadId: "sms:42", unread: true, body: "Your code is 4242")
+    await deliver(model, channel, [provider.begin] + provider.fragments + [provider.commit])
+    await until("provider row") { model.messages(peer, address: "+15551234567").count == 1 }
+    XCTAssertTrue(spy.notes.isEmpty)
+    // The delayed live copy keeps the provider row and announces the message exactly once.
+    let live = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "e", count: 32),
+      threadId: "sms:42", unread: true, body: "Your code is 4242")
+    await deliver(model, channel, [live.begin] + live.fragments + [live.commit])
+    await until("late live notification") { spy.notes.count == 1 }
+    XCTAssertEqual(spy.notes[0].body, "Your code is 4242")
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
+    let line = model.diagnostics(peer)
+    XCTAssertTrue(line.contains("1 live received"), line)
+    XCTAssertTrue(line.contains("1 notified"), line)
+    XCTAssertTrue(line.contains("1 already seen"), line)
+    // A redelivery of the same live stream never announces a second banner.
+    await deliver(model, channel, [live.begin] + live.fragments + [live.commit])
+    await until("redelivery acknowledgement") { self.sent(channel, 9).count == 2 }
+    XCTAssertEqual(spy.notes.count, 1)
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
+  }
   @MainActor func testHistoryOrderingUsesByteWiseDescendingIdsAndPagingCursors() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let channel = MockSecuredChannel(transport: "lan")

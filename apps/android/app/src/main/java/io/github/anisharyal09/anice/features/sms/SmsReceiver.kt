@@ -17,6 +17,8 @@ class SmsReceiver : BroadcastReceiver() {
         if (pdus.isEmpty()) return
         val pending = goAsync()
         // The relay computes deterministic live IDs, parks queued events and retries once per transport.
-        application.sms.submitLive(SmsPduParser.parse(intent.getStringExtra("format"), pdus)) { pending.finish() }
+        val events = SmsPduParser.parse(intent.getStringExtra("format"), pdus)
+        SmsTrace.log("incoming: ${pdus.size} pdu(s), ${events.size} event(s)")
+        application.sms.submitLive(events) { pending.finish() }
     }
 }

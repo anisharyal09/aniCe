@@ -45,6 +45,7 @@ def generate():
 
     good = [
         row('capability', message(1, [24576, 8, 50, 50])),
+        row('capability-bluetooth', message(1, [24576, 8, 20, 10])),
         row('thread-request', message(2, [request])),
         row('thread-record-provider', message(3, [request, thread, address, 'See you at 6', tie, 2])),
         row('thread-record-address-token', message(3, [request, token, 'Bank', '', 0, 0])),
@@ -94,8 +95,8 @@ def generate():
         row('fields-type', [tag, 1, 1, 24576]),
         row('capability-body-low', message(1, [24575, 8, 50, 50])),
         row('capability-fragments', message(1, [24576, 7, 50, 50])),
-        row('capability-threads', message(1, [24576, 8, 49, 50])),
-        row('capability-messages', message(1, [24576, 8, 50, 49])),
+        row('capability-threads', message(1, [24576, 8, 0, 50])),
+        row('capability-messages', message(1, [24576, 8, 50, 51])),
         row('capability-short', message(1, [24576, 8, 50])),
         row('capability-extra', message(1, [24576, 8, 50, 50, 0])),
         row('thread-request-uppercase', message(2, [request.upper()])),

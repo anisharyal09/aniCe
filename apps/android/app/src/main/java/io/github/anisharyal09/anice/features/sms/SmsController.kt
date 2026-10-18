@@ -17,6 +17,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class SmsPermissionState(val receive: Boolean, val read: Boolean, val send: Boolean)
 data class SmsDisplayMessage(val messageId: String, val address: String, val dateMillis: Long, val direction: Long, val unread: Boolean, val text: String, val pending: Boolean)
 
+/**
+ * Relay trace: counts, kinds and transport names only, never addresses, bodies or message ids.
+ * The application installs the sink in debuggable builds; enable it with
+ * `adb shell setprop log.tag.AniCeSms DEBUG` before the app process starts.
+ */
+internal object SmsTrace {
+    const val TAG = "AniCeSms"
+    var sink: ((String) -> Unit)? = null
+    fun log(event: String) {
+        sink?.invoke(event)
+    }
+}
+
 class SmsComposeOperation internal constructor() {
     internal val completion = CompletableDeferred<SmsSendOutcome>()
     suspend fun result(): SmsSendOutcome = completion.await()
@@ -32,6 +45,9 @@ class SmsController(
 ) : FeatureHandler {
     private class Link(val channel: SecuredChannel) {
         var remoteCapability by mutableStateOf(false)
+        /** Caps the Mac advertises on this link; a Bluetooth link gets smaller pages than a local-network one. */
+        var remoteThreads = 50
+        var remoteMessages = 50
         val queue = ArrayDeque<SmsWireMessage>()
         var sending = false
         var wake = false
@@ -44,7 +60,11 @@ class SmsController(
         val acked = CompletableDeferred<Unit>()
         private val announced = AtomicBoolean(false)
         var job: Job? = null
+        /** Next retry of a parked event; zero while nothing is due. */
+        var retryAt = 0L
         fun attemptedOnce() { if (announced.compareAndSet(false, true)) onFirstAttempt() }
+        /** When the parked event must be looked at again: its retry while it lives, else its deadline. */
+        fun nextWake() = if (retryAt > 0) retryAt else deadline
     }
     private class Mark(val messageId: String, val address: String, val digest: ByteArray, val dateMillis: Long, val expiry: Long)
     private class Extra(val row: SmsDisplayMessage, val expiry: Long)
@@ -76,6 +96,10 @@ class SmsController(
     var loading by mutableStateOf(false); private set
     var status by mutableStateOf("Grant SMS permissions to relay messages"); private set
     var skippedRows by mutableStateOf(0); private set
+    /** Relay counters for the panel: counts only, never addresses, bodies or message ids. */
+    var relayedLive by mutableStateOf(0); private set
+    var waitingLive by mutableStateOf(0); private set
+    var failedLive by mutableStateOf(0); private set
     var onLanRequired: () -> Unit = {}
 
     fun connected(peer: DeviceIdentity) = links.values.any { key(it.channel.descriptor.peer) == key(peer) }
@@ -93,8 +117,13 @@ class SmsController(
         links[d.transport]?.let { retired(it.channel.descriptor) }
         val link = Link(channel)
         links[d.transport] = link
-        enqueue(link, SmsWireMessage.of(1, number(24576), number(8), number(50), number(50)))
+        announce(link)
         refreshPermissions()
+    }
+
+    /** Advertises the relay capability and this link's limits; a peer may re-advertise when its own hello was lost. */
+    private fun announce(link: Link) {
+        enqueue(link, SmsWireMessage.of(1, number(24576), number(8), number(50), number(50)))
     }
 
     override fun retired(descriptor: ChannelDescriptor) {
@@ -124,10 +153,16 @@ class SmsController(
             catch (_: SmsWireException) { return DataHandling.DISCARDED }
             catch (_: SessionException) { return DataHandling.DISCARDED }
         expire()
-        if (!live(descriptor)) return DataHandling.DISCARDED
+        if (!live(descriptor)) { SmsTrace.log("in ${m.kind} ${descriptor.transport} stale"); return DataHandling.DISCARDED }
         val link = links[descriptor.transport] ?: return DataHandling.DISCARDED
+        SmsTrace.log("in ${m.kind} ${descriptor.transport}${if (link.remoteCapability) "" else " unadvertised"}")
         when (m.kind) {
-            1L -> { link.remoteCapability = true; flush(); return DataHandling.HANDLED }
+            1L -> {
+                link.remoteCapability = true
+                link.remoteThreads = m.number(2).toInt().coerceIn(1, 50)
+                link.remoteMessages = m.number(3).toInt().coerceIn(1, 50)
+                flush(); return DataHandling.HANDLED
+            }
             2L -> {
                 if (!link.remoteCapability) return DataHandling.DISCARDED
                 serveThreads(link, m.text(0))
@@ -140,8 +175,11 @@ class SmsController(
             }
             9L -> {
                 val pending = pendingLive.firstOrNull { it.streamId == m.text(0) } ?: return DataHandling.DISCARDED
+                if (!pending.acked.isCompleted) relayedLive++
                 pending.acked.complete(Unit)
+                syncLiveCounters()
                 status = "Message relayed"
+                SmsTrace.log("live: acked on ${descriptor.transport}, $relayedLive relayed")
                 return DataHandling.HANDLED
             }
             11L -> {
@@ -173,7 +211,7 @@ class SmsController(
             try {
                 val deadline = now() + PAGE_DEADLINE
                 var failed = false
-                val page = try { store.threads() } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
+                val page = try { store.threads(link.remoteThreads) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
                 if (page == null) { send(link, SmsWireMessage.of(4, text(requestId), number(if (failed) 5 else 1)), deadline); return@launch }
                 skippedRows += page.skipped
                 for (record in page.threads) {
@@ -198,7 +236,7 @@ class SmsController(
             try {
                 val deadline = now() + PAGE_DEADLINE
                 var failed = false
-                val page = try { store.history(threadId, beforeMillis, beforeMessageId, limit) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
+                val page = try { store.history(threadId, beforeMillis, beforeMessageId, minOf(limit, link.remoteMessages)) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
                 if (page == null) { send(link, SmsWireMessage.of(10, text(requestId), number(if (failed) 5 else 1), number(0), text("")), deadline); return@launch }
                 skippedRows += page.skipped
                 for (message in page.messages) {
@@ -313,6 +351,7 @@ class SmsController(
         onLanRequired()
         scope.launch { wait(FAILURE_BOUND); finish() }
         var first = true
+        var admitted = 0
         for (event in events) {
             val text = smsSanitizeText(event.body)
             val bytes = text?.toByteArray(Charsets.UTF_8)
@@ -326,11 +365,35 @@ class SmsController(
             displayExtras += Extra(SmsDisplayMessage(event.messageId, event.address, event.dateMillis, 0, true, text, false), now() + PENDING_LIVE_LIFETIME)
             status = "Incoming message"
             live.job = scope.launch { deliver(live) }
+            upsertLiveThread(event, text)
+            admitted++
             first = false
         }
         if (first) finish()
+        SmsTrace.log("live: admitted=$admitted of ${events.size}, links=${links.size}, capable=${candidateLinks().size}, queued=${pendingLive.size}")
+        syncLiveCounters()
         refreshConversation()
         schedule()
+    }
+
+    private fun syncLiveCounters() {
+        waitingLive = pendingLive.count { !it.acked.isCompleted }
+    }
+
+    /** A live message lands in the panel's conversation list at once; the next provider load replaces the row. */
+    private fun upsertLiveThread(event: SmsLiveEvent, text: String) {
+        val current = threads ?: return
+        val normalized = event.normalizedAddress
+        val snippet = text.take(160)
+        val index = current.indexOfFirst { it.threadId == event.threadId || smsNormalizedAddress(it.address) == normalized }
+        threads = if (index < 0) {
+            current + SmsThreadRecord(event.threadId, event.address, snippet, event.dateMillis, 1)
+        } else {
+            current.toMutableList().also { list ->
+                val row = list[index]
+                list[index] = row.copy(snippet = snippet, dateMillis = maxOf(row.dateMillis, event.dateMillis), unreadCount = row.unreadCount + 1)
+            }
+        }
     }
 
     private fun duplicate(event: SmsLiveEvent, digest: ByteArray): Boolean {
@@ -350,10 +413,19 @@ class SmsController(
     }
 
     private suspend fun deliver(live: Live) {
+        // Each round may use one attempt per live transport; a retry round starts over.
+        live.attempted.clear()
+        live.retryAt = 0
         try {
             repeat(2) {
                 if (live.acked.isCompleted || now() >= live.deadline) return@repeat
-                val link = candidateLinks().firstOrNull { l -> live.attempted.none { it == l.channel.descriptor } } ?: return@repeat
+                val candidates = candidateLinks()
+                if (candidates.isEmpty()) {
+                    // No authenticated Mac advertises the relay, so the event stays parked for its retry window.
+                    status = "Waiting for the Mac"
+                    return@repeat
+                }
+                val link = candidates.firstOrNull { l -> live.attempted.none { it == l.channel.descriptor } } ?: return@repeat
                 live.attempted.add(link.channel.descriptor)
                 var transmitted = false
                 try {
@@ -369,6 +441,7 @@ class SmsController(
                         }
                         if (!send(link, SmsWireMessage.of(8, text(live.streamId)), live.deadline)) throw CancellationException("SMS channel retired")
                         transmitted = true
+                        SmsTrace.log("live: stream sent on ${link.channel.descriptor.transport}")
                     }
                 } catch (e: CancellationException) { currentCoroutineContext().ensureActive() }
                   catch (_: Exception) { /* The same event may use its one alternate transport. */ }
@@ -376,14 +449,24 @@ class SmsController(
                     live.attemptedOnce()
                     try {
                         coroutineScope {
-                            val timeout = async(start = CoroutineStart.UNDISPATCHED) { wait(minOf(2000, maxOf(1, live.deadline - now()))) }
+                            val timeout = async(start = CoroutineStart.UNDISPATCHED) { wait(minOf(LIVE_ACK_WAIT, maxOf(1, live.deadline - now()))) }
                             try { select<Unit> { live.acked.onAwait { }; timeout.onAwait { } } } finally { timeout.cancel() }
                         }
                     } catch (e: CancellationException) { currentCoroutineContext().ensureActive() }
                 }
                 if (live.acked.isCompleted) return
             }
-        } finally { schedule() }
+            // Nothing capable answered: a peer that never saw our hello is asked to announce itself again,
+            // so a lost capability record parks the event for a retry rather than until a new channel.
+            if (candidateLinks().isEmpty()) links.values.filterNot { it.remoteCapability }.forEach { announce(it) }
+        } finally {
+            // An unacknowledged event keeps trying inside its lifetime, so a lost fragment or completion
+            // acknowledgement costs seconds rather than waiting for the next channel to be established.
+            val parked = !live.acked.isCompleted && now() < live.deadline
+            if (parked) live.retryAt = now() + LIVE_RETRY_DELAY
+            SmsTrace.log("live: ${if (live.acked.isCompleted) "delivered" else if (parked) "parked" else "lapsed"}")
+            schedule()
+        }
     }
 
     private fun enqueue(link: Link, message: SmsWireMessage) {
@@ -427,7 +510,7 @@ class SmsController(
         scope.launch {
             loading = true
             try {
-                val page = try { store.threads() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                val page = try { store.threads(PANEL_THREAD_LIMIT) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
                 if (page == null) status = "READ_SMS permission is required to load conversations"
                 else {
                     skippedRows += page.skipped
@@ -522,7 +605,17 @@ class SmsController(
         val time = now()
         marks.removeAll { it.expiry <= time }
         displayExtras.removeAll { it.expiry <= time }
+        val lapsed = pendingLive.count { !it.acked.isCompleted && it.deadline <= time }
         pendingLive.removeAll { it.acked.isCompleted || it.deadline <= time }
+        if (lapsed > 0) {
+            failedLive += lapsed
+            status = "A message could not reach the Mac"
+        }
+        // Parked events are retried until they are acknowledged or their lifetime ends.
+        pendingLive.filter { !it.acked.isCompleted && it.retryAt > 0 && it.retryAt <= time && it.job?.isActive != true }.forEach { live ->
+            live.job = scope.launch { deliver(live) }
+        }
+        syncLiveCounters()
         incomingReplies.entries.removeAll { (k, incoming) ->
             if (incoming.deadline > time) return@removeAll false
             incoming.job?.cancel()
@@ -536,7 +629,7 @@ class SmsController(
 
     private fun schedule() {
         timer?.cancel(); timer = null
-        val next = (marks.map { it.expiry } + displayExtras.map { it.expiry } + pendingLive.map { it.deadline } + incomingReplies.values.map { it.deadline }).minOrNull() ?: return
+        val next = (marks.map { it.expiry } + displayExtras.map { it.expiry } + pendingLive.map { it.nextWake() } + incomingReplies.values.map { it.deadline }).minOrNull() ?: return
         timer = scope.launch { wait(maxOf(1, next - now())); expire() }
     }
 
@@ -547,6 +640,7 @@ class SmsController(
         pendingLive.forEach { it.job?.cancel() }; pendingLive.clear()
         incomingReplies.values.forEach { it.job?.cancel() }
         incomingReplies.clear(); marks.clear(); displayExtras.clear(); loadedRows = emptyList()
+        relayedLive = 0; waitingLive = 0; failedLive = 0
         conversationJob?.cancel(); conversationGeneration++
         threads = null; selectedThreadId = null; conversation = emptyList(); conversationMore = false; loading = false
         links.values.toList().forEach { retired(it.channel.descriptor) }
@@ -562,9 +656,15 @@ class SmsController(
         private const val MARK_LIFETIME = 600_000L
         private const val PENDING_LIVE_LIMIT = 16
         private const val PENDING_LIVE_LIFETIME = 600_000L
+        /** How long an unacknowledged live stream waits for its completion acknowledgement. */
+        private const val LIVE_ACK_WAIT = 2_000L
+        /** How soon a still-parked live event is offered again, until it is acknowledged or expires. */
+        private const val LIVE_RETRY_DELAY = 5_000L
         private const val EXTRAS_LIFETIME = 600_000L
-        /** First page shown when a conversation opens; older pages continue from its cursor. */
-        private const val DEFAULT_PAGE_SIZE = 20
+        /** First page shown when a conversation opens; the panel and the Mac offer older pages from its cursor. */
+        private const val DEFAULT_PAGE_SIZE = 10
+        /** The local panel lists its own conversations; the Mac's link cap governs what it is served. */
+        private const val PANEL_THREAD_LIMIT = 50
         private const val MERGE_TOLERANCE = 5_000L
         private const val FAILURE_BOUND = 8_000L
     }

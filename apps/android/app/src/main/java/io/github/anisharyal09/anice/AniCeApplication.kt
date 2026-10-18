@@ -8,6 +8,7 @@ import android.os.Build
 import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityKeys
 import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityMetadata
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
+import io.github.anisharyal09.anice.features.sms.SmsTrace
 
 class AniCeApplication : Application() {
     private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
@@ -62,6 +63,10 @@ class AniCeApplication : Application() {
                 if(android.util.Log.isLoggable(timingTag,android.util.Log.DEBUG)) {
                     android.util.Log.d(timingTag,"$event $time")
                 }
+            }
+            // The relay trace carries counts, kinds and transports only; log.tag.AniCeSms switches it on.
+            SmsTrace.sink = { event ->
+                if (android.util.Log.isLoggable(SmsTrace.TAG, android.util.Log.DEBUG)) android.util.Log.d(SmsTrace.TAG, event)
             }
         }
     }

@@ -29,7 +29,7 @@ class SmsHistoryPage(val messages: List<SmsHistoryMessage>, val nextBeforeMillis
 
 interface SmsStore {
     /** Returns null when READ_SMS is not granted; throws [SmsStoreException] when every source failed. */
-    suspend fun threads(): SmsThreadPage?
+    suspend fun threads(limit: Int): SmsThreadPage?
 
     /** Returns null when READ_SMS is not granted; throws [SmsStoreException] when every source failed. */
     suspend fun history(threadId: String, beforeMillis: Long, beforeMessageId: String, limit: Int): SmsHistoryPage?
@@ -127,9 +127,9 @@ class AndroidSmsStore(
         dispatcher = Dispatchers.IO,
         hasReadPermission = { ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED },
     )
-    override suspend fun threads(): SmsThreadPage? {
+    override suspend fun threads(limit: Int): SmsThreadPage? {
         if (!hasReadPermission()) return null
-        return withContext(dispatcher) { loadThreads() }
+        return withContext(dispatcher) { loadThreads(limit.coerceIn(1, THREAD_LIMIT)) }
     }
 
     override suspend fun history(threadId: String, beforeMillis: Long, beforeMessageId: String, limit: Int): SmsHistoryPage? {
@@ -146,7 +146,7 @@ class AndroidSmsStore(
             null
         }
 
-    private fun loadThreads(): SmsThreadPage {
+    private fun loadThreads(limit: Int): SmsThreadPage {
         var skipped = 0
         val primary = try {
             provider.conversations()
@@ -157,7 +157,7 @@ class AndroidSmsStore(
         }
         val rows = primary.ifEmpty {
             try {
-                provider.directThreads(THREAD_LIMIT)
+                provider.directThreads(limit)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -212,7 +212,7 @@ class AndroidSmsStore(
         val ordered = threads.sortedWith { a, b ->
             val d = b.dateMillis.compareTo(a.dateMillis)
             if (d != 0) d else -smsCompareMessageIds(a.threadId, b.threadId)
-        }.take(THREAD_LIMIT)
+        }.take(limit)
         return SmsThreadPage(ordered, skipped)
     }
 

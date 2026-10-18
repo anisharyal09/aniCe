@@ -84,6 +84,9 @@ struct SmsView: View {
     if model.status(peer) != "Ready" {
       Text(model.status(peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
+    if !model.diagnostics(peer).isEmpty {
+      Text(model.diagnostics(peer)).font(.caption2).foregroundStyle(AniCePalette.secondaryText(scheme))
+    }
     let cards = model.threads(peer)
     if cards.isEmpty {
       Text("No conversations yet").foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -132,6 +135,11 @@ struct SmsView: View {
     if model.status(peer) != "Ready" {
       Text(model.status(peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
+    if !model.diagnostics(peer).isEmpty {
+      Text(model.diagnostics(peer)).font(.caption2).foregroundStyle(AniCePalette.secondaryText(scheme))
+    }
+    // The reply box stays directly above the newest message, so sending a reply never needs a scroll.
+    composer(peer)
     let rows = model.messages(peer, address: address)
     if rows.isEmpty {
       Text("No messages on this phone").foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -148,10 +156,9 @@ struct SmsView: View {
       }
     }
     if model.more(peer, address: address) {
-      Button("Load older messages") { model.requestMessages(peer, address: address) }
+      Button("Show older messages") { model.requestMessages(peer, address: address) }
         .buttonStyle(.bordered).controlSize(.small).disabled(model.busy(peer))
     }
-    composer(peer)
   }
 
   @ViewBuilder private func metadata(_ row: SmsMessageRow) -> some View {

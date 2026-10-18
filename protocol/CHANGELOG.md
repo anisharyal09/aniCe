@@ -6,7 +6,7 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
-- SMS relay v1 deterministic CBOR capability, thread-list, paged history, live message-stream, reply and result messages, with capability gating, `messageResult` acknowledgement for live streams only, byte-wise lexical messageId cursor ties and content-key live/provider deduplication; 118 independent fixtures (45 valid, 73 invalid).
+- SMS relay v1 deterministic CBOR capability, thread-list, paged history, live message-stream, reply and result messages, with capability gating, `messageResult` acknowledgement for live streams only, byte-wise lexical messageId cursor ties and content-key live/provider deduplication; 119 independent fixtures (46 valid, 73 invalid).
 
 - Clipboard v1 deterministic CBOR capabilities, receive settings, bounded text assembly, ordered item identities, terminal deduplication and one safe cross-transport retry, with independent positive/negative fixtures.
 
@@ -14,6 +14,10 @@ Records shared communication-contract changes, compatibility implications, and p
 - Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
 
 ### Changed
+
+- Clarified SMS capability limits: `maxThreadsPerPage` and `maxMessagesPerPage` are the advertiser's per-link limits in 1..50 rather than the fixed value 50, so a slower link can announce smaller thread lists and pages, and a peer serves within the limits it received. Layout, field order and bounds are unchanged and a 50/50 capability stays valid.
+
+- Clarified SMS live-relay retry semantics: an event that is not acknowledged is offered again on its live channels inside its ten-minute pending lifetime rather than only once, and an idempotent capability record may be re-sent on a link whose peer capability has not arrived with the receiver answering with its own, so a lost fragment, `messageResult` or capability hello does not strand the event until a new channel generation. Messages, bounds and fixture bytes are unchanged.
 
 - Clarified SMS `historyDone` cursor semantics: a page with no older rows sends the terminal `(0, "")` cursor so clients never offer an empty "load older" request, and `unreadCount` counts unread incoming provider rows because the threads view's `read` column is an all-read flag, not a count. An `addr:` identity carries alphanumeric sender IDs as their trimmed uppercase text, so bank and service senders keep distinct conversation identities instead of one empty-string identity. Seven-bit SMS bodies decode to their declared septet count, so the octet padding never becomes a trailing character and the message digest matches the provider copy.
 

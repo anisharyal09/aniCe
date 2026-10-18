@@ -119,6 +119,10 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var contents: [ContentMark] = []
     var assemblies: [String: Assembly] = [:]
     var send: Send?
+    /** Counts only, never addresses or bodies: what the live relay delivered and what it suppressed. */
+    var liveReceived = 0
+    var liveNotified = 0
+    var liveSuppressed = 0
   }
 
   final class Assembly {
@@ -157,7 +161,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let address: String
     let digest: Data
     let dateMillis: Int64
-    let expiry: TimeInterval
+    var expiry: TimeInterval
+    /** Whether a notification already announced this content, so a retry or a provider copy never re-announces it. */
+    var notified: Bool
   }
 
   final class Link {
@@ -199,6 +205,15 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     peers[key] = created
     return created
   }
+  /// A Bluetooth link carries a smaller thread list so a slow link finishes inside its deadline.
+  private func caps(_ transport: String) -> (threads: Int64, messages: Int64) {
+    transport == "ble"
+      ? (Int64(SmsMessage.bluetoothThreads), Int64(SmsMessage.bluetoothMessages))
+      : (Int64(SmsMessage.maximumThreads), Int64(SmsMessage.maximumMessages))
+  }
+  private func requestDeadline(_ transport: String) -> TimeInterval {
+    now() + (transport == "ble" ? 60 : 30)
+  }
   private func conversation(_ state: PeerState, _ normalized: String) -> Conversation? {
     guard !normalized.isEmpty else { return nil }
     if let existing = state.conversations[normalized] { return existing }
@@ -218,6 +233,19 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }
   }
   func status(_ peer: DeviceIdentity) -> String { peers[key(peer)]?.status ?? "Connect your phone to relay messages" }
+  /** Privacy-safe relay state for the panel: the live link and how many live messages arrived, announced or were suppressed as already seen. */
+  func diagnostics(_ peer: DeviceIdentity) -> String {
+    let k = key(peer)
+    guard let state = peers[k] else { return "" }
+    var parts: [String] = []
+    if let link = links(for: k).first {
+      parts.append(link.channel.descriptor.transport == "ble" ? "Bluetooth" : "Local network")
+    }
+    parts.append("\(state.liveReceived) live received")
+    parts.append("\(state.liveNotified) notified")
+    parts.append("\(state.liveSuppressed) already seen")
+    return parts.joined(separator: " · ")
+  }
   func busy(_ peer: DeviceIdentity) -> Bool {
     guard let state = peers[key(peer)] else { return false }
     return state.send != nil || !state.threadRequest.isEmpty || state.conversations.values.contains { !$0.requestId.isEmpty }
@@ -264,7 +292,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     requestPage(peer, address: address, refreshing: true)
   }
 
-  /// Loads the older page the conversation's cursor points at ("Load older messages").
+  /// Loads the older page the conversation's cursor points at ("Show older messages").
   func requestMessages(_ peer: DeviceIdentity, address: String) {
     requestPage(peer, address: address, refreshing: false)
   }
@@ -282,7 +310,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let requestId = UUID().uuidString.lowercased()
     conversation.requestId = requestId
     conversation.transport = link.channel.descriptor.transport
-    conversation.deadline = now() + 30
+    conversation.deadline = requestDeadline(link.channel.descriptor.transport)
     conversation.refreshing = refreshing
     // Live-only threads fall back to the address form; the provider id replaces it once the thread list reports one.
     let threadId = conversation.threadId.isEmpty ? "addr:" + normalized : conversation.threadId
@@ -315,7 +343,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let threadId = !preferred.isEmpty ? preferred
       : (conversation?.threadId.isEmpty == false ? conversation!.threadId : "addr:" + normalized)
     state.send = Send(requestId: requestId, address: address, threadId: threadId, text: body,
-      descriptor: link.channel.descriptor, deadline: now() + 30)
+      descriptor: link.channel.descriptor, deadline: requestDeadline(link.channel.descriptor.transport))
     enqueue(link, SmsMessage(kind: 11, fields: [.text(requestId), .text(threadId), .text(address),
       .integer(Int64(data.count)), .integer(Int64(count)), .bytes(Data(SHA256.hash(data: data)))]))
     for index in 0..<count {
@@ -344,9 +372,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if live(descriptor) { return }
     links[descriptor.transport] = Link(channel)
     let state = state(key(descriptor.peer))
-    enqueue(links[descriptor.transport]!, SmsMessage(kind: 1, fields: [.integer(SmsMessage.maxBodyBytes),
-      .integer(SmsMessage.maxFragments), .integer(Int64(SmsMessage.maximumThreads)), .integer(Int64(SmsMessage.maximumMessages))]))
+    announce(links[descriptor.transport]!, descriptor.transport)
     if state.status.isEmpty { state.status = "Waiting for your phone" }
+  }
+
+  /// Advertises the relay capability and this link's limits. A peer may announce again, and answering a
+  /// capability record recovers a hello the phone never saw without waiting for a new channel generation.
+  private func announce(_ link: Link, _ transport: String) {
+    let limits = caps(transport)
+    enqueue(link, SmsMessage(kind: 1, fields: [.integer(SmsMessage.maxBodyBytes),
+      .integer(SmsMessage.maxFragments), .integer(limits.threads), .integer(limits.messages)]))
   }
 
   func retired(_ descriptor: ChannelDescriptor) {
@@ -389,6 +424,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     case 1:
       state.capable = true
       if state.status == "Waiting for your phone" { state.status = "Ready" }
+      // Answer with our own capability: the phone re-announces while it has not seen ours, so a hello
+      // lost on this channel costs a retry rather than parking live messages.
+      announce(link, descriptor.transport)
       if state.pendingThreads, state.threadRequest.isEmpty {
         state.pendingThreads = false
         issueThreads(state, link, key(descriptor.peer))
@@ -465,7 +503,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let requestId = UUID().uuidString.lowercased()
     state.threadRequest = requestId
     state.threadTransport = link.channel.descriptor.transport
-    state.threadDeadline = now() + 30
+    state.threadDeadline = requestDeadline(link.channel.descriptor.transport)
     state.threadSeen = []
     state.status = "Loading conversations…"
     enqueue(link, SmsMessage(kind: 2, fields: [.text(requestId)]))
@@ -585,17 +623,33 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private func admitLive(_ state: PeerState, _ assembly: Assembly, body: String, digest: Data, peer: DeviceIdentity) async {
     let time = now()
     let normalized = smsNormalizedAddress(assembly.address)
-    let duplicate = state.known[assembly.messageId] != nil || state.contents.contains {
+    let mark = state.contents.firstIndex {
       $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && $0.expiry > time
     }
+    // A provider copy of the same message owns its row, but only a delivered notification suppresses the next one:
+    // an event that lands after the panel already fetched the provider copy still announces the message.
+    let announced = mark.map { state.contents[$0].notified } ?? false
+    let duplicate = state.known[assembly.messageId] != nil || mark != nil
     state.known[assembly.messageId] = time + 600
-    state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis, expiry: time + 600))
-    guard !duplicate, let conversation = conversation(state, normalized) else { return }
-    let row = SmsMessageRow(messageId: assembly.messageId, address: assembly.address, dateMillis: assembly.dateMillis,
-      direction: assembly.direction, unread: assembly.unread, body: body, digest: digest)
-    conversation.live.append(row)
-    upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0)
+    if let index = mark {
+      state.contents[index].expiry = time + 600
+      state.contents[index].notified = true
+    } else {
+      state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis,
+        expiry: time + 600, notified: true))
+    }
+    state.liveReceived += 1
+    if duplicate { state.liveSuppressed += 1 }
+    guard let conversation = conversation(state, normalized) else { return }
+    if !duplicate {
+      let row = SmsMessageRow(messageId: assembly.messageId, address: assembly.address, dateMillis: assembly.dateMillis,
+        direction: assembly.direction, unread: assembly.unread, body: body, digest: digest)
+      conversation.live.append(row)
+      upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0)
+    }
+    if announced { return }
     state.status = "Message received"
+    state.liveNotified += 1
     await notifier.post(SmsNotification(identifier: smsNotificationPrefix + assembly.messageId, peerKey: key(peer),
       peerName: peer.deviceName, address: assembly.address, threadId: conversation.threadId,
       threadIdentifier: normalized, body: body, failure: false))
@@ -606,7 +660,15 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard let (normalized, conversation) = state.conversations.first(where: { $0.value.requestId == assembly.requestId }) else { return }
     let time = now()
     state.known[assembly.messageId] = time + 600
-    state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis, expiry: time + 600))
+    // The provider copy never notifies; an existing mark keeps the announced state its live copy may have set.
+    if let index = state.contents.firstIndex(where: {
+      $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000
+    }) {
+      state.contents[index].expiry = time + 600
+    } else {
+      state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis,
+        expiry: time + 600, notified: false))
+    }
     // The provider record wins: its live copy is replaced and an existing posted notification is untouched.
     conversation.live.removeAll {
       $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && smsNormalizedAddress($0.address) == normalized

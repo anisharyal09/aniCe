@@ -117,20 +117,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
             }
             val record = owner.threads?.firstOrNull { it.threadId == threadId }
             Text(record?.address ?: threadId.removePrefix("addr:"), style = MaterialTheme.typography.titleSmall)
-            if (owner.conversation.isEmpty()) Text(if (owner.loading) "Loading messages…" else "No messages on this device",
-                style = MaterialTheme.typography.bodyMedium)
-            else owner.conversation.forEach { message ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        (if (message.direction == 1L) "Sent" else "Received") + " · " + stamp(message.dateMillis) +
-                            (if (message.unread) " · Unread" else "") + (if (message.pending) " · Sending" else ""),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                HorizontalDivider()
-            }
-            if (owner.conversationMore) TextButton(onClick = owner::loadConversation, enabled = !owner.loading) { Text("Load older messages") }
+            // The reply box stays directly above the newest message, so sending a reply never needs a scroll.
             var draft by remember(threadId) { mutableStateOf("") }
             var sending by remember(threadId) { mutableStateOf(false) }
             val bytes = draft.toByteArray(Charsets.UTF_8).size
@@ -158,8 +145,27 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
                 Spacer(Modifier.width(8.dp))
                 Text("Send SMS")
             }
+            if (owner.conversation.isEmpty()) Text(if (owner.loading) "Loading messages…" else "No messages on this device",
+                style = MaterialTheme.typography.bodyMedium)
+            else owner.conversation.forEach { message ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        (if (message.direction == 1L) "Sent" else "Received") + " · " + stamp(message.dateMillis) +
+                            (if (message.unread) " · Unread" else "") + (if (message.pending) " · Sending" else ""),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HorizontalDivider()
+            }
+            if (owner.conversationMore) TextButton(onClick = owner::loadConversation, enabled = !owner.loading) { Text("Show older messages") }
         }
         if (owner.status != "Grant SMS permissions to relay messages") Text(owner.status, style = MaterialTheme.typography.bodySmall)
+        // Counts are always shown so an idle relay is distinguishable from a missing line.
+        Text(
+            "${owner.relayedLive} relayed · ${owner.waitingLive} waiting · ${owner.failedLive} not relayed",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         if (owner.skippedRows > 0) Text("${owner.skippedRows} rows could not be read", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
