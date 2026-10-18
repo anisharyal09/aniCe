@@ -13,6 +13,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.
+
 - Clarified that optional device-local clipboard history is separate from process-local delivery state and shares native observation without changing wire messages.
 
 ## [0.2.0]

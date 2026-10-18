@@ -2,6 +2,7 @@
 // Exercises independent clipboard vectors, native failure isolation and cross-transport idempotency without the real pasteboard.
 import XCTest
 import CryptoKit
+import SwiftUI
 @testable import aniCe
 
 @MainActor final class ClipboardNativeFake: NativeClipboard {
@@ -391,6 +392,114 @@ final class ClipboardTests: XCTestCase {
     try await until { history.error != nil }; XCTAssertEqual(history.entries.map(\.text), ["preserved"])
     history.setEnabled(false)
     try await until { history.error != nil }; XCTAssertFalse(history.enabled); XCTAssertEqual(history.entries.map(\.text), ["preserved"])
+  }
+
+  @MainActor func testRecentActivityDoesNotRefreshOnDuplicateAndCopyCannotTargetReplacement() async throws {
+    let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
+    let text = String(repeating: "x", count: 239) + "👋" + "full copy suffix"
+    let begin = try await h.receive(c, text: text)
+    let first = try XCTUnwrap(h.owner.recent)
+    XCTAssertTrue(first.received); XCTAssertFalse(h.owner.history.enabled)
+    XCTAssertEqual(first.textPreview, String(repeating: "x", count: 239) + "👋")
+    h.time = 1
+    _ = await h.owner.handle(try begin.encode(), on: c.descriptor)
+    _ = await h.owner.handle(try ClipboardMessage.id(5, begin.text(2)).encode(), on: c.descriptor)
+    XCTAssertEqual(h.owner.recent?.id, first.id)
+    h.owner.setAutomatic(true)
+    XCTAssertTrue(h.owner.copyActivity(first.id)); XCTAssertEqual(h.native.sample?.text, text)
+    XCTAssertTrue(h.owner.history.entries.isEmpty); XCTAssertFalse(h.owner.busy)
+    try await h.receive(c, text: "replacement", revision: 2)
+    let second = try XCTUnwrap(h.owner.recent)
+    XCTAssertFalse(h.owner.copyActivity(first.id))
+    h.owner.dismissActivity(first.id); XCTAssertEqual(h.owner.recent?.id, second.id)
+    h.native.fail = true
+    XCTAssertFalse(h.owner.copyActivity(second.id)); XCTAssertEqual(h.owner.recent?.id, second.id)
+    h.time = 301; h.owner.expire()
+    XCTAssertNil(h.owner.recent); XCTAssertFalse(h.owner.copyActivity(second.id)); h.owner.invalidate()
+  }
+
+  @MainActor func testRecentOutgoingRequiresAppliedResultAndSuppressesMarkedContent() async throws {
+    let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
+    h.owner.send(pasted: "failed"); try await until { c.sent.contains { $0.kind == 5 } }
+    XCTAssertNil(h.owner.recent)
+    let failed = try XCTUnwrap(c.sent.first { $0.kind == 3 })
+    _ = await h.owner.handle(try ClipboardMessage.result(failed.text(2), 5).encode(), on: c.descriptor)
+    try await until { !h.owner.busy }; XCTAssertNil(h.owner.recent)
+    h.owner.sendConfirmed(ClipboardSample(text: "secret", sensitive: true))
+    try await until { c.sent.filter { $0.kind == 5 }.count == 2 }
+    let sensitive = try XCTUnwrap(c.sent.last { $0.kind == 3 })
+    _ = await h.owner.handle(try ClipboardMessage.result(sensitive.text(2), 0).encode(), on: c.descriptor)
+    try await until { !h.owner.busy }
+    XCTAssertNil(h.owner.recent?.sample); XCTAssertNil(h.owner.recent?.textPreview)
+    XCTAssertFalse(try XCTUnwrap(h.owner.recent).received)
+    try await h.receive(c)
+    XCTAssertNotNil(h.owner.recent?.sample)
+    h.owner.prune([], confirmedTrust: true); XCTAssertNil(h.owner.recent)
+    h.owner.invalidate()
+  }
+
+  @MainActor func testRecentClipboardNativeLayouts() async throws {
+    let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
+    try await h.receive(c, text: "A long clipboard preview with 👋 Unicode that wraps naturally and keeps its native Copy action accessible.")
+    let folder = URL(fileURLWithPath: "/tmp/anice-clipboard-quiet-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var rendered = 0
+    for compact in [false, true] {
+      for scheme in [ColorScheme.light, .dark] {
+        let content = VStack(alignment: .leading, spacing: 16) {
+          ClipboardActivityView(model: h.owner, compact: compact, open: {})
+          ClipboardSendButton(model: h.owner)
+        }.padding(16).frame(width: compact ? 350 : 620).background(AniCePalette.surface(scheme)).environment(\.colorScheme, scheme)
+        let host = NSHostingView(rootView: content)
+        host.frame.size = host.fittingSize
+        host.layoutSubtreeIfNeeded()
+        let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: image)
+        let data = try XCTUnwrap(image.representation(using: .png, properties: [:]))
+        try data.write(to: folder.appendingPathComponent("clipboard-\(compact)-\(scheme).png"))
+        XCTAssertGreaterThan(host.bounds.height, 100); rendered += 1
+      }
+    }
+    XCTAssertEqual(rendered, 4); h.owner.invalidate()
+  }
+
+  @MainActor func testClipboardHistoryAndPreferencesRenderInBothAppearances() async throws {
+    let folder = URL(fileURLWithPath: "/tmp/anice-clipboard-history-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let file = ClipboardHistoryFile(url: folder.appendingPathComponent("fixture-\(UUID().uuidString).json"))
+    defer { try? file.delete() }
+    let date = Date()
+    try file.save([
+      ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "A project update copied on the phone, with enough text to wrap onto another line.", origin: "phone", timestamp: date, credential: nil),
+      ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "https://example.com/notes", origin: "mac", timestamp: date.addingTimeInterval(-60), credential: nil),
+      ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "Earlier notes 👋", origin: "phone", timestamp: date.addingTimeInterval(-86400), credential: nil)
+    ])
+    let history = ClipboardHistory(storage: file)
+    try await until { history.enabled }
+    let peer = ClipboardChannel().descriptor.peer
+    let preferences = ClipboardPreferences(); preferences.set(peer, true)
+    let model = MacClipboardModel(native: ClipboardNativeFake(), history: history, preferences: preferences)
+    model.select(peer)
+    let record = PeerTrustRecord(peer: peer, localFingerprint: "fixture", method: .qr, pairedAt: date,
+      transcriptHash: Data(repeating: 0, count: 32), active: true)
+    var renders = 0
+    for scheme in [ColorScheme.light, .dark] {
+      for width: CGFloat in [350, 620] {
+        let content = VStack(alignment: .leading, spacing: 20) {
+          ClipboardSettingsView(model: model, peers: [record], showHistory: false)
+          Divider()
+          ClipboardHistoryView(model: model)
+        }.padding(20).frame(width: width).background(AniCePalette.surface(scheme))
+          .environment(\.colorScheme, scheme).tint(AniCePalette.primaryText(scheme))
+        let host = NSHostingView(rootView: content)
+        host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
+        let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: image)
+        try XCTUnwrap(image.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent("history-\(Int(width))-\(scheme).png"))
+        XCTAssertGreaterThan(host.bounds.height, 200); XCTAssertFalse(model.busy); renders += 1
+      }
+    }
+    XCTAssertEqual(renders, 4); model.invalidate()
   }
 
   @MainActor func testResetDuringLoadWriteOrPruneNeverRestoresContentWhenDeletionFails() async throws {

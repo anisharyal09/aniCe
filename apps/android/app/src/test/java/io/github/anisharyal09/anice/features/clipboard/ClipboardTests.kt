@@ -467,4 +467,83 @@ class ClipboardTests {
         }
     }
 
+    @Test fun explicitClipboardFocusReadsOnceWithoutObservationAndPreservesSensitivity() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        h.owner.history.setKeepingHistory(true); until { h.owner.history.enabled }
+        h.owner.setAutomaticEnabled(true)
+        h.native.sample = ClipboardSample("marked secret", sensitive = true, token = "secret")
+        val window = Any(); val state = SelectionSendState(h.owner); state.openClipboard()
+        val reads = h.native.reads
+        assertNull(h.owner.captureManual()); assertEquals(reads, h.native.reads)
+        h.owner.focus(true, window, observe = false); state.focused(); state.focused()
+        assertEquals(reads + 1, h.native.reads); assertNull(h.native.observer)
+        assertFalse(h.owner.busy); assertNull(state.operation)
+        state.send(); assertTrue(state.confirming); assertNull(state.operation)
+        state.dismissConfirmation(); assertNotNull(state.sample); state.send(); state.confirm()
+        until { c.sent.any { it.kind == 5L } }
+        val begin = c.sent.first { it.kind == 3L }; assertTrue(begin.flag(4)); assertEquals(0L, begin.number(3))
+        assertTrue(h.owner.history.entries.isEmpty()); assertNull(state.sample)
+        h.owner.handle(c.descriptor, ClipboardMessage.result(begin.text(2), 0).encode())
+        assertEquals(ClipboardSendResult.APPLIED, state.operation!!.result())
+        assertFalse(h.owner.recent!!.canCopy)
+        assertNull(h.owner.recent!!.textPreview)
+        h.owner.focus(false, window, observe = false); h.owner.invalidate()
+    }
+    @Test fun explicitSheetSuppressesExistingObservationAndNeverReplaysAfterProcessLoss() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        until { h.owner.supports(c.descriptor.peer) }
+        h.native.sample = ClipboardSample("skip", excluded = true, token = "1")
+        h.owner.setAutomaticEnabled(true); val appWindow = Any(); h.owner.focus(true, appWindow)
+        assertNotNull(h.native.observer)
+        val sheet = Any(); h.owner.focus(true, sheet, observe = false)
+        assertNull(h.native.observer)
+        h.native.sample = ClipboardSample("explicit", token = "2")
+        val state = SelectionSendState(h.owner); state.openClipboard(); state.focused()
+        val captured = state.sample; val reads = h.native.reads
+        state.openClipboard(); state.abandon(); state.focused()
+        assertSame(captured, state.sample); assertEquals(reads, h.native.reads); assertNull(state.operation)
+        val lost = SelectionSendState(h.owner); lost.abandon()
+        assertEquals(ClipboardSendResult.UNCONFIRMED, lost.operation!!.result()); assertEquals(reads, h.native.reads)
+        state.cancel(); assertNull(state.sample); assertFalse(c.sent.any { it.kind == 3L })
+        h.owner.focus(false, appWindow); h.owner.focus(false, sheet, observe = false); h.owner.invalidate()
+    }
+    @Test fun recentActivityExpiresWithoutHistoryAndStaleClicksCannotCopyAnotherItem() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        h.native.focused = false
+        val text = "x".repeat(239) + "👋" + "full copy suffix"
+        val first = h.receive(c, text = text)
+        val old = h.owner.recent!!; assertTrue(old.received); assertTrue(old.canCopy); assertFalse(h.owner.history.enabled)
+        assertEquals("x".repeat(239) + "👋", old.textPreview)
+        assertTrue(h.owner.copyActivity(old.id)); assertEquals(text, h.native.sample!!.text)
+        h.time = 1000
+        h.owner.handle(c.descriptor, first.encode()); h.owner.handle(c.descriptor, ClipboardMessage.id(5, first.text(2)).encode())
+        assertSame(old, h.owner.recent)
+        h.receive(c, text = "second", revision = 2)
+        val latest = h.owner.recent!!; val writes = h.native.writes
+        assertFalse(h.owner.copyActivity(old.id)); assertEquals(writes, h.native.writes)
+        h.owner.dismissActivity(old.id); assertSame(latest, h.owner.recent)
+        assertTrue(h.owner.copyActivity(latest.id)); assertEquals(writes + 1, h.native.writes)
+        assertSame(latest, h.owner.recent); assertTrue(h.owner.history.entries.isEmpty())
+        h.time = 301000; h.owner.expire()
+        assertNull(h.owner.recent); assertFalse(h.owner.copyActivity(latest.id))
+        h.owner.invalidate()
+    }
+    @Test fun recentOutgoingRequiresAppliedResultAndClearsOnDismissOrTrustLoss() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        until { h.owner.supports(c.descriptor.peer) }
+        h.owner.send(pasted = "failed"); until { c.sent.any { it.kind == 5L } }
+        assertNull(h.owner.recent)
+        val failed = c.sent.first { it.kind == 3L }
+        h.owner.handle(c.descriptor, ClipboardMessage.result(failed.text(2), 5).encode()); until { !h.owner.busy }
+        assertNull(h.owner.recent)
+        h.owner.send(pasted = "applied"); until { c.sent.count { it.kind == 5L } == 2 }
+        val applied = c.sent.last { it.kind == 3L }
+        h.owner.handle(c.descriptor, ClipboardMessage.result(applied.text(2), 0).encode()); until { !h.owner.busy }
+        val recent = h.owner.recent!!; assertFalse(recent.received); assertTrue(recent.canCopy)
+        h.owner.dismissActivity(recent.id); assertNull(h.owner.recent)
+        h.receive(c, text = "incoming")
+        h.owner.prune(emptyList(), confirmedTrust = true); assertNull(h.owner.recent)
+        h.owner.invalidate()
+    }
+
 }

@@ -22,6 +22,7 @@ ScrollView {
                 Text("No devices paired yet").font(.headline)
                 Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
               }
+              ClipboardActivityView(model: clipboard, open: { navigation.openFeature(.clipboard) })
               if playback.showOnMac && playback.compactVisible {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 720 && (pairing.hasTrustedAndroid || transfer.state != .idle) ? 2 : 1), alignment: .leading, spacing: 20) {
                   MediaView(model: playback, visible: playback.mainVisible, open: { navigation.openFeature(.playback) })

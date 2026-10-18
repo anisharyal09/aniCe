@@ -43,6 +43,7 @@ MINIMUM_CONNECTED = 10
 # skips at all; this list only covers the broad connected/hosted runs.
 DOCUMENTED_ANDROID_SKIPS = {
     "HomeVisualReviewTest#nativePresentationStates",
+    "ClipboardSurfaceTests#preferencesAndHistoryRenderInBothThemesWithoutClipboardReads",
     "IdentityInterchangeTest#executeInterchange",
     "LanNativeTest#rawSocketBaseline",
     "LanNativeTest#protectedTcpInterchange",

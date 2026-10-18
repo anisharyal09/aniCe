@@ -39,26 +39,28 @@ struct CompanionView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           deviceContent
+          if clipboard.recent != nil {
+            Divider()
+            ClipboardActivityView(model: clipboard, compact: true, open: { navigation.openFeature(.clipboard); openMainWindow() })
+          }
           if hasLiveActivity {
             Divider()
             liveActivitySection
           }
-          if let sendFilesAction {
+          if clipboard.selected.map(clipboard.supports) == true || sendFilesAction != nil {
             Divider()
-            Button(action: sendFilesAction) {
-              HStack(spacing: 12) {
-                Image(systemName: "paperplane").accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                  Text("Send files").font(.subheadline.weight(.medium))
-                  if let peer = transfer.activeChannel?.descriptor.peer {
-                    Text("Choose files for " + peer.deviceName).font(.caption)
-                      .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                  }
-                }
-                Spacer()
-                Image(systemName: "chevron.right").accessibilityHidden(true)
-              }.padding(.vertical, 8).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 8) {
+              ViewThatFits(in: .horizontal) {
+                HStack { sendActions }
+                VStack(alignment: .leading, spacing: 8) { sendActions }
+              }
+              if let peer = transfer.activeChannel?.descriptor.peer, sendFilesAction != nil {
+                Text("To " + peer.deviceName).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              }
+              if !["Ready to share text", "Clipboard received", "Clipboard delivered"].contains(clipboard.status) {
+                Text(clipboard.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              }
+            }
           }
         }
       }.fixedSize(horizontal: false, vertical: true).frame(maxHeight: 520)
@@ -78,6 +80,14 @@ struct CompanionView: View {
 
   private func openMain() {
     openMainWindow()
+  }
+
+  @ViewBuilder private var sendActions: some View {
+    if clipboard.selected.map(clipboard.supports) == true { ClipboardSendButton(model: clipboard) }
+    if let sendFilesAction {
+      Button(action: sendFilesAction) { Label("Send files", systemImage: "paperplane") }
+        .buttonStyle(.bordered).controlSize(.small)
+    }
   }
 
   // Gated on idle state, peer compatibility and readiness matching TransferView.idleContent.

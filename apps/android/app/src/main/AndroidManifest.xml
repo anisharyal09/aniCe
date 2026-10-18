@@ -37,6 +37,12 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <service android:name=".features.clipboard.ClipboardTileService" android:exported="true"
+            android:label="Send to Mac" android:icon="@drawable/ic_clipboard_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <receiver android:name=".features.media.MediaActionReceiver" android:exported="false" />
         <service android:name=".features.transfer.TransferService" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <service android:name=".features.finddevice.FindDeviceRingService" android:exported="false" android:foregroundServiceType="mediaPlayback" />

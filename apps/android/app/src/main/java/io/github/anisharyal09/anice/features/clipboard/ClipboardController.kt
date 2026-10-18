@@ -19,6 +19,15 @@ class ClipboardSendOperation internal constructor() {
     suspend fun result(): ClipboardSendResult = completion.await()
 }
 
+class ClipboardActivity internal constructor(
+    val id: String, val received: Boolean, val timestamp: Long,
+    internal val deadline: Long, internal val credential: String, internal val sample: ClipboardSample?,
+) {
+    val canCopy: Boolean get() = sample != null
+    // Bound presentation work independently of the full item retained for an explicit Copy.
+    val textPreview: String? = sample?.text?.let { it.substring(0, it.offsetByCodePoints(0, minOf(240, it.codePointCount(0, it.length)))) }
+}
+
 class ClipboardController(
     private val native: NativeClipboard,
     val preferences: ClipboardPreferences = ClipboardPreferences(),
@@ -47,7 +56,7 @@ class ClipboardController(
         var incoming: Incoming? = null
         val terminal = linkedMapOf<String, Terminal>()
     }
-    private class Outgoing(val peer: DeviceIdentity, val begin: ClipboardMessage, val data: ByteArray, val deadline: Long) {
+    private class Outgoing(val peer: DeviceIdentity, val begin: ClipboardMessage, val data: ByteArray, val deadline: Long, val sample: ClipboardSample) {
         val attempted = mutableSetOf<ChannelDescriptor>()
         val result = CompletableDeferred<Long>()
         var channelLost = CompletableDeferred<Unit>()
@@ -74,6 +83,8 @@ class ClipboardController(
     private var focused = false
     private var pendingFocusSample = false
     private val focusedWindows = mutableSetOf<Any>()
+    private val manualWindows = mutableSetOf<Any>()
+    var recent by mutableStateOf<ClipboardActivity?>(null); private set
     var selected by mutableStateOf<DeviceIdentity?>(null); private set
     var busy by mutableStateOf(false); private set
     var automatic by mutableStateOf(false); private set
@@ -106,13 +117,15 @@ class ClipboardController(
         }
         observedToken = null; updateObservation()
     }
-    fun focus(value: Boolean, window: Any = this) {
-        if (value) focusedWindows.add(window) else focusedWindows.remove(window)
-        val active = focusedWindows.isNotEmpty()
+    fun focus(value: Boolean, window: Any = this, observe: Boolean = true) {
+        val windows = if (observe) focusedWindows else manualWindows
+        if (value) windows.add(window) else windows.remove(window)
+        // A manually focused sheet can read once, but must not activate automatic sending or history observation.
+        val active = focusedWindows.isNotEmpty() && manualWindows.isEmpty()
+        (native as? AndroidClipboard)?.focused = focusedWindows.isNotEmpty() || manualWindows.isNotEmpty()
         if (focused == active) return
         focused = active
         pendingFocusSample = active
-        (native as? AndroidClipboard)?.focused = active
         if (!active) { preview = null; pending = null; if (preparingAutomatic) { sampling++; busy = false; preparingAutomatic = false } }
         updateObservation()
     }
@@ -149,11 +162,17 @@ class ClipboardController(
         finally { applying = false }
     }
     fun sendHistory(entry: ClipboardHistoryEntry) { submit(ClipboardSample(entry.text), false) }
-    fun sendSelection(text: String?): ClipboardSendOperation {
+    fun captureManual(): ClipboardSample? {
+        if (focusedWindows.isEmpty() && manualWindows.isEmpty()) return null
+        return native.read()?.takeIf { validHistoryText(it.text) }
+    }
+    fun sendSelection(text: String?): ClipboardSendOperation = startExplicitSend(text?.let { ClipboardSample(it) })
+    internal fun sendCaptured(sample: ClipboardSample): ClipboardSendOperation = startExplicitSend(sample)
+    private fun startExplicitSend(sample: ClipboardSample?): ClipboardSendOperation {
         val operation = ClipboardSendOperation()
         fun reject(result: ClipboardSendResult): ClipboardSendOperation { operation.completion.complete(result); return operation }
-        if (text == null || !validHistoryText(text)) return reject(ClipboardSendResult.INVALID)
-        history.record(ClipboardSample(text), "phone")
+        if (sample == null || !validHistoryText(sample.text)) return reject(ClipboardSendResult.INVALID)
+        history.record(sample, "phone")
         if (busy || selectionOperation != null) return reject(ClipboardSendResult.BUSY)
         val peer = links.values.firstOrNull()?.channel?.descriptor?.peer ?: return reject(ClipboardSendResult.UNAVAILABLE)
         select(peer)
@@ -165,7 +184,7 @@ class ClipboardController(
                 if (!connected(peer)) operation.completion.complete(ClipboardSendResult.UNAVAILABLE)
                 else {
                     busy = false
-                    submit(ClipboardSample(text), false)
+                    submit(sample, false)
                     if (!busy) operation.completion.complete(ClipboardSendResult.INVALID)
                 }
                 operation.completion.await()
@@ -209,7 +228,7 @@ class ClipboardController(
             preparingAutomatic = false
             if (pair == null || pair.first.size !in 1..65536 || revision >= 4294967295L) { busy = false; status = "Choose plain text up to 64 KiB"; completeSelection(ClipboardSendResult.INVALID); return@launch }
             val begin = ClipboardMessage.of(3, Cbor.Text(epoch), Cbor.Integer(++revision), Cbor.Text(UUID.randomUUID().toString()), Cbor.Integer(if (auto) 1 else 0), Cbor.Bool(sample.sensitive), Cbor.Integer(pair.first.size.toLong()), Cbor.Integer((pair.first.size + 3071L) / 3072), Cbor.Bytes(pair.second))
-            val item = Outgoing(peer, begin, pair.first, minOf(now() + 30000, selectionDeadline ?: Long.MAX_VALUE))
+            val item = Outgoing(peer, begin, pair.first, minOf(now() + 30000, selectionDeadline ?: Long.MAX_VALUE), sample)
             outgoing = item; status = "Sending to ${peer.deviceName}"; onLanRequired()
             item.job = scope.launch { deliver(item) }; schedule()
         }
@@ -289,6 +308,7 @@ class ClipboardController(
             if (outgoing === item) {
                 val code = if (item.result.isCompleted) item.result.await() else null
                 status = when (code) { 0L -> "Clipboard delivered"; 1L -> "Automatic receiving is off on the other device"; 2L -> "Other device is busy"; 3L -> "Newer clipboard item already received"; 4L -> "Newer local copy kept"; 5L -> "Could not write the other clipboard"; 6L -> "Clipboard item rejected"; 7L -> "Clipboard send cancelled"; else -> "Delivery unconfirmed" }
+                if (code == 0L) recordActivity(item.sample, received = false, peer = item.peer)
                 completeSelection(if (code == 0L) ClipboardSendResult.APPLIED else if (code == null) ClipboardSendResult.UNCONFIRMED else ClipboardSendResult.REJECTED)
                 outgoing = null; busy = false; preview = null
                 val next = pending; pending = null
@@ -378,7 +398,11 @@ class ClipboardController(
                 finally { applying = false }
             }
         }
-        if (code == 0L && text != null) history.record(ClipboardSample(text, sensitive = incoming.begin.flag(4)), "mac", k)
+        if (code == 0L && text != null) {
+            val sample = ClipboardSample(text, sensitive = incoming.begin.flag(4))
+            history.record(sample, "mac", k)
+            recordActivity(sample, received = true, peer = descriptor.peer)
+        }
         val responseLink = if (live(descriptor)) link else links.values.firstOrNull { key(it.channel.descriptor.peer) == k && it.epoch == h.epoch }
         finishIncoming(k, incoming, code, responseLink)
         return DataHandling.HANDLED
@@ -402,16 +426,34 @@ class ClipboardController(
         item?.attempted?.forEach { d -> links[d.transport]?.takeIf { live(d) }?.let { enqueue(it, ClipboardMessage.id(7, item.begin.text(2))) } }
         schedule()
     }
+    private fun recordActivity(sample: ClipboardSample, received: Boolean, peer: DeviceIdentity) {
+        // Keep one bounded, process-local item even with history off; marked content retains metadata only.
+        recent = ClipboardActivity(UUID.randomUUID().toString(), received, System.currentTimeMillis(), now() + 300000, key(peer), sample.takeUnless { it.sensitive || it.excluded })
+        schedule()
+    }
+    fun dismissActivity(id: String) { if (recent?.id == id) { recent = null; schedule() } }
+    // An old card click must never copy a newer item that arrived before the click was handled.
+    fun copyActivity(id: String): Boolean {
+        val item = recent?.takeIf { it.id == id && it.deadline > now() } ?: return false
+        val sample = item.sample ?: return false
+        applying = true
+        return try { native.write(sample.text, sample.sensitive) } finally { applying = false }
+    }
     fun invalidate() {
+        recent = null
         cancel(); native.observe(false) {}; links.values.toList().forEach { retired(it.channel.descriptor) }; histories.clear(); preview = null; schedule()
     }
     fun prune(peers: List<DeviceIdentity>, confirmedTrust: Boolean = false) {
         preferences.prune(peers)
-        if (confirmedTrust) history.prune(peers.map(::key).toSet())
+        if (confirmedTrust) {
+            history.prune(peers.map(::key).toSet())
+            if (recent?.credential?.let { credential -> peers.none { key(it) == credential } } == true) { recent = null; schedule() }
+        }
         if (selected != null && peers.none { key(it) == key(selected!!) }) { select(null); automatic = false }
     }
     fun expire() {
         val time = now()
+        if (recent?.deadline?.let { it <= time } == true) recent = null
         histories.forEach { (k, h) ->
             h.terminal.entries.removeAll { it.value.expiry <= time }
             h.incoming?.takeIf { it.deadline <= time }?.let { finishIncoming(k, it, 7, null) }
@@ -423,7 +465,8 @@ class ClipboardController(
     }
     private fun schedule() {
         timer?.cancel(); timer = null
-        val next = (histories.values.flatMap { h -> h.terminal.values.map { it.expiry } + listOfNotNull(h.incoming?.deadline) } + listOfNotNull(outgoing?.deadline, selectionDeadline)).minOrNull() ?: return
+        // Reuse the delivery deadline timer so recent activity needs no additional polling loop.
+        val next = (histories.values.flatMap { h -> h.terminal.values.map { it.expiry } + listOfNotNull(h.incoming?.deadline) } + listOfNotNull(outgoing?.deadline, selectionDeadline, recent?.deadline)).minOrNull() ?: return
         timer = scope.launch { wait(maxOf(1, next - now())); expire() }
     }
     private fun enqueue(link: Link, message: ClipboardMessage) {

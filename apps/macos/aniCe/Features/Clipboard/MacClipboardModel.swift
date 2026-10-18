@@ -5,6 +5,16 @@ import CryptoKit
 import Foundation
 import Observation
 
+struct ClipboardActivity: Identifiable {
+  let id = UUID()
+  let received: Bool
+  let timestamp = Date()
+  let deadline: TimeInterval
+  let credential: String
+  let sample: ClipboardSample?
+  var textPreview: String? { sample.map { String($0.text.prefix(240)) } }
+}
+
 @MainActor @Observable final class MacClipboardModel: FeatureHandler {
   @Observable final class Link {
     let channel: any SecuredChannel
@@ -41,13 +51,14 @@ import Observation
     let begin: ClipboardMessage
     let data: Data
     let deadline: TimeInterval
+    let sample: ClipboardSample
     var attempted: [ChannelDescriptor] = []
     var result: Int64?
     var task: Task<Void, Never>?
     var resultWait: CheckedContinuation<Void, Never>?
     var resultTimer: Task<Void, Never>?
-    init(peer: DeviceIdentity, begin: ClipboardMessage, data: Data, deadline: TimeInterval) {
-      self.peer = peer; self.begin = begin; self.data = data; self.deadline = deadline
+    init(peer: DeviceIdentity, begin: ClipboardMessage, data: Data, deadline: TimeInterval, sample: ClipboardSample) {
+      self.peer = peer; self.begin = begin; self.data = data; self.deadline = deadline; self.sample = sample
     }
     func wake() { resultTimer?.cancel(); resultTimer = nil; let c = resultWait; resultWait = nil; c?.resume() }
   }
@@ -76,6 +87,7 @@ import Observation
   private(set) var automatic = false
   private(set) var status = "Ready to share text"
   private(set) var preview: ClipboardSample?
+  private(set) var recent: ClipboardActivity?
   var onLanRequired: () -> Void = {}
   var automaticAccessAllowed: Bool { native.automaticAccessAllowed }
   init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
@@ -168,7 +180,7 @@ import Observation
       guard self.revision < 4294967295 else { self.busy = false; self.status = "Clipboard revision limit reached"; return }
       self.revision += 1
       let begin = ClipboardMessage(kind: 3, fields: [.text(self.epoch), .integer(self.revision), .text(UUID().uuidString.lowercased()), .integer(auto ? 1 : 0), .bool(sample.sensitive), .integer(Int64(pair.0.count)), .integer(Int64((pair.0.count + 3071) / 3072)), .bytes(pair.1)])
-      let item = Outgoing(peer: peer, begin: begin, data: pair.0, deadline: self.now() + 30)
+      let item = Outgoing(peer: peer, begin: begin, data: pair.0, deadline: self.now() + 30, sample: sample)
       self.outgoing = item; self.status = "Sending to \(peer.deviceName)"; self.onLanRequired()
       item.task = Task { [weak self] in await self?.deliver(item) }; self.schedule()
     }
@@ -221,6 +233,7 @@ import Observation
       if outgoing === item {
         let messages = ["Clipboard delivered", "Automatic receiving is off on the other device", "Other device is busy", "Newer clipboard item already received", "Newer local copy kept", "Could not write the other clipboard", "Clipboard item rejected", "Clipboard send cancelled"]
         status = item.result.map { messages[Int($0)] } ?? "Delivery unconfirmed"
+        if item.result == 0 { recordActivity(item.sample, received: false, peer: item.peer) }
         outgoing = nil; busy = false; preview = nil
         let next = pending; pending = nil
         if let next, automatic, !sleeping { submit(next, auto: true) }
@@ -329,7 +342,11 @@ import Observation
       code = native.write(text!, sensitive: incoming.begin.flag(4)) ? 0 : 5
       applying = false
     }
-    if code == 0, let text { history.record(ClipboardSample(text: text, sensitive: incoming.begin.flag(4)), origin: "phone", credential: k) }
+    if code == 0, let text {
+      let sample = ClipboardSample(text: text, sensitive: incoming.begin.flag(4))
+      history.record(sample, origin: "phone", credential: k)
+      recordActivity(sample, received: true, peer: d.peer)
+    }
     let responseLink = live(d) ? link : links.values.first { key($0.channel.descriptor.peer) == k && $0.epoch == h.epoch }
     finishIncoming(k, incoming, code, responseLink); return .handled
   }
@@ -350,14 +367,31 @@ import Observation
     for link in links.values { let waking = Array(link.capacity.values); link.capacity.removeAll(); waking.forEach { $0.resume() } }
     schedule()
   }
-  func invalidate() { cancel(); native.observe(false) {}; for d in links.values.map({ $0.channel.descriptor }) { retired(d) }; histories.removeAll(); preview = nil; schedule() }
+  private func recordActivity(_ sample: ClipboardSample, received: Bool, peer: DeviceIdentity) {
+    // Retain one process-local item for five minutes; sensitive/generated text is never retained for preview or Copy.
+    recent = ClipboardActivity(received: received, deadline: now() + 300, credential: key(peer), sample: sample.sensitive || sample.excluded ? nil : sample)
+    schedule()
+  }
+  func dismissActivity(_ id: UUID) { if recent?.id == id { recent = nil; schedule() } }
+  func copyActivity(_ id: UUID) -> Bool {
+    // A stale view action must not copy a replacement item or revive an expired one.
+    guard let recent, recent.id == id, recent.deadline > now(), let sample = recent.sample else { return false }
+    applying = true
+    defer { applying = false }
+    return native.write(sample.text, sensitive: sample.sensitive)
+  }
+  func invalidate() { recent = nil; cancel(); native.observe(false) {}; for d in links.values.map({ $0.channel.descriptor }) { retired(d) }; histories.removeAll(); preview = nil; schedule() }
   func prune(_ peers: [DeviceIdentity], confirmedTrust: Bool = false) {
     preferences.prune(peers)
-    if confirmedTrust { history.prune(Set(peers.map(key))) }
+    if confirmedTrust {
+      let keep = Set(peers.map(key)); history.prune(keep)
+      if let recent, !keep.contains(recent.credential) { self.recent = nil; schedule() }
+    }
     if let selected, !peers.contains(where: { key($0) == key(selected) }) { select(nil); automatic = false }
   }
   func expire() {
     let time = now()
+    if let recent, recent.deadline <= time { self.recent = nil }
     for (k, h) in histories {
       h.terminal = h.terminal.filter { $0.value.expiry > time }
       if let incoming = h.incoming, incoming.deadline <= time { finishIncoming(k, incoming, 7, nil) }
@@ -368,7 +402,8 @@ import Observation
   }
   private func schedule() {
     timer?.cancel(); timer = nil
-    let deadlines = histories.values.flatMap { h in h.terminal.values.map(\.expiry) + (h.incoming.map { [$0.deadline] } ?? []) } + (outgoing.map { [$0.deadline] } ?? [])
+    // Reuse the delivery deadline timer so recent activity needs no additional polling loop.
+    let deadlines = histories.values.flatMap { h in h.terminal.values.map(\.expiry) + (h.incoming.map { [$0.deadline] } ?? []) } + (outgoing.map { [$0.deadline] } ?? []) + (recent.map { [$0.deadline] } ?? [])
     guard let next = deadlines.min() else { return }
     let delay = max(0.001, next - now()), wait = self.wait
     timer = Task { [weak self] in

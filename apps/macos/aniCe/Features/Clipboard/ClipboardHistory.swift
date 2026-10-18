@@ -68,6 +68,7 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
   private var recording = false
   private var preferenceRevision = 0
   var onChanged: () -> Void = {}
+  // A delayed startup read must not overwrite a newer consent or identity-reset request.
   init(storage: (any ClipboardHistoryStorage)? = nil) {
     self.storage = storage
     command {
@@ -94,6 +95,7 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
   }
   func record(_ sample: ClipboardSample, origin: String, credential: String? = nil) {
     guard enabled, !sample.sensitive, !sample.excluded, ClipboardHistoryFile.valid(sample.text) else { return }
+    // Bound pending content independently of the saved inventory while disk IO is stalled.
     if captures.count == 20 { captures.removeFirst() }
     captures.append((sample, origin, credential))
     guard !recording else { return }; recording = true

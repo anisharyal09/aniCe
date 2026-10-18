@@ -1,0 +1,7 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Draws a padded screen-and-upload outline for the Send to Mac Quick Settings action. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="1.5"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M5.25,5.25H18.75Q20.25,5.25 20.25,6.75V15Q20.25,16.5 18.75,16.5H5.25Q3.75,16.5 3.75,15V6.75Q3.75,5.25 5.25,5.25Z M12,16.5V19.5 M9,19.5H15 M12,13V8 M9.5,10.5L12,8L14.5,10.5" />
+</vector>

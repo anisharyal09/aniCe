@@ -22,6 +22,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
         DeviceRoute.Overview -> {
             if (navigation.destination == AppDestination.Home) {
                 HomeScreen(pairing.peers.isNotEmpty(), onPair = navigation::pair, attention = {
+                    io.github.anisharyal09.anice.features.clipboard.ClipboardActivityView(session.clipboard, open = { navigation.openFeature(AppFeature.Clipboard) })
                     if (session.media.compactVisible || navigation.mediaDetails) {
                         io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media, showPlayerSelector = false, compactVolume = true, open = { navigation.openFeature(AppFeature.Playback) })
                         if (navigation.mediaDetails) TextButton(onClick = { navigation.mediaDetails = false }) { Text("Done") }

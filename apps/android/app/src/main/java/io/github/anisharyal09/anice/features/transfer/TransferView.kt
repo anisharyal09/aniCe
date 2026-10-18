@@ -27,8 +27,7 @@ fun rememberSendFilesAction(controller: TransferController): () -> Unit {
         controller.endPicker()
     }
     return {
-        // File selection is demand even when BLE is already secured; the current batch still
-        // uses the best already-secured channel and never migrates mid-batch.
+        // File selection requests LAN without retiring the secured BLE channel or waiting for LAN readiness.
         controller.onDemandLanConnection?.invoke()
         controller.beginPicker()
         launcher.launch(arrayOf("*/*"))
@@ -108,12 +107,15 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
+                        OutlinedButton(
                             enabled = !controller.preparing,
                             onClick = sendFiles,
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
+                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Send files…")
                         }
 
@@ -412,15 +414,18 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (!controller.receiving) {
-                            Button(
+                            OutlinedButton(
                                 onClick = {
                                     controller.dismiss()
                                     sendFiles()
                                 },
                                 enabled = controller.peerConnected,
                                 shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.heightIn(min = 48.dp)
                             ) {
+                                Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text("Send more…")
                             }
                         }
@@ -439,15 +444,18 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 controller.dismiss()
                                 sendFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
+                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Send files…")
                         }
                         OutlinedButton(
@@ -466,15 +474,18 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         color = MaterialTheme.colorScheme.error
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 controller.dismiss()
                                 sendFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
+                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Send files…")
                         }
                         OutlinedButton(
@@ -493,15 +504,18 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 controller.dismiss()
                                 sendFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
+                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Send files…")
                         }
                         OutlinedButton(

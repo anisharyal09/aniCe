@@ -6,9 +6,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 @Composable
 fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, showHistory: Boolean = true) {
@@ -22,10 +29,8 @@ fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, 
                     onClick = { owner.select(record.peer) }, label = { Text(record.peer.deviceName) }) }
             }
         } else peers.firstOrNull()?.let { Text(it.peer.deviceName, style = MaterialTheme.typography.titleSmall) }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("Automatic clipboard sharing", Modifier.weight(1f))
-            Switch(checked = owner.automatic, onCheckedChange = owner::setAutomaticEnabled, enabled = owner.selected != null)
-        }
+        AutomaticConnectionToggle(checked = owner.automatic, enabled = owner.selected != null,
+            onCheckedChange = owner::setAutomaticEnabled, label = "Automatic clipboard sharing")
         if (showHistory) HistoryPreference(owner.history)
     }
 }
@@ -62,10 +67,16 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
             val available = peer?.let(owner::supports) == true
             if (peer != null && !available) Text(if (owner.connected(peer)) "Clipboard unavailable on this device" else "Connect first")
             if (owner.status != "Ready to share text" && (available || owner.busy)) Text(owner.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = { owner.send(); sensitiveSample = owner.preview?.takeIf { it.sensitive }; confirming = sensitiveSample != null }, enabled = available && !owner.busy) { Text("Send clipboard") }
+            OutlinedButton(onClick = { owner.send(); sensitiveSample = owner.preview?.takeIf { it.sensitive }; confirming = sensitiveSample != null }, enabled = available && !owner.busy,
+                shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = Modifier.heightIn(min = 48.dp)) {
+                Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Send clipboard")
+            }
             if (owner.busy) TextButton(onClick = owner::cancel) { Text("Cancel send") }
             TextButton(onClick = { more = !more; if (!more) { pasted = ""; reveal = false; owner.clearPreview() } }) { Text(if (more) "More options ▴" else "More options ▾") }
             if (more) {
+                ClipboardTileSetup()
                 OutlinedButton(onClick = owner::inspect, enabled = !owner.busy) { Text("Inspect clipboard") }
                 owner.preview?.let { sample ->
                     Text("${sample.text.toByteArray(Charsets.UTF_8).size} bytes · ${if (sample.sensitive) "Sensitive text" else "Plain text"}", style = MaterialTheme.typography.bodySmall)
@@ -76,7 +87,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
                 if (pasted.isNotEmpty()) OutlinedButton(onClick = { owner.send(pasted = pasted); pasted = "" }, enabled = available && !owner.busy) { Text("Send pasted text") }
             }
             TextButton(onClick = { how = !how }) { Text(if (how) "How sharing works ▴" else "How sharing works ▾") }
-            if (how) Text("Manual sharing works with automatic sharing off. For text or links in another app, use Share → Send to Mac (aniCe icon). Text-selection menus also work where supported. A small sending panel opens; connect your Mac first.\n\nFor automatic sharing, enable it on both devices, copy text, then open aniCe. Android reads copied text only while aniCe has focus. Received text replaces your clipboard, including in the background. Optional history stays on this device.", style = MaterialTheme.typography.bodySmall)
+            if (how) Text("Manual sharing works with automatic sharing off. For text or links in another app, use Share → Send to Mac (aniCe icon). Text-selection menus also work where supported. For copied text, use the Send to Mac Quick Settings tile and tap Send in its small panel. Add the tile from More options. Connect your Mac first.\n\nFor automatic sharing, enable it on both devices, copy text, then open aniCe. Android reads copied text only while aniCe has focus. Received text replaces your clipboard, including in the background. Home shows the latest successful clipboard activity for five minutes with a short preview and local Copy for eligible text. Optional history stays on this device, organized by date with the latest items first.", style = MaterialTheme.typography.bodySmall)
         }
     }
     if (confirming) AlertDialog(onDismissRequest = { confirming = false; sensitiveSample = null; owner.clearPreview() }, title = { Text("Send sensitive text?") },
@@ -88,10 +99,8 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
 @Composable
 private fun HistoryPreference(history: ClipboardHistory) {
     var confirm by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Text("Keep clipboard history", Modifier.weight(1f))
-        Switch(checked = history.enabled, onCheckedChange = { if (it) confirm = true else history.setKeepingHistory(false) })
-    }
+    AutomaticConnectionToggle(checked = history.enabled, enabled = true,
+        onCheckedChange = { if (it) confirm = true else history.setKeepingHistory(false) }, label = "Keep clipboard history")
     history.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("Keep clipboard history?") },
         text = { Text("Save the latest 20 text items on this device across restarts. Recognized sensitive text is excluded. Turning this off deletes saved history.") },
@@ -100,25 +109,41 @@ private fun HistoryPreference(history: ClipboardHistory) {
 }
 
 @Composable
-private fun ClipboardHistoryView(owner: ClipboardController) {
+internal fun ClipboardHistoryView(owner: ClipboardController) {
     val history = owner.history
     var clear by remember { mutableStateOf(false) }
     HistoryPreference(history)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("${history.entries.size} of 20 · Saved on this device", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (history.entries.isNotEmpty()) TextButton(onClick = { clear = true }) { Text("Clear all") }
+    }
     if (owner.status != "Ready to share text") Text(owner.status, style = MaterialTheme.typography.bodySmall)
     if (owner.busy) TextButton(onClick = owner::cancel) { Text("Cancel send") }
     if (history.entries.isEmpty()) Text(if (history.enabled) "No clipboard history yet" else "Enable history to keep text on this device", style = MaterialTheme.typography.bodyMedium)
     else {
-        TextButton(onClick = { clear = true }) { Text("Clear all") }
-        history.entries.forEach { entry ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(entry.text.take(240), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${if (entry.origin == "mac") "From Mac" else "From phone"} · ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(entry.timestamp))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { owner.copyHistory(entry) }) { Text("Copy") }
-                    TextButton(onClick = { owner.sendHistory(entry) }, enabled = owner.selected?.let(owner::supports) == true && !owner.busy) { Text("Send") }
-                    TextButton(onClick = { history.delete(entry.id) }) { Text("Delete") }
+        val zone = ZoneId.systemDefault()
+        val days = history.entries.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
+        days.keys.sortedDescending().forEach { day ->
+            Text(day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)), style = MaterialTheme.typography.titleSmall)
+            days.getValue(day).forEach { entry ->
+                key(entry.id) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(entry.text.take(240), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        Text("${if (entry.origin == "mac") "From Mac" else "From phone"} · ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(entry.timestamp))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { owner.copyHistory(entry) }) {
+                                Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp)); Text("Copy")
+                            }
+                            TextButton(onClick = { owner.sendHistory(entry) }, enabled = owner.selected?.let(owner::supports) == true && !owner.busy) {
+                                Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp)); Text("Send")
+                            }
+                            TextButton(onClick = { history.delete(entry.id) }) { Text("Delete") }
+                        }
+                    }
+                    HorizontalDivider()
                 }
-                HorizontalDivider()
             }
         }
     }

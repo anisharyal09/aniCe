@@ -10,7 +10,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
-- Clipboard now includes Android Send to Mac actions for selected and shared text or URLs, simpler native sharing controls and optional persistent local history on both devices.
+- Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
 
 - Strict local verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) prove the gate rejects those false-success shapes. No CI workflow is added.
 - `--check` drift verification for every independent vector generator (clipboard, transfer, media, find-device, identity, pairing, session handshake/control/record, LAN framing, bulk probe and LAN transfer). Identity checking compares all non-randomized fields and verifies committed signatures with OpenSSL.

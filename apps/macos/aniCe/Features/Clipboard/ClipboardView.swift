@@ -7,6 +7,7 @@ struct ClipboardSettingsView: View {
   let model: MacClipboardModel
   let peers: [PeerTrustRecord]
   var showHistory = true
+  @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       if peers.isEmpty { Text("Pair a device to share your clipboard.").foregroundStyle(.secondary) }
@@ -15,7 +16,8 @@ struct ClipboardSettingsView: View {
           model.select(peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == value }?.peer)
         })) { ForEach(peers) { record in Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint) } }
       } else if let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
-      Toggle("Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) })).disabled(model.selected == nil)
+      Toggle("Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
+        .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
       if showHistory { HistoryPreference(history: model.history) }
       ClipboardAccessGuidance(model: model)
     }
@@ -40,6 +42,7 @@ private struct HistoryPreference: View {
   @State private var confirming = false
   var body: some View {
     Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
+      .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
       .alert("Keep clipboard history?", isPresented: $confirming) {
         Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
       } message: { Text("Save the latest 20 text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off deletes saved history.") }
@@ -53,8 +56,6 @@ struct ClipboardView: View {
   @State private var more = false
   @State private var reveal = false
   @State private var pasted = ""
-  @State private var confirming = false
-  @State private var sensitiveSample: ClipboardSample?
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }.pickerStyle(.segmented).labelsHidden()
@@ -65,7 +66,7 @@ struct ClipboardView: View {
         if let peer = model.selected, !available { Text(model.connected(peer) ? "Clipboard unavailable on this device" : "Connect first").font(.callout) }
         if model.status != "Ready to share text" && (available || model.busy) { Text(model.status).font(.caption).foregroundStyle(.secondary) }
         HStack {
-          Button("Send clipboard") { model.send(); sensitiveSample = model.preview?.sensitive == true ? model.preview : nil; confirming = sensitiveSample != nil }.disabled(model.busy || !available)
+          ClipboardSendButton(model: model)
           if model.busy { Button("Cancel send") { model.cancel() } }
         }
         DisclosureGroup("More options", isExpanded: $more) {
@@ -82,14 +83,10 @@ struct ClipboardView: View {
           }.padding(.top, 8)
         }
         DisclosureGroup("How sharing works") {
-          Text("Manual sharing works with automatic sharing off. From another Android app, use Share → Send to Mac for text or links, or select text and choose Send to Mac where offered. The Mac must already be connected.\n\nFor automatic sharing, enable it on both devices. Android shares copies while aniCe has focus; copy text and open aniCe. Incoming text replaces the receiving clipboard, including while the phone app is in the background. Optional history stays on each device.").font(.caption).foregroundStyle(.secondary)
+          Text("Manual sharing works with automatic sharing off. From another Android app, use Share → Send to Mac for text or links, or select text and choose Send to Mac where offered. For text already copied on the phone, its Send to Mac Quick Settings tile opens an explicit sending panel. The Mac must already be connected.\n\nFor automatic sharing, enable it on both devices. Android shares copies while aniCe has focus; copy text and open aniCe. Incoming text replaces the receiving clipboard, including while the phone app is in the background. Recent activity offers a short preview and local Copy for eligible text. Optional history stays on each device, organized by date with the latest items first.").font(.caption).foregroundStyle(.secondary)
         }
       }
     }
-    .alert("Send sensitive text?", isPresented: $confirming) {
-      Button("Send") { if let sensitiveSample { model.sendConfirmed(sensitiveSample) }; sensitiveSample = nil }
-      Button("Cancel", role: .cancel) { sensitiveSample = nil; model.clearPreview() }
-    } message: { Text("This clipboard is marked sensitive. Send it to \(model.selected?.deviceName ?? "the selected device")?") }
     .onChange(of: model.preview?.text) { _, _ in reveal = false }
     .onChange(of: historyTab) { _, _ in clearContent() }
     .onChange(of: more) { _, value in if !value { clearContent() } }
@@ -99,34 +96,109 @@ struct ClipboardView: View {
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshAccess() }
     .onDisappear { clearContent() }
   }
-  private func clearContent() { pasted = ""; reveal = false; sensitiveSample = nil; confirming = false; model.clearPreview() }
+  private func clearContent() { pasted = ""; reveal = false; model.clearPreview() }
 }
-private struct ClipboardHistoryView: View {
+
+// Both entry points confirm the exact captured item, never a later pasteboard read.
+struct ClipboardSendButton: View {
+  let model: MacClipboardModel
+  @State private var sensitiveSample: ClipboardSample?
+  var body: some View {
+    Button {
+      model.send(); sensitiveSample = model.preview?.sensitive == true ? model.preview : nil
+    } label: { Label("Send clipboard", systemImage: "doc.on.clipboard") }
+      .buttonStyle(.bordered).controlSize(.small)
+      .disabled(model.busy || model.selected.map(model.supports) != true)
+      .alert("Send sensitive text?", isPresented: Binding(get: { sensitiveSample != nil }, set: { if !$0 { sensitiveSample = nil } }), presenting: sensitiveSample) { captured in
+        Button("Send") { model.sendConfirmed(captured); sensitiveSample = nil }
+        Button("Cancel", role: .cancel) { sensitiveSample = nil; model.clearPreview() }
+      } message: { _ in Text("This clipboard is marked sensitive. Send it to \(model.selected?.deviceName ?? "the selected device")?") }
+      .onChange(of: model.selected.map { $0.deviceId + ":" + $0.fingerprint }) { _, _ in sensitiveSample = nil }
+      .onChange(of: model.preview == nil) { _, empty in if empty { sensitiveSample = nil } }
+      .onDisappear { sensitiveSample = nil; model.clearPreview() }
+  }
+}
+
+struct ClipboardActivityView: View {
+  let model: MacClipboardModel
+  var compact = false
+  let open: () -> Void
+  @Environment(\.colorScheme) private var scheme
+  @State private var copyStatus: String?
+  var body: some View {
+    if let item = model.recent {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Button(action: open) { HStack { Text("Clipboard"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) } }
+            .buttonStyle(.plain).font(.headline).accessibilityLabel("Open Clipboard")
+          Spacer()
+          Button { model.dismissActivity(item.id) } label: { Image(systemName: "xmark") }
+            .buttonStyle(.plain).accessibilityLabel("Dismiss clipboard activity")
+        }
+        ViewThatFits(in: .horizontal) {
+          HStack { origin(item); Text(item.timestamp, format: .dateTime.hour().minute()); direction(item) }
+          VStack(alignment: .leading) { origin(item); HStack { Text(item.timestamp, format: .dateTime.hour().minute()); direction(item) } }
+        }.font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        if let preview = item.textPreview { Text(preview).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading) }
+        else { Text("Preview hidden for marked clipboard items").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
+        if item.sample != nil {
+          Button { copyStatus = model.copyActivity(item.id) ? "Copied" : "Could not copy" } label: { Label(copyStatus ?? "Copy", systemImage: "doc.on.doc") }
+            .buttonStyle(.borderless).controlSize(.small)
+        }
+      }
+      .padding(compact ? 0 : 16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(compact ? Color.clear : AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
+      .onChange(of: item.id) { _, _ in copyStatus = nil }
+    }
+  }
+  private func origin(_ item: ClipboardActivity) -> Text { Text(item.received ? "From phone" : "From Mac") }
+  private func direction(_ item: ClipboardActivity) -> Text { Text(item.received ? "Received" : "Sent to phone") }
+}
+struct ClipboardHistoryView: View {
   let model: MacClipboardModel
   @State private var clearing = false
+  @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HistoryPreference(history: model.history)
+      HStack {
+        Text("\(model.history.entries.count) of 20 · Saved on this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        Spacer()
+        if !model.history.entries.isEmpty { Button("Clear all") { clearing = true }.buttonStyle(.borderless).controlSize(.small) }
+      }
       if model.status != "Ready to share text" { Text(model.status).font(.caption).foregroundStyle(.secondary) }
       if model.busy { Button("Cancel send") { model.cancel() } }
       if model.history.entries.isEmpty { Text(model.history.enabled ? "No clipboard history yet" : "Enable history to keep text on this Mac").foregroundStyle(.secondary) }
       else {
-        Button("Clear all") { clearing = true }
-        ForEach(model.history.entries) { entry in
-          VStack(alignment: .leading, spacing: 4) {
-            Text(String(entry.text.prefix(240))).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-            HStack { Text(entry.origin == "mac" ? "From Mac" : "From phone"); Text(entry.timestamp, format: .dateTime.month().day().hour().minute()) }.font(.caption).foregroundStyle(.secondary)
-            HStack {
-              Button("Copy") { model.copyHistory(entry) }
-              Button("Send") { model.sendHistory(entry) }.disabled(model.busy || model.selected.map(model.supports) != true)
-              Button("Delete", role: .destructive) { model.history.delete(entry.id) }
+        let days = Dictionary(grouping: model.history.entries) { Calendar.current.startOfDay(for: $0.timestamp) }
+        ForEach(days.keys.sorted(by: >), id: \.self) { day in
+          Text(day, format: .dateTime.year().month().day()).font(.subheadline.weight(.medium))
+          ForEach(days[day] ?? []) { entry in
+            VStack(alignment: .leading, spacing: 6) {
+              Text(String(entry.text.prefix(240))).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+              ViewThatFits(in: .horizontal) {
+                HStack { metadata(entry); Spacer(); actions(entry) }
+                VStack(alignment: .leading, spacing: 4) { metadata(entry); HStack { actions(entry) } }
+              }.buttonStyle(.borderless).controlSize(.small)
             }
+            .padding(.vertical, 8)
+            Divider()
           }
-          Divider()
         }
       }
       if model.history.error != nil && model.history.entries.isEmpty { Button("Clear history") { model.history.clear() } }
     }
     .confirmationDialog("Clear clipboard history?", isPresented: $clearing) { Button("Clear all", role: .destructive) { model.history.clear() }; Button("Cancel", role: .cancel) {} } message: { Text("Delete all saved text on this Mac.") }
+  }
+  private func metadata(_ entry: ClipboardHistoryEntry) -> some View {
+    HStack { Text(entry.origin == "mac" ? "From Mac" : "From phone"); Text(entry.timestamp, format: .dateTime.hour().minute()) }
+      .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+  }
+  @ViewBuilder private func actions(_ entry: ClipboardHistoryEntry) -> some View {
+    Button { model.copyHistory(entry) } label: { Label("Copy", systemImage: "doc.on.doc") }
+    Button { model.sendHistory(entry) } label: { Label("Send", systemImage: "paperplane") }
+      .disabled(model.busy || model.selected.map(model.supports) != true)
+    Button(role: .destructive) { model.history.delete(entry.id) } label: { Label("Delete", systemImage: "trash") }
   }
 }

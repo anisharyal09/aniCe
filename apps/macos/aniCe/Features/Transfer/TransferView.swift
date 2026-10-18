@@ -120,7 +120,8 @@ struct TransferView: View {
       } label: {
         Label("Send files…", systemImage: "arrow.up.circle")
       }
-      .buttonStyle(.borderedProminent)
+      .buttonStyle(.bordered)
+      .controlSize(.small)
       .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
     }
   }
@@ -349,11 +350,11 @@ struct TransferView: View {
           .buttonStyle(.borderedProminent)
           .controlSize(.small)
         } else if !model.receiving {
-          Button("Send more…") {
+          Button {
             model.dismiss()
             promptAndSendFiles()
-          }
-          .buttonStyle(.borderedProminent)
+          } label: { Label("Send more…", systemImage: "arrow.up.circle") }
+          .buttonStyle(.bordered)
           .controlSize(.small)
           .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
         }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents an automatic connection preference as one accessible row with a compact native checkbox.
+// Presents a labeled preference as one accessible row with a compact native checkbox.
 package io.github.anisharyal09.anice.ui
 
 import io.github.anisharyal09.anice.ui.theme.selectionAccent

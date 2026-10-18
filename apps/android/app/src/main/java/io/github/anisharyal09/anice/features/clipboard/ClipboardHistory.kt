@@ -77,6 +77,7 @@ class ClipboardHistory(private val storage: ClipboardHistoryStorage? = null, dis
     private var recording = false
     private var preferenceRevision = 0
     var onChanged: () -> Unit = {}
+    // A delayed startup read must not overwrite a newer consent or identity-reset request.
     init { command { val saved = withContext(Dispatchers.IO) { storage?.load() }; if (preferenceRevision == 0) { enabled = saved != null; entries = saved ?: emptyList() }; onChanged() } }
     private fun command(block: suspend () -> Unit) { scope.launch { lock.withLock {
         try { block(); error = null } catch (_: java.io.IOException) { error = "Could not update clipboard history. Clear history or try again." }
@@ -97,6 +98,7 @@ class ClipboardHistory(private val storage: ClipboardHistoryStorage? = null, dis
     }
     fun record(sample: ClipboardSample, origin: String, credential: String? = null) {
         if (!enabled || sample.sensitive || sample.excluded || !validHistoryText(sample.text)) return
+        // Bound pending content independently of the saved inventory while disk IO is stalled.
         if (captures.size == 20) captures.removeFirst()
         captures.addLast(Capture(sample, origin, credential))
         if (recording) return
