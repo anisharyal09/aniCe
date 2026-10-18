@@ -19,6 +19,7 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented; physical acceptance pending | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented; physical acceptance pending | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
+| **SMS Relay** | `1` | Implemented; physical acceptance pending | [`sms/README.md`](sms/README.md) | Provider thread/history reads, live SMS events and replies inside secured DATA |
 | **File Transfer** | `1` | Implemented; acceptance pending | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---
@@ -172,3 +173,7 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## Clipboard
 
 [Clipboard v1](clipboard/README.md) defines bounded text fragments, per-peer automatic consent, live-process idempotent application and one cross-transport retry. [CDDL](clipboard/clipboard.cddl) and [independent fixtures](test-vectors/clipboard/clipboard-vectors.json) specify canonical DATA messages.
+
+## SMS Relay
+
+[SMS relay v1](sms/README.md) defines provider thread and paged history reads, live `SMS_RECEIVED` events with capability gating and `messageResult` acknowledgement, and Mac-composed replies reassembled by Android before SMS submission. [CDDL](sms/sms.cddl) and [independent fixtures](test-vectors/sms/sms-vectors.json) specify canonical DATA messages; history is ordered by `(dateMillis DESC, messageId DESC)` with byte-wise lexical messageId comparison and live/provider copies merge by content key.

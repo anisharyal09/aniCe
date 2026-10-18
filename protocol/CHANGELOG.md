@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- SMS relay v1 deterministic CBOR capability, thread-list, paged history, live message-stream, reply and result messages, with capability gating, `messageResult` acknowledgement for live streams only, byte-wise lexical messageId cursor ties and content-key live/provider deduplication; 118 independent fixtures (45 valid, 73 invalid).
+
 - Clipboard v1 deterministic CBOR capabilities, receive settings, bounded text assembly, ordered item identities, terminal deduplication and one safe cross-transport retry, with independent positive/negative fixtures.
 
 - Activated the reserved Local File Transfer `resume` (10) and `status` (11) messages for in-memory pause/resume after a channel change. Either side can initiate a resume: the sender proposes its acknowledged offset, or the receiver proposes the prefix it retains when the user explicitly continues over Bluetooth; the receiving side validates the offset and prefix hash and answers with states 0–4. A live LAN that becomes capable during a BLE stream runs the same handshake and upgrades the active stream in place. The verified partial is retained for 15 minutes and a resume at the final length replays the verified file result. CDDL, framing, bounds and fixture bytes are unchanged.

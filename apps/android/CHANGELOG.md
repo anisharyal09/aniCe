@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Messages relays incoming SMS to the Mac over the secured session and answers Mac requests for conversation lists, paged history and replies. The panel requests RECEIVE_SMS (live), READ_SMS (conversations/history) and SEND_SMS (replies) separately, explains Android 13+ restricted settings after a permanent denial and reports unread counts and skipped rows. Reads use the conversations view with recipient resolution and fall back to the newest direct `content://sms`/`content://mms` row per thread; history pages filter by timestamp in SQL and apply the byte-wise messageId tie-break in memory. A manifest `SMS_RECEIVED` receiver parses PDUs (multipart combination, NUL sanitization, deterministic `live:` IDs), live events are queued in memory for up to ten minutes without a channel, and replies are sent as multipart SMS on the default subscription after every part's `sentIntent` reports success.
+
 - Send to Mac through supported text-selection menus, the text Share sheet and a Quick Settings tile with a compact screen-and-arrow icon. The tile uses native placement setup, one focused capture and sensitive-text confirmation. Clipboard retains Share/History views, with optional device-local history limited to 20 items, date groups, source-device labels and Copy/Send/Delete controls. Home shows the latest successful clipboard activity for five minutes with an eligible-text preview and local Copy.
 
 - Strict local verification gate for the shared JVM/Android checks. It parses JUnit reports and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips; shared vector generators now support `--check` drift validation.

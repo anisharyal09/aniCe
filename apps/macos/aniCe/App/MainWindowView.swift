@@ -16,6 +16,8 @@ struct MainWindowView: View {
   let clipboard: MacClipboardModel
   let findDevice: MacFindDeviceModel
   let findNotifier: MacFindDeviceNotifier?
+  let sms: MacSmsModel
+  let smsPreferences: SmsPreferences
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
@@ -49,8 +51,8 @@ struct MainWindowView: View {
         switch navigation.destination {
         case .home: homeContent
         case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
-        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
+        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
+        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
         case .about: aboutContent
         case .settings: settingsContent
 

@@ -138,6 +138,8 @@ if navigation.settingsRoute == .identity {
               Divider().padding(.vertical, 12)
               ClipboardSettingsView(model: clipboard, peers: pairing.peers).padding(.horizontal, 24)
               Divider().padding(.vertical, 12)
+              SmsSettingsView(preferences: smsPreferences, peers: pairing.peers).padding(.horizontal, 24)
+              Divider().padding(.vertical, 12)
               Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
                 .padding(.horizontal, 24)
               Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network. Enable this on both devices.")

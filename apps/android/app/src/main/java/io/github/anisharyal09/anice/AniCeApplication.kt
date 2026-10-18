@@ -97,6 +97,14 @@ class AniCeApplication : Application() {
         ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
     }
     val clipboard get() = clipboardOwner.value
+    private val smsOwner = lazy {
+        io.github.anisharyal09.anice.features.sms.SmsController(
+            store = io.github.anisharyal09.anice.features.sms.AndroidSmsStore(this),
+            sender = io.github.anisharyal09.anice.features.sms.AndroidSmsSender(this),
+            permissions = { name -> androidx.core.content.ContextCompat.checkSelfPermission(this, name) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
+    }
+    val sms get() = smsOwner.value
     val findDeviceNotification by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceNotification(this) }
     val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
@@ -111,6 +119,7 @@ class AniCeApplication : Application() {
             it.register(transfer)
             it.register(findDevice)
             it.register(clipboard)
+            it.register(sms)
         }
     }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()
@@ -124,6 +133,9 @@ class AniCeApplication : Application() {
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
         nowPlaying.invalidate()
+        if (smsOwner.isInitialized()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { sms.invalidate() }
+        }
         if (clipboardOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 clipboard.invalidate()

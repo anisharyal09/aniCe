@@ -1,0 +1,35 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Defines bounded SMS relay messages carried by secured DATA records.
+sms = ["aniCe sms", 1, (capability / threadRequest / threadRecord / threadDone / historyRequest / messageBegin / messageFragment / messageCommit / messageResult / historyDone / sendBegin / sendFragment / sendCommit / sendResult)]
+capability = (1, [24576, 8, 50, 50])
+threadRequest = (2, [uuid])
+threadRecord = (3, [uuid, threadId, address, snippet, dateMillis, unreadCount])
+threadDone = (4, [uuid, result])
+historyRequest = (5, [uuid, threadId, cursorMillis, cursorMessageId, limit])
+messageBegin = (6, [streamId, requestId, messageId, threadId, address, dateMillis, direction, unread, totalBytes, fragmentCount, sha256])
+messageFragment = (7, [streamId, 0..7, bytes])
+messageCommit = (8, [streamId])
+messageResult = (9, [streamId, result])
+historyDone = (10, [uuid, result, cursorMillis, cursorMessageId])
+sendBegin = (11, [uuid, threadId, address, totalBytes, fragmentCount, sha256])
+sendFragment = (12, [uuid, 0..7, bytes])
+sendCommit = (13, [uuid])
+sendResult = (14, [uuid, result, messageId / "", dateMillis])
+requestId = uuid / ""
+streamId = uuid
+uuid = tstr .regexp "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+threadId = tstr .size (1..80)
+address = tstr .size (1..64)
+snippet = tstr .size (0..160)
+messageId = tstr .regexp "(sms|mms):[0-9]{1,19}|live:[0-9a-f]{32}"
+cursorMessageId = messageId / ""
+dateMillis = 0..9007199254740991
+unreadCount = 0..9007199254740991
+cursorMillis = 0..9007199254740991
+totalBytes = 1..24576
+fragmentCount = 1..8
+sha256 = bstr .size 32
+bytes = bstr .size (1..3072)
+direction = 0..1
+result = 0..6
+limit = 1..50

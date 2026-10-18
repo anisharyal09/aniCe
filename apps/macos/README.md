@@ -8,7 +8,7 @@ Opt-in Connect automatically shares nearby admission, allowed-phone selection an
 
 ## Development version and verification
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device and text Clipboard are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -23,6 +23,7 @@ aniCe/
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
     FindDevice/                Peer ring request actions, sound player and notification setup
     NowPlaying/                Playback model, native bridge, session link, codecs and views
+    Sms/                       SMS relay model, wire codec, notifier and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
     Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
   Infrastructure/
@@ -39,6 +40,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   Clipboard/                   Clipboard model, debounce and wire codec test suites
   FindDevice/                  Find device payload and state transition test suites
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+  Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
 IdentityInterchange/           Native test-only signature endpoint
 SessionInterchange/            Native test-only session/TCP endpoints
@@ -106,6 +108,10 @@ Debug/Release disable App Sandbox for the whole app. Journals retain their exist
 ## Find Device
 
 Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.
+
+## Messages (SMS relay)
+
+Features → Messages relays incoming SMS to notifications with an inline reply and reads the phone's conversations and history on demand without storing them. Per-phone **Show message text in notifications** is off by default; a failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for provider paging limits and the notification-preview preference.
 
 ## Clipboard
 

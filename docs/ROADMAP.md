@@ -8,7 +8,7 @@
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
 | **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
-| **Application continuity** | Now Playing, File Transfer, Find Device and text Clipboard implemented; native UI overhaul in 0.2.0-dev. | In progress |
+| **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard and Android→Mac SMS relay implemented; native UI overhaul in 0.2.0-dev. | In progress |
 
 Manual feature/UI tests, physical transfer measurements, native ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current milestone: 0.2.0-dev, build 2.
 
@@ -44,9 +44,15 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 
 - **Find Device:** Native peer alerts, Android alarm playback with Stop and sixty-second expiry, Mac notifications and explicit notification setup. Samsung native ringing/Stop/timeout checks pass. See [Find Device](features/FIND_DEVICE.md).
 
+- **Messages (SMS relay):** Incoming SMS becomes a Mac notification with an inline reply, and the Mac reads the phone's conversations and history on demand over the secured session without storing content. See [Messages](features/SMS.md) and the [SMS Contract](../protocol/sms/README.md).
+
 - **Native UI:** Dedicated feature panels, Favourites and About, compact phone Home, direct transport controls in Devices, accessible disclosure labels and responsive Mac activity panels.
 
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.
+
+## Messages (SMS relay)
+
+[Messages](features/SMS.md) relays incoming SMS to Mac notifications and lets the Mac read provider conversations and history and reply. Relay needs Android SMS permissions (RECEIVE_SMS live, READ_SMS history, SEND_SMS replies), an active secured session and the Mac app running; nothing is stored on the Mac or replayed after process death. RCS, MMS send, group MMS content, attachments, contacts resolution and per-reply SIM selection are excluded in v1.
 
 ## Text Clipboard
 

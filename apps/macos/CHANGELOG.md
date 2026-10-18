@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Messages relays incoming SMS from the paired phone to native notifications with an inline Reply action and an on-demand conversation list, history and composer. Message text stays hidden in banners until **Show message text in notifications** is enabled per phone in Settings → Messages; a failed or unconfirmed reply posts a follow-up alert, replies fast-fail without a live channel, and one notification is posted per previously unknown live message. Provider history merges over matching live copies by normalized address, body digest and a ±5-second tolerance, pages continue from the last completed cursor, and SMS content is never written to disk or logged.
+
 - Compact Clipboard Share/History views and optional device-local history with 20 retained items, source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.
 
 - Replaced the transfer-ordering test that reimplemented compact/none-connected ordering locally with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback. The strict local verification gate now cross-checks hosted-suite result bundles against `xcodebuild` test-case lines and rejects zero-test runs, failures, crashes and undocumented skips.

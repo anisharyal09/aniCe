@@ -8,7 +8,7 @@ Automatic nearby recovery uses an OS-bound companion lease and one device settin
 
 ## Development version and verification
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device and text Clipboard are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -25,6 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
+        sms/                        SMS store, PDU parser, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/
         connections/                BLE/LAN owners, nearby policy and DATA dispatch
@@ -110,6 +111,10 @@ Home → Files and Features → Send files provide file transfer controls, incom
 ## Find Device
 
 Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.
+
+## Messages (SMS relay)
+
+Features → Messages relays incoming SMS to the Mac, reads conversations and history on demand and sends replies from the Mac over the secured session. RECEIVE_SMS covers live relay, READ_SMS conversations and history, and SEND_SMS replies; each missing permission is reported separately and permanent denial links to App info for Android 13+ restricted settings. SMS permissions are Play-restricted and this build is sideloaded. See [Messages](../../docs/features/SMS.md) for the provider fallbacks, paging limits and permission handling.
 
 ## Clipboard
 

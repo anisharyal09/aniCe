@@ -45,6 +45,9 @@ import AppKit
   func resumeSessionAdvertising() { resumes += 1 }
   func tickSessionTransport() throws {}
 }
+@MainActor private final class VisualSmsNotifier: SmsNotifying {
+  func post(_ note: SmsNotification) async {}
+}
 @MainActor private final class VisualFindNotifier: FindDeviceNotifying {
   var posts = 0
   func post(identifier: String, peerName: String) async -> FindResult { posts += 1; return .failed }
@@ -196,7 +199,8 @@ import AppKit
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
             discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
-            transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil, navigation: navigation)
+            transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
+            sms: MacSmsModel(notifier: VisualSmsNotifier()), smsPreferences: SmsPreferences(storage: nil), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: 800)
@@ -219,7 +223,7 @@ import AppKit
         }
       }
     }
-    XCTAssertEqual(renders, 40)
+    XCTAssertEqual(renders, 44)
     XCTAssertFalse(radio.started)
     XCTAssertTrue(radio.sent.isEmpty)
     XCTAssertFalse(lan.allowing)

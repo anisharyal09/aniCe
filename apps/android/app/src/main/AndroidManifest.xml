@@ -18,6 +18,10 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
     <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE" />
     <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
@@ -44,6 +48,11 @@
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
         <receiver android:name=".features.media.MediaActionReceiver" android:exported="false" />
+        <receiver android:name=".features.sms.SmsReceiver" android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter><action android:name="android.provider.Telephony.SMS_RECEIVED" /></intent-filter>
+        </receiver>
+        <receiver android:name=".features.sms.SmsStatusReceiver" android:exported="false" />
         <service android:name=".features.transfer.TransferService" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <service android:name=".features.finddevice.FindDeviceRingService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <receiver android:name=".features.finddevice.FindDeviceDismissReceiver" android:exported="false" />

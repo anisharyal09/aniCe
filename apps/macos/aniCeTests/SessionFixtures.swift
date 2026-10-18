@@ -23,6 +23,7 @@ struct SessionFixtures {
       repoUrl.appendingPathComponent("transfer/\(name).json"),
       repoUrl.appendingPathComponent("media/\(name).json"),
       repoUrl.appendingPathComponent("lan/\(name).json"),
+      repoUrl.appendingPathComponent("sms/\(name).json"),
     ].compactMap { $0 }
     guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
       throw SessionFailure.malformed
