@@ -6,4 +6,9 @@
         <item name="android:windowBackground">#F4F3EF</item>
         <item name="android:colorAccent">#355B70</item>
     </style>
+    <style name="Theme.AniCe.ClipboardAction" parent="android:style/Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:windowCloseOnTouchOutside">false</item>
+        <item name="android:windowMinWidthMajor">85%</item>
+        <item name="android:windowMinWidthMinor">85%</item>
+    </style>
 </resources>

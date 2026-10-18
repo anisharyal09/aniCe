@@ -91,8 +91,9 @@ class AniCeApplication : Application() {
 
     private val clipboardOwner = lazy {
         io.github.anisharyal09.anice.features.clipboard.ClipboardController(
-            io.github.anisharyal09.anice.features.clipboard.AndroidClipboard(this),
-            io.github.anisharyal09.anice.features.clipboard.ClipboardPreferences(getSharedPreferences("clipboard_preferences", MODE_PRIVATE))
+            native = io.github.anisharyal09.anice.features.clipboard.AndroidClipboard(this),
+            history = io.github.anisharyal09.anice.features.clipboard.ClipboardHistory(io.github.anisharyal09.anice.features.clipboard.ClipboardHistoryFile(java.io.File(noBackupFilesDir, "clipboard/history.json"))),
+            preferences = io.github.anisharyal09.anice.features.clipboard.ClipboardPreferences(getSharedPreferences("clipboard_preferences", MODE_PRIVATE))
         ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
     }
     val clipboard get() = clipboardOwner.value
@@ -131,7 +132,7 @@ class AniCeApplication : Application() {
                         try { trustStore.list(identityService.getOrCreateIdentity().identity.fingerprint).map { it.peer } }
                         catch (_: Exception) { null }
                     }
-                    if (peers != null) clipboard.prune(peers) else clipboard.select(null)
+                    if (peers != null) clipboard.prune(peers, confirmedTrust = true) else clipboard.select(null)
                 }
             }
         }

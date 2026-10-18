@@ -82,6 +82,24 @@ import CryptoKit
     return begin
   }
 }
+private struct FailedHistoryStorage: ClipboardHistoryStorage {
+  let entry = ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "preserved", origin: "phone", timestamp: Date(), credential: nil)
+  func load() throws -> [ClipboardHistoryEntry]? { [entry] }
+  func save(_ entries: [ClipboardHistoryEntry]) throws { throw CocoaError(.fileWriteNoPermission) }
+  func delete() throws { throw CocoaError(.fileWriteNoPermission) }
+}
+private struct HeldHistoryStorage: ClipboardHistoryStorage {
+  let phase: Int
+  let entered = DispatchSemaphore(value: 0)
+  let release = DispatchSemaphore(value: 0)
+  func gate() throws { entered.signal(); if release.wait(timeout: .now() + 5) != .success { throw CocoaError(.fileReadUnknown) } }
+  func load() throws -> [ClipboardHistoryEntry]? {
+    if phase == 1 { return nil }; if phase == 0 { try gate() }
+    return [nil, "peer"].map { ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "old", origin: "mac", timestamp: Date(), credential: $0) }
+  }
+  func save(_ entries: [ClipboardHistoryEntry]) throws { if phase == 2 || phase == 1 && !entries.isEmpty { try gate() } }
+  func delete() throws { throw CocoaError(.fileWriteNoPermission) }
+}
 final class ClipboardTests: XCTestCase {
   func testIndependentCanonicalBytesAndInvalidInventory() throws {
     let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "clipboard-vectors", withExtension: "json"))
@@ -302,6 +320,94 @@ final class ClipboardTests: XCTestCase {
     let current = try XCTUnwrap(lan.sent.last { $0.kind == 3 }).text(2)
     _ = await h.owner.handle(try ClipboardMessage.result(current, 0).encode(), on: lan.descriptor)
     try await until { !h.owner.busy }; XCTAssertEqual(h.owner.status, "Clipboard delivered"); h.owner.invalidate()
+  }
+
+  @MainActor func testHistoryPersistenceBoundsExclusionsAndPruning() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let history = ClipboardHistory(storage: file)
+    history.record(ClipboardSample(text: "disabled"), origin: "mac")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: file.url.path))
+    history.setEnabled(true); try await until { history.enabled }
+    for i in 0..<25 { history.record(ClipboardSample(text: "item-\(i)"), origin: i % 2 == 0 ? "phone" : "mac", credential: i % 2 == 0 ? "peer" : nil) }
+    try await until { history.entries.first?.text == "item-24" }; XCTAssertEqual(history.entries.count, 20)
+    history.record(ClipboardSample(text: "item-24"), origin: "phone", credential: "peer")
+    history.record(ClipboardSample(text: "secret", sensitive: true), origin: "mac")
+    history.record(ClipboardSample(text: "generated", excluded: true), origin: "mac")
+    history.record(ClipboardSample(text: String(repeating: "é", count: 32769)), origin: "mac")
+    history.delete(history.entries.last!.id); try await until { history.entries.count == 19 }
+    let reload = ClipboardHistory(storage: file); try await until { reload.enabled }
+    XCTAssertEqual(reload.entries.count, 19); XCTAssertEqual(reload.entries.first?.text, "item-24")
+    XCTAssertFalse(reload.entries.contains { $0.text == "secret" || $0.text == "generated" })
+    history.prune([]); try await until { history.entries.allSatisfy { $0.credential == nil } }
+    history.setEnabled(false); try await until { !FileManager.default.fileExists(atPath: file.url.path) && history.entries.isEmpty }
+  }
+  @MainActor func testHistoryCorruptStorageAndWriteFailureRemainVisible() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("history.json")
+    try Data("invalid".utf8).write(to: url)
+    let history = ClipboardHistory(storage: ClipboardHistoryFile(url: url))
+    try await until { history.error != nil }; XCTAssertFalse(history.enabled)
+    history.clear(); try await until { history.error == nil }; XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    try Data().write(to: directory.appendingPathComponent("blocked"))
+    let blocked = ClipboardHistory(storage: ClipboardHistoryFile(url: directory.appendingPathComponent("blocked/history.json")))
+    blocked.setEnabled(true); try await until { blocked.error != nil }; XCTAssertFalse(blocked.enabled)
+  }
+  @MainActor func testHistoryOnlyObservationAndCopyDoNotSend() async throws {
+    let native = ClipboardNativeFake(), history = ClipboardHistory()
+    let owner = MacClipboardModel(native: native, history: history)
+    history.setEnabled(true); try await until { history.enabled }
+    XCTAssertNotNil(native.observer); XCTAssertFalse(owner.automatic)
+    native.observer?(); try await until { history.entries.count == 1 }
+    owner.copyHistory(history.entries[0]); native.observer?()
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(history.entries.count, 1); XCTAssertFalse(owner.busy)
+    native.automaticAccessAllowed = false; owner.refreshAccess(); XCTAssertNil(native.observer)
+    owner.invalidate(); history.reset()
+  }
+
+  @MainActor func testIncomingHistoryOnlyRecordsAppliedItemsAndRetainsOriginOnCopy() async throws {
+    let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
+    h.owner.history.setEnabled(true); try await until { h.owner.history.enabled }
+    let begin = try await h.receive(c, text: "from phone")
+    try await until { h.owner.history.entries.count == 1 }
+    XCTAssertEqual(h.owner.history.entries[0].origin, "phone")
+    h.owner.copyHistory(h.owner.history.entries[0]); XCTAssertEqual(h.owner.history.entries[0].origin, "phone")
+    _ = await h.owner.handle(try begin.encode(), on: c.descriptor)
+    _ = await h.owner.handle(try ClipboardMessage.id(5, begin.text(2)).encode(), on: c.descriptor)
+    h.native.fail = true; try await h.receive(c, text: "failed", revision: 2)
+    XCTAssertEqual(h.owner.history.entries.map(\.text), ["from phone"])
+    h.owner.prune([]); for _ in 0..<10 { await Task.yield() }; XCTAssertEqual(h.owner.history.entries.count, 1)
+    h.owner.prune([], confirmedTrust: true); try await until { h.owner.history.entries.isEmpty }
+    h.owner.invalidate()
+  }
+  @MainActor func testHistoryFailedWriteAndDeletePreserveRowsAndReportFailure() async throws {
+    let history = ClipboardHistory(storage: FailedHistoryStorage())
+    try await until { history.enabled }
+    history.record(ClipboardSample(text: "new"), origin: "mac")
+    try await until { history.error != nil }; XCTAssertEqual(history.entries.map(\.text), ["preserved"])
+    history.setEnabled(false)
+    try await until { history.error != nil }; XCTAssertFalse(history.enabled); XCTAssertEqual(history.entries.map(\.text), ["preserved"])
+  }
+
+  @MainActor func testResetDuringLoadWriteOrPruneNeverRestoresContentWhenDeletionFails() async throws {
+    for phase in [0, 1, 2] {
+      let storage = HeldHistoryStorage(phase: phase)
+      let held = ClipboardHistory(storage: storage)
+      if phase == 1 {
+        held.setEnabled(true); try await until { held.enabled }
+        held.record(ClipboardSample(text: "old"), origin: "mac")
+      } else if phase == 2 {
+        try await until { held.enabled }; held.prune([])
+      }
+      try await until { storage.entered.wait(timeout: .now()) == .success }
+      held.reset(); storage.release.signal()
+      try await until { held.error != nil }
+      XCTAssertFalse(held.enabled); XCTAssertTrue(held.entries.isEmpty)
+    }
   }
 
 }

@@ -8,7 +8,7 @@ The pairing and transport foundations include P-256 identities, QR and OPAQUE PI
 
 ## Current development milestone
 
-**0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer, Find Device and text Clipboard are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
+**0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer, Find Device and text Clipboard with optional local history and Android sharing actions are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
 
 Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use. Current automated checks pass 265 Android JVM tests; the Mac hosted suite contains 246 tests, of which 243 pass and the three real-player acceptance tests are explicit documented skips when the strict gate enables the isolated Keychain tests. Zero tests fail.
 

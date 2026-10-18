@@ -53,6 +53,8 @@ import Observation
   }
   private let native: any NativeClipboard
   let preferences: ClipboardPreferences
+  let history: ClipboardHistory
+  private var historyToken: String?
   private let now: () -> TimeInterval
   private let wait: @MainActor (TimeInterval) async throws -> Void
   private var links: [String: Link] = [:]
@@ -76,8 +78,10 @@ import Observation
   private(set) var preview: ClipboardSample?
   var onLanRequired: () -> Void = {}
   var automaticAccessAllowed: Bool { native.automaticAccessAllowed }
-  init(native: any NativeClipboard, preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+  init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+    self.history = history
     self.native = native; self.preferences = preferences; self.now = now; self.wait = wait
+    history.onChanged = { [weak self] in self?.updateObservation() }
   }
   func installLifecycle() {
     guard notifications.isEmpty else { return }
@@ -115,26 +119,40 @@ import Observation
   }
   func refreshAccess() { updateObservation() }
   private func updateObservation() {
-    native.observe(!sleeping && automatic && selected.map(supports) == true && native.automaticAccessAllowed) { [weak self] in
+    native.observe(!sleeping && (history.enabled || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
       guard let self, !self.applying else { return }; self.sampleAutomatic()
     }
-    if automatic && !native.automaticAccessAllowed { status = "Allow pasteboard access in System Settings, or paste text below" }
+    if (automatic || history.enabled) && !native.automaticAccessAllowed { status = "Allow pasteboard access in System Settings, or paste text below" }
   }
   private func sampleAutomatic() {
-    guard !sleeping, automatic, native.automaticAccessAllowed, let peer = selected, candidates(peer).contains(where: { $0.remoteAutomatic }), let sample = native.read() else { return }
+    guard !sleeping, native.automaticAccessAllowed, let sample = native.read() else { return }
+    captureLocal(sample)
+    guard automatic, let peer = selected, candidates(peer).contains(where: { $0.remoteAutomatic }) else { return }
     guard sample.token != observedToken else { return }; observedToken = sample.token
     pending = nil
     if preparingAutomatic { sampling += 1; busy = false; preparingAutomatic = false }
     guard !sample.sensitive, !sample.excluded else { return }
     submit(sample, auto: true)
   }
+  private func captureLocal(_ sample: ClipboardSample) {
+    guard history.enabled else { return }
+    guard sample.token.isEmpty || sample.token != historyToken else { return }; historyToken = sample.token
+    history.record(sample, origin: "mac")
+  }
+  func copyHistory(_ entry: ClipboardHistoryEntry) {
+    applying = true
+    status = native.write(entry.text, sensitive: false) ? "Copied" : "Could not copy text"
+    applying = false
+  }
+  func sendHistory(_ entry: ClipboardHistoryEntry) { submit(ClipboardSample(text: entry.text), auto: false) }
   func sendConfirmed(_ sample: ClipboardSample) { submit(sample, auto: false) }
   func clearPreview() { preview = nil }
-  func inspect() { preview = native.read(); if preview == nil { status = "Copy plain text, or paste text below" }; updateObservation() }
-  func send(confirmedSensitive: Bool = false, pasted: String? = nil) {
+  func inspect() { preview = native.read(); if let preview { captureLocal(preview) }; if preview == nil { status = "Copy plain text, or paste text below" }; updateObservation() }
+  func send(pasted: String? = nil) {
     guard let sample = pasted.map({ ClipboardSample(text: $0) }) ?? native.read() else { status = "Copy plain text, or paste text below"; return }
+    captureLocal(sample)
     preview = sample
-    guard !sample.sensitive || confirmedSensitive else { status = "Confirm sending sensitive text"; return }
+    guard !sample.sensitive else { status = "Confirm sending sensitive text"; return }
     submit(sample, auto: false)
   }
   private func submit(_ sample: ClipboardSample, auto: Bool) {
@@ -311,6 +329,7 @@ import Observation
       code = native.write(text!, sensitive: incoming.begin.flag(4)) ? 0 : 5
       applying = false
     }
+    if code == 0, let text { history.record(ClipboardSample(text: text, sensitive: incoming.begin.flag(4)), origin: "phone", credential: k) }
     let responseLink = live(d) ? link : links.values.first { key($0.channel.descriptor.peer) == k && $0.epoch == h.epoch }
     finishIncoming(k, incoming, code, responseLink); return .handled
   }
@@ -332,8 +351,9 @@ import Observation
     schedule()
   }
   func invalidate() { cancel(); native.observe(false) {}; for d in links.values.map({ $0.channel.descriptor }) { retired(d) }; histories.removeAll(); preview = nil; schedule() }
-  func prune(_ peers: [DeviceIdentity]) {
+  func prune(_ peers: [DeviceIdentity], confirmedTrust: Bool = false) {
     preferences.prune(peers)
+    if confirmedTrust { history.prune(Set(peers.map(key))) }
     if let selected, !peers.contains(where: { key($0) == key(selected) }) { select(nil); automatic = false }
   }
   func expire() {

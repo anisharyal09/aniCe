@@ -50,4 +50,4 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 
 ## Text Clipboard
 
-[Clipboard v1](features/CLIPBOARD.md) implements native manual text sharing, opt-in focus-limited Android observation, permission-aware Mac observation and LAN-preferred/BLE-fallback delivery. Physical cross-app paste, background receipt and OS-permission acceptance remain pending.
+[Clipboard](features/CLIPBOARD.md) includes native text sharing, Android selection and Share-sheet actions, optional local history, focus-limited Android observation, permission-aware Mac observation and LAN-preferred/BLE-fallback delivery.

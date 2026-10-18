@@ -7,15 +7,23 @@ import io.github.anisharyal09.anice.infrastructure.connections.*
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.util.UUID
 
+enum class ClipboardSendResult { APPLIED, REJECTED, UNCONFIRMED, CANCELLED, UNAVAILABLE, BUSY, INVALID }
+class ClipboardSendOperation internal constructor() {
+    internal val completion = CompletableDeferred<ClipboardSendResult>()
+    suspend fun result(): ClipboardSendResult = completion.await()
+}
+
 class ClipboardController(
     private val native: NativeClipboard,
     val preferences: ClipboardPreferences = ClipboardPreferences(),
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    val history: ClipboardHistory = ClipboardHistory(dispatcher = dispatcher),
     private val now: () -> Long = android.os.SystemClock::elapsedRealtime,
     private val wait: suspend (Long) -> Unit = { delay(it) },
 ) : FeatureHandler {
@@ -52,11 +60,16 @@ class ClipboardController(
     private val epoch = UUID.randomUUID().toString()
     private var revision = 0L
     private var outgoing: Outgoing? = null
+    private var selectionOperation: ClipboardSendOperation? = null
+    private var selectionJob: Job? = null
+    private var selectionDeadline: Long? = null
     private var pending: ClipboardSample? = null
     private var sampling = 0L
     private var preparingAutomatic = false
     private var timer: Job? = null
     private var observedToken: String? = null
+    init { history.onChanged = { updateObservation() } }
+    private var historyToken: String? = null
     private var applying = false
     private var focused = false
     private var pendingFocusSample = false
@@ -104,15 +117,19 @@ class ClipboardController(
         updateObservation()
     }
     private fun updateObservation() {
-        native.observe(focused && automatic && selected?.let(::supports) == true) { if (!applying) sampleAutomatic() }
+        native.observe(focused && (history.enabled || automatic && selected?.let(::supports) == true)) { if (!applying) sampleAutomatic() }
         if (pendingFocusSample) sampleAutomatic()
     }
     private fun sampleAutomatic() {
-        val peer = selected ?: return
-        if (!focused || !automatic || !candidates(peer).any { it.remoteAutomatic }) return
+        if (!focused) return
+        val peer = selected
+        val sharing = automatic && peer != null && candidates(peer).any { it.remoteAutomatic }
+        if (!history.enabled && !sharing) return
         val sample = native.read()
-        pendingFocusSample = false
+        if (sharing) pendingFocusSample = false
         if (sample == null) return
+        captureLocal(sample)
+        if (!sharing) return
         if (sample.token == observedToken) return
         observedToken = sample.token
         pending = null
@@ -120,21 +137,64 @@ class ClipboardController(
         if (sample.sensitive || sample.excluded) return
         submit(sample, true)
     }
+    private fun captureLocal(sample: ClipboardSample) {
+        if (!history.enabled) return
+        if (sample.token.isNotEmpty() && sample.token == historyToken) return
+        historyToken = sample.token
+        history.record(sample, "phone")
+    }
+    fun copyHistory(entry: ClipboardHistoryEntry) {
+        applying = true
+        try { if (!native.write(entry.text, false)) status = "Could not copy text" else status = "Copied" }
+        finally { applying = false }
+    }
+    fun sendHistory(entry: ClipboardHistoryEntry) { submit(ClipboardSample(entry.text), false) }
+    fun sendSelection(text: String?): ClipboardSendOperation {
+        val operation = ClipboardSendOperation()
+        fun reject(result: ClipboardSendResult): ClipboardSendOperation { operation.completion.complete(result); return operation }
+        if (text == null || !validHistoryText(text)) return reject(ClipboardSendResult.INVALID)
+        history.record(ClipboardSample(text), "phone")
+        if (busy || selectionOperation != null) return reject(ClipboardSendResult.BUSY)
+        val peer = links.values.firstOrNull()?.channel?.descriptor?.peer ?: return reject(ClipboardSendResult.UNAVAILABLE)
+        select(peer)
+        selectionOperation = operation; selectionDeadline = now() + 30000; busy = true
+        selectionJob = scope.launch {
+            try {
+                snapshotFlow { supports(peer) || !connected(peer) }.first { it }
+                if (operation.completion.isCompleted) return@launch
+                if (!connected(peer)) operation.completion.complete(ClipboardSendResult.UNAVAILABLE)
+                else {
+                    busy = false
+                    submit(ClipboardSample(text), false)
+                    if (!busy) operation.completion.complete(ClipboardSendResult.INVALID)
+                }
+                operation.completion.await()
+            }
+            finally { if (selectionOperation === operation) { selectionOperation = null; selectionDeadline = null; selectionJob = null; busy = false; schedule() } }
+        }
+        schedule()
+        return operation
+    }
+    fun cancelSelection(operation: ClipboardSendOperation) {
+        if (selectionOperation === operation) cancel()
+    }
+    private fun completeSelection(result: ClipboardSendResult) { selectionOperation?.completion?.complete(result) }
     fun sendConfirmed(sample: ClipboardSample) { submit(sample, false) }
     fun clearPreview() { preview = null }
-    fun inspect() { preview = native.read(); if (preview == null) status = "Focus aniCe and copy plain text, or paste text below" }
-    fun send(confirmedSensitive: Boolean = false, pasted: String? = null) {
+    fun inspect() { preview = native.read(); preview?.let(::captureLocal); if (preview == null) status = "Focus aniCe and copy plain text, or paste text below" }
+    fun send(pasted: String? = null) {
         val sample = if (pasted != null) ClipboardSample(pasted) else native.read()
         if (sample == null) { status = "Focus aniCe and copy plain text, or paste text below"; return }
+        captureLocal(sample)
         preview = sample
-        if (sample.sensitive && !confirmedSensitive) { status = "Confirm sending sensitive text"; return }
+        if (sample.sensitive) { status = "Confirm sending sensitive text"; return }
         submit(sample, false)
     }
     private fun submit(sample: ClipboardSample, auto: Boolean) {
         val peer = selected ?: return
         if (candidates(peer).none { !auto || it.remoteAutomatic }) { status = "Connect first, or enable automatic sharing on both devices"; return }
         if (busy) { if (auto) pending = sample; return }
-        if (auto && !focused) return
+        if (auto && (!focused || selectionOperation != null)) return
         if (sample.text.isEmpty() || sample.text.indexOf('\u0000') >= 0 || sample.text.length > 65536) { status = "Choose plain text up to 64 KiB"; return }
         busy = true; preparingAutomatic = auto; val generation = ++sampling
         scope.launch {
@@ -147,9 +207,9 @@ class ClipboardController(
             }
             if (generation != sampling || selected?.let(::key) != key(peer) || auto && !automatic) return@launch
             preparingAutomatic = false
-            if (pair == null || pair.first.size !in 1..65536 || revision >= 4294967295L) { busy = false; status = "Choose plain text up to 64 KiB"; return@launch }
+            if (pair == null || pair.first.size !in 1..65536 || revision >= 4294967295L) { busy = false; status = "Choose plain text up to 64 KiB"; completeSelection(ClipboardSendResult.INVALID); return@launch }
             val begin = ClipboardMessage.of(3, Cbor.Text(epoch), Cbor.Integer(++revision), Cbor.Text(UUID.randomUUID().toString()), Cbor.Integer(if (auto) 1 else 0), Cbor.Bool(sample.sensitive), Cbor.Integer(pair.first.size.toLong()), Cbor.Integer((pair.first.size + 3071L) / 3072), Cbor.Bytes(pair.second))
-            val item = Outgoing(peer, begin, pair.first, now() + 30000)
+            val item = Outgoing(peer, begin, pair.first, minOf(now() + 30000, selectionDeadline ?: Long.MAX_VALUE))
             outgoing = item; status = "Sending to ${peer.deviceName}"; onLanRequired()
             item.job = scope.launch { deliver(item) }; schedule()
         }
@@ -229,6 +289,7 @@ class ClipboardController(
             if (outgoing === item) {
                 val code = if (item.result.isCompleted) item.result.await() else null
                 status = when (code) { 0L -> "Clipboard delivered"; 1L -> "Automatic receiving is off on the other device"; 2L -> "Other device is busy"; 3L -> "Newer clipboard item already received"; 4L -> "Newer local copy kept"; 5L -> "Could not write the other clipboard"; 6L -> "Clipboard item rejected"; 7L -> "Clipboard send cancelled"; else -> "Delivery unconfirmed" }
+                completeSelection(if (code == 0L) ClipboardSendResult.APPLIED else if (code == null) ClipboardSendResult.UNCONFIRMED else ClipboardSendResult.REJECTED)
                 outgoing = null; busy = false; preview = null
                 val next = pending; pending = null
                 if (next != null && automatic && focused) submit(next, true)
@@ -317,6 +378,7 @@ class ClipboardController(
                 finally { applying = false }
             }
         }
+        if (code == 0L && text != null) history.record(ClipboardSample(text, sensitive = incoming.begin.flag(4)), "mac", k)
         val responseLink = if (live(descriptor)) link else links.values.firstOrNull { key(it.channel.descriptor.peer) == k && it.epoch == h.epoch }
         finishIncoming(k, incoming, code, responseLink)
         return DataHandling.HANDLED
@@ -332,6 +394,8 @@ class ClipboardController(
         preview = null; schedule()
     }
     fun cancel() {
+        completeSelection(ClipboardSendResult.CANCELLED)
+        selectionJob?.cancel(); selectionJob = null; selectionOperation = null; selectionDeadline = null
         sampling++; preparingAutomatic = false; pendingFocusSample = false; pending = null; preview = null
         val item = outgoing; outgoing = null; busy = false
         item?.job?.cancel()
@@ -341,8 +405,9 @@ class ClipboardController(
     fun invalidate() {
         cancel(); native.observe(false) {}; links.values.toList().forEach { retired(it.channel.descriptor) }; histories.clear(); preview = null; schedule()
     }
-    fun prune(peers: List<DeviceIdentity>) {
+    fun prune(peers: List<DeviceIdentity>, confirmedTrust: Boolean = false) {
         preferences.prune(peers)
+        if (confirmedTrust) history.prune(peers.map(::key).toSet())
         if (selected != null && peers.none { key(it) == key(selected!!) }) { select(null); automatic = false }
     }
     fun expire() {
@@ -352,12 +417,13 @@ class ClipboardController(
             h.incoming?.takeIf { it.deadline <= time }?.let { finishIncoming(k, it, 7, null) }
         }
         histories.entries.removeAll { (k, h) -> h.terminal.isEmpty() && h.incoming == null && links.values.none { key(it.channel.descriptor.peer) == k } }
+        if (selectionDeadline?.let { it <= time } == true) { completeSelection(ClipboardSendResult.UNCONFIRMED); cancel(); status = "Delivery unconfirmed" }
         if (outgoing?.deadline?.let { it <= time } == true) { cancel(); status = "Delivery unconfirmed" }
         schedule()
     }
     private fun schedule() {
         timer?.cancel(); timer = null
-        val next = (histories.values.flatMap { h -> h.terminal.values.map { it.expiry } + listOfNotNull(h.incoming?.deadline) } + listOfNotNull(outgoing?.deadline)).minOrNull() ?: return
+        val next = (histories.values.flatMap { h -> h.terminal.values.map { it.expiry } + listOfNotNull(h.incoming?.deadline) } + listOfNotNull(outgoing?.deadline, selectionDeadline)).minOrNull() ?: return
         timer = scope.launch { wait(maxOf(1, next - now())); expire() }
     }
     private fun enqueue(link: Link, message: ClipboardMessage) {

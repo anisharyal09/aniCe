@@ -21,7 +21,7 @@ struct AniCeApp: App {
   @State private var navigation: ConnectionNavigation
 
   init() {
-    let clipboard = MacClipboardModel(native: MacClipboard(), preferences: ClipboardPreferences(storage: .standard))
+    let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json"))), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
     clipboard.installLifecycle()
     let notifier = MacFindDeviceNotifier()
@@ -100,10 +100,10 @@ struct AniCeApp: App {
     }
     pairing.trustRemoved = {
       session.retireTrust(); lan.cancel(); clipboard.invalidate()
-      Task { @MainActor in await pairing.refresh(); clipboard.prune(pairing.peers.map(\.peer)) }
+      Task { @MainActor in await pairing.refresh(); clipboard.prune(pairing.peers.map(\.peer), confirmedTrust: true) }
     }
     identity.onIdentityReset = {
-      clipboard.invalidate(); clipboard.preferences.clear()
+      clipboard.invalidate(); clipboard.history.reset(); clipboard.preferences.clear()
       lan.cancel()
       session.retireTrust()
       pairing.cancel()

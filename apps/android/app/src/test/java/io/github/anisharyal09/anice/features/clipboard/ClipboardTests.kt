@@ -324,4 +324,147 @@ class ClipboardTests {
         h.owner.invalidate()
     }
 
+    @Test fun persistedHistoryIsOptInBoundedAndSkipsPrivateText() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("anice-history").toFile()
+        try {
+            val file = java.io.File(directory, "history.json")
+            val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+            val history = ClipboardHistory(ClipboardHistoryFile(file), dispatcher)
+            history.record(ClipboardSample("not enabled"), "phone"); yield(); assertFalse(file.exists())
+            history.setKeepingHistory(true); until { history.enabled }
+            repeat(25) { history.record(ClipboardSample("item-$it"), if (it % 2 == 0) "mac" else "phone", if (it % 2 == 0) "peer" else null) }
+            until { history.entries.firstOrNull()?.text == "item-24" }
+            assertEquals(20, history.entries.size)
+            history.record(ClipboardSample("item-24"), "mac", "peer")
+            history.record(ClipboardSample("secret", sensitive = true), "phone")
+            history.record(ClipboardSample("generated", excluded = true), "phone")
+            history.record(ClipboardSample("é".repeat(32769)), "phone")
+            history.delete(history.entries.last().id); until { history.entries.size == 19 }
+            val reload = ClipboardHistory(ClipboardHistoryFile(file), dispatcher)
+            until { reload.enabled }; assertEquals(19, reload.entries.size); assertEquals("item-24", reload.entries.first().text)
+            assertFalse(reload.entries.any { it.text == "secret" || it.text == "generated" })
+            history.prune(emptySet()); until { history.entries.all { it.credential == null } }
+            history.setKeepingHistory(false); until { !file.exists() && history.entries.isEmpty() }
+        } finally { directory.deleteRecursively() }
+    }
+    @Test fun historyCorruptionAndDeleteFailureAreVisible() = runBlocking {
+        val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        val history = ClipboardHistory(object : ClipboardHistoryStorage {
+            override fun load(): List<ClipboardHistoryEntry>? = throw IllegalArgumentException()
+            override fun save(entries: List<ClipboardHistoryEntry>) {}
+            override fun delete() = throw java.io.IOException()
+        }, dispatcher)
+        until { history.error != null }; assertFalse(history.enabled)
+        history.setKeepingHistory(true); until { history.enabled }
+        history.record(ClipboardSample("keep"), "phone"); until { history.entries.size == 1 }
+        history.setKeepingHistory(false); until { history.error != null }
+        assertFalse(history.enabled); assertEquals("keep", history.entries.single().text)
+    }
+    @Test fun historyOnlyObservationAndCopyNeverSendOrEcho() = runBlocking {
+        val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        val h = Harness(dispatcher)
+        h.owner.history.setKeepingHistory(true); until { h.owner.history.enabled }
+        h.owner.focus(true); until { h.owner.history.entries.size == 1 }
+        assertFalse(h.owner.automatic); assertNotNull(h.native.observer)
+        val entry = h.owner.history.entries.single()
+        h.owner.copyHistory(entry); yield(); assertEquals(1, h.owner.history.entries.size)
+        val c = Channel(); h.ready(c); h.owner.setAutomaticEnabled(true)
+        h.owner.copyHistory(entry); yield(); assertFalse(c.sent.any { it.kind == 3L })
+        h.owner.focus(false); assertNull(h.native.observer)
+        h.owner.invalidate()
+    }
+    @Test fun selectionUsesExplicitTextAndOnlyItsOwnOperation() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel()
+        assertEquals(ClipboardSendResult.INVALID, h.owner.sendSelection(null).result())
+        assertEquals(ClipboardSendResult.INVALID, h.owner.sendSelection("é".repeat(32769)).result())
+        h.owner.history.setKeepingHistory(true); until { h.owner.history.enabled }
+        assertEquals(ClipboardSendResult.UNAVAILABLE, h.owner.sendSelection("text").result())
+        until { h.owner.history.entries.firstOrNull()?.text == "text" }; assertEquals("phone", h.owner.history.entries.first().origin)
+        h.ready(c); val reads = h.native.reads
+        val first = h.owner.sendSelection("selected text")
+        val rejected = h.owner.sendSelection("second")
+        assertEquals(ClipboardSendResult.BUSY, rejected.result()); h.owner.cancelSelection(rejected)
+        until { c.sent.any { it.kind == 5L } }
+        assertEquals(reads, h.native.reads)
+        val begin = c.sent.first { it.kind == 3L }
+        h.owner.handle(c.descriptor, ClipboardMessage.result(begin.text(2), 0).encode())
+        assertEquals(ClipboardSendResult.APPLIED, first.result())
+        until { !h.owner.busy }; h.owner.invalidate()
+    }
+    @Test fun selectionWaitingForNegotiationCancelsWithoutLaterSubmission() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel()
+        h.owner.available(c)
+        val operation = h.owner.sendSelection("selected")
+        assertTrue(h.owner.busy); h.owner.cancelSelection(operation)
+        assertEquals(ClipboardSendResult.CANCELLED, operation.result())
+        h.ready(c); yield(); assertFalse(c.sent.any { it.kind == 3L })
+        h.owner.invalidate()
+    }
+
+    @Test fun incomingHistoryRequiresSuccessfulWriteAndDuplicateDoesNotAddAnotherRow() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        h.owner.history.setKeepingHistory(true); until { h.owner.history.enabled }
+        val begin = h.receive(c, text = "from Mac")
+        until { h.owner.history.entries.size == 1 }
+        assertEquals("mac", h.owner.history.entries.single().origin)
+        h.owner.handle(c.descriptor, begin.encode()); h.owner.handle(c.descriptor, ClipboardMessage.id(5, begin.text(2)).encode())
+        h.native.fail = true; h.receive(c, "failed", revision = 2); yield()
+        assertEquals("from Mac", h.owner.history.entries.single().text)
+        // Presentation inventory may be temporarily empty before trust loading finishes.
+        h.owner.prune(emptyList()); yield(); assertEquals(1, h.owner.history.entries.size)
+        h.owner.prune(emptyList(), confirmedTrust = true); until { h.owner.history.entries.isEmpty() }
+        h.owner.invalidate()
+    }
+    @Test fun selectionStateRecreationAndNegotiationDeadlineDoNotResubmit() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel()
+        h.owner.available(c)
+        val state = SelectionSendState(h.owner); state.start("first")
+        val operation = state.operation!!; state.start("second"); assertSame(operation, state.operation)
+        h.time = 30000; h.owner.expire()
+        assertEquals(ClipboardSendResult.UNCONFIRMED, operation.result())
+        h.ready(c); yield(); assertFalse(c.sent.any { it.kind == 3L }); assertFalse(h.owner.busy)
+        h.owner.invalidate()
+    }
+
+    @Test fun shareAndSelectionInputsAcceptLiteralTextAndRejectOtherPayloads() {
+        for (action in listOf(android.content.Intent.ACTION_SEND, android.content.Intent.ACTION_PROCESS_TEXT)) {
+            for (text in listOf("shared text", "https://example.com/a?q=1", "é".repeat(32768))) {
+                assertEquals(text, clipboardActionText(action, "text/plain", text))
+            }
+            for (text in listOf(null, "", "bad\u0000text", "é".repeat(32769), "a".repeat(65537), "\uD800")) {
+                assertNull(clipboardActionText(action, "text/plain", text))
+            }
+            assertNull(clipboardActionText(action, "text/html", "<b>text</b>"))
+            assertNull(clipboardActionText(action, "image/png", "content://example/image"))
+            assertNull(clipboardActionText(action, null, "text"))
+        }
+        assertNull(clipboardActionText(android.content.Intent.ACTION_SEND_MULTIPLE, "text/plain", "text"))
+        assertNull(clipboardActionText(null, "text/plain", "text"))
+    }
+
+    @Test fun resetDuringHistoryLoadWriteOrPruneCannotRestoreContentEvenIfDeletionFails() = runBlocking {
+        val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        for (phase in listOf(0, 1, 2)) {
+            val entered = java.util.concurrent.CountDownLatch(1)
+            val release = java.util.concurrent.CountDownLatch(1)
+            val row = ClipboardHistoryEntry(UUID.randomUUID().toString(), "old", "phone", 1)
+            fun gate() { entered.countDown(); check(release.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
+            val history = ClipboardHistory(object : ClipboardHistoryStorage {
+                override fun load(): List<ClipboardHistoryEntry>? { if (phase == 0) gate(); return if (phase == 1) null else listOf(row, row.copy(id = UUID.randomUUID().toString(), credential = "peer")) }
+                override fun save(entries: List<ClipboardHistoryEntry>) { if (phase == 2 || phase == 1 && entries.isNotEmpty()) gate() }
+                override fun delete() = throw java.io.IOException()
+            }, dispatcher)
+            if (phase == 1) {
+                history.setKeepingHistory(true); until { history.enabled }
+                history.record(ClipboardSample("old"), "phone")
+            } else if (phase == 2) {
+                until { history.enabled }; history.prune(emptySet())
+            }
+            try { until { entered.count == 0L }; history.reset() }
+            finally { release.countDown() }
+            until { history.error != null }
+            assertFalse(history.enabled); assertTrue(history.entries.isEmpty())
+        }
+    }
+
 }

@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Send to Mac in supported text-selection menus and the text Share sheet, compact Share/History views and optional device-local history with 20 retained items, source-device labels and Copy/Send/Delete controls.
+
 - Strict local verification gate for the shared JVM/Android checks. It parses JUnit reports and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips; shared vector generators now support `--check` drift validation.
 
 - Clipboard panel and shared per-peer settings, actual-focus automatic reading, marked background incoming writes, sensitive-content confirmation and bounded LAN/BLE delivery with idempotent fallback. Manual sends survive automatic clipboard changes during preparation; disabling automatic sharing immediately cancels pending automatic preparation. A focus-triggered sample waits for clipboard negotiation when the connection becomes ready after aniCe opens.
@@ -14,6 +16,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - A receiver-initiated Bluetooth continuation now works end to end: the receiving device hashes its retained bytes, sends the resume request itself, and the sender answers with the validated offset. A live LAN that becomes capable during a Bluetooth stream upgrades the active transfer in place, so the stream moves off Bluetooth as soon as Wi-Fi reconnects.
 - Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE readiness coordination permits one bounded foreground Wi-Fi initiation on BLE/eligibility events, successful BLE feature traffic, file selection, companion media demand or explicit transfer demand, without independent LAN retries. The background idle timeout defaults to Never while preserving saved finite choices.
 - Background companion playback holds a bounded media demand lease while playing or inside the paused grace, so Now Playing can request and retain LAN (and receive artwork) in the background.
+
+### Changed
+
+- Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 
 ### Fixed
 
