@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Standalone call-audio diagnostic with native HFP service and SCO state, phone-address endpoint association, bounded input/output buffer checks, explicit microphone permission requests, interactive call controls and JSON results. Supports native audio transfer and passive phone-initiated SCO setup.
+
 - Compact Clipboard Share/History views and optional device-local history with 20 retained items, source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.
 
 - Replaced the transfer-ordering test that reimplemented compact/none-connected ordering locally with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback. The strict local verification gate now cross-checks hosted-suite result bundles against `xcodebuild` test-case lines and rejects zero-test runs, failures, crashes and undocumented skips.
