@@ -30,6 +30,9 @@ struct SmsMessageRow: Identifiable, Equatable {
   var subscriptionId: Int64 = 0
   /** An outgoing row the phone has not confirmed yet; it shows as sending and settles or disappears with the result. */
   var pending: Bool = false
+  /** A sent echo without a provider ID cannot adopt a row older than the phone's send-queue time. */
+  var earliestProviderMillis: Int64 = 0
+  var isProviderRecord: Bool { messageId.hasPrefix("sms:") || messageId.hasPrefix("mms:") }
   var id: String { messageId }
 }
 
@@ -143,6 +146,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     /** Arrival slots for rows that entered memory this session; a provider copy keeps the slot of the live copy it replaced. */
     var arrival: [String: Int64] = [:]
     var arrivalSeq: Int64 = 0
+    var sortDates: [String: Int64] = [:]
+    var lastArrivalMillis: Int64 = 0
     var nextBeforeMillis: Int64 = 0
     var nextBeforeMessageId = ""
     var more = false
@@ -273,6 +278,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
 
   private let notifier: any SmsNotifying
   private let now: () -> TimeInterval
+  private let wallNow: () -> TimeInterval
   private let wait: (TimeInterval) async throws -> Void
   private var links: [String: Link] = [:]
   private var peers: [String: PeerState] = [:]
@@ -281,9 +287,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
 
   init(notifier: any SmsNotifying,
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    wallNow: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 },
     wait: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
     self.notifier = notifier
     self.now = now
+    self.wallNow = wallNow
     self.wait = wait
   }
 
@@ -353,12 +361,6 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   func more(_ peer: DeviceIdentity, address: String) -> Bool {
     peers[key(peer)]?.conversations[smsNormalizedAddress(address)]?.more ?? false
   }
-  func destination(_ peer: DeviceIdentity, address: String) -> String {
-    let normalized = smsNormalizedAddress(address)
-    guard !normalized.isEmpty else { return "" }
-    let known = peers[key(peer)]?.conversations[normalized]?.threadId ?? ""
-    return known.isEmpty ? "addr:" + normalized : known
-  }
   func messages(_ peer: DeviceIdentity, address: String) -> [SmsMessageRow] {
     let normalized = smsNormalizedAddress(address)
     guard !normalized.isEmpty, let conversation = peers[key(peer)]?.conversations[normalized] else { return [] }
@@ -366,30 +368,32 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var unmatched = conversation.rows
     let live = conversation.live.filter { row in
       if let index = unmatched.firstIndex(where: { existing in
-        existing.direction == row.direction && existing.digest == row.digest &&
+        !row.pending && existing.dateMillis >= row.earliestProviderMillis &&
+          existing.direction == row.direction && existing.digest == row.digest &&
           smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address) &&
-          (abs(existing.dateMillis - row.dateMillis) <= 5000 || row.pending) &&
+          (existing.messageId == row.messageId || !row.isProviderRecord && abs(existing.dateMillis - row.dateMillis) <= 5000) &&
           (existing.subscriptionId == 0 || row.subscriptionId == 0 || existing.subscriptionId == row.subscriptionId)
       }) { unmatched.remove(at: index); return false }
       return true
     }
     return (conversation.rows + live).sorted {
-      // Order on the whole second: an SMS PDU carries second granularity, while a provider stamp for the
-      // sent row can carry milliseconds. Comparing raw millis let that echo outrank an answer in the same
-      // second; within a second, arrival decides, then the provider's byte-wise id tie-break.
-      let aSecond = $0.dateMillis / 1000, bSecond = $1.dateMillis / 1000
-      if aSecond != bSecond { return aSecond > bSecond }
+      // Observed messages keep local submit/receive order even when carrier clocks disagree.
+      let aDate = (conversation.sortDates[$0.messageId] ?? $0.dateMillis) / 1000
+      let bDate = (conversation.sortDates[$1.messageId] ?? $1.dateMillis) / 1000
+      if aDate != bDate { return aDate > bDate }
       let a = conversation.arrival[$0.messageId] ?? -1, b = conversation.arrival[$1.messageId] ?? -1
       if a != b { return a > b }
       return smsCompareMessageIds($0.messageId, $1.messageId) > 0
     }
   }
 
-  /** Stamps the arrival slot of a row that just entered memory; a same-second tie compares this. */
+  /** Retains local observation time and order independently of provider and carrier timestamps. */
   private func noteArrival(_ conversation: Conversation?, _ messageId: String) {
     guard let conversation else { return }
     conversation.arrivalSeq += 1
     conversation.arrival[messageId] = conversation.arrivalSeq
+    conversation.lastArrivalMillis = max(conversation.lastArrivalMillis, smsClampDate(Int64(wallNow() * 1000)))
+    conversation.sortDates[messageId] = conversation.lastArrivalMillis
   }
 
   /** Whether the thread list has another page; the view asks for it when its last card appears. */
@@ -611,9 +615,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     // An explicit choice is kept for the echo; 0 resolves to the known default so a mixed thread still labels the send.
     let resolved = subscriptionId != 0 ? subscriptionId : (state.simEntries.first(where: \.isDefault)?.subscriptionId ?? 0)
     // The reply paints immediately as a provisional row; the result settles its identity or removes it.
-    // The stamp is second-aligned like an SMS PDU, so a reply that lands in the same second ties and
-    // is ordered by arrival instead of losing to a sub-second submit stamp.
-    let submittedAt = Int64(now()) * 1000
+    // Display time is second-aligned; the observation key separately preserves submit/receive order.
+    let submittedAt = smsClampDate(Int64(wallNow()) * 1000)
     let rowId = "pending:" + requestId
     conversation?.live.append(SmsMessageRow(messageId: rowId, address: address, dateMillis: submittedAt,
       direction: 1, unread: false, body: body, digest: digest, subscriptionId: resolved, pending: true))
@@ -897,6 +900,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       state.status = state.threads.isEmpty ? "No conversations on your phone" : "\(state.threads.count) conversations"
     case 1: state.status = "Allow SMS access on your phone to read conversations"
+    case 4: state.status = "Too many conversations share a timestamp to load this page"
     default: state.status = "Conversations are unavailable"
     }
     state.threadCards = [:]
@@ -1046,13 +1050,17 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     // The provider record wins: its live copy is replaced and an existing posted notification is untouched.
     // The replacement inherits the live copy's arrival slot, so a refresh cannot demote a newer answer.
     if let index = conversation.live.firstIndex(where: {
-      $0.direction == assembly.direction && $0.digest == digest &&
-        (abs($0.dateMillis - assembly.dateMillis) <= 5000 || $0.pending) &&
+      !$0.pending && assembly.dateMillis >= $0.earliestProviderMillis &&
+        $0.direction == assembly.direction && $0.digest == digest &&
+        ($0.messageId == assembly.messageId || !$0.isProviderRecord && abs($0.dateMillis - assembly.dateMillis) <= 5000) &&
         smsNormalizedAddress($0.address) == normalized &&
         ($0.subscriptionId == 0 || assembly.subscriptionId == 0 || $0.subscriptionId == assembly.subscriptionId)
     }) {
-      let order = conversation.arrival.removeValue(forKey: conversation.live[index].messageId)
+      let id = conversation.live[index].messageId
+      let order = conversation.arrival.removeValue(forKey: id)
+      let sortDate = conversation.sortDates.removeValue(forKey: id)
       conversation.live.remove(at: index)
+      if let sortDate { conversation.sortDates[assembly.messageId] = sortDate }
       if let order, conversation.arrival[assembly.messageId] == nil { conversation.arrival[assembly.messageId] = order }
     }
     conversation.rows.removeAll { $0.messageId == assembly.messageId }
@@ -1154,8 +1162,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if code == 0 {
       let providerId = m.text(2)
       let millis = smsClampDate(m.number(3))
-      // A result without a provider row carries the phone's send-queue time; second-align it to the
-      // PDU granularity so an answer in the same second ties and wins on arrival order.
+      // Keep the phone's send time for display without replacing the submit observation used for ordering.
       let stamp = millis == 0 ? send.submittedAt
         : (providerId.isEmpty ? (millis / 1000) * 1000 : millis)
       let messageId = providerId.isEmpty ? "echo:" + UUID().uuidString.lowercased() : providerId
@@ -1163,16 +1170,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       let normalized = smsNormalizedAddress(send.address)
       let conversation = conversation(state, normalized)
       let settled = SmsMessageRow(messageId: messageId, address: send.address, dateMillis: stamp,
-        direction: 1, unread: false, body: send.text, digest: digest, subscriptionId: send.subscriptionId)
+        direction: 1, unread: false, body: send.text, digest: digest, subscriptionId: send.subscriptionId,
+        earliestProviderMillis: providerId.isEmpty ? millis : 0)
       if let conversation, let index = conversation.live.firstIndex(where: { $0.messageId == send.rowId }) {
         // The settled row keeps the submission's arrival slot, so the answer that landed meanwhile stays on top.
         let order = conversation.arrival.removeValue(forKey: send.rowId)
+        let sortDate = conversation.sortDates.removeValue(forKey: send.rowId)
         conversation.live[index] = settled
+        if let sortDate { conversation.sortDates[messageId] = sortDate }
         if let order, conversation.arrival[messageId] == nil { conversation.arrival[messageId] = order }
-      } else if !(conversation?.rows.contains(where: {
-        $0.direction == 1 && $0.digest == digest && smsNormalizedAddress($0.address) == normalized
-      }) ?? false) {
-        // The provisional row is gone (a refresh already adopted the provider copy); only then is an echo needed.
+      } else if !(conversation?.rows.contains(where: { $0.messageId == messageId }) ?? false) {
         conversation?.live.append(settled)
         noteArrival(conversation, messageId)
       }
@@ -1194,6 +1201,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard let conversation = conversation(state, smsNormalizedAddress(send.address)) else { return }
     conversation.live.removeAll { $0.messageId == send.rowId }
     conversation.arrival.removeValue(forKey: send.rowId)
+    conversation.sortDates.removeValue(forKey: send.rowId)
   }
 
   private func upsertCard(_ state: PeerState, address: String, snippet: String, dateMillis: Int64, unread: Int64) {

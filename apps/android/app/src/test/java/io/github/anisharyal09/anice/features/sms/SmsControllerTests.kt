@@ -18,6 +18,7 @@ class SmsControllerTests {
         var threadsResult: SmsThreadPage? = SmsThreadPage(emptyList(), 0)
         var historyResult: SmsHistoryPage? = SmsHistoryPage(emptyList(), 0, "", false, 0)
         var throwOnThreads = false
+        var threadsUnsupported = false
         var throwOnHistory = false
         var searchResult: SmsHistoryPage? = SmsHistoryPage(emptyList(), 0, "", false, 0)
         var throwOnSearch = false
@@ -30,6 +31,7 @@ class SmsControllerTests {
         override suspend fun threads(limit: Int, beforeMillis: Long, beforeThreadId: String): SmsThreadPage? {
             threadCalls += Triple(limit, beforeMillis, beforeThreadId)
             if (throwOnThreads) throw SmsStoreException()
+            if (threadsUnsupported) throw SmsPagingUnsupported()
             return threadsResult
         }
         override suspend fun history(threadId: String, beforeMillis: Long, beforeMessageId: String, limit: Int): SmsHistoryPage? {
@@ -101,7 +103,7 @@ class SmsControllerTests {
         val store = FakeStore()
         val sender = FakeSender()
         val subscriptions = FakeSubscriptions()
-        val owner = SmsController(store, sender, dispatcher = dispatcher, subscriptions = subscriptions, now = { time }, wait = clock::wait, permissions = { true })
+        val owner = SmsController(store, sender, dispatcher = dispatcher, subscriptions = subscriptions, now = { time }, wallNow = { 1_700_000_000_000 + time }, wait = clock::wait, permissions = { true })
         suspend fun announce(c: Channel) {
             owner.handle(c.descriptor, SmsWireMessage.of(1, number(24576), number(8), number(50), number(50)).encode())
         }
@@ -717,6 +719,37 @@ class SmsControllerTests {
         assertEquals(listOf("sms:201", "sms:200"), h.owner.conversation.map { it.messageId })
     }
 
+    @Test fun laterReceivedReplyStaysAboveSendDespiteCarrierClockSkewAndRefresh() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("42", "+15551234567", "old", 1_699_000_000_000, 0)), 0)
+        h.owner.loadThreads()
+        until { h.owner.threads?.size == 1 }
+        h.owner.select("42")
+        until { !h.owner.loading }
+        h.sender.pause = CompletableDeferred()
+        h.sender.outcome = SmsSendOutcome(0, "sms:77", 1_700_000_003_428)
+        h.owner.send("+15551234567", "hi")
+        until { h.sender.bodies.size == 1 }
+        h.time += 1000
+        // The reply arrives later, but its carrier timestamp is ten seconds behind the phone.
+        h.owner.submitLive(listOf(SmsLiveEvent("+15551234567", 1_699_999_990_000, "hlo")))
+        h.sender.pause!!.complete(Unit)
+        until { h.owner.conversation.size == 2 }
+        assertEquals(listOf("hlo", "hi"), h.owner.conversation.map { it.text })
+        h.store.historyResult = SmsHistoryPage(listOf(
+            SmsHistoryMessage("sms:78", "+15551234567", 1_699_999_990_000, 0, true, "hlo"),
+            SmsHistoryMessage("sms:77", "+15551234567", 1_700_000_003_428, 1, false, "hi"),
+            SmsHistoryMessage("sms:76", "+15551234567", 1_699_999_980_000, 0, false, "older"),
+        ), 0, "", false, 0)
+        h.owner.loadConversation()
+        until { h.owner.conversation.size == 3 }
+        assertEquals(listOf("hlo", "hi", "older"), h.owner.conversation.map { it.text })
+        assertEquals(listOf("sms:78", "sms:77", "sms:76"), h.owner.conversation.map { it.messageId })
+        h.owner.invalidate()
+    }
+
     @Test fun sameSecondRepliesSortAboveTheSendEchoByArrivalOrder() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()
@@ -894,7 +927,11 @@ class SmsControllerTests {
         var mmsMatches: ((String, Long?, Int) -> List<SmsRawMessage>)? = { _, _, _ -> emptyList() }
         var mmsMatchGroup: ((String, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
         override fun conversations(limit: Int, beforeMillis: Long, beforeThreadId: String) =
-            SmsConversationPage(conversations?.invoke() ?: throw SmsStoreException())
+            SmsConversationPage((conversations?.invoke() ?: throw SmsStoreException())
+                .filter { beforeMillis == 0L && beforeThreadId.isEmpty() || (it.dateMillis ?: 0) <= beforeMillis }
+                .sortedWith(compareByDescending<SmsConversationRow> { it.dateMillis ?: 0L }.thenByDescending { it.threadId }).take(limit))
+        override fun conversationDateGroup(millis: Long) = (conversations?.invoke() ?: throw SmsStoreException())
+            .filter { smsClampDate(it.dateMillis ?: 0) == millis }.take(2049)
         override fun unreadCounts() = unreadRows?.invoke() ?: throw SmsStoreException()
         override fun canonicalAddresses(ids: List<Long>) = canonical?.invoke(ids) ?: throw SmsStoreException()
         override fun newestThreadRow(threadId: Long) = fallback?.invoke(threadId)
@@ -1097,6 +1134,122 @@ class SmsControllerTests {
         assertFalse(second.more)
         assertEquals(0L, second.nextBeforeMillis)
         assertEquals("", second.nextBeforeThreadId)
+    }
+
+    @Test fun threadPagesCompleteTimestampGroupsBeforeApplyingLexicalCursors() = runBlocking {
+        val provider = FakeProvider()
+        provider.conversations = { (1L..100L).map { id ->
+            SmsConversationRow(id, 1000, "same stamp", emptyList(), 1, 1, address = "+1555$id")
+        } + SmsConversationRow(101, 900, "older", emptyList(), 1, 1, address = "+1555101") }
+        val store = store(provider, { true })
+        val found = mutableListOf<String>()
+        var cursor = 0L to ""
+        var terminal = false
+        repeat(10) {
+            if (!terminal) {
+                val page = store.threads(15, cursor.first, cursor.second)!!
+                assertTrue(page.threads.size <= 15)
+                found += page.threads.map { it.threadId }
+                cursor = page.nextBeforeMillis to page.nextBeforeThreadId
+                terminal = !page.more
+            }
+        }
+        assertTrue(terminal)
+        assertEquals((1L..100L).map { it.toString() }.sortedDescending() + "101", found)
+        assertEquals(found.size, found.distinct().size)
+        assertEquals(0L to "", cursor)
+    }
+
+    @Test fun threadScanSkipsAnUnreadableWindowWithoutHidingOlderConversations() = runBlocking {
+        val provider = FakeProvider()
+        provider.conversations = { (1L..60L).map { id ->
+            SmsConversationRow(id, 1000 - id, "unreadable", emptyList(), 1, 1)
+        } + SmsConversationRow(61, 900, "valid", emptyList(), 1, 1, address = "+155561") }
+        val page = store(provider, { true }).threads(15, 0, "")!!
+        assertEquals(listOf("61"), page.threads.map { it.threadId })
+        assertEquals(60, page.skipped)
+        assertFalse(page.more)
+    }
+
+    @Test fun threadScanBudgetReturnsAContinuationAfterOnlyUnreadableRows() = runBlocking {
+        val provider = FakeProvider()
+        provider.conversations = { (1L..400L).map { id ->
+            SmsConversationRow(id, 1000 - id, "unreadable", emptyList(), 1, 1)
+        } + SmsConversationRow(401, 500, "valid", emptyList(), 1, 1, address = "+1555401") }
+        val store = store(provider, { true })
+        val first = store.threads(15, 0, "")!!
+        assertTrue(first.threads.isEmpty())
+        assertTrue(first.more)
+        assertEquals(376, first.skipped)
+        val second = store.threads(15, first.nextBeforeMillis, first.nextBeforeThreadId)!!
+        assertEquals(listOf("401"), second.threads.map { it.threadId })
+        assertFalse(second.more)
+    }
+
+    @Test fun oversizedThreadTimestampGroupIsUnsupportedInsteadOfTruncated() = runBlocking {
+        val provider = FakeProvider()
+        provider.conversations = { (1L..2049L).map { id ->
+            SmsConversationRow(id, 1000, "same stamp", emptyList(), 1, 1, address = "+1555$id")
+        } }
+        try { store(provider, { true }).threads(15, 0, ""); fail("oversized thread group") }
+        catch (_: SmsPagingUnsupported) { }
+    }
+
+    @Test fun threadCursorAtZeroDoesNotRestartTheList() = runBlocking {
+        val provider = FakeProvider()
+        provider.conversations = { (1L..100L).map { id ->
+            SmsConversationRow(id, 0, "legacy", emptyList(), 1, 1, address = "+1555$id")
+        } }
+        val store = store(provider, { true })
+        val first = store.threads(15, 0, "")!!
+        val second = store.threads(15, first.nextBeforeMillis, first.nextBeforeThreadId)!!
+        assertEquals((1L..100L).map { it.toString() }.sortedDescending().take(30),
+            (first.threads + second.threads).map { it.threadId })
+        assertTrue(second.more)
+    }
+
+    @Test fun threadFailureOnAnOlderPageNeverReturnsAnEmptyTerminalPage() = runBlocking {
+        val provider = FakeProvider()
+        try { store(provider, { true }).threads(15, 1000, "10"); fail("provider failure") }
+        catch (_: SmsStoreException) { }
+    }
+
+    @Test fun unsupportedThreadPageReportsResultFourAndKeepsTheLocalSnapshot() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("42", "+1555", "kept", 1000, 0)), 0)
+        h.owner.loadThreads()
+        until { !h.owner.loading && h.owner.threads?.size == 1 }
+        h.store.threadsUnsupported = true
+        h.owner.loadThreads()
+        until { !h.owner.loading && h.owner.status.contains("Too many conversations") }
+        assertEquals("42", h.owner.threads!!.single().threadId)
+        val channel = Channel()
+        ready(h, channel)
+        val id = request()
+        h.owner.handle(channel.descriptor, SmsWireMessage.of(2, text(id), number(0), text("")).encode())
+        until { channel.sent.any { it.kind == 4L && it.text(0) == id } }
+        assertEquals(4L, channel.sent.first { it.kind == 4L && it.text(0) == id }.number(1))
+        assertFalse(channel.sent.any { it.kind == 3L && it.text(0) == id })
+        h.owner.invalidate()
+    }
+
+    @Test fun partialThreadPageKeepsItsSnapshotAndCursorForRetry() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("42", "+1555", "kept", 1000, 0)), 0, false, 1000, "42", true)
+        h.owner.loadThreads()
+        until { !h.owner.loading && h.owner.threadsMore }
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("99", "+1999", "partial", 900, 0)), 0, partial = true)
+        h.owner.loadMoreThreads()
+        until { !h.owner.loading && h.owner.status.contains("Try again") }
+        assertEquals(listOf("42"), h.owner.threads!!.map { it.threadId })
+        assertTrue(h.owner.threadsMore)
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("43", "+1444", "complete", 800, 0)), 0)
+        h.owner.loadMoreThreads()
+        until { !h.owner.loading && h.owner.threads?.size == 2 }
+        assertEquals(h.store.threadCalls[1], h.store.threadCalls[2])
+        assertEquals(listOf("42", "43"), h.owner.threads!!.map { it.threadId })
+        assertFalse(h.owner.threadsMore)
+        h.owner.invalidate()
     }
 
     @Test fun historyCarriesTheProviderSubscription() = runBlocking {

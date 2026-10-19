@@ -18,10 +18,13 @@ struct CompanionView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      HStack {
+      HStack(spacing: 12) {
         Text("aniCe").font(.headline)
         Spacer()
         Menu {
+          Button("Quick Paste Tray (⌥⌘V)") {
+            PasteTrayController.shared.show()
+          }
           if session.state == "Secured" || lan.state == "Secured" {
             Button("Disconnect device") { session.disconnect(); lan.disconnect() }
           }
@@ -47,7 +50,7 @@ struct CompanionView: View {
             Divider()
             liveActivitySection
           }
-          if clipboard.selected.map(clipboard.supports) == true || sendFilesAction != nil {
+          Group {
             Divider()
             VStack(alignment: .leading, spacing: 8) {
               ViewThatFits(in: .horizontal) {
@@ -83,7 +86,15 @@ struct CompanionView: View {
   }
 
   @ViewBuilder private var sendActions: some View {
-    if clipboard.selected.map(clipboard.supports) == true { ClipboardSendButton(model: clipboard) }
+    HStack(spacing: 6) {
+      if clipboard.selected.map(clipboard.supports) == true { ClipboardSendButton(model: clipboard) }
+      Button { PasteTrayController.shared.toggle() } label: {
+        Image(systemName: "rectangle.stack").frame(width: 20, height: 18)
+      }
+      .buttonStyle(.bordered).controlSize(.small)
+      .accessibilityLabel("Open clipboard tray")
+      .help("Open clipboard tray (⌥⌘V)")
+    }
     if let sendFilesAction {
       Button(action: sendFilesAction) { Label("Send files", systemImage: "paperplane") }
         .buttonStyle(.bordered).controlSize(.small)

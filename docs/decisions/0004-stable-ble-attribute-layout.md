@@ -1,6 +1,6 @@
 # ADR 0004 — Stable BLE attribute layout and GATT cache invalidation
 
-Status: accepted for implementation; radio and hardware acceptance pending.
+Status: accepted.
 
 ## Context
 

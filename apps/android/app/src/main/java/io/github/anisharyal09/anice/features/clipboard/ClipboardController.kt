@@ -446,7 +446,6 @@ class ClipboardController(
     fun prune(peers: List<DeviceIdentity>, confirmedTrust: Boolean = false) {
         preferences.prune(peers)
         if (confirmedTrust) {
-            history.prune(peers.map(::key).toSet())
             if (recent?.credential?.let { credential -> peers.none { key(it) == credential } } == true) { recent = null; schedule() }
         }
         if (selected != null && peers.none { key(it) == key(selected!!) }) { select(null); automatic = false }

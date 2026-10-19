@@ -77,7 +77,6 @@ struct SmsView: View {
   private var peer: DeviceIdentity? {
     peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == peerKey }?.peer
   }
-  private var destination: String { peer.map { model.destination($0, address: address) } ?? address }
   /// A picker only helps when more than one phone can serve the panel; a single connected phone is used directly.
   private var selectable: [PeerTrustRecord] {
     let connected = peers.filter { model.connected($0.peer) }
@@ -342,6 +341,7 @@ struct SmsView: View {
         .foregroundStyle(over ? AniCePalette.error(scheme) : AniCePalette.secondaryText(scheme))
       Spacer(minLength: 8)
       simPicker(peer)
+      if model.sending(peer) { ProgressView().controlSize(.small).accessibilityLabel("Sending reply") }
       Button { submit(peer) } label: { Label("Send SMS", systemImage: "paperplane") }
         .buttonStyle(.bordered).controlSize(.small)
         .disabled(!ready)
@@ -350,10 +350,6 @@ struct SmsView: View {
     if draft.count > 1000 {
       Text("Very long messages may be rejected by the carrier; Unicode text reaches the limit sooner.")
         .font(.caption).foregroundStyle(AniCePalette.warning(scheme))
-    }
-    if !destination.isEmpty, destination != address {
-      Text("Thread \(destination)").font(.caption2)
-        .foregroundStyle(AniCePalette.secondaryText(scheme)).lineLimit(1)
     }
   }
 

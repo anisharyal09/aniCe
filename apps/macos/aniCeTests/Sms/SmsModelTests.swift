@@ -24,7 +24,7 @@ import CryptoKit
 @MainActor
 final class SmsModelTests: XCTestCase {
   private func make(_ spy: SmsNotifierSpy, _ clock: SmsClock) -> MacSmsModel {
-    MacSmsModel(notifier: spy, now: { clock.time }, wait: { _ in throw CancellationError() })
+    MacSmsModel(notifier: spy, now: { clock.time }, wallNow: { clock.time }, wait: { _ in throw CancellationError() })
   }
 
   private func capability() throws -> Data {
@@ -237,7 +237,7 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(cards[0].dateMillis, 1_700_000_002_000)
     XCTAssertEqual(cards[0].unreadCount, 2)
     XCTAssertEqual(cards[0].snippet, "one")
-    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.messageId), ["sms:2", "sms:3"])
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.messageId), ["sms:3", "sms:2"])
     // Re-read messages never decrement the unread count even when the provider copy arrives later.
     XCTAssertEqual(spy.notes.count, 2)
   }
@@ -864,6 +864,100 @@ final class SmsModelTests: XCTestCase {
     XCTAssertTrue(spy.notes.isEmpty)
   }
 
+  @MainActor func testProvisionalReplyUsesWallTimeWhileDeadlinesUseUptime() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock()
+    clock.advance(42)
+    let model = MacSmsModel(notifier: spy, now: { clock.time }, wait: { _ in throw CancellationError() })
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    let before = Int64(Date().timeIntervalSince1970) * 1000
+    model.send(peer, address: "+15551234567", text: "hi")
+    let row = try XCTUnwrap(model.messages(peer, address: "+15551234567").first)
+    XCTAssertGreaterThanOrEqual(row.dateMillis, before)
+    XCTAssertLessThanOrEqual(row.dateMillis, Int64(Date().timeIntervalSince1970) * 1000)
+    XCTAssertTrue(row.pending)
+    clock.advance(29)
+    model.expire()
+    XCTAssertTrue(model.sending(peer))
+    clock.advance(2)
+    model.expire()
+    XCTAssertFalse(model.sending(peer))
+    XCTAssertTrue(model.messages(peer, address: "+15551234567").isEmpty)
+    model.invalidate()
+  }
+
+  @MainActor func testHistoryCannotConsumeAPendingReplyWithOlderIdenticalText() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    clock.advance(1_700_000_000)
+    model.send(peer, address: "+15551234567", text: "OK")
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 11))
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let history = try XCTUnwrap(try lastSent(channel, 5))
+    // Both an unrelated old reply and a recent identical reply must leave the pending send alone.
+    for (id, stamp) in [("sms:1", Int64(1_699_000_000_000)), ("sms:2", Int64(1_699_999_999_000))] {
+      let old = try stream(UUID().uuidString.lowercased(), requestId: history.text(0), messageId: id,
+        dateMillis: stamp, direction: 1, body: "OK")
+      await deliver(model, channel, [old.begin] + old.fragments + [old.commit])
+    }
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 3)
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").filter(\.pending).count, 1)
+    await deliver(model, channel, [try records(10, [.text(history.text(0)), .integer(0), .integer(0), .text("")])])
+    await deliver(model, channel, [try records(14, [.text(request.text(0)), .integer(0), .text("sms:3"), .integer(1_700_000_000_000)])])
+    let rows = model.messages(peer, address: "+15551234567")
+    XCTAssertEqual(rows.map(\.messageId), ["sms:3", "sms:2", "sms:1"])
+    XCTAssertFalse(rows.contains(where: \.pending))
+    model.invalidate()
+  }
+
+  @MainActor func testUnidentifiedSendEchoCannotAdoptAnEarlierIdenticalReply() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    clock.advance(1_700_000_000)
+    model.send(peer, address: "+15551234567", text: "OK")
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 11))
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let history = try XCTUnwrap(try lastSent(channel, 5))
+    let old = try stream(UUID().uuidString.lowercased(), requestId: history.text(0), messageId: "sms:1",
+      dateMillis: 1_700_000_000_100, direction: 1, body: "OK")
+    await deliver(model, channel, [old.begin] + old.fragments + [old.commit])
+    await deliver(model, channel, [try records(14, [.text(request.text(0)), .integer(0), .text(""), .integer(1_700_000_000_428)])])
+    let rows = model.messages(peer, address: "+15551234567")
+    XCTAssertEqual(rows.count, 2)
+    XCTAssertTrue(rows.contains { $0.messageId.hasPrefix("echo:") })
+    XCTAssertTrue(rows.contains { $0.messageId == "sms:1" })
+    let actual = try stream(UUID().uuidString.lowercased(), requestId: history.text(0), messageId: "sms:2",
+      dateMillis: 1_700_000_000_500, direction: 1, body: "OK")
+    await deliver(model, channel, [actual.begin] + actual.fragments + [actual.commit])
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.messageId), ["sms:2", "sms:1"])
+    model.invalidate()
+  }
+
+  @MainActor func testConfirmedProviderIdentityMergesDespiteClockSkew() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    clock.advance(1_700_000_000)
+    model.send(peer, address: "+15551234567", text: "OK")
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 11))
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let history = try XCTUnwrap(try lastSent(channel, 5))
+    let provider = try stream(UUID().uuidString.lowercased(), requestId: history.text(0), messageId: "sms:3",
+      dateMillis: 1_700_003_600_000, direction: 1, body: "OK")
+    await deliver(model, channel, [provider.begin] + provider.fragments + [provider.commit])
+    await deliver(model, channel, [try records(14, [.text(request.text(0)), .integer(0), .text("sms:3"), .integer(1_700_003_600_000)])])
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.messageId), ["sms:3"])
+    model.invalidate()
+  }
+
   @MainActor func testAProvisionalRowPaintsTheReplyBeforeThePhoneAnswers() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let channel = MockSecuredChannel(transport: "lan")
@@ -888,6 +982,34 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(settled.map(\.messageId), ["sms:9"])
     XCTAssertFalse(settled[0].pending)
     XCTAssertEqual(settled[0].dateMillis, 1_700_000_001_000)
+  }
+
+  @MainActor func testReplyWithAnEarlierCarrierTimestampStaysAboveSendAfterRefresh() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    clock.advance(1_700_000_000)
+    model.send(peer, address: "+15551234567", text: "hi")
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let send = try XCTUnwrap(try lastSent(channel, 11))
+    clock.advance(1)
+    let reply = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "a", count: 32),
+      dateMillis: 1_699_999_990_000, unread: true, body: "hlo")
+    await deliver(model, channel, [reply.begin] + reply.fragments + [reply.commit])
+    await deliver(model, channel, [try records(14, [.text(send.text(0)), .integer(0), .text("sms:77"), .integer(1_700_000_003_428)])])
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.body), ["hlo", "hi"])
+    model.refreshMessages(peer, address: "+15551234567")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let history = try XCTUnwrap(try lastSent(channel, 5))
+    for (id, stamp, direction, body) in [("sms:77", Int64(1_700_000_003_428), Int64(1), "hi"),
+      ("sms:78", Int64(1_699_999_990_000), Int64(0), "hlo"),
+      ("sms:76", Int64(1_699_999_980_000), Int64(0), "older")] {
+      let row = try stream(UUID().uuidString.lowercased(), requestId: history.text(0), messageId: id,
+        dateMillis: stamp, direction: direction, body: body)
+      await deliver(model, channel, [row.begin] + row.fragments + [row.commit])
+    }
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").map(\.messageId), ["sms:78", "sms:77", "sms:76"])
+    model.invalidate()
   }
 
   @MainActor func testAReplyThatLandsDuringTheSendStaysAboveItsEcho() async throws {

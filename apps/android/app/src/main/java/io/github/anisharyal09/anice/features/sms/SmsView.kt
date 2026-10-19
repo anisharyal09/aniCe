@@ -167,34 +167,39 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
                 simAnswered = true
                 simListing.value = if (granted) owner.listSubscriptions() else SmsSubscriptionListing(1, emptyList())
             }
-            if (multiSim && state.send && (simEntries.size >= 2 || (simListing.value?.result == 1L && !simAnswered))) {
-                Box {
-                    OutlinedButton(onClick = {
-                        if (simEntries.size >= 2) simMenu = true
-                        else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
-                    },
-                        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(if (simEntries.size >= 2) "Send from: " + (simChoiceLabel ?: "Phone default") else "Choose SIM…")
-                    }
-                    DropdownMenu(expanded = simMenu, onDismissRequest = { simMenu = false }) {
-                        DropdownMenuItem(text = { Text("Phone default") }, onClick = { simChoice = 0; simMenu = false })
-                        simEntries.forEach { entry ->
-                            DropdownMenuItem(text = { Text(if (entry.isDefault) simLabel(entry, simEntries) + " (default)" else simLabel(entry, simEntries)) },
-                                onClick = { simChoice = entry.subscriptionId; simMenu = false })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (multiSim && state.send && (simEntries.size >= 2 || (simListing.value?.result == 1L && !simAnswered))) {
+                    Box(Modifier.weight(1f)) {
+                        OutlinedButton(onClick = {
+                            if (simEntries.size >= 2) simMenu = true
+                            else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
+                        },
+                            shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(if (simEntries.size >= 2) "Send from: " + (simChoiceLabel ?: "Phone default") else "Choose SIM…",
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        DropdownMenu(expanded = simMenu, onDismissRequest = { simMenu = false }) {
+                            DropdownMenuItem(text = { Text("Phone default") }, onClick = { simChoice = 0; simMenu = false })
+                            simEntries.forEach { entry ->
+                                DropdownMenuItem(text = { Text(if (entry.isDefault) simLabel(entry, simEntries) + " (default)" else simLabel(entry, simEntries)) },
+                                    onClick = { simChoice = entry.subscriptionId; simMenu = false })
+                            }
                         }
                     }
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
-            }
-            OutlinedButton(
-                onClick = { submitDraft() },
-                enabled = !sending && draft.isNotBlank() && bytes <= SmsWireMessage.MAX_BODY_BYTES && state.send,
-                shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.heightIn(min = 48.dp)
-            ) {
-                Icon(painterResource(R.drawable.ic_sms), contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Send SMS")
+                OutlinedButton(
+                    onClick = { submitDraft() },
+                    enabled = !sending && draft.isNotBlank() && bytes <= SmsWireMessage.MAX_BODY_BYTES && state.send,
+                    shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Icon(painterResource(R.drawable.ic_sms), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Send SMS")
+                }
             }
             if (owner.conversation.isEmpty()) Text(if (owner.loading) "Loading messages…" else "No messages on this device",
                 style = MaterialTheme.typography.bodyMedium)

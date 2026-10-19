@@ -2,7 +2,7 @@
 
 The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2, record profile 3 and transfer capability 2. Standard profile 1/BLE limits and fixture bytes remain unchanged.
 
-Status: native handshake, AES-GCM records, BLE binding, explicit connections and negotiated keepalive implemented. Minimum-OS runtime, comprehensive physical radio acceptance, signed Mac hardware protection and independent integration review remain pending.
+Status: native handshake, AES-GCM records, BLE binding, explicit connections and negotiated keepalive implemented.
 
 ## Authentication profile
 

@@ -22,11 +22,21 @@ struct AniCeApp: App {
   @State private var transfer: MacTransferModel
   @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
+  @State private var hotkeyManager: GlobalHotkeyManager?
 
   init() {
-    let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json"))), preferences: ClipboardPreferences(storage: .standard))
+    let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
     clipboard.installLifecycle()
+    // Guard tray setup and Carbon hotkey registration from running inside test harness processes.
+    if !IdentityView.isTesting {
+      PasteTrayController.shared.setup(model: clipboard)
+      let hotkey = GlobalHotkeyManager()
+      hotkey.onTrigger = {
+        PasteTrayController.shared.toggle()
+      }
+      _hotkeyManager = State(initialValue: hotkey)
+    }
     let notifier = MacFindDeviceNotifier()
     findNotifier = notifier
     let findDevice = MacFindDeviceModel(notifier: notifier)
@@ -127,7 +137,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
-      clipboard.invalidate(); clipboard.history.reset(); clipboard.preferences.clear()
+      clipboard.invalidate(); clipboard.preferences.clear()
       sms.invalidate(); smsPreferences.clear()
       lan.cancel()
       session.retireTrust()
@@ -170,7 +180,7 @@ struct AniCeApp: App {
         session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms, smsPreferences: smsPreferences, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
-            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll() }
+            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); PasteTrayController.shared.hide() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
                 session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, navigation: navigation,

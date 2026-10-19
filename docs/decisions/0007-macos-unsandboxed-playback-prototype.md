@@ -17,7 +17,7 @@ Removing sandboxing permits a broader process/filesystem boundary; it does not g
 ## Consequences
 
 - App Sandbox no longer confines aniCe. Existing signing defaults remain development-oriented.
-- Release app and universal helper signatures carry `adhoc,runtime` flags. Xcode disables effective hardened runtime for its ad-hoc Debug app despite `ENABLE_HARDENED_RUNTIME = YES`; the existing signing defaults are retained. Forcing runtime on the ad-hoc Debug split dylib fails Team ID library validation. Certificate-signed Debug/runtime acceptance remains pending.
-- Permission prompts, Bluetooth/LAN admission and Keychain access remain subject to native OS policy. Existing automated tests do not establish packaged physical-radio acceptance.
+- Release app and universal helper signatures carry `adhoc,runtime` flags. Xcode disables effective hardened runtime for its ad-hoc Debug app despite `ENABLE_HARDENED_RUNTIME = YES`; the existing signing defaults are retained. Forcing runtime on the ad-hoc Debug split dylib fails Team ID library validation.
+- Permission prompts, Bluetooth/LAN admission and Keychain access remain subject to native OS policy.
 - The adapter must refuse commands that cannot be bound to the selected running player and recording. No global playback-command fallback is permitted.
 - Unsupported player/action combinations remain disabled. Physical targeting acceptance is recorded per player rather than inferred from metadata availability. See [Now Playing](../features/NOW_PLAYING.md).

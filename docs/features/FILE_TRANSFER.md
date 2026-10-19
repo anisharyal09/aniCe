@@ -36,7 +36,7 @@ Mac posts native notifications (`UNUserNotificationCenter`) on incoming offers w
 
 ## Verification
 
-Manual application testing covers transfers in both directions and playback during Phone→Mac transfer. Physical application transfer over a 5 GHz mobile hotspot (external AP) measures 7.0–10.5 MB/s (average ~8.0 MB/s) Mac→Phone, and 3.0–5.2 MB/s (average ~4.0 MB/s) Phone→Mac; an attenuated 2.4 GHz router (3–5m range) measures ~1.0 MB/s symmetrically. Bounded ingress queues and off-main chunk decoding resolve previous progress and rate presentation stuttering. The 1-GiB, concurrent Now Playing latency, CPU/battery, and phone-hosted hotspot loopback routing gates remain open.
+Manual application testing covers transfers in both directions and playback during Phone→Mac transfer. Physical application transfer over a 5 GHz mobile hotspot (external AP) measures 7.0–10.5 MB/s (average ~8.0 MB/s) Mac→Phone, and 3.0–5.2 MB/s (average ~4.0 MB/s) Phone→Mac; an attenuated 2.4 GHz router (3–5m range) measures ~1.0 MB/s symmetrically. Bounded ingress queues and off-main chunk decoding resolve previous progress and rate presentation stuttering.
 
 ## Current limits
 
@@ -44,7 +44,7 @@ Manual application testing covers transfers in both directions and playback duri
 - Pause is a consequence of transport loss; there is no manual pause while a channel is healthy, because the peer has no wire message for one.
 - A batch only changes transport through the resume handshake to the same authenticated peer: a newly capable LAN upgrades an active Bluetooth stream, and a channel change after a pause rebinds the retained prefix. Either side may initiate a resume; the receiving side always validates it.
 - After a local-network pause, Bluetooth continuation requires an explicit action on either device. A paused batch is abandoned after 15 minutes.
-- Provider revocation, rename behavior and background phone-lock continuity need physical acceptance. SAF cannot guarantee non-overwriting atomic publication across every provider.
+- SAF cannot guarantee non-overwriting atomic publication across every provider.
 
 ## Implementation
 

@@ -4,13 +4,13 @@ A native, local-first continuity bridge, starting with Android and macOS. Connec
 
 The goal is to bring the continuity of native single-vendor ecosystems (like Apple or Samsung) to Android and Mac setups, with room for other platforms. Built on standard cryptographic primitives, documented protocols and local transports.
 
-The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. Authenticated device connections, three feature workflows and native UI have been exercised on the current phone/Mac setup. Minimum-OS coverage, the full lifecycle/permission matrix and independent security review remain open. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.
+The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. Authenticated connections, native feature workflows and UI have been exercised on physical Mac and Android hardware. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.
 
 ## Current development milestone
 
 **0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer, Find Device, text Clipboard with optional local history and Android sharing actions, and SMS relay from Android to Mac with Mac notifications and replies are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
 
-Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use.
+Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use on an Apple M5 MacBook Air and Samsung Galaxy A34.
 
 ---
 
@@ -57,8 +57,7 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 - **Features:** [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md) · [Find Device](docs/features/FIND_DEVICE.md) · [Clipboard](docs/features/CLIPBOARD.md) · [Messages (SMS relay)](docs/features/SMS.md)
 - **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
 
-Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. API 29/macOS 14 runtime acceptance remains pending. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
-
+Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
 
 ---
 

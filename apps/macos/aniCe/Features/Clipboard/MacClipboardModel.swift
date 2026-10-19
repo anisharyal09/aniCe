@@ -151,12 +151,23 @@ struct ClipboardActivity: Identifiable {
     guard sample.token.isEmpty || sample.token != historyToken else { return }; historyToken = sample.token
     history.record(sample, origin: "mac")
   }
-  func copyHistory(_ entry: ClipboardHistoryEntry) {
+  // Writes entry to system pasteboard with applying guard to suppress self-observation loop.
+  @discardableResult func copyHistory(_ entry: ClipboardHistoryEntry) -> Bool {
     applying = true
-    status = native.write(entry.text, sensitive: false) ? "Copied" : "Could not copy text"
+    let copied = native.write(entry.text, sensitive: false)
+    status = copied ? "Copied" : "Could not copy text"
     applying = false
+    return copied
   }
+  // Initiates an explicit manual submission to the selected peer over the secured channel.
   func sendHistory(_ entry: ClipboardHistoryEntry) { submit(ClipboardSample(text: entry.text), auto: false) }
+  // Toggles pinned state to retain or release snippet during FIFO capacity eviction.
+  func togglePin(_ entry: ClipboardHistoryEntry) { history.togglePin(entry.id) }
+  func deleteHistory(_ entry: ClipboardHistoryEntry) { history.delete(entry.id) }
+  // Purges history entries, preserving pinned snippets unless includePinned is explicitly true.
+  func clearHistory(includePinned: Bool = false) { history.clear(includePinned: includePinned) }
+  // Updates history capacity (20, 50, 100) and triggers immediate trim if downsized.
+  func setHistoryCapacity(_ capacity: Int) { history.setCapacity(capacity) }
   func sendConfirmed(_ sample: ClipboardSample) { submit(sample, auto: false) }
   func clearPreview() { preview = nil }
   func inspect() { preview = native.read(); if let preview { captureLocal(preview) }; if preview == nil { status = "Copy plain text, or paste text below" }; updateObservation() }
@@ -384,7 +395,7 @@ struct ClipboardActivity: Identifiable {
   func prune(_ peers: [DeviceIdentity], confirmedTrust: Bool = false) {
     preferences.prune(peers)
     if confirmedTrust {
-      let keep = Set(peers.map(key)); history.prune(keep)
+      let keep = Set(peers.map(key))
       if let recent, !keep.contains(recent.credential) { self.recent = nil; schedule() }
     }
     if let selected, !peers.contains(where: { key($0) == key(selected) }) { select(nil); automatic = false }

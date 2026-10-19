@@ -6,11 +6,7 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
-- SMS Relay v3: `messageBegin` carries the receiving `subscriptionId` (0 = unknown) so both panels can label which SIM a message arrived on, and `threadRequest`/`threadDone` gain a `(beforeMillis, beforeThreadId)` cursor so the thread list loads a first page and continues on demand. The contract version is now 3, so a v2 peer cannot exchange SMS until both applications are updated; the shared fixture set grows to 169 (64 valid, 105 invalid).
-
-- SMS Relay v2: `sendBegin` carries a `subscriptionId` (0 = the phone's default SMS subscription) and new kinds `simRequest`/`simDone` expose the phone's active SMS subscriptions for an optional explicit per-reply choice, and `searchRequest`/`searchDone` add bounded, cancellable, cursor-paginated substring search over provider SMS bodies and text/plain MMS parts. The contract version is now 2, so a v1 peer cannot exchange SMS until both applications are updated; v1 message layouts and bounds are unchanged apart from `sendBegin`'s appended field, and the shared fixture set grows to 154 (60 valid, 94 invalid).
-
-- SMS relay v1 deterministic CBOR capability, thread-list, paged history, live message-stream, reply and result messages, with capability gating, `messageResult` acknowledgement for live streams only, byte-wise lexical messageId cursor ties and content-key live/provider deduplication; 119 independent fixtures (46 valid, 73 invalid).
+- SMS Relay v3 defines deterministic CBOR capability negotiation, cursor-paginated conversations and history, acknowledged live message streams, multipart replies, phone-side search, active-SIM discovery and per-message subscription attribution inside authenticated DATA. Bodies are bounded to 24,576 UTF-8 bytes in up to eight fragments; records remain within 4,000 bytes and page limits are advertised per link. Composite cursors use byte-wise identifier ordering and terminal `(0, "")` pairs; incomplete provider reads and oversized timestamp groups do not advance them. Live events retry within their ten-minute pending lifetime, duplicate reply results are bounded, and `sendResult.dateMillis` carries the provider send time or phone send-queue time. Both applications must support v3 to exchange SMS.
 
 - Clipboard v1 deterministic CBOR capabilities, receive settings, bounded text assembly, ordered item identities, terminal deduplication and one safe cross-transport retry, with independent positive/negative fixtures.
 
@@ -18,16 +14,6 @@ Records shared communication-contract changes, compatibility implications, and p
 - Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
 
 ### Changed
-
-- Clarified SMS v3 `sendResult.dateMillis` as the reply's send time rather than the moment the phone answered: the provider row's `date` when the READ_SMS lookup finds the sent row, otherwise the phone's send-queue time. A Mac echo without a provider row is stamped with the send rather than the verdict, so an answer that arrives while the radio is still confirming keeps its newer position. Wire layouts, bounds and fixture bytes are unchanged.
-
-- Clarified SMS v1 authenticated acknowledgement results, request-owned submission deadlines, bounded duplicate reply results, independent provider scan positions and non-advancing failures for oversized timestamp groups or incomplete provider sources. Wire fields and bounds are unchanged.
-
-- Clarified SMS capability limits: `maxThreadsPerPage` and `maxMessagesPerPage` are the advertiser's per-link limits in 1..50 rather than the fixed value 50, so a slower link can announce smaller thread lists and pages, and a peer serves within the limits it received. Layout, field order and bounds are unchanged and a 50/50 capability stays valid.
-
-- Clarified SMS live-relay retry semantics: an event that is not acknowledged is offered again on its live channels inside its ten-minute pending lifetime rather than only once, and an idempotent capability record may be re-sent on a link whose peer capability has not arrived with the receiver answering with its own, so a lost fragment, `messageResult` or capability hello does not strand the event until a new channel generation. Messages, bounds and fixture bytes are unchanged.
-
-- Clarified SMS `historyDone` cursor semantics: a page with no older rows sends the terminal `(0, "")` cursor so clients never offer an empty "load older" request, and `unreadCount` counts unread incoming provider rows because the threads view's `read` column is an all-read flag, not a count. An `addr:` identity carries alphanumeric sender IDs as their trimmed uppercase text, so bank and service senders keep distinct conversation identities instead of one empty-string identity.
 
 - Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.
 

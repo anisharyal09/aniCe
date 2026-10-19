@@ -64,6 +64,8 @@ data class SmsRawMessage(val id: Long, val dateMillis: Long, val address: String
 /** Raw provider surface. Implementations throw on provider failure; the store owns sanitization and paging. */
 interface SmsProvider {
     fun conversations(limit: Int, beforeMillis: Long, beforeThreadId: String): SmsConversationPage
+    /** At most 2,049 rows, including the overflow sentinel, from one clamped timestamp group. */
+    fun conversationDateGroup(millis: Long): List<SmsConversationRow>
     /** Unread incoming SMS rows per provider thread; the threads view's `read` flag is not a count. */
     fun unreadCounts(): Map<Long, Long>
     fun canonicalAddresses(ids: List<Long>): Map<Long, String>
@@ -173,85 +175,104 @@ class AndroidSmsStore(
     }
 
     private fun loadThreads(limit: Int, beforeMillis: Long, beforeThreadId: String): SmsThreadPage {
-        var skipped = 0
         val firstPage = beforeMillis == 0L && beforeThreadId.isEmpty()
-        // A bounded provider window keeps the first paint fast; the exact contract order and cursor are
-        // resolved in memory because the provider orders numeric ids while the contract compares strings.
         val window = limit + TIE_ALLOWANCE
-        val primary = try { provider.conversations(window, beforeMillis, beforeThreadId) }
+        var batch = try { provider.conversations(window, beforeMillis, beforeThreadId) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (!firstPage) throw SmsStoreException()
+                null
+            }
+        // The direct scan is a degraded first-page fallback only; it has no cursor of its own.
+        val direct = firstPage && batch?.rows.isNullOrEmpty()
+        if (direct) {
+            batch = try { provider.directThreads(limit) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { if (batch == null) throw SmsStoreException() else batch }
+        }
+        val unreadCounts = try { provider.unreadCounts() }
             catch (e: CancellationException) { throw e }
             catch (_: Exception) { null }
-        // The direct scan is a degraded first-page fallback only; it has no cursor of its own.
-        val fallback = if (firstPage && primary?.rows.isNullOrEmpty()) {
-            try { provider.directThreads(limit) }
-            catch (e: CancellationException) { throw e }
-            catch (_: Exception) { if (primary == null) throw SmsStoreException() else SmsConversationPage(emptyList()) }
-        } else null
-        val rows = fallback?.rows ?: primary?.rows.orEmpty()
         val threads = mutableListOf<SmsThreadRecord>()
-        // The threads view's `read` flag is "all messages read", never a count; unread comes from the SMS rows.
-        val unreadCounts = try {
-            provider.unreadCounts()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
-        for (row in rows) {
-            var address = row.address
-            var date = row.dateMillis
-            var snippet = row.snippet
-            var unread = if (unreadCounts != null) unreadCounts[row.threadId] ?: 0L else row.unread
-            if (address.isNullOrEmpty()) {
-                address = try {
-                    row.recipientIds.firstOrNull()?.let { provider.canonicalAddresses(listOf(it))[it] }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
+        var skipped = 0
+        var examined: Pair<Long, String>? = null
+        var exhausted = false
+        var partial = false
+        var rounds = 0
+        while (batch != null && threads.size <= limit && rounds++ < SCAN_ROUNDS) {
+            partial = partial || batch.partial
+            val raw = batch.rows
+            val oldest = raw.minOfOrNull { smsClampDate(it.dateMillis ?: 0) }
+            val rows = raw.associateByTo(LinkedHashMap()) { it.threadId }
+            exhausted = direct || raw.size < window || oldest == null || oldest == 0L
+            // SQL orders numeric ids; complete the boundary group before applying the lexical cursor.
+            if (!direct && raw.size >= window && oldest != null) {
+                val group = provider.conversationDateGroup(oldest)
+                if (group.size > GROUP_CAP) throw SmsPagingUnsupported()
+                group.forEach { rows[it.threadId] = it }
             }
-            if (address.isNullOrEmpty() || date == null || unread == null) {
-                val fallback = try {
-                    provider.newestThreadRow(row.threadId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
-                if (address.isNullOrEmpty()) address = fallback?.address
-                if (date == null) date = fallback?.dateMillis
-                if (snippet == null) snippet = fallback?.snippet
-                if (unread == null) unread = fallback?.unread?.let { if (it) 1L else 0L }
+            val eligible = rows.values.filter { row ->
+                val date = smsClampDate(row.dateMillis ?: 0)
+                firstPage || date < beforeMillis ||
+                    date == beforeMillis && smsCompareMessageIds(row.threadId.toString(), beforeThreadId) < 0
+            }.sortedWith { a, b ->
+                val date = smsClampDate(b.dateMillis ?: 0).compareTo(smsClampDate(a.dateMillis ?: 0))
+                if (date != 0) date else smsCompareMessageIds(b.threadId.toString(), a.threadId.toString())
             }
-            val cleanAddress = address?.takeIf { it.isNotEmpty() }?.let { smsSanitizeText(it)?.let { text -> smsTruncate(text, 64) } }
-            val cleanDate = date
-            if (cleanAddress.isNullOrEmpty() || smsNormalizedAddress(cleanAddress).isEmpty() || cleanDate == null) {
-                skipped++
-                continue
+            for (row in eligible) {
+                examined = smsClampDate(row.dateMillis ?: 0) to row.threadId.toString()
+                val record = threadRecord(row, unreadCounts)
+                if (record == null) skipped++ else threads += record
+                if (threads.size > limit) break
             }
-            val cleanSnippet = snippet?.let { smsSanitizeText(it) }?.let { smsTruncate(it, 160) } ?: ""
-            threads += SmsThreadRecord(row.threadId.toString(), cleanAddress, cleanSnippet, smsClampDate(cleanDate), (unread ?: 0L).coerceIn(0, SmsWireMessage.MAX_DATE))
+            if (threads.size > limit || exhausted || partial || rounds >= SCAN_ROUNDS) break
+            // A skipped batch still advances the raw scan; the next request can continue after its last row.
+            batch = provider.conversations(window, oldest!! - 1, "0")
         }
-        val eligible = threads.filter { row ->
-            firstPage || row.dateMillis < beforeMillis ||
-                row.dateMillis == beforeMillis && smsCompareMessageIds(row.threadId, beforeThreadId) < 0
-        }.sortedWith { a, b ->
-            val d = b.dateMillis.compareTo(a.dateMillis)
-            if (d != 0) d else -smsCompareMessageIds(a.threadId, b.threadId)
+        val ordered = threads.sortedWith { a, b ->
+            val date = b.dateMillis.compareTo(a.dateMillis)
+            if (date != 0) date else smsCompareMessageIds(b.threadId, a.threadId)
+        }.take(limit)
+        val more = threads.size > limit || !exhausted
+        val cursor = ordered.lastOrNull()?.let { it.dateMillis to it.threadId } ?: examined
+        val next = if (more) cursor ?: throw SmsPagingUnsupported() else 0L to ""
+        return SmsThreadPage(ordered, skipped, partial, next.first, next.second, more)
+    }
+
+    private fun threadRecord(row: SmsConversationRow, unreadCounts: Map<Long, Long>?): SmsThreadRecord? {
+        var address = row.address
+        var date = row.dateMillis
+        var snippet = row.snippet
+        var unread = if (unreadCounts != null) unreadCounts[row.threadId] ?: 0L else row.unread
+        if (address.isNullOrEmpty()) {
+            address = try {
+                row.recipientIds.firstOrNull()?.let { provider.canonicalAddresses(listOf(it))[it] }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
         }
-        val ordered = eligible.take(limit)
-        // The provider window filled, or more eligible rows remain in it: another page exists.
-        val more = ordered.isNotEmpty() && (eligible.size > limit || (primary != null && primary.rows.size >= window))
-        val cursor = ordered.lastOrNull()
-        return SmsThreadPage(
-            ordered,
-            skipped,
-            fallback?.partial ?: false,
-            if (more) cursor?.dateMillis ?: 0 else 0,
-            if (more) cursor?.threadId ?: "" else "",
-            more,
-        )
+        if (address.isNullOrEmpty() || date == null || unread == null) {
+            val fallback = try {
+                provider.newestThreadRow(row.threadId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (address.isNullOrEmpty()) address = fallback?.address
+            if (date == null) date = fallback?.dateMillis
+            if (snippet == null) snippet = fallback?.snippet
+            if (unread == null) unread = fallback?.unread?.let { if (it) 1L else 0L }
+        }
+        val cleanAddress = address?.takeIf { it.isNotEmpty() }?.let { smsSanitizeText(it)?.let { text -> smsTruncate(text, 64) } }
+        val cleanDate = date
+        if (cleanAddress.isNullOrEmpty() || smsNormalizedAddress(cleanAddress).isEmpty() || cleanDate == null) {
+            return null
+        }
+        val cleanSnippet = snippet?.let { smsSanitizeText(it) }?.let { smsTruncate(it, 160) } ?: ""
+        return SmsThreadRecord(row.threadId.toString(), cleanAddress, cleanSnippet, smsClampDate(cleanDate), (unread ?: 0L).coerceIn(0, SmsWireMessage.MAX_DATE))
     }
 
     override suspend fun search(query: String, beforeMillis: Long, beforeMessageId: String, limit: Int): SmsHistoryPage? {
@@ -401,8 +422,15 @@ internal class AndroidSmsProvider(context: Context) : SmsProvider {
     override fun conversations(limit: Int, beforeMillis: Long, beforeThreadId: String): SmsConversationPage {
         // The cursor is a contract threadId; only a date pushdown is safe for string tie ordering, so the
         // store applies the exact (date, threadId) filter in memory.
-        val selection = if (beforeMillis > 0) "date <= ?" else null
-        val args = if (beforeMillis > 0) arrayOf(beforeMillis.toString()) else null
+        val bounded = beforeMillis > 0 || beforeThreadId.isNotEmpty()
+        return conversationRows(if (bounded) "date <= ?" else null,
+            if (bounded) arrayOf(beforeMillis.toString()) else null, limit)
+    }
+
+    override fun conversationDateGroup(millis: Long): List<SmsConversationRow> =
+        conversationRows("date " + dateGroupOperator(millis) + " ?", arrayOf(millis.toString()), GROUP_CAP + 1).rows
+
+    private fun conversationRows(selection: String?, args: Array<String>?, limit: Int): SmsConversationPage {
         val cursor = query(Uri.parse("content://mms-sms/conversations?simple=true"), arrayOf("_id", "date", "snippet", "message_count", "recipient_ids", "read"), selection, args, "date DESC, _id DESC LIMIT $limit") ?: throw SmsStoreException()
         return cursor.use {
             val id = it.getColumnIndex("_id")

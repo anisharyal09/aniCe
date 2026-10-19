@@ -343,22 +343,34 @@ class ClipboardTests {
             val reload = ClipboardHistory(ClipboardHistoryFile(file), dispatcher)
             until { reload.enabled }; assertEquals(19, reload.entries.size); assertEquals("item-24", reload.entries.first().text)
             assertFalse(reload.entries.any { it.text == "secret" || it.text == "generated" })
-            history.prune(emptySet()); until { history.entries.all { it.credential == null } }
-            history.setKeepingHistory(false); until { !file.exists() && history.entries.isEmpty() }
+            val saved = history.entries
+            history.setKeepingHistory(false)
+            until { JSONObject(file.readText()).optBoolean("enabled", true) == false }
+            assertEquals(saved, history.entries)
+            history.record(ClipboardSample("ignored while paused"), "phone")
+            val paused = ClipboardHistory(ClipboardHistoryFile(file), dispatcher)
+            until { paused.entries.isNotEmpty() }
+            assertFalse(paused.enabled); assertEquals(saved, paused.entries)
+            paused.delete(saved.first().id); until { paused.entries.size == saved.size - 1 }
+            paused.clear(); until { paused.entries.isEmpty() }
+            assertFalse(ClipboardHistoryFile(file).load()!!.enabled)
         } finally { directory.deleteRecursively() }
     }
     @Test fun historyCorruptionAndDeleteFailureAreVisible() = runBlocking {
         val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        var failSaving = false
         val history = ClipboardHistory(object : ClipboardHistoryStorage {
-            override fun load(): List<ClipboardHistoryEntry>? = throw IllegalArgumentException()
-            override fun save(entries: List<ClipboardHistoryEntry>) {}
+            override fun load(): ClipboardHistoryState? = throw IllegalArgumentException()
+            override fun save(entries: List<ClipboardHistoryEntry>, enabled: Boolean, capacity: Int) { if (failSaving) throw java.io.IOException() }
             override fun delete() = throw java.io.IOException()
         }, dispatcher)
         until { history.error != null }; assertFalse(history.enabled)
         history.setKeepingHistory(true); until { history.enabled }
         history.record(ClipboardSample("keep"), "phone"); until { history.entries.size == 1 }
-        history.setKeepingHistory(false); until { history.error != null }
-        assertFalse(history.enabled); assertEquals("keep", history.entries.single().text)
+        history.setKeepingHistory(false); until { !history.enabled }
+        failSaving = true
+        history.delete(history.entries.single().id); until { history.error != null }
+        assertEquals("keep", history.entries.single().text)
     }
     @Test fun historyOnlyObservationAndCopyNeverSendOrEcho() = runBlocking {
         val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
@@ -412,7 +424,7 @@ class ClipboardTests {
         assertEquals("from Mac", h.owner.history.entries.single().text)
         // Presentation inventory may be temporarily empty before trust loading finishes.
         h.owner.prune(emptyList()); yield(); assertEquals(1, h.owner.history.entries.size)
-        h.owner.prune(emptyList(), confirmedTrust = true); until { h.owner.history.entries.isEmpty() }
+        h.owner.prune(emptyList(), confirmedTrust = true); h.owner.invalidate(); assertEquals(1, h.owner.history.entries.size)
         h.owner.invalidate()
     }
     @Test fun selectionStateRecreationAndNegotiationDeadlineDoNotResubmit() = runBlocking {
@@ -440,31 +452,6 @@ class ClipboardTests {
         }
         assertNull(clipboardActionText(android.content.Intent.ACTION_SEND_MULTIPLE, "text/plain", "text"))
         assertNull(clipboardActionText(null, "text/plain", "text"))
-    }
-
-    @Test fun resetDuringHistoryLoadWriteOrPruneCannotRestoreContentEvenIfDeletionFails() = runBlocking {
-        val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
-        for (phase in listOf(0, 1, 2)) {
-            val entered = java.util.concurrent.CountDownLatch(1)
-            val release = java.util.concurrent.CountDownLatch(1)
-            val row = ClipboardHistoryEntry(UUID.randomUUID().toString(), "old", "phone", 1)
-            fun gate() { entered.countDown(); check(release.await(5, java.util.concurrent.TimeUnit.SECONDS)) }
-            val history = ClipboardHistory(object : ClipboardHistoryStorage {
-                override fun load(): List<ClipboardHistoryEntry>? { if (phase == 0) gate(); return if (phase == 1) null else listOf(row, row.copy(id = UUID.randomUUID().toString(), credential = "peer")) }
-                override fun save(entries: List<ClipboardHistoryEntry>) { if (phase == 2 || phase == 1 && entries.isNotEmpty()) gate() }
-                override fun delete() = throw java.io.IOException()
-            }, dispatcher)
-            if (phase == 1) {
-                history.setKeepingHistory(true); until { history.enabled }
-                history.record(ClipboardSample("old"), "phone")
-            } else if (phase == 2) {
-                until { history.enabled }; history.prune(emptySet())
-            }
-            try { until { entered.count == 0L }; history.reset() }
-            finally { release.countDown() }
-            until { history.error != null }
-            assertFalse(history.enabled); assertTrue(history.entries.isEmpty())
-        }
     }
 
     @Test fun explicitClipboardFocusReadsOnceWithoutObservationAndPreservesSensitivity() = runBlocking {
@@ -544,6 +531,49 @@ class ClipboardTests {
         h.receive(c, text = "incoming")
         h.owner.prune(emptyList(), confirmedTrust = true); assertNull(h.owner.recent)
         h.owner.invalidate()
+    }
+
+    @Test fun historyCapacityPersistsAcrossPausedRestartAndRejectsInvalidSettings() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("anice-capacity").toFile()
+        try {
+            val file = java.io.File(directory, "history.json")
+            val storage = ClipboardHistoryFile(file)
+            val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+            val history = ClipboardHistory(storage, dispatcher)
+            history.updateCapacity(100); until { history.capacity == 100 }
+            history.setKeepingHistory(true); until { history.enabled }
+            repeat(105) { history.record(ClipboardSample("row-$it"), "phone") }
+            until { history.entries.firstOrNull()?.text == "row-104" }
+            assertEquals(100, history.entries.size)
+            history.setKeepingHistory(false); until { JSONObject(file.readText()).optBoolean("enabled", true) == false }
+            val paused = ClipboardHistory(storage, dispatcher)
+            until { paused.entries.size == 100 }
+            assertFalse(paused.enabled); assertEquals(100, paused.capacity)
+            paused.updateCapacity(50); until { paused.capacity == 50 }
+            assertEquals(50, paused.entries.size); assertEquals("row-104", paused.entries.first().text)
+            paused.updateCapacity(0); paused.updateCapacity(101); yield(); assertEquals(50, paused.capacity)
+            val legacy = JSONObject(file.readText()).apply { remove("enabled"); remove("capacity") }
+            file.writeText(legacy.toString())
+            assertTrue(storage.load()!!.enabled); assertEquals(20, storage.load()!!.capacity)
+            legacy.put("capacity", 101); file.writeText(legacy.toString())
+            try { storage.load(); fail("Invalid capacity accepted") } catch (_: IllegalArgumentException) {}
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun pausingDuringDelayedLoadKeepsHistoryAndDoesNotRestoreCollection() = runBlocking {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val row = ClipboardHistoryEntry(UUID.randomUUID().toString(), "Keep", "phone", 1)
+        val saved = java.util.concurrent.atomic.AtomicReference(ClipboardHistoryState(listOf(row)))
+        val history = ClipboardHistory(object : ClipboardHistoryStorage {
+            override fun load(): ClipboardHistoryState { entered.countDown(); check(release.await(5, java.util.concurrent.TimeUnit.SECONDS)); return saved.get() }
+            override fun save(entries: List<ClipboardHistoryEntry>, enabled: Boolean, capacity: Int) { saved.set(ClipboardHistoryState(entries, enabled, capacity)) }
+            override fun delete() = error("Pausing must not delete history")
+        }, coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        try { until { entered.count == 0L }; history.setKeepingHistory(false) } finally { release.countDown() }
+        until { history.entries.isNotEmpty() }
+        assertFalse(history.enabled); assertEquals(listOf(row), history.entries)
+        until { !saved.get().enabled }; assertEquals(listOf(row), saved.get().entries)
     }
 
 }

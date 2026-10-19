@@ -41,6 +41,7 @@ class SmsController(
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val subscriptions: SmsSubscriptionSource? = null,
     private val now: () -> Long = android.os.SystemClock::elapsedRealtime,
+    private val wallNow: () -> Long = System::currentTimeMillis,
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val permissions: (String) -> Boolean = { false },
 ) : FeatureHandler {
@@ -72,9 +73,9 @@ class SmsController(
         fun nextWake() = if (retryAt > 0) retryAt else deadline
     }
     private class Mark(val messageId: String, val expiry: Long)
-    private class Extra(val row: SmsDisplayMessage, val expiry: Long, val seq: Long)
+    private class Extra(val row: SmsDisplayMessage, val expiry: Long, val seq: Long, val sortMillis: Long)
     private class Serving(val requestId: String, val descriptor: ChannelDescriptor, var job: Job? = null)
-    private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long, val seq: Long) {
+    private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long, val seq: Long, val sortMillis: Long) {
         val fragments = mutableListOf<ByteArray>()
         var committing = false
         var job: Job? = null
@@ -89,9 +90,14 @@ class SmsController(
     private val pendingLive = ArrayDeque<Live>()
     private val marks = ArrayDeque<Mark>()
     private val displayExtras = mutableListOf<Extra>()
-    /** Monotonic arrival order: a timestamp tie goes to the row that arrived later, never to a synthetic ID. */
+    /** Local observation order survives carrier clock differences and late radio verdicts. */
     private var arrivalSeq = 0L
     private fun nextArrival() = ++arrivalSeq
+    private var lastSortMillis = 0L
+    private fun nextSortMillis(): Long {
+        lastSortMillis = maxOf(lastSortMillis, wallNow())
+        return lastSortMillis
+    }
     private var timer: Job? = null
     private var loadedRows: List<SmsHistoryMessage> = emptyList()
     private var loadedCursor: Pair<Long, String> = 0L to ""
@@ -261,7 +267,13 @@ class SmsController(
             try {
                 val deadline = deadline(link)
                 var failed = false
-                val page = try { store.threads(link.remoteThreads, beforeMillis, beforeThreadId) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
+                val page = try { store.threads(link.remoteThreads, beforeMillis, beforeThreadId) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: SmsPagingUnsupported) {
+                        send(link, SmsWireMessage.of(4, text(requestId), number(4), number(0), text("")), deadline)
+                        return@launch
+                    }
+                    catch (_: Exception) { failed = true; null }
                 if (page == null) { send(link, SmsWireMessage.of(4, text(requestId), number(if (failed) 5 else 1), number(0), text("")), deadline); return@launch }
                 if (page.partial) { send(link, SmsWireMessage.of(4, text(requestId), number(5), number(0), text("")), deadline); return@launch }
                 skippedRows += page.skipped
@@ -379,7 +391,7 @@ class SmsController(
             return
         }
         if (current != null) { replyResult(link, requestId, 2, "", 0); return }
-        incomingReplies[k] = Incoming(link.channel.descriptor, requestId, m.text(2), m.number(3).toInt(), m.number(4).toInt(), m.bytes(5), m.number(6).toInt(), deadline(link), nextArrival())
+        incomingReplies[k] = Incoming(link.channel.descriptor, requestId, m.text(2), m.number(3).toInt(), m.number(4).toInt(), m.bytes(5), m.number(6).toInt(), deadline(link), nextArrival(), nextSortMillis())
         schedule()
     }
 
@@ -435,11 +447,10 @@ class SmsController(
             replyResult(link, current.requestId, outcome.result, outcome.messageId, outcome.dateMillis)
             if (outcome.result == 0L) {
                 val raw = outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
-                // A send without a provider row is second-aligned like a PDU, so a reply in the same second
-                // ties and wins on arrival order instead of losing to a sub-second queue stamp.
+                // Synthetic echoes use whole-second display time; ordering retains the submit observation.
                 val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
                 val row = SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, current.address, stamp, 1, false, text, outcome.messageId.isEmpty(), current.subscriptionId)
-                displayExtras += Extra(row, now() + EXTRAS_LIFETIME, current.seq)
+                displayExtras += Extra(row, now() + EXTRAS_LIFETIME, current.seq, current.sortMillis)
                 upsertSentThread(current.address, text, stamp)
                 refreshConversation()
                 status = "Reply sent"
@@ -486,7 +497,7 @@ class SmsController(
             if (pendingLive.size >= PENDING_LIVE_LIMIT) { pendingLive.removeFirst().job?.cancel(); failedLive++ }
             val live = Live(cleanEvent, now() + PENDING_LIVE_LIFETIME) { finish() }
             pendingLive.addLast(live)
-            displayExtras += Extra(SmsDisplayMessage(cleanEvent.messageId, event.address, event.dateMillis, 0, true, text, false, cleanEvent.subscriptionId), now() + PENDING_LIVE_LIFETIME, nextArrival())
+            displayExtras += Extra(SmsDisplayMessage(cleanEvent.messageId, event.address, event.dateMillis, 0, true, text, false, cleanEvent.subscriptionId), now() + PENDING_LIVE_LIFETIME, nextArrival(), nextSortMillis())
             status = "Incoming message"
             live.job = scope.launch { deliver(live) }
             upsertLiveThread(event, text)
@@ -695,11 +706,14 @@ class SmsController(
                 var failed = false
                 val page = try { store.threads(PANEL_THREAD_PAGE, cursor.first, cursor.second) }
                     catch (e: CancellationException) { throw e }
+                    catch (_: SmsPagingUnsupported) { status = "Too many conversations share a timestamp to load this page"; return@launch }
                     catch (_: Exception) { failed = true; null }
                 // A reset started while this page ran: its rows and cursor must not land here.
                 if (generation != threadGeneration) return@launch
                 if (page == null) {
                     status = if (failed) "Conversations are unavailable" else "READ_SMS permission is required to load conversations"
+                } else if (page.partial) {
+                    status = "Some conversation sources are unavailable. Try again."
                 } else {
                     skippedRows += page.skipped
                     val combined = if (reset) page.threads else (threads.orEmpty() + page.threads).distinctBy { it.threadId }
@@ -707,7 +721,6 @@ class SmsController(
                     threadCursor = page.nextBeforeMillis to page.nextBeforeThreadId
                     threadsMore = page.more
                     status = when {
-                        page.partial -> "Some conversation sources are unavailable"
                         combined.isEmpty() -> "No conversations on this device"
                         else -> "${combined.size} conversations"
                     }
@@ -774,15 +787,16 @@ class SmsController(
             operation.completion.complete(SmsSendOutcome(6, "", 0)); status = "Message must be plain text up to 24 KiB"
             return operation
         }
-        // The echo carries the submission's arrival slot, so a reply that lands before the result still outranks it on a tie.
+        // Capture order before the radio call: a reply received during confirmation must stay above this send.
         val echoSeq = nextArrival()
+        val echoSortMillis = nextSortMillis()
         scope.launch {
             val outcome = try { sender.send(address, clean, subscriptionId) } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
             when (outcome.result) {
                 0L -> {
                     val raw = outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
                     val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
-                    displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, stamp, 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME, echoSeq)
+                    displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, stamp, 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME, echoSeq, echoSortMillis)
                     upsertSentThread(address, clean, stamp)
                     refreshConversation(); status = "Message sent"
                     if (outcome.messageId.isEmpty()) recheckPendingEcho()
@@ -814,6 +828,7 @@ class SmsController(
         // Arrival order decides a timestamp tie — a reply that landed after the send — never synthetic IDs.
         // A provider row inherits the arrival slot of the live copy or echo it replaced.
         val arrival = HashMap<String, Long>()
+        val sortDates = HashMap<String, Long>()
         val visible = mutableListOf<SmsDisplayMessage>()
         for (extra in displayExtras) {
             if (selected != null && (address == null || smsNormalizedAddress(extra.row.address) != smsNormalizedAddress(address))) continue
@@ -821,14 +836,17 @@ class SmsController(
             if (index < 0) {
                 visible += extra.row
                 arrival[extra.row.messageId] = extra.seq
+                sortDates[extra.row.messageId] = extra.sortMillis
             } else {
-                arrival[unmatched.removeAt(index).messageId] = extra.seq
+                val id = unmatched.removeAt(index).messageId
+                arrival[id] = extra.seq
+                sortDates[id] = extra.sortMillis
             }
         }
         conversation = (loadedRows.map { SmsDisplayMessage(it.messageId, it.address, it.dateMillis, it.direction, it.unread, it.text, false, it.subscriptionId) } + visible).sortedWith { a, b ->
-            // Order on the whole second: a PDU timestamp has second granularity, a provider sent-row date
-            // can carry milliseconds. Within a second, arrival decides, then the provider's id tie-break.
-            val d = (b.dateMillis / 1000).compareTo(a.dateMillis / 1000)
+            // Carrier timestamps can precede the send they answer. Observed rows and their provider
+            // copies keep local submit/receive order; untouched history retains provider chronology.
+            val d = ((sortDates[b.messageId] ?: b.dateMillis) / 1000).compareTo((sortDates[a.messageId] ?: a.dateMillis) / 1000)
             if (d != 0) d
             else {
                 val ra = arrival[a.messageId] ?: -1L
