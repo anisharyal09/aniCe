@@ -72,9 +72,9 @@ class SmsController(
         fun nextWake() = if (retryAt > 0) retryAt else deadline
     }
     private class Mark(val messageId: String, val expiry: Long)
-    private class Extra(val row: SmsDisplayMessage, val expiry: Long)
+    private class Extra(val row: SmsDisplayMessage, val expiry: Long, val seq: Long)
     private class Serving(val requestId: String, val descriptor: ChannelDescriptor, var job: Job? = null)
-    private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long) {
+    private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long, val seq: Long) {
         val fragments = mutableListOf<ByteArray>()
         var committing = false
         var job: Job? = null
@@ -89,6 +89,9 @@ class SmsController(
     private val pendingLive = ArrayDeque<Live>()
     private val marks = ArrayDeque<Mark>()
     private val displayExtras = mutableListOf<Extra>()
+    /** Monotonic arrival order: a timestamp tie goes to the row that arrived later, never to a synthetic ID. */
+    private var arrivalSeq = 0L
+    private fun nextArrival() = ++arrivalSeq
     private var timer: Job? = null
     private var loadedRows: List<SmsHistoryMessage> = emptyList()
     private var loadedCursor: Pair<Long, String> = 0L to ""
@@ -100,6 +103,8 @@ class SmsController(
     /** Ownership token: a conversation load only lands while its selection still stands. */
     private var conversationGeneration = 0
     var permissionsState by mutableStateOf(SmsPermissionState(false, false, false)); private set
+    /** Every SMS capability is granted; Settings drops its Messages card once this is true. */
+    val granted: Boolean get() = permissionsState.receive && permissionsState.read && permissionsState.send
     var threads by mutableStateOf<List<SmsThreadRecord>?>(null); private set
     var threadsMore by mutableStateOf(false); private set
     var selectedThreadId by mutableStateOf<String?>(null); private set
@@ -113,6 +118,9 @@ class SmsController(
     var waitingLive by mutableStateOf(0); private set
     var failedLive by mutableStateOf(0); private set
     var onLanRequired: () -> Unit = {}
+
+    // Cold start without visiting the panel first: Settings must know the real grant before it composes.
+    init { refreshPermissions() }
 
     fun connected(peer: DeviceIdentity) = links.values.any { key(it.channel.descriptor.peer) == key(peer) }
     fun reachable(peer: DeviceIdentity) = candidateLinks().any { key(it.channel.descriptor.peer) == key(peer) }
@@ -371,7 +379,7 @@ class SmsController(
             return
         }
         if (current != null) { replyResult(link, requestId, 2, "", 0); return }
-        incomingReplies[k] = Incoming(link.channel.descriptor, requestId, m.text(2), m.number(3).toInt(), m.number(4).toInt(), m.bytes(5), m.number(6).toInt(), deadline(link))
+        incomingReplies[k] = Incoming(link.channel.descriptor, requestId, m.text(2), m.number(3).toInt(), m.number(4).toInt(), m.bytes(5), m.number(6).toInt(), deadline(link), nextArrival())
         schedule()
     }
 
@@ -426,9 +434,13 @@ class SmsController(
             incomingReplies.remove(k)
             replyResult(link, current.requestId, outcome.result, outcome.messageId, outcome.dateMillis)
             if (outcome.result == 0L) {
-                val row = SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, current.address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, text, outcome.messageId.isEmpty(), current.subscriptionId)
-                displayExtras += Extra(row, now() + EXTRAS_LIFETIME)
-                upsertSentThread(current.address, text, outcome.dateMillis)
+                val raw = outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
+                // A send without a provider row is second-aligned like a PDU, so a reply in the same second
+                // ties and wins on arrival order instead of losing to a sub-second queue stamp.
+                val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
+                val row = SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, current.address, stamp, 1, false, text, outcome.messageId.isEmpty(), current.subscriptionId)
+                displayExtras += Extra(row, now() + EXTRAS_LIFETIME, current.seq)
+                upsertSentThread(current.address, text, stamp)
                 refreshConversation()
                 status = "Reply sent"
                 if (outcome.messageId.isEmpty()) recheckPendingEcho()
@@ -474,7 +486,7 @@ class SmsController(
             if (pendingLive.size >= PENDING_LIVE_LIMIT) { pendingLive.removeFirst().job?.cancel(); failedLive++ }
             val live = Live(cleanEvent, now() + PENDING_LIVE_LIFETIME) { finish() }
             pendingLive.addLast(live)
-            displayExtras += Extra(SmsDisplayMessage(cleanEvent.messageId, event.address, event.dateMillis, 0, true, text, false, cleanEvent.subscriptionId), now() + PENDING_LIVE_LIFETIME)
+            displayExtras += Extra(SmsDisplayMessage(cleanEvent.messageId, event.address, event.dateMillis, 0, true, text, false, cleanEvent.subscriptionId), now() + PENDING_LIVE_LIFETIME, nextArrival())
             status = "Incoming message"
             live.job = scope.launch { deliver(live) }
             upsertLiveThread(event, text)
@@ -762,12 +774,16 @@ class SmsController(
             operation.completion.complete(SmsSendOutcome(6, "", 0)); status = "Message must be plain text up to 24 KiB"
             return operation
         }
+        // The echo carries the submission's arrival slot, so a reply that lands before the result still outranks it on a tie.
+        val echoSeq = nextArrival()
         scope.launch {
             val outcome = try { sender.send(address, clean, subscriptionId) } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
             when (outcome.result) {
                 0L -> {
-                    displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME)
-                    upsertSentThread(address, clean, outcome.dateMillis)
+                    val raw = outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
+                    val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
+                    displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, stamp, 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME, echoSeq)
+                    upsertSentThread(address, clean, stamp)
                     refreshConversation(); status = "Message sent"
                     if (outcome.messageId.isEmpty()) recheckPendingEcho()
                 }
@@ -795,15 +811,30 @@ class SmsController(
         val address = selected?.let { id -> threads?.firstOrNull { it.threadId == id }?.address } ?: loadedRows.firstOrNull()?.address
         // The provider record wins: a live copy or sent echo matching a provider row is hidden, never duplicated.
         val unmatched = loadedRows.toMutableList()
-        val visible = displayExtras.map { it.row }
-            .filter { selected == null || (address != null && smsNormalizedAddress(it.address) == smsNormalizedAddress(address)) }
-            .filterNot { extra ->
-                val index = unmatched.indexOfFirst { row -> row.direction == extra.direction && sameContent(row, extra) }
-                if (index < 0) false else { unmatched.removeAt(index); true }
+        // Arrival order decides a timestamp tie — a reply that landed after the send — never synthetic IDs.
+        // A provider row inherits the arrival slot of the live copy or echo it replaced.
+        val arrival = HashMap<String, Long>()
+        val visible = mutableListOf<SmsDisplayMessage>()
+        for (extra in displayExtras) {
+            if (selected != null && (address == null || smsNormalizedAddress(extra.row.address) != smsNormalizedAddress(address))) continue
+            val index = unmatched.indexOfFirst { row -> row.direction == extra.row.direction && sameContent(row, extra.row) }
+            if (index < 0) {
+                visible += extra.row
+                arrival[extra.row.messageId] = extra.seq
+            } else {
+                arrival[unmatched.removeAt(index).messageId] = extra.seq
             }
+        }
         conversation = (loadedRows.map { SmsDisplayMessage(it.messageId, it.address, it.dateMillis, it.direction, it.unread, it.text, false, it.subscriptionId) } + visible).sortedWith { a, b ->
-            val d = b.dateMillis.compareTo(a.dateMillis)
-            if (d != 0) d else -smsCompareMessageIds(a.messageId, b.messageId)
+            // Order on the whole second: a PDU timestamp has second granularity, a provider sent-row date
+            // can carry milliseconds. Within a second, arrival decides, then the provider's id tie-break.
+            val d = (b.dateMillis / 1000).compareTo(a.dateMillis / 1000)
+            if (d != 0) d
+            else {
+                val ra = arrival[a.messageId] ?: -1L
+                val rb = arrival[b.messageId] ?: -1L
+                if (ra != rb) rb.compareTo(ra) else -smsCompareMessageIds(a.messageId, b.messageId)
+            }
         }
     }
 

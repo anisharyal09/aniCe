@@ -115,10 +115,11 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
                         }
                         HorizontalDivider()
                     }
-                    // The first page paints on its own; the rest follows without blocking the list.
+                    // The first page paints on its own; the button is the way out when an automatic request is dropped.
                     if (owner.threadsMore) {
-                        Text("Loading more conversations…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         LaunchedEffect(owner.threads!!.size) { owner.loadMoreThreads() }
+                        if (owner.loading) Text("Loading more conversations…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        else TextButton(onClick = owner::loadMoreThreads) { Text("Load more conversations") }
                     }
                 }
             }
@@ -235,11 +236,11 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
 fun SmsSettings(owner: SmsController) {
     LaunchedEffect(Unit) { owner.refreshPermissions() }
     val state = owner.permissionsState
-    val ready = state.receive && state.read && state.send
+    // A full grant removes the Settings card entirely; the panel already reports **SMS access granted**.
+    if (state.receive && state.read && state.send) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            if (ready) "Relaying incoming messages to your Mac."
-            else "Still needed: ${missingLabels(state)}.",
+            "Still needed: ${missingLabels(state)}.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (owner.skippedRows > 0) Text("${owner.skippedRows} rows could not be read", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

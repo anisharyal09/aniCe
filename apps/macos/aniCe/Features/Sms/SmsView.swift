@@ -86,23 +86,14 @@ struct SmsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      HStack(alignment: .center, spacing: 8) {
-        if selectable.count > 1 {
-          Picker("Phone", selection: $peerKey) {
-            ForEach(selectable) { record in
-              Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
-            }
-          }.labelsHidden().frame(maxWidth: 260)
-        }
-        Spacer(minLength: 0)
-        // The gear is the same control set as Settings → Messages, right where replies are sent from.
-        if let peer {
-          Button { controlsOpen = true } label: { Label("Notification settings", systemImage: "gearshape") }
-            .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
-            .help("Notification settings for \(peer.deviceName)")
-            .accessibilityLabel("Notification settings for \(peer.deviceName)")
-            .popover(isPresented: $controlsOpen, arrowEdge: .bottom) { notificationPopover(peer) }
-        }
+      // The phone picker exists only when more than one phone can serve the panel; the gear rides the
+      // search or conversation row instead of reserving a row of its own.
+      if selectable.count > 1 {
+        Picker("Phone", selection: $peerKey) {
+          ForEach(selectable) { record in
+            Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
+          }
+        }.labelsHidden().frame(maxWidth: 260)
       }
       if !model.notificationStatus.isEmpty {
         Text(model.notificationStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -147,13 +138,17 @@ struct SmsView: View {
   }
 
   @ViewBuilder private func threads(_ peer: DeviceIdentity) -> some View {
-    TextField("Search messages", text: $query)
-      .textFieldStyle(.roundedBorder)
-      .onChange(of: query) { _, _ in expanded.removeAll() }
-      .task(id: query) {
-        do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
-        model.search(peer, query: query)
-      }
+    HStack(spacing: 8) {
+      TextField("Search messages", text: $query)
+        .textFieldStyle(.roundedBorder)
+        .onChange(of: query) { _, _ in expanded.removeAll() }
+        .task(id: query) {
+          do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+          model.search(peer, query: query)
+        }
+      gear(peer)
+    }
+    if controlsOpen { notificationPanel(peer) }
     if query.isEmpty {
       HStack {
         Text("Conversations").font(.subheadline.weight(.medium))
@@ -205,10 +200,16 @@ struct SmsView: View {
           Divider()
         }
         if model.threadMore(peer) {
-          HStack(spacing: 6) {
-            ProgressView().controlSize(.small)
-            Text("Loading older conversations…").font(.caption)
-              .foregroundStyle(AniCePalette.secondaryText(scheme))
+          // The automatic request can be dropped while another one is in flight; the button is the way out.
+          if model.loadingThreads(peer) {
+            HStack(spacing: 6) {
+              ProgressView().controlSize(.small)
+              Text("Loading older conversations…").font(.caption)
+                .foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
+          } else {
+            Button("Load older conversations") { model.requestMoreThreads(peer) }
+              .buttonStyle(.bordered).controlSize(.small)
           }
         }
       }
@@ -274,7 +275,9 @@ struct SmsView: View {
       Button("Refresh") { model.refreshMessages(peer, address: address) }
         .buttonStyle(.bordered).controlSize(.small)
         .disabled(!model.supports(peer))
+      gear(peer)
     }
+    if controlsOpen { notificationPanel(peer) }
     if model.status(peer) != "Ready" {
       Text(model.status(peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
@@ -376,13 +379,26 @@ struct SmsView: View {
     }
   }
 
-  @ViewBuilder private func notificationPopover(_ peer: DeviceIdentity) -> some View {
+  /** Toggles the notification controls that sit directly under this row; they never leave the window. */
+  @ViewBuilder private func gear(_ peer: DeviceIdentity) -> some View {
+    Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
+      .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
+      .help("Notification settings for \(peer.deviceName)")
+      .accessibilityLabel("Notification settings for \(peer.deviceName)")
+      .accessibilityValue(controlsOpen ? "Showing" : "Hidden")
+  }
+
+  @ViewBuilder private func notificationPanel(_ peer: DeviceIdentity) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(peer.deviceName).font(.subheadline.weight(.medium))
       SmsNotificationControls(preferences: preferences, peer: peer)
       Text("Sound and message text follow the Notifications switch. The same controls sit in Settings.")
         .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-    }.padding(12).frame(width: 300)
+    }
+    .padding(10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AniCePalette.secondarySurface(scheme)))
+    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AniCePalette.separator(scheme)))
   }
 
   private func date(_ millis: Int64) -> Date { Date(timeIntervalSince1970: Double(millis) / 1000) }

@@ -717,6 +717,52 @@ class SmsControllerTests {
         assertEquals(listOf("sms:201", "sms:200"), h.owner.conversation.map { it.messageId })
     }
 
+    @Test fun sameSecondRepliesSortAboveTheSendEchoByArrivalOrder() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        // The phone answers without a readable provider row, so the echo is stamped at its queue second.
+        h.sender.outcome = SmsSendOutcome(0, "", 1_700_000_000_750)
+        h.owner.send("+15551234567", "hi")
+        until { h.owner.conversation.size == 1 }
+        val echo = h.owner.conversation.single()
+        assertEquals(1_700_000_000_000, echo.dateMillis)
+        assertTrue(echo.pending)
+        // The answer carries the same whole second: arrival order decides, never the synthetic echo ID.
+        h.owner.submitLive(listOf(SmsLiveEvent("+15551234567", 1_700_000_000_000, "hi2")))
+        until { h.owner.conversation.size == 2 }
+        assertEquals(listOf("hi2", "hi"), h.owner.conversation.map { it.text })
+        assertEquals(listOf(false, true), h.owner.conversation.map { it.pending })
+    }
+
+    @Test fun aProviderEchoWithMillisecondsStillSortsBelowASameSecondReply() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        // The phone found its provider row: the echo carries a millisecond provider date in the same second.
+        h.sender.outcome = SmsSendOutcome(0, "sms:77", 1_700_000_000_428)
+        h.owner.send("+15551234567", "hi")
+        until { h.owner.conversation.size == 1 }
+        // The answer carries a whole-second PDU stamp from that same second.
+        h.owner.submitLive(listOf(SmsLiveEvent("+15551234567", 1_700_000_000_000, "hi2")))
+        until { h.owner.conversation.size == 2 }
+        assertEquals(listOf("hi2", "hi"), h.owner.conversation.map { it.text })
+        assertEquals(listOf(0L, 1L), h.owner.conversation.map { it.direction })
+    }
+
+    @Test fun aMessageThatLandedBeforeTheSendKeepsItsPlaceOnASecondTie() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.owner.submitLive(listOf(SmsLiveEvent("+15551234567", 1_700_000_000_000, "earlier")))
+        until { h.owner.conversation.size == 1 }
+        h.sender.outcome = SmsSendOutcome(0, "", 1_700_000_000_750)
+        h.owner.send("+15551234567", "later")
+        until { h.owner.conversation.size == 2 }
+        // Arrival, not direction: a send that followed the message sits above it on the same second.
+        assertEquals(listOf("later", "earlier"), h.owner.conversation.map { it.text })
+    }
+
     @Test fun switchingConversationsMidLoadKeepsRowsAndCursorOfTheSelectedThread() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()
