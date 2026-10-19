@@ -2,13 +2,13 @@
 
 Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Extended background endurance, minimum-OS runtime coverage and independent security review remain open. Manual Connect retains its 120-second admission window.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Manual Connect retains its 120-second admission window.
 
-Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records acceptance gates.
+Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
-## Development version and verification
+## Development milestone
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device and text Clipboard are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -23,6 +23,7 @@ aniCe/
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
     FindDevice/                Peer ring request actions, sound player and notification setup
     NowPlaying/                Playback model, native bridge, session link, codecs and views
+    Sms/                       SMS relay model, wire codec, notifier and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
     Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
   Infrastructure/
@@ -39,6 +40,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   Clipboard/                   Clipboard model, debounce and wire codec test suites
   FindDevice/                  Find device payload and state transition test suites
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+  Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
 IdentityInterchange/           Native test-only signature endpoint
 SessionInterchange/            Native test-only session/TCP endpoints
@@ -77,7 +79,7 @@ The gate enables the Keychain tests, cross-checks the result bundle against `xco
 
 The storage backend remains the development login Keychain, without hardware isolation. The default build uses local ad-hoc signing without a certificate requirement. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Stable certificate signing keeps code identity across rebuilds; ad-hoc builds may require renewed Keychain authorization. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
-The separate signed data-protection/Secure Enclave backend requires real signing and authorized entitlements; native verification is pending. Universal builds support Apple Silicon and Intel. macOS 14 is the provisional minimum; runtime coverage remains pending.
+The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Universal builds support Apple Silicon and Intel; macOS 14 is the deployment target.
 
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
@@ -107,6 +109,10 @@ Debug/Release disable App Sandbox for the whole app. Journals retain their exist
 
 Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.
 
+## Messages (SMS relay)
+
+Features → Messages relays incoming SMS to notifications with an inline reply, reads the phone's conversations and history on demand, searches matching messages in bounded pages without indexing them, and replies on the phone's default SIM unless another active subscription is chosen while the panel is open. The thread list paints 15 cards first, keeps filling from the cursor and shows **Load older conversations** whenever a page is available and none is loading; **Return** or **Command-Return** sends (Shift-Return keeps a newline), and the reply paints as a **Sending** row until the phone confirms it. A conversation that mixes two SIMs labels each row with the subscription it arrived on. Settings → Messages collapses each phone's **Notifications** and **Play sound** switches (both on by default) and the **Show message text in notifications** preview (off by default) behind its clickable name label, and the panel's gear expands the same switches under its row; a failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for paging limits, search behavior and the notification controls.
+
 ## Clipboard
 
-Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior and physical acceptance gates](../../docs/features/CLIPBOARD.md) describe the background-overwrite limitation and verification still required.
+Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior](../../docs/features/CLIPBOARD.md) describes permissions, focus rules and the background-overwrite limitation.

@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Messages provides SMS permission setup, live relay, paged conversations and history, phone-side search and active-SIM selection over existing secured sessions. Multipart replies report radio acceptance or an unconfirmed outcome without automatic resend. Provider scans complete timestamp groups and retain continuation cursors across unreadable batches; partial reads preserve completed state. Live receipts and sends keep local observation order when carrier clocks differ. The composer keeps SIM choice on the left and Send SMS at the far-right edge, with keyboard sending and readable long-label truncation.
+
 - Send to Mac through supported text-selection menus, the text Share sheet and a Quick Settings tile with a compact screen-and-arrow icon. The tile uses native placement setup, one focused capture and sensitive-text confirmation. Clipboard retains Share/History views, with optional device-local history, 20/50/100-item capacity choices, date groups, source-device labels and Copy/Send/Delete controls. Home shows the latest successful clipboard activity for five minutes with an eligible-text preview and local Copy.
 
 - Strict local verification gate for the shared JVM/Android checks. It parses JUnit reports and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips; shared vector generators now support `--check` drift validation.
@@ -24,6 +26,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 
 ### Fixed
+
+- SMS reception uses the platform decoder for GSM/CDMA and framework multipart batches, with bounded broadcast completion. Live acknowledgements validate result and channel; expired queues and replies are retired, duplicate reply commits reuse bounded in-memory results, and provider paging preserves each source position and rejects oversized timestamp groups.
 
 - A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and paused batches keep the transfer foreground service, LAN work lease and a secured BLE fallback lease so automatic LAN or explicit Bluetooth continuation can resume them.
 - Continuing over Bluetooth no longer causes the BLE channel to connect and disconnect repeatedly, and the paused card/notification offers Continue over Bluetooth on the receiving device as well as the sender.

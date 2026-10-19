@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Messages provides native SMS notifications with inline Reply, paged phone conversations and history, bounded phone-side search and optional SIM selection. Per-phone notification, sound and preview controls are shared by Settings and the panel. Provisional replies use wall-clock timestamps and remain separate from history until confirmed; known provider identities and send-queue bounds prevent unrelated identical replies from merging. Local submit/receive order survives provider refreshes and carrier clock differences. Content remains in memory and clears with the last secured link.
+
 - Native Quick Paste Tray: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), small tray icon beside Send clipboard in the companion, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, stable selection and immediate arrow-key navigation, and Return to copy. Search and filters have separate rows, cards retain visible actions, and failed native copies remain open for retry. The full Clipboard panel offers a direct tray entry, small horizontal insets, and History search/source filters. Pausing collection preserves saved history across restart, Forget device and Reset identity, with explicit Clear/Delete controls. History capacity is now configurable (20 default, 50, 100), pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
 
 - Compact Clipboard Share/History views and optional device-local history with source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.
@@ -23,6 +25,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Clipboard and file sending use compact labeled native controls. Clipboard preferences use small accent-colored checkboxes; History groups entries by date with a count/Clear all toolbar and adaptive row actions in both appearances. Clipboard help explains Android selection, Share-sheet and Quick Settings routes, connected-device requirements and manual sharing with automatic sharing off.
 
 ### Fixed
+
+- SMS requests negotiate capability per channel, stage provider thread snapshots until completion, retain failed drafts and discard stale asynchronous assemblies. Notification settings and submission failures are visible; counters advance after macOS accepts a notification, and peer retirement clears notification targets.
 
 - A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and a paused batch keeps its sleep assertion, destination and secured Bluetooth fallback so automatic LAN or explicit Bluetooth continuation can finish it. The paused notification offers Continue over Bluetooth on the receiving device as well as the sender.
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected, even on fresh installs with no stored preference.

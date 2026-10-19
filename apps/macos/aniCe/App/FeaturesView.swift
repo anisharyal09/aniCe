@@ -7,6 +7,8 @@ struct FeaturesView: View {
   let transfer: MacTransferModel
   let clipboard: MacClipboardModel
   let findDevice: MacFindDeviceModel
+  let sms: MacSmsModel
+  let smsPreferences: SmsPreferences
   let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
   @Bindable var navigation: ConnectionNavigation
@@ -27,6 +29,7 @@ struct FeaturesView: View {
             DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
           case .files: TransferView(model: transfer)
           case .clipboard: ClipboardView(model: clipboard, peers: peers)
+          case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
           }
         } else {
@@ -38,7 +41,7 @@ struct FeaturesView: View {
           }
           LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 700 ? 2 : 1), alignment: .leading, spacing: 16) {
             ForEach(favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.allCases) { item in
-              feature(item, detail: item == .playback ? "Playback on this Mac" : item == .files ? "Send to your connected device" : item == .clipboard ? "Share text with your connected device" : "Alert a connected device")
+              feature(item, detail: item == .playback ? "Playback on this Mac" : item == .files ? "Send to your connected device" : item == .clipboard ? "Share text with your connected device" : item == .messages ? "Read and reply from your Mac" : "Alert a connected device")
             }
           }
         }

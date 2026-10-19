@@ -524,6 +524,7 @@ def run_vector_checks(interpreter, artifacts):
         ("LAN framing vectors", ROOT / "protocol/test-vectors/lan/generate_lan_vectors.py", ["--check"]),
         ("Bulk probe vectors", ROOT / "protocol/test-vectors/lan/generate_bulk_probe_vectors.py", ["--check"]),
         ("LAN transfer vectors", ROOT / "protocol/test-vectors/lan/generate_bulk_probe_vectors.py", ["--check", "--lan-transfer"]),
+        ("SMS vectors", ROOT / "protocol/test-vectors/sms/generate_sms_vectors.py", ["--check"]),
     ]
     for label, script, extra in checks:
         run_step(label, [interpreter, script] + extra, artifacts, cwd=script.parent)

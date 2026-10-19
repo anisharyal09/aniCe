@@ -124,6 +124,12 @@ fun SettingsScreen(
         HorizontalDivider()
         val clipboardApp = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
         io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(clipboardApp.clipboard, peers)
+        // The Messages card is only a permission prompt; once all three grants are in, Settings has no Messages section.
+        if (!clipboardApp.sms.granted) {
+            HorizontalDivider()
+            Text("Messages", style = MaterialTheme.typography.titleSmall)
+            io.github.anisharyal09.anice.features.sms.SmsSettings(clipboardApp.sms)
+        }
         HorizontalDivider()
         Text("Local network (LAN)", style = MaterialTheme.typography.titleSmall)
         val lan = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).lanSessionController

@@ -35,7 +35,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ## 4. Independent BLE & LAN Transports
 
-- **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime on supported API 31+ platforms in Debug and Release; physical endurance and minimum-OS acceptance remain pending.
+- **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime on supported API 31+ platforms in Debug and Release.
   - Contract: [BLE Discovery Wire Format](protocol/bluetooth/README.md)
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
@@ -105,6 +105,10 @@ App registers media and transfer FeatureHandlers before DATA delivery. Android f
 Native navigation types and Features destination content are separated from app shells. MacPlaybackModel is the sole playback authority; its owned process bridge fences native delivery by launch generation, and its session link coalesces logical snapshots before sealing. The fixture generator lives beside the media fixture; native and interchange scripts remain supported entry points. `python3 scripts/check-structure.py` checks dependency direction, local documentation links and explicit Xcode membership.
 
 Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Recovery journals, provider crash reconciliation and coordinated LAN renewal remain unimplemented.
+
+## Messages (SMS relay)
+
+Application-scoped SMS owners register with FeatureDispatch and share authenticated LAN/BLE channels; the Mac never stores SMS content on disk and drops peer data when the last link retires, trust is removed or the app quits. Android remains the source of truth: an IO-dispatched store reads `content://mms-sms/conversations` with a direct `content://sms`/`content://mms` fallback, sanitizes provider rows, pages the thread list on a `(dateMillis, threadId)` cursor and history on a `(dateMillis, messageId)` cursor with a bounded provider window and in-memory byte-wise tie-break, and reports the subscription each message arrived on; a manifest `SMS_RECEIVED` receiver decodes PDUs through Android telephony and passes ordered parts to a pure event assembler. The Mac reassembles live and provider records through one fragment/digest path, paints thread cards and conversation pages as they arrive, shows an outgoing reply as a provisional row stamped with its submit time until the phone's result settles or removes it, retains local submit/receive ordering independently of carrier timestamps when provider copies replace observed rows, merges provider copies by a subscription-aware content key, and posts one notification per previously unknown live message with an inline reply clamped to the protocol bound, under per-phone notification and sound switches reachable from Settings → Messages and the panel's own gear. Search reuses the same bounded, cancellable page scan with the query as a `LIKE … ESCAPE '\'` match over SMS bodies and text/plain MMS parts and keeps no index on either side; replies use the phone's default SMS subscription unless the Mac sends an explicit active one from a SIM listing the phone answers on demand. See [Messages](docs/features/SMS.md) and the [wire contract](protocol/sms/README.md).
 
 ## Clipboard
 

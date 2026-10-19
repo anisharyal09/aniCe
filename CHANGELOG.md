@@ -10,12 +10,16 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Updated implementation summaries to remove outdated blanket acceptance-pending labels.
+
+- SMS relay v3 connects Android Messages with Mac notifications, inline replies, paged conversations, history, phone-side search and per-reply SIM selection over secured LAN/Bluetooth. Content stays in memory on the Mac. Live receipts and sends retain local observation order across provider refreshes; thread scans complete timestamp groups and continue past unreadable rows. Native composers expose SIM choice beside Send, with per-phone Mac notification, sound and preview controls.
+
 - Native Quick Paste Tray on macOS: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), menu-bar companion button, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, immediate arrow-key selection, and Return to copy. History capacity is configurable on both platforms (20 default, 50, 100); pausing collection, app restart, Forget device and Reset identity preserve saved items, with explicit Clear/Delete controls. Clipboard panels have small horizontal insets. On macOS, pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
 
 - Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
 
 - Strict local verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) prove the gate rejects those false-success shapes. No CI workflow is added.
-- `--check` drift verification for every independent vector generator (clipboard, transfer, media, find-device, identity, pairing, session handshake/control/record, LAN framing, bulk probe and LAN transfer). Identity checking compares all non-randomized fields and verifies committed signatures with OpenSSL.
+- `--check` drift verification for every independent vector generator (clipboard, SMS, transfer, media, find-device, identity, pairing, session handshake/control/record, LAN framing, bulk probe and LAN transfer). Identity checking compares all non-randomized fields and verifies committed signatures with OpenSSL.
 - Replaced the macOS transfer-ordering test that asserted a local reimplementation with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback.
 
 - Native text Clipboard v1 on Android and macOS, with manual sharing, per-device opt-in automatic sharing and direct native clipboard delivery over secured LAN or BLE.
@@ -75,7 +79,7 @@ Development milestone: 0.2.0-dev, build 2.
 - **Navigation & Ergonomics**: Replaced full-window connection management on Home with compact summaries; moved detailed pairing, automatic preferences, and transport diagnostics to Devices with clickable fingerprint disclosures.
 - **Zero-Copy Record Processing**: Eliminated intermediate allocations and copies across authenticated record paths on both platforms; reused directional ciphers, encoded CBOR into exact buffers, and decoded sliced frames without rebasing.
 - **Transports & Concurrency**: Moved macOS LAN socket delivery, sliced frame parsing, write accounting, and watchdogs off the MainActor; decoupled Android socket reads into bounded ordered queues.
-- **Release & Verification Documentation**: Set release milestone to 0.2.0-dev, build 2; consolidated verification evidence in `docs/VERIFICATION.md` detailing automated test passes alongside remaining physical radio, lifecycle, and accessibility matrix items.
+- **Development milestone**: Set the application milestone to 0.2.0-dev, build 2.
 - **Test Accuracy**: Renamed macOS Find Device rendering test to `testFindDeviceViewRendersNonemptyLayoutWithAndWithoutPeers` to describe layout coverage without claiming OS permission evaluation.
 
 ### Fixed

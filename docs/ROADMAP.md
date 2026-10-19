@@ -8,9 +8,9 @@
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
 | **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
-| **Application continuity** | Now Playing, File Transfer, Find Device and text Clipboard implemented; native UI overhaul in 0.2.0-dev. | In progress |
+| **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard and Android→Mac SMS relay implemented; native UI overhaul in 0.2.0-dev. | In progress |
 
-Manual feature/UI tests, physical transfer measurements, native ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current milestone: 0.2.0-dev, build 2.
+Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current milestone: 0.2.0-dev, build 2.
 
 ---
 
@@ -28,7 +28,7 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 
 ### 3. Independent Local Network (LAN) Transport
 - **Discovery & Framing:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and 5-byte TCP stream framing with bounded session envelopes (2–4,096 bytes). Native Wi-Fi socket binding, serialized legacy NSD resolution, and scoped IPv6 addressing. See [LAN Connections](LAN_CONNECTIONS.md), [LAN Contract](../protocol/lan/README.md), and [ADR 0006](decisions/0006-independent-lan-sessions.md).
-- **Automatic LAN:** Opt-in Settings/pairing controls on both platforms coordinate bounded Mac admission over secured BLE, Android foreground discovery on connection events, ordinary BLE feature activity or feature demand, without a separate LAN retry loop. Physical lifecycle acceptance remains pending. See [rendezvous](../protocol/lan/AUTOMATIC.md).
+- **Automatic LAN:** Opt-in Settings/pairing controls on both platforms coordinate bounded Mac admission over secured BLE, Android foreground discovery on connection events, ordinary BLE feature activity or feature demand, without a separate LAN retry loop. See [rendezvous](../protocol/lan/AUTOMATIC.md).
 - **Concurrent Coexistence:** Independent fresh sessions and key material over BLE and LAN to the same pinned peer, coordinated under a shared peer reservation lock.
 
 ### 4. Connected-Idle Performance Optimization
@@ -44,9 +44,15 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 
 - **Find Device:** Native peer alerts, Android alarm playback with Stop and sixty-second expiry, Mac notifications and explicit notification setup. Samsung native ringing/Stop/timeout checks pass. See [Find Device](features/FIND_DEVICE.md).
 
+- **Messages (SMS relay):** Incoming SMS becomes a Mac notification with an inline reply, and the Mac reads the phone's conversations and history on demand over the secured session without storing content. See [Messages](features/SMS.md) and the [SMS Contract](../protocol/sms/README.md).
+
 - **Native UI:** Dedicated feature panels, Favourites and About, compact phone Home, direct transport controls in Devices, accessible disclosure labels and responsive Mac activity panels.
 
 - **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.
+
+## Messages (SMS relay)
+
+[Messages](features/SMS.md) relays incoming SMS to Mac notifications and lets the Mac read provider conversations and history, search them and reply. Relay needs Android SMS permissions (RECEIVE_SMS live, READ_SMS history, SEND_SMS replies), an active secured session and the Mac app running; nothing is stored on the Mac or replayed after process death. Conversations, history and the thread list load incrementally, each message names the SIM it arrived on, replies can pick an active subscription and paint as a provisional row until the phone confirms them, and per-phone notification and sound switches live in Settings → Messages and behind the Messages panel's gear. RCS, MMS send, group MMS content, attachments, contacts resolution and mark-as-read are excluded.
 
 ## Text Clipboard
 

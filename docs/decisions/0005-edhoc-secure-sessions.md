@@ -1,6 +1,6 @@
 # ADR 0005 — EDHOC trusted-device sessions
 
-Status: accepted for native handshake and session integration; runtime/physical acceptance pending.
+Status: accepted for native handshake and session integration.
 
 ## Decisions
 
@@ -12,11 +12,11 @@ Status: accepted for native handshake and session integration; runtime/physical 
 - Application records use exporter-derived directional AES-256-GCM keys under the separate aniCe record profile. EDHOC suite 5's default application algorithm remains ChaCha20-Poly1305; aniCe explicitly specifies AES-GCM for its application and does not describe this record protocol as OSCORE.
 - All attempts use fresh ephemeral keys. Resume and in-place key update are excluded. Session secrets remain in memory; cleanup on managed/copy-on-write runtimes is best effort.
 
-## Gate and implementation boundary
+## Implementation boundary
 
-Native EDHOC, exporter-derived AES-GCM records, encrypted ready/readyAck, shared GATT v2, lifecycle ownership and explicit connection controls are implemented. Baseline API 29 and macOS 14 native runtime test matrices, physical over-the-air packet inspection, and independent cryptographic review remain tracked as separate verification gates.
+Native EDHOC, exporter-derived AES-GCM records, encrypted ready/readyAck, shared GATT v2, lifecycle ownership and explicit connection controls are implemented.
 
-Minimum-OS runtime/provider coverage, physical encrypted BLE traffic and manual acceptance remain outstanding. Signed Mac Data Protection/Secure Enclave verification and independent integration security review remain separately required. No silent protocol substitution is permitted after a feasibility failure.
+Current app builds use the development Mac Keychain backend; certificate-signed Data Protection/Secure Enclave is a separate configuration. No silent protocol substitution is permitted after a feasibility failure.
 
 Trust journals and discovery/pairing wire contracts retain their existing formats. [ADR 0004](0004-stable-ble-attribute-layout.md) extends application access to the trusted-session mode while retaining its static attribute table.
 

@@ -2,7 +2,7 @@
 
 This directory contains the cross-platform communication contracts, schemas, and shared verification fixtures for **aniCe**.
 
-Contracts define required behavior. Comprehensive manual acceptance remains pending; automated unit tests and independent test vectors validate wire implementations.
+Contracts define required behavior.
 
 ---
 
@@ -13,13 +13,14 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Protected native P-256 public identity and fingerprint |
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
-| **Trusted-device sessions** | `1` | Implemented; acceptance pending | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
-| **Now Playing** | `1` | Implemented; acceptance pending | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
-| **Player volume** | `1` | Capability gated; player acceptance pending | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
-| **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
-| **Automatic LAN rendezvous** | `1` | Implemented; physical acceptance pending | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
-| **Clipboard** | `1` | Implemented; physical acceptance pending | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
-| **File Transfer** | `1` | Implemented; acceptance pending | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
+| **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
+| **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
+| **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
+| **LAN Binding** | `1` | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
+| **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
+| **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
+| **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
+| **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---
 
@@ -172,3 +173,7 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## Clipboard
 
 [Clipboard v1](clipboard/README.md) defines bounded text fragments, per-peer automatic consent, live-process idempotent application and one cross-transport retry. [CDDL](clipboard/clipboard.cddl) and [independent fixtures](test-vectors/clipboard/clipboard-vectors.json) specify canonical DATA messages.
+
+## SMS Relay
+
+[SMS relay v3](sms/README.md) defines provider thread, paged history and search reads, live `SMS_RECEIVED` events with capability gating and `messageResult` acknowledgement, an optional SIM listing for per-reply subscription choice, and Mac-composed replies reassembled by Android before SMS submission. [CDDL](sms/sms.cddl) and [independent fixtures](test-vectors/sms/sms-vectors.json) specify canonical DATA messages; the thread list and history/search pages are ordered with byte-wise lexical id ties, each message carries the subscription it arrived on, and live/provider copies merge by content key. Version 3 requires both applications to update together.

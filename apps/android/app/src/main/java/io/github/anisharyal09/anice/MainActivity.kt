@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
         identity.onIdentityReset = {
             (application as AniCeApplication).clipboard.preferences.clear()
             (application as AniCeApplication).clipboard.invalidate()
+            (application as AniCeApplication).sms.invalidate()
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this).stop("Identity changed. Set up automatic connection again.")
             session.cancel()
             pairing.cancel()

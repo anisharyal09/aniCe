@@ -1,6 +1,6 @@
 # ADR 0003 — Provisional pairing and trust
 
-Status: accepted for Phase 4 implementation; physical acceptance and security review pending.
+Status: accepted.
 
 Mac is the BLE peripheral and invitation owner. Android is the central. QR is the default and manual six-digit entry is an equal supported alternative. Both require authenticated public-identity proof and explicit approval on both devices. Discovery is not trust.
 

@@ -2,13 +2,13 @@
 
 Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations. Physical API 36 verification covers authenticated BLE and LAN sockets, settings navigation, Pause/Resume and 190 seconds of quiet secured traffic after Recents removal. Locked-screen endurance, out-of-range recovery, minimum-OS coverage, and independent security review remain pending.
+Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations.
 
-Automatic nearby recovery uses an OS-bound companion lease and one device setting. The shared API 31+ resource enables notification-free ownership in Debug and Release. Physical endurance and minimum-OS acceptance remain pending. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records policy and hardware gates.
+Automatic nearby recovery uses an OS-bound companion lease and one device setting. The shared API 31+ resource enables notification-free ownership in Debug and Release. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
-## Development version and verification
+## Development milestone
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device and text Clipboard are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
 
 ## Nearby discovery
 
@@ -25,6 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
+        sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/
         connections/                BLE/LAN owners, nearby policy and DATA dispatch
@@ -91,7 +92,7 @@ Mac selects an allowed Android (or Any trusted Android) and taps **Connect** to 
 
 ## Background connection experiment
 
-Devices exposes **Connect automatically**; **Connection details → Diagnostics → Setup settings** retains association management; that page contains only setup/reset controls. Checks, counters and Debug automatic-service events share the connection diagnostics section; event logs are collapsed by default. Home/setup navigation preserves LAN. Opening discovery preserves BLE and LAN; Scan retires only BLE and releases its temporary automatic-policy suspension after cleanup. Automatic preference state updates independently of connection progress. First setup or permission/association repair uses the native companion route; valid saved setup resumes directly from Devices. Turning automatic connection off retains eligible secured foreground work as manual, while releasing background ownership and retries. Opening setup settings preserves manual work while an activity remains visible. Only a system-bound companion service owns background operation. The companion resource gate controls platform/build availability; physical compatibility acceptance remains separate. Nearby retries and fresh-session renewal are implemented; foreground-service fallback and reboot recovery remain deferred. [Policy and physical test steps](../../docs/BACKGROUND_CONNECTIONS.md).
+Devices exposes **Connect automatically**; **Connection details → Diagnostics → Setup settings** retains association management; that page contains only setup/reset controls. Checks, counters and Debug automatic-service events share the connection diagnostics section; event logs are collapsed by default. Home/setup navigation preserves LAN. Opening discovery preserves BLE and LAN; Scan retires only BLE and releases its temporary automatic-policy suspension after cleanup. Automatic preference state updates independently of connection progress. First setup or permission/association repair uses the native companion route; valid saved setup resumes directly from Devices. Turning automatic connection off retains eligible secured foreground work as manual, while releasing background ownership and retries. Opening setup settings preserves manual work while an activity remains visible. Only a system-bound companion service owns background operation. The companion resource gate controls platform/build availability. Nearby retries and fresh-session renewal are implemented; foreground-service fallback and reboot recovery remain deferred. [Policy and lifecycle checks](../../docs/BACKGROUND_CONNECTIONS.md).
 
 Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
 
@@ -111,6 +112,10 @@ Home → Files and Features → Send files provide file transfer controls, incom
 
 Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.
 
+## Messages (SMS relay)
+
+Features → Messages relays incoming SMS to the Mac, serves its reads of conversations, history and search matches, and sends Mac replies over the secured session. RECEIVE_SMS covers live relay, READ_SMS conversations/history/search, and SEND_SMS replies; the permission block names each missing capability separately, permanent denial links to App info for Android 13+ restricted settings, and the block clears on the first full grant — the panel then confirms **SMS access granted** while Settings keeps one line naming what is still needed. READ_PHONE_STATE is optional: the composer reads the phone's subscriptions once per conversation and asks for it only when that read would offer a second active subscription, and the phone default, history and search all work without it. The conversation list loads 15 threads first and continues from the returned cursor; rows keep the subscription their message arrived on, a conversation that mixes two SIMs labels each such row with a SIM chip and groups messages under day headers, and the composer's keyboard send key shares the Send button's path so the chosen subscription always applies. SMS permissions remain Play-restricted in this sideloaded build. See [Messages](../../docs/features/SMS.md) for provider fallbacks, paging limits and permission handling.
+
 ## Clipboard
 
-Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior and physical acceptance gates](../../docs/features/CLIPBOARD.md) describe the background-overwrite limitation and verification still required.
+Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior](../../docs/features/CLIPBOARD.md) describes permissions, focus rules and the background-overwrite limitation.

@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var reopenMainWindow: (@MainActor () -> Void)?
     private var notifier: MacTransferNotifier?
     private var findNotifier: MacFindDeviceNotifier?
+    private var smsNotifier: MacSmsNotifier?
     private var companion: CompanionHost?
     var onTerminate: () -> Void = {}
     func applicationWillTerminate(_ notification: Notification) { onTerminate() }
@@ -17,21 +18,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
     }
 
-    func configureNotifications(findDevice: MacFindDeviceNotifier, transfer: MacTransferNotifier) {
+    func configureNotifications(findDevice: MacFindDeviceNotifier, transfer: MacTransferNotifier, sms: MacSmsNotifier? = nil) {
         findNotifier = findDevice
         notifier = transfer
+        smsNotifier = sms
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.setNotificationCategories(Self.notificationCategories)
     }
 
     static var notificationCategories: Set<UNNotificationCategory> {
-        MacTransferNotifier.notificationCategories().union([MacFindDeviceNotifier.notificationCategory])
+        MacTransferNotifier.notificationCategories().union([MacFindDeviceNotifier.notificationCategory, MacSmsNotifier.notificationCategory])
     }
 
-    func handleNotificationAction(category: String, action: String, identifier: String) {
+    func handleNotificationAction(category: String, action: String, identifier: String, userText: String = "") {
         if category == MacFindDeviceNotifier.category {
             findNotifier?.handleAction(action, identifier: identifier)
+        } else if category == MacSmsNotifier.category {
+            _ = smsNotifier?.handleAction(category: category, action: action, identifier: identifier, userText: userText)
         } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result {
             notifier?.handleAction(action, identifier: identifier)
         }
@@ -40,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         let category = notification.request.content.categoryIdentifier
-        let known = category == MacFindDeviceNotifier.category ||
+        let known = category == MacFindDeviceNotifier.category || category == MacSmsNotifier.category ||
             category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result
         completionHandler(known ? [.banner, .list, .sound] : [])
     }
@@ -49,9 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let category = response.notification.request.content.categoryIdentifier
         let action = response.actionIdentifier, identifier = response.notification.request.identifier
+        let userText = (response as? UNTextInputNotificationResponse)?.userText ?? ""
         Task { @MainActor [weak self] in
             defer { completionHandler() }
-            self?.handleNotificationAction(category: category, action: action, identifier: identifier)
+            self?.handleNotificationAction(category: category, action: action, identifier: identifier, userText: userText)
         }
     }
 
