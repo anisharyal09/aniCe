@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
         C11000000000000000000001 = {isa = PBXBuildFile; fileRef = C11000000000000000000002; };
+        C11000000000000000000003 = {isa = PBXBuildFile; fileRef = C11000000000000000000004; };
+        C11000000000000000000005 = {isa = PBXBuildFile; fileRef = C11000000000000000000006; };
+        C11000000000000000000007 = {isa = PBXBuildFile; fileRef = C11000000000000000000008; };
         A0701A000000000000000001 /* LanRendezvous.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0701A000000000000000002; };
 		0000000000000000000000C8 /* AniCeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000064 /* AniCeApp.swift */; };
 		0000000000000000000000C9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000065 /* AppDelegate.swift */; };
@@ -123,6 +126,9 @@
 
 /* Begin PBXFileReference section */
         C11000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/ClipboardHistory.swift"; sourceTree = SOURCE_ROOT; };
+        C11000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/GlobalHotkeyManager.swift"; sourceTree = SOURCE_ROOT; };
+        C11000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/PasteTrayView.swift"; sourceTree = SOURCE_ROOT; };
+        C11000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/PasteTrayWindow.swift"; sourceTree = SOURCE_ROOT; };
         A0701A000000000000000002 /* LanRendezvous.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/LanRendezvous.swift; sourceTree = SOURCE_ROOT; };
 		00000000000000000000000A /* aniCe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = aniCe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000064 /* AniCeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AniCeApp.swift; sourceTree = "<group>"; };
@@ -254,6 +260,9 @@
 				7886F9180923AA3BA021362F,
 				D7F2A1210EAF55185006B8AA,
                 C11000000000000000000002,
+                C11000000000000000000004,
+                C11000000000000000000006,
+                C11000000000000000000008,
 				1D4B97D6ECC3B2435E9B143A,
 				E413A30F3969ABF8F21985CF,
 				BCE5D6794FFC5A0FC2BE45B9,
@@ -613,6 +622,9 @@
 			files = (
 				E358D2436EC54F89A980C517,
                 C11000000000000000000001,
+                C11000000000000000000003,
+                C11000000000000000000005,
+                C11000000000000000000007,
 				5DA2BC6FB9846DFE4FFAC736,
 				CE151FC717CC5D74B9C2C7C0,
 				1461CEF5CC2F331A3A440620,

@@ -14,16 +14,17 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 data class ClipboardHistoryEntry(val id: String, val text: String, val origin: String, val timestamp: Long, val credential: String? = null)
+data class ClipboardHistoryState(val entries: List<ClipboardHistoryEntry>, val enabled: Boolean = true, val capacity: Int = 20)
 interface ClipboardHistoryStorage {
-    fun load(): List<ClipboardHistoryEntry>?
-    fun save(entries: List<ClipboardHistoryEntry>)
+    fun load(): ClipboardHistoryState?
+    fun save(entries: List<ClipboardHistoryEntry>, enabled: Boolean = true, capacity: Int = 20)
     fun delete()
 }
 class ClipboardHistoryFile(private val file: File) : ClipboardHistoryStorage {
     private fun clearTemporary() {
         file.parentFile?.listFiles()?.filter { it.name.matches(Regex("clipboard-[0-9]+\\.tmp")) }?.forEach { check(it.delete()) }
     }
-    override fun load(): List<ClipboardHistoryEntry>? {
+    override fun load(): ClipboardHistoryState? {
         clearTemporary()
         if (!file.exists()) return null
         require(file.length() <= 8_000_000)
@@ -40,18 +41,19 @@ class ClipboardHistoryFile(private val file: File) : ClipboardHistoryStorage {
         require(bytes.size <= 8_000_000)
         val root = JSONObject(Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString())
         require(root.getInt("version") == 1)
-        val rows = root.getJSONArray("entries"); require(rows.length() <= 20)
+        val rows = root.getJSONArray("entries"); require(rows.length() <= 100)
         val result = (0 until rows.length()).map { i -> rows.getJSONObject(i).let {
             ClipboardHistoryEntry(it.getString("id"), it.getString("text"), it.getString("origin"), it.getLong("timestamp"), if (it.has("credential")) it.getString("credential") else null)
         } }
         require(result.map { it.id }.toSet().size == result.size)
         require(result.all { validHistoryText(it.text) && it.origin in setOf("mac", "phone") && it.timestamp >= 0 && runCatching { UUID.fromString(it.id).toString() == it.id }.getOrDefault(false) && (it.credential?.length ?: 0) <= 512 })
-        return result
+        val capacity = root.optInt("capacity", 20); require(capacity in setOf(20, 50, 100))
+        return ClipboardHistoryState(result, root.optBoolean("enabled", true), capacity)
     }
-    override fun save(entries: List<ClipboardHistoryEntry>) {
+    override fun save(entries: List<ClipboardHistoryEntry>, enabled: Boolean, capacity: Int) {
         val rows = JSONArray()
         entries.forEach { entry -> rows.put(JSONObject().put("id", entry.id).put("text", entry.text).put("origin", entry.origin).put("timestamp", entry.timestamp).apply { entry.credential?.let { put("credential", it) } }) }
-        val bytes = JSONObject().put("version", 1).put("entries", rows).toString().toByteArray(Charsets.UTF_8)
+        val bytes = JSONObject().put("version", 1).put("entries", rows).put("enabled", enabled).put("capacity", capacity).toString().toByteArray(Charsets.UTF_8)
         val directory = file.parentFile!!; check(directory.isDirectory || directory.mkdirs())
         val temp = File.createTempFile("clipboard-", ".tmp", directory)
         try {
@@ -70,6 +72,7 @@ class ClipboardHistory(private val storage: ClipboardHistoryStorage? = null, dis
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val lock = Mutex()
     var enabled by mutableStateOf(false); private set
+    var capacity by mutableStateOf(20); private set
     var entries by mutableStateOf<List<ClipboardHistoryEntry>>(emptyList()); private set
     var error by mutableStateOf<String?>(null); private set
     private data class Capture(val sample: ClipboardSample, val origin: String, val credential: String?)
@@ -77,8 +80,8 @@ class ClipboardHistory(private val storage: ClipboardHistoryStorage? = null, dis
     private var recording = false
     private var preferenceRevision = 0
     var onChanged: () -> Unit = {}
-    // A delayed startup read must not overwrite a newer consent or identity-reset request.
-    init { command { val saved = withContext(Dispatchers.IO) { storage?.load() }; if (preferenceRevision == 0) { enabled = saved != null; entries = saved ?: emptyList() }; onChanged() } }
+    // A delayed startup read must not overwrite a newer collection preference.
+    init { command { val saved = withContext(Dispatchers.IO) { storage?.load() }; entries = saved?.entries ?: emptyList(); capacity = saved?.capacity ?: 20; if (preferenceRevision == 0) { enabled = saved?.enabled ?: false }; onChanged() } }
     private fun command(block: suspend () -> Unit) { scope.launch { lock.withLock {
         try { block(); error = null } catch (_: java.io.IOException) { error = "Could not update clipboard history. Clear history or try again." }
         catch (_: IllegalArgumentException) { error = "Clipboard history could not be read. Clear history to reset it." }
@@ -92,14 +95,15 @@ class ClipboardHistory(private val storage: ClipboardHistoryStorage? = null, dis
         if (!value) { enabled = false; captures.clear(); onChanged() }
         command {
             val rows = entries
-            withContext(Dispatchers.IO) { if (value) storage?.save(rows) else storage?.delete() }
-            if (revision == preferenceRevision) enabled = value; if (!value) entries = emptyList(); onChanged()
+            val limit = capacity
+            withContext(Dispatchers.IO) { storage?.save(rows, value, limit) }
+            if (revision == preferenceRevision) enabled = value; onChanged()
         }
     }
     fun record(sample: ClipboardSample, origin: String, credential: String? = null) {
         if (!enabled || sample.sensitive || sample.excluded || !validHistoryText(sample.text)) return
         // Bound pending content independently of the saved inventory while disk IO is stalled.
-        if (captures.size == 20) captures.removeFirst()
+        if (captures.size == 100) captures.removeFirst()
         captures.addLast(Capture(sample, origin, credential))
         if (recording) return
         recording = true
@@ -109,20 +113,30 @@ class ClipboardHistory(private val storage: ClipboardHistoryStorage? = null, dis
                     val capture = captures.removeFirst()
                     val first = entries.firstOrNull()
                     val row = ClipboardHistoryEntry(if (first?.text == capture.sample.text && first.origin == capture.origin) first.id else UUID.randomUUID().toString(), capture.sample.text, capture.origin, System.currentTimeMillis(), capture.credential)
-                    val next = (listOf(row) + entries.filter { it.id != row.id }).take(20)
-                    withContext(Dispatchers.IO) { storage?.save(next) }; if (enabled) entries = next
+                    val next = (listOf(row) + entries.filter { it.id != row.id }).take(capacity)
+                    val limit = capacity
+                    withContext(Dispatchers.IO) { storage?.save(next, true, limit) }; entries = next
                 }
             } finally { recording = false; captures.clear() }
         }
     }
 
+    fun updateCapacity(value: Int) {
+        if (value !in setOf(20, 50, 100)) return
+        command {
+            val next = entries.take(value)
+            val keeping = enabled
+            withContext(Dispatchers.IO) { storage?.save(next, keeping, value) }
+            capacity = value; entries = next
+        }
+    }
     fun delete(id: String) = replace { it.filterNot { row -> row.id == id } }
-    fun clear() = command { val keep = enabled; withContext(Dispatchers.IO) { if (keep) storage?.save(emptyList()) else storage?.delete() }; entries = emptyList() }
-    fun reset() { entries = emptyList(); setKeepingHistory(false) }
-    fun prune(credentials: Set<String>) = replace { it.filter { row -> row.credential == null || row.credential in credentials } }
+    fun clear() = replace { emptyList() }
     private fun replace(transform: (List<ClipboardHistoryEntry>) -> List<ClipboardHistoryEntry>) = command {
         val next = transform(entries)
-        val keep = enabled
-        if (next != entries) { withContext(Dispatchers.IO) { if (keep) storage?.save(next) else storage?.delete() }; if (enabled) entries = next else if (!keep) entries = emptyList() }
+        val keeping = enabled
+        val limit = capacity
+        withContext(Dispatchers.IO) { storage?.save(next, keeping, limit) }
+        entries = next
     }
 }

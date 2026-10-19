@@ -55,7 +55,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     LaunchedEffect(owner.selected?.deviceId, owner.selected?.fingerprint, owner.selected?.let(owner::supports)) { pasted = ""; reveal = false; sensitiveSample = null; confirming = false }
     DisposableEffect(owner.selected?.deviceId) { onDispose { owner.clearPreview() } }
     LaunchedEffect(owner.preview?.token, owner.preview?.text) { reveal = false }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SecondaryTabRow(selectedTabIndex = if (historyTab) 1 else 0) {
             Tab(selected = !historyTab, onClick = { historyTab = false }, text = { Text("Share") })
             Tab(selected = historyTab, onClick = { historyTab = true; pasted = ""; reveal = false; owner.clearPreview() }, text = { Text("History") })
@@ -101,9 +101,19 @@ private fun HistoryPreference(history: ClipboardHistory) {
     var confirm by remember { mutableStateOf(false) }
     AutomaticConnectionToggle(checked = history.enabled, enabled = true,
         onCheckedChange = { if (it) confirm = true else history.setKeepingHistory(false) }, label = "Keep clipboard history")
+    var capacityMenu by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { capacityMenu = true }) { Text("History capacity: ${history.capacity} items") }
+        DropdownMenu(expanded = capacityMenu, onDismissRequest = { capacityMenu = false }) {
+            listOf(20, 50, 100).forEach { value ->
+                DropdownMenuItem(text = { Text("$value items") }, onClick = { capacityMenu = false; history.updateCapacity(value) })
+            }
+        }
+    }
+    if (!history.enabled && history.entries.isNotEmpty()) Text("Collection paused · Saved items are kept", style = MaterialTheme.typography.bodySmall)
     history.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("Keep clipboard history?") },
-        text = { Text("Save the latest 20 text items on this device across restarts. Recognized sensitive text is excluded. Turning this off deletes saved history.") },
+        text = { Text("Save eligible text on this device across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Use Delete or Clear to remove them.") },
         confirmButton = { TextButton(onClick = { confirm = false; history.setKeepingHistory(true) }) { Text("Enable") } },
         dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } })
 }
@@ -114,7 +124,7 @@ internal fun ClipboardHistoryView(owner: ClipboardController) {
     var clear by remember { mutableStateOf(false) }
     HistoryPreference(history)
     Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Text("${history.entries.size} of 20 · Saved on this device", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${history.entries.size} of ${history.capacity} · Saved on this device", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (history.entries.isNotEmpty()) TextButton(onClick = { clear = true }) { Text("Clear all") }
     }
     if (owner.status != "Ready to share text") Text(owner.status, style = MaterialTheme.typography.bodySmall)

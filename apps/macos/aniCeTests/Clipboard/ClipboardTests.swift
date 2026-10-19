@@ -85,20 +85,8 @@ import SwiftUI
 }
 private struct FailedHistoryStorage: ClipboardHistoryStorage {
   let entry = ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "preserved", origin: "phone", timestamp: Date(), credential: nil)
-  func load() throws -> [ClipboardHistoryEntry]? { [entry] }
-  func save(_ entries: [ClipboardHistoryEntry]) throws { throw CocoaError(.fileWriteNoPermission) }
-  func delete() throws { throw CocoaError(.fileWriteNoPermission) }
-}
-private struct HeldHistoryStorage: ClipboardHistoryStorage {
-  let phase: Int
-  let entered = DispatchSemaphore(value: 0)
-  let release = DispatchSemaphore(value: 0)
-  func gate() throws { entered.signal(); if release.wait(timeout: .now() + 5) != .success { throw CocoaError(.fileReadUnknown) } }
-  func load() throws -> [ClipboardHistoryEntry]? {
-    if phase == 1 { return nil }; if phase == 0 { try gate() }
-    return [nil, "peer"].map { ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "old", origin: "mac", timestamp: Date(), credential: $0) }
-  }
-  func save(_ entries: [ClipboardHistoryEntry]) throws { if phase == 2 || phase == 1 && !entries.isEmpty { try gate() } }
+  func load() throws -> ClipboardHistoryState? { ClipboardHistoryState(entries: [entry]) }
+  func save(_ entries: [ClipboardHistoryEntry], enabled: Bool, capacity: Int) throws { throw CocoaError(.fileWriteNoPermission) }
   func delete() throws { throw CocoaError(.fileWriteNoPermission) }
 }
 final class ClipboardTests: XCTestCase {
@@ -110,6 +98,10 @@ final class ClipboardTests: XCTestCase {
     for row in good { let data = try SessionFixtures().b(row, "bytes"); XCTAssertEqual(try XCTUnwrap(ClipboardMessage.decode(data)).encode(), data) }
     for row in bad { XCTAssertThrowsError(try ClipboardMessage.decode(SessionFixtures().b(row, "bytes")), row["name"] as? String ?? "") }
     XCTAssertNil(try ClipboardMessage.decode(SessionCbor.encode(.array([.text("other")]))))
+  }
+  private func savedCollectionEnabled(_ url: URL) -> Bool? {
+    guard let data = try? Data(contentsOf: url), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    return root["enabled"] as? Bool
   }
   @MainActor private func until(_ test: @escaping @MainActor () -> Bool) async throws {
     for _ in 0..<2000 { if test() { return }; try await Task.sleep(for: .milliseconds(1)) }
@@ -341,8 +333,17 @@ final class ClipboardTests: XCTestCase {
     let reload = ClipboardHistory(storage: file); try await until { reload.enabled }
     XCTAssertEqual(reload.entries.count, 19); XCTAssertEqual(reload.entries.first?.text, "item-24")
     XCTAssertFalse(reload.entries.contains { $0.text == "secret" || $0.text == "generated" })
-    history.prune([]); try await until { history.entries.allSatisfy { $0.credential == nil } }
-    history.setEnabled(false); try await until { !FileManager.default.fileExists(atPath: file.url.path) && history.entries.isEmpty }
+    let saved = history.entries
+    history.setEnabled(false)
+    try await until { self.savedCollectionEnabled(file.url) == false }
+    XCTAssertEqual(history.entries, saved)
+    history.record(ClipboardSample(text: "ignored while paused"), origin: "mac")
+    let paused = ClipboardHistory(storage: file)
+    try await until { !paused.entries.isEmpty }
+    XCTAssertFalse(paused.enabled); XCTAssertEqual(paused.entries, saved)
+    paused.delete(saved[0].id); try await until { paused.entries.count == saved.count - 1 }
+    paused.clear(includePinned: true); try await until { paused.entries.isEmpty }
+    XCTAssertFalse(try XCTUnwrap(file.load()).enabled)
   }
   @MainActor func testHistoryCorruptStorageAndWriteFailureRemainVisible() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -352,7 +353,7 @@ final class ClipboardTests: XCTestCase {
     try Data("invalid".utf8).write(to: url)
     let history = ClipboardHistory(storage: ClipboardHistoryFile(url: url))
     try await until { history.error != nil }; XCTAssertFalse(history.enabled)
-    history.clear(); try await until { history.error == nil }; XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    history.clear(); try await until { history.error == nil }; XCTAssertTrue(try XCTUnwrap(ClipboardHistoryFile(url: url).load()).entries.isEmpty)
     try Data().write(to: directory.appendingPathComponent("blocked"))
     let blocked = ClipboardHistory(storage: ClipboardHistoryFile(url: directory.appendingPathComponent("blocked/history.json")))
     blocked.setEnabled(true); try await until { blocked.error != nil }; XCTAssertFalse(blocked.enabled)
@@ -367,7 +368,7 @@ final class ClipboardTests: XCTestCase {
     for _ in 0..<10 { await Task.yield() }
     XCTAssertEqual(history.entries.count, 1); XCTAssertFalse(owner.busy)
     native.automaticAccessAllowed = false; owner.refreshAccess(); XCTAssertNil(native.observer)
-    owner.invalidate(); history.reset()
+    owner.invalidate(); history.setEnabled(false)
   }
 
   @MainActor func testIncomingHistoryOnlyRecordsAppliedItemsAndRetainsOriginOnCopy() async throws {
@@ -382,7 +383,7 @@ final class ClipboardTests: XCTestCase {
     h.native.fail = true; try await h.receive(c, text: "failed", revision: 2)
     XCTAssertEqual(h.owner.history.entries.map(\.text), ["from phone"])
     h.owner.prune([]); for _ in 0..<10 { await Task.yield() }; XCTAssertEqual(h.owner.history.entries.count, 1)
-    h.owner.prune([], confirmedTrust: true); try await until { h.owner.history.entries.isEmpty }
+    h.owner.prune([], confirmedTrust: true); h.owner.invalidate(); XCTAssertEqual(h.owner.history.entries.count, 1)
     h.owner.invalidate()
   }
   @MainActor func testHistoryFailedWriteAndDeletePreserveRowsAndReportFailure() async throws {
@@ -502,20 +503,221 @@ final class ClipboardTests: XCTestCase {
     XCTAssertEqual(renders, 4); model.invalidate()
   }
 
-  @MainActor func testResetDuringLoadWriteOrPruneNeverRestoresContentWhenDeletionFails() async throws {
-    for phase in [0, 1, 2] {
-      let storage = HeldHistoryStorage(phase: phase)
-      let held = ClipboardHistory(storage: storage)
-      if phase == 1 {
-        held.setEnabled(true); try await until { held.enabled }
-        held.record(ClipboardSample(text: "old"), origin: "mac")
-      } else if phase == 2 {
-        try await until { held.enabled }; held.prune([])
+  @MainActor func testClipboardHistoryCapacityPinningAndClearing() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let history = ClipboardHistory(storage: file, capacity: 20)
+    history.setEnabled(true); try await until { history.enabled }
+
+    for i in 0..<5 { history.record(ClipboardSample(text: "item-\(i)"), origin: "mac") }
+    try await until { history.entries.count == 5 }
+
+    let item2 = try XCTUnwrap(history.entries.first { $0.text == "item-2" })
+    history.togglePin(item2.id)
+    try await until { history.entries.first { $0.text == "item-2" }?.pinned == true }
+
+    for i in 10..<35 { history.record(ClipboardSample(text: "overflow-\(i)"), origin: "mac") }
+    try await until { history.entries.first?.text == "overflow-34" }
+
+    XCTAssertTrue(history.entries.contains { $0.text == "item-2" && $0.pinned })
+    XCTAssertEqual(history.entries.count, 21)
+
+    history.setCapacity(50)
+    try await until { history.capacity == 50 }
+
+    history.clear(includePinned: false)
+    try await until { history.entries.count == 1 }
+    XCTAssertEqual(history.entries.first?.text, "item-2")
+    XCTAssertTrue(history.entries.first?.pinned == true)
+
+    history.clear(includePinned: true)
+    try await until { history.entries.isEmpty }
+  }
+
+  @MainActor func testClipboardHistorySearchAndSmartPreviewDetection() async throws {
+    let entryUrl = ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "https://anice.local/docs", origin: "mac", timestamp: Date(), credential: nil)
+    XCTAssertTrue(entryUrl.isUrl)
+    XCTAssertNil(entryUrl.hexColorValue)
+
+    let entryColor = ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "#355B70", origin: "phone", timestamp: Date(), credential: nil)
+    XCTAssertFalse(entryColor.isUrl)
+    XCTAssertEqual(entryColor.hexColorValue, "#355B70")
+
+    let entryText = ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "let greeting = \"Hello World\";", origin: "mac", timestamp: Date(), credential: nil)
+    XCTAssertFalse(entryText.isUrl)
+    XCTAssertNil(entryText.hexColorValue)
+
+    let history = ClipboardHistory(capacity: 20)
+    history.setEnabled(true); try await until { history.enabled }
+    history.record(ClipboardSample(text: "Quick brown fox"), origin: "mac")
+    history.record(ClipboardSample(text: "Lazy dog jumps"), origin: "phone")
+    history.record(ClipboardSample(text: "FOX in socks"), origin: "mac")
+    try await until { history.entries.count == 3 }
+
+    let results = history.search(query: "fox")
+    XCTAssertEqual(results.count, 2)
+    XCTAssertTrue(results.allSatisfy { $0.text.localizedCaseInsensitiveContains("fox") })
+
+    let emptySearch = history.search(query: "")
+    XCTAssertEqual(emptySearch.count, 3)
+  }
+
+  func testTrayTypingNeverConsumesArrowOrFunctionKeyCharacters() {
+    for code in 0xF700...0xF8FF {
+      let scalar = UnicodeScalar(code)!
+      XCTAssertFalse(PasteTrayKeyboard.searchCharacters.contains(scalar), "AppKit key \(code) must reach navigation")
+    }
+    for text in ["a", "Z", "1", "/", "?", "é", "क", "🙂"] {
+      XCTAssertTrue(text.unicodeScalars.allSatisfy(PasteTrayKeyboard.searchCharacters.contains), text)
+    }
+    for scalar in "\t\r\n\u{7F}".unicodeScalars {
+      XCTAssertFalse(PasteTrayKeyboard.searchCharacters.contains(scalar))
+    }
+  }
+
+  func testTrayFiltersKeepPinnedOrderAndRejectNonmatchingOrigins() {
+    let rows = (0..<6).map { index in
+      ClipboardHistoryEntry(id: "row-\(index)", text: index == 4 ? "Other text" : "Hello 👋 \(index)",
+        origin: index.isMultiple(of: 2) ? "mac" : "phone", timestamp: Date(), credential: nil,
+        pinned: index == 2 || index == 3)
+    }
+    XCTAssertEqual(PasteTrayFilter.all.entries(in: rows, query: "  HELLO  ").map(\.id), ["row-2", "row-3", "row-0", "row-1", "row-5"])
+    XCTAssertEqual(PasteTrayFilter.pinned.entries(in: rows, query: "").map(\.id), ["row-2", "row-3"])
+    XCTAssertEqual(PasteTrayFilter.mac.entries(in: rows, query: "hello").map(\.id), ["row-2", "row-0"])
+    XCTAssertEqual(PasteTrayFilter.phone.entries(in: rows, query: "👋").map(\.id), ["row-3", "row-1", "row-5"])
+    XCTAssertTrue(PasteTrayFilter.all.entries(in: rows, query: "missing").isEmpty)
+    XCTAssertTrue(PasteTrayFilter.all.entries(in: [], query: "").isEmpty)
+  }
+
+  @MainActor func testHistoryCopyFailurePreservesClipboardAndDoesNotSend() async throws {
+    let h = ClipboardHarness(), channel = ClipboardChannel(); try await h.ready(channel)
+    let entry = ClipboardHistoryEntry(id: "copy", text: "Saved item", origin: "mac", timestamp: Date(), credential: nil)
+    let count = channel.sent.count
+    h.native.fail = true
+    XCTAssertFalse(h.owner.copyHistory(entry))
+    XCTAssertEqual(h.native.sample?.text, "local")
+    XCTAssertEqual(h.owner.status, "Could not copy text")
+    h.native.fail = false
+    XCTAssertTrue(h.owner.copyHistory(entry))
+    XCTAssertEqual(h.native.sample?.text, "Saved item")
+    XCTAssertEqual(channel.sent.count, count)
+    h.owner.invalidate()
+  }
+
+  @MainActor func testTrayNativeRendersInBothThemesAndNarrowWidths() async throws {
+    let folder = URL(fileURLWithPath: "/tmp/anice-tray-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let history = ClipboardHistory()
+    history.setEnabled(true); try await until { history.enabled }
+    for text in ["A long note with Unicode 👋 and several lines\nSecond line\nThird line\nFourth line", "https://example.com/a/long/path", "#355B70", "func copy() { return true; }"] {
+      history.record(ClipboardSample(text: text), origin: "mac")
+    }
+    try await until { history.entries.count == 4 }
+    let model = MacClipboardModel(native: ClipboardNativeFake(), history: history)
+    for collecting in [true, false] {
+      history.setEnabled(collecting); try await until { history.enabled == collecting }
+    for scheme in [ColorScheme.light, .dark] {
+      for width: CGFloat in [560, 760] {
+        let content = PasteTrayView(model: model, width: width, onDismiss: {}, onSelect: { _ in })
+          .environment(\.colorScheme, scheme)
+        let host = NSHostingView(rootView: content)
+        host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.bounds.width, width); XCTAssertEqual(host.bounds.height, 292)
+        let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: image)
+        try XCTUnwrap(image.representation(using: .png, properties: [:]))
+          .write(to: folder.appendingPathComponent("tray-\(Int(width))-\(scheme)-\(collecting).png"))
       }
-      try await until { storage.entered.wait(timeout: .now()) == .success }
-      held.reset(); storage.release.signal()
-      try await until { held.error != nil }
-      XCTAssertFalse(held.enabled); XCTAssertTrue(held.entries.isEmpty)
+    }
+    }
+    model.invalidate()
+  }
+
+  @MainActor func testPinnedItemSurvivesAbsoluteHistoryLimit() async throws {
+    let history = ClipboardHistory(capacity: 100)
+    history.setEnabled(true); try await until { history.enabled }
+    history.record(ClipboardSample(text: "Keep this"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    let id = try XCTUnwrap(history.entries.first?.id)
+    history.togglePin(id); try await until { history.entries.first?.pinned == true }
+    for index in 0..<100 { history.record(ClipboardSample(text: "New item \(index)"), origin: "mac") }
+    try await until { history.entries.first?.text == "New item 99" }
+    XCTAssertEqual(history.entries.count, 100)
+    XCTAssertTrue(history.entries.contains { $0.id == id && $0.pinned })
+  }
+
+  @MainActor func testPausedCapacityAndLegacyHistoryRoundTrip() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let history = ClipboardHistory(storage: file)
+    history.setCapacity(100); try await until { history.capacity == 100 }
+    history.setEnabled(true); try await until { history.enabled }
+    for index in 0..<105 { history.record(ClipboardSample(text: "row-\(index)"), origin: "mac") }
+    try await until { history.entries.first?.text == "row-104" }
+    XCTAssertEqual(history.entries.count, 100)
+    history.setEnabled(false); try await until { self.savedCollectionEnabled(file.url) == false }
+    let paused = ClipboardHistory(storage: file)
+    try await until { paused.entries.count == 100 }
+    XCTAssertFalse(paused.enabled); XCTAssertEqual(paused.capacity, 100)
+    paused.setCapacity(50); try await until { paused.capacity == 50 }
+    XCTAssertEqual(paused.entries.count, 50); XCTAssertEqual(paused.entries.first?.text, "row-104")
+    paused.setCapacity(0); paused.setCapacity(101); XCTAssertEqual(paused.capacity, 50)
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file.url)) as? [String: Any])
+    legacy.removeValue(forKey: "enabled"); legacy.removeValue(forKey: "capacity")
+    try JSONSerialization.data(withJSONObject: legacy).write(to: file.url)
+    XCTAssertTrue(try XCTUnwrap(file.load()).enabled)
+    legacy["capacity"] = 101
+    try JSONSerialization.data(withJSONObject: legacy).write(to: file.url)
+    XCTAssertThrowsError(try file.load())
+  }
+
+  @MainActor func testPausingDuringDelayedLoadKeepsSavedItemsAndConsentOff() async throws {
+    struct DelayedStorage: ClipboardHistoryStorage {
+      let file: ClipboardHistoryFile
+      let entered: DispatchSemaphore
+      let release: DispatchSemaphore
+      func load() throws -> ClipboardHistoryState? {
+        entered.signal()
+        guard release.wait(timeout: .now() + 5) == .success else { throw CocoaError(.fileReadUnknown) }
+        return try file.load()
+      }
+      func save(_ entries: [ClipboardHistoryEntry], enabled: Bool, capacity: Int) throws { try file.save(entries, enabled: enabled, capacity: capacity) }
+      func delete() throws { try file.delete() }
+    }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    try file.save([ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "Keep", origin: "mac", timestamp: Date(), credential: nil)])
+    let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let history = ClipboardHistory(storage: DelayedStorage(file: file, entered: entered, release: release))
+    try await until { entered.wait(timeout: .now()) == .success }
+    history.setEnabled(false); release.signal()
+    try await until { self.savedCollectionEnabled(file.url) == false }
+    XCTAssertFalse(history.enabled); XCTAssertEqual(history.entries.map(\.text), ["Keep"])
+  }
+
+  @MainActor func testFullTrayPreviewKeepsLongUnicodeTextScrollableInBothThemes() throws {
+    let folder = URL(fileURLWithPath: "/tmp/anice-tray-preview-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let text = String(repeating: "Full clipboard text 👋\nA second line with https://example.com and code { }\n", count: 150)
+    let entry = ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: text, origin: "phone", timestamp: Date(), credential: nil)
+    for scheme in [ColorScheme.light, .dark] {
+      for width: CGFloat in [560, 760] {
+        let content = PasteTrayExpandedPreview(entry: entry).padding(16)
+          .frame(width: width, height: 320)
+          .background(AniCePalette.surface(scheme))
+          .foregroundStyle(AniCePalette.primaryText(scheme))
+          .environment(\.colorScheme, scheme)
+        let host = NSHostingView(rootView: content)
+        host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.bounds.width, width); XCTAssertEqual(host.bounds.height, 320)
+        let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: image)
+        try XCTUnwrap(image.representation(using: .png, properties: [:]))
+          .write(to: folder.appendingPathComponent("preview-\(Int(width))-\(scheme).png"))
+      }
     }
   }
 

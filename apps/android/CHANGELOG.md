@@ -6,7 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Send to Mac through supported text-selection menus, the text Share sheet and a Quick Settings tile with a compact screen-and-arrow icon. The tile uses native placement setup, one focused capture and sensitive-text confirmation. Clipboard retains Share/History views, with optional device-local history limited to 20 items, date groups, source-device labels and Copy/Send/Delete controls. Home shows the latest successful clipboard activity for five minutes with an eligible-text preview and local Copy.
+- Send to Mac through supported text-selection menus, the text Share sheet and a Quick Settings tile with a compact screen-and-arrow icon. The tile uses native placement setup, one focused capture and sensitive-text confirmation. Clipboard retains Share/History views, with optional device-local history, 20/50/100-item capacity choices, date groups, source-device labels and Copy/Send/Delete controls. Home shows the latest successful clipboard activity for five minutes with an eligible-text preview and local Copy.
 
 - Strict local verification gate for the shared JVM/Android checks. It parses JUnit reports and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips; shared vector generators now support `--check` drift validation.
 
@@ -19,7 +19,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
-- Clipboard and file sending use quiet outlined icon-and-label controls. Clipboard preferences use the compact LAN-style checkbox; History shows a saved-count and Clear all toolbar.
+- Clipboard and file sending use quiet outlined icon-and-label controls. Clipboard preferences use the compact LAN-style checkbox; History shows a saved-count and Clear all toolbar. Pausing collection preserves saved history across app restarts, Forget device and Reset identity; Clear/Delete remain explicit. Clipboard content has a small horizontal inset.
 
 - Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 

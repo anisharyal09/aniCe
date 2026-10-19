@@ -41,11 +41,27 @@ private struct HistoryPreference: View {
   @Environment(\.colorScheme) private var scheme
   @State private var confirming = false
   var body: some View {
-    Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
-      .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
-      .alert("Keep clipboard history?", isPresented: $confirming) {
-        Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
-      } message: { Text("Save the latest 20 text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off deletes saved history.") }
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
+        .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+        .alert("Keep clipboard history?", isPresented: $confirming) {
+          Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
+        } message: { Text("Save the latest text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Delete items or use Clear to remove them.") }
+
+      // History capacity: limits FIFO unpinned persistence to 20, 50, or 100 items.
+      if history.enabled || !history.entries.isEmpty {
+        HStack(spacing: 8) {
+          Picker("History capacity", selection: Binding(get: { history.capacity }, set: { history.setCapacity($0) })) {
+            Text("20 items").tag(20)
+            Text("50 items").tag(50)
+            Text("100 items").tag(100)
+          }
+          .pickerStyle(.menu)
+          .controlSize(.small)
+        }
+      }
+    }
+    if !history.enabled && !history.entries.isEmpty { Text("Collection paused · Saved items are kept").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
     if let error = history.error { Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
   }
 }
@@ -58,7 +74,12 @@ struct ClipboardView: View {
   @State private var pasted = ""
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }.pickerStyle(.segmented).labelsHidden()
+      HStack(spacing: 12) {
+        Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }
+          .pickerStyle(.segmented).labelsHidden()
+        Button("Open tray", systemImage: "rectangle.stack") { PasteTrayController.shared.show() }
+          .buttonStyle(.bordered).controlSize(.small).help("Open clipboard tray (⌥⌘V)")
+      }
       if historyTab { ClipboardHistoryView(model: model); ClipboardAccessGuidance(model: model) }
       else {
         ClipboardSettingsView(model: model, peers: peers, showHistory: false)
@@ -87,6 +108,7 @@ struct ClipboardView: View {
         }
       }
     }
+    .padding(.horizontal, 4)
     .onChange(of: model.preview?.text) { _, _ in reveal = false }
     .onChange(of: historyTab) { _, _ in clearContent() }
     .onChange(of: more) { _, value in if !value { clearContent() } }
@@ -158,20 +180,30 @@ struct ClipboardActivityView: View {
 struct ClipboardHistoryView: View {
   let model: MacClipboardModel
   @State private var clearing = false
+  @State private var query = ""
+  @State private var filter: PasteTrayFilter = .all
   @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HistoryPreference(history: model.history)
       HStack {
-        Text("\(model.history.entries.count) of 20 · Saved on this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        Text("\(model.history.entries.count) saved · On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         Spacer()
-        if !model.history.entries.isEmpty { Button("Clear all") { clearing = true }.buttonStyle(.borderless).controlSize(.small) }
+        if !model.history.entries.isEmpty { Button("Clear...") { clearing = true }.buttonStyle(.borderless).controlSize(.small) }
       }
       if model.status != "Ready to share text" { Text(model.status).font(.caption).foregroundStyle(.secondary) }
       if model.busy { Button("Cancel send") { model.cancel() } }
-      if model.history.entries.isEmpty { Text(model.history.enabled ? "No clipboard history yet" : "Enable history to keep text on this Mac").foregroundStyle(.secondary) }
+      if model.history.enabled || !model.history.entries.isEmpty {
+        TextField("Search history", text: $query).textFieldStyle(.roundedBorder)
+          .accessibilityLabel("Search saved clipboard history")
+        Picker("History filter", selection: $filter) {
+          ForEach(PasteTrayFilter.allCases) { Text($0.rawValue).tag($0) }
+        }.pickerStyle(.segmented).labelsHidden().tint(AniCePalette.accent(scheme))
+      }
+      let entries = filter.entries(in: model.history.entries, query: query)
+      if entries.isEmpty { Text(model.history.enabled ? (query.isEmpty && filter == .all ? "No clipboard history yet" : "No matching clipboard items") : "Enable history to keep text on this Mac").foregroundStyle(.secondary) }
       else {
-        let days = Dictionary(grouping: model.history.entries) { Calendar.current.startOfDay(for: $0.timestamp) }
+        let days = Dictionary(grouping: entries) { Calendar.current.startOfDay(for: $0.timestamp) }
         ForEach(days.keys.sorted(by: >), id: \.self) { day in
           Text(day, format: .dateTime.year().month().day()).font(.subheadline.weight(.medium))
           ForEach(days[day] ?? []) { entry in
@@ -187,16 +219,31 @@ struct ClipboardHistoryView: View {
           }
         }
       }
-      if model.history.error != nil && model.history.entries.isEmpty { Button("Clear history") { model.history.clear() } }
+      if model.history.error != nil && model.history.entries.isEmpty { Button("Clear history") { model.history.clear(includePinned: true) } }
     }
-    .confirmationDialog("Clear clipboard history?", isPresented: $clearing) { Button("Clear all", role: .destructive) { model.history.clear() }; Button("Cancel", role: .cancel) {} } message: { Text("Delete all saved text on this Mac.") }
+    .confirmationDialog("Clear clipboard history?", isPresented: $clearing) {
+      Button("Clear unpinned", role: .destructive) { model.history.clear(includePinned: false) }
+      Button("Clear all", role: .destructive) { model.history.clear(includePinned: true) }
+      Button("Cancel", role: .cancel) {}
+    } message: { Text("Clear saved text on this Mac. Pinned snippets are kept when clearing unpinned items.") }
   }
   private func metadata(_ entry: ClipboardHistoryEntry) -> some View {
-    HStack { Text(entry.origin == "mac" ? "From Mac" : "From phone"); Text(entry.timestamp, format: .dateTime.hour().minute()) }
-      .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+    HStack(spacing: 6) {
+      if entry.pinned {
+        Image(systemName: "pin.fill")
+          .font(.caption2)
+          .foregroundStyle(AniCePalette.warning(scheme))
+      }
+      Text(entry.origin == "mac" ? "From Mac" : "From phone")
+      Text(entry.timestamp, format: .dateTime.hour().minute())
+    }
+    .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
   }
   @ViewBuilder private func actions(_ entry: ClipboardHistoryEntry) -> some View {
     Button { model.copyHistory(entry) } label: { Label("Copy", systemImage: "doc.on.doc") }
+    Button { model.togglePin(entry) } label: {
+      Label(entry.pinned ? "Unpin" : "Pin", systemImage: entry.pinned ? "pin.fill" : "pin")
+    }
     Button { model.sendHistory(entry) } label: { Label("Send", systemImage: "paperplane") }
       .disabled(model.busy || model.selected.map(model.supports) != true)
     Button(role: .destructive) { model.history.delete(entry.id) } label: { Label("Delete", systemImage: "trash") }

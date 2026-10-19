@@ -6,7 +6,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Compact Clipboard Share/History views and optional device-local history with 20 retained items, source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.
+- Native Quick Paste Tray: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), small tray icon beside Send clipboard in the companion, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, stable selection and immediate arrow-key navigation, and Return to copy. Search and filters have separate rows, cards retain visible actions, and failed native copies remain open for retry. The full Clipboard panel offers a direct tray entry, small horizontal insets, and History search/source filters. Pausing collection preserves saved history across restart, Forget device and Reset identity, with explicit Clear/Delete controls. History capacity is now configurable (20 default, 50, 100), pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
+
+- Compact Clipboard Share/History views and optional device-local history with source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.
 
 - Replaced the transfer-ordering test that reimplemented compact/none-connected ordering locally with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback. The strict local verification gate now cross-checks hosted-suite result bundles against `xcodebuild` test-case lines and rejects zero-test runs, failures, crashes and undocumented skips.
 

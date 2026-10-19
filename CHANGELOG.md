@@ -10,6 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Native Quick Paste Tray on macOS: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), menu-bar companion button, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, immediate arrow-key selection, and Return to copy. History capacity is configurable on both platforms (20 default, 50, 100); pausing collection, app restart, Forget device and Reset identity preserve saved items, with explicit Clear/Delete controls. Clipboard panels have small horizontal insets. On macOS, pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
+
 - Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
 
 - Strict local verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) prove the gate rejects those false-success shapes. No CI workflow is added.
