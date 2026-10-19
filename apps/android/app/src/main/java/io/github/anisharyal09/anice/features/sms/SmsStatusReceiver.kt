@@ -8,7 +8,7 @@ import android.content.Intent
 
 class SmsStatusReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        AndroidSmsSender.report(intent.getIntExtra(EXTRA_CODE, -1), resultCode)
+        AndroidSmsSender.report(intent.getStringExtra(EXTRA_CODE), resultCode)
     }
 
     companion object {

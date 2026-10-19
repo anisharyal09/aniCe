@@ -34,6 +34,8 @@ struct SmsView: View {
   @State private var peerKey = ""
   @State private var address = ""
   @State private var draft = ""
+  @State private var submittedDraft: String?
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
 
   private var peer: DeviceIdentity? {
@@ -50,6 +52,9 @@ struct SmsView: View {
           }
         }.labelsHidden().frame(maxWidth: 260)
       }
+      if !model.notificationStatus.isEmpty {
+        Text(model.notificationStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
       if let peer {
         if !model.supports(peer) {
           Text(model.connected(peer) ? "Waiting for your phone" : "Connect aniCe on your phone first")
@@ -61,6 +66,14 @@ struct SmsView: View {
       }
     }
     .onAppear { select() }
+    .task { await model.refreshNotificationSettings() }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { Task { await model.refreshNotificationSettings() } }
+    }
+    .onChange(of: peer.map { model.sending($0) } ?? false) { wasSending, isSending in
+      if wasSending && !isSending, let peer, model.status(peer) == "Sent", draft == submittedDraft { draft = "" }
+      if !isSending { submittedDraft = nil }
+    }
     .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in select() }
   }
 
@@ -123,7 +136,7 @@ struct SmsView: View {
       }
     }
     Color.clear.frame(height: 0).task(id: peerKey) {
-      if model.supports(peer), !model.busy(peer) { model.requestThreads(peer) }
+      if !model.busy(peer) { model.requestThreads(peer) }
     }
   }
 
@@ -177,8 +190,8 @@ struct SmsView: View {
         .foregroundStyle(over ? AniCePalette.error(scheme) : AniCePalette.secondaryText(scheme))
       Spacer(minLength: 8)
       Button {
+        submittedDraft = draft
         model.send(peer, address: address, text: draft)
-        draft = ""
       } label: { Label("Send SMS", systemImage: "paperplane") }
         .buttonStyle(.bordered).controlSize(.small)
         .disabled(!model.supports(peer) || draft.isEmpty || over || model.sending(peer))

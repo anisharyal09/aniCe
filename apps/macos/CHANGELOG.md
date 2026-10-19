@@ -26,6 +26,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- SMS requests negotiate capability per channel, stage provider thread snapshots until completion, retain failed drafts and discard stale asynchronous assemblies. Notification settings and submission failures are visible; counters advance after macOS accepts a notification, and peer retirement clears notification targets.
+
 - A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and a paused batch keeps its sleep assertion, destination and secured Bluetooth fallback so automatic LAN or explicit Bluetooth continuation can finish it. The paused notification offers Continue over Bluetooth on the receiving device as well as the sender.
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected, even on fresh installs with no stored preference.
 - Feature traffic no longer resumes LAN after an explicit Disconnect; manual Allow/Connect or a preference change resumes automation.

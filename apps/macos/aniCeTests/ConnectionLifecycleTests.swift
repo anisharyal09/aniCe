@@ -46,7 +46,7 @@ import AppKit
   func tickSessionTransport() throws {}
 }
 @MainActor private final class VisualSmsNotifier: SmsNotifying {
-  func post(_ note: SmsNotification) async {}
+  func post(_ note: SmsNotification) async -> SmsPostOutcome { .submitted }
 }
 @MainActor private final class VisualFindNotifier: FindDeviceNotifying {
   var posts = 0

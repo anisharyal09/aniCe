@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Hands SMS_RECEIVED PDUs to the application relay within the broadcast completion bound.
+// Hands SMS_RECEIVED messages to the application relay within the broadcast completion bound.
 package io.github.anisharyal09.anice.features.sms
 
 import android.content.BroadcastReceiver
@@ -12,13 +12,24 @@ class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
         val application = context.applicationContext as? AniCeApplication ?: return
-        val event = intent.extras?.get("pdus")
-        val pdus = (event as? Array<*>)?.filterIsInstance<ByteArray>() ?: emptyList()
-        if (pdus.isEmpty()) return
         val pending = goAsync()
-        // The relay computes deterministic live IDs, parks queued events and retries once per transport.
-        val events = SmsPduParser.parse(intent.getStringExtra("format"), pdus)
-        SmsTrace.log("incoming: ${pdus.size} pdu(s), ${events.size} event(s)")
-        application.sms.submitLive(events) { pending.finish() }
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        val finish = Runnable { if (finished.compareAndSet(false, true)) pending.finish() }
+        handler.postDelayed(finish, 8_000)
+        try {
+            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent).orEmpty()
+            val subscription = intent.getIntExtra(android.telephony.SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX, -1)
+            val parts = messages.map { message ->
+                SmsReceivedPart(message?.originatingAddress, message?.timestampMillis ?: 0, message?.messageBody, subscription)
+            }
+            val events = listOfNotNull(smsReceivedEvent(parts))
+            SmsTrace.log("incoming: ${parts.size} part(s), ${events.size} event(s)${if (events.isEmpty()) " rejected-metadata" else ""}")
+            application.sms.submitLive(events) { handler.removeCallbacks(finish); finish.run() }
+        } catch (_: Exception) {
+            SmsTrace.log("incoming: native-decode-failed")
+            handler.removeCallbacks(finish)
+            finish.run()
+        }
     }
 }

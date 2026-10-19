@@ -11,14 +11,17 @@ private final class SpySmsNotificationCenter: SmsNotificationCenter, @unchecked 
   var pending: [String] = []
   var removedDelivered: [[String]] = []
   var removedPending: [[String]] = []
+  var access: SmsNotificationAccess = .authorized
+  var error: Error?
   var authRequests = 0
+  func settings(completionHandler: @escaping @Sendable (SmsNotificationAccess) -> Void) { completionHandler(access) }
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void) {
     authRequests += 1
     completionHandler(true, nil)
   }
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?) {
     added.append(request)
-    completionHandler?(nil)
+    completionHandler?(error)
   }
   func removeDeliveredNotifications(withIdentifiers identifiers: [String]) { removedDelivered.append(identifiers) }
   func removePendingNotificationRequests(withIdentifiers identifiers: [String]) { removedPending.append(identifiers) }
@@ -70,6 +73,30 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertTrue(prefs.preview(peer))
     prefs.prune([other])
     XCTAssertFalse(prefs.preview(peer))
+  }
+
+  @MainActor func testFailedSubmissionCanBeRetriedAndDeniedAlertsAreVisible() async throws {
+    let center = SpySmsNotificationCenter(), peer = phone()
+    let notifier = MacSmsNotifier(preferences: preferences(), center: center)
+    center.error = NSError(domain: "sms-test", code: 1)
+    let failed = await notifier.post(note(peer))
+    XCTAssertEqual(failed, .failed)
+    XCTAssertFalse(notifier.status.isEmpty)
+    center.error = nil
+    let retried = await notifier.post(note(peer))
+    XCTAssertEqual(retried, .submitted)
+    XCTAssertEqual(center.added.count, 2)
+    center.access = .denied
+    let denied = await notifier.post(note(peer, identifier: "anice-sms-denied"))
+    XCTAssertEqual(denied, .denied)
+    XCTAssertTrue(notifier.status.contains("turned off"))
+    center.access = .alertsDisabled
+    let disabled = await notifier.post(note(peer, identifier: "anice-sms-disabled"))
+    XCTAssertEqual(disabled, .alertsDisabled)
+    XCTAssertEqual(center.added.count, 2)
+    notifier.clear(peerKey: peer.deviceId + ":" + peer.fingerprint)
+    XCTAssertFalse(notifier.handleAction(category: "other", action: "ANICE_SMS_REPLY", identifier: "anice-sms-denied"))
+    XCTAssertTrue(center.removedDelivered.flatMap { $0 }.contains(note(peer).identifier))
   }
 
   @MainActor func testStartupCleanupOnlyRemovesReservedIdentifiers() async throws {
@@ -161,8 +188,8 @@ final class SmsNotifierTests: XCTestCase {
       peerName: peer.deviceName, address: "+15551234567", threadId: "sms:42",
       threadIdentifier: "+15551234567", body: "", failure: true))
     XCTAssertEqual(center.added.count, 1)
-    XCTAssertEqual(center.added[0].content.title, "Message not sent")
-    XCTAssertEqual(center.added[0].content.body, "Message to +15551234567 failed to send")
+    XCTAssertEqual(center.added[0].content.title, "Reply not confirmed")
+    XCTAssertEqual(center.added[0].content.body, "Message to +15551234567 was not confirmed; it may have been sent")
     XCTAssertEqual(center.added[0].content.categoryIdentifier, "ANICE_SMS")
   }
 

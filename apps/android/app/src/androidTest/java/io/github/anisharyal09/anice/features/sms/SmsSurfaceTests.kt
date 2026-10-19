@@ -28,6 +28,19 @@ class SmsSurfaceTests {
         assertFalse(status.exported)
     }
 
+    @Test fun platformDecoderAcceptsStatusReportIndicationWithoutChangingText() {
+        // SMS-DELIVER, +1555, GSM7 "hello", fixed service-centre timestamp; TP-SRI is set.
+        val hex = "00240491515500006201910000000005E8329BFD06"
+        val pdu = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val intent = Intent(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
+            .putExtra("format", "3gpp").putExtra("pdus", arrayOf(pdu))
+        val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        assertEquals(1, messages.size)
+        assertEquals("hello", messages.single().messageBody)
+        assertEquals("+1555", messages.single().originatingAddress)
+        assertNotNull(smsReceivedEvent(messages.map { SmsReceivedPart(it.originatingAddress, it.timestampMillis, it.messageBody) }))
+    }
+
     @Test fun smsPermissionsAreDeclared() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val declared = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)

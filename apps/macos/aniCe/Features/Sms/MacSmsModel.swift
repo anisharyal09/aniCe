@@ -48,8 +48,20 @@ struct SmsReplyRequest: Equatable {
   let text: String
 }
 
+enum SmsPostOutcome: Sendable { case submitted, duplicate, denied, alertsDisabled, failed, cancelled }
+enum SmsNotificationAccess: Sendable {
+  case authorized, denied, alertsDisabled, notDetermined
+}
 @MainActor protocol SmsNotifying: AnyObject {
-  func post(_ note: SmsNotification) async
+  var status: String { get }
+  func refreshSettings() async
+  func clear(peerKey: String)
+  func post(_ note: SmsNotification) async -> SmsPostOutcome
+}
+extension SmsNotifying {
+  var status: String { "" }
+  func refreshSettings() async {}
+  func clear(peerKey: String) {}
 }
 
 /** Canonical conversation key: digits with one optional leading `+`, or the trimmed uppercase text for alphanumeric sender IDs. */
@@ -109,7 +121,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var capable = false
     var status = "Waiting for your phone"
     var threads: [SmsThreadCard] = []
-    var threadSeen: Set<String> = []
+    var threadCards: [String: SmsThreadCard] = [:]
     var pendingThreads = false
     var threadRequest = ""
     var threadTransport = ""
@@ -164,13 +176,26 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var expiry: TimeInterval
     /** Whether a notification already announced this content, so a retry or a provider copy never re-announces it. */
     var notified: Bool
+    var liveMessageId: String? = nil
+    let direction: Int64
   }
 
+  final class Queued {
+    let message: SmsMessage
+    let owner: String
+    let deadline: TimeInterval
+    init(_ message: SmsMessage, owner: String, deadline: TimeInterval) {
+      self.message = message; self.owner = owner; self.deadline = deadline
+    }
+  }
   final class Link {
     let channel: any SecuredChannel
-    var queue: [SmsMessage] = []
+    var queue: [Queued] = []
     var sending = false
     var wake = false
+    var capable = false
+    var maximumThreads = 50
+    var maximumMessages = 50
     init(_ channel: any SecuredChannel) { self.channel = channel }
   }
 
@@ -197,7 +222,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
   private func capableLink(_ key: String) -> Link? {
     guard peers[key]?.capable == true else { return nil }
-    return links(for: key).first
+    return links(for: key).first { $0.capable }
   }
   private func state(_ key: String) -> PeerState {
     if let existing = peers[key] { return existing }
@@ -225,7 +250,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   func connected(_ peer: DeviceIdentity) -> Bool { !links(for: key(peer)).isEmpty }
   func supports(_ peer: DeviceIdentity) -> Bool {
     let k = key(peer)
-    return peers[k]?.capable == true && !links(for: k).isEmpty
+    return capableLink(k) != nil
   }
   func threads(_ peer: DeviceIdentity) -> [SmsThreadCard] {
     (peers[key(peer)]?.threads ?? []).sorted {
@@ -238,11 +263,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let k = key(peer)
     guard let state = peers[k] else { return "" }
     var parts: [String] = []
-    if let link = links(for: k).first {
+    if let link = capableLink(k) {
       parts.append(link.channel.descriptor.transport == "ble" ? "Bluetooth" : "Local network")
     }
     parts.append("\(state.liveReceived) live received")
-    parts.append("\(state.liveNotified) notified")
+    parts.append("\(state.liveNotified) Submitted to macOS")
     parts.append("\(state.liveSuppressed) already seen")
     return parts.joined(separator: " · ")
   }
@@ -250,6 +275,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard let state = peers[key(peer)] else { return false }
     return state.send != nil || !state.threadRequest.isEmpty || state.conversations.values.contains { !$0.requestId.isEmpty }
   }
+  var notificationStatus: String { notifier.status }
+  func refreshNotificationSettings() async { await notifier.refreshSettings() }
   func sending(_ peer: DeviceIdentity) -> Bool { peers[key(peer)]?.send != nil }
   func more(_ peer: DeviceIdentity, address: String) -> Bool {
     peers[key(peer)]?.conversations[smsNormalizedAddress(address)]?.more ?? false
@@ -263,11 +290,13 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   func messages(_ peer: DeviceIdentity, address: String) -> [SmsMessageRow] {
     let normalized = smsNormalizedAddress(address)
     guard !normalized.isEmpty, let conversation = peers[key(peer)]?.conversations[normalized] else { return [] }
+    var unmatched = conversation.rows
     let live = conversation.live.filter { row in
-      !conversation.rows.contains { existing in
-        existing.digest == row.digest && smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address)
-          && abs(existing.dateMillis - row.dateMillis) <= 5000
-      }
+      if let index = unmatched.firstIndex(where: { existing in
+        existing.direction == row.direction && existing.digest == row.digest &&
+          smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address) && abs(existing.dateMillis - row.dateMillis) <= 5000
+      }) { unmatched.remove(at: index); return false }
+      return true
     }
     return (conversation.rows + live).sorted {
       $0.dateMillis != $1.dateMillis ? $0.dateMillis > $1.dateMillis : smsCompareMessageIds($0.messageId, $1.messageId) > 0
@@ -275,6 +304,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
 
   func requestThreads(_ peer: DeviceIdentity) {
+    onLanRequired()
     let k = key(peer)
     let state = state(k)
     guard state.capable, state.threadRequest.isEmpty, let link = capableLink(k) else {
@@ -298,6 +328,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
 
   private func requestPage(_ peer: DeviceIdentity, address: String, refreshing: Bool) {
+    onLanRequired()
     let k = key(peer)
     let state = state(k)
     let normalized = smsNormalizedAddress(address)
@@ -316,7 +347,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let threadId = conversation.threadId.isEmpty ? "addr:" + normalized : conversation.threadId
     enqueue(link, SmsMessage(kind: 5, fields: [.text(requestId), .text(threadId),
       .integer(refreshing ? 0 : conversation.nextBeforeMillis), .text(refreshing ? "" : conversation.nextBeforeMessageId),
-      .integer(Int64(SmsMessage.defaultPageSize))]))
+      .integer(Int64(min(SmsMessage.defaultPageSize, link.maximumMessages)))]))
     state.status = "Loading messages…"
     schedule()
   }
@@ -326,6 +357,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
 
   private func submit(_ k: String, address: String, text: String, threadId preferred: String) {
+    onLanRequired()
     let state = state(k)
     let normalized = smsNormalizedAddress(address)
     let body = smsTruncate(smsSanitizeText(text), maxBytes: Int(SmsMessage.maxBodyBytes))
@@ -340,6 +372,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let requestId = UUID().uuidString.lowercased()
     let data = Data(body.utf8)
     let count = (data.count + 3071) / 3072
+    guard link.queue.count + count + 2 <= 32 else { state.status = "SMS channel is busy"; return }
     let threadId = !preferred.isEmpty ? preferred
       : (conversation?.threadId.isEmpty == false ? conversation!.threadId : "addr:" + normalized)
     state.send = Send(requestId: requestId, address: address, threadId: threadId, text: body,
@@ -386,10 +419,12 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
 
   func retired(_ descriptor: ChannelDescriptor) {
     guard live(descriptor) else { return }
+    links[descriptor.transport]?.queue.removeAll()
     links[descriptor.transport] = nil
     let k = key(descriptor.peer)
     if links(for: k).isEmpty {
       // Peer data is process-local and never outlives the last authenticated channel.
+      notifier.clear(peerKey: k)
       peers[k] = nil
     } else if let state = peers[k] {
       // Mid-page loss aborts the page; the next request continues from the last completed cursor.
@@ -403,7 +438,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       state.assemblies = state.assemblies.filter { $0.value.descriptor != descriptor }
       if let send = state.send, send.descriptor == descriptor {
-        state.send = nil; state.status = "Connection lost before the reply was confirmed"
+        state.send = nil; state.status = "Not confirmed; it may have been sent"
       }
     }
     schedule()
@@ -422,6 +457,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard live(descriptor), let link = links[descriptor.transport], let state = peers[key(descriptor.peer)] else { return .discarded }
     switch message.kind {
     case 1:
+      link.capable = true
+      link.maximumThreads = Int(message.number(2))
+      link.maximumMessages = Int(message.number(3))
       state.capable = true
       if state.status == "Waiting for your phone" { state.status = "Ready" }
       // Answer with our own capability: the phone re-announces while it has not seen ours, so a hello
@@ -435,25 +473,29 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       return .handled
     case 3:
-      guard state.capable else { return .discarded }
+      guard state.threadTransport == descriptor.transport else { return .discarded }
+      guard link.capable else { return .discarded }
       return recordThread(state, message) ? .handled : .discarded
     case 4:
-      guard state.capable else { return .discarded }
+      guard state.threadTransport == descriptor.transport else { return .discarded }
+      guard link.capable else { return .discarded }
       return finishThreads(state, message) ? .handled : .discarded
     case 6:
-      guard state.capable else { return .discarded }
+      guard link.capable else { return .discarded }
       return beginStream(state, message, descriptor) ? .handled : .discarded
     case 7:
-      guard state.capable else { return .discarded }
+      guard link.capable else { return .discarded }
       return fragment(state, message, descriptor) ? .handled : .discarded
     case 8:
-      guard state.capable else { return .discarded }
+      guard link.capable else { return .discarded }
       return await commit(state, message, descriptor)
     case 10:
-      guard state.capable else { return .discarded }
+      guard state.conversations.values.contains(where: { $0.requestId == message.text(0) && $0.transport == descriptor.transport }) else { return .discarded }
+      guard link.capable else { return .discarded }
       return finishHistory(state, message) ? .handled : .discarded
     case 14:
-      guard state.capable else { return .discarded }
+      guard state.send?.descriptor == descriptor else { return .discarded }
+      guard link.capable else { return .discarded }
       return await finishSend(state, message) ? .handled : .discarded
     default:
       return .unrecognized
@@ -472,6 +514,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var failures: [SmsNotification] = []
     for (k, state) in peers {
       if !state.threadRequest.isEmpty, state.threadDeadline <= time {
+        cancelQueued(state.threadRequest)
+        state.threadCards = [:]
         state.threadRequest = ""; state.threadTransport = ""
         state.status = "Your phone did not answer"
       }
@@ -481,14 +525,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
         state.status = "Your phone did not answer"
       }
       if let send = state.send, send.deadline <= time {
+        cancelQueued(send.requestId)
         state.send = nil
-        state.status = "The reply was not confirmed"
+        state.status = "Not confirmed; it may have been sent"
         failures.append(failureNote(k, links(for: k).first?.channel.descriptor.peer.deviceName ?? "", send.address, send.threadId))
       }
       state.known = state.known.filter { $0.value > time }
       state.contents.removeAll { $0.expiry <= time }
       state.assemblies = state.assemblies.filter { $0.value.deadline > time }
     }
+    for link in links.values { link.queue.removeAll { $0.deadline <= time } }
     for note in failures { Task { await notifier.post(note) } }
     schedule()
   }
@@ -502,9 +548,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private func issueThreads(_ state: PeerState, _ link: Link, _ k: String) {
     let requestId = UUID().uuidString.lowercased()
     state.threadRequest = requestId
+    state.threadCards = [:]
     state.threadTransport = link.channel.descriptor.transport
     state.threadDeadline = requestDeadline(link.channel.descriptor.transport)
-    state.threadSeen = []
     state.status = "Loading conversations…"
     enqueue(link, SmsMessage(kind: 2, fields: [.text(requestId)]))
     schedule()
@@ -520,22 +566,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       snippet: smsTruncate(smsSanitizeText(m.text(3)), maxBytes: 160),
       dateMillis: smsClampDate(m.number(4)), unreadCount: min(m.number(5), SmsMessage.maxDate))
     card.live = false
-    state.threadSeen.insert(normalized)
-    if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
-      state.threads[index] = card
-    } else {
-      state.threads.append(card)
-    }
-    guard let conversation = conversation(state, normalized) else { return true }
-    if conversation.threadId.isEmpty {
-      conversation.threadId = threadId
-    } else if conversation.threadId != threadId, conversation.requestId.isEmpty {
-      // A provider identity replaces the address fallback; paging restarts from the newest row.
-      conversation.threadId = threadId
-      conversation.nextBeforeMillis = 0
-      conversation.nextBeforeMessageId = ""
-      conversation.more = false
-    }
+    state.threadCards[normalized] = card
+
     return true
   }
 
@@ -546,13 +578,22 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     case 0:
       // A completed list is a snapshot: provider conversations it no longer reports disappear, while
       // cards a live message created stay until a later snapshot adopts or replaces them.
-      let seen = state.threadSeen
-      state.threads.removeAll { !$0.live && !seen.contains($0.key) }
+      let cards = state.threadCards
+      state.threads = state.threads.filter { $0.live && cards[$0.key] == nil } + Array(cards.values)
+      for (normalized, card) in cards {
+        guard let conversation = conversation(state, normalized) else { continue }
+        if conversation.threadId != card.threadId {
+          conversation.threadId = card.threadId
+          conversation.nextBeforeMillis = 0
+          conversation.nextBeforeMessageId = ""
+          conversation.more = false
+        }
+      }
       state.status = state.threads.isEmpty ? "No conversations on your phone" : "\(state.threads.count) conversations"
     case 1: state.status = "Allow SMS access on your phone to read conversations"
     default: state.status = "Conversations are unavailable"
     }
-    state.threadSeen = []
+    state.threadCards = [:]
     schedule()
     return true
   }
@@ -560,7 +601,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private func beginStream(_ state: PeerState, _ m: SmsMessage, _ descriptor: ChannelDescriptor) -> Bool {
     let streamId = m.text(0)
     let requestId = m.text(1)
-    if !requestId.isEmpty, !state.conversations.values.contains(where: { $0.requestId == requestId }) { return false }
+    if !requestId.isEmpty, !state.conversations.values.contains(where: { $0.requestId == requestId && $0.transport == descriptor.transport }) { return false }
     if let existing = state.assemblies[streamId] {
       if existing.descriptor == descriptor, existing.begin == m { return true }
       state.assemblies[streamId] = nil
@@ -570,7 +611,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
         return true
       }
     }
-    state.assemblies[streamId] = Assembly(descriptor, m, deadline: now() + 30)
+    guard state.assemblies.count < 16 else { if requestId.isEmpty { ack(descriptor, streamId, 2) }; return false }
+    state.assemblies[streamId] = Assembly(descriptor, m, deadline: requestDeadline(descriptor.transport))
     schedule()
     return true
   }
@@ -606,6 +648,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
         !body.contains("\0") else { return nil }
       return body
     }.value
+    guard live(descriptor), peers[key(descriptor.peer)] === state,
+      state.assemblies[streamId] === assembly, assembly.deadline > now(),
+      assembly.requestId.isEmpty || state.conversations.values.contains(where: { $0.requestId == assembly.requestId }) else { return .discarded }
     state.assemblies[streamId] = nil
     guard let text else {
       if assembly.requestId.isEmpty { ack(descriptor, streamId, 6) }
@@ -624,7 +669,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let time = now()
     let normalized = smsNormalizedAddress(assembly.address)
     let mark = state.contents.firstIndex {
-      $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && $0.expiry > time
+      $0.direction == assembly.direction && ($0.liveMessageId == nil || $0.liveMessageId == assembly.messageId || !assembly.messageId.hasPrefix("live:")) && $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && $0.expiry > time
     }
     // A provider copy of the same message owns its row, but only a delivered notification suppresses the next one:
     // an event that lands after the panel already fetched the provider copy still announces the message.
@@ -633,10 +678,10 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     state.known[assembly.messageId] = time + 600
     if let index = mark {
       state.contents[index].expiry = time + 600
-      state.contents[index].notified = true
+      if assembly.messageId.hasPrefix("live:") { state.contents[index].liveMessageId = assembly.messageId }
     } else {
       state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis,
-        expiry: time + 600, notified: true))
+        expiry: time + 600, notified: false, liveMessageId: assembly.messageId, direction: assembly.direction))
     }
     state.liveReceived += 1
     if duplicate { state.liveSuppressed += 1 }
@@ -649,10 +694,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }
     if announced { return }
     state.status = "Message received"
-    state.liveNotified += 1
-    await notifier.post(SmsNotification(identifier: smsNotificationPrefix + assembly.messageId, peerKey: key(peer),
+    let outcome = await notifier.post(SmsNotification(identifier: smsNotificationPrefix + assembly.messageId, peerKey: key(peer),
       peerName: peer.deviceName, address: assembly.address, threadId: conversation.threadId,
       threadIdentifier: normalized, body: body, failure: false))
+    guard peers[key(peer)] === state, live(assembly.descriptor) else { return }
+    if outcome == .submitted || outcome == .duplicate {
+      if outcome == .submitted { state.liveNotified += 1 }
+      if let index = state.contents.firstIndex(where: {
+        $0.direction == assembly.direction && ($0.liveMessageId == nil || $0.liveMessageId == assembly.messageId || !assembly.messageId.hasPrefix("live:")) && $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000
+      }) { state.contents[index].notified = true }
+    }
     schedule()
   }
 
@@ -662,18 +713,18 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     state.known[assembly.messageId] = time + 600
     // The provider copy never notifies; an existing mark keeps the announced state its live copy may have set.
     if let index = state.contents.firstIndex(where: {
-      $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000
+      $0.direction == assembly.direction && $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000
     }) {
       state.contents[index].expiry = time + 600
     } else {
       state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis,
-        expiry: time + 600, notified: false))
+        expiry: time + 600, notified: false, direction: assembly.direction))
     }
     // The provider record wins: its live copy is replaced and an existing posted notification is untouched.
-    conversation.live.removeAll {
-      $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && smsNormalizedAddress($0.address) == normalized
-    }
-    guard !conversation.rows.contains(where: { $0.messageId == assembly.messageId }) else { return }
+    if let index = conversation.live.firstIndex(where: {
+      $0.direction == assembly.direction && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && smsNormalizedAddress($0.address) == normalized
+    }) { conversation.live.remove(at: index) }
+    conversation.rows.removeAll { $0.messageId == assembly.messageId }
     conversation.rows.append(SmsMessageRow(messageId: assembly.messageId, address: assembly.address, dateMillis: assembly.dateMillis,
       direction: assembly.direction, unread: assembly.unread, body: body, digest: digest))
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
@@ -690,7 +741,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard m.number(1) == 0 else {
       // A failed newest-page refresh leaves older paging state untouched; a failed older page stops offering more.
       if !refreshing { conversation.more = false }
-      state.status = m.number(1) == 1 ? "Allow SMS access on your phone to read messages" : "Messages are unavailable"
+      state.status = m.number(1) == 1 ? "Allow SMS access on your phone to read messages"
+        : m.number(1) == 4 ? "This timestamp group is too large to page" : "Messages are unavailable"
       schedule()
       return true
     }
@@ -726,7 +778,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       upsertCard(state, address: send.address, snippet: send.text, dateMillis: stamp, unread: 0)
       state.status = "Sent"
     } else {
-      state.status = code == 1 ? "Allow SMS on your phone to send replies" : code == 5 ? "The reply failed to send" : "The reply was rejected"
+      state.status = code == 1 ? "Allow SMS on your phone to send replies" : code == 5 ? "Not confirmed; it may have been sent" : "The reply was rejected"
       if code == 1 || code == 5 {
         await notifier.post(failureNote(key(send.descriptor.peer), send.descriptor.peer.deviceName, send.address, send.threadId))
       }
@@ -759,7 +811,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
 
   private func schedule() {
     timer?.cancel(); timer = nil
-    var deadlines: [TimeInterval] = []
+    var deadlines = links.values.flatMap { $0.queue.map(\.deadline) }
     for state in peers.values {
       if !state.threadRequest.isEmpty { deadlines.append(state.threadDeadline) }
       deadlines.append(contentsOf: state.conversations.values.filter { !$0.requestId.isEmpty }.map(\.deadline))
@@ -776,10 +828,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }
   }
 
+  private func cancelQueued(_ owner: String) {
+    for link in links.values { link.queue.removeAll { $0.owner == owner } }
+  }
+
   private func enqueue(_ link: Link, _ message: SmsMessage) {
     guard live(link.channel.descriptor), link.queue.count < 32 else { return }
-    link.queue.append(message)
+    let owner = message.kind == 1 ? "" : message.text(0)
+    link.queue.append(Queued(message, owner: owner, deadline: requestDeadline(link.channel.descriptor.transport)))
     pump(link)
+    schedule()
   }
 
   private func pump(_ link: Link) {
@@ -791,10 +849,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       repeat {
         link.wake = false
         while self.live(link.channel.descriptor), let first = link.queue.first {
-          do { try await link.channel.sendData(first.encode()) }
+          if first.deadline <= self.now() { link.queue.removeFirst(); continue }
+          do { try await link.channel.sendData(first.message.encode()) }
           catch is SessionBackpressure { break }
-          catch { link.queue.removeAll(); return }
-          if link.queue.first == first { link.queue.removeFirst() }
+          catch {
+            let peer = self.peers[self.key(link.channel.descriptor.peer)]
+            self.retired(link.channel.descriptor)
+            peer?.status = "SMS submission was not confirmed"
+            return
+          }
+          if link.queue.first === first { link.queue.removeFirst() }
         }
       } while link.wake && self.live(link.channel.descriptor)
     }

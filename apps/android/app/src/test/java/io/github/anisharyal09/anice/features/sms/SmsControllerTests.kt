@@ -39,7 +39,7 @@ class SmsControllerTests {
         var pause: CompletableDeferred<Unit>? = null
         val addresses = mutableListOf<String>()
         val bodies = mutableListOf<String>()
-        override suspend fun send(address: String, body: String): SmsSendOutcome {
+        override suspend fun send(address: String, body: String, timeoutMillis: Long): SmsSendOutcome {
             addresses += address
             bodies += body
             pause?.await()
@@ -49,7 +49,13 @@ class SmsControllerTests {
     private class Channel(val transport: String = "lan") : SecuredChannel {
         override val descriptor = ChannelDescriptor(UUID.randomUUID().toString(), transport, DeviceIdentity("peer", "Device", "macos", "key", "fingerprint"))
         val sent = mutableListOf<SmsWireMessage>()
-        override suspend fun sendData(bytes: ByteArray) { sent.add(SmsWireMessage.decode(bytes)!!) }
+        var blocked = false
+        var attempts = 0
+        override suspend fun sendData(bytes: ByteArray) {
+            attempts++
+            if (blocked) throw io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure()
+            sent.add(SmsWireMessage.decode(bytes)!!)
+        }
     }
     private class Clock {
         var time = 0L
@@ -59,6 +65,7 @@ class SmsControllerTests {
             sleeps[wake] = time + duration
             try { wake.await() } finally { sleeps.remove(wake) }
         }
+        fun hasDeadline(value: Long) = sleeps.values.contains(value)
         fun advance(duration: Long) {
             time += duration
             val due = sleeps.filterValues { it <= time }.keys.toList()
@@ -116,7 +123,7 @@ class SmsControllerTests {
         assertTrue(begin.flag(7))
         assertEquals(5L, begin.number(8))
         assertEquals(1L, begin.number(9))
-        assertEquals(1, finished)
+        until { finished == 1 }
         val stream = begin.text(0)
         val fragment = lan.sent.first { it.kind == 7L }
         assertEquals(stream, fragment.text(0))
@@ -154,7 +161,9 @@ class SmsControllerTests {
         // The Mac is silent, so the event stays parked and is offered again inside its lifetime.
         assertEquals(1, h.owner.waitingLive)
         assertEquals(0, h.owner.relayedLive)
+        until { h.clock.hasDeadline(h.time + 2_000) }
         h.tick(2_000)
+        until { h.clock.hasDeadline(h.time + 5_000) }
         h.tick(5_000)
         until { lan.sent.count { it.kind == 8L } == 2 }
         assertEquals(0, h.owner.relayedLive)
@@ -247,6 +256,7 @@ class SmsControllerTests {
         h.owner.submitLive(listOf(event))
         yield()
         assertEquals(1, lan.sent.count { it.kind == 6L })
+        until { h.clock.hasDeadline(h.time + 2_000) }
         h.time += 2000
         until { ble.sent.any { it.kind == 8L } }
         val bleBegin = ble.sent.first { it.kind == 6L }
@@ -466,7 +476,7 @@ class SmsControllerTests {
         assertEquals(5L, lan.sent.first { it.kind == 14L && it.text(0) == timeout }.number(1))
     }
 
-    @Test fun replacedReplyRequestCancelsItsJobAndKeepsTheNewerSlot() = runBlocking {
+    @Test fun anotherReplyIsBusyAndDuplicateCommitNeverResends() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()
         ready(h, lan)
@@ -483,15 +493,15 @@ class SmsControllerTests {
         h.owner.handle(lan.descriptor, begin(second, "second").encode())
         h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(second), number(0), data(utf8("second"))).encode())
         h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(second)).encode())
-        until { h.sender.bodies.size == 2 }
+        until { lan.sent.any { it.kind == 14L && it.text(0) == second } }
+        assertEquals(2L, lan.sent.first { it.kind == 14L && it.text(0) == second }.number(1))
+        assertEquals(listOf("first"), h.sender.bodies)
         h.sender.pause!!.complete(Unit)
-        until { lan.sent.any { it.kind == 14L } }
-        // The retired request reports nothing, and its late completion cannot erase the newer request's tracking.
-        assertTrue(lan.sent.none { it.kind == 14L && it.text(0) == first })
-        val result = lan.sent.single { it.kind == 14L }
-        assertEquals(second, result.text(0))
-        assertEquals(0L, result.number(1))
-        assertEquals(listOf("first", "second"), h.sender.bodies)
+        until { lan.sent.any { it.kind == 14L && it.text(0) == first } }
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(first)).encode())
+        until { lan.sent.count { it.kind == 14L && it.text(0) == first } == 2 }
+        assertEquals(listOf("first"), h.sender.bodies)
+        assertTrue(lan.sent.filter { it.kind == 14L && it.text(0) == first }.all { it.number(1) == 0L })
     }
 
     @Test fun expiryCancelsAnInFlightReplyAndReportsFailureOnce() = runBlocking {
@@ -637,7 +647,7 @@ class SmsControllerTests {
         override fun unreadCounts() = unreadRows?.invoke() ?: throw SmsStoreException()
         override fun canonicalAddresses(ids: List<Long>) = canonical?.invoke(ids) ?: throw SmsStoreException()
         override fun newestThreadRow(threadId: Long) = fallback?.invoke(threadId)
-        override fun directThreads(limit: Int) = direct?.invoke(limit) ?: throw SmsStoreException()
+        override fun directThreads(limit: Int) = SmsConversationPage(direct?.invoke(limit) ?: throw SmsStoreException())
         override fun smsHistory(threadId: Long, upperMillis: Long?, limit: Int) = sms!!.invoke(threadId, upperMillis, limit)
         override fun smsDateGroup(threadId: Long, millis: Long) = smsGroup!!.invoke(threadId, millis)
         override fun mmsHistory(threadId: Long, upperMillis: Long?, limit: Int) = mms!!.invoke(threadId, upperMillis, limit)
@@ -781,35 +791,127 @@ class SmsControllerTests {
         assertTrue(page.skipped > 0)
         assertTrue(page.more)
         assertTrue(page.nextBeforeMillis > 0)
-        assertEquals("", page.nextBeforeMessageId)
+        assertTrue(page.nextBeforeMessageId.startsWith("sms:"))
     }
 
-    @Test fun pduParserDecodesSevenBitUcs2AlphanumericAndMultipart() {
-        val plain = buildPdu(PduSpec(address = "+15551234567", text = "Hello 123", timeMillis = 1_700_000_000_000, offsetMinutes = 330))
-        val events = SmsPduParser.parse("3gpp", listOf(plain))
-        assertEquals(1, events.size)
-        assertEquals("+15551234567", events[0].address)
-        assertEquals("Hello 123", events[0].body)
-        assertEquals(1_700_000_000_000L, events[0].dateMillis)
-        val unicode = buildPdu(PduSpec(address = "+15551234567", text = "héllo \u0000 end", timeMillis = 1_700_000_000_000, offsetMinutes = 0, ucs2 = true))
-        assertEquals("héllo \uFFFD end", SmsPduParser.parse("3gpp", listOf(unicode)).single().body)
-        val alpha = buildPdu(PduSpec(address = "BANK", text = "code 42", timeMillis = 1_700_000_000_000, offsetMinutes = -480, alphanumeric = true))
-        assertEquals("BANK", SmsPduParser.parse("3gpp", listOf(alpha)).single().address)
-        // A declared septet count of 7 (mod 8) must not decode the octet padding as a trailing character.
-        val seven = buildPdu(PduSpec(address = "+15551234567", text = "code 42", timeMillis = 1_700_000_000_000, offsetMinutes = 0))
-        assertEquals("code 42", SmsPduParser.parse("3gpp", listOf(seven)).single().body)
-        val fifteen = buildPdu(PduSpec(address = "+15551234567", text = "0123456789abcde", timeMillis = 1_700_000_000_000, offsetMinutes = 0))
-        assertEquals("0123456789abcde", SmsPduParser.parse("3gpp", listOf(fifteen)).single().body)
-        val paddedHead = buildPdu(PduSpec(address = "+15551234567", text = "code 42", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 1)))
-        val paddedTail = buildPdu(PduSpec(address = "+15551234567", text = "tail", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 2)))
-        assertEquals("code 42tail", SmsPduParser.parse("3gpp", listOf(paddedHead, paddedTail)).single().body)
-        val tail = buildPdu(PduSpec(address = "+15551234567", text = "two", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 2)))
-        val head = buildPdu(PduSpec(address = "+15551234567", text = "one ", timeMillis = 1_700_000_000_000, offsetMinutes = 0, concat = Triple(7, 2, 1)))
-        assertEquals("one two", SmsPduParser.parse("3gpp", listOf(tail, head)).single().body)
-        assertTrue(SmsPduParser.parse("3gpp2", listOf(plain)).isEmpty())
-        assertTrue(SmsPduParser.parse(null, listOf(plain)).single().body == "Hello 123")
-        assertTrue(SmsPduParser.parse("3gpp", listOf(byteArrayOf(1, 2, 3))).isEmpty())
-        assertTrue(SmsPduParser.parse("3gpp", listOf(buildPdu(PduSpec(address = "+1555", text = "one ", timeMillis = 1, offsetMinutes = 0, concat = Triple(7, 2, 1))))).isEmpty())
+    @Test fun localProviderFailuresNeverClaimPermissionWasDenied() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        h.owner.refreshPermissions()
+        h.store.throwOnThreads = true
+        h.owner.loadThreads()
+        until { h.owner.status == "Conversations are unavailable" }
+        assertTrue(h.owner.permissionsState.read)
+        h.store.throwOnHistory = true
+        h.owner.select("42")
+        until { h.owner.status == "Messages are unavailable" }
+        assertTrue(h.owner.permissionsState.read)
+        h.owner.invalidate()
+    }
+
+    @Test fun expiredPageCannotDrainAfterBackpressureClears() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        lan.blocked = true
+        val attempts = lan.attempts
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("42", "+1555", "test", 10, 0)), 0)
+        val request = request()
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(2, text(request)).encode())
+        until { lan.attempts > attempts }
+        h.time += 30_001
+        h.owner.expire()
+        yield()
+        lan.blocked = false
+        h.owner.capacityAvailable(lan.descriptor)
+        yield()
+        assertTrue(lan.sent.none { it.kind == 3L && it.text(0) == request })
+        assertTrue(lan.sent.none { it.kind == 4L && it.text(0) == request })
+        h.owner.invalidate()
+    }
+
+    @Test fun bluetoothReplyKeepsItsSixtySecondWindow() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val ble = Channel("ble")
+        ready(h, ble)
+        val request = request()
+        h.owner.handle(ble.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(4), number(1), data(digest("test"))).encode())
+        h.time += 30_001
+        h.owner.expire()
+        yield()
+        assertTrue(ble.sent.none { it.kind == 14L && it.text(0) == request })
+        h.owner.handle(ble.descriptor, SmsWireMessage.of(12, text(request), number(0), data(utf8("test"))).encode())
+        h.owner.handle(ble.descriptor, SmsWireMessage.of(13, text(request)).encode())
+        until { ble.sent.any { it.kind == 14L && it.text(0) == request } }
+        assertEquals(0L, ble.sent.first { it.kind == 14L && it.text(0) == request }.number(1))
+        h.owner.invalidate()
+    }
+
+    @Test fun negativeLiveAcknowledgementNeverReportsDelivery() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.owner.submitLive(listOf(SmsLiveEvent("+1555", 1000, "hello")))
+        until { lan.sent.any { it.kind == 8L } }
+        val stream = lan.sent.first { it.kind == 6L }.text(0)
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(9, text(stream), number(6)).encode())
+        assertEquals(0, h.owner.relayedLive)
+        assertEquals(1, h.owner.failedLive)
+        assertEquals(0, h.owner.waitingLive)
+        h.owner.invalidate()
+    }
+
+    @Test fun historyKeepsSmsSourcePositionWhenMmsIsMuchOlder() = runBlocking {
+        val provider = FakeProvider()
+        val sms = (1L..100L).map { id -> SmsRawMessage(id, 1000 - id, "+1555", if (id <= 42) "x".repeat(24_577) else "valid", 0, false, true) }
+        val mms = listOf(SmsRawMessage(1, 1, "+1555", "old MMS", 0, false, true))
+        provider.sms = { _, upper, limit -> sms.filter { upper == null || it.dateMillis <= upper }.take(limit) }
+        provider.smsGroup = { _, date -> sms.filter { it.dateMillis == date } }
+        provider.mms = { _, upper, limit -> mms.filter { upper == null || it.dateMillis <= upper }.take(limit) }
+        provider.mmsGroup = { _, date -> mms.filter { it.dateMillis == date } }
+        val page = store(provider, { true }).history("42", 0, "", 10)!!
+        assertEquals((43L..52L).map { "sms:$it" }, page.messages.map { it.messageId })
+        assertTrue(page.more)
+    }
+
+    @Test fun clampedZeroTimestampCursorDoesNotRestartThePage() = runBlocking {
+        val provider = FakeProvider()
+        val rows = (1L..40L).map { SmsRawMessage(it, -it, "+1555", "legacy", 0, false, true) }
+        provider.sms = { _, upper, limit -> rows.filter { upper == null || it.dateMillis <= upper }.take(limit) }
+        provider.smsGroup = { _, date -> rows.filter { smsClampDate(it.dateMillis) == date } }
+        val store = store(provider, { true })
+        val first = store.history("42", 0, "", 2)!!
+        val second = store.history("42", first.nextBeforeMillis, first.nextBeforeMessageId, 2)!!
+        assertEquals(listOf("sms:9", "sms:8"), first.messages.map { it.messageId })
+        assertEquals(listOf("sms:7", "sms:6"), second.messages.map { it.messageId })
+        assertTrue(second.more)
+    }
+
+    @Test fun oversizedTimestampGroupFailsWithoutAFalseTerminalCursor() = runBlocking {
+        val provider = FakeProvider()
+        val rows = (1L..2049L).map { SmsRawMessage(it, 1000, "+1555", "hello", 0, false, true) }
+        provider.sms = { _, _, limit -> rows.take(limit) }
+        provider.smsGroup = { _, _ -> rows }
+        try { store(provider, { true }).history("42", 0, "", 10); fail("oversized group") }
+        catch (_: SmsPagingUnsupported) { }
+    }
+
+    @Test fun providerFailureIsNotAnEmptyInbox() = runBlocking {
+        try { store(FakeProvider(), { true }).threads(50); fail("both sources failed") }
+        catch (_: SmsStoreException) { }
+    }
+
+    @Test fun nativePartsPreserveOrderAndRejectMixedOrMalformedBatches() {
+        val part = SmsReceivedPart("BANK", 1_700_000_000_000, "code 42")
+        assertEquals("code 42", smsReceivedEvent(listOf(part))!!.body)
+        assertEquals("code 42tail", smsReceivedEvent(listOf(part, part.copy(body = "tail")))!!.body)
+        assertEquals("héllo \uFFFD end", smsReceivedEvent(listOf(part.copy(body = "héllo \u0000 end")))!!.body)
+        assertNull(smsReceivedEvent(emptyList()))
+        assertNull(smsReceivedEvent(listOf(part, part.copy(address = "OTHER"))))
+        assertNull(smsReceivedEvent(listOf(part, part.copy(subscriptionId = 2))))
+        assertNull(smsReceivedEvent(listOf(part.copy(dateMillis = 0))))
+        assertNull(smsReceivedEvent(listOf(part.copy(body = null))))
+        assertNull(smsReceivedEvent(listOf(part.copy(body = "x".repeat(24_577)))))
+        assertNull(smsReceivedEvent(listOf(part.copy(body = "\uD800"))))
     }
 
     @Test fun liveIdsAreDeterministicAndAddressTokensNormalize() {
@@ -831,87 +933,4 @@ class SmsControllerTests {
         assertEquals(158, smsTruncate("é".repeat(200), 159).toByteArray().size)
     }
 
-    private class PduSpec(
-        val address: String,
-        val text: String,
-        val timeMillis: Long,
-        val offsetMinutes: Int,
-        val ucs2: Boolean = false,
-        val alphanumeric: Boolean = false,
-        val concat: Triple<Int, Int, Int>? = null,
-    )
-
-    private fun buildPdu(spec: PduSpec): ByteArray {
-        val header = spec.concat?.let { (reference, count, index) -> byteArrayOf(5, 0, 3, reference.toByte(), count.toByte(), index.toByte()) } ?: ByteArray(0)
-        val body = if (spec.ucs2) header + spec.text.toByteArray(Charsets.UTF_16BE) else packSeptets(header, spec.text)
-        val length = if (spec.ucs2) body.size else septetTotal(header, spec.text)
-        val out = java.io.ByteArrayOutputStream()
-        out.write(0)
-        out.write(if (header.isEmpty()) 0x04 else 0x44)
-        if (spec.alphanumeric) {
-            val packed = packSeptets(ByteArray(0), spec.address)
-            out.write(packed.size * 2)
-            out.write(0xD0)
-            out.write(packed)
-        } else {
-            val international = spec.address.startsWith("+")
-            val digits = spec.address.removePrefix("+")
-            out.write(digits.length)
-            out.write(if (international) 0x91 else 0x81)
-            out.write(bcd(digits))
-        }
-        out.write(0)
-        out.write(if (spec.ucs2) 0x08 else 0x00)
-        out.write(scts(spec.timeMillis, spec.offsetMinutes))
-        out.write(length)
-        out.write(body)
-        return out.toByteArray()
-    }
-
-    private fun septetTotal(header: ByteArray, text: String): Int = (if (header.isEmpty()) 0 else (header.size * 8 + 6) / 7) + text.length
-
-    private fun bcd(digits: String): ByteArray {
-        val padded = if (digits.length % 2 == 1) digits + "F" else digits
-        return ByteArray(padded.length / 2) { index ->
-            val low = Character.digit(padded[index * 2], 16)
-            val high = Character.digit(padded[index * 2 + 1], 16)
-            ((high shl 4) or low).toByte()
-        }
-    }
-
-    private fun scts(timeMillis: Long, offsetMinutes: Int): ByteArray {
-        val calendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        calendar.timeInMillis = timeMillis + offsetMinutes * 60_000L
-        fun semi(value: Int) = (value % 10 shl 4) or (value / 10)
-        val quarters = kotlin.math.abs(offsetMinutes) / 15
-        val tz = ((quarters % 10 shl 4) or (quarters / 10)) or (if (offsetMinutes < 0) 0x08 else 0)
-        return byteArrayOf(
-            semi(calendar.get(java.util.Calendar.YEAR) % 100).toByte(),
-            semi(calendar.get(java.util.Calendar.MONTH) + 1).toByte(),
-            semi(calendar.get(java.util.Calendar.DAY_OF_MONTH)).toByte(),
-            semi(calendar.get(java.util.Calendar.HOUR_OF_DAY)).toByte(),
-            semi(calendar.get(java.util.Calendar.MINUTE)).toByte(),
-            semi(calendar.get(java.util.Calendar.SECOND)).toByte(),
-            tz.toByte(),
-        )
-    }
-
-    /** Writes header bytes then pads to a septet boundary before the packed 7-bit payload. */
-    private fun packSeptets(header: ByteArray, text: String): ByteArray {
-        val septets = text.map { it.code }.toIntArray()
-        val headerSeptets = if (header.isEmpty()) 0 else (header.size * 8 + 6) / 7
-        val total = headerSeptets + septets.size
-        val out = ByteArray((total * 7 + 7) / 8)
-        var bit = 0
-        fun write(value: Int, bits: Int) {
-            for (index in 0 until bits) {
-                if (value shr index and 1 == 1) out[(bit + index) / 8] = (out[(bit + index) / 8].toInt() or (1 shl ((bit + index) % 8))).toByte()
-            }
-            bit += bits
-        }
-        header.forEach { write(it.toInt() and 255, 8) }
-        while (bit < headerSeptets * 7) bit++
-        septets.forEach { write(it, 7) }
-        return out
-    }
 }

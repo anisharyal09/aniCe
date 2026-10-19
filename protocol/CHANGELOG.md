@@ -15,11 +15,13 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Clarified SMS v1 authenticated acknowledgement results, request-owned submission deadlines, bounded duplicate reply results, independent provider scan positions and non-advancing failures for oversized timestamp groups or incomplete provider sources. Wire fields and bounds are unchanged.
+
 - Clarified SMS capability limits: `maxThreadsPerPage` and `maxMessagesPerPage` are the advertiser's per-link limits in 1..50 rather than the fixed value 50, so a slower link can announce smaller thread lists and pages, and a peer serves within the limits it received. Layout, field order and bounds are unchanged and a 50/50 capability stays valid.
 
 - Clarified SMS live-relay retry semantics: an event that is not acknowledged is offered again on its live channels inside its ten-minute pending lifetime rather than only once, and an idempotent capability record may be re-sent on a link whose peer capability has not arrived with the receiver answering with its own, so a lost fragment, `messageResult` or capability hello does not strand the event until a new channel generation. Messages, bounds and fixture bytes are unchanged.
 
-- Clarified SMS `historyDone` cursor semantics: a page with no older rows sends the terminal `(0, "")` cursor so clients never offer an empty "load older" request, and `unreadCount` counts unread incoming provider rows because the threads view's `read` column is an all-read flag, not a count. An `addr:` identity carries alphanumeric sender IDs as their trimmed uppercase text, so bank and service senders keep distinct conversation identities instead of one empty-string identity. Seven-bit SMS bodies decode to their declared septet count, so the octet padding never becomes a trailing character and the message digest matches the provider copy.
+- Clarified SMS `historyDone` cursor semantics: a page with no older rows sends the terminal `(0, "")` cursor so clients never offer an empty "load older" request, and `unreadCount` counts unread incoming provider rows because the threads view's `read` column is an all-read flag, not a count. An `addr:` identity carries alphanumeric sender IDs as their trimmed uppercase text, so bank and service senders keep distinct conversation identities instead of one empty-string identity.
 
 - Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.
 

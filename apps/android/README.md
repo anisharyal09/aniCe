@@ -25,7 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
-        sms/                        SMS store, PDU parser, sender, controller, receiver and panel
+        sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/
         connections/                BLE/LAN owners, nearby policy and DATA dispatch

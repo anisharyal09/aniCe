@@ -6,7 +6,14 @@ import CryptoKit
 
 @MainActor final class SmsNotifierSpy: SmsNotifying {
   var notes: [SmsNotification] = []
-  func post(_ note: SmsNotification) async { notes.append(note) }
+  var outcome: SmsPostOutcome = .submitted
+  var pause: CheckedContinuation<SmsPostOutcome, Never>?
+  var suspendPost = false
+  func post(_ note: SmsNotification) async -> SmsPostOutcome {
+    notes.append(note)
+    if suspendPost { return await withCheckedContinuation { pause = $0 } }
+    return outcome
+  }
 }
 
 @MainActor final class SmsClock {
@@ -178,7 +185,7 @@ final class SmsModelTests: XCTestCase {
     let line = model.diagnostics(peer)
     XCTAssertTrue(line.contains("Local network"), line)
     XCTAssertTrue(line.contains("3 live received"), line)
-    XCTAssertTrue(line.contains("1 notified"), line)
+    XCTAssertTrue(line.contains("1 Submitted to macOS"), line)
     XCTAssertTrue(line.contains("2 already seen"), line)
   }
 
@@ -330,6 +337,68 @@ final class SmsModelTests: XCTestCase {
     XCTAssertTrue(sent(channel, 9).isEmpty)
   }
 
+  @MainActor func testExpiredReplyDoesNotDrainFragmentsWhenCapacityReturns() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    await until("capability submitted") { self.sent(channel, 1).count >= 2 }
+    channel.onSendData = { _ in throw SessionBackpressure() }
+    model.send(peer, address: "+1555", text: String(repeating: "x", count: 24_576))
+    await until("begin attempted") { self.sent(channel, 11).count == 1 }
+    clock.advance(31)
+    model.expire()
+    channel.onSendData = nil
+    model.capacityAvailable(channel.descriptor)
+    await Task.yield()
+    XCTAssertTrue(sent(channel, 12).isEmpty)
+    XCTAssertTrue(sent(channel, 13).isEmpty)
+    XCTAssertFalse(model.sending(peer))
+    XCTAssertEqual(model.status(peer), "Not confirmed; it may have been sent")
+  }
+
+  @MainActor func testAnUnadvertisedLanDoesNotStealBleRequests() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let ble = MockSecuredChannel(transport: "ble")
+    let peer = try await ready(model, ble)
+    let lan = MockSecuredChannel(instance: "new-lan", transport: "lan", peer: peer)
+    model.available(lan)
+    model.requestThreads(peer)
+    await until("BLE request") { self.sent(ble, 2).count == 1 }
+    XCTAssertTrue(sent(lan, 2).isEmpty)
+    XCTAssertTrue(model.diagnostics(peer).contains("Bluetooth"))
+  }
+
+  @MainActor func testNotificationFailureDoesNotCountAsSubmittedAndRetryCanNotify() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    spy.outcome = .failed
+    let parts = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "e", count: 32), body: "test")
+    await deliver(model, channel, [parts.begin] + parts.fragments + [parts.commit])
+    XCTAssertTrue(model.diagnostics(peer).contains("0 Submitted to macOS"))
+    spy.outcome = .submitted
+    await deliver(model, channel, [parts.begin] + parts.fragments + [parts.commit])
+    XCTAssertTrue(model.diagnostics(peer).contains("1 Submitted to macOS"))
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
+    XCTAssertEqual(spy.notes.count, 2)
+  }
+
+  @MainActor func testLastRetirementDuringNotificationSubmissionCannotRepopulateState() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    spy.suspendPost = true
+    let parts = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "f", count: 32), body: "test")
+    await deliver(model, channel, [parts.begin] + parts.fragments)
+    let commit = Task { await model.handle(parts.commit, on: channel.descriptor) }
+    await until("notification submitted") { spy.pause != nil }
+    model.retired(channel.descriptor)
+    spy.pause?.resume(returning: .submitted)
+    _ = await commit.value
+    XCTAssertTrue(model.messages(peer, address: "+15551234567").isEmpty)
+    XCTAssertTrue(model.threads(peer).isEmpty)
+  }
+
   // MARK: - Thread list and provider paging
 
   @MainActor func testThreadsLoadGroupAndOrderWithProviderIdentityWinning() async throws {
@@ -476,7 +545,7 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
     let line = model.diagnostics(peer)
     XCTAssertTrue(line.contains("1 live received"), line)
-    XCTAssertTrue(line.contains("1 notified"), line)
+    XCTAssertTrue(line.contains("1 Submitted to macOS"), line)
     XCTAssertTrue(line.contains("1 already seen"), line)
     // A redelivery of the same live stream never announces a second banner.
     await deliver(model, channel, [live.begin] + live.fragments + [live.commit])
@@ -678,7 +747,7 @@ final class SmsModelTests: XCTestCase {
     clock.advance(31)
     model.expire()
     XCTAssertFalse(model.sending(peer))
-    XCTAssertEqual(model.status(peer), "The reply was not confirmed")
+    XCTAssertEqual(model.status(peer), "Not confirmed; it may have been sent")
     await until("failure alert") { spy.notes.contains { $0.failure } }
     XCTAssertEqual(spy.notes.last?.address, "+15551234567")
     XCTAssertTrue(spy.notes.last?.failure ?? false)
@@ -734,7 +803,7 @@ final class SmsModelTests: XCTestCase {
     let channel = MockSecuredChannel(transport: "lan")
     let peer = try await ready(model, channel)
     let expected: [(Int64, String, Bool)] = [(1, "Allow SMS on your phone to send replies", true),
-                                             (5, "The reply failed to send", true),
+                                             (5, "Not confirmed; it may have been sent", true),
                                              (6, "The reply was rejected", false)]
     var alertCount = 0
     for (index, row) in expected.enumerated() {
