@@ -33,21 +33,43 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
   }
 }
 
-// Per-peer opt-in for message text in banners; bodies stay hidden until the user enables preview.
+// Per-peer notification controls: delivery, sound and message-text preview. Bodies stay hidden until the
+// user enables preview, and a disabled phone posts nothing at all — banner, sound or failure note.
 @Observable @MainActor final class SmsPreferences {
   private let storage: UserDefaults?
-  private var values: [String: Bool]
+  private var previews: [String: Bool]
+  private var sounds: [String: Bool]
+  private var delivery: [String: Bool]
   init(storage: UserDefaults? = nil) {
     self.storage = storage
-    values = storage?.dictionary(forKey: "sms.preview") as? [String: Bool] ?? [:]
+    previews = storage?.dictionary(forKey: "sms.preview") as? [String: Bool] ?? [:]
+    sounds = storage?.dictionary(forKey: "sms.sound") as? [String: Bool] ?? [:]
+    delivery = storage?.dictionary(forKey: "sms.enabled") as? [String: Bool] ?? [:]
   }
   func key(_ peer: DeviceIdentity) -> String { peer.deviceId + ":" + peer.fingerprint }
-  func preview(_ key: String) -> Bool { values[key] ?? false }
+  func preview(_ key: String) -> Bool { previews[key] ?? false }
   func preview(_ peer: DeviceIdentity) -> Bool { preview(key(peer)) }
-  func set(_ peer: DeviceIdentity, _ enabled: Bool) { values[key(peer)] = enabled; persist() }
-  func prune(_ peers: [DeviceIdentity]) { let keep = Set(peers.map(key)); values = values.filter { keep.contains($0.key) }; persist() }
-  func clear() { values.removeAll(); persist() }
-  private func persist() { storage?.set(values, forKey: "sms.preview") }
+  /** Notifications default to on; sound defaults to on and is muted with the notifications themselves. */
+  func notifications(_ key: String) -> Bool { delivery[key] ?? true }
+  func notifications(_ peer: DeviceIdentity) -> Bool { notifications(key(peer)) }
+  func sound(_ key: String) -> Bool { notifications(key) && (sounds[key] ?? true) }
+  func sound(_ peer: DeviceIdentity) -> Bool { sound(key(peer)) }
+  func set(_ peer: DeviceIdentity, _ enabled: Bool) { previews[key(peer)] = enabled; persist() }
+  func setNotifications(_ peer: DeviceIdentity, _ on: Bool) { delivery[key(peer)] = on; persist() }
+  func setSound(_ peer: DeviceIdentity, _ on: Bool) { sounds[key(peer)] = on; persist() }
+  func prune(_ peers: [DeviceIdentity]) {
+    let keep = Set(peers.map(key))
+    previews = previews.filter { keep.contains($0.key) }
+    sounds = sounds.filter { keep.contains($0.key) }
+    delivery = delivery.filter { keep.contains($0.key) }
+    persist()
+  }
+  func clear() { previews.removeAll(); sounds.removeAll(); delivery.removeAll(); persist() }
+  private func persist() {
+    storage?.set(previews, forKey: "sms.preview")
+    storage?.set(sounds, forKey: "sms.sound")
+    storage?.set(delivery, forKey: "sms.enabled")
+  }
 }
 
 @Observable @MainActor final class MacSmsNotifier: NSObject, SmsNotifying {
@@ -124,6 +146,8 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
   }
 
   func post(_ note: SmsNotification) async -> SmsPostOutcome {
+    // A phone the user silenced posts nothing; the panel keeps its counts and the relay keeps running.
+    guard preferences.notifications(note.peerKey) else { return .muted }
     guard !identifiers.contains(note.identifier) else { return .duplicate }
     guard inFlight[note.identifier] == nil else { return .cancelled }
     let token = UUID(), generation = generations[note.peerKey, default: 0]
@@ -150,7 +174,7 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
       : preferences.preview(note.peerKey) ? note.body : "New message"
     content.categoryIdentifier = Self.category
     content.threadIdentifier = note.threadIdentifier
-    content.sound = .default
+    content.sound = preferences.sound(note.peerKey) ? .default : nil
     let accepted = await withCheckedContinuation { continuation in
       completions[note.identifier] = continuation
       center.add(UNNotificationRequest(identifier: note.identifier, content: content, trigger: nil)) { [weak self] error in

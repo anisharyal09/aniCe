@@ -40,11 +40,11 @@ final class SmsWireTests: XCTestCase {
     let id = request(), stream = stream()
     let rows: [SmsMessage] = [
       SmsMessage(kind: 1, fields: [.integer(24576), .integer(8), .integer(50), .integer(50)]),
-      SmsMessage(kind: 2, fields: [.text(id)]),
+      SmsMessage(kind: 2, fields: [.text(id), .integer(9007199254740991), .text(String(repeating: "t", count: 80))]),
       SmsMessage(kind: 3, fields: [.text(id), .text("42"), .text("+15551234567"), .text(String(repeating: "s", count: 160)), .integer(9007199254740991), .integer(0)]),
-      SmsMessage(kind: 4, fields: [.text(id), .integer(6)]),
+      SmsMessage(kind: 4, fields: [.text(id), .integer(6), .integer(9007199254740991), .text("42")]),
       SmsMessage(kind: 5, fields: [.text(id), .text("addr:+15551234567"), .integer(9007199254740991), .text("live:" + String(repeating: "a", count: 32)), .integer(50)]),
-      SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("live:" + String(repeating: "b", count: 32)), .text("42"), .text("+15551234567"), .integer(0), .integer(1), .bool(true), .integer(24576), .integer(8), .bytes(digest("x"))]),
+      SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("live:" + String(repeating: "b", count: 32)), .text("42"), .text("+15551234567"), .integer(0), .integer(1), .bool(true), .integer(24576), .integer(8), .bytes(digest("x")), .integer(2147483647)]),
       SmsMessage(kind: 7, fields: [.text(stream), .integer(7), .bytes(Data(repeating: 0, count: 3072))]),
       SmsMessage(kind: 8, fields: [.text(stream)]),
       SmsMessage(kind: 9, fields: [.text(stream), .integer(0)]),
@@ -72,28 +72,31 @@ final class SmsWireTests: XCTestCase {
     let id = request(), stream = stream(), hash = digest("x")
     rejected("unknown-kind", SmsMessage(kind: 19, fields: []))
     rejected("capability-floor", SmsMessage(kind: 1, fields: [.integer(24575), .integer(8), .integer(50), .integer(50)]))
-    rejected("request-empty", SmsMessage(kind: 2, fields: [.text("")]))
-    rejected("request-uppercase", SmsMessage(kind: 2, fields: [.text(id.uppercased())]))
+    rejected("request-empty", SmsMessage(kind: 2, fields: [.text(""), .integer(0), .text("")]))
+    rejected("request-uppercase", SmsMessage(kind: 2, fields: [.text(id.uppercased()), .integer(0), .text("")]))
+    rejected("request-cursor-long", SmsMessage(kind: 2, fields: [.text(id), .integer(0), .text(String(repeating: "a", count: 81))]))
     rejected("thread-empty", SmsMessage(kind: 3, fields: [.text(id), .text(""), .text("+1"), .text(""), .integer(0), .integer(0)]))
     rejected("address-long", SmsMessage(kind: 3, fields: [.text(id), .text("1"), .text(String(repeating: "a", count: 65)), .text(""), .integer(0), .integer(0)]))
     rejected("snippet-long", SmsMessage(kind: 3, fields: [.text(id), .text("1"), .text("+1"), .text(String(repeating: "s", count: 161)), .integer(0), .integer(0)]))
-    rejected("result-out-of-range", SmsMessage(kind: 4, fields: [.text(id), .integer(7)]))
+    rejected("result-out-of-range", SmsMessage(kind: 4, fields: [.text(id), .integer(7), .integer(0), .text("")]))
     rejected("limit-zero", SmsMessage(kind: 5, fields: [.text(id), .text("1"), .integer(0), .text(""), .integer(0)]))
     rejected("cursor-bogus", SmsMessage(kind: 5, fields: [.text(id), .text("1"), .integer(0), .text("bogus"), .integer(1)]))
-    rejected("live-short-hex", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("live:abc"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("live-uppercase-hex", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("live:" + String(repeating: "A", count: 32)), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("provider-id-too-long", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:" + String(repeating: "9", count: 20)), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("provider-empty-digits", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("message-id-prefix", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("SMS:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("date-above-range", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(9007199254740992), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("direction-range", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(2), .bool(false), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("unread-not-bool", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .integer(1), .integer(1), .integer(1), .bytes(hash)]))
-    rejected("body-over-limit", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(24577), .integer(9), .bytes(hash)]))
-    rejected("body-count-mismatch", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(6144), .integer(3), .bytes(hash)]))
+    rejected("live-short-hex", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("live:abc"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("live-uppercase-hex", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("live:" + String(repeating: "A", count: 32)), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("provider-id-too-long", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:" + String(repeating: "9", count: 20)), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("provider-empty-digits", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("message-id-prefix", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("SMS:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("date-above-range", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(9007199254740992), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("direction-range", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(2), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("unread-not-bool", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .integer(1), .integer(1), .integer(1), .bytes(hash), .integer(0)]))
+    rejected("body-over-limit", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(24577), .integer(9), .bytes(hash), .integer(0)]))
+    rejected("body-count-mismatch", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(6144), .integer(3), .bytes(hash), .integer(0)]))
     rejected("fragment-index-ceiling", SmsMessage(kind: 7, fields: [.text(stream), .integer(8), .bytes(Data([1]))]))
     rejected("fragment-empty", SmsMessage(kind: 7, fields: [.text(stream), .integer(0), .bytes(Data())]))
     rejected("fragment-oversize", SmsMessage(kind: 7, fields: [.text(stream), .integer(0), .bytes(Data(repeating: 1, count: 3073))]))
     rejected("begin-fields-truncated", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1")]))
+    rejected("subscription-negative", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(-1)]))
+    rejected("subscription-overflow", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1"), .text("42"), .text("+1"), .integer(0), .integer(0), .bool(false), .integer(1), .integer(1), .bytes(hash), .integer(2147483648)]))
     rejected("send-begin-digest", SmsMessage(kind: 11, fields: [.text(id), .text("1"), .text("+1"), .integer(1), .integer(1), .bytes(Data([1])), .integer(0)]))
     rejected("send-begin-subscription", SmsMessage(kind: 11, fields: [.text(id), .text("1"), .text("+1"), .integer(1), .integer(1), .bytes(hash), .integer(2147483648)]))
     rejected("sim-label-long", SmsMessage(kind: 16, fields: [.text(id), .integer(0), .array([.array([.integer(1), .integer(0), .text(String(repeating: "x", count: 41)), .bool(true)])])]))

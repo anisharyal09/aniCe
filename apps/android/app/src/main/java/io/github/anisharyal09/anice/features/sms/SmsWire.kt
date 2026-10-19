@@ -12,7 +12,7 @@ data class SmsWireMessage(val kind: Long, val fields: List<Cbor>) {
     fun number(i: Int) = (fields[i] as Cbor.Integer).value
     fun flag(i: Int) = (fields[i] as Cbor.Bool).value
     fun bytes(i: Int) = (fields[i] as Cbor.Bytes).value
-    fun encode(): ByteArray = SessionCbor.encode(Cbor.Array(listOf(Cbor.Text(TAG), Cbor.Integer(2), Cbor.Integer(kind), Cbor.Array(fields)))).also { validate() }
+    fun encode(): ByteArray = SessionCbor.encode(Cbor.Array(listOf(Cbor.Text(TAG), Cbor.Integer(3), Cbor.Integer(kind), Cbor.Array(fields)))).also { validate() }
     private fun validate() {
         fun requireWire(value: Boolean) { if (!value) throw SmsWireException() }
         fun uuid(i: Int) { val s = text(i); requireWire(runCatching { UUID.fromString(s).toString() == s }.getOrDefault(false)) }
@@ -22,6 +22,7 @@ data class SmsWireMessage(val kind: Long, val fields: List<Cbor>) {
         fun result(i: Int) = requireWire(number(i) in 0..6)
         fun subscription(i: Int) = requireWire(number(i) in 0..MAX_SUBSCRIPTION)
         fun threadId(i: Int) = requireWire(text(i).toByteArray(Charsets.UTF_8).size in 1..80)
+        fun threadCursor(i: Int) { val s = text(i); requireWire(s.isEmpty() || s.toByteArray(Charsets.UTF_8).size in 1..80) }
         fun address(i: Int) = requireWire(text(i).toByteArray(Charsets.UTF_8).size in 1..64)
         fun snippet(i: Int) = requireWire(text(i).toByteArray(Charsets.UTF_8).size <= 160)
         fun body(total: Int, count: Int) {
@@ -31,13 +32,13 @@ data class SmsWireMessage(val kind: Long, val fields: List<Cbor>) {
         try {
             when (kind) {
                 1L -> { requireWire(fields.size == 4); requireWire(number(0) == MAX_BODY_BYTES && number(1) == MAX_FRAGMENTS && number(2) in 1..50 && number(3) in 1..50) }
-                2L -> { requireWire(fields.size == 1); uuid(0) }
+                2L -> { requireWire(fields.size == 3); uuid(0); millis(1); threadCursor(2) }
                 3L -> { requireWire(fields.size == 6); uuid(0); threadId(1); address(2); snippet(3); millis(4); millis(5) }
-                4L -> { requireWire(fields.size == 2); uuid(0); result(1) }
+                4L -> { requireWire(fields.size == 4); uuid(0); result(1); millis(2); threadCursor(3) }
                 5L -> { requireWire(fields.size == 5); uuid(0); threadId(1); millis(2); cursorId(3); requireWire(number(4) in 1..50) }
                 6L -> {
-                    requireWire(fields.size == 11); uuid(0); uuidOrEmpty(1); requireWire(MESSAGE_ID.matches(text(2))); threadId(3); address(4); millis(5)
-                    requireWire(number(6) in 0..1); flag(7); body(8, 9); requireWire(bytes(10).size == 32)
+                    requireWire(fields.size == 12); uuid(0); uuidOrEmpty(1); requireWire(MESSAGE_ID.matches(text(2))); threadId(3); address(4); millis(5)
+                    requireWire(number(6) in 0..1); flag(7); body(8, 9); requireWire(bytes(10).size == 32); subscription(11)
                 }
                 7L -> { requireWire(fields.size == 3); uuid(0); requireWire(number(1) in 0..MAX_FRAGMENTS - 1 && bytes(2).size in 1..3072) }
                 8L, 13L -> { requireWire(fields.size == 1); uuid(0) }
@@ -85,7 +86,7 @@ data class SmsWireMessage(val kind: Long, val fields: List<Cbor>) {
             if (data.size > 4000) return null
             val row = (SessionCbor.decode(data) as? Cbor.Array)?.value ?: return null
             if ((row.firstOrNull() as? Cbor.Text)?.value != TAG) return null
-            if (row.size != 4 || (row[1] as? Cbor.Integer)?.value != 2L) throw SmsWireException()
+            if (row.size != 4 || (row[1] as? Cbor.Integer)?.value != 3L) throw SmsWireException()
             val m = SmsWireMessage((row[2] as? Cbor.Integer)?.value ?: throw SmsWireException(), (row[3] as? Cbor.Array)?.value ?: throw SmsWireException())
             m.validate()
             if (!m.encode().contentEquals(data)) throw SmsWireException()

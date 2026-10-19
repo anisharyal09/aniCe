@@ -1,12 +1,12 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Defines bounded SMS relay messages carried by secured DATA records.
-sms = ["aniCe sms", 2, (capability / threadRequest / threadRecord / threadDone / historyRequest / messageBegin / messageFragment / messageCommit / messageResult / historyDone / sendBegin / sendFragment / sendCommit / sendResult / simRequest / simDone / searchRequest / searchDone)]
+sms = ["aniCe sms", 3, (capability / threadRequest / threadRecord / threadDone / historyRequest / messageBegin / messageFragment / messageCommit / messageResult / historyDone / sendBegin / sendFragment / sendCommit / sendResult / simRequest / simDone / searchRequest / searchDone)]
 capability = (1, [24576, 8, 1..50, 1..50])
-threadRequest = (2, [uuid])
+threadRequest = (2, [uuid, cursorMillis, cursorThreadId])
 threadRecord = (3, [uuid, threadId, address, snippet, dateMillis, unreadCount])
-threadDone = (4, [uuid, result])
+threadDone = (4, [uuid, result, cursorMillis, cursorThreadId])
 historyRequest = (5, [uuid, threadId, cursorMillis, cursorMessageId, limit])
-messageBegin = (6, [streamId, requestId, messageId, threadId, address, dateMillis, direction, unread, totalBytes, fragmentCount, sha256])
+messageBegin = (6, [streamId, requestId, messageId, threadId, address, dateMillis, direction, unread, totalBytes, fragmentCount, sha256, subscriptionId])
 messageFragment = (7, [streamId, 0..7, bytes])
 messageCommit = (8, [streamId])
 messageResult = (9, [streamId, result])
@@ -24,6 +24,7 @@ requestId = uuid / ""
 streamId = uuid
 uuid = tstr .regexp "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 threadId = tstr .size (1..80)
+cursorThreadId = threadId / ""
 address = tstr .size (1..64)
 snippet = tstr .size (0..160)
 messageId = tstr .regexp "(sms|mms):[0-9]{1,19}|live:[0-9a-f]{32}"

@@ -45,11 +45,11 @@ class SmsWireTests {
         val messageId = "sms:9"
         val rows = listOf(
             SmsWireMessage.of(1, number(24576), number(8), number(50), number(50)),
-            SmsWireMessage.of(2, text(id)),
+            SmsWireMessage.of(2, text(id), number(0), text("")),
             SmsWireMessage.of(3, text(id), text("42"), text("+15551234567"), text("s".repeat(160)), number(9007199254740991L), number(0)),
-            SmsWireMessage.of(4, text(id), number(6)),
+            SmsWireMessage.of(4, text(id), number(6), number(0), text("")),
             SmsWireMessage.of(5, text(id), text("addr:+15551234567"), number(9007199254740991L), text("live:" + "a".repeat(32)), number(50)),
-            SmsWireMessage.of(6, text(stream()), text(""), text("live:" + "b".repeat(32)), text("42"), text("+15551234567"), number(0), number(1), flag(true), number(24576), number(8), data(digest("x"))),
+            SmsWireMessage.of(6, text(stream()), text(""), text("live:" + "b".repeat(32)), text("42"), text("+15551234567"), number(0), number(1), flag(true), number(24576), number(8), data(digest("x")), number(0)),
             SmsWireMessage.of(7, text(stream()), number(7), data(ByteArray(3072))),
             SmsWireMessage.of(8, text(stream())),
             SmsWireMessage.of(9, text(stream()), number(0)),
@@ -75,18 +75,22 @@ class SmsWireTests {
         val stream = stream()
         val digest = digest("x")
         rejected("capability-floor", SmsWireMessage.of(1, number(24575), number(8), number(50), number(50)))
-        rejected("request-empty", SmsWireMessage.of(2, text("")))
-        rejected("request-uppercase", SmsWireMessage.of(2, text(id.uppercase())))
+        rejected("request-empty", SmsWireMessage.of(2, text(""), number(0), text("")))
+        rejected("request-uppercase", SmsWireMessage.of(2, text(id.uppercase()), number(0), text("")))
+        rejected("request-cursor-long", SmsWireMessage.of(2, text(id), number(0), text("a".repeat(81))))
         rejected("thread-empty", SmsWireMessage.of(3, text(id), text(""), text("+1"), text(""), number(0), number(0)))
         rejected("address-long", SmsWireMessage.of(3, text(id), text("1"), text("a".repeat(65)), text(""), number(0), number(0)))
-        rejected("result-out-of-range", SmsWireMessage.of(4, text(id), number(7)))
+        rejected("result-out-of-range", SmsWireMessage.of(4, text(id), number(7), number(0), text("")))
         rejected("limit-zero", SmsWireMessage.of(5, text(id), text("1"), number(0), text(""), number(0)))
         rejected("cursor-bogus", SmsWireMessage.of(5, text(id), text("1"), number(0), text("bogus"), number(1)))
-        rejected("direction-2", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(2), flag(false), number(1), number(1), data(digest)))
-        rejected("unread-int", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), number(1), number(1), number(1), data(digest)))
-        rejected("fragment-math", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(3073), number(1), data(digest)))
-        rejected("digest-short", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(ByteArray(31))))
-        rejected("live-short", SmsWireMessage.of(6, text(stream), text(""), text("live:" + "a".repeat(31)), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(digest)))
+        rejected("direction-2", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(2), flag(false), number(1), number(1), data(digest), number(0)))
+        rejected("unread-int", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), number(1), number(1), number(1), data(digest), number(0)))
+        rejected("fragment-math", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(3073), number(1), data(digest), number(0)))
+        rejected("digest-short", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(ByteArray(31)), number(0)))
+        rejected("live-short", SmsWireMessage.of(6, text(stream), text(""), text("live:" + "a".repeat(31)), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(digest), number(0)))
+        rejected("subscription-negative", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(digest), number(-1)))
+        rejected("subscription-overflow", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(digest), number(2147483648L)))
+        rejected("subscription-missing", SmsWireMessage.of(6, text(stream), text(""), text("sms:1"), text("1"), text("+1"), number(0), number(0), flag(false), number(5), number(1), data(digest)))
         rejected("fragment-empty", SmsWireMessage.of(7, text(stream), number(0), data(ByteArray(0))))
         rejected("fragment-overflow", SmsWireMessage.of(7, text(stream), number(0), data(ByteArray(3073))))
         rejected("fragment-index", SmsWireMessage.of(7, text(stream), number(8), data(byteArrayOf(1))))
@@ -103,7 +107,7 @@ class SmsWireTests {
     }
 
     @Test fun trailingNonMinimalTruncatedAndOversizedBytesAreRejected() {
-        val row = SmsWireMessage.of(4, text(request()), number(0))
+        val row = SmsWireMessage.of(4, text(request()), number(0), number(0), text(""))
         val bytes = row.encode()
         try { SmsWireMessage.decode(bytes + byteArrayOf(0)); fail("trailing") } catch (_: SmsWireException) {} catch (_: SessionException) {}
         val nonMinimal = bytes.copyOf(bytes.size + 1).also { bytes.copyInto(it); it[bytes.size - 1] = 24; it[bytes.size] = 0 }

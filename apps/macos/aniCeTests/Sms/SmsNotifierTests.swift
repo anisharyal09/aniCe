@@ -193,6 +193,50 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertEqual(center.added[0].content.categoryIdentifier, "ANICE_SMS")
   }
 
+  @MainActor func testPerPhoneNotificationControlsMuteBannersAndSound() async throws {
+    let center = SpySmsNotificationCenter(), prefs = preferences(), peer = phone()
+    let notifier = MacSmsNotifier(preferences: prefs, center: center)
+    // Defaults: delivery on and sound on, so the first banner carries the default sound.
+    XCTAssertTrue(prefs.notifications(peer))
+    XCTAssertTrue(prefs.sound(peer))
+    await notifier.post(note(peer))
+    XCTAssertEqual(center.added.count, 1)
+    XCTAssertNotNil(center.added[0].content.sound)
+    // Sound off keeps the banner but drops its sound.
+    prefs.setSound(peer, false)
+    XCTAssertTrue(prefs.notifications(peer))
+    XCTAssertFalse(prefs.sound(peer))
+    await notifier.post(note(peer, identifier: smsNotificationPrefix + "sms:2"))
+    XCTAssertEqual(center.added.count, 2)
+    XCTAssertNil(center.added[1].content.sound)
+    // Notifications off posts nothing at all, and the sound control has no effect while it is off.
+    prefs.setNotifications(peer, false)
+    XCTAssertFalse(prefs.sound(peer))
+    let muted = await notifier.post(note(peer, identifier: smsNotificationPrefix + "sms:3"))
+    XCTAssertEqual(muted, .muted)
+    let failure = SmsNotification(identifier: smsNotificationPrefix + "failed-9", peerKey: peer.deviceId + ":" + peer.fingerprint,
+      peerName: peer.deviceName, address: "+15551234567", threadId: "sms:42", threadIdentifier: "+15551234567", body: "", failure: true)
+    let mutedFailure = await notifier.post(failure)
+    XCTAssertEqual(mutedFailure, .muted)
+    XCTAssertEqual(center.added.count, 2)
+    // Delivery back on resumes banners; the sound stays off until it is re-enabled.
+    prefs.setNotifications(peer, true)
+    XCTAssertFalse(prefs.sound(peer))
+    let resumed = await notifier.post(note(peer, identifier: smsNotificationPrefix + "sms:3"))
+    XCTAssertEqual(resumed, .submitted)
+    XCTAssertNil(center.added.last?.content.sound)
+    prefs.setSound(peer, true)
+    XCTAssertTrue(prefs.sound(peer))
+    // The controls are per phone and are pruned with the peer.
+    let other = phone("Tablet")
+    XCTAssertTrue(prefs.notifications(other))
+    prefs.prune([other])
+    XCTAssertTrue(prefs.notifications(peer))
+    prefs.clear()
+    XCTAssertTrue(prefs.notifications(peer))
+    XCTAssertTrue(prefs.sound(peer))
+  }
+
   @MainActor func testCategoryRegistersInlineReplyAndDefaultTap() {
     let category = MacSmsNotifier.notificationCategory
     XCTAssertEqual(category.identifier, "ANICE_SMS")

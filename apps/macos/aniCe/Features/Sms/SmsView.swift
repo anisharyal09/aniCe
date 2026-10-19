@@ -15,12 +15,22 @@ struct SmsSettingsView: View {
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
         ForEach(peers) { record in
-          Toggle("Show message text in notifications · \(record.peer.deviceName)",
-            isOn: Binding(get: { preferences.preview(record.peer) },
-              set: { preferences.set(record.peer, $0) }))
-            .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+          VStack(alignment: .leading, spacing: 6) {
+            Toggle("Notifications · \(record.peer.deviceName)",
+              isOn: Binding(get: { preferences.notifications(record.peer) },
+                set: { preferences.setNotifications(record.peer, $0) }))
+            Toggle("Play sound · \(record.peer.deviceName)",
+              isOn: Binding(get: { preferences.sound(record.peer) },
+                set: { preferences.setSound(record.peer, $0) }))
+              .disabled(!preferences.notifications(record.peer))
+            Toggle("Show message text in notifications · \(record.peer.deviceName)",
+              isOn: Binding(get: { preferences.preview(record.peer) },
+                set: { preferences.set(record.peer, $0) }))
+              .disabled(!preferences.notifications(record.peer))
+          }
+          .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
         }
-        Text("Notifications hide message text until you enable this for that phone.")
+        Text("Notifications and sound are on by default for each phone. Message text stays hidden in banners until you enable it.")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
@@ -125,7 +135,7 @@ struct SmsView: View {
       if cards.isEmpty {
         Text("No conversations yet").foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
-        ForEach(cards) { card in
+        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
           Button {
             address = card.key
             draft = ""
@@ -153,7 +163,16 @@ struct SmsView: View {
                 .foregroundStyle(AniCePalette.accent(scheme)).accessibilityHidden(true)
             }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
           }.buttonStyle(.plain)
+          // Reaching the last card asks for the next page, so the list keeps filling without a manual step.
+          .onAppear { if index == cards.count - 1 { model.requestMoreThreads(peer) } }
           Divider()
+        }
+        if model.threadMore(peer) {
+          HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text("Loading older conversations…").font(.caption)
+              .foregroundStyle(AniCePalette.secondaryText(scheme))
+          }
         }
       }
     } else {
@@ -228,15 +247,21 @@ struct SmsView: View {
     // The reply box stays directly above the newest message, so sending a reply never needs a scroll.
     composer(peer)
     let rows = model.messages(peer, address: address)
+    let mixed = model.mixedSubscriptions(peer, address: address)
     if rows.isEmpty {
       Text("No messages on this phone").foregroundStyle(AniCePalette.secondaryText(scheme))
     } else {
-      ForEach(rows) { row in
+      ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
         VStack(alignment: .leading, spacing: 4) {
+          // A day header separates the run of messages below it; rows arrive newest first.
+          if index == 0 || !Calendar.current.isDate(date(rows[index - 1].dateMillis), inSameDayAs: date(row.dateMillis)) {
+            Text(date(row.dateMillis), format: .dateTime.weekday(.wide).month(.abbreviated).day())
+              .font(.caption.weight(.medium)).foregroundStyle(AniCePalette.secondaryText(scheme))
+          }
           Text(row.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
           ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { metadata(row); Spacer() }
-            VStack(alignment: .leading, spacing: 2) { metadata(row) }
+            HStack(spacing: 8) { metadata(row, peer: peer, mixed: mixed); Spacer() }
+            VStack(alignment: .leading, spacing: 2) { metadata(row, peer: peer, mixed: mixed) }
           }
         }
         Divider()
@@ -248,9 +273,13 @@ struct SmsView: View {
     }
   }
 
-  @ViewBuilder private func metadata(_ row: SmsMessageRow) -> some View {
+  @ViewBuilder private func metadata(_ row: SmsMessageRow, peer: DeviceIdentity, mixed: Bool) -> some View {
     Text(row.direction == 1 ? "Sent" : "Received")
     Text(date(row.dateMillis), format: .dateTime.month().day().hour().minute())
+    // SIM labels appear only in a conversation that really mixes origins; an unknown incoming row stays silent.
+    if mixed && (row.direction == 1 || row.subscriptionId != 0) {
+      Text(model.simName(peer, subscriptionId: row.subscriptionId))
+    }
     if row.unread { Text("Unread").foregroundStyle(AniCePalette.accent(scheme)) }
   }
 
@@ -288,16 +317,10 @@ struct SmsView: View {
       Picker("Send from", selection: Binding(get: { model.simChoice(peer) }, set: { model.chooseSim(peer, $0) })) {
         Text("Phone default").tag(Int64(0))
         ForEach(sims) { entry in
-          Text(simLabel(entry, of: sims)).tag(entry.subscriptionId)
+          Text(smsSimLabel(entry, of: sims)).tag(entry.subscriptionId)
         }
       }.labelsHidden().frame(maxWidth: 220)
     }
-  }
-
-  /// Two subscriptions can carry the same display name; the slot disambiguates them.
-  private func simLabel(_ entry: SmsSimEntry, of sims: [SmsSimEntry]) -> String {
-    let base = entry.label.isEmpty ? "SIM \(entry.slotIndex + 1)" : entry.label
-    return !entry.label.isEmpty && sims.filter { $0.label == entry.label }.count > 1 ? "\(base) (SIM \(entry.slotIndex + 1))" : base
   }
 
   private func date(_ millis: Int64) -> Date { Date(timeIntervalSince1970: Double(millis) / 1000) }

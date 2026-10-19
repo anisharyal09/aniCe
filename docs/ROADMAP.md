@@ -52,7 +52,7 @@ Manual feature/UI tests, physical transfer measurements, native ringing/lifecycl
 
 ## Messages (SMS relay)
 
-[Messages](features/SMS.md) relays incoming SMS to Mac notifications and lets the Mac read provider conversations and history and reply. Relay needs Android SMS permissions (RECEIVE_SMS live, READ_SMS history, SEND_SMS replies), an active secured session and the Mac app running; nothing is stored on the Mac or replayed after process death. RCS, MMS send, group MMS content, attachments, contacts resolution and per-reply SIM selection are excluded in v1.
+[Messages](features/SMS.md) relays incoming SMS to Mac notifications and lets the Mac read provider conversations and history, search them and reply. Relay needs Android SMS permissions (RECEIVE_SMS live, READ_SMS history, SEND_SMS replies), an active secured session and the Mac app running; nothing is stored on the Mac or replayed after process death. Conversations, history and the thread list load incrementally, each message names the SIM it arrived on, replies can pick an active subscription, and per-phone notification and sound switches live in Settings → Messages. RCS, MMS send, group MMS content, attachments, contacts resolution and mark-as-read are excluded.
 
 ## Text Clipboard
 

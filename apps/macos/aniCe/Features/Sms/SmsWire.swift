@@ -23,7 +23,7 @@ struct SmsMessage: Equatable, Sendable {
   func bytes(_ i: Int) -> Data { if case .bytes(let v) = fields[i] { return v }; preconditionFailure() }
   func encode() throws -> Data {
     try validate()
-    return try SessionCbor.encode(.array([.text(Self.tag), .integer(2), .integer(kind), .array(fields)]))
+    return try SessionCbor.encode(.array([.text(Self.tag), .integer(3), .integer(kind), .array(fields)]))
   }
   private func validate() throws {
     func check(_ v: Bool) throws { if !v { throw SmsWireError.malformed } }
@@ -37,6 +37,7 @@ struct SmsMessage: Equatable, Sendable {
     func result(_ i: Int) throws { try check((0...6).contains(try n(i))) }
     func subscription(_ i: Int) throws { try check((0...2147483647).contains(try n(i))) }
     func threadId(_ i: Int) throws { try check((1...80).contains(try string(i).utf8.count)) }
+    func threadCursor(_ i: Int) throws { let s = try string(i); try check(s.isEmpty || (1...80).contains(s.utf8.count)) }
     func address(_ i: Int) throws { try check((1...64).contains(try string(i).utf8.count)) }
     func snippet(_ i: Int) throws { try check(try string(i).utf8.count <= 160) }
     func bool(_ i: Int) throws { if case .bool = fields[i] { return }; throw SmsWireError.malformed }
@@ -53,18 +54,19 @@ struct SmsMessage: Equatable, Sendable {
       try check(fields.count == 4 && n(0) == Self.maxBodyBytes && n(1) == Self.maxFragments)
       try check((1...Int64(Self.maximumThreads)).contains(n(2)) && (1...Int64(Self.maximumMessages)).contains(n(3)))
     case 2:
-      try check(fields.count == 1); try uuid(0)
+      try check(fields.count == 3); try uuid(0); try millis(1); try threadCursor(2)
     case 3:
       try check(fields.count == 6); try uuid(0); try threadId(1); try address(2); try snippet(3); try millis(4); try millis(5)
     case 4:
-      try check(fields.count == 2); try uuid(0); try result(1)
+      try check(fields.count == 4); try uuid(0); try result(1); try millis(2); try threadCursor(3)
     case 5:
       try check(fields.count == 5); try uuid(0); try threadId(1); try millis(2); try cursorId(3)
       try check((1...Int64(Self.maximumMessages)).contains(n(4)))
     case 6:
-      try check(fields.count == 11); try uuid(0); try uuidOrEmpty(1); try messageId(2); try threadId(3); try address(4); try millis(5)
+      try check(fields.count == 12); try uuid(0); try uuidOrEmpty(1); try messageId(2); try threadId(3); try address(4); try millis(5)
       try check((0...1).contains(n(6))); try bool(7); try body(8, 9)
       guard case .bytes(let digest) = fields[10], digest.count == 32 else { throw SmsWireError.malformed }
+      try subscription(11)
     case 7, 12:
       try check(fields.count == 3); try uuid(0); try fragment(1)
     case 8, 13:
@@ -106,7 +108,7 @@ struct SmsMessage: Equatable, Sendable {
   static func decode(_ bytes: Data) throws -> Self? {
     guard bytes.count <= 4000 else { return nil }
     guard case .array(let row) = try SessionCbor.decode(bytes), row.first == .text(tag) else { return nil }
-    guard row.count == 4, row[1] == .integer(2), case .integer(let kind) = row[2], case .array(let fields) = row[3] else { throw SmsWireError.malformed }
+    guard row.count == 4, row[1] == .integer(3), case .integer(let kind) = row[2], case .array(let fields) = row[3] else { throw SmsWireError.malformed }
     let message = Self(kind: kind, fields: fields)
     try message.validate()
     guard try message.encode() == bytes else { throw SmsWireError.malformed }

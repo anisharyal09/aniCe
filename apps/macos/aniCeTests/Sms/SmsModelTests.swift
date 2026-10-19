@@ -72,12 +72,13 @@ final class SmsModelTests: XCTestCase {
 
   private func stream(_ streamId: String, requestId: String = "", messageId: String, threadId: String = "sms:42",
     address: String = "+15551234567", dateMillis: Int64 = 1_700_000_000_000, direction: Int64 = 0,
-    unread: Bool = false, body: String, corruptDigest: Bool = false) throws -> (begin: Data, fragments: [Data], commit: Data) {
+    unread: Bool = false, subscription: Int64 = 0, body: String, corruptDigest: Bool = false) throws -> (begin: Data, fragments: [Data], commit: Data) {
     let data = Data(body.utf8)
     let count = (data.count + 3071) / 3072
     let digest = corruptDigest ? Data(repeating: 0, count: 32) : Data(SHA256.hash(data: data))
     let begin = try records(6, [.text(streamId), .text(requestId), .text(messageId), .text(threadId), .text(address),
-      .integer(dateMillis), .integer(direction), .bool(unread), .integer(Int64(data.count)), .integer(Int64(count)), .bytes(digest)])
+      .integer(dateMillis), .integer(direction), .bool(unread), .integer(Int64(data.count)), .integer(Int64(count)), .bytes(digest),
+      .integer(subscription)])
     let fragments = try (0..<count).map { index -> Data in
       let start = index * 3072
       return try records(7, [.text(streamId), .integer(Int64(index)),
@@ -122,7 +123,7 @@ final class SmsModelTests: XCTestCase {
     await expect(.discarded, Data("nonsense".utf8), channel, model)
     let wrongTag = try SessionCbor.encode(.array([.text("aniCe other"), .integer(1), .integer(3), .array([])]))
     await expect(.unrecognized, wrongTag, channel, model)
-    await expect(.unrecognized, try records(2, [.text(UUID().uuidString.lowercased())]), channel, model)
+    await expect(.unrecognized, try records(2, [.text(UUID().uuidString.lowercased()), .integer(0), .text("")]), channel, model)
     await expect(.unrecognized, try records(5, [.text(UUID().uuidString.lowercased()), .text("1"),
       .integer(0), .text(""), .integer(50)]), channel, model)
     await expect(.unrecognized, try records(9, [.text(UUID().uuidString.lowercased()), .integer(0)]), channel, model)
@@ -423,7 +424,7 @@ final class SmsModelTests: XCTestCase {
     // A duplicate address record replaces the card instead of appending one.
     _ = await handle(model, try records(3, [.text(requestId), .text("sms:44"), .text("+15551234567"),
       .text("newest"), .integer(900), .integer(0)]), channel)
-    let done = await model.handle(try records(4, [.text(requestId), .integer(0)]), on: channel.descriptor)
+    let done = await model.handle(try records(4, [.text(requestId), .integer(0), .integer(0), .text("")]), on: channel.descriptor)
     XCTAssertEqual(done, .handled)
     let cards = model.threads(peer)
     XCTAssertEqual(cards.map(\.key), ["+15551234567", "+15559990000"])
@@ -432,7 +433,7 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(cards[0].address, "+15551234567")
     XCTAssertEqual(model.status(peer), "2 conversations")
     // Stale thread completions are discarded rather than clearing fresh state.
-    let stale = await model.handle(try records(4, [.text(UUID().uuidString.lowercased()), .integer(6)]), on: channel.descriptor)
+    let stale = await model.handle(try records(4, [.text(UUID().uuidString.lowercased()), .integer(6), .integer(0), .text("")]), on: channel.descriptor)
     XCTAssertEqual(stale, .discarded)
     XCTAssertEqual(model.threads(peer).count, 2)
     XCTAssertFalse(model.busy(peer))
@@ -449,7 +450,7 @@ final class SmsModelTests: XCTestCase {
       .text("hi"), .integer(500), .integer(0)]), channel)
     _ = await handle(model, try records(3, [.text(first.text(0)), .text("sms:7"), .text("AUTH XYZ"),
       .text("alert"), .integer(400), .integer(1)]), channel)
-    _ = await handle(model, try records(4, [.text(first.text(0)), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(first.text(0)), .integer(0), .integer(0), .text("")]), channel)
     XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15551234567", "AUTH XYZ"])
     // A card a live message created survives the next snapshot even when the phone does not report it.
     let liveId = "live:" + String(repeating: "e", count: 32)
@@ -462,7 +463,7 @@ final class SmsModelTests: XCTestCase {
     let second = try XCTUnwrap(try lastSent(channel, 2))
     _ = await handle(model, try records(3, [.text(second.text(0)), .text("sms:42"), .text("+15551234567"),
       .text("newest"), .integer(900), .integer(0)]), channel)
-    _ = await handle(model, try records(4, [.text(second.text(0)), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(second.text(0)), .integer(0), .integer(0), .text("")]), channel)
     XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15551234567", "ACME BANK"])
     XCTAssertEqual(model.threads(peer).first { $0.key == "+15551234567" }?.snippet, "newest")
     // A late record from the finished first request is discarded and cannot re-add the deleted card.
@@ -470,6 +471,65 @@ final class SmsModelTests: XCTestCase {
       .text("late"), .integer(1000), .integer(0)]), on: channel.descriptor)
     XCTAssertEqual(late, .discarded)
     XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15551234567", "ACME BANK"])
+  }
+
+  @MainActor func testThreadPagesFollowTheCursorAndPaintBeforeThePageCompletes() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.requestThreads(peer)
+    await until("first request") { self.sent(channel, 2).count == 1 }
+    let first = try XCTUnwrap(try lastSent(channel, 2))
+    // The first page is requested with a zero cursor.
+    XCTAssertEqual(first.number(1), 0); XCTAssertEqual(first.text(2), "")
+    _ = await handle(model, try records(3, [.text(first.text(0)), .text("sms:42"), .text("+15551234567"),
+      .text("first page"), .integer(900), .integer(0)]), channel)
+    // Cards paint as records arrive, before the page's done message.
+    XCTAssertEqual(model.threads(peer).map(\.key), ["+15551234567"])
+    XCTAssertFalse(model.threadMore(peer))
+    _ = await handle(model, try records(4, [.text(first.text(0)), .integer(0), .integer(800), .text("sms:40")]), channel)
+    XCTAssertTrue(model.threadMore(peer))
+    model.requestMoreThreads(peer)
+    await until("second request") { self.sent(channel, 2).count == 2 }
+    let second = try XCTUnwrap(try lastSent(channel, 2))
+    XCTAssertEqual(second.number(1), 800); XCTAssertEqual(second.text(2), "sms:40")
+    _ = await handle(model, try records(3, [.text(second.text(0)), .text("sms:39"), .text("+15550001111"),
+      .text("older page"), .integer(700), .integer(1)]), channel)
+    // An older page only adds to the list; the first page stays.
+    XCTAssertEqual(model.threads(peer).map(\.key).sorted(), ["+15550001111", "+15551234567"])
+    _ = await handle(model, try records(4, [.text(second.text(0)), .integer(0), .integer(0), .text("")]), channel)
+    XCTAssertFalse(model.threadMore(peer))
+    XCTAssertEqual(model.status(peer), "2 conversations")
+  }
+
+  @MainActor func testTwoSimCopiesOfOneTextStayDistinctAndMergeByOrigin() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    // The same sender and the same text on two subscriptions at the same millisecond: two distinct rows.
+    let one = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "1", count: 32),
+      address: "+1415", dateMillis: 1_700_000_000_000, subscription: 1, body: "same")
+    let two = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "2", count: 32),
+      address: "+1415", dateMillis: 1_700_000_000_000, subscription: 2, body: "same")
+    await deliver(model, channel, [one.begin] + one.fragments + [one.commit])
+    await deliver(model, channel, [two.begin] + two.fragments + [two.commit])
+    XCTAssertEqual(model.messages(peer, address: "+1415").map(\.subscriptionId).sorted(), [1, 2])
+    XCTAssertEqual(spy.notes.count, 2)
+    XCTAssertTrue(model.mixedSubscriptions(peer, address: "+1415"))
+    XCTAssertEqual(model.simName(peer, subscriptionId: 2), "SIM 2")
+    XCTAssertEqual(model.simName(peer, subscriptionId: 0), "Phone default")
+    // The provider copy merges only its own subscription's live row; the other SIM copy survives.
+    model.refreshMessages(peer, address: "+1415")
+    await until("history request") { self.sent(channel, 5).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 5))
+    let provider = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:10",
+      threadId: "sms:9", address: "+1415", dateMillis: 1_700_000_000_000, subscription: 1, body: "same")
+    await deliver(model, channel, [provider.begin] + provider.fragments + [provider.commit]
+      + [try records(10, [.text(request.text(0)), .integer(0), .integer(0), .text("")])])
+    let merged = model.messages(peer, address: "+1415")
+    XCTAssertEqual(merged.count, 2)
+    XCTAssertEqual(merged.first { $0.subscriptionId == 1 }?.messageId, "sms:10")
+    XCTAssertTrue(merged.first { $0.subscriptionId == 2 }?.messageId.hasPrefix("live:") == true)
   }
 
   @MainActor func testHistoryPageMergesProviderCopyAndPrefersItOverLive() async throws {
@@ -496,7 +556,7 @@ final class SmsModelTests: XCTestCase {
     let threads = try XCTUnwrap(try lastSent(channel, 2))
     _ = await handle(model, try records(3, [.text(threads.text(0)), .text("sms:42"), .text("+15551234567"),
       .text("ping"), .integer(1_700_000_000_000), .integer(0)]), channel)
-    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0), .integer(0), .text("")]), channel)
     model.requestMessages(peer, address: "+15551234567")
     await until("provider history request") { self.sent(channel, 5).count == 2 }
     let second = try XCTUnwrap(try lastSent(channel, 5))
@@ -532,7 +592,7 @@ final class SmsModelTests: XCTestCase {
     let threads = try XCTUnwrap(try lastSent(channel, 2))
     _ = await handle(model, try records(3, [.text(threads.text(0)), .text("sms:42"), .text("+15551234567"),
       .text("Your code is 4242"), .integer(1_700_000_000_000), .integer(1)]), channel)
-    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0), .integer(0), .text("")]), channel)
     // The user opens the conversation: the provider row arrives before the relay's live copy does.
     model.refreshMessages(peer, address: "+15551234567")
     await until("history request") { self.sent(channel, 5).count == 1 }
@@ -568,7 +628,7 @@ final class SmsModelTests: XCTestCase {
     let threads = try XCTUnwrap(try lastSent(channel, 2))
     _ = await handle(model, try records(3, [.text(threads.text(0)), .text("sms:42"), .text("+15551234567"),
       .text("hi"), .integer(1_700_000_000_000), .integer(0)]), channel)
-    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0), .integer(0), .text("")]), channel)
     model.requestMessages(peer, address: "+15551234567")
     await until("history request") { self.sent(channel, 5).count == 1 }
     let request = try XCTUnwrap(try lastSent(channel, 5))
@@ -625,7 +685,7 @@ final class SmsModelTests: XCTestCase {
     let threads = try XCTUnwrap(try lastSent(channel, 2))
     _ = await handle(model, try records(3, [.text(threads.text(0)), .text("sms:42"), .text("+15551234567"),
       .text("hi"), .integer(1_700_000_000_000), .integer(0)]), channel)
-    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0)]), channel)
+    _ = await handle(model, try records(4, [.text(threads.text(0)), .integer(0), .integer(0), .text("")]), channel)
     // First open: the request asks for the newest page and leaves an older-message cursor behind.
     model.refreshMessages(peer, address: "+15551234567")
     await until("first open") { self.sent(channel, 5).count == 1 }
@@ -667,12 +727,12 @@ final class SmsModelTests: XCTestCase {
     model.requestThreads(peer)
     await until("thread request") { self.sent(channel, 2).count == 1 }
     let request = try XCTUnwrap(try lastSent(channel, 2))
-    _ = await handle(model, try records(4, [.text(request.text(0)), .integer(1)]), channel)
+    _ = await handle(model, try records(4, [.text(request.text(0)), .integer(1), .integer(0), .text("")]), channel)
     XCTAssertEqual(model.status(peer), "Allow SMS access on your phone to read conversations")
     model.requestThreads(peer)
     await until("thread retry") { self.sent(channel, 2).count == 2 }
     let retry = try XCTUnwrap(try lastSent(channel, 2))
-    _ = await handle(model, try records(4, [.text(retry.text(0)), .integer(5)]), channel)
+    _ = await handle(model, try records(4, [.text(retry.text(0)), .integer(5), .integer(0), .text("")]), channel)
     XCTAssertEqual(model.status(peer), "Conversations are unavailable")
     XCTAssertFalse(model.busy(peer))
   }
@@ -879,7 +939,7 @@ final class SmsModelTests: XCTestCase {
     await Task.yield()
     XCTAssertEqual(sent(fresh, 2).count, 1)
     let outstanding = try XCTUnwrap(try lastSent(fresh, 2))
-    _ = await handle(model, try records(4, [.text(outstanding.text(0)), .integer(0)]), fresh)
+    _ = await handle(model, try records(4, [.text(outstanding.text(0)), .integer(0), .integer(0), .text("")]), fresh)
     XCTAssertFalse(model.busy(peer))
     model.requestThreads(peer)
     await until("refreshed thread request") { self.sent(fresh, 2).count == 2 }

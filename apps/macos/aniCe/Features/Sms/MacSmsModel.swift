@@ -26,6 +26,8 @@ struct SmsMessageRow: Identifiable, Equatable {
   let unread: Bool
   let body: String
   let digest: Data
+  /** The receiving subscription as the phone reported it; 0 means unknown (MMS or no readable provider id). */
+  var subscriptionId: Int64 = 0
   var id: String { messageId }
 }
 
@@ -46,6 +48,7 @@ struct SmsSearchRow: Identifiable, Equatable {
   let dateMillis: Int64
   let direction: Int64
   let body: String
+  var subscriptionId: Int64 = 0
   var id: String { messageId }
 }
 
@@ -68,7 +71,7 @@ struct SmsReplyRequest: Equatable {
   let text: String
 }
 
-enum SmsPostOutcome: Sendable { case submitted, duplicate, denied, alertsDisabled, failed, cancelled }
+enum SmsPostOutcome: Sendable { case submitted, duplicate, denied, alertsDisabled, failed, cancelled, muted }
 enum SmsNotificationAccess: Sendable {
   case authorized, denied, alertsDisabled, notDetermined
 }
@@ -82,6 +85,14 @@ extension SmsNotifying {
   var status: String { "" }
   func refreshSettings() async {}
   func clear(peerKey: String) {}
+}
+
+/** Two subscriptions can carry the same display name; the slot disambiguates them for display. */
+func smsSimLabel(_ entry: SmsSimEntry, of entries: [SmsSimEntry]) -> String {
+  if !entry.label.isEmpty && entries.filter({ $0.label == entry.label }).count > 1 {
+    return "\(entry.label) (SIM \(entry.slotIndex + 1))"
+  }
+  return entry.label.isEmpty ? "SIM \(entry.slotIndex + 1)" : entry.label
 }
 
 /** Canonical conversation key: digits with one optional leading `+`, or the trimmed uppercase text for alphanumeric sender IDs. */
@@ -161,6 +172,12 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var threadRequest = ""
     var threadTransport = ""
     var threadDeadline: TimeInterval = 0
+    /** Thread-list cursor: the page after this one exists while [threadMore] stays true. */
+    var threadMore = false
+    var threadNextMillis: Int64 = 0
+    var threadNextThreadId = ""
+    /** The in-flight request is the newest page, a snapshot that drops provider cards it no longer reports. */
+    var threadFirstPage = true
     var conversations: [String: Conversation] = [:]
     var known: [String: TimeInterval] = [:]
     var contents: [ContentMark] = []
@@ -199,6 +216,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var totalBytes: Int { Int(begin.number(8)) }
     var count: Int { Int(begin.number(9)) }
     var digest: Data { begin.bytes(10) }
+    var subscriptionId: Int64 { begin.number(11) }
   }
 
   struct Send {
@@ -206,6 +224,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let address: String
     let threadId: String
     let text: String
+    /** The subscription the reply was submitted on; 0 means the phone default and stays 0 on the echo. */
+    let subscriptionId: Int64
     let descriptor: ChannelDescriptor
     let deadline: TimeInterval
   }
@@ -219,6 +239,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var notified: Bool
     var liveMessageId: String? = nil
     let direction: Int64
+    /** 0 means the origin is unknown; a known origin must match before two copies collapse into one. */
+    let subscriptionId: Int64
   }
 
   final class Queued {
@@ -335,13 +357,33 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let live = conversation.live.filter { row in
       if let index = unmatched.firstIndex(where: { existing in
         existing.direction == row.direction && existing.digest == row.digest &&
-          smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address) && abs(existing.dateMillis - row.dateMillis) <= 5000
+          smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address) && abs(existing.dateMillis - row.dateMillis) <= 5000 &&
+          (existing.subscriptionId == 0 || row.subscriptionId == 0 || existing.subscriptionId == row.subscriptionId)
       }) { unmatched.remove(at: index); return false }
       return true
     }
     return (conversation.rows + live).sorted {
       $0.dateMillis != $1.dateMillis ? $0.dateMillis > $1.dateMillis : smsCompareMessageIds($0.messageId, $1.messageId) > 0
     }
+  }
+
+  /** Whether the thread list has another page; the view asks for it when its last card appears. */
+  func threadMore(_ peer: DeviceIdentity) -> Bool { peers[key(peer)]?.threadMore ?? false }
+
+  /** The display label for a row's subscription, falling back to the raw id when the listing is unavailable. */
+  func simName(_ peer: DeviceIdentity, subscriptionId: Int64) -> String {
+    if subscriptionId == 0 { return "Phone default" }
+    let entries = peers[key(peer)]?.simEntries ?? []
+    guard let entry = entries.first(where: { $0.subscriptionId == subscriptionId }) else { return "SIM \(subscriptionId)" }
+    return smsSimLabel(entry, of: entries)
+  }
+
+  /** Whether a conversation mixes two or more known subscriptions, which is when per-row SIM labels earn their space. */
+  func mixedSubscriptions(_ peer: DeviceIdentity, address: String) -> Bool {
+    let normalized = smsNormalizedAddress(address)
+    guard !normalized.isEmpty, let conversation = peers[key(peer)]?.conversations[normalized] else { return false }
+    let known = Set((conversation.rows + conversation.live).map(\.subscriptionId).filter { $0 != 0 })
+    return known.count >= 2
   }
 
   /** The picker exists only when the phone reports at least two subscriptions. */
@@ -377,7 +419,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       return
     }
     state.pendingThreads = false
-    issueThreads(state, link, k)
+    issueThreads(state, link, k, firstPage: true)
+  }
+
+  /** Loads the next thread page the previous [threadMore] cursor points at. */
+  func requestMoreThreads(_ peer: DeviceIdentity) {
+    onLanRequired()
+    let k = key(peer)
+    let state = state(k)
+    guard state.capable, state.threadMore, state.threadRequest.isEmpty, let link = capableLink(k) else { return }
+    issueThreads(state, link, k, firstPage: false)
   }
 
   /// Opens a conversation at its newest page; the stored cursor keeps pointing at older history.
@@ -528,7 +579,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard link.queue.count + count + 2 <= 32 else { state.status = "SMS channel is busy"; return }
     let threadId = !preferred.isEmpty ? preferred
       : (conversation?.threadId.isEmpty == false ? conversation!.threadId : "addr:" + normalized)
-    state.send = Send(requestId: requestId, address: address, threadId: threadId, text: body,
+    // An explicit choice is kept for the echo; 0 resolves to the known default so a mixed thread still labels the send.
+    let resolved = subscriptionId != 0 ? subscriptionId : (state.simEntries.first(where: \.isDefault)?.subscriptionId ?? 0)
+    state.send = Send(requestId: requestId, address: address, threadId: threadId, text: body, subscriptionId: resolved,
       descriptor: link.channel.descriptor, deadline: requestDeadline(link.channel.descriptor.transport))
     enqueue(link, SmsMessage(kind: 11, fields: [.text(requestId), .text(threadId), .text(address),
       .integer(Int64(data.count)), .integer(Int64(count)), .bytes(Data(SHA256.hash(data: data))),
@@ -584,6 +637,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       // Mid-page loss aborts the page; the next request continues from the last completed cursor.
       if state.threadTransport == descriptor.transport {
         state.threadRequest = ""; state.threadTransport = ""; state.threadDeadline = 0
+        state.threadFirstPage = true
         state.status = "Connection lost while loading conversations"
       }
       for conversation in state.conversations.values where conversation.transport == descriptor.transport {
@@ -628,7 +682,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       announce(link, descriptor.transport)
       if state.pendingThreads, state.threadRequest.isEmpty {
         state.pendingThreads = false
-        issueThreads(state, link, key(descriptor.peer))
+        issueThreads(state, link, key(descriptor.peer), firstPage: true)
       } else if state.pendingThreads, !state.threadRequest.isEmpty {
         state.pendingThreads = false
       }
@@ -685,6 +739,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       if !state.threadRequest.isEmpty, state.threadDeadline <= time {
         cancelQueued(state.threadRequest)
         state.threadCards = [:]
+        state.threadFirstPage = true
         state.threadRequest = ""; state.threadTransport = ""
         state.status = "Your phone did not answer"
       }
@@ -725,14 +780,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       threadIdentifier: smsNormalizedAddress(address), body: "", failure: true)
   }
 
-  private func issueThreads(_ state: PeerState, _ link: Link, _ k: String) {
+  private func issueThreads(_ state: PeerState, _ link: Link, _ k: String, firstPage: Bool) {
     let requestId = UUID().uuidString.lowercased()
     state.threadRequest = requestId
     state.threadCards = [:]
     state.threadTransport = link.channel.descriptor.transport
     state.threadDeadline = requestDeadline(link.channel.descriptor.transport)
+    state.threadFirstPage = firstPage
     state.status = "Loading conversations…"
-    enqueue(link, SmsMessage(kind: 2, fields: [.text(requestId)]))
+    enqueue(link, SmsMessage(kind: 2, fields: [.text(requestId),
+      .integer(firstPage ? 0 : state.threadNextMillis), .text(firstPage ? "" : state.threadNextThreadId)]))
     schedule()
   }
 
@@ -741,26 +798,53 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard !state.threadRequest.isEmpty, m.text(0) == state.threadRequest else { return false }
     let normalized = smsNormalizedAddress(m.text(2))
     guard !normalized.isEmpty else { return false }
-    let threadId = m.text(1)
-    var card = SmsThreadCard(key: normalized, threadId: threadId, address: m.text(2),
+    let card = SmsThreadCard(key: normalized, threadId: m.text(1), address: m.text(2),
       snippet: smsTruncate(smsSanitizeText(m.text(3)), maxBytes: 160),
       dateMillis: smsClampDate(m.number(4)), unreadCount: min(m.number(5), SmsMessage.maxDate))
-    card.live = false
     state.threadCards[normalized] = card
-
+    // Paint each card as it arrives; a live card that is already newer keeps its snippet and stays flagged.
+    if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
+      var existing = state.threads[index]
+      if card.dateMillis >= existing.dateMillis {
+        existing.snippet = card.snippet
+        existing.dateMillis = card.dateMillis
+        existing.address = card.address
+        existing.unreadCount = card.unreadCount
+        existing.live = false
+      }
+      existing.threadId = card.threadId
+      state.threads[index] = existing
+    } else {
+      state.threads.append(card)
+    }
+    orderThreads(state)
     return true
   }
 
   private func finishThreads(_ state: PeerState, _ m: SmsMessage) -> Bool {
     guard !state.threadRequest.isEmpty, m.text(0) == state.threadRequest else { return false }
+    let firstPage = state.threadFirstPage
     state.threadRequest = ""; state.threadTransport = ""; state.threadDeadline = 0
+    state.threadFirstPage = true
     switch m.number(1) {
     case 0:
-      // A completed list is a snapshot: provider conversations it no longer reports disappear, while
-      // cards a live message created stay until a later snapshot adopts or replaces them.
-      let cards = state.threadCards
-      state.threads = state.threads.filter { $0.live && cards[$0.key] == nil } + Array(cards.values)
-      for (normalized, card) in cards {
+      // A first page is a snapshot: provider cards it no longer reports disappear, while a live card survives
+      // unless the snapshot is at least as new. Older pages only add to what the list already shows.
+      if firstPage {
+        var merged: [String: SmsThreadCard] = [:]
+        for card in state.threads where card.live { merged[card.key] = card }
+        for card in state.threadCards.values {
+          if let existing = merged[card.key], existing.dateMillis > card.dateMillis { continue }
+          merged[card.key] = card
+        }
+        state.threads = Array(merged.values)
+        orderThreads(state)
+      }
+      let terminal = m.number(2) == 0 && m.text(3).isEmpty
+      state.threadNextMillis = terminal ? 0 : m.number(2)
+      state.threadNextThreadId = terminal ? "" : m.text(3)
+      state.threadMore = !terminal
+      for (normalized, card) in state.threadCards {
         guard let conversation = conversation(state, normalized) else { continue }
         if conversation.threadId != card.threadId {
           conversation.threadId = card.threadId
@@ -856,9 +940,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private func admitLive(_ state: PeerState, _ assembly: Assembly, body: String, digest: Data, peer: DeviceIdentity) async {
     let time = now()
     let normalized = smsNormalizedAddress(assembly.address)
-    let mark = state.contents.firstIndex {
-      $0.direction == assembly.direction && ($0.liveMessageId == nil || $0.liveMessageId == assembly.messageId || !assembly.messageId.hasPrefix("live:")) && $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && $0.expiry > time
-    }
+    let mark = state.contents.firstIndex { contentMatches($0, assembly, digest: digest, normalized: normalized) && $0.expiry > time }
     // A provider copy of the same message owns its row, but only a delivered notification suppresses the next one:
     // an event that lands after the panel already fetched the provider copy still announces the message.
     let announced = mark.map { state.contents[$0].notified } ?? false
@@ -869,14 +951,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       if assembly.messageId.hasPrefix("live:") { state.contents[index].liveMessageId = assembly.messageId }
     } else {
       state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis,
-        expiry: time + 600, notified: false, liveMessageId: assembly.messageId, direction: assembly.direction))
+        expiry: time + 600, notified: false, liveMessageId: assembly.messageId, direction: assembly.direction,
+        subscriptionId: assembly.subscriptionId))
     }
     state.liveReceived += 1
     if duplicate { state.liveSuppressed += 1 }
     guard let conversation = conversation(state, normalized) else { return }
     if !duplicate {
       let row = SmsMessageRow(messageId: assembly.messageId, address: assembly.address, dateMillis: assembly.dateMillis,
-        direction: assembly.direction, unread: assembly.unread, body: body, digest: digest)
+        direction: assembly.direction, unread: assembly.unread, body: body, digest: digest,
+        subscriptionId: assembly.subscriptionId)
       conversation.live.append(row)
       upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0)
     }
@@ -889,10 +973,18 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if outcome == .submitted || outcome == .duplicate {
       if outcome == .submitted { state.liveNotified += 1 }
       if let index = state.contents.firstIndex(where: {
-        $0.direction == assembly.direction && ($0.liveMessageId == nil || $0.liveMessageId == assembly.messageId || !assembly.messageId.hasPrefix("live:")) && $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000
+        contentMatches($0, assembly, digest: digest, normalized: normalized)
       }) { state.contents[index].notified = true }
     }
     schedule()
+  }
+
+  /** One content key with live-ID tolerance and subscription awareness, so two SIM copies never collapse. */
+  private func contentMatches(_ mark: ContentMark, _ assembly: Assembly, digest: Data, normalized: String) -> Bool {
+    guard mark.direction == assembly.direction, mark.address == normalized, mark.digest == digest,
+      abs(mark.dateMillis - assembly.dateMillis) <= 5000 else { return false }
+    guard mark.subscriptionId == 0 || assembly.subscriptionId == 0 || mark.subscriptionId == assembly.subscriptionId else { return false }
+    return mark.liveMessageId == nil || mark.liveMessageId == assembly.messageId || !assembly.messageId.hasPrefix("live:")
   }
 
   private func admitProvider(_ state: PeerState, _ assembly: Assembly, body: String, digest: Data) {
@@ -901,20 +993,22 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     state.known[assembly.messageId] = time + 600
     // The provider copy never notifies; an existing mark keeps the announced state its live copy may have set.
     if let index = state.contents.firstIndex(where: {
-      $0.direction == assembly.direction && $0.address == normalized && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000
+      contentMatches($0, assembly, digest: digest, normalized: normalized)
     }) {
       state.contents[index].expiry = time + 600
     } else {
       state.contents.append(ContentMark(address: normalized, digest: digest, dateMillis: assembly.dateMillis,
-        expiry: time + 600, notified: false, direction: assembly.direction))
+        expiry: time + 600, notified: false, direction: assembly.direction, subscriptionId: assembly.subscriptionId))
     }
     // The provider record wins: its live copy is replaced and an existing posted notification is untouched.
     if let index = conversation.live.firstIndex(where: {
-      $0.direction == assembly.direction && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 && smsNormalizedAddress($0.address) == normalized
+      $0.direction == assembly.direction && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 &&
+        smsNormalizedAddress($0.address) == normalized &&
+        ($0.subscriptionId == 0 || assembly.subscriptionId == 0 || $0.subscriptionId == assembly.subscriptionId)
     }) { conversation.live.remove(at: index) }
     conversation.rows.removeAll { $0.messageId == assembly.messageId }
     conversation.rows.append(SmsMessageRow(messageId: assembly.messageId, address: assembly.address, dateMillis: assembly.dateMillis,
-      direction: assembly.direction, unread: assembly.unread, body: body, digest: digest))
+      direction: assembly.direction, unread: assembly.unread, body: body, digest: digest, subscriptionId: assembly.subscriptionId))
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       var card = state.threads[index]
       card.threadId = assembly.threadId
@@ -927,7 +1021,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     guard let search = state.search, search.requestId == assembly.requestId,
       search.results.count < 200, !search.results.contains(where: { $0.messageId == assembly.messageId }) else { return }
     search.results.append(SmsSearchRow(messageId: assembly.messageId, threadId: assembly.threadId,
-      address: assembly.address, dateMillis: assembly.dateMillis, direction: assembly.direction, body: body))
+      address: assembly.address, dateMillis: assembly.dateMillis, direction: assembly.direction, body: body,
+      subscriptionId: assembly.subscriptionId))
   }
 
   private func finishSearch(_ state: PeerState, _ m: SmsMessage) -> Bool {
@@ -1015,7 +1110,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       let conversation = conversation(state, smsNormalizedAddress(send.address))
       conversation?.live.append(SmsMessageRow(messageId: messageId, address: send.address,
         dateMillis: stamp, direction: 1, unread: false,
-        body: send.text, digest: Data(SHA256.hash(data: Data(send.text.utf8)))))
+        body: send.text, digest: Data(SHA256.hash(data: Data(send.text.utf8))),
+        subscriptionId: send.subscriptionId))
       upsertCard(state, address: send.address, snippet: send.text, dateMillis: stamp, unread: 0)
       state.status = "Sent"
     } else {
@@ -1042,6 +1138,14 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     } else {
       state.threads.append(SmsThreadCard(key: normalized, threadId: "", address: address, snippet: text,
         dateMillis: dateMillis, unreadCount: unread, live: true))
+    }
+    orderThreads(state)
+  }
+
+  /** The list reads newest first with a stable key tie-break, so a live message moves its card up at once. */
+  private func orderThreads(_ state: PeerState) {
+    state.threads.sort {
+      $0.dateMillis != $1.dateMillis ? $0.dateMillis > $1.dateMillis : $0.key < $1.key
     }
   }
 

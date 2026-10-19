@@ -15,7 +15,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class SmsPermissionState(val receive: Boolean, val read: Boolean, val send: Boolean)
-data class SmsDisplayMessage(val messageId: String, val address: String, val dateMillis: Long, val direction: Long, val unread: Boolean, val text: String, val pending: Boolean)
+data class SmsDisplayMessage(val messageId: String, val address: String, val dateMillis: Long, val direction: Long, val unread: Boolean, val text: String, val pending: Boolean, val subscriptionId: Int = 0)
 
 /**
  * Relay trace: counts, kinds and transport names only, never addresses, bodies or message ids.
@@ -93,11 +93,15 @@ class SmsController(
     private var loadedRows: List<SmsHistoryMessage> = emptyList()
     private var loadedCursor: Pair<Long, String> = 0L to ""
     private var threadsJob: Job? = null
+    private var threadCursor: Pair<Long, String> = 0L to ""
+    /** Ownership token: a thread page only lands while its reset generation still stands. */
+    private var threadGeneration = 0
     private var conversationJob: Job? = null
     /** Ownership token: a conversation load only lands while its selection still stands. */
     private var conversationGeneration = 0
     var permissionsState by mutableStateOf(SmsPermissionState(false, false, false)); private set
     var threads by mutableStateOf<List<SmsThreadRecord>?>(null); private set
+    var threadsMore by mutableStateOf(false); private set
     var selectedThreadId by mutableStateOf<String?>(null); private set
     var conversation by mutableStateOf<List<SmsDisplayMessage>>(emptyList()); private set
     var conversationMore by mutableStateOf(false); private set
@@ -180,7 +184,7 @@ class SmsController(
             }
             2L -> {
                 if (!link.remoteCapability) return DataHandling.DISCARDED
-                serveThreads(link, m.text(0))
+                serveThreads(link, m.text(0), m.number(1), m.text(2))
                 return DataHandling.HANDLED
             }
             5L -> {
@@ -239,7 +243,7 @@ class SmsController(
         }
     }
 
-    private fun serveThreads(link: Link, requestId: String) {
+    private fun serveThreads(link: Link, requestId: String, beforeMillis: Long, beforeThreadId: String) {
         val k = key(link.channel.descriptor.peer)
         val current = servingThreads[k]
         if (current?.requestId == requestId && current.job?.isActive == true) return
@@ -249,15 +253,15 @@ class SmsController(
             try {
                 val deadline = deadline(link)
                 var failed = false
-                val page = try { store.threads(link.remoteThreads) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
-                if (page == null) { send(link, SmsWireMessage.of(4, text(requestId), number(if (failed) 5 else 1)), deadline); return@launch }
-                if (page.partial) { send(link, SmsWireMessage.of(4, text(requestId), number(5)), deadline); return@launch }
+                val page = try { store.threads(link.remoteThreads, beforeMillis, beforeThreadId) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
+                if (page == null) { send(link, SmsWireMessage.of(4, text(requestId), number(if (failed) 5 else 1), number(0), text("")), deadline); return@launch }
+                if (page.partial) { send(link, SmsWireMessage.of(4, text(requestId), number(5), number(0), text("")), deadline); return@launch }
                 skippedRows += page.skipped
                 for (record in page.threads) {
                     val sent = send(link, SmsWireMessage.of(3, text(requestId), text(record.threadId), text(record.address), text(record.snippet), number(record.dateMillis), number(record.unreadCount)), deadline)
                     if (!sent) return@launch
                 }
-                send(link, SmsWireMessage.of(4, text(requestId), number(0)), deadline)
+                send(link, SmsWireMessage.of(4, text(requestId), number(0), number(page.nextBeforeMillis), text(page.nextBeforeThreadId)), deadline)
             } finally {
                 cancelQueued(link, requestId)
                 if (servingThreads[k]?.job == self) servingThreads.remove(k)
@@ -286,7 +290,7 @@ class SmsController(
                     val digest = MessageDigest.getInstance("SHA-256").digest(data)
                     val count = (data.size + 3071) / 3072
                     val streamId = UUID.randomUUID().toString()
-                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(threadId), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest)), deadline)) return@launch
+                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(threadId), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest), number(message.subscriptionId.toLong())), deadline)) return@launch
                     for (index in 0 until count) {
                         val from = index * 3072
                         if (!sendPage(SmsWireMessage.of(7, text(streamId), number(index.toLong()), data(data.copyOfRange(from, minOf(from + 3072, data.size)))), deadline)) return@launch
@@ -335,7 +339,7 @@ class SmsController(
                     val count = (data.size + 3071) / 3072
                     val streamId = UUID.randomUUID().toString()
                     val thread = message.threadId.ifEmpty { "addr:" + smsNormalizedAddress(message.address).ifEmpty { message.address } }
-                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(thread), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest)))) return@launch
+                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(thread), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest), number(message.subscriptionId.toLong())))) return@launch
                     for (index in 0 until count) {
                         val from = index * 3072
                         if (!sendPage(SmsWireMessage.of(7, text(streamId), number(index.toLong()), data(data.copyOfRange(from, minOf(from + 3072, data.size)))))) return@launch
@@ -422,7 +426,7 @@ class SmsController(
             incomingReplies.remove(k)
             replyResult(link, current.requestId, outcome.result, outcome.messageId, outcome.dateMillis)
             if (outcome.result == 0L) {
-                val row = SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, current.address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, text, outcome.messageId.isEmpty())
+                val row = SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, current.address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, text, outcome.messageId.isEmpty(), current.subscriptionId)
                 displayExtras += Extra(row, now() + EXTRAS_LIFETIME)
                 upsertSentThread(current.address, text, outcome.dateMillis)
                 refreshConversation()
@@ -470,7 +474,7 @@ class SmsController(
             if (pendingLive.size >= PENDING_LIVE_LIMIT) { pendingLive.removeFirst().job?.cancel(); failedLive++ }
             val live = Live(cleanEvent, now() + PENDING_LIVE_LIFETIME) { finish() }
             pendingLive.addLast(live)
-            displayExtras += Extra(SmsDisplayMessage(cleanEvent.messageId, event.address, event.dateMillis, 0, true, text, false), now() + PENDING_LIVE_LIFETIME)
+            displayExtras += Extra(SmsDisplayMessage(cleanEvent.messageId, event.address, event.dateMillis, 0, true, text, false, cleanEvent.subscriptionId), now() + PENDING_LIVE_LIFETIME)
             status = "Incoming message"
             live.job = scope.launch { deliver(live) }
             upsertLiveThread(event, text)
@@ -558,7 +562,7 @@ class SmsController(
                         val bytes = live.event.body.toByteArray(Charsets.UTF_8)
                         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
                         val count = (bytes.size + 3071) / 3072
-                        val begin = SmsWireMessage.of(6, text(live.streamId), text(""), text(live.event.messageId), text(live.event.threadId), text(live.event.address), number(live.event.dateMillis), number(0), flag(true), number(bytes.size.toLong()), number(count.toLong()), data(digest))
+                        val begin = SmsWireMessage.of(6, text(live.streamId), text(""), text(live.event.messageId), text(live.event.threadId), text(live.event.address), number(live.event.dateMillis), number(0), flag(true), number(bytes.size.toLong()), number(count.toLong()), data(digest), number(live.event.subscriptionId.toLong()))
                         if (!send(link, begin, attemptDeadline)) throw CancellationException("SMS channel retired")
                         for (index in 0 until count) {
                             val from = index * 3072
@@ -657,20 +661,46 @@ class SmsController(
         }
     }
 
-    fun loadThreads() {
-        threadsJob?.cancel()
+    /** First page for the local panel; the view keeps asking for more while [threadsMore] stays true. */
+    fun loadThreads() = loadThreadPage(reset = true)
+
+    fun loadMoreThreads() {
+        if (threadsMore && !loading) loadThreadPage(reset = false)
+    }
+
+    private fun loadThreadPage(reset: Boolean) {
+        if (reset) {
+            threadsJob?.cancel()
+            threadGeneration++
+            threadCursor = 0L to ""
+            threadsMore = false
+        } else if (threadsJob?.isActive == true) return
+        val generation = threadGeneration
+        val cursor = if (reset) 0L to "" else threadCursor
         threadsJob = scope.launch {
             loading = true
             try {
                 var failed = false
-                val page = try { store.threads(PANEL_THREAD_LIMIT) } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true; null }
-                if (page == null) status = if (failed) "Conversations are unavailable" else "READ_SMS permission is required to load conversations"
-                else {
+                val page = try { store.threads(PANEL_THREAD_PAGE, cursor.first, cursor.second) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { failed = true; null }
+                // A reset started while this page ran: its rows and cursor must not land here.
+                if (generation != threadGeneration) return@launch
+                if (page == null) {
+                    status = if (failed) "Conversations are unavailable" else "READ_SMS permission is required to load conversations"
+                } else {
                     skippedRows += page.skipped
-                    threads = page.threads
-                    status = if (page.partial) "Some conversation sources are unavailable" else if (page.threads.isEmpty()) "No conversations on this device" else "${page.threads.size} conversations"
+                    val combined = if (reset) page.threads else (threads.orEmpty() + page.threads).distinctBy { it.threadId }
+                    threads = combined
+                    threadCursor = page.nextBeforeMillis to page.nextBeforeThreadId
+                    threadsMore = page.more
+                    status = when {
+                        page.partial -> "Some conversation sources are unavailable"
+                        combined.isEmpty() -> "No conversations on this device"
+                        else -> "${combined.size} conversations"
+                    }
                 }
-            } finally { loading = false }
+            } finally { if (generation == threadGeneration) loading = false }
         }
     }
 
@@ -736,7 +766,7 @@ class SmsController(
             val outcome = try { sender.send(address, clean, subscriptionId) } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
             when (outcome.result) {
                 0L -> {
-                    displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, clean, outcome.messageId.isEmpty()), now() + EXTRAS_LIFETIME)
+                    displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME)
                     upsertSentThread(address, clean, outcome.dateMillis)
                     refreshConversation(); status = "Message sent"
                     if (outcome.messageId.isEmpty()) recheckPendingEcho()
@@ -768,19 +798,21 @@ class SmsController(
         val visible = displayExtras.map { it.row }
             .filter { selected == null || (address != null && smsNormalizedAddress(it.address) == smsNormalizedAddress(address)) }
             .filterNot { extra ->
-                val index = unmatched.indexOfFirst { row -> row.direction == extra.direction && sameContent(row.address, row.text, row.dateMillis, extra) }
+                val index = unmatched.indexOfFirst { row -> row.direction == extra.direction && sameContent(row, extra) }
                 if (index < 0) false else { unmatched.removeAt(index); true }
             }
-        conversation = (loadedRows.map { SmsDisplayMessage(it.messageId, it.address, it.dateMillis, it.direction, it.unread, it.text, false) } + visible).sortedWith { a, b ->
+        conversation = (loadedRows.map { SmsDisplayMessage(it.messageId, it.address, it.dateMillis, it.direction, it.unread, it.text, false, it.subscriptionId) } + visible).sortedWith { a, b ->
             val d = b.dateMillis.compareTo(a.dateMillis)
             if (d != 0) d else -smsCompareMessageIds(a.messageId, b.messageId)
         }
     }
 
-    private fun sameContent(address: String, text: String, dateMillis: Long, extra: SmsDisplayMessage): Boolean {
-        if (smsNormalizedAddress(address) != smsNormalizedAddress(extra.address)) return false
-        if (kotlin.math.abs(dateMillis - extra.dateMillis) > MERGE_TOLERANCE) return false
-        return MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).contentEquals(MessageDigest.getInstance("SHA-256").digest(extra.text.toByteArray(Charsets.UTF_8)))
+    private fun sameContent(row: SmsHistoryMessage, extra: SmsDisplayMessage): Boolean {
+        if (smsNormalizedAddress(row.address) != smsNormalizedAddress(extra.address)) return false
+        if (kotlin.math.abs(row.dateMillis - extra.dateMillis) > MERGE_TOLERANCE) return false
+        // Two SIMs can deliver identical content at the same moment; only merge when the origins agree or one is unknown.
+        if (row.subscriptionId != 0 && extra.subscriptionId != 0 && row.subscriptionId != extra.subscriptionId) return false
+        return MessageDigest.getInstance("SHA-256").digest(row.text.toByteArray(Charsets.UTF_8)).contentEquals(MessageDigest.getInstance("SHA-256").digest(extra.text.toByteArray(Charsets.UTF_8)))
     }
 
     fun expire() {
@@ -829,7 +861,8 @@ class SmsController(
         incomingReplies.values.forEach { it.job?.cancel() }
         incomingReplies.clear(); completedReplies.clear(); marks.clear(); displayExtras.clear(); loadedRows = emptyList()
         relayedLive = 0; waitingLive = 0; failedLive = 0
-        threadsJob?.cancel(); conversationJob?.cancel(); conversationGeneration++
+        threadsJob?.cancel(); conversationJob?.cancel(); conversationGeneration++; threadGeneration++
+        threadCursor = 0L to ""; threadsMore = false
         threads = null; selectedThreadId = null; conversation = emptyList(); conversationMore = false; loading = false
         links.values.toList().forEach { retired(it.channel.descriptor) }
     }
@@ -851,8 +884,8 @@ class SmsController(
         private const val ECHO_RECHECK_DELAY = 2_000L
         /** First page shown when a conversation opens; the panel and the Mac offer older pages from its cursor. */
         private const val DEFAULT_PAGE_SIZE = 10
-        /** The local panel lists its own conversations; the Mac's link cap governs what it is served. */
-        private const val PANEL_THREAD_LIMIT = 50
+        /** The local panel's first page; the rest follows on scroll so the list paints immediately. */
+        private const val PANEL_THREAD_PAGE = 15
         private const val MERGE_TOLERANCE = 5_000L
         private const val FAILURE_BOUND = 8_000L
     }

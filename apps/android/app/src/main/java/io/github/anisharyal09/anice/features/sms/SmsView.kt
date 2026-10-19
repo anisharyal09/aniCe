@@ -90,23 +90,30 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
             when {
                 owner.threads == null -> if (owner.loading) CircularProgressIndicator(Modifier.size(20.dp)) else Text("Conversations are unavailable", style = MaterialTheme.typography.bodyMedium)
                 owner.threads!!.isEmpty() -> Text("No conversations on this device", style = MaterialTheme.typography.bodyMedium)
-                else -> owner.threads!!.forEach { record ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Open conversation") { owner.select(record.threadId) }
-                            .heightIn(min = 48.dp).padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(record.address, style = MaterialTheme.typography.titleSmall)
-                            if (record.snippet.isNotEmpty()) Text(record.snippet, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                else -> {
+                    owner.threads!!.forEach { record ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Open conversation") { owner.select(record.threadId) }
+                                .heightIn(min = 48.dp).padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(record.address, style = MaterialTheme.typography.titleSmall)
+                                if (record.snippet.isNotEmpty()) Text(record.snippet, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(stamp(record.dateMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (record.unreadCount > 0) Text("${record.unreadCount} unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.selectionAccent)
+                            }
                         }
-                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(stamp(record.dateMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (record.unreadCount > 0) Text("${record.unreadCount} unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.selectionAccent)
-                        }
+                        HorizontalDivider()
                     }
-                    HorizontalDivider()
+                    // The first page paints on its own; the rest follows without blocking the list.
+                    if (owner.threadsMore) {
+                        Text("Loading more conversations…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LaunchedEffect(owner.threads!!.size) { owner.loadMoreThreads() }
+                    }
                 }
             }
         } else {
@@ -179,16 +186,27 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
             }
             if (owner.conversation.isEmpty()) Text(if (owner.loading) "Loading messages…" else "No messages on this device",
                 style = MaterialTheme.typography.bodyMedium)
-            else owner.conversation.forEach { message ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        (if (message.direction == 1L) "Sent" else "Received") + " · " + stamp(message.dateMillis) +
-                            (if (message.unread) " · Unread" else "") + (if (message.pending) " · Sending" else ""),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            else {
+                // Two SIMs can deliver the same sender into one thread; label rows only when the thread mixes origins.
+                val mixedSubscriptions = owner.conversation.map { it.subscriptionId }.filter { it != 0 }.distinct().size >= 2
+                owner.conversation.forEachIndexed { index, message ->
+                    val previous = owner.conversation.getOrNull(index - 1)
+                    if (previous == null || !sameDay(previous.dateMillis, message.dateMillis)) {
+                        Text(dayStamp(message.dateMillis), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                    }
+                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                        val sim = if (mixedSubscriptions && (message.direction == 1L || message.subscriptionId != 0))
+                            " · " + simName(message.subscriptionId, simEntries) else ""
+                        Text(
+                            (if (message.direction == 1L) "Sent" else "Received") + " · " + stamp(message.dateMillis) + sim +
+                                (if (message.unread) " · Unread" else "") + (if (message.pending) " · Sending" else ""),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HorizontalDivider()
                 }
-                HorizontalDivider()
             }
             if (owner.conversationMore) TextButton(onClick = owner::loadConversation, enabled = !owner.loading) { Text("Show older messages") }
         }
@@ -222,6 +240,22 @@ fun SmsSettings(owner: SmsController, onOpen: () -> Unit) {
 /** Two subscriptions can carry the same display name; the slot disambiguates them. */
 private fun simLabel(entry: SmsSubscription, all: List<SmsSubscription>): String =
     if (entry.label.isNotEmpty() && all.count { it.label == entry.label } > 1) "${entry.label} (SIM ${entry.slotIndex + 1})" else entry.label
+
+/** Subscription 0 means the phone default for a sent reply and unknown for a received row. */
+private fun simName(subscriptionId: Int, entries: List<SmsSubscription>): String {
+    if (subscriptionId == 0) return "Phone default"
+    return entries.firstOrNull { it.subscriptionId == subscriptionId }?.let { simLabel(it, entries) } ?: "SIM $subscriptionId"
+}
+
+private fun sameDay(a: Long, b: Long): Boolean {
+    val left = java.util.Calendar.getInstance().apply { timeInMillis = a }
+    val right = java.util.Calendar.getInstance().apply { timeInMillis = b }
+    return left.get(java.util.Calendar.YEAR) == right.get(java.util.Calendar.YEAR) &&
+        left.get(java.util.Calendar.DAY_OF_YEAR) == right.get(java.util.Calendar.DAY_OF_YEAR)
+}
+
+private fun dayStamp(millis: Long): String =
+    java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(millis))
 
 /** Lists the missing capabilities without implying a permission the user has not granted. */
 private fun missingLabels(state: SmsPermissionState): String = listOfNotNull(
