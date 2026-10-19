@@ -13,7 +13,7 @@ final class SmsWireTests: XCTestCase {
     let root = try SessionFixtures().root("sms-vectors")
     let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
     let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
-    XCTAssertGreaterThanOrEqual(valid.count, 42); XCTAssertGreaterThanOrEqual(invalid.count, 70)
+    XCTAssertGreaterThanOrEqual(valid.count, 55); XCTAssertGreaterThanOrEqual(invalid.count, 85)
     var kinds = Set<Int64>()
     for row in valid {
       let bytes = try SessionFixtures().b(row, "bytes")
@@ -22,7 +22,7 @@ final class SmsWireTests: XCTestCase {
       XCTAssertEqual(row["kind"] as? Int64, message.kind)
       kinds.insert(message.kind)
     }
-    XCTAssertEqual(kinds, Set(1...14))
+    XCTAssertEqual(kinds, Set(1...18))
     for row in invalid {
       let name = row["name"] as? String ?? ""
       let bytes = try SessionFixtures().b(row, "bytes")
@@ -49,16 +49,20 @@ final class SmsWireTests: XCTestCase {
       SmsMessage(kind: 8, fields: [.text(stream)]),
       SmsMessage(kind: 9, fields: [.text(stream), .integer(0)]),
       SmsMessage(kind: 10, fields: [.text(id), .integer(0), .integer(0), .text("")]),
-      SmsMessage(kind: 11, fields: [.text(id), .text("42"), .text("+15551234567"), .integer(24576), .integer(8), .bytes(digest("x"))]),
+      SmsMessage(kind: 11, fields: [.text(id), .text("42"), .text("+15551234567"), .integer(24576), .integer(8), .bytes(digest("x")), .integer(2147483647)]),
       SmsMessage(kind: 12, fields: [.text(id), .integer(0), .bytes(Data([1]))]),
       SmsMessage(kind: 13, fields: [.text(id)]),
       SmsMessage(kind: 14, fields: [.text(id), .integer(0), .text("sms:9"), .integer(9007199254740991)]),
+      SmsMessage(kind: 15, fields: [.text(id)]),
+      SmsMessage(kind: 16, fields: [.text(id), .integer(0), .array([.array([.integer(0), .integer(0), .text(""), .bool(true)])])]),
+      SmsMessage(kind: 17, fields: [.text(id), .text("otp"), .integer(0), .text(""), .integer(50)]),
+      SmsMessage(kind: 18, fields: [.text(id), .integer(0), .integer(9007199254740991), .text("mms:7")]),
     ]
     for row in rows {
       let bytes = try row.encode()
       XCTAssertEqual(try SmsMessage.decode(bytes)?.encode(), bytes)
     }
-    XCTAssertEqual(Set(rows.map(\.kind)), Set(1...14))
+    XCTAssertEqual(Set(rows.map(\.kind)), Set(1...18))
   }
 
   func testStrictValidationRejectsSemanticViolations() throws {
@@ -66,7 +70,7 @@ final class SmsWireTests: XCTestCase {
       XCTAssertThrowsError(try row.encode(), name)
     }
     let id = request(), stream = stream(), hash = digest("x")
-    rejected("unknown-kind", SmsMessage(kind: 15, fields: []))
+    rejected("unknown-kind", SmsMessage(kind: 19, fields: []))
     rejected("capability-floor", SmsMessage(kind: 1, fields: [.integer(24575), .integer(8), .integer(50), .integer(50)]))
     rejected("request-empty", SmsMessage(kind: 2, fields: [.text("")]))
     rejected("request-uppercase", SmsMessage(kind: 2, fields: [.text(id.uppercased())]))
@@ -90,7 +94,12 @@ final class SmsWireTests: XCTestCase {
     rejected("fragment-empty", SmsMessage(kind: 7, fields: [.text(stream), .integer(0), .bytes(Data())]))
     rejected("fragment-oversize", SmsMessage(kind: 7, fields: [.text(stream), .integer(0), .bytes(Data(repeating: 1, count: 3073))]))
     rejected("begin-fields-truncated", SmsMessage(kind: 6, fields: [.text(stream), .text(""), .text("sms:1")]))
-    rejected("send-begin-digest", SmsMessage(kind: 11, fields: [.text(id), .text("1"), .text("+1"), .integer(1), .integer(1), .bytes(Data([1]))]))
+    rejected("send-begin-digest", SmsMessage(kind: 11, fields: [.text(id), .text("1"), .text("+1"), .integer(1), .integer(1), .bytes(Data([1])), .integer(0)]))
+    rejected("send-begin-subscription", SmsMessage(kind: 11, fields: [.text(id), .text("1"), .text("+1"), .integer(1), .integer(1), .bytes(hash), .integer(2147483648)]))
+    rejected("sim-label-long", SmsMessage(kind: 16, fields: [.text(id), .integer(0), .array([.array([.integer(1), .integer(0), .text(String(repeating: "x", count: 41)), .bool(true)])])]))
+    rejected("sim-entry-shape", SmsMessage(kind: 16, fields: [.text(id), .integer(0), .array([.array([.integer(1), .integer(0)])])]))
+    rejected("search-query-short", SmsMessage(kind: 17, fields: [.text(id), .text("a"), .integer(0), .text(""), .integer(10)]))
+    rejected("search-limit", SmsMessage(kind: 17, fields: [.text(id), .text("ok"), .integer(0), .text(""), .integer(51)]))
     rejected("send-result-id-with-code", SmsMessage(kind: 14, fields: [.text(id), .integer(5), .text("sms:1"), .integer(0)]))
     // A successful send without a provider lookup keeps an empty id; that is valid.
     XCTAssertNoThrow(try SmsMessage(kind: 14, fields: [.text(id), .integer(0), .text(""), .integer(1)]).encode())

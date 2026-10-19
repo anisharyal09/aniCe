@@ -29,6 +29,26 @@ struct SmsMessageRow: Identifiable, Equatable {
   var id: String { messageId }
 }
 
+/** One active SMS subscription as the phone reported it; numbers are never transmitted. */
+struct SmsSimEntry: Identifiable, Equatable {
+  let subscriptionId: Int64
+  let slotIndex: Int64
+  let label: String
+  let isDefault: Bool
+  var id: Int64 { subscriptionId }
+}
+
+/** A search hit: enough context to show a result row without touching the conversation store. */
+struct SmsSearchRow: Identifiable, Equatable {
+  let messageId: String
+  let threadId: String
+  let address: String
+  let dateMillis: Int64
+  let direction: Int64
+  let body: String
+  var id: String { messageId }
+}
+
 struct SmsNotification: Equatable {
   let identifier: String
   let peerKey: String
@@ -117,6 +137,21 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var refreshing = false
   }
 
+  /** One peer-scoped search session: the active page request, its buffer and the next-page cursor. Nothing here is persisted. */
+  @Observable final class Search {
+    var requestId = ""
+    var transport = ""
+    var deadline: TimeInterval = 0
+    var query = ""
+    var results: [SmsSearchRow] = []
+    var nextBeforeMillis: Int64 = 0
+    var nextBeforeMessageId = ""
+    var more = false
+    /// Completed pages, capped with the row count so a result list stays bounded.
+    var pages = 0
+    var note = ""
+  }
+
   @Observable final class PeerState {
     var capable = false
     var status = "Waiting for your phone"
@@ -131,6 +166,12 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var contents: [ContentMark] = []
     var assemblies: [String: Assembly] = [:]
     var send: Send?
+    var simEntries: [SmsSimEntry] = []
+    var simChoice: Int64 = 0
+    var simRequest = ""
+    var simTransport = ""
+    var simDeadline: TimeInterval = 0
+    var search: Search?
     /** Counts only, never addresses or bodies: what the live relay delivered and what it suppressed. */
     var liveReceived = 0
     var liveNotified = 0
@@ -303,6 +344,28 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }
   }
 
+  /** The picker exists only when the phone reports at least two subscriptions. */
+  func sims(_ peer: DeviceIdentity) -> [SmsSimEntry] {
+    let entries = peers[key(peer)]?.simEntries ?? []
+    return entries.count >= 2 ? entries : []
+  }
+  func simChoice(_ peer: DeviceIdentity) -> Int64 { peers[key(peer)]?.simChoice ?? 0 }
+
+  func searchResults(_ peer: DeviceIdentity) -> [SmsSearchRow] { peers[key(peer)]?.search?.results ?? [] }
+  func searchStatus(_ peer: DeviceIdentity) -> String { peers[key(peer)]?.search?.note ?? "" }
+  func searching(_ peer: DeviceIdentity) -> Bool { !(peers[key(peer)]?.search?.requestId.isEmpty ?? true) }
+  /** More pages exist and the buffer is still under the four-page/200-row cap. */
+  func moreResults(_ peer: DeviceIdentity) -> Bool {
+    guard let search = peers[key(peer)]?.search else { return false }
+    return search.requestId.isEmpty && search.more && !searchCapped(search)
+  }
+  /** The cursor points at more rows the cap refuses to load: the user has to narrow the query. */
+  func refineSearch(_ peer: DeviceIdentity) -> Bool {
+    guard let search = peers[key(peer)]?.search else { return false }
+    return search.requestId.isEmpty && search.more && searchCapped(search)
+  }
+  private func searchCapped(_ search: Search) -> Bool { search.pages >= 4 || search.results.count >= 200 }
+
   func requestThreads(_ peer: DeviceIdentity) {
     onLanRequired()
     let k = key(peer)
@@ -352,11 +415,101 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     schedule()
   }
 
-  func send(_ peer: DeviceIdentity, address: String, text: String) {
-    submit(key(peer), address: address, text: text, threadId: "")
+  /** Asks the phone for its active SMS subscriptions; the listing stays silent unless it offers a second choice. */
+  func requestSims(_ peer: DeviceIdentity) {
+    let k = key(peer)
+    let state = state(k)
+    guard state.simRequest.isEmpty, state.capable, let link = capableLink(k) else { return }
+    onLanRequired()
+    let requestId = UUID().uuidString.lowercased()
+    state.simRequest = requestId
+    state.simTransport = link.channel.descriptor.transport
+    state.simDeadline = now() + 10
+    enqueue(link, SmsMessage(kind: 15, fields: [.text(requestId)]))
+    schedule()
   }
 
-  private func submit(_ k: String, address: String, text: String, threadId preferred: String) {
+  /** The choice is per peer and process-local; a listing that no longer offers it falls back to the phone default. */
+  func chooseSim(_ peer: DeviceIdentity, _ subscriptionId: Int64) {
+    let state = state(key(peer))
+    guard subscriptionId == 0 || sims(peer).contains(where: { $0.subscriptionId == subscriptionId }) else { return }
+    state.simChoice = subscriptionId
+  }
+
+  /** A fresh query cancels the previous page and replaces the buffer; blank clears, under two bytes only warns. */
+  func search(_ peer: DeviceIdentity, query: String) {
+    let k = key(peer)
+    let state = state(k)
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { clearSearch(peer); return }
+    cancelSearch(state)
+    guard trimmed.utf8.count >= 2 else {
+      let search = Search()
+      search.note = "Search needs at least 2 characters"
+      state.search = search
+      return
+    }
+    guard state.capable, let link = capableLink(k) else {
+      let search = Search()
+      search.query = trimmed
+      search.note = "Connect your phone to search messages"
+      state.search = search
+      return
+    }
+    onLanRequired()
+    let search = Search()
+    search.query = smsTruncate(trimmed, maxBytes: 64)
+    search.transport = link.channel.descriptor.transport
+    search.deadline = requestDeadline(search.transport)
+    search.requestId = UUID().uuidString.lowercased()
+    search.note = "Searching…"
+    state.search = search
+    issueSearch(link, search, millis: 0, messageId: "")
+  }
+
+  /** Leaving the results drops the buffer and any page in flight. */
+  func clearSearch(_ peer: DeviceIdentity) {
+    guard let state = peers[key(peer)] else { return }
+    cancelSearch(state)
+    schedule()
+  }
+
+  func searchMore(_ peer: DeviceIdentity) {
+    onLanRequired()
+    let k = key(peer)
+    let state = state(k)
+    guard let search = state.search, search.requestId.isEmpty, search.more, !searchCapped(search) else { return }
+    guard state.capable, let link = capableLink(k) else {
+      search.note = "Connect your phone to load more results"
+      return
+    }
+    search.requestId = UUID().uuidString.lowercased()
+    search.transport = link.channel.descriptor.transport
+    search.deadline = requestDeadline(search.transport)
+    search.note = "Searching…"
+    issueSearch(link, search, millis: search.nextBeforeMillis, messageId: search.nextBeforeMessageId)
+  }
+
+  private func issueSearch(_ link: Link, _ search: Search, millis: Int64, messageId: String) {
+    enqueue(link, SmsMessage(kind: 17, fields: [.text(search.requestId), .text(search.query),
+      .integer(millis), .text(messageId), .integer(Int64(min(SmsMessage.defaultPageSize, link.maximumMessages)))]))
+    schedule()
+  }
+
+  private func cancelSearch(_ state: PeerState) {
+    guard let search = state.search else { return }
+    if !search.requestId.isEmpty {
+      cancelQueued(search.requestId)
+      state.assemblies = state.assemblies.filter { $0.value.requestId != search.requestId }
+    }
+    state.search = nil
+  }
+
+  func send(_ peer: DeviceIdentity, address: String, text: String) {
+    submit(key(peer), address: address, text: text, threadId: "", subscriptionId: peers[key(peer)]?.simChoice ?? 0)
+  }
+
+  private func submit(_ k: String, address: String, text: String, threadId preferred: String, subscriptionId: Int64 = 0) {
     onLanRequired()
     let state = state(k)
     let normalized = smsNormalizedAddress(address)
@@ -378,7 +531,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     state.send = Send(requestId: requestId, address: address, threadId: threadId, text: body,
       descriptor: link.channel.descriptor, deadline: requestDeadline(link.channel.descriptor.transport))
     enqueue(link, SmsMessage(kind: 11, fields: [.text(requestId), .text(threadId), .text(address),
-      .integer(Int64(data.count)), .integer(Int64(count)), .bytes(Data(SHA256.hash(data: data)))]))
+      .integer(Int64(data.count)), .integer(Int64(count)), .bytes(Data(SHA256.hash(data: data))),
+      .integer(subscriptionId)]))
     for index in 0..<count {
       let start = index * 3072
       enqueue(link, SmsMessage(kind: 12, fields: [.text(requestId), .integer(Int64(index)),
@@ -397,7 +551,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       await notifier.post(failureNote(request.peerKey, request.peerName, request.address, request.threadId))
       return
     }
-    submit(request.peerKey, address: request.address, text: request.text, threadId: request.threadId)
+    submit(request.peerKey, address: request.address, text: request.text, threadId: request.threadId, subscriptionId: 0)
   }
 
   func available(_ channel: any SecuredChannel) {
@@ -435,6 +589,13 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       for conversation in state.conversations.values where conversation.transport == descriptor.transport {
         conversation.requestId = ""; conversation.transport = ""; conversation.deadline = 0
         state.status = "Connection lost while loading messages"
+      }
+      if !state.simRequest.isEmpty, state.simTransport == descriptor.transport {
+        state.simRequest = ""; state.simTransport = ""; state.simDeadline = 0
+      }
+      if let search = state.search, search.transport == descriptor.transport {
+        search.requestId = ""; search.transport = ""; search.deadline = 0
+        search.note = "Connection lost while searching"
       }
       state.assemblies = state.assemblies.filter { $0.value.descriptor != descriptor }
       if let send = state.send, send.descriptor == descriptor {
@@ -497,6 +658,14 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       guard state.send?.descriptor == descriptor else { return .discarded }
       guard link.capable else { return .discarded }
       return await finishSend(state, message) ? .handled : .discarded
+    case 16:
+      guard state.simTransport == descriptor.transport else { return .discarded }
+      guard link.capable else { return .discarded }
+      return finishSims(state, message) ? .handled : .discarded
+    case 18:
+      guard state.search?.transport == descriptor.transport else { return .discarded }
+      guard link.capable else { return .discarded }
+      return finishSearch(state, message) ? .handled : .discarded
     default:
       return .unrecognized
     }
@@ -523,6 +692,17 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
         conversation.requestId = ""; conversation.transport = ""
         conversation.refreshing = false
         state.status = "Your phone did not answer"
+      }
+      if !state.simRequest.isEmpty, state.simDeadline <= time {
+        cancelQueued(state.simRequest)
+        state.simRequest = ""; state.simTransport = ""; state.simDeadline = 0
+        state.simEntries = []
+        state.simChoice = 0
+      }
+      if let search = state.search, !search.requestId.isEmpty, search.deadline <= time {
+        cancelQueued(search.requestId)
+        search.requestId = ""; search.transport = ""; search.deadline = 0
+        search.note = "Your phone did not answer"
       }
       if let send = state.send, send.deadline <= time {
         cancelQueued(send.requestId)
@@ -601,7 +781,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private func beginStream(_ state: PeerState, _ m: SmsMessage, _ descriptor: ChannelDescriptor) -> Bool {
     let streamId = m.text(0)
     let requestId = m.text(1)
-    if !requestId.isEmpty, !state.conversations.values.contains(where: { $0.requestId == requestId && $0.transport == descriptor.transport }) { return false }
+    if !requestId.isEmpty {
+      let history = state.conversations.values.contains { $0.requestId == requestId && $0.transport == descriptor.transport }
+      let searching = state.search?.requestId == requestId && state.search?.transport == descriptor.transport
+      if !history && !searching { return false }
+    }
     if let existing = state.assemblies[streamId] {
       if existing.descriptor == descriptor, existing.begin == m { return true }
       state.assemblies[streamId] = nil
@@ -650,15 +834,19 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }.value
     guard live(descriptor), peers[key(descriptor.peer)] === state,
       state.assemblies[streamId] === assembly, assembly.deadline > now(),
-      assembly.requestId.isEmpty || state.conversations.values.contains(where: { $0.requestId == assembly.requestId }) else { return .discarded }
+      assembly.requestId.isEmpty || state.conversations.values.contains(where: { $0.requestId == assembly.requestId })
+        || state.search?.requestId == assembly.requestId else { return .discarded }
     state.assemblies[streamId] = nil
     guard let text else {
       if assembly.requestId.isEmpty { ack(descriptor, streamId, 6) }
       return .handled
     }
+    // Search hits stay in the peer's search buffer; they never touch conversations, threads or notifications.
     if assembly.requestId.isEmpty {
       ack(descriptor, streamId, 0)
       await admitLive(state, assembly, body: text, digest: digest, peer: descriptor.peer)
+    } else if state.search?.requestId == assembly.requestId {
+      admitSearch(state, assembly, body: text)
     } else {
       admitProvider(state, assembly, body: text, digest: digest)
     }
@@ -731,6 +919,59 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       var card = state.threads[index]
       card.threadId = assembly.threadId
       state.threads[index] = card
+    }
+  }
+
+  /** A search hit adds nothing to live dedupe, the thread list or notification state. */
+  private func admitSearch(_ state: PeerState, _ assembly: Assembly, body: String) {
+    guard let search = state.search, search.requestId == assembly.requestId,
+      search.results.count < 200, !search.results.contains(where: { $0.messageId == assembly.messageId }) else { return }
+    search.results.append(SmsSearchRow(messageId: assembly.messageId, threadId: assembly.threadId,
+      address: assembly.address, dateMillis: assembly.dateMillis, direction: assembly.direction, body: body))
+  }
+
+  private func finishSearch(_ state: PeerState, _ m: SmsMessage) -> Bool {
+    guard let search = state.search, !search.requestId.isEmpty, search.requestId == m.text(0) else { return false }
+    search.requestId = ""; search.transport = ""; search.deadline = 0
+    switch m.number(1) {
+    case 0:
+      // Cursors advance only on success; a zero pair is the terminal page.
+      search.pages += 1
+      let terminal = m.number(2) == 0 && m.text(3).isEmpty
+      search.nextBeforeMillis = terminal ? 0 : m.number(2)
+      search.nextBeforeMessageId = terminal ? "" : m.text(3)
+      search.more = !terminal
+      if search.results.isEmpty { search.note = "No matching messages" }
+      else if search.more && searchCapped(search) { search.note = "Refine the search" }
+      else { search.note = "\(search.results.count) results" }
+    case 1: search.note = "Allow SMS access on your phone to search messages"
+    case 4: search.note = "Search could not complete on the phone"
+    case 5: search.note = "Search is unavailable"
+    case 6: search.note = "The search query was rejected"
+    default: search.note = "Search is unavailable"
+    }
+    schedule()
+    return true
+  }
+
+  /** A listing is only kept when it offers a real second choice; everything else stays silent and on the default. */
+  private func finishSims(_ state: PeerState, _ m: SmsMessage) -> Bool {
+    guard !state.simRequest.isEmpty, m.text(0) == state.simRequest else { return false }
+    state.simRequest = ""; state.simTransport = ""; state.simDeadline = 0
+    state.simEntries = m.number(1) == 0 ? simEntries(m) : []
+    if state.simEntries.count < 2 { state.simEntries = [] }
+    if !state.simEntries.contains(where: { $0.subscriptionId == state.simChoice }) { state.simChoice = 0 }
+    schedule()
+    return true
+  }
+
+  private func simEntries(_ m: SmsMessage) -> [SmsSimEntry] {
+    guard case .array(let rows) = m.fields[2] else { return [] }
+    return rows.compactMap { row in
+      guard case .array(let cells) = row, cells.count == 4,
+        case .integer(let subscriptionId) = cells[0], case .integer(let slotIndex) = cells[1],
+        case .text(let label) = cells[2], case .bool(let isDefault) = cells[3] else { return nil }
+      return SmsSimEntry(subscriptionId: subscriptionId, slotIndex: slotIndex, label: label, isDefault: isDefault)
     }
   }
 
@@ -815,6 +1056,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     for state in peers.values {
       if !state.threadRequest.isEmpty { deadlines.append(state.threadDeadline) }
       deadlines.append(contentsOf: state.conversations.values.filter { !$0.requestId.isEmpty }.map(\.deadline))
+      if !state.simRequest.isEmpty { deadlines.append(state.simDeadline) }
+      if let search = state.search, !search.requestId.isEmpty { deadlines.append(search.deadline) }
       if let send = state.send { deadlines.append(send.deadline) }
       deadlines.append(contentsOf: state.known.values)
       deadlines.append(contentsOf: state.contents.map(\.expiry))

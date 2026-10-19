@@ -114,7 +114,7 @@ Features → Find Device opens peer request actions and local notification setup
 
 ## Messages (SMS relay)
 
-Features → Messages relays incoming SMS to the Mac, reads conversations and history on demand and sends replies from the Mac over the secured session. RECEIVE_SMS covers live relay, READ_SMS conversations and history, and SEND_SMS replies; each missing permission is reported separately and permanent denial links to App info for Android 13+ restricted settings. SMS permissions are Play-restricted and this build is sideloaded. See [Messages](../../docs/features/SMS.md) for the provider fallbacks, paging limits and permission handling.
+Features → Messages relays incoming SMS to the Mac, reads conversations, history and matches on demand and sends replies from the Mac over the secured session. RECEIVE_SMS covers live relay, READ_SMS conversations/history/search, and SEND_SMS replies; each missing permission is reported separately and permanent denial links to App info for Android 13+ restricted settings. READ_PHONE_STATE is optional: the composer reads the phone's subscriptions once per conversation and asks for it only when that read would offer a second active subscription, and the phone default, history and search all work without it. SMS permissions are Play-restricted and this build is sideloaded. See [Messages](../../docs/features/SMS.md) for the provider fallbacks, paging limits and permission handling.
 
 ## Clipboard
 

@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Added
 
+- SMS Relay v2: `sendBegin` carries a `subscriptionId` (0 = the phone's default SMS subscription) and new kinds `simRequest`/`simDone` expose the phone's active SMS subscriptions for an optional explicit per-reply choice, and `searchRequest`/`searchDone` add bounded, cancellable, cursor-paginated substring search over provider SMS bodies and text/plain MMS parts. The contract version is now 2, so a v1 peer cannot exchange SMS until both applications are updated; v1 message layouts and bounds are unchanged apart from `sendBegin`'s appended field, and the shared fixture set grows to 154 (60 valid, 94 invalid).
+
 - SMS relay v1 deterministic CBOR capability, thread-list, paged history, live message-stream, reply and result messages, with capability gating, `messageResult` acknowledgement for live streams only, byte-wise lexical messageId cursor ties and content-key live/provider deduplication; 119 independent fixtures (46 valid, 73 invalid).
 
 - Clipboard v1 deterministic CBOR capabilities, receive settings, bounded text assembly, ordered item identities, terminal deduplication and one safe cross-transport retry, with independent positive/negative fixtures.

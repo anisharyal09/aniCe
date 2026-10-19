@@ -111,7 +111,7 @@ Features → Find Device opens peer request actions and local notification setup
 
 ## Messages (SMS relay)
 
-Features → Messages relays incoming SMS to notifications with an inline reply and reads the phone's conversations and history on demand without storing them. Per-phone **Show message text in notifications** is off by default; a failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for provider paging limits and the notification-preview preference.
+Features → Messages relays incoming SMS to notifications with an inline reply, reads the phone's conversations and history on demand, searches matching messages in bounded pages without indexing them, and replies on the phone's default SIM unless another active subscription is chosen from the phone's SIM list while the panel is open. Per-phone **Show message text in notifications** is off by default; a failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for provider paging limits, search behavior and the notification-preview preference.
 
 ## Clipboard
 

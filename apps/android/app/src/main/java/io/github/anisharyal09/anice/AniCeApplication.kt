@@ -103,9 +103,11 @@ class AniCeApplication : Application() {
     }
     val clipboard get() = clipboardOwner.value
     private val smsOwner = lazy {
+        val subscriptions = io.github.anisharyal09.anice.features.sms.AndroidSmsSubscriptionSource(this)
         io.github.anisharyal09.anice.features.sms.SmsController(
             store = io.github.anisharyal09.anice.features.sms.AndroidSmsStore(this),
-            sender = io.github.anisharyal09.anice.features.sms.AndroidSmsSender(this),
+            sender = io.github.anisharyal09.anice.features.sms.AndroidSmsSender(this, subscriptions = subscriptions),
+            subscriptions = subscriptions,
             permissions = { name -> androidx.core.content.ContextCompat.checkSelfPermission(this, name) == android.content.pm.PackageManager.PERMISSION_GRANTED }
         ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
     }

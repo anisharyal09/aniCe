@@ -127,11 +127,43 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
                 color = if (bytes > SmsWireMessage.MAX_BODY_BYTES) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             if (draft.length > 1000) Text("Very long messages may be rejected by carriers; Unicode text reaches the limit sooner.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.warning)
+            // A SIM choice is only offered when the phone reports a second subscription; otherwise the default is enough.
+            val multiSim = remember(threadId) { owner.modemCount() >= 2 }
+            val simListing = remember(threadId) { mutableStateOf<SmsSubscriptionListing?>(null) }
+            var simChoice by remember(threadId) { mutableStateOf(0) }
+            var simMenu by remember(threadId) { mutableStateOf(false) }
+            var simAnswered by remember(threadId) { mutableStateOf(false) }
+            LaunchedEffect(threadId) { if (multiSim) simListing.value = owner.listSubscriptions() }
+            val simEntries = simListing.value?.entries.orEmpty()
+            val simChoiceLabel = simEntries.firstOrNull { it.subscriptionId == simChoice }?.let { simLabel(it, simEntries) }
+            val phoneState = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                simAnswered = true
+                simListing.value = if (granted) owner.listSubscriptions() else SmsSubscriptionListing(1, emptyList())
+            }
+            if (multiSim && state.send && (simEntries.size >= 2 || (simListing.value?.result == 1L && !simAnswered))) {
+                Box {
+                    OutlinedButton(onClick = {
+                        if (simEntries.size >= 2) simMenu = true
+                        else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
+                    },
+                        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (simEntries.size >= 2) "Send from: " + (simChoiceLabel ?: "Phone default") else "Choose SIM…")
+                    }
+                    DropdownMenu(expanded = simMenu, onDismissRequest = { simMenu = false }) {
+                        DropdownMenuItem(text = { Text("Phone default") }, onClick = { simChoice = 0; simMenu = false })
+                        simEntries.forEach { entry ->
+                            DropdownMenuItem(text = { Text(if (entry.isDefault) simLabel(entry, simEntries) + " (default)" else simLabel(entry, simEntries)) },
+                                onClick = { simChoice = entry.subscriptionId; simMenu = false })
+                        }
+                    }
+                }
+            }
             val address = record?.address ?: threadId.removePrefix("addr:")
             OutlinedButton(
                 onClick = {
                     sending = true
-                    val operation = owner.send(address, draft)
+                    val operation = owner.send(address, draft, simChoice)
                     scope.launch {
                         if (operation.result().result == 0L) draft = ""
                         sending = false
@@ -186,6 +218,10 @@ fun SmsSettings(owner: SmsController, onOpen: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Open Messages") }
     }
 }
+
+/** Two subscriptions can carry the same display name; the slot disambiguates them. */
+private fun simLabel(entry: SmsSubscription, all: List<SmsSubscription>): String =
+    if (entry.label.isNotEmpty() && all.count { it.label == entry.label } > 1) "${entry.label} (SIM ${entry.slotIndex + 1})" else entry.label
 
 /** Lists the missing capabilities without implying a permission the user has not granted. */
 private fun missingLabels(state: SmsPermissionState): String = listOfNotNull(

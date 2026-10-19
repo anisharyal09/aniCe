@@ -38,7 +38,7 @@ def generate():
     body = b'x' * 24576
 
     def message(kind, fields):
-        return [tag, 1, kind, fields]
+        return [tag, 2, kind, fields]
 
     def row(name, value, kind=0):
         return {'name': name, 'kind': value[2] if isinstance(value, list) and len(value) > 2 and isinstance(value[2], int) else kind, 'bytesHex': encode(value).hex()}
@@ -70,8 +70,8 @@ def generate():
         row('history-done-end', message(10, [request, 0, 0, ''])),
         row('history-done-disabled', message(10, [request, 1, 0, ''])),
         row('history-done-failure', message(10, [request, 5, 0, ''])),
-        row('send-begin', message(11, [request, thread, address, 5, 1, hello])),
-        row('send-begin-max', message(11, [request, token, address, 24576, 8, hashlib.sha256(body).digest()])),
+        row('send-begin', message(11, [request, thread, address, 5, 1, hello, 0])),
+        row('send-begin-max', message(11, [request, token, address, 24576, 8, hashlib.sha256(body).digest(), 0])),
         row('send-fragment', message(12, [request, 0, b'hello'])),
         row('send-fragment-max', message(12, [request, 7, b'y' * 3072])),
         row('send-commit', message(13, [request])),
@@ -82,13 +82,30 @@ def generate():
     for index, message_id in enumerate(['sms:99', 'sms:100', 'sms:101']):
         good.append(row('history-tie-' + str(index), message(6, [stream, request, message_id, thread, address, tie, 0, False, 5, 1, hello])))
     good.append(row('history-done-tie-cursor', message(10, [request, 0, tie, 'sms:99'])))
+    good += [
+        row('send-begin-explicit-subscription', message(11, [request, thread, address, 5, 1, hello, 2])),
+        row('send-begin-max-subscription', message(11, [request, token, address, 24576, 8, hashlib.sha256(body).digest(), 2147483647])),
+        row('sim-request', message(15, [request])),
+        row('sim-done-empty', message(16, [request, 0, []])),
+        row('sim-done-two', message(16, [request, 0, [[1, 0, 'Personal', True], [2, 1, 'Work', False]]])),
+        row('sim-done-label-unicode', message(16, [request, 0, [[7, 1, '😀' * 10, False]]])),
+        row('sim-done-max-entries', message(16, [request, 0, [[index + 1, index, 'x' * 40, index == 0] for index in range(8)]])),
+        row('sim-done-disabled', message(16, [request, 1, []])),
+        row('search-request-initial', message(17, [request, 'otp', 0, '', 50])),
+        row('search-request-cursor', message(17, [request, 'héllo 100%', tie, 'sms:100', 10])),
+        row('search-hit-sms', message(6, [stream, request, 'sms:100', thread, address, tie, 0, False, 5, 1, hello])),
+        row('search-done-more', message(18, [request, 0, tie, 'sms:100'])),
+        row('search-done-end', message(18, [request, 0, 0, ''])),
+        row('search-done-unsupported', message(18, [request, 4, 0, ''])),
+    ]
 
     bad = [
         row('wrong-tag', ['aniCe sms2', 1, 1, [24576, 8, 50, 50]]),
         row('version-0', [tag, 0, 1, [24576, 8, 50, 50]]),
-        row('version-2', [tag, 2, 1, [24576, 8, 50, 50]]),
+        row('version-1', [tag, 1, 1, [24576, 8, 50, 50]]),
+        row('version-3', [tag, 3, 1, [24576, 8, 50, 50]]),
         row('kind-0', message(0, [])),
-        row('kind-15', message(15, [])),
+        row('kind-19', message(19, [])),
         row('missing-fields', [tag, 1, 1]),
         row('extra-envelope', [tag, 1, 1, [24576, 8, 50, 50], 0]),
         row('kind-type', [tag, 1, '1', [24576, 8, 50, 50]]),
@@ -152,6 +169,26 @@ def generate():
         row('send-result-failed-with-id', message(14, [request, 5, 'sms:10', 0])),
         row('send-result-bad-message-id', message(14, [request, 0, 'bogus', 0])),
         row('send-result-negative-date', message(14, [request, 0, '', -1])),
+        row('send-begin-no-subscription', message(11, [request, thread, address, 5, 1, hello])),
+        row('send-begin-subscription-negative', message(11, [request, thread, address, 5, 1, hello, -1])),
+        row('send-begin-subscription-overflow', message(11, [request, thread, address, 5, 1, hello, 2147483648])),
+        row('sim-request-empty', message(15, [''])),
+        row('sim-done-extra-column', message(16, [request, 0, [[1, 0, 'a', True, 0]]])),
+        row('sim-done-entry-types', message(16, [request, 0, [[1, 0, 'a', 1]]])),
+        row('sim-done-label-long', message(16, [request, 0, [[1, 0, 'a' * 41, True]]])),
+        row('sim-done-slot-overflow', message(16, [request, 0, [[1, 16, 'a', True]]])),
+        row('sim-done-subscription-negative', message(16, [request, 0, [[-1, 0, 'a', True]]])),
+        row('sim-done-subscription-overflow', message(16, [request, 0, [[2147483648, 0, 'a', True]]])),
+        row('sim-done-too-many-entries', message(16, [request, 0, [[index + 1, 0, 'a', False] for index in range(9)]])),
+        row('sim-done-result-7', message(16, [request, 7, []])),
+        row('search-request-query-short', message(17, [request, 'a', 0, '', 10])),
+        row('search-request-query-long', message(17, [request, 'a' * 65, 0, '', 10])),
+        row('search-request-query-type', message(17, [request, 5, 0, '', 10])),
+        row('search-request-limit-51', message(17, [request, 'ok', 0, '', 51])),
+        row('search-request-bad-cursor', message(17, [request, 'ok', 0, 'bogus', 10])),
+        row('search-request-cursor-overflow', message(17, [request, 'ok', 2**53, '', 10])),
+        row('search-done-bad-cursor', message(18, [request, 0, 0, 'nope'])),
+        row('search-done-result-7', message(18, [request, 7, 0, ''])),
     ]
     done = encode(message(4, [request, 0]))
     record = bytearray(encode(message(3, [request, thread, 'Bank', 'ok', 0, 0])))
@@ -163,7 +200,7 @@ def generate():
         {'name': 'indefinite-array', 'kind': 4, 'bytesHex': (b'\x9f' + done[1:] + b'\xff').hex()},
         {'name': 'invalid-utf8', 'kind': 3, 'bytesHex': bytes(record).hex()},
     ]
-    assert len(good) >= 42 and len(bad) >= 70
+    assert len(good) >= 55 and len(bad) >= 85
     return {'valid': good, 'invalid': bad}
 
 

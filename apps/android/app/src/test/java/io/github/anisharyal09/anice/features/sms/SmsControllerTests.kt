@@ -19,8 +19,13 @@ class SmsControllerTests {
         var historyResult: SmsHistoryPage? = SmsHistoryPage(emptyList(), 0, "", false, 0)
         var throwOnThreads = false
         var throwOnHistory = false
+        var searchResult: SmsHistoryPage? = SmsHistoryPage(emptyList(), 0, "", false, 0)
+        var throwOnSearch = false
+        var searchUnsupported = false
         var pause: CompletableDeferred<Unit>? = null
+        var searchPause: CompletableDeferred<Unit>? = null
         val historyCalls = mutableListOf<Triple<String, Pair<Long, String>, Int>>()
+        val searchCalls = mutableListOf<Triple<String, Pair<Long, String>, Int>>()
         val threadCalls = mutableListOf<Int>()
         override suspend fun threads(limit: Int): SmsThreadPage? {
             threadCalls += limit
@@ -33,15 +38,30 @@ class SmsControllerTests {
             pause?.await()
             return historyResult
         }
+        override suspend fun search(query: String, beforeMillis: Long, beforeMessageId: String, limit: Int): SmsHistoryPage? {
+            if (throwOnSearch) throw SmsStoreException()
+            if (searchUnsupported) throw SmsPagingUnsupported()
+            searchCalls += Triple(query, beforeMillis to beforeMessageId, limit)
+            searchPause?.await()
+            return searchResult
+        }
+    }
+    private class FakeSubscriptions : SmsSubscriptionSource {
+        var listing = SmsSubscriptionListing(0, emptyList())
+        var modems = 1
+        override fun list() = listing
+        override fun modemCount() = modems
     }
     private class FakeSender : SmsSender {
         var outcome = SmsSendOutcome(0, "sms:77", 55)
         var pause: CompletableDeferred<Unit>? = null
         val addresses = mutableListOf<String>()
         val bodies = mutableListOf<String>()
-        override suspend fun send(address: String, body: String, timeoutMillis: Long): SmsSendOutcome {
+        val subscriptionIds = mutableListOf<Int>()
+        override suspend fun send(address: String, body: String, subscriptionId: Int, timeoutMillis: Long): SmsSendOutcome {
             addresses += address
             bodies += body
+            subscriptionIds += subscriptionId
             pause?.await()
             return outcome
         }
@@ -80,7 +100,8 @@ class SmsControllerTests {
             set(value) { clock.advance(value - clock.time) }
         val store = FakeStore()
         val sender = FakeSender()
-        val owner = SmsController(store, sender, dispatcher = dispatcher, now = { time }, wait = clock::wait, permissions = { true })
+        val subscriptions = FakeSubscriptions()
+        val owner = SmsController(store, sender, dispatcher = dispatcher, subscriptions = subscriptions, now = { time }, wait = clock::wait, permissions = { true })
         suspend fun announce(c: Channel) {
             owner.handle(c.descriptor, SmsWireMessage.of(1, number(24576), number(8), number(50), number(50)).encode())
         }
@@ -395,6 +416,115 @@ class SmsControllerTests {
         assertEquals(5L, lan.sent.filter { it.kind == 10L }.last().number(1))
     }
 
+    @Test fun simListingServesSubscriptionsAndActionableResults() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.subscriptions.listing = SmsSubscriptionListing(0, listOf(SmsSubscription(1, 0, "Personal", true), SmsSubscription(2, 1, "Work", false)))
+        val first = request()
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(first)).encode())
+        until { lan.sent.any { it.kind == 16L } }
+        val done = lan.sent.first { it.kind == 16L }
+        assertEquals(first, done.text(0))
+        assertEquals(0L, done.number(1))
+        val entries = (done.fields[2] as Cbor.Array).value
+        assertEquals(2, entries.size)
+        val entry = (entries[0] as Cbor.Array).value
+        assertEquals(1L, (entry[0] as Cbor.Integer).value)
+        assertEquals(0L, (entry[1] as Cbor.Integer).value)
+        assertEquals("Personal", (entry[2] as Cbor.Text).value)
+        assertTrue((entry[3] as Cbor.Bool).value)
+        // Missing READ_PHONE_STATE and platform failure are distinguishable and both keep the default usable.
+        h.subscriptions.listing = SmsSubscriptionListing(1, emptyList())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(request())).encode())
+        until { lan.sent.count { it.kind == 16L } == 2 }
+        assertEquals(1L, lan.sent.filter { it.kind == 16L }.last().number(1))
+        h.subscriptions.listing = SmsSubscriptionListing(5, emptyList())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(request())).encode())
+        until { lan.sent.count { it.kind == 16L } == 3 }
+        assertEquals(5L, lan.sent.filter { it.kind == 16L }.last().number(1))
+    }
+
+    @Test fun searchStreamsHitsUnderTheRequestIdAndCancelsStalePages() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.store.searchResult = SmsHistoryPage(listOf(SmsHistoryMessage("sms:100", "+1555", 1_000, 0, true, "hello action", "42")), 0, "", false, 0)
+        val first = request()
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(17, text(first), text("hello"), number(0), text(""), number(50)).encode())
+        until { lan.sent.any { it.kind == 18L } }
+        assertEquals(Triple("hello", 0L to "", 50), h.store.searchCalls[0])
+        val hit = lan.sent.first { it.kind == 6L }
+        assertEquals(first, hit.text(1))
+        assertEquals("sms:100", hit.text(2))
+        assertEquals("42", hit.text(3))
+        assertEquals("hello action", lan.sent.filter { it.kind == 7L && it.text(0) == hit.text(0) }.joinToString("") { String(it.bytes(2)) })
+        assertEquals(first, lan.sent.first { it.kind == 18L }.text(0))
+        // A newer search cancels the parked page; the older requestId never lands a record or a terminal.
+        val second = request()
+        h.store.searchPause = CompletableDeferred()
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(17, text(second), text("action"), number(0), text(""), number(50)).encode())
+        until { h.store.searchCalls.size == 2 }
+        val third = request()
+        h.store.searchResult = SmsHistoryPage(listOf(SmsHistoryMessage("sms:200", "+1555", 2_000, 1, false, "third", "43")), 0, "", false, 0)
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(17, text(third), text("third"), number(0), text(""), number(50)).encode())
+        until { h.store.searchCalls.size == 3 }
+        h.store.searchPause!!.complete(Unit)
+        until { lan.sent.any { it.kind == 18L && it.text(0) == third } }
+        assertTrue(lan.sent.filter { it.kind == 6L }.none { it.text(1) == second })
+        assertTrue(lan.sent.filter { it.kind == 18L }.none { it.text(0) == second })
+    }
+
+    @Test fun searchResultCodesCoverDisabledUnsupportedFailureAndInvalidQuery() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        fun search(query: String) = SmsWireMessage.of(17, text(request()), text(query), number(0), text(""), number(50))
+        // A one-byte query is invalid on the wire; a query that trims short is answered with result 6 and never reaches the store.
+        val rawShortQuery = SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("aniCe sms"), Cbor.Integer(2), Cbor.Integer(17), Cbor.Array(listOf(text(request()), text("a"), number(0), text(""), number(50))))))
+        assertEquals(DataHandling.DISCARDED, h.owner.handle(lan.descriptor, rawShortQuery))
+        h.store.searchResult = null
+        h.owner.handle(lan.descriptor, search("hello").encode())
+        until { lan.sent.count { it.kind == 18L } == 1 }
+        assertEquals(1L, lan.sent.first { it.kind == 18L }.number(1))
+        h.store.searchUnsupported = true
+        h.owner.handle(lan.descriptor, search("hello").encode())
+        until { lan.sent.count { it.kind == 18L } == 2 }
+        assertEquals(4L, lan.sent.filter { it.kind == 18L }.last().number(1))
+        h.store.searchUnsupported = false
+        h.store.throwOnSearch = true
+        h.owner.handle(lan.descriptor, search("hello").encode())
+        until { lan.sent.count { it.kind == 18L } == 3 }
+        assertEquals(5L, lan.sent.filter { it.kind == 18L }.last().number(1))
+        h.store.throwOnSearch = false
+        h.owner.handle(lan.descriptor, search(" x ").encode())
+        until { lan.sent.count { it.kind == 18L } == 4 }
+        assertEquals(6L, lan.sent.filter { it.kind == 18L }.last().number(1))
+        assertEquals(1, h.store.searchCalls.size)
+    }
+
+    @Test fun searchEscapesLikeWildcardsAndKeepsProviderThreadIds() = runBlocking {
+        val provider = FakeProvider()
+        val store = store(provider, { true })
+        val patterns = mutableListOf<String>()
+        val hit = SmsRawMessage(100, 1_000, "+1555", "100% done", 0, true, true, 42)
+        provider.smsMatches = { pattern, _, _ -> patterns += pattern; listOf(hit) }
+        provider.smsMatchGroup = { pattern, millis -> patterns += pattern; if (millis == 1_000L) listOf(hit) else emptyList() }
+        val page = store.search("100%", 0, "", 10)!!
+        assertEquals("%100\\%%", patterns.single())
+        assertEquals("sms:100", page.messages.single().messageId)
+        assertEquals("42", page.messages.single().threadId)
+        assertEquals(0, page.skipped)
+        patterns.clear()
+        val cursor = store.search("100%", 1_000, "sms:101", 10)!!
+        assertEquals("sms:100", cursor.messages.single().messageId)
+        assertEquals(listOf("%100\\%%", "%100\\%%"), patterns)
+        provider.smsMatches = { pattern, _, _ -> patterns += pattern; emptyList() }
+        store.search("a_b", 0, "", 10)
+        assertEquals("%a\\_b%", patterns.last())
+        assertNull(store(provider, { false }).search("100%", 0, "", 10))
+    }
+
     @Test fun replyAssemblyVerifiesDigestAndReportsRadioVerdict() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()
@@ -402,7 +532,7 @@ class SmsControllerTests {
         val request = request()
         val text = "reply body"
         val bytes = utf8(text)
-        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+15551234567"), number(bytes.size.toLong()), number(1), data(digest(text))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+15551234567"), number(bytes.size.toLong()), number(1), data(digest(text)), number(7)).encode())
         h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(request), number(0), data(bytes)).encode())
         h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(request)).encode())
         until { lan.sent.any { it.kind == 14L } }
@@ -413,6 +543,7 @@ class SmsControllerTests {
         assertEquals(55L, result.number(3))
         assertEquals(listOf("+15551234567"), h.sender.addresses)
         assertEquals(listOf(text), h.sender.bodies)
+        assertEquals(listOf(7), h.sender.subscriptionIds)
     }
 
     @Test fun replyFailuresReportFailedDisabledAndInvalidWithoutSendingWrongText() = runBlocking {
@@ -420,7 +551,7 @@ class SmsControllerTests {
         val lan = Channel()
         ready(h, lan)
         fun begin(request: String, text: String, count: Long = 1, hash: ByteArray = digest(text)) =
-            SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(text.toByteArray().size.toLong()), number(count), data(hash)).encode()
+            SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(text.toByteArray().size.toLong()), number(count), data(hash), number(0)).encode()
         val bad = request()
         h.owner.handle(lan.descriptor, begin(bad, "one", hash = digest("other")))
         h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(bad), number(0), data(utf8("one"))).encode())
@@ -454,6 +585,13 @@ class SmsControllerTests {
         h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(failed)).encode())
         until { lan.sent.any { it.kind == 14L && it.text(0) == failed } }
         assertEquals(5L, lan.sent.first { it.kind == 14L && it.text(0) == failed }.number(1))
+        h.sender.outcome = SmsSendOutcome(4, "", 0)
+        val inactive = request()
+        h.owner.handle(lan.descriptor, begin(inactive, "six"))
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(inactive), number(0), data(utf8("six"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(inactive)).encode())
+        until { lan.sent.any { it.kind == 14L && it.text(0) == inactive } }
+        assertEquals(4L, lan.sent.first { it.kind == 14L && it.text(0) == inactive }.number(1))
         assertTrue(lan.sent.filter { it.kind == 14L }.all { it.number(1) == 0L || it.text(2).isEmpty() })
     }
 
@@ -463,13 +601,13 @@ class SmsControllerTests {
         ready(h, lan)
         val request = request()
         val bytes = utf8("text")
-        val begin = SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(bytes.size.toLong()), number(1), data(digest("text")))
+        val begin = SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(bytes.size.toLong()), number(1), data(digest("text")), number(0))
         h.owner.handle(lan.descriptor, begin.encode())
-        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(99), number(1), data(digest("text"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(99), number(1), data(digest("text")), number(0)).encode())
         until { lan.sent.any { it.kind == 14L } }
         assertEquals(6L, lan.sent.first { it.kind == 14L }.number(1))
         val timeout = request()
-        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(timeout), text("42"), text("+1555"), number(bytes.size.toLong()), number(1), data(digest("text"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(timeout), text("42"), text("+1555"), number(bytes.size.toLong()), number(1), data(digest("text")), number(0)).encode())
         h.time += 30_001
         h.owner.expire()
         until { lan.sent.any { it.kind == 14L && it.text(0) == timeout } }
@@ -481,7 +619,7 @@ class SmsControllerTests {
         val lan = Channel()
         ready(h, lan)
         fun begin(request: String, text: String) =
-            SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(text.toByteArray().size.toLong()), number(1), data(digest(text)))
+            SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(text.toByteArray().size.toLong()), number(1), data(digest(text)), number(0))
         // The first radio call parks; a replacement request arrives before it returns.
         val first = request()
         h.sender.pause = CompletableDeferred()
@@ -510,7 +648,7 @@ class SmsControllerTests {
         ready(h, lan)
         val request = request()
         h.sender.pause = CompletableDeferred()
-        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(4), number(1), data(digest("late"))).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(4), number(1), data(digest("late")), number(0)).encode())
         h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(request), number(0), data(utf8("late"))).encode())
         h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(request)).encode())
         until { h.sender.bodies == listOf("late") }
@@ -604,6 +742,27 @@ class SmsControllerTests {
         assertTrue(h.owner.conversation.isEmpty())
     }
 
+    @Test fun aSendWithoutAProviderIdResolvesThroughOneDelayedRecheck() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.store.threadsResult = SmsThreadPage(listOf(SmsThreadRecord("42", "+15551234567", "hi", 1_699_000_000_000, 0)), 0)
+        h.owner.loadThreads()
+        until { h.owner.threads?.size == 1 }
+        h.store.historyResult = SmsHistoryPage(emptyList(), 0, "", false, 0)
+        h.owner.select("42")
+        until { h.owner.selectedThreadId == "42" }
+        // The sentIntent resolves before the provider row exists, so the echo is pending.
+        h.sender.outcome = SmsSendOutcome(0, "", 1_700_000_000_000)
+        h.owner.send("+15551234567", "typed here")
+        until { h.owner.conversation.any { it.pending } }
+        // The row lands a moment later; the delayed re-read replaces the echo instead of leaving it pending.
+        h.store.historyResult = SmsHistoryPage(listOf(SmsHistoryMessage("sms:900", "+15551234567", 1_700_000_000_000, 1, false, "typed here")), 0, "", false, 0)
+        h.tick(2_001)
+        until { h.owner.conversation.any { it.messageId == "sms:900" } }
+        assertTrue(h.owner.conversation.none { it.pending })
+    }
+
     @Test fun sentAndLiveExtrasRenderOnlyInsideTheirOwnOpenThread() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()
@@ -633,6 +792,39 @@ class SmsControllerTests {
         assertTrue(h.owner.conversation.single().unread)
     }
 
+    @Test fun sentMessagesMoveTheirConversationUpWithTheNewSnippetWithoutUnread() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        h.store.threadsResult = SmsThreadPage(
+            listOf(
+                SmsThreadRecord("42", "+15551234567", "hi", 1_700_000_000_000, 2),
+                SmsThreadRecord("43", "ACME BANK", "alert", 1_700_000_001_000, 0),
+            ),
+            0,
+        )
+        h.owner.loadThreads()
+        until { h.owner.threads?.size == 2 }
+        // A panel send moves its conversation to the top with the new snippet and leaves unread counts alone.
+        h.sender.outcome = SmsSendOutcome(0, "sms:300", 1_700_000_002_000)
+        h.owner.send("+15551234567", "typed here")
+        until { h.owner.threads?.firstOrNull()?.snippet == "typed here" }
+        assertEquals("42", h.owner.threads?.first()?.threadId)
+        assertEquals("typed here", h.owner.threads?.first()?.snippet)
+        assertEquals(2L, h.owner.threads?.first()?.unreadCount)
+        // A reply that arrives from the Mac does the same with its own text and date.
+        val request = request()
+        val text = "from the mac"
+        val bytes = utf8(text)
+        h.sender.outcome = SmsSendOutcome(0, "sms:301", 1_700_000_003_000)
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(11, text(request), text("43"), text("ACME BANK"), number(bytes.size.toLong()), number(1), data(digest(text)), number(0)).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(12, text(request), number(0), data(bytes)).encode())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(13, text(request)).encode())
+        until { h.owner.threads?.firstOrNull()?.snippet == "from the mac" }
+        assertEquals("43", h.owner.threads?.first()?.threadId)
+        assertEquals(0L, h.owner.threads?.first()?.unreadCount)
+    }
+
     private class FakeProvider : SmsProvider {
         var conversations: (() -> List<SmsConversationRow>)? = null
         var canonical: ((List<Long>) -> Map<Long, String>)? = null
@@ -643,6 +835,10 @@ class SmsControllerTests {
         var smsGroup: ((Long, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
         var mms: ((Long, Long?, Int) -> List<SmsRawMessage>)? = { _, _, _ -> emptyList() }
         var mmsGroup: ((Long, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
+        var smsMatches: ((String, Long?, Int) -> List<SmsRawMessage>)? = { _, _, _ -> emptyList() }
+        var smsMatchGroup: ((String, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
+        var mmsMatches: ((String, Long?, Int) -> List<SmsRawMessage>)? = { _, _, _ -> emptyList() }
+        var mmsMatchGroup: ((String, Long) -> List<SmsRawMessage>)? = { _, _ -> emptyList() }
         override fun conversations() = conversations?.invoke() ?: throw SmsStoreException()
         override fun unreadCounts() = unreadRows?.invoke() ?: throw SmsStoreException()
         override fun canonicalAddresses(ids: List<Long>) = canonical?.invoke(ids) ?: throw SmsStoreException()
@@ -652,6 +848,10 @@ class SmsControllerTests {
         override fun smsDateGroup(threadId: Long, millis: Long) = smsGroup!!.invoke(threadId, millis)
         override fun mmsHistory(threadId: Long, upperMillis: Long?, limit: Int) = mms!!.invoke(threadId, upperMillis, limit)
         override fun mmsDateGroup(threadId: Long, millis: Long) = mmsGroup!!.invoke(threadId, millis)
+        override fun smsSearch(pattern: String, upperMillis: Long?, limit: Int) = smsMatches!!.invoke(pattern, upperMillis, limit)
+        override fun smsSearchGroup(pattern: String, millis: Long) = smsMatchGroup!!.invoke(pattern, millis)
+        override fun mmsSearch(pattern: String, upperMillis: Long?, limit: Int) = mmsMatches!!.invoke(pattern, upperMillis, limit)
+        override fun mmsSearchGroup(pattern: String, millis: Long) = mmsMatchGroup!!.invoke(pattern, millis)
     }
 
     private fun store(provider: FakeProvider, hasReadPermission: () -> Boolean) =
@@ -834,7 +1034,7 @@ class SmsControllerTests {
         val ble = Channel("ble")
         ready(h, ble)
         val request = request()
-        h.owner.handle(ble.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(4), number(1), data(digest("test"))).encode())
+        h.owner.handle(ble.descriptor, SmsWireMessage.of(11, text(request), text("42"), text("+1555"), number(4), number(1), data(digest("test")), number(0)).encode())
         h.time += 30_001
         h.owner.expire()
         yield()

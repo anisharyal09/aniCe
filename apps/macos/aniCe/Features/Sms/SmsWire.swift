@@ -23,7 +23,7 @@ struct SmsMessage: Equatable, Sendable {
   func bytes(_ i: Int) -> Data { if case .bytes(let v) = fields[i] { return v }; preconditionFailure() }
   func encode() throws -> Data {
     try validate()
-    return try SessionCbor.encode(.array([.text(Self.tag), .integer(1), .integer(kind), .array(fields)]))
+    return try SessionCbor.encode(.array([.text(Self.tag), .integer(2), .integer(kind), .array(fields)]))
   }
   private func validate() throws {
     func check(_ v: Bool) throws { if !v { throw SmsWireError.malformed } }
@@ -35,6 +35,7 @@ struct SmsMessage: Equatable, Sendable {
     func cursorId(_ i: Int) throws { let s = try string(i); try check(s.isEmpty || Self.isMessageId(s)) }
     func millis(_ i: Int) throws { try check((0...Self.maxDate).contains(try n(i))) }
     func result(_ i: Int) throws { try check((0...6).contains(try n(i))) }
+    func subscription(_ i: Int) throws { try check((0...2147483647).contains(try n(i))) }
     func threadId(_ i: Int) throws { try check((1...80).contains(try string(i).utf8.count)) }
     func address(_ i: Int) throws { try check((1...64).contains(try string(i).utf8.count)) }
     func snippet(_ i: Int) throws { try check(try string(i).utf8.count <= 160) }
@@ -73,20 +74,39 @@ struct SmsMessage: Equatable, Sendable {
     case 10:
       try check(fields.count == 4); try uuid(0); try result(1); try millis(2); try cursorId(3)
     case 11:
-      try check(fields.count == 6); try uuid(0); try threadId(1); try address(2); try body(3, 4)
+      try check(fields.count == 7); try uuid(0); try threadId(1); try address(2); try body(3, 4)
       guard case .bytes(let digest) = fields[5], digest.count == 32 else { throw SmsWireError.malformed }
+      try subscription(6)
     case 14:
       try check(fields.count == 4); try uuid(0)
       let code = try n(1), id = try string(2)
       try check((0...6).contains(code) && (id.isEmpty || Self.isMessageId(id)) && (code == 0 || id.isEmpty))
       try millis(3)
+    case 15:
+      try check(fields.count == 1); try uuid(0)
+    case 16:
+      try check(fields.count == 3); try uuid(0); try result(1)
+      guard case .array(let entries) = fields[2], entries.count <= 8 else { throw SmsWireError.malformed }
+      for entry in entries {
+        guard case .array(let cells) = entry, cells.count == 4,
+              case .integer(let subscriptionId) = cells[0], (0...2147483647).contains(subscriptionId),
+              case .integer(let slot) = cells[1], (0...15).contains(slot),
+              case .text(let label) = cells[2], label.utf8.count <= 40,
+              case .bool = cells[3] else { throw SmsWireError.malformed }
+      }
+    case 17:
+      try check(fields.count == 5); try uuid(0)
+      try check((2...64).contains(try string(1).utf8.count))
+      try millis(2); try cursorId(3); try check((1...50).contains(try n(4)))
+    case 18:
+      try check(fields.count == 4); try uuid(0); try result(1); try millis(2); try cursorId(3)
     default: throw SmsWireError.malformed
     }
   }
   static func decode(_ bytes: Data) throws -> Self? {
     guard bytes.count <= 4000 else { return nil }
     guard case .array(let row) = try SessionCbor.decode(bytes), row.first == .text(tag) else { return nil }
-    guard row.count == 4, row[1] == .integer(1), case .integer(let kind) = row[2], case .array(let fields) = row[3] else { throw SmsWireError.malformed }
+    guard row.count == 4, row[1] == .integer(2), case .integer(let kind) = row[2], case .array(let fields) = row[3] else { throw SmsWireError.malformed }
     let message = Self(kind: kind, fields: fields)
     try message.validate()
     guard try message.encode() == bytes else { throw SmsWireError.malformed }

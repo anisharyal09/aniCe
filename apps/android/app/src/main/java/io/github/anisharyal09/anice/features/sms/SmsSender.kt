@@ -26,7 +26,8 @@ private class SmsPartFailed : Exception()
 class SmsSendOutcome(val result: Long, val messageId: String, val dateMillis: Long)
 
 interface SmsSender {
-    suspend fun send(address: String, body: String, timeoutMillis: Long = 30_000): SmsSendOutcome
+    /** [subscriptionId] 0 sends on the device default; a non-zero id must name an active subscription or the reply fails with 4. */
+    suspend fun send(address: String, body: String, subscriptionId: Int = 0, timeoutMillis: Long = 30_000): SmsSendOutcome
 }
 
 class AndroidSmsSender(
@@ -34,16 +35,18 @@ class AndroidSmsSender(
     private val hasSendPermission: () -> Boolean = { ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED },
     private val hasReadPermission: () -> Boolean = { ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED },
     private val clock: () -> Long = System::currentTimeMillis,
+    private val subscriptions: SmsSubscriptionSource? = null,
 ) : SmsSender {
     private val smsManager: SmsManager? get() = context.getSystemService(SmsManager::class.java)
 
-    override suspend fun send(address: String, body: String, timeoutMillis: Long): SmsSendOutcome {
+    override suspend fun send(address: String, body: String, subscriptionId: Int, timeoutMillis: Long): SmsSendOutcome {
         if (address.isEmpty() || address.toByteArray(Charsets.UTF_8).size > 64) return SmsSendOutcome(6, "", 0)
         val clean = smsSanitizeText(body) ?: return SmsSendOutcome(6, "", 0)
         val bytes = clean.toByteArray(Charsets.UTF_8)
         if (bytes.isEmpty() || bytes.size > SmsWireMessage.MAX_BODY_BYTES) return SmsSendOutcome(6, "", 0)
+        if (subscriptionId < 0 || subscriptionId > SmsWireMessage.MAX_SUBSCRIPTION) return SmsSendOutcome(6, "", 0)
         if (!hasSendPermission()) return SmsSendOutcome(1, "", 0)
-        val manager = smsManager ?: return SmsSendOutcome(5, "", 0)
+        val manager = managerFor(subscriptionId) ?: return SmsSendOutcome(if (subscriptionId != 0) 4 else 5, "", 0)
         val parts: List<String> = try {
             manager.divideMessage(clean)
         } catch (_: Exception) {
@@ -84,7 +87,7 @@ class AndroidSmsSender(
         }
         if (!queued) {
             waiters.forEach { (code, _) -> pending.remove(code) }
-            return SmsSendOutcome(if (!hasSendPermission()) 1 else 5, "", 0)
+            return SmsSendOutcome(if (!hasSendPermission()) 1L else if (subscriptionId != 0) 4L else 5L, "", 0)
         }
         // sendMultipartTextMessage only queues IPC: wait for every part's radio verdict under one deadline.
         val reported = try {
@@ -105,6 +108,22 @@ class AndroidSmsSender(
         if (reported == null || reported.any { it != Activity.RESULT_OK }) return SmsSendOutcome(5, "", 0)
         val found = withContext(Dispatchers.IO) { lookupSent(address, clean, startedAt, subscription) }
         return if (found != null) SmsSendOutcome(0, found.first, found.second) else SmsSendOutcome(0, "", clock())
+    }
+
+    /**
+     * Resolves the default manager or a manager for an explicit subscription. An explicit subscription
+     * is checked against the active list when one is readable and is never silently swapped for another.
+     */
+    private fun managerFor(subscriptionId: Int): SmsManager? {
+        if (subscriptionId == 0) return smsManager
+        val listing = try { subscriptions?.list() } catch (_: Exception) { null }
+        if (listing != null && listing.result == 0L && listing.entries.isNotEmpty() && listing.entries.none { it.subscriptionId == subscriptionId }) return null
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= 31) smsManager?.createForSubscriptionId(subscriptionId)
+            else @Suppress("DEPRECATION") SmsManager.getSmsManagerForSubscriptionId(subscriptionId)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** At most one best-effort provider lookup for the sent row; absent rows keep an empty provider ID. */

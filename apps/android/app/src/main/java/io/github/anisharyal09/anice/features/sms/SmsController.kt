@@ -39,6 +39,7 @@ class SmsController(
     private val store: SmsStore,
     private val sender: SmsSender,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    private val subscriptions: SmsSubscriptionSource? = null,
     private val now: () -> Long = android.os.SystemClock::elapsedRealtime,
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val permissions: (String) -> Boolean = { false },
@@ -73,7 +74,7 @@ class SmsController(
     private class Mark(val messageId: String, val expiry: Long)
     private class Extra(val row: SmsDisplayMessage, val expiry: Long)
     private class Serving(val requestId: String, val descriptor: ChannelDescriptor, var job: Job? = null)
-    private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val deadline: Long) {
+    private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long) {
         val fragments = mutableListOf<ByteArray>()
         var committing = false
         var job: Job? = null
@@ -82,6 +83,7 @@ class SmsController(
     private val links = mutableStateMapOf<String, Link>()
     private val servingThreads = mutableMapOf<String, Serving>()
     private val servingHistory = mutableMapOf<String, Serving>()
+    private val servingSearch = mutableMapOf<String, Serving>()
     private val incomingReplies = mutableMapOf<String, Incoming>()
     private val completedReplies = mutableMapOf<String, ArrayDeque<Completed>>()
     private val pendingLive = ArrayDeque<Live>()
@@ -143,6 +145,7 @@ class SmsController(
         if (links.values.none { key(it.channel.descriptor.peer) == k }) {
             servingThreads.remove(k)?.job?.cancel()
             servingHistory.remove(k)?.job?.cancel()
+            servingSearch.remove(k)?.job?.cancel()
             incomingReplies.remove(k)?.job?.cancel()
             completedReplies.remove(k)
         }
@@ -183,6 +186,16 @@ class SmsController(
             5L -> {
                 if (!link.remoteCapability) return DataHandling.DISCARDED
                 serveHistory(link, m.text(0), m.text(1), m.number(2), m.text(3), m.number(4).toInt())
+                return DataHandling.HANDLED
+            }
+            15L -> {
+                if (!link.remoteCapability) return DataHandling.DISCARDED
+                serveSim(link, m.text(0))
+                return DataHandling.HANDLED
+            }
+            17L -> {
+                if (!link.remoteCapability) return DataHandling.DISCARDED
+                serveSearch(link, m.text(0), m.text(1), m.number(2), m.text(3), m.number(4).toInt())
                 return DataHandling.HANDLED
             }
             9L -> {
@@ -289,6 +302,55 @@ class SmsController(
         servingHistory[k] = Serving(requestId, link.channel.descriptor, job)
     }
 
+    /** One platform read answered with exactly one simDone; nothing is persisted and nothing is retried. */
+    private fun serveSim(link: Link, requestId: String) {
+        val listing = try { subscriptions?.list() ?: SmsSubscriptionListing(5, emptyList()) } catch (_: Exception) { SmsSubscriptionListing(5, emptyList()) }
+        val entries = Cbor.Array(listing.entries.map { entry ->
+            Cbor.Array(listOf(number(entry.subscriptionId.toLong()), number(entry.slotIndex.toLong()), text(entry.label), flag(entry.isDefault)))
+        })
+        enqueue(link, SmsWireMessage.of(16, text(requestId), number(listing.result), entries))
+    }
+
+    /** A search page streams hits as regular message records under the search requestId; a newer request cancels this one. */
+    private fun serveSearch(link: Link, requestId: String, query: String, beforeMillis: Long, beforeMessageId: String, limit: Int) {
+        val k = key(link.channel.descriptor.peer)
+        val current = servingSearch[k]
+        if (current?.requestId == requestId && current.job?.isActive == true) return
+        current?.job?.cancel()
+        val job = scope.launch {
+            val self = coroutineContext[Job]
+            try {
+                val deadline = deadline(link)
+                suspend fun sendPage(message: SmsWireMessage) = send(link, message, deadline, requestId)
+                val clean = query.trim()
+                if (clean.toByteArray(Charsets.UTF_8).size < 2) { sendPage(SmsWireMessage.of(18, text(requestId), number(6L), number(0), text(""))); return@launch }
+                var failed = false
+                val page = try { store.search(clean, beforeMillis, beforeMessageId, minOf(limit, link.remoteMessages)) } catch (e: CancellationException) { throw e } catch (_: SmsPagingUnsupported) { sendPage(SmsWireMessage.of(18, text(requestId), number(4L), number(0), text(""))); return@launch } catch (_: Exception) { failed = true; null }
+                if (page == null) { sendPage(SmsWireMessage.of(18, text(requestId), number(if (failed) 5L else 1L), number(0), text(""))); return@launch }
+                if (page.partial) { sendPage(SmsWireMessage.of(18, text(requestId), number(5L), number(0), text(""))); return@launch }
+                skippedRows += page.skipped
+                for (message in page.messages) {
+                    val data = message.text.toByteArray(Charsets.UTF_8)
+                    val digest = MessageDigest.getInstance("SHA-256").digest(data)
+                    val count = (data.size + 3071) / 3072
+                    val streamId = UUID.randomUUID().toString()
+                    val thread = message.threadId.ifEmpty { "addr:" + smsNormalizedAddress(message.address).ifEmpty { message.address } }
+                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(thread), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest)))) return@launch
+                    for (index in 0 until count) {
+                        val from = index * 3072
+                        if (!sendPage(SmsWireMessage.of(7, text(streamId), number(index.toLong()), data(data.copyOfRange(from, minOf(from + 3072, data.size)))))) return@launch
+                    }
+                    if (!sendPage(SmsWireMessage.of(8, text(streamId)))) return@launch
+                }
+                sendPage(SmsWireMessage.of(18, text(requestId), number(0), number(page.nextBeforeMillis), text(page.nextBeforeMessageId)))
+            } finally {
+                cancelQueued(link, requestId)
+                if (servingSearch[k]?.job == self) servingSearch.remove(k)
+            }
+        }
+        servingSearch[k] = Serving(requestId, link.channel.descriptor, job)
+    }
+
     private fun beginIncoming(link: Link, m: SmsWireMessage) {
         val k = key(link.channel.descriptor.peer)
         val requestId = m.text(0)
@@ -305,7 +367,7 @@ class SmsController(
             return
         }
         if (current != null) { replyResult(link, requestId, 2, "", 0); return }
-        incomingReplies[k] = Incoming(link.channel.descriptor, requestId, m.text(2), m.number(3).toInt(), m.number(4).toInt(), m.bytes(5), deadline(link))
+        incomingReplies[k] = Incoming(link.channel.descriptor, requestId, m.text(2), m.number(3).toInt(), m.number(4).toInt(), m.bytes(5), m.number(6).toInt(), deadline(link))
         schedule()
     }
 
@@ -354,7 +416,7 @@ class SmsController(
             }
             // Retiring, expiry or a newer request may drop this one while validation runs: never send for a dead request.
             if (incomingReplies[k] !== current || !live(current.descriptor) || now() >= current.deadline) return@launch
-            val outcome = try { sender.send(current.address, text, maxOf(1, current.deadline - now())) } catch (e: CancellationException) { throw e } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
+            val outcome = try { sender.send(current.address, text, current.subscriptionId, maxOf(1, current.deadline - now())) } catch (e: CancellationException) { throw e } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
             // Only clear the slot when it still holds this request; a newer reply keeps its own tracking.
             if (incomingReplies[k] !== current) return@launch
             incomingReplies.remove(k)
@@ -362,10 +424,14 @@ class SmsController(
             if (outcome.result == 0L) {
                 val row = SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, current.address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, text, outcome.messageId.isEmpty())
                 displayExtras += Extra(row, now() + EXTRAS_LIFETIME)
+                upsertSentThread(current.address, text, outcome.dateMillis)
                 refreshConversation()
                 status = "Reply sent"
+                if (outcome.messageId.isEmpty()) recheckPendingEcho()
             } else if (outcome.result == 1L) {
                 status = "SEND_SMS permission is required"
+            } else if (outcome.result == 4L) {
+                status = "That SIM is not active on this phone"
             } else {
                 status = "Not confirmed; it may have been sent"
             }
@@ -435,6 +501,22 @@ class SmsController(
                 val row = list[index]
                 list[index] = row.copy(snippet = if (event.dateMillis >= row.dateMillis) snippet else row.snippet, dateMillis = maxOf(row.dateMillis, event.dateMillis), unreadCount = row.unreadCount + 1)
             }
+        }.sortedWith { a, b ->
+            val date = b.dateMillis.compareTo(a.dateMillis)
+            if (date != 0) date else smsCompareMessageIds(b.threadId, a.threadId)
+        }
+    }
+
+    /** A sent message updates the panel's list snippet at once, without touching its unread count. */
+    private fun upsertSentThread(address: String, text: String, dateMillis: Long) {
+        val current = threads ?: return
+        val normalized = smsNormalizedAddress(address)
+        val index = current.indexOfFirst { smsNormalizedAddress(it.address) == normalized }
+        if (index < 0) return
+        threads = current.toMutableList().also { list ->
+            val row = list[index]
+            val date = maxOf(row.dateMillis, dateMillis)
+            list[index] = row.copy(snippet = if (dateMillis >= row.dateMillis) smsTruncate(text, 160) else row.snippet, dateMillis = date)
         }.sortedWith { a, b ->
             val date = b.dateMillis.compareTo(a.dateMillis)
             if (date != 0) date else smsCompareMessageIds(b.threadId, a.threadId)
@@ -631,7 +713,18 @@ class SmsController(
         }
     }
 
-    fun send(address: String, text: String): SmsComposeOperation {
+    /**
+     * A sent provider row can land just after the sentIntent resolves, leaving the local echo pending; one bounded
+     * re-read of the newest page replaces it with the provider row instead of showing "Sending" for its lifetime.
+     */
+    private fun recheckPendingEcho() {
+        scope.launch {
+            wait(ECHO_RECHECK_DELAY)
+            if (selectedThreadId != null) { loadedCursor = 0L to ""; loadConversation() }
+        }
+    }
+
+    fun send(address: String, text: String, subscriptionId: Int = 0): SmsComposeOperation {
         val operation = SmsComposeOperation()
         val clean = smsSanitizeText(text)
         val bytes = clean?.toByteArray(Charsets.UTF_8)
@@ -640,13 +733,16 @@ class SmsController(
             return operation
         }
         scope.launch {
-            val outcome = try { sender.send(address, clean) } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
+            val outcome = try { sender.send(address, clean, subscriptionId) } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
             when (outcome.result) {
                 0L -> {
                     displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis(), 1, false, clean, outcome.messageId.isEmpty()), now() + EXTRAS_LIFETIME)
+                    upsertSentThread(address, clean, outcome.dateMillis)
                     refreshConversation(); status = "Message sent"
+                    if (outcome.messageId.isEmpty()) recheckPendingEcho()
                 }
                 1L -> status = "SEND_SMS permission is required"
+                4L -> status = "That SIM is not active on this phone"
                 5L -> status = "Not confirmed; it may have been sent"
                 else -> status = "Message rejected"
             }
@@ -655,6 +751,11 @@ class SmsController(
         }
         return operation
     }
+
+    /** The panel offers a SIM choice only on a multi-modem phone; the phone default needs no permission or listing. */
+    fun modemCount(): Int = try { subscriptions?.modemCount() ?: 0 } catch (_: Exception) { 0 }
+
+    fun listSubscriptions(): SmsSubscriptionListing = try { subscriptions?.list() ?: SmsSubscriptionListing(5, emptyList()) } catch (_: Exception) { SmsSubscriptionListing(5, emptyList()) }
 
     private fun refreshConversation() {
         val time = now()
@@ -723,6 +824,7 @@ class SmsController(
         timer?.cancel(); timer = null
         servingThreads.values.forEach { it.job?.cancel() }; servingThreads.clear()
         servingHistory.values.forEach { it.job?.cancel() }; servingHistory.clear()
+        servingSearch.values.forEach { it.job?.cancel() }; servingSearch.clear()
         pendingLive.forEach { it.job?.cancel() }; pendingLive.clear()
         incomingReplies.values.forEach { it.job?.cancel() }
         incomingReplies.clear(); completedReplies.clear(); marks.clear(); displayExtras.clear(); loadedRows = emptyList()
@@ -745,6 +847,8 @@ class SmsController(
         /** How soon a still-parked live event is offered again, until it is acknowledged or expires. */
         private const val LIVE_RETRY_DELAY = 5_000L
         private const val EXTRAS_LIFETIME = 600_000L
+        /** How long after a send the newest page is re-read to replace a pending echo with its provider row. */
+        private const val ECHO_RECHECK_DELAY = 2_000L
         /** First page shown when a conversation opens; the panel and the Mac offer older pages from its cursor. */
         private const val DEFAULT_PAGE_SIZE = 10
         /** The local panel lists its own conversations; the Mac's link cap governs what it is served. */

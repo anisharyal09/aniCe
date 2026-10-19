@@ -18,8 +18,8 @@ class SmsWireTests {
     @Test fun sharedFixturesStayCanonicalWithinInventoryFloors() {
         val good = fixtures("valid")
         val bad = fixtures("invalid")
-        assertTrue(good.length() >= 42)
-        assertTrue(bad.length() >= 70)
+        assertTrue(good.length() >= 55)
+        assertTrue(bad.length() >= 85)
         val kinds = mutableSetOf<Long>()
         for (i in 0 until good.length()) {
             val row = good.getJSONObject(i)
@@ -29,7 +29,7 @@ class SmsWireTests {
             assertEquals(row.getInt("kind").toLong(), message.kind)
             kinds += message.kind
         }
-        assertEquals((1L..14L).toSet(), kinds)
+        assertEquals((1L..18L).toSet(), kinds)
         for (i in 0 until bad.length()) {
             val row = bad.getJSONObject(i)
             val name = row.getString("name")
@@ -54,13 +54,17 @@ class SmsWireTests {
             SmsWireMessage.of(8, text(stream())),
             SmsWireMessage.of(9, text(stream()), number(0)),
             SmsWireMessage.of(10, text(id), number(0), number(0), text("")),
-            SmsWireMessage.of(11, text(id), text("42"), text("+15551234567"), number(24576), number(8), data(digest("x"))),
+            SmsWireMessage.of(11, text(id), text("42"), text("+15551234567"), number(24576), number(8), data(digest("x")), number(2147483647L)),
             SmsWireMessage.of(12, text(id), number(0), data(byteArrayOf(1))),
             SmsWireMessage.of(13, text(id)),
             SmsWireMessage.of(14, text(id), number(0), text(messageId), number(9007199254740991L)),
+            SmsWireMessage.of(15, text(id)),
+            SmsWireMessage.of(16, text(id), number(0), Cbor.Array(listOf(Cbor.Array(listOf(number(0), number(0), text(""), flag(true)))))),
+            SmsWireMessage.of(17, text(id), text("otp"), number(0), text(""), number(50)),
+            SmsWireMessage.of(18, text(id), number(0), number(9007199254740991L), text("mms:7")),
         )
         for (row in rows) assertArrayEquals(row.encode(), SmsWireMessage.decode(row.encode())!!.encode())
-        assertEquals((1L..14L).toSet(), rows.map { it.kind }.toSet())
+        assertEquals((1L..18L).toSet(), rows.map { it.kind }.toSet())
     }
 
     @Test fun strictValidationRejectsSemanticViolations() {
@@ -88,10 +92,14 @@ class SmsWireTests {
         rejected("fragment-index", SmsWireMessage.of(7, text(stream), number(8), data(byteArrayOf(1))))
         rejected("result-7", SmsWireMessage.of(9, text(stream), number(7)))
         rejected("next-overflow", SmsWireMessage.of(10, text(id), number(0), number(9007199254740992L), text("")))
-        rejected("send-math", SmsWireMessage.of(11, text(id), text("1"), text("+1"), number(24577), number(9), data(digest)))
+        rejected("send-math", SmsWireMessage.of(11, text(id), text("1"), text("+1"), number(24577), number(9), data(digest), number(0)))
+        rejected("send-subscription-overflow", SmsWireMessage.of(11, text(id), text("1"), text("+1"), number(5), number(1), data(digest), number(2147483648L)))
         rejected("send-result-id-on-failure", SmsWireMessage.of(14, text(id), number(5), text("sms:10"), number(0)))
         rejected("send-result-bad-id", SmsWireMessage.of(14, text(id), number(0), text("mms:"), number(0)))
-        rejected("unknown-kind", SmsWireMessage.of(15, text(id)))
+        rejected("sim-label-long", SmsWireMessage.of(16, text(id), number(0), Cbor.Array(listOf(Cbor.Array(listOf(number(1), number(0), text("x".repeat(41)), flag(true)))))))
+        rejected("sim-entry-shape", SmsWireMessage.of(16, text(id), number(0), Cbor.Array(listOf(Cbor.Array(listOf(number(1), number(0), text("a"), flag(true), number(0)))))))
+        rejected("search-query-short", SmsWireMessage.of(17, text(id), text("a"), number(0), text(""), number(10)))
+        rejected("unknown-kind", SmsWireMessage.of(19, text(id)))
     }
 
     @Test fun trailingNonMinimalTruncatedAndOversizedBytesAreRejected() {

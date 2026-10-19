@@ -98,6 +98,12 @@ final class SmsModelTests: XCTestCase {
 
   private func lastResult(_ channel: MockSecuredChannel) -> Int64? { (try? lastSent(channel, 9))??.number(1) }
 
+  private func simDone(_ requestId: String, result: Int64 = 0,
+    entries: [(id: Int64, slot: Int64, label: String, isDefault: Bool)] = []) throws -> Data {
+    try records(16, [.text(requestId), .integer(result),
+      .array(entries.map { .array([.integer($0.id), .integer($0.slot), .text($0.label), .bool($0.isDefault)]) })])
+  }
+
   // MARK: - Gates, capability and dispatch
 
   @MainActor func testCapabilityGateAndUnrecognizedKinds() async throws {
@@ -881,6 +887,295 @@ final class SmsModelTests: XCTestCase {
     model.requestThreads(peer)
     await Task.yield()
     XCTAssertEqual(sent(fresh, 2).count, 2)
+  }
+
+  // MARK: - SIM selection
+
+  @MainActor func testSendBeginCarriesTheChosenSubscriptionAndNotificationRepliesUseTheDefault() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.send(peer, address: "+15551234567", text: "default sim")
+    await until("default send") { self.sent(channel, 11).count == 1 }
+    let first = try XCTUnwrap(try lastSent(channel, 11))
+    XCTAssertEqual(first.number(6), 0)
+    _ = await model.handle(try records(14, [.text(first.text(0)), .integer(0), .text("sms:1"), .integer(1)]), on: channel.descriptor)
+    // A listing with two subscriptions reveals the picker and the choice rides on sendBegin.
+    model.requestSims(peer)
+    await until("sim request") { self.sent(channel, 15).count == 1 }
+    let listing = try XCTUnwrap(try lastSent(channel, 15))
+    let listed = await model.handle(try simDone(listing.text(0),
+      entries: [(id: 7, slot: 0, label: "Personal", isDefault: true), (id: 9, slot: 1, label: "Work", isDefault: false)]),
+      on: channel.descriptor)
+    XCTAssertEqual(listed, .handled)
+    XCTAssertEqual(model.sims(peer).map(\.subscriptionId), [7, 9])
+    XCTAssertEqual(model.sims(peer).map(\.label), ["Personal", "Work"])
+    model.chooseSim(peer, 9)
+    XCTAssertEqual(model.simChoice(peer), 9)
+    model.send(peer, address: "+15551234567", text: "work sim")
+    await until("chosen send") { self.sent(channel, 11).count == 2 }
+    let second = try XCTUnwrap(try lastSent(channel, 11))
+    XCTAssertEqual(second.number(6), 9)
+    _ = await model.handle(try records(14, [.text(second.text(0)), .integer(0), .text(""), .integer(1)]), on: channel.descriptor)
+    // Notification replies never pick a subscription.
+    await model.reply(SmsReplyRequest(peerKey: key(peer), peerName: peer.deviceName, address: "+15551234567",
+      threadId: "sms:42", text: "from the banner"))
+    await until("reply send") { self.sent(channel, 11).count == 3 }
+    XCTAssertEqual(try lastSent(channel, 11)?.number(6), 0)
+    XCTAssertTrue(spy.notes.isEmpty)
+  }
+
+  @MainActor func testSimListingPermissionFailureSingleEntryAndTimeoutFallBackToTheDefault() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    // A simDone for another request changes nothing while the current one stays in flight.
+    model.requestSims(peer)
+    await until("sim request") { self.sent(channel, 15).count == 1 }
+    let listing = try XCTUnwrap(try lastSent(channel, 15))
+    let stale = await model.handle(try simDone(UUID().uuidString.lowercased(),
+      entries: [(id: 3, slot: 0, label: "Other", isDefault: false)]), on: channel.descriptor)
+    XCTAssertEqual(stale, .discarded)
+    XCTAssertTrue(model.sims(peer).isEmpty)
+    // READ_PHONE_STATE missing: an inline hint, and default sending still works.
+    let denied = await model.handle(try simDone(listing.text(0), result: 1), on: channel.descriptor)
+    XCTAssertEqual(denied, .handled)
+    XCTAssertTrue(model.sims(peer).isEmpty)
+    XCTAssertEqual(model.simChoice(peer), 0)
+    model.send(peer, address: "+15551234567", text: "still default")
+    await until("send after permission failure") { self.sent(channel, 11).count == 1 }
+    let send = try XCTUnwrap(try lastSent(channel, 11))
+    XCTAssertEqual(send.number(6), 0)
+    _ = await model.handle(try records(14, [.text(send.text(0)), .integer(0), .text(""), .integer(0)]), on: channel.descriptor)
+    // A failed listing leaves only the default.
+    model.requestSims(peer)
+    await until("failed listing") { self.sent(channel, 15).count == 2 }
+    let failure = try XCTUnwrap(try lastSent(channel, 15))
+    let failed = await model.handle(try simDone(failure.text(0), result: 5), on: channel.descriptor)
+    XCTAssertEqual(failed, .handled)
+    XCTAssertTrue(model.sims(peer).isEmpty)
+    XCTAssertEqual(model.simChoice(peer), 0)
+    // A single subscription hides the picker.
+    model.requestSims(peer)
+    await until("single listing") { self.sent(channel, 15).count == 3 }
+    let single = try XCTUnwrap(try lastSent(channel, 15))
+    let alone = await model.handle(try simDone(single.text(0),
+      entries: [(id: 5, slot: 0, label: "Only", isDefault: true)]), on: channel.descriptor)
+    XCTAssertEqual(alone, .handled)
+    XCTAssertTrue(model.sims(peer).isEmpty)
+    XCTAssertEqual(model.simChoice(peer), 0)
+    // A chosen subscription is dropped when a re-listing times out after ten seconds.
+    model.requestSims(peer)
+    await until("relisting") { self.sent(channel, 15).count == 4 }
+    let reload = try XCTUnwrap(try lastSent(channel, 15))
+    _ = await model.handle(try simDone(reload.text(0),
+      entries: [(id: 7, slot: 0, label: "Personal", isDefault: true), (id: 9, slot: 1, label: "Work", isDefault: false)]),
+      on: channel.descriptor)
+    model.chooseSim(peer, 7)
+    XCTAssertEqual(model.simChoice(peer), 7)
+    model.requestSims(peer)
+    await until("timeout listing") { self.sent(channel, 15).count == 5 }
+    let timeout = try XCTUnwrap(try lastSent(channel, 15))
+    clock.advance(9)
+    model.expire()
+    clock.advance(2)
+    model.expire()
+    XCTAssertTrue(model.sims(peer).isEmpty)
+    XCTAssertEqual(model.simChoice(peer), 0)
+    // A late simDone for the expired request is discarded.
+    let lateSim = await model.handle(try simDone(timeout.text(0),
+      entries: [(id: 4, slot: 0, label: "Late", isDefault: true)]), on: channel.descriptor)
+    XCTAssertEqual(lateSim, .discarded)
+    XCTAssertTrue(model.sims(peer).isEmpty)
+  }
+
+  // MARK: - Search
+
+  @MainActor func testSearchStreamsRowsUnderTheRequestAndPagesFromTheStoredCursor() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.search(peer, query: "  otp  ")
+    await until("search request") { self.sent(channel, 17).count == 1 }
+    let first = try XCTUnwrap(try lastSent(channel, 17))
+    XCTAssertTrue(model.searching(peer))
+    XCTAssertEqual(first.text(1), "otp")
+    XCTAssertEqual(first.number(2), 0); XCTAssertEqual(first.text(3), "")
+    XCTAssertEqual(first.number(4), Int64(SmsMessage.defaultPageSize))
+    let requestId = first.text(0)
+    let alpha = try stream(UUID().uuidString.lowercased(), requestId: requestId, messageId: "sms:11",
+      threadId: "sms:42", address: "+15551234567", dateMillis: 1_700_000_000_000, direction: 1, body: "Your OTP is 11")
+    let beta = try stream(UUID().uuidString.lowercased(), requestId: requestId, messageId: "sms:12",
+      threadId: "sms:7", address: "ACME BANK", dateMillis: 1_699_999_000_000, body: "Your OTP is 12")
+    await deliver(model, channel, [alpha.begin] + alpha.fragments + [alpha.commit])
+    await deliver(model, channel, [beta.begin] + beta.fragments + [beta.commit])
+    // Hits land in the search buffer only: no conversation, thread card, acknowledgement or notification.
+    XCTAssertEqual(model.searchResults(peer).map(\.messageId), ["sms:11", "sms:12"])
+    XCTAssertEqual(model.searchResults(peer).map(\.body), ["Your OTP is 11", "Your OTP is 12"])
+    XCTAssertEqual(model.searchResults(peer)[0].address, "+15551234567")
+    XCTAssertEqual(model.searchResults(peer)[0].direction, 1)
+    XCTAssertEqual(model.searchResults(peer)[1].threadId, "sms:7")
+    XCTAssertTrue(model.messages(peer, address: "+15551234567").isEmpty)
+    XCTAssertTrue(model.messages(peer, address: "ACME BANK").isEmpty)
+    XCTAssertTrue(model.threads(peer).isEmpty)
+    XCTAssertTrue(sent(channel, 9).isEmpty)
+    XCTAssertTrue(spy.notes.isEmpty)
+    // A successful page stores its cursor and offers one more page.
+    let firstPage = await model.handle(try records(18, [.text(requestId), .integer(0),
+      .integer(1_699_000_000_000), .text("sms:120")]), on: channel.descriptor)
+    XCTAssertEqual(firstPage, .handled)
+    XCTAssertFalse(model.searching(peer))
+    XCTAssertTrue(model.moreResults(peer))
+    XCTAssertFalse(model.refineSearch(peer))
+    XCTAssertEqual(model.searchStatus(peer), "2 results")
+    model.searchMore(peer)
+    await until("second page request") { self.sent(channel, 17).count == 2 }
+    let second = try XCTUnwrap(try lastSent(channel, 17))
+    XCTAssertEqual(second.text(1), "otp")
+    XCTAssertEqual(second.number(2), 1_699_000_000_000)
+    XCTAssertEqual(second.text(3), "sms:120")
+    XCTAssertEqual(second.number(4), Int64(SmsMessage.defaultPageSize))
+    let gamma = try stream(UUID().uuidString.lowercased(), requestId: second.text(0), messageId: "sms:9",
+      threadId: "sms:7", dateMillis: 1_698_000_000_000, body: "older otp")
+    await deliver(model, channel, [gamma.begin] + gamma.fragments + [gamma.commit])
+    let terminal = await model.handle(try records(18, [.text(second.text(0)), .integer(0),
+      .integer(0), .text("")]), on: channel.descriptor)
+    XCTAssertEqual(terminal, .handled)
+    XCTAssertEqual(model.searchResults(peer).map(\.messageId), ["sms:11", "sms:12", "sms:9"])
+    XCTAssertFalse(model.moreResults(peer))
+    XCTAssertFalse(model.refineSearch(peer))
+    XCTAssertEqual(model.searchStatus(peer), "3 results")
+  }
+
+  @MainActor func testSecondSearchDropsStalePagesAndFailureCodesReportStatus() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.search(peer, query: "otp")
+    await until("first search") { self.sent(channel, 17).count == 1 }
+    let first = try XCTUnwrap(try lastSent(channel, 17))
+    let hit = try stream(UUID().uuidString.lowercased(), requestId: first.text(0), messageId: "sms:30", body: "old hit")
+    await deliver(model, channel, [hit.begin] + hit.fragments + [hit.commit])
+    XCTAssertEqual(model.searchResults(peer).map(\.messageId), ["sms:30"])
+    // A new query replaces the buffer and cancels the old request's records.
+    model.search(peer, query: "bank")
+    await until("second search") { self.sent(channel, 17).count == 2 }
+    XCTAssertTrue(model.searchResults(peer).isEmpty)
+    let second = try XCTUnwrap(try lastSent(channel, 17))
+    XCTAssertEqual(second.number(2), 0); XCTAssertEqual(second.text(3), "")
+    let late = try stream(UUID().uuidString.lowercased(), requestId: first.text(0), messageId: "sms:31", body: "late hit")
+    await deliver(model, channel, [late.begin], expected: .discarded)
+    await deliver(model, channel, [late.fragments[0], late.commit], expected: .discarded)
+    let staleDone = await model.handle(try records(18, [.text(first.text(0)), .integer(0),
+      .integer(0), .text("")]), on: channel.descriptor)
+    XCTAssertEqual(staleDone, .discarded)
+    XCTAssertTrue(model.searchResults(peer).isEmpty)
+    // Failure codes each report a status and add nothing.
+    let codes: [(Int64, String)] = [(1, "Allow SMS access on your phone to search messages"),
+      (4, "Search could not complete on the phone"), (5, "Search is unavailable"),
+      (6, "The search query was rejected")]
+    for (index, row) in codes.enumerated() {
+      model.search(peer, query: "query \(index)")
+      await until("search \(row.0)") { self.sent(channel, 17).count == index + 3 }
+      let request = try XCTUnwrap(try lastSent(channel, 17))
+      let handled = await model.handle(try records(18, [.text(request.text(0)), .integer(row.0),
+        .integer(5), .text("sms:5")]), on: channel.descriptor)
+      XCTAssertEqual(handled, .handled)
+      XCTAssertEqual(model.searchStatus(peer), row.1)
+      XCTAssertTrue(model.searchResults(peer).isEmpty)
+      XCTAssertFalse(model.moreResults(peer))
+      XCTAssertFalse(model.searching(peer))
+    }
+    // Short queries only warn; clearing the field drops everything.
+    let before = sent(channel, 17).count
+    model.search(peer, query: "a")
+    await Task.yield()
+    XCTAssertEqual(sent(channel, 17).count, before)
+    XCTAssertEqual(model.searchStatus(peer), "Search needs at least 2 characters")
+    XCTAssertTrue(model.searchResults(peer).isEmpty)
+    model.search(peer, query: "  ")
+    XCTAssertTrue(model.searchStatus(peer).isEmpty)
+    XCTAssertFalse(model.searching(peer))
+  }
+
+  @MainActor func testSearchStopsAtFourPagesAndAsksToRefine() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.search(peer, query: "otp")
+    await until("search request") { self.sent(channel, 17).count == 1 }
+    var request = try XCTUnwrap(try lastSent(channel, 17))
+    for page in 1...4 {
+      let hit = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:\(50 + page)",
+        dateMillis: Int64(1_700_000_000_000 - page * 1000), body: "hit \(page)")
+      await deliver(model, channel, [hit.begin] + hit.fragments + [hit.commit])
+      let cursor = page < 4 ? Int64(1_700_000_000_000 - page * 1000) : 1_699_000_000_000
+      _ = await model.handle(try records(18, [.text(request.text(0)), .integer(0),
+        .integer(cursor), .text("sms:\(40 + page)")]), on: channel.descriptor)
+      if page < 4 {
+        XCTAssertTrue(model.moreResults(peer))
+        model.searchMore(peer)
+        await until("page \(page + 1)") { self.sent(channel, 17).count == page + 1 }
+        request = try XCTUnwrap(try lastSent(channel, 17))
+      }
+    }
+    XCTAssertEqual(model.searchResults(peer).count, 4)
+    XCTAssertFalse(model.moreResults(peer))
+    XCTAssertTrue(model.refineSearch(peer))
+    XCTAssertEqual(model.searchStatus(peer), "Refine the search")
+    let before = sent(channel, 17).count
+    model.searchMore(peer)
+    await Task.yield()
+    XCTAssertEqual(sent(channel, 17).count, before)
+  }
+
+  @MainActor func testSearchResultsAndSimChoiceClearOnTheLastLink() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let lan = MockSecuredChannel(instance: "lan-1", transport: "lan")
+    let ble = MockSecuredChannel(instance: "ble-1", transport: "ble", peer: lan.descriptor.peer)
+    let peer = try await ready(model, lan)
+    model.available(ble)
+    _ = await model.handle(try capability(), on: ble.descriptor)
+    model.search(peer, query: "otp")
+    await until("search request") { self.sent(lan, 17).count == 1 }
+    let request = try XCTUnwrap(try lastSent(lan, 17))
+    let hit = try stream(UUID().uuidString.lowercased(), requestId: request.text(0), messageId: "sms:60", body: "hit")
+    await deliver(model, lan, [hit.begin] + hit.fragments + [hit.commit])
+    _ = await model.handle(try records(18, [.text(request.text(0)), .integer(0),
+      .integer(1_699_000_000_000), .text("sms:10")]), on: lan.descriptor)
+    XCTAssertEqual(model.searchResults(peer).count, 1)
+    // Leaving the results drops the buffer and its cursor.
+    model.clearSearch(peer)
+    XCTAssertTrue(model.searchResults(peer).isEmpty)
+    XCTAssertFalse(model.moreResults(peer))
+    XCTAssertFalse(model.refineSearch(peer))
+    XCTAssertEqual(model.searchStatus(peer), "")
+    // A fresh search's buffer survives one link loss but dies with the last link.
+    model.search(peer, query: "bank")
+    await until("second search") { self.sent(lan, 17).count == 2 }
+    let second = try XCTUnwrap(try lastSent(lan, 17))
+    let other = try stream(UUID().uuidString.lowercased(), requestId: second.text(0), messageId: "sms:61", body: "bank hit")
+    await deliver(model, lan, [other.begin] + other.fragments + [other.commit])
+    model.requestSims(peer)
+    await until("sim request") { self.sent(lan, 15).count == 1 }
+    let listing = try XCTUnwrap(try lastSent(lan, 15))
+    _ = await model.handle(try simDone(listing.text(0),
+      entries: [(id: 7, slot: 0, label: "Personal", isDefault: true), (id: 9, slot: 1, label: "Work", isDefault: false)]),
+      on: lan.descriptor)
+    model.chooseSim(peer, 9)
+    XCTAssertEqual(model.searchResults(peer).count, 1)
+    XCTAssertEqual(model.sims(peer).count, 2)
+    XCTAssertEqual(model.simChoice(peer), 9)
+    model.retired(lan.descriptor)
+    XCTAssertTrue(model.connected(peer))
+    XCTAssertEqual(model.searchResults(peer).count, 1)
+    XCTAssertEqual(model.simChoice(peer), 9)
+    model.retired(ble.descriptor)
+    XCTAssertFalse(model.connected(peer))
+    XCTAssertTrue(model.searchResults(peer).isEmpty)
+    XCTAssertTrue(model.sims(peer).isEmpty)
+    XCTAssertEqual(model.simChoice(peer), 0)
+    XCTAssertEqual(model.searchStatus(peer), "")
   }
 
   @MainActor func testSmsNeverTouchesDisk() async throws {

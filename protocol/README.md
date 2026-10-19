@@ -19,7 +19,7 @@ Contracts define required behavior. Comprehensive manual acceptance remains pend
 | **LAN Binding** | `1` | Implemented; acceptance pending | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented; physical acceptance pending | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented; physical acceptance pending | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
-| **SMS Relay** | `1` | Implemented; physical acceptance pending | [`sms/README.md`](sms/README.md) | Provider thread/history reads, live SMS events and replies inside secured DATA |
+| **SMS Relay** | `2` | Implemented; physical acceptance pending | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **File Transfer** | `1` | Implemented; acceptance pending | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---
@@ -176,4 +176,4 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 
 ## SMS Relay
 
-[SMS relay v1](sms/README.md) defines provider thread and paged history reads, live `SMS_RECEIVED` events with capability gating and `messageResult` acknowledgement, and Mac-composed replies reassembled by Android before SMS submission. [CDDL](sms/sms.cddl) and [independent fixtures](test-vectors/sms/sms-vectors.json) specify canonical DATA messages; history is ordered by `(dateMillis DESC, messageId DESC)` with byte-wise lexical messageId comparison and live/provider copies merge by content key.
+[SMS relay v2](sms/README.md) defines provider thread, paged history and search reads, live `SMS_RECEIVED` events with capability gating and `messageResult` acknowledgement, an optional SIM listing for per-reply subscription choice, and Mac-composed replies reassembled by Android before SMS submission. [CDDL](sms/sms.cddl) and [independent fixtures](test-vectors/sms/sms-vectors.json) specify canonical DATA messages; history and search are ordered by `(dateMillis DESC, messageId DESC)` with byte-wise lexical messageId comparison and live/provider copies merge by content key. Version 2 requires both applications to update together.
