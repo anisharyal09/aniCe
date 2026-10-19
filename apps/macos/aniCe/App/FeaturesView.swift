@@ -8,6 +8,7 @@ struct FeaturesView: View {
   let clipboard: MacClipboardModel
   let findDevice: MacFindDeviceModel
   let sms: MacSmsModel
+  let smsPreferences: SmsPreferences
   let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
   @Bindable var navigation: ConnectionNavigation
@@ -28,7 +29,7 @@ struct FeaturesView: View {
             DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
           case .files: TransferView(model: transfer)
           case .clipboard: ClipboardView(model: clipboard, peers: peers)
-          case .messages: SmsView(model: sms, peers: peers)
+          case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
           }
         } else {

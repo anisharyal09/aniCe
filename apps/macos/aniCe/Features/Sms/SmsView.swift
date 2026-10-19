@@ -3,6 +3,26 @@
 import AppKit
 import SwiftUI
 
+/** The per-phone delivery controls, shared by the Settings section and the Messages panel's own popover. */
+struct SmsNotificationControls: View {
+  let preferences: SmsPreferences
+  let peer: DeviceIdentity
+  @Environment(\.colorScheme) private var scheme
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
+        set: { preferences.setNotifications(peer, $0) }))
+      Toggle("Play sound", isOn: Binding(get: { preferences.sound(peer) },
+        set: { preferences.setSound(peer, $0) }))
+        .disabled(!preferences.notifications(peer))
+      Toggle("Show message text in notifications", isOn: Binding(get: { preferences.preview(peer) },
+        set: { preferences.set(peer, $0) }))
+        .disabled(!preferences.notifications(peer))
+    }
+    .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+  }
+}
+
 struct SmsSettingsView: View {
   let preferences: SmsPreferences
   let peers: [PeerTrustRecord]
@@ -14,39 +34,43 @@ struct SmsSettingsView: View {
         Text("Pair a phone to relay messages.").font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
+        // One collapsed row per phone keeps the section short; the label still carries the state that matters.
         ForEach(peers) { record in
-          VStack(alignment: .leading, spacing: 6) {
-            Toggle("Notifications · \(record.peer.deviceName)",
-              isOn: Binding(get: { preferences.notifications(record.peer) },
-                set: { preferences.setNotifications(record.peer, $0) }))
-            Toggle("Play sound · \(record.peer.deviceName)",
-              isOn: Binding(get: { preferences.sound(record.peer) },
-                set: { preferences.setSound(record.peer, $0) }))
-              .disabled(!preferences.notifications(record.peer))
-            Toggle("Show message text in notifications · \(record.peer.deviceName)",
-              isOn: Binding(get: { preferences.preview(record.peer) },
-                set: { preferences.set(record.peer, $0) }))
-              .disabled(!preferences.notifications(record.peer))
+          DisclosureGroup {
+            SmsNotificationControls(preferences: preferences, peer: record.peer)
+          } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(record.peer.deviceName)
+              Text(summary(record.peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
           }
-          .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
         }
-        Text("Notifications and sound are on by default for each phone. Message text stays hidden in banners until you enable it.")
+        Text("On by default for each phone. The same switches sit behind the gear in Messages.")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
     .onAppear { preferences.prune(peers.map(\.peer)) }
+  }
+
+  /// The label stays informative while the switches themselves are collapsed.
+  private func summary(_ peer: DeviceIdentity) -> String {
+    guard preferences.notifications(peer) else { return "Notifications off" }
+    return "Notifications on · Sound \(preferences.sound(peer) ? "on" : "off") · Text \(preferences.preview(peer) ? "shown" : "hidden")"
   }
 }
 
 struct SmsView: View {
   let model: MacSmsModel
   let peers: [PeerTrustRecord]
+  let preferences: SmsPreferences
   @State private var peerKey = ""
   @State private var address = ""
   @State private var draft = ""
   @State private var query = ""
   @State private var expanded: Set<String> = []
   @State private var submittedDraft: String?
+  @State private var controlsOpen = false
+  @FocusState private var composerFocused: Bool
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
 
@@ -62,12 +86,23 @@ struct SmsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      if selectable.count > 1 {
-        Picker("Phone", selection: $peerKey) {
-          ForEach(selectable) { record in
-            Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
-          }
-        }.labelsHidden().frame(maxWidth: 260)
+      HStack(alignment: .center, spacing: 8) {
+        if selectable.count > 1 {
+          Picker("Phone", selection: $peerKey) {
+            ForEach(selectable) { record in
+              Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
+            }
+          }.labelsHidden().frame(maxWidth: 260)
+        }
+        Spacer(minLength: 0)
+        // The gear is the same control set as Settings → Messages, right where replies are sent from.
+        if let peer {
+          Button { controlsOpen = true } label: { Label("Notification settings", systemImage: "gearshape") }
+            .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
+            .help("Notification settings for \(peer.deviceName)")
+            .accessibilityLabel("Notification settings for \(peer.deviceName)")
+            .popover(isPresented: $controlsOpen, arrowEdge: .bottom) { notificationPopover(peer) }
+        }
       }
       if !model.notificationStatus.isEmpty {
         Text(model.notificationStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -95,6 +130,8 @@ struct SmsView: View {
     }
     .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in select() }
     .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
+    // Opening a conversation is an invitation to type; the draft is one Return away.
+    .onChange(of: address) { _, next in composerFocused = !next.isEmpty }
   }
 
   private func select() {
@@ -205,7 +242,7 @@ struct SmsView: View {
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) { resultMetadata(row); Spacer() }
             VStack(alignment: .leading, spacing: 2) { resultMetadata(row) }
-          }
+          }.font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain)
       Divider()
@@ -262,7 +299,7 @@ struct SmsView: View {
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) { metadata(row, peer: peer, mixed: mixed); Spacer() }
             VStack(alignment: .leading, spacing: 2) { metadata(row, peer: peer, mixed: mixed) }
-          }
+          }.font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }
         Divider()
       }
@@ -274,7 +311,7 @@ struct SmsView: View {
   }
 
   @ViewBuilder private func metadata(_ row: SmsMessageRow, peer: DeviceIdentity, mixed: Bool) -> some View {
-    Text(row.direction == 1 ? "Sent" : "Received")
+    Text(row.pending ? "Sending" : row.direction == 1 ? "Sent" : "Received")
     Text(date(row.dateMillis), format: .dateTime.month().day().hour().minute())
     // SIM labels appear only in a conversation that really mixes origins; an unknown incoming row stays silent.
     if mixed && (row.direction == 1 || row.subscriptionId != 0) {
@@ -284,21 +321,28 @@ struct SmsView: View {
   }
 
   @ViewBuilder private func composer(_ peer: DeviceIdentity) -> some View {
-    simPicker(peer)
     let bytes = draft.utf8.count
     let over = bytes > Int(SmsMessage.maxBodyBytes)
+    let ready = model.supports(peer) && !draft.isEmpty && !over && !model.sending(peer)
     TextField("Reply from this phone", text: $draft, axis: .vertical)
       .lineLimit(2...6).textFieldStyle(.roundedBorder)
+      .focused($composerFocused)
+      // Return and Command-Return send; Shift-Return keeps the newline for a multi-line draft.
+      .onSubmit { submit(peer) }
+      .onKeyPress(.return, phases: .down) { press in
+        if press.modifiers.contains(.shift) { return .ignored }
+        submit(peer)
+        return .handled
+      }
     HStack(spacing: 12) {
       Text("\(bytes) / \(SmsMessage.maxBodyBytes) bytes").font(.caption)
         .foregroundStyle(over ? AniCePalette.error(scheme) : AniCePalette.secondaryText(scheme))
       Spacer(minLength: 8)
-      Button {
-        submittedDraft = draft
-        model.send(peer, address: address, text: draft)
-      } label: { Label("Send SMS", systemImage: "paperplane") }
+      simPicker(peer)
+      Button { submit(peer) } label: { Label("Send SMS", systemImage: "paperplane") }
         .buttonStyle(.bordered).controlSize(.small)
-        .disabled(!model.supports(peer) || draft.isEmpty || over || model.sending(peer))
+        .disabled(!ready)
+        .keyboardShortcut(.return, modifiers: .command)
     }
     if draft.count > 1000 {
       Text("Very long messages may be rejected by the carrier; Unicode text reaches the limit sooner.")
@@ -310,6 +354,14 @@ struct SmsView: View {
     }
   }
 
+  /** Sends the draft on the chosen subscription once; a reply already in flight is never doubled by a second Return. */
+  private func submit(_ peer: DeviceIdentity) {
+    let bytes = draft.utf8.count
+    guard !draft.isEmpty, bytes <= Int(SmsMessage.maxBodyBytes), model.supports(peer), !model.sending(peer) else { return }
+    submittedDraft = draft
+    model.send(peer, address: address, text: draft)
+  }
+
   /// The phone's subscription list arrives quietly; a choice only appears when it really offers a second subscription.
   @ViewBuilder private func simPicker(_ peer: DeviceIdentity) -> some View {
     let sims = model.sims(peer)
@@ -319,8 +371,18 @@ struct SmsView: View {
         ForEach(sims) { entry in
           Text(smsSimLabel(entry, of: sims)).tag(entry.subscriptionId)
         }
-      }.labelsHidden().frame(maxWidth: 220)
+      }.labelsHidden().controlSize(.small).frame(maxWidth: 180)
+        .help("Send from").accessibilityLabel("Send from")
     }
+  }
+
+  @ViewBuilder private func notificationPopover(_ peer: DeviceIdentity) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(peer.deviceName).font(.subheadline.weight(.medium))
+      SmsNotificationControls(preferences: preferences, peer: peer)
+      Text("Sound and message text follow the Notifications switch. The same controls sit in Settings.")
+        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+    }.padding(12).frame(width: 300)
   }
 
   private func date(_ millis: Int64) -> Date { Date(timeIntervalSince1970: Double(millis) / 1000) }

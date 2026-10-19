@@ -51,8 +51,8 @@ struct MainWindowView: View {
         switch navigation.destination {
         case .home: homeContent
         case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
-        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
+        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
+        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
         case .about: aboutContent
         case .settings: settingsContent
 

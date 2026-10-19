@@ -107,7 +107,9 @@ class AndroidSmsSender(
         }
         if (reported == null || reported.any { it != Activity.RESULT_OK }) return SmsSendOutcome(5, "", 0)
         val found = withContext(Dispatchers.IO) { lookupSent(address, clean, startedAt, subscription) }
-        return if (found != null) SmsSendOutcome(0, found.first, found.second) else SmsSendOutcome(0, "", clock())
+        // Without a provider row the echo carries the queue time, not the verdict time, so a reply that
+        // arrived while the radio was confirming is not displayed below the send.
+        return if (found != null) SmsSendOutcome(0, found.first, found.second) else SmsSendOutcome(0, "", startedAt)
     }
 
     /**

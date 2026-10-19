@@ -122,6 +122,14 @@ class SmsControllerTests {
         yield()
     }
 
+    /** The panel shows its status line only when there is something to say; the permission card owns the ask. */
+    @Test fun panelStatusStartsQuietAndRefreshingPermissionsNeverRepeatsTheAsk() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        assertEquals("", h.owner.status)
+        h.owner.refreshPermissions()
+        assertEquals("", h.owner.status)
+    }
+
     @Test fun capabilityGatesLiveUntilMacAnnouncesAndAckClearsParking() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
         val lan = Channel()

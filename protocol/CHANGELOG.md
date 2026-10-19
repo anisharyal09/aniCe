@@ -19,6 +19,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Clarified SMS v3 `sendResult.dateMillis` as the reply's send time rather than the moment the phone answered: the provider row's `date` when the READ_SMS lookup finds the sent row, otherwise the phone's send-queue time. A Mac echo without a provider row is stamped with the send rather than the verdict, so an answer that arrives while the radio is still confirming keeps its newer position. Wire layouts, bounds and fixture bytes are unchanged.
+
 - Clarified SMS v1 authenticated acknowledgement results, request-owned submission deadlines, bounded duplicate reply results, independent provider scan positions and non-advancing failures for oversized timestamp groups or incomplete provider sources. Wire fields and bounds are unchanged.
 
 - Clarified SMS capability limits: `maxThreadsPerPage` and `maxMessagesPerPage` are the advertiser's per-link limits in 1..50 rather than the fixed value 50, so a slower link can announce smaller thread lists and pages, and a peer serves within the limits it received. Layout, field order and bounds are unchanged and a 50/50 capability stays valid.

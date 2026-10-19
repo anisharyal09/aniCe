@@ -126,7 +126,7 @@ fun SettingsScreen(
         io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(clipboardApp.clipboard, peers)
         HorizontalDivider()
         Text("Messages", style = MaterialTheme.typography.titleSmall)
-        io.github.anisharyal09.anice.features.sms.SmsSettings(clipboardApp.sms) { navigation.openFeature(AppFeature.Sms) }
+        io.github.anisharyal09.anice.features.sms.SmsSettings(clipboardApp.sms)
         HorizontalDivider()
         Text("Local network (LAN)", style = MaterialTheme.typography.titleSmall)
         val lan = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).lanSessionController

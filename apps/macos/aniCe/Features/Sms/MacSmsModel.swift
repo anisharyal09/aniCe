@@ -28,6 +28,8 @@ struct SmsMessageRow: Identifiable, Equatable {
   let digest: Data
   /** The receiving subscription as the phone reported it; 0 means unknown (MMS or no readable provider id). */
   var subscriptionId: Int64 = 0
+  /** An outgoing row the phone has not confirmed yet; it shows as sending and settles or disappears with the result. */
+  var pending: Bool = false
   var id: String { messageId }
 }
 
@@ -226,6 +228,10 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let text: String
     /** The subscription the reply was submitted on; 0 means the phone default and stays 0 on the echo. */
     let subscriptionId: Int64
+    /** The provisional row shown from the moment Send is pressed; [finishSend] replaces or removes it. */
+    let rowId: String
+    /** When the Mac submitted the stream, so an echo without a provider row is stamped with the send time, not the answer time. */
+    let submittedAt: Int64
     let descriptor: ChannelDescriptor
     let deadline: TimeInterval
   }
@@ -357,7 +363,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let live = conversation.live.filter { row in
       if let index = unmatched.firstIndex(where: { existing in
         existing.direction == row.direction && existing.digest == row.digest &&
-          smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address) && abs(existing.dateMillis - row.dateMillis) <= 5000 &&
+          smsNormalizedAddress(existing.address) == smsNormalizedAddress(row.address) &&
+          (abs(existing.dateMillis - row.dateMillis) <= 5000 || row.pending) &&
           (existing.subscriptionId == 0 || row.subscriptionId == 0 || existing.subscriptionId == row.subscriptionId)
       }) { unmatched.remove(at: index); return false }
       return true
@@ -575,16 +582,24 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let conversation = conversation(state, normalized)
     let requestId = UUID().uuidString.lowercased()
     let data = Data(body.utf8)
+    let digest = Data(SHA256.hash(data: data))
     let count = (data.count + 3071) / 3072
     guard link.queue.count + count + 2 <= 32 else { state.status = "SMS channel is busy"; return }
     let threadId = !preferred.isEmpty ? preferred
       : (conversation?.threadId.isEmpty == false ? conversation!.threadId : "addr:" + normalized)
     // An explicit choice is kept for the echo; 0 resolves to the known default so a mixed thread still labels the send.
     let resolved = subscriptionId != 0 ? subscriptionId : (state.simEntries.first(where: \.isDefault)?.subscriptionId ?? 0)
+    // The reply paints immediately as a provisional row; the result settles its identity or removes it.
+    let submittedAt = Int64(now() * 1000)
+    let rowId = "pending:" + requestId
+    conversation?.live.append(SmsMessageRow(messageId: rowId, address: address, dateMillis: submittedAt,
+      direction: 1, unread: false, body: body, digest: digest, subscriptionId: resolved, pending: true))
+    upsertCard(state, address: address, snippet: body, dateMillis: submittedAt, unread: 0)
     state.send = Send(requestId: requestId, address: address, threadId: threadId, text: body, subscriptionId: resolved,
+      rowId: rowId, submittedAt: submittedAt,
       descriptor: link.channel.descriptor, deadline: requestDeadline(link.channel.descriptor.transport))
     enqueue(link, SmsMessage(kind: 11, fields: [.text(requestId), .text(threadId), .text(address),
-      .integer(Int64(data.count)), .integer(Int64(count)), .bytes(Data(SHA256.hash(data: data))),
+      .integer(Int64(data.count)), .integer(Int64(count)), .bytes(digest),
       .integer(subscriptionId)]))
     for index in 0..<count {
       let start = index * 3072
@@ -653,7 +668,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       state.assemblies = state.assemblies.filter { $0.value.descriptor != descriptor }
       if let send = state.send, send.descriptor == descriptor {
-        state.send = nil; state.status = "Not confirmed; it may have been sent"
+        state.send = nil
+        dropPending(state, send)
+        state.status = "Not confirmed; it may have been sent"
       }
     }
     schedule()
@@ -762,6 +779,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       if let send = state.send, send.deadline <= time {
         cancelQueued(send.requestId)
         state.send = nil
+        dropPending(state, send)
         state.status = "Not confirmed; it may have been sent"
         failures.append(failureNote(k, links(for: k).first?.channel.descriptor.peer.deviceName ?? "", send.address, send.threadId))
       }
@@ -1002,7 +1020,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }
     // The provider record wins: its live copy is replaced and an existing posted notification is untouched.
     if let index = conversation.live.firstIndex(where: {
-      $0.direction == assembly.direction && $0.digest == digest && abs($0.dateMillis - assembly.dateMillis) <= 5000 &&
+      $0.direction == assembly.direction && $0.digest == digest &&
+        (abs($0.dateMillis - assembly.dateMillis) <= 5000 || $0.pending) &&
         smsNormalizedAddress($0.address) == normalized &&
         ($0.subscriptionId == 0 || assembly.subscriptionId == 0 || $0.subscriptionId == assembly.subscriptionId)
     }) { conversation.live.remove(at: index) }
@@ -1105,16 +1124,26 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if code == 0 {
       let providerId = m.text(2)
       let millis = smsClampDate(m.number(3))
-      let stamp = millis == 0 ? Int64(Date().timeIntervalSince1970 * 1000) : millis
+      // A result without a provider row keeps the submission time, so a reply that already arrived stays on top.
+      let stamp = millis == 0 ? send.submittedAt : millis
       let messageId = providerId.isEmpty ? "echo:" + UUID().uuidString.lowercased() : providerId
-      let conversation = conversation(state, smsNormalizedAddress(send.address))
-      conversation?.live.append(SmsMessageRow(messageId: messageId, address: send.address,
-        dateMillis: stamp, direction: 1, unread: false,
-        body: send.text, digest: Data(SHA256.hash(data: Data(send.text.utf8))),
-        subscriptionId: send.subscriptionId))
+      let digest = Data(SHA256.hash(data: Data(send.text.utf8)))
+      let normalized = smsNormalizedAddress(send.address)
+      let conversation = conversation(state, normalized)
+      let settled = SmsMessageRow(messageId: messageId, address: send.address, dateMillis: stamp,
+        direction: 1, unread: false, body: send.text, digest: digest, subscriptionId: send.subscriptionId)
+      if let index = conversation?.live.firstIndex(where: { $0.messageId == send.rowId }) {
+        conversation?.live[index] = settled
+      } else if !(conversation?.rows.contains(where: {
+        $0.direction == 1 && $0.digest == digest && smsNormalizedAddress($0.address) == normalized
+      }) ?? false) {
+        // The provisional row is gone (a refresh already adopted the provider copy); only then is an echo needed.
+        conversation?.live.append(settled)
+      }
       upsertCard(state, address: send.address, snippet: send.text, dateMillis: stamp, unread: 0)
       state.status = "Sent"
     } else {
+      dropPending(state, send)
       state.status = code == 1 ? "Allow SMS on your phone to send replies" : code == 5 ? "Not confirmed; it may have been sent" : "The reply was rejected"
       if code == 1 || code == 5 {
         await notifier.post(failureNote(key(send.descriptor.peer), send.descriptor.peer.deviceName, send.address, send.threadId))
@@ -1122,6 +1151,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     }
     schedule()
     return true
+  }
+
+  /** Removes the provisional outgoing row when the phone rejects, loses or misses the reply. */
+  private func dropPending(_ state: PeerState, _ send: Send) {
+    conversation(state, smsNormalizedAddress(send.address))?.live.removeAll { $0.messageId == send.rowId }
   }
 
   private func upsertCard(_ state: PeerState, address: String, snippet: String, dateMillis: Int64, unread: Int64) {

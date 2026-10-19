@@ -106,7 +106,7 @@ class SmsController(
     var conversation by mutableStateOf<List<SmsDisplayMessage>>(emptyList()); private set
     var conversationMore by mutableStateOf(false); private set
     var loading by mutableStateOf(false); private set
-    var status by mutableStateOf("Grant SMS permissions to relay messages"); private set
+    var status by mutableStateOf(""); private set
     var skippedRows by mutableStateOf(0); private set
     /** Relay counters for the panel: counts only, never addresses, bodies or message ids. */
     var relayedLive by mutableStateOf(0); private set

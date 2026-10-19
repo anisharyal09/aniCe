@@ -864,6 +864,71 @@ final class SmsModelTests: XCTestCase {
     XCTAssertTrue(spy.notes.isEmpty)
   }
 
+  @MainActor func testAProvisionalRowPaintsTheReplyBeforeThePhoneAnswers() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    clock.advance(1_700_000_000)
+    model.send(peer, address: "+1 (555) 123-4567", text: "hi")
+    // The reply paints at once, stamped with the submit time and flagged as still unconfirmed.
+    let pending = model.messages(peer, address: "+15551234567")
+    XCTAssertEqual(pending.count, 1)
+    XCTAssertTrue(pending[0].messageId.hasPrefix("pending:"))
+    XCTAssertTrue(pending[0].pending)
+    XCTAssertEqual(pending[0].direction, 1)
+    XCTAssertEqual(pending[0].body, "hi")
+    XCTAssertEqual(pending[0].dateMillis, 1_700_000_000_000)
+    XCTAssertEqual(model.threads(peer).first?.snippet, "hi")
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 11))
+    let result = try records(14, [.text(request.text(0)), .integer(0), .text("sms:9"), .integer(1_700_000_001_000)])
+    let handled = await model.handle(result, on: channel.descriptor)
+    XCTAssertEqual(handled, .handled)
+    let settled = model.messages(peer, address: "+15551234567")
+    XCTAssertEqual(settled.map(\.messageId), ["sms:9"])
+    XCTAssertFalse(settled[0].pending)
+    XCTAssertEqual(settled[0].dateMillis, 1_700_000_001_000)
+  }
+
+  @MainActor func testAReplyThatLandsDuringTheSendStaysAboveItsEcho() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    clock.advance(1_700_000_000)
+    model.send(peer, address: "+15551234567", text: "hi")
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 11))
+    // The answer arrives while the radio is still confirming the send.
+    clock.advance(3)
+    let parts = try stream(UUID().uuidString.lowercased(), messageId: "live:" + String(repeating: "c", count: 32),
+      dateMillis: 1_700_000_003_000, unread: true, body: "hi2")
+    await deliver(model, channel, [parts.begin] + parts.fragments + [parts.commit])
+    // The phone answers without a provider row, so the echo keeps the submit time rather than the answer time.
+    let result = try records(14, [.text(request.text(0)), .integer(0), .text(""), .integer(0)])
+    let handled = await model.handle(result, on: channel.descriptor)
+    XCTAssertEqual(handled, .handled)
+    let rows = model.messages(peer, address: "+15551234567")
+    XCTAssertEqual(rows.map(\.body), ["hi2", "hi"])
+    XCTAssertFalse(rows.contains { $0.pending })
+    XCTAssertEqual(rows[1].dateMillis, 1_700_000_000_000)
+  }
+
+  @MainActor func testARejectedReplyTakesItsProvisionalRowBackOut() async throws {
+    let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
+    let channel = MockSecuredChannel(transport: "lan")
+    let peer = try await ready(model, channel)
+    model.send(peer, address: "+15551234567", text: "hi")
+    XCTAssertEqual(model.messages(peer, address: "+15551234567").count, 1)
+    await until("send begin") { self.sent(channel, 11).count == 1 }
+    let request = try XCTUnwrap(try lastSent(channel, 11))
+    let result = try records(14, [.text(request.text(0)), .integer(6), .text(""), .integer(0)])
+    let handled = await model.handle(result, on: channel.descriptor)
+    XCTAssertEqual(handled, .handled)
+    XCTAssertEqual(model.status(peer), "The reply was rejected")
+    XCTAssertTrue(model.messages(peer, address: "+15551234567").isEmpty)
+    XCTAssertTrue(spy.notes.isEmpty)
+  }
+
   @MainActor func testSendFailuresAreReportedInlineAndByAlert() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let channel = MockSecuredChannel(transport: "lan")

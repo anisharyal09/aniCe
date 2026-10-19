@@ -13,6 +13,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
@@ -53,10 +56,13 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
     BackHandler(enabled = owner.selectedThreadId != null) { owner.select(null) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val relay = peers.firstOrNull { owner.reachable(it.peer) }
+        val granted = state.receive && state.read && state.send
         Text(
             when {
                 peers.isEmpty() -> "Pair a Mac to relay messages."
                 relay != null -> "Sharing new messages with ${relay.peer.deviceName}."
+                // Access granted is said once; the card below is the only thing that ever asks for it.
+                granted -> "SMS access granted. Connect your Mac to share new messages and reply from it."
                 else -> "Connect your Mac to share new messages and reply from it."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -123,13 +129,27 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
                 Text("All conversations")
             }
             val record = owner.threads?.firstOrNull { it.threadId == threadId }
-            Text(record?.address ?: threadId.removePrefix("addr:"), style = MaterialTheme.typography.titleSmall)
+            val address = record?.address ?: threadId.removePrefix("addr:")
+            Text(address, style = MaterialTheme.typography.titleSmall)
             // The reply box stays directly above the newest message, so sending a reply never needs a scroll.
             var draft by remember(threadId) { mutableStateOf("") }
             var sending by remember(threadId) { mutableStateOf(false) }
             val bytes = draft.toByteArray(Charsets.UTF_8).size
+            // Declared here so the keyboard's send key and the button share one path, chosen subscription included.
+            var simChoice by remember(threadId) { mutableStateOf(0) }
+            fun submitDraft() {
+                if (sending || draft.isBlank() || bytes > SmsWireMessage.MAX_BODY_BYTES || !state.send) return
+                sending = true
+                val operation = owner.send(address, draft, simChoice)
+                scope.launch {
+                    if (operation.result().result == 0L) draft = ""
+                    sending = false
+                }
+            }
             OutlinedTextField(value = draft, onValueChange = { draft = it }, label = { Text("Reply from this phone") },
-                modifier = Modifier.fillMaxWidth(), enabled = !sending)
+                modifier = Modifier.fillMaxWidth(), enabled = !sending,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { submitDraft() }))
             Text("$bytes / ${SmsWireMessage.MAX_BODY_BYTES} bytes", style = MaterialTheme.typography.bodySmall,
                 color = if (bytes > SmsWireMessage.MAX_BODY_BYTES) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             if (draft.length > 1000) Text("Very long messages may be rejected by carriers; Unicode text reaches the limit sooner.",
@@ -137,7 +157,6 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
             // A SIM choice is only offered when the phone reports a second subscription; otherwise the default is enough.
             val multiSim = remember(threadId) { owner.modemCount() >= 2 }
             val simListing = remember(threadId) { mutableStateOf<SmsSubscriptionListing?>(null) }
-            var simChoice by remember(threadId) { mutableStateOf(0) }
             var simMenu by remember(threadId) { mutableStateOf(false) }
             var simAnswered by remember(threadId) { mutableStateOf(false) }
             LaunchedEffect(threadId) { if (multiSim) simListing.value = owner.listSubscriptions() }
@@ -166,16 +185,8 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
                     }
                 }
             }
-            val address = record?.address ?: threadId.removePrefix("addr:")
             OutlinedButton(
-                onClick = {
-                    sending = true
-                    val operation = owner.send(address, draft, simChoice)
-                    scope.launch {
-                        if (operation.result().result == 0L) draft = ""
-                        sending = false
-                    }
-                },
+                onClick = { submitDraft() },
                 enabled = !sending && draft.isNotBlank() && bytes <= SmsWireMessage.MAX_BODY_BYTES && state.send,
                 shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 modifier = Modifier.heightIn(min = 48.dp)
@@ -210,7 +221,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
             }
             if (owner.conversationMore) TextButton(onClick = owner::loadConversation, enabled = !owner.loading) { Text("Show older messages") }
         }
-        if (owner.status != "Grant SMS permissions to relay messages") Text(owner.status, style = MaterialTheme.typography.bodySmall)
+        if (owner.status.isNotEmpty()) Text(owner.status, style = MaterialTheme.typography.bodySmall)
         // Counts are always shown so an idle relay is distinguishable from a missing line.
         Text(
             "${owner.relayedLive} relayed · ${owner.waitingLive} waiting · ${owner.failedLive} not relayed",
@@ -221,19 +232,17 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>) {
 }
 
 @Composable
-fun SmsSettings(owner: SmsController, onOpen: () -> Unit) {
+fun SmsSettings(owner: SmsController) {
     LaunchedEffect(Unit) { owner.refreshPermissions() }
     val state = owner.permissionsState
     val ready = state.receive && state.read && state.send
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             if (ready) "Relaying incoming messages to your Mac."
-            else "Grant ${missingLabels(state)} to relay messages.",
+            else "Still needed: ${missingLabels(state)}.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (owner.skippedRows > 0) Text("${owner.skippedRows} rows could not be read", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = onOpen, shape = MaterialTheme.shapes.small,
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Open Messages") }
     }
 }
 
