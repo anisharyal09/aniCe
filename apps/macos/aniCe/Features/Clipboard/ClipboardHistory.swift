@@ -245,7 +245,10 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
     guard !trimmed.isEmpty else { return entries }
     return entries.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
   }
-  func delete(_ id: String) { replace { $0.filter { $0.id != id } } }
+  /// Deletes multiple entries atomically from history storage with a single disk persistence write.
+  func delete(_ ids: Set<String>) { replace { $0.filter { !ids.contains($0.id) } } }
+  /// Deletes a single entry by its unique identifier.
+  func delete(_ id: String) { delete(Set([id])) }
   // Retains pinned items by default when clearing unpinned history.
   func clear(includePinned: Bool = false) { replace { includePinned ? [] : $0.filter(\.pinned) } }
   private func replace(_ transform: @escaping ([ClipboardHistoryEntry]) -> [ClipboardHistoryEntry]) { command {

@@ -721,4 +721,60 @@ final class ClipboardTests: XCTestCase {
     }
   }
 
+  @MainActor func testClipboardPauseAndResume() async throws {
+    let native = ClipboardNativeFake(), history = ClipboardHistory()
+    let model = MacClipboardModel(native: native, history: history)
+    XCTAssertFalse(model.isPaused)
+    XCTAssertNil(model.pauseDeadline)
+    XCTAssertNil(model.pauseStatusText)
+
+    model.pause(for: .untilTurnedOn)
+    XCTAssertTrue(model.isPaused)
+    XCTAssertNil(model.pauseDeadline)
+    XCTAssertEqual(model.pauseStatusText, "Paused until turned on")
+
+    model.pause(for: .minutes11)
+    XCTAssertTrue(model.isPaused)
+    XCTAssertNotNil(model.pauseDeadline)
+    XCTAssertEqual(model.pauseStatusText, "Paused (11m)")
+
+    model.pause(for: .hours3)
+    XCTAssertTrue(model.isPaused)
+    XCTAssertEqual(model.pauseStatusText, "Paused (3h)")
+
+    model.resume()
+    XCTAssertFalse(model.isPaused)
+    XCTAssertNil(model.pauseDeadline)
+    XCTAssertNil(model.pauseStatusText)
+    model.invalidate()
+  }
+
+  @MainActor func testMultiDeleteAndCopyText() async throws {
+    let native = ClipboardNativeFake(), history = ClipboardHistory()
+    history.setEnabled(true); try await until { history.enabled }
+    for i in 1...5 {
+      history.record(ClipboardSample(text: "Item \(i)"), origin: "mac")
+    }
+    try await until { history.entries.count == 5 }
+    let model = MacClipboardModel(native: native, history: history)
+
+    // Test copyText functionality
+    XCTAssertTrue(model.copyText("Combined text\nItem 2"))
+    XCTAssertEqual(native.sample?.text, "Combined text\nItem 2")
+    XCTAssertEqual(model.status, "Copied")
+
+    // Test atomic multi-item deletion via model
+    let toDelete = Set([history.entries[1].id, history.entries[3].id])
+    model.deleteHistory(ids: toDelete)
+    try await until { history.entries.count == 3 }
+    let remainingTexts = history.entries.map(\.text)
+    XCTAssertFalse(remainingTexts.contains("Item 2"))
+    XCTAssertFalse(remainingTexts.contains("Item 4"))
+    XCTAssertTrue(remainingTexts.contains("Item 5"))
+    XCTAssertTrue(remainingTexts.contains("Item 3"))
+    XCTAssertTrue(remainingTexts.contains("Item 1"))
+
+    model.invalidate()
+  }
+
 }

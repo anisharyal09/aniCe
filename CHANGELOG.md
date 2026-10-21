@@ -14,7 +14,9 @@ Repository-wide structure, documentation, and development conventions belong her
 
 - SMS relay v3 connects Android Messages with Mac notifications, inline replies, paged conversations, history, phone-side search and per-reply SIM selection over secured LAN/Bluetooth. Content stays in memory on the Mac. Live receipts and sends retain local observation order across provider refreshes; thread scans complete timestamp groups and continue past unreadable rows. Native composers expose SIM choice beside Send, with per-phone Mac notification, sound and preview controls.
 
-- Native Quick Paste Tray on macOS: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), menu-bar companion button, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, immediate arrow-key selection, and Return to copy. History capacity is configurable on both platforms (20 default, 50, 100); pausing collection, app restart, Forget device and Reset identity preserve saved items, with explicit Clear/Delete controls. Clipboard panels have small horizontal insets. On macOS, pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
+- Native Quick Paste Tray on macOS: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), menu-bar companion button, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, contiguous multi-selection via Shift + Click / Shift + Arrow, individual toggle via Command + Click, Backspace/Delete to delete selected items, and Return to copy (joining multi-selections with newlines). History capacity is configurable on both platforms (20 default, 50, 100); pausing collection, app restart, Forget device and Reset identity preserve saved items, with explicit Clear/Delete controls. Pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
+
+- Pause clipboard observation on macOS for timed intervals (11m, 21m, 45m, 3h, 9h) or indefinitely until re-enabled, with instant Resume controls accessible from the menu-bar status item right-click menu, the companion popover (organized into logical sections with dividers), the Quick Paste Tray, and the Clipboard panel settings.
 
 - Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
 
@@ -29,9 +31,13 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Raise authenticated LAN file-transfer chunks to 262,016 bytes under transfer capability 3, reducing per-byte record overhead while retaining profile-3 limits and old-peer negotiation.
+
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
 
 ### Fixed
+
+- Repair LAN transfer startup, bound automatic connection demand from BLE traffic, and calculate sender progress from receiver acknowledgements.
 
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected. Android background Now Playing additionally requests and retains LAN (including artwork) while playing or inside the paused grace.
 - File selection and a pending send no longer retire a secured BLE channel; a send with a secured channel proceeds on it, and a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.

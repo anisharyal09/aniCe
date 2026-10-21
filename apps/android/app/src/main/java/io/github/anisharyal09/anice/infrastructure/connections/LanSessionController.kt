@@ -205,7 +205,7 @@ class LanSessionController(private val app: AniCeApplication,
         val coordination = try { LanRendezvousWire.decode(bytes) != null }
             catch (_: IllegalArgumentException) { false }
             catch (_: io.github.anisharyal09.anice.infrastructure.session.SessionException) { false }
-        if (!coordination) requestAutomaticConnection()
+        if (!coordination && automaticGate.claimActivity()) requestAutomaticConnection()
     }
 
     fun requestAutomaticConnection(): Boolean {

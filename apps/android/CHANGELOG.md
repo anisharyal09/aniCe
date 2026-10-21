@@ -21,11 +21,15 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
+
 - Clipboard and file sending use quiet outlined icon-and-label controls. Clipboard preferences use the compact LAN-style checkbox; History shows a saved-count and Clear all toolbar. Pausing collection preserves saved history across app restarts, Forget device and Reset identity; Clear/Delete remain explicit. Clipboard content has a small horizontal inset.
 
 - Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 
 ### Fixed
+
+- Wait for requested LAN capability before sending, bound traffic-triggered LAN attempts, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
 - SMS reception uses the platform decoder for GSM/CDMA and framework multipart batches, with bounded broadcast completion. Live acknowledgements validate result and channel; expired queues and replies are retired, duplicate reply commits reuse bounded in-memory results, and provider paging preserves each source position and rejects oversized timestamp groups.
 

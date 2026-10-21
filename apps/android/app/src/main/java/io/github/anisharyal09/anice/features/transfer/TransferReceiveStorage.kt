@@ -79,7 +79,7 @@ internal class TransferReceiveStorage(
             val actual = MessageDigest.getInstance("SHA-256")
             input.use { source ->
                 var remaining = length
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(131072)
                 while (remaining > 0) {
                     val count = source.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                     if (count < 0) throw IOException("Partial ended before the retained offset")

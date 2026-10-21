@@ -155,13 +155,20 @@ extension SessionTests {
     let target = NSObject()
     let items = CompanionHost.makeMenu(target: target).items
     XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Devices", "Manage devices", "Quit aniCe"])
-    XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
+      ["Open aniCe", "Devices", "Manage devices", "Pause clipboard", "Quit aniCe"])
+    XCTAssertEqual(items.filter(\.isSeparatorItem).count, 2)
     for item in items where !item.isSeparatorItem {
       XCTAssertTrue(item.target === target)
       XCTAssertNotNil(item.action)
     }
-    XCTAssertEqual(Set(items.compactMap(\.action)).count, 4)
+    XCTAssertEqual(Set(items.compactMap(\.action)).count, 5)
+    XCTAssertEqual(items.first(where: { $0.title == "Pause clipboard" })?.submenu?.items.map(\.title),
+      ClipboardPauseDuration.allCases.map(\.rawValue))
+    let pausedModel = MacClipboardModel(native: ClipboardNativeFake())
+    pausedModel.pause(for: .minutes11)
+    let pausedItems = CompanionHost.makeMenu(target: target, clipboard: pausedModel).items
+    XCTAssertEqual(pausedItems.filter { !$0.isSeparatorItem }.map(\.title),
+      ["Open aniCe", "Devices", "Manage devices", "Resume clipboard (Paused (11m))", "Quit aniCe"])
   }
 
   func testConnectionSummaryRequiresReadinessAcrossBothTransports() {

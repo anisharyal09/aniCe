@@ -114,12 +114,37 @@ class TransferController(
     }
 
     /**
-     * A failed LAN attempt must not leave a pending send spinning until the connect timeout.
-     * A send only waits here when no secured channel could accept it; a channel that arrives
-     * later resumes it through its capability message, so fail the wait immediately.
+     * A failed LAN attempt must not drop a pending send when a secured Bluetooth channel is alive.
+     * When Bluetooth is connected, fall back to it; otherwise fail the wait immediately so the send
+     * does not spin until the connect timeout.
      */
     fun onLanUnavailable(reason: String) {
         if (state !is TransferState.Connecting || pendingSend == null) return
+        val ble = channels["ble"]
+        waitingForLan = false
+        if (ble != null && channels["lan"] == null) {
+            selectPreferredChannel()
+            if (state !is TransferState.Connecting) return
+            // Re-announce capability over Bluetooth to prompt the peer in case its capability was missed.
+            scope.launch {
+                runCatching {
+                    sendWithBackpressure(TransferMessage.capability(
+                        version = 1L,
+                        maxChunkBytes = 3072L,
+                        maxWindow = 64L
+                    ).encode(3072), ble, jobBound = false)
+                }
+            }
+            connectTimeoutJob?.cancel()
+            connectTimeoutJob = scope.launch {
+                delay(3000L)
+                if (state is TransferState.Connecting) {
+                    pendingSend = null
+                    failTransfer("This peer has not advertised file transfer support")
+                }
+            }
+            return
+        }
         connectTimeoutJob?.cancel(); connectTimeoutJob = null
         pendingSend = null
         failTransfer(reason)
@@ -142,6 +167,7 @@ class TransferController(
 
     var onDemandLanConnection: (() -> Boolean)? = null
     private var pendingSend: (() -> Unit)? = null
+    private var waitingForLan = false
     private var connectTimeoutJob: Job? = null
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -231,16 +257,54 @@ class TransferController(
     private var lastAckedWrittenBytes: Long = 0L
     private var ackJob: Job? = null
     private var ackTimerJob: Job? = null
-    private var receiverRate = TransferRate()
     private var lastReceiverUiUpdate: Long = 0L
 
+    private var progressJob: Job? = null
+    private var progressRate = TransferRate()
+    private var progressEpoch: UUID? = null
+    private var progressSampleAt = 0L
+    private var progressSpeed = 0.0
+
     private fun updateState(newState: TransferState) {
-        state = newState
-        onStateChanged?.invoke(newState)
+        var published = newState
+        if (newState is TransferState.Transferring) {
+            val progress = newState
+            if (progressJob?.isActive != true || progressEpoch != epoch) {
+                progressJob?.cancel()
+                progressEpoch = epoch
+                progressSampleAt = clock()
+                progressSpeed = 0.0
+                progressRate = TransferRate().also { it.add(progress.totalBytes, progressSampleAt) }
+                val operation = epoch
+                progressJob = scope.launch(start = CoroutineStart.LAZY) {
+                    while (isActive && operation == epoch) {
+                        delay(250L)
+                        val current = state as? TransferState.Transferring ?: break
+                        val index = if (receiving) receiverCurrentFileIndex else senderFileIndex
+                        val file = current.batch.files.getOrNull(index) ?: break
+                        val written = if (receiving) receiverWrittenBytes else acknowledgedBytes
+                        val completed = current.batch.files.take(index).sumOf { it.size }
+                        updateState(current.copy(fileIndex = index + 1, fileName = file.name,
+                            fileBytes = written, fileSize = file.size, totalBytes = completed + written))
+                    }
+                }.also { it.start() }
+            }
+            val now = clock()
+            if (now - progressSampleAt >= 250L) {
+                progressSpeed = progressRate.add(progress.totalBytes, now)
+                progressSampleAt = now
+            }
+            published = progress.copy(speedBps = progressSpeed)
+        } else {
+            progressJob?.cancel(); progressJob = null
+            progressEpoch = null
+        }
+        state = published
+        onStateChanged?.invoke(published)
     }
 
     private fun chunkLimit(descriptor: ChannelDescriptor?) =
-        if (descriptor?.transport == "lan" && descriptor.maximumDataBytes >= 262144) 131072 else 3072
+        if (descriptor?.transport == "lan" && descriptor.maximumDataBytes >= 262144) 262016 else 3072
 
     override fun available(channel: SecuredChannel) {
         val transport = channel.descriptor.transport
@@ -256,11 +320,17 @@ class TransferController(
         channels[transport] = channel
         selectPreferredChannel()
         scope.launch {
-            if (channels[transport] === channel) runCatching { sendWithBackpressure(TransferMessage.capability(
-                version = if (chunkLimit(channel.descriptor) > 3072) 2 else 1,
-                maxChunkBytes = chunkLimit(channel.descriptor).toLong(),
-                maxWindow = if (chunkLimit(channel.descriptor) > 3072) 8 else 64
-            ).encode(chunkLimit(channel.descriptor)), channel, jobBound = false) }
+            val limit = chunkLimit(channel.descriptor)
+            val versions = if (limit > 131072) listOf(2L, 3L) else listOf(if (limit > 3072) 2L else 1L)
+            for (version in versions) {
+                if (channels[transport] !== channel) return@launch
+                val chunk = if (version == 2L) minOf(131072, limit) else limit
+                try {
+                    sendWithBackpressure(TransferMessage.capability(version, chunk.toLong(),
+                        if (chunk > 3072) 8 else 64).encode(limit), channel, jobBound = false)
+                } catch (error: CancellationException) { throw error }
+                  catch (_: Exception) { return@launch }
+            }
         }
     }
 
@@ -289,9 +359,14 @@ class TransferController(
 
     private fun applyCapability(message: TransferMessage) {
         peerCompatible = true
-        peerMaxChunkBytes = message.number(1).coerceAtMost(if (message.number(0) == 2L) chunkLimit(activeChannel?.descriptor).toLong() else 3072L)
+        peerMaxChunkBytes = message.number(1).coerceAtMost(when (message.number(0)) {
+            3L -> chunkLimit(activeChannel?.descriptor).toLong()
+            2L -> minOf(131072L, chunkLimit(activeChannel?.descriptor).toLong())
+            else -> 3072L
+        })
         peerMaxWindow = message.number(2).coerceAtMost(if (peerMaxChunkBytes > 3072) 8L else 64L)
-        if (state is TransferState.Connecting) {
+        if (state is TransferState.Connecting && (!waitingForLan || activeChannel?.descriptor?.transport == "lan")) {
+            waitingForLan = false
             connectTimeoutJob?.cancel(); connectTimeoutJob = null
             val send = pendingSend
             pendingSend = null
@@ -1083,7 +1158,7 @@ class TransferController(
         val digest = MessageDigest.getInstance("SHA-256")
         openSource(file).use { stream ->
             var remaining = length
-            val buffer = ByteArray(8192)
+            val buffer = ByteArray(131072)
             while (remaining > 0) {
                 val count = stream.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                 if (count < 0) throw java.io.IOException("Source ended before the retained offset")
@@ -1102,7 +1177,7 @@ class TransferController(
 
     private fun skipFully(stream: java.io.InputStream, length: Long) {
         var remaining = length
-        val buffer = ByteArray(8192)
+        val buffer = ByteArray(131072)
         while (remaining > 0) {
             val count = stream.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
             if (count < 0) throw java.io.IOException("Source ended before the retained offset")
@@ -1138,29 +1213,33 @@ class TransferController(
         }
     }
 
-    private fun <T> prepareSources(sources: List<T>, prepare: suspend (T) -> TransferFile) {
+    private fun <T> prepareSources(sources: List<T>, awaitLan: Boolean = true, prepare: suspend (T) -> TransferFile) {
         if (state !is TransferState.Connecting) selectPreferredChannel()
         if (sources.isEmpty() || sources.size > 128) {
             updateState(TransferState.Failed("Transfer batch must contain 1 to 128 files"))
             return
         }
         val channel = activeChannel
-        if (channel == null || !peerConnected) {
-            if (onDemandLanConnection?.invoke() == true) {
-                pendingSend = { prepareSources(sources, prepare) }
-                updateState(TransferState.Connecting("your Mac"))
-                onLeaseChanged?.invoke(true)
-                connectTimeoutJob?.cancel()
-                connectTimeoutJob = scope.launch {
-                    delay(30_000L)
-                    if (state is TransferState.Connecting) {
-                        failTransfer("Could not connect to your Mac over local network. Check Wi-Fi and Allow Connections on your Mac.")
-                    }
+        val requestedLan = awaitLan && channel?.descriptor?.transport != "lan" && onDemandLanConnection?.invoke() == true
+        if (requestedLan || channel == null || !peerConnected || !peerCompatible) {
+            if (!requestedLan && channel == null) {
+                updateState(TransferState.Failed("No secured local-network or Bluetooth connection"))
+                return
+            }
+            waitingForLan = requestedLan
+            pendingSend = { prepareSources(sources, awaitLan = false, prepare = prepare) }
+            updateState(TransferState.Connecting("your Mac"))
+            onLeaseChanged?.invoke(true)
+            connectTimeoutJob?.cancel()
+            connectTimeoutJob = scope.launch {
+                delay(if (requestedLan) 30_000L else 3000L)
+                if (state is TransferState.Connecting) {
+                    onLanUnavailable(if (requestedLan) "Could not connect to your Mac over local network. Check Wi-Fi and Allow Connections on your Mac."
+                        else "This peer has not advertised file transfer support")
                 }
-            } else updateState(TransferState.Failed("No secured local-network or Bluetooth connection"))
+            }
             return
         }
-        if (!peerCompatible) { updateState(TransferState.Failed("This peer has not advertised file transfer support")); return }
         if (preparation?.isActive == true || transferJob?.isActive == true) return
         val operation = epoch
         preparing = true
@@ -1189,7 +1268,7 @@ class TransferController(
         }
         if (size < 0) throw java.io.IOException("The provider must supply a known file size: $name")
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(8192)
+        val buffer = ByteArray(262144)
         var readSize = 0L
         (open() ?: throw java.io.IOException("Cannot read file: $name")).use { stream ->
             while (true) {
@@ -1287,7 +1366,6 @@ class TransferController(
         if (activeChannel == null) return
         val operation = epoch
         var totalTransferred = completedBefore + startOffset
-        val rate = TransferRate()
         var lastUiUpdate = 0L
 
         for (fileIndex in startFileIndex until batch.files.size) {
@@ -1384,7 +1462,7 @@ class TransferController(
                         val now = clock()
                         if (now - lastUiUpdate >= 100L || fileBytesSent == file.size) {
                             lastUiUpdate = now
-                            val speed = rate.add(totalTransferred, now)
+                            val confirmed = totalTransferred - fileBytesSent + acknowledgedBytes
 
                             withContext(dispatcher) {
                                 updateState(
@@ -1392,10 +1470,10 @@ class TransferController(
                                         batch = batch,
                                         fileIndex = fileIndex + 1,
                                         fileName = file.name,
-                                        fileBytes = fileBytesSent,
+                                        fileBytes = acknowledgedBytes,
                                         fileSize = file.size,
-                                        totalBytes = totalTransferred,
-                                        speedBps = speed
+                                        totalBytes = confirmed,
+                                        speedBps = 0.0
                                     )
                                 )
                             }
@@ -1588,7 +1666,6 @@ class TransferController(
         receiverWrittenBytes = 0L
         receiverTotalTransferred = 0L
         lastAckedWrittenBytes = 0L
-        receiverRate = TransferRate()
         lastReceiverUiUpdate = 0L
 
         try { prepareReceiverForFile(0, current.batch) }
@@ -1687,7 +1764,10 @@ class TransferController(
                     if (operation != epoch || receiverCurrentFileIndex != fileIndex) return@withContext
                     ackJob = null
                     val unacked = receiverWrittenBytes - lastAckedWrittenBytes
-                    if (unacked >= minOf(8L, maxOf(1L, peerMaxWindow / 2)) * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes)) {
+                    // Flow-control ACK cadence: for LAN transfer (chunk size > 3072), ACK every 2 chunks
+                    // (peerMaxWindow / 4) so sender credit never stalls. Standard/BLE retains 8-chunk cadence.
+                    val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
+                    if (unacked >= ackCadence * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes)) {
                         flushAck()
                     }
                 }
@@ -1720,7 +1800,6 @@ class TransferController(
         val now = clock()
         if (now - lastReceiverUiUpdate >= 100L || receiverWrittenBytes == currentFile.size) {
             lastReceiverUiUpdate = now
-            val speed = receiverRate.add(receiverTotalTransferred, now)
 
             updateState(
                 TransferState.Transferring(
@@ -1730,14 +1809,16 @@ class TransferController(
                     fileBytes = receiverWrittenBytes,
                     fileSize = currentFile.size,
                     totalBytes = receiverTotalTransferred,
-                    speedBps = speed
+                    speedBps = 0.0
                 )
             )
         }
 
-        // Ack every 8 chunks or at end of file
+        // Flow-control ACK cadence: for LAN transfer (chunk size > 3072), ACK every 2 chunks
+        // (peerMaxWindow / 4) so sender credit never stalls. Standard/BLE retains 8-chunk cadence.
         val unacked = receiverWrittenBytes - lastAckedWrittenBytes
-        if (unacked >= minOf(8L, maxOf(1L, peerMaxWindow / 2)) * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size) {
+        val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
+        if (unacked >= ackCadence * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size) {
             flushAck()
         } else if (receiverWrittenBytes > lastAckedWrittenBytes) {
             scheduleAckTimer()
@@ -1851,9 +1932,12 @@ class TransferController(
     }
 
     private fun cleanupTransfer(selectChannel: Boolean = true) {
+        progressJob?.cancel(); progressJob = null
+        progressEpoch = null
         connectTimeoutJob?.cancel()
         connectTimeoutJob = null
         pendingSend = null
+        waitingForLan = false
         endPicker()
         destinationPreparation?.cancel(); destinationPreparation = null
         preparation?.cancel(); preparation = null; preparing = false

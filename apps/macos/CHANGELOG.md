@@ -8,7 +8,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Messages provides native SMS notifications with inline Reply, paged phone conversations and history, bounded phone-side search and optional SIM selection. Per-phone notification, sound and preview controls are shared by Settings and the panel. Provisional replies use wall-clock timestamps and remain separate from history until confirmed; known provider identities and send-queue bounds prevent unrelated identical replies from merging. Local submit/receive order survives provider refreshes and carrier clock differences. Content remains in memory and clears with the last secured link.
 
-- Native Quick Paste Tray: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), small tray icon beside Send clipboard in the companion, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, stable selection and immediate arrow-key navigation, and Return to copy. Search and filters have separate rows, cards retain visible actions, and failed native copies remain open for retry. The full Clipboard panel offers a direct tray entry, small horizontal insets, and History search/source filters. Pausing collection preserves saved history across restart, Forget device and Reset identity, with explicit Clear/Delete controls. History capacity is now configurable (20 default, 50, 100), pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
+- Native Quick Paste Tray: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), small tray icon beside Send clipboard in the companion, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, stable contiguous multi-selection via Shift + Click / Shift + Arrow, individual toggle via Command + Click, Backspace/Delete to delete selected items, and Return to copy (joining multi-selections with newlines). Search and filters have separate rows, cards retain visible actions, and failed native copies remain open for retry. The full Clipboard panel offers a direct tray entry, small horizontal insets, and History search/source filters. Pausing collection preserves saved history across restart, Forget device and Reset identity, with explicit Clear/Delete controls. History capacity is now configurable (20 default, 50, 100), pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
+
+- Pause clipboard observation for timed intervals (11m, 21m, 45m, 3h, 9h) or indefinitely until re-enabled, with instant Resume controls available from the menu-bar status item right-click menu, the companion popover (organized into logical sections with dividers), the Quick Paste Tray, and the Clipboard panel settings.
 
 - Compact Clipboard Share/History views and optional device-local history with source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.
 
@@ -22,9 +24,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
+
 - Clipboard and file sending use compact labeled native controls. Clipboard preferences use small accent-colored checkboxes; History groups entries by date with a count/Clear all toolbar and adaptive row actions in both appearances. Clipboard help explains Android selection, Share-sheet and Quick Settings routes, connected-device requirements and manual sharing with automatic sharing off.
 
 ### Fixed
+
+- Bound traffic-triggered LAN attempts, preserve LAN offer priority, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
 - SMS requests negotiate capability per channel, stage provider thread snapshots until completion, retain failed drafts and discard stale asynchronous assemblies. Notification settings and submission failures are visible; counters advance after macOS accepts a notification, and peer retirement clears notification targets.
 

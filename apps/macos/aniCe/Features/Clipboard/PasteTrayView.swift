@@ -79,7 +79,10 @@ struct PasteTrayView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var query = ""
   @State private var filter: PasteTrayFilter = .all
-  @State private var selectedID: String?
+  /// Multiple selection set supporting shift-click range expansion and multi-item operations.
+  @State private var selectedIDs: Set<String> = []
+  /// The anchor / pivot item ID used to calculate contiguous ranges during Shift + Click or Shift + Arrow.
+  @State private var pivotID: String?
   @State private var confirmingHistory = false
   private enum Focus: Hashable { case tray, search }
   @FocusState private var focus: Focus?
@@ -88,21 +91,54 @@ struct PasteTrayView: View {
   private var entries: [ClipboardHistoryEntry] {
     filter.entries(in: model.history.entries, query: query)
   }
+  /// Primary selected entry; returns the pivot, earliest selected item, or the first filtered entry.
   private var selected: ClipboardHistoryEntry? {
-    entries.first { $0.id == selectedID } ?? entries.first
+    if let pivotID, let entry = entries.first(where: { $0.id == pivotID }) {
+      return entry
+    }
+    return entries.first { selectedIDs.contains($0.id) } ?? entries.first
   }
-  private var selectedIndex: Int { entries.firstIndex { $0.id == selected?.id } ?? 0 }
+  /// Index of the primary active/selected entry within the current filter results.
+  private var selectedIndex: Int {
+    entries.firstIndex { $0.id == selected?.id } ?? 0
+  }
 
   var body: some View {
     VStack(spacing: 8) {
       searchRow
-      HStack {
+      HStack(spacing: 6) {
         Picker("History filter", selection: $filter) {
           ForEach(PasteTrayFilter.allCases) { Text($0.rawValue).tag($0) }
         }
         .pickerStyle(.segmented).labelsHidden().frame(width: 260)
         Spacer()
-        Text(model.history.enabled ? "Saved on this Mac" : "Collection paused").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        // Tray header status badge: displays current pause duration/mode or history disabled indicator.
+        if model.isPaused {
+          Text(model.pauseStatusText ?? "Clipboard paused")
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        } else if !model.history.enabled {
+          Text("Collection paused")
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        }
+        // Quick-action menu: toggles pause state and allows choosing timed pause intervals.
+        Menu {
+          if model.isPaused {
+            Button("Resume clipboard", systemImage: "play.fill") { model.resume() }
+            Divider()
+          }
+          Section("Pause clipboard") {
+            ForEach(ClipboardPauseDuration.allCases) { duration in
+              Button(duration.rawValue) { model.pause(for: duration) }
+            }
+          }
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(model.isPaused ? "Resume or change clipboard pause" : "Pause clipboard options")
       }
       if previewing, let selected {
         PasteTrayExpandedPreview(entry: selected).frame(maxHeight: .infinity)
@@ -110,15 +146,19 @@ struct PasteTrayView: View {
         content.frame(height: 156)
       }
       HStack(spacing: 8) {
-        Text(entries.isEmpty ? "0 items" : "\(selectedIndex + 1) of \(entries.count)")
+        if selectedIDs.count > 1 {
+          Text("\(selectedIDs.count) of \(entries.count) selected")
+        } else {
+          Text(entries.isEmpty ? "0 items" : "\(selectedIndex + 1) of \(entries.count)")
+        }
         Spacer()
-        Text(model.status == "Could not copy text" ? "Could not copy text. Try again." : "← → Select · Space Preview · ↵ Copy")
+        Text(model.status == "Could not copy text" ? "Could not copy text. Try again." : "← → Select · Space Preview · ↵ Copy · ⌫ Delete")
         Button(previewing ? "Collapse" : "Preview", systemImage: previewing ? "rectangle.compress.vertical" : "arrow.up.left.and.arrow.down.right") {
           togglePreview()
         }.disabled(selected == nil).help("Preview full text (Space)")
-        Button("Copy", systemImage: "doc.on.doc") { copySelection() }
-          .disabled(selected == nil)
-          .help("Copy selected item and close (Return)")
+        Button(selectedIDs.count > 1 ? "Copy all" : "Copy", systemImage: "doc.on.doc") { copySelection() }
+          .disabled(selectedIDs.isEmpty && selected == nil)
+          .help(selectedIDs.count > 1 ? "Copy selected items joined by newlines (Return)" : "Copy selected item and close (Return)")
       }
       .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
@@ -129,7 +169,13 @@ struct PasteTrayView: View {
     .overlay(RoundedRectangle(cornerRadius: 14).stroke(AniCePalette.separator(scheme)))
     .tint(AniCePalette.accent(scheme))
     .focusable().focusEffectDisabled().focused($focus, equals: .tray)
-    .onAppear { selectedID = entries.first?.id; focus = .tray }
+    .onAppear {
+      if let first = entries.first?.id {
+        selectedIDs = [first]
+        pivotID = first
+      }
+      focus = .tray
+    }
     .onKeyPress(.escape) {
       if previewing { previewing = false; focus = .tray }
       else if focus == .search { query = ""; focus = .tray }
@@ -143,32 +189,77 @@ struct PasteTrayView: View {
     .onKeyPress(.return) {
       guard focus == .tray else { return .ignored }; copySelection(); return .handled
     }
+    .onKeyPress(.delete) {
+      guard focus == .tray else { return .ignored }
+      deleteSelection(); return .handled
+    }
+    .onKeyPress(.deleteForward) {
+      guard focus == .tray else { return .ignored }
+      deleteSelection(); return .handled
+    }
+    .onKeyPress(characters: CharacterSet(charactersIn: "\u{7F}\u{08}")) { _ in
+      guard focus == .tray else { return .ignored }
+      deleteSelection(); return .handled
+    }
     .onKeyPress(.upArrow) {
-      guard !previewing else { return .ignored }; move(-1); return .handled
+      guard !previewing else { return .ignored }
+      let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
+      move(-1, extend: isShift); return .handled
     }
     .onKeyPress(.downArrow) {
-      guard !previewing else { return .ignored }; move(1); return .handled
+      guard !previewing else { return .ignored }
+      let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
+      move(1, extend: isShift); return .handled
     }
     .onKeyPress(.leftArrow) {
-      guard focus != .search else { return .ignored }; move(-1); return .handled
+      guard focus != .search else { return .ignored }
+      let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
+      move(-1, extend: isShift); return .handled
     }
     .onKeyPress(.rightArrow) {
-      guard focus != .search else { return .ignored }; move(1); return .handled
+      guard focus != .search else { return .ignored }
+      let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
+      move(1, extend: isShift); return .handled
     }
     .onKeyPress(characters: PasteTrayKeyboard.searchCharacters) { press in
       guard press.characters != " " else { return .ignored }
       guard focus == .tray, press.modifiers.intersection([.command, .control, .option]).isEmpty else {
         if press.modifiers == .command && press.characters == "f" { focus = .search; return .handled }
+        if press.modifiers == .command && press.characters == "a" {
+          selectedIDs = Set(entries.map(\.id))
+          pivotID = entries.first?.id
+          return .handled
+        }
         return .ignored
       }
       query += press.characters; previewing = false; focus = .search
       return .handled
     }
     .onChange(of: previewing) { _, expanded in onHeightChange(expanded ? previewHeight : 292) }
-    .onChange(of: query) { _, _ in selectedID = entries.first?.id }
-    .onChange(of: filter) { _, _ in selectedID = entries.first?.id }
+    .onChange(of: query) { _, _ in
+      if let first = entries.first?.id {
+        selectedIDs = [first]
+        pivotID = first
+      } else {
+        selectedIDs = []
+        pivotID = nil
+      }
+    }
+    .onChange(of: filter) { _, _ in
+      if let first = entries.first?.id {
+        selectedIDs = [first]
+        pivotID = first
+      } else {
+        selectedIDs = []
+        pivotID = nil
+      }
+    }
     .onChange(of: entries.map(\.id)) { _, ids in
-      if !ids.contains(selectedID ?? "") { selectedID = ids.first }
+      selectedIDs = selectedIDs.filter { ids.contains($0) }
+      if selectedIDs.isEmpty, let first = ids.first {
+        selectedIDs = [first]
+        pivotID = first
+      }
       if ids.isEmpty { previewing = false }
     }
     .alert("Keep clipboard history?", isPresented: $confirmingHistory) {
@@ -219,15 +310,26 @@ struct PasteTrayView: View {
         ScrollView(.horizontal) {
           LazyHStack(spacing: 10) {
             ForEach(entries) { entry in
-              PasteTrayCard(entry: entry, isSelected: selected?.id == entry.id,
-                onSelect: { onSelect(entry) }, onTogglePin: { model.togglePin(entry) },
-                onDelete: { model.deleteHistory(entry) })
-                .id(entry.id)
+              PasteTrayCard(
+                entry: entry,
+                isSelected: selectedIDs.contains(entry.id),
+                onClick: { handleCardClick(entry) },
+                onTogglePin: { model.togglePin(entry) },
+                onDelete: {
+                  if selectedIDs.contains(entry.id) && selectedIDs.count > 1 {
+                    deleteSelection()
+                  } else {
+                    selectedIDs = [entry.id]
+                    deleteSelection()
+                  }
+                }
+              )
+              .id(entry.id)
             }
           }.padding(2)
         }
         .scrollIndicators(.hidden)
-        .onChange(of: selected?.id) { _, id in
+        .onChange(of: pivotID ?? selected?.id) { _, id in
           if let id {
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
           }
@@ -236,17 +338,100 @@ struct PasteTrayView: View {
     }
   }
 
+  /// Deletes all currently selected history items from local storage and advances selection.
+  private func deleteSelection() {
+    guard !selectedIDs.isEmpty, !entries.isEmpty else { return }
+    let idsToDelete = selectedIDs
+    let earliestIndex = entries.firstIndex { idsToDelete.contains($0.id) } ?? 0
+    let remaining = entries.filter { !idsToDelete.contains($0.id) }
+
+    model.deleteHistory(ids: idsToDelete)
+
+    if !remaining.isEmpty {
+      let nextIndex = min(earliestIndex, remaining.count - 1)
+      let nextEntry = remaining[nextIndex]
+      selectedIDs = [nextEntry.id]
+      pivotID = nextEntry.id
+    } else {
+      selectedIDs = []
+      pivotID = nil
+      previewing = false
+    }
+  }
+
+  /// Copies either the single active entry or multiple selected entries joined with newlines.
+  private func copySelection() {
+    let selectedEntries = entries.filter { selectedIDs.contains($0.id) }
+    if selectedEntries.count > 1 {
+      let combined = selectedEntries.map(\.text).joined(separator: "\n")
+      if model.copyText(combined) { onDismiss() }
+    } else if let target = selectedEntries.first ?? selected {
+      onSelect(target)
+    }
+  }
+
+  /// Handles card mouse clicks supporting:
+  /// - Double click: copies immediately and dismisses tray.
+  /// - Shift + click: multi-selects contiguous range between pivot and clicked card.
+  /// - Command + click: toggles individual card in multi-selection.
+  /// - Single click: selects single card and sets as pivot anchor.
+  private func handleCardClick(_ entry: ClipboardHistoryEntry) {
+    focus = .tray
+    let modifiers = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+    let clickCount = NSApp.currentEvent?.clickCount ?? 1
+
+    if clickCount >= 2 {
+      onSelect(entry)
+      return
+    }
+
+    if modifiers.contains(.shift) {
+      let pivot = pivotID ?? selectedIDs.first ?? entry.id
+      if let pivotIdx = entries.firstIndex(where: { $0.id == pivot }),
+         let currentIdx = entries.firstIndex(where: { $0.id == entry.id }) {
+        let range = min(pivotIdx, currentIdx)...max(pivotIdx, currentIdx)
+        selectedIDs = Set(entries[range].map(\.id))
+      } else {
+        selectedIDs = [entry.id]
+        pivotID = entry.id
+      }
+    } else if modifiers.contains(.command) {
+      if selectedIDs.contains(entry.id) {
+        selectedIDs.remove(entry.id)
+      } else {
+        selectedIDs.insert(entry.id)
+      }
+      pivotID = entry.id
+    } else {
+      selectedIDs = [entry.id]
+      pivotID = entry.id
+    }
+  }
+
   private func togglePreview() {
     guard selected != nil else { return }
     previewing.toggle(); focus = .tray
   }
-  private func move(_ delta: Int) {
+
+  /// Moves selection by delta; if extend is true (Shift key held), expands selection range.
+  private func move(_ delta: Int, extend: Bool = false) {
     guard !entries.isEmpty else { return }
     focus = .tray
-    selectedID = entries[min(max(selectedIndex + delta, 0), entries.count - 1)].id
-  }
-  private func copySelection() {
-    if let selected { onSelect(selected) }
+    let currentIdx = selectedIndex
+    let nextIdx = min(max(currentIdx + delta, 0), entries.count - 1)
+    let nextEntry = entries[nextIdx]
+
+    if extend {
+      let pivot = pivotID ?? entries[currentIdx].id
+      pivotID = pivot
+      if let pivotIdx = entries.firstIndex(where: { $0.id == pivot }) {
+        let range = min(pivotIdx, nextIdx)...max(pivotIdx, nextIdx)
+        selectedIDs = Set(entries[range].map(\.id))
+      }
+    } else {
+      selectedIDs = [nextEntry.id]
+      pivotID = nextEntry.id
+    }
   }
 }
 
@@ -276,7 +461,8 @@ struct PasteTrayExpandedPreview: View {
 private struct PasteTrayCard: View {
   let entry: ClipboardHistoryEntry
   let isSelected: Bool
-  let onSelect: () -> Void
+  /// Action called on card body click (supports single click select, shift-click range, command-click, and double-click copy).
+  let onClick: () -> Void
   let onTogglePin: () -> Void
   let onDelete: () -> Void
 
@@ -286,12 +472,12 @@ private struct PasteTrayCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       header
-      Button(action: onSelect) {
+      Button(action: onClick) {
         bodyPreview.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel("Copy " + String(entry.text.prefix(120)))
+      .accessibilityLabel("Select " + String(entry.text.prefix(120)))
       .accessibilityAddTraits(isSelected ? [.isSelected] : [])
       Spacer(minLength: 0)
       footer

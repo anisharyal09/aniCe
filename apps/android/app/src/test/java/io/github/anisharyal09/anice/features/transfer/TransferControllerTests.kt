@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -35,7 +36,7 @@ class MockAndroidSecuredChannel(
         fingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     )
     override val descriptor = ChannelDescriptor(instance, transport, peer, maximumDataBytes)
-    val sentData = mutableListOf<ByteArray>()
+    val sentData = java.util.concurrent.CopyOnWriteArrayList<ByteArray>()
     var onSendData: (suspend (ByteArray) -> Unit)? = null
 
     override suspend fun sendData(bytes: ByteArray) {
@@ -62,6 +63,7 @@ class TransferControllerTests {
         owner.available(channel)
         delay(30)
         assertEquals(2, TransferMessage.decode(channel.sentData.first(), 131072)!!.number(0).toInt())
+        assertEquals(3, TransferMessage.decode(channel.sentData.last(), 262016)!!.number(0).toInt())
         owner.retired(channel.descriptor)
         val ble = MockAndroidSecuredChannel(transport = "ble")
         owner.available(ble)
@@ -682,6 +684,49 @@ class TransferControllerTests {
         owner.dismiss()
     }
 
+    @Test fun phoneWaitsForRequestedLanInsteadOfStartingAnOfferOnBluetooth() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        owner.onDemandLanConnection = { true }
+        val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(1024)) }
+        owner.sendFiles(listOf(source))
+        assertTrue(owner.state is TransferState.Connecting)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        assertTrue(owner.state is TransferState.Connecting)
+        assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+        val lan = MockAndroidSecuredChannel(instance = "lan", transport = "lan", maximumDataBytes = 262144)
+        owner.available(lan)
+        assertTrue(owner.state is TransferState.Connecting)
+        owner.handle(lan.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        withTimeout(2000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+        withTimeout(2000) { while (lan.sentData.none { TransferMessage.decode(it, 262016)?.kind == 2L }) delay(5) }
+        assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+        owner.dismiss()
+    }
+
+    @Test fun senderProgressWaitsForReceiverAcknowledgements() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val channel = MockAndroidSecuredChannel(transport = "ble")
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(12288)) }
+        owner.sendFiles(listOf(source))
+        withTimeout(2000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+        val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+        owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+        withTimeout(2000) { while (channel.sentData.count { TransferMessage.decode(it)?.kind == 5L } < 4) delay(5) }
+        assertEquals(0L, (owner.state as TransferState.Transferring).totalBytes)
+        owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 3072).encode())
+        withTimeout(2000) { while ((owner.state as TransferState.Transferring).fileBytes != 3072L) delay(10) }
+        assertEquals(3072L, (owner.state as TransferState.Transferring).totalBytes)
+        withTimeout(1000) { while ((owner.state as TransferState.Transferring).speedBps <= 0) delay(10) }
+        withTimeout(3000) { while ((owner.state as TransferState.Transferring).speedBps > 0) delay(10) }
+        assertEquals(3072L, (owner.state as TransferState.Transferring).totalBytes)
+        owner.dismiss()
+    }
+
     @Test fun lanFailureWithoutAnotherChannelFailsThePendingSendImmediately() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         owner.onDemandLanConnection = { true }
@@ -690,6 +735,23 @@ class TransferControllerTests {
         assertTrue(owner.state is TransferState.Connecting)
         owner.onLanUnavailable("No local network.")
         assertEquals("No local network.", (owner.state as TransferState.Failed).reason)
+        owner.dismiss()
+    }
+
+    @Test fun lanFailureFallsBackToSecuredBleChannelWhenPendingSendWaits() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        owner.onDemandLanConnection = { true }
+        val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(1024)) }
+        owner.sendFiles(listOf(source))
+        assertTrue(owner.state is TransferState.Connecting)
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        owner.onLanUnavailable("Wi-Fi unavailable.")
+        kotlinx.coroutines.withTimeout(2000) {
+            while (owner.state !is TransferState.WaitingForPeerApproval && owner.state !is TransferState.Failed) delay(5)
+        }
+        assertTrue(owner.state is TransferState.WaitingForPeerApproval)
         owner.dismiss()
     }
 
@@ -835,8 +897,11 @@ class TransferControllerTests {
         owner.available(channel)
         val source = File(tempDir, "a").apply { writeText("a") }
         owner.sendFiles(listOf(source))
-        assertTrue(owner.state is TransferState.Failed)
+        assertTrue(owner.state is TransferState.Connecting)
         assertFalse(channel.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 2L })
+        owner.onLanUnavailable("This peer has not advertised file transfer support")
+        assertTrue(owner.state is TransferState.Failed)
+        owner.dismiss()
     }
 
     @Test fun emptyFileCompletesAndKeepsUnrelatedPartial() = runBlocking {
@@ -884,11 +949,12 @@ class TransferControllerTests {
     @Test fun bleFallbackStreamsAndVerifiesBatch() = verifyBatch("ble")
 
 
-    @Test fun largerLanChunksStreamAcrossCreditWindows() = verifyBatch("lan", 131072)
+    @Test fun largerLanChunksStreamAcrossCreditWindows() = verifyBatch("lan", 262016)
 
     private fun verifyBatch(transport: String, maximumChunkBytes: Int = 3072) = runBlocking {
         val maximumDataBytes = if (maximumChunkBytes > 3072) 262144 else 4000
-        val capability = TransferMessage.capability(if (maximumChunkBytes > 3072) 2 else 1, maximumChunkBytes.toLong(), if (maximumChunkBytes > 3072) 8 else 64).encode(maximumChunkBytes)
+        val version = when { maximumChunkBytes > 131072 -> 3; maximumChunkBytes > 3072 -> 2; else -> 1 }
+        val capability = TransferMessage.capability(version.toLong(), maximumChunkBytes.toLong(), if (maximumChunkBytes > 3072) 8 else 64).encode(maximumChunkBytes)
         val sender = TransferController(dispatcher = Dispatchers.Unconfined)
         val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
 
@@ -947,7 +1013,7 @@ class TransferControllerTests {
         assertTrue("Received file does not exist", receivedFile.exists())
         assertArrayEquals(testData, receivedFile.readBytes())
 
-        if (maximumChunkBytes > 3072) assertTrue(senderChannel.sentData.mapNotNull { TransferMessage.decode(it, maximumChunkBytes) }.any { it.kind == 5L && it.bytes(3).size == 131072 })
+        if (maximumChunkBytes > 3072) assertTrue(senderChannel.sentData.mapNotNull { TransferMessage.decode(it, maximumChunkBytes) }.any { it.kind == 5L && it.bytes(3).size == maximumChunkBytes })
 
         val partFile = File(destFolder, "sample.bin.anice-part")
         assertFalse("Temporary part file was not removed", partFile.exists())

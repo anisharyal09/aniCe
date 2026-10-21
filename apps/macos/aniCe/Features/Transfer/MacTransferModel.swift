@@ -50,7 +50,7 @@ enum TransferEvent: Equatable {
 }
 
 @Observable @MainActor final class MacTransferModel: FeatureHandler {
-  private(set) var state: TransferState = .idle
+  private(set) var state: TransferState = .idle { didSet { maintainProgressUpdates() } }
   private(set) var activeChannel: (any SecuredChannel)?
   private(set) var peerConnected = false
   private(set) var peerCompatible = false
@@ -168,19 +168,67 @@ enum TransferEvent: Equatable {
   private var lastAckedWrittenBytes: Int64 = 0
   private var ackTask: Task<Void, Never>?
   private var ackTimerTask: Task<Void, Never>?
-  private var receiverRate = TransferRate()
   private var lastReceiverUiUpdate: TimeInterval = 0
 
   deinit {
+    progressTask?.cancel()
     if hasSleepAssertion {
       IOPMAssertionRelease(sleepAssertionID)
     }
   }
 
+  @ObservationIgnored nonisolated(unsafe) private var progressTask: Task<Void, Never>?
+  private var progressRate = TransferRate()
+  private var progressEpoch: UUID?
+  private var progressSampleAt: TimeInterval = 0
+  private var progressSpeed: Double = 0
+
+  private func maintainProgressUpdates() {
+    guard case .transferring(_, _, _, _, _, let total, _) = state else {
+      progressTask?.cancel(); progressTask = nil; progressEpoch = nil
+      return
+    }
+    guard progressTask == nil || progressEpoch != epoch else { return }
+    progressTask?.cancel()
+    progressEpoch = epoch
+    progressRate = TransferRate()
+    progressSampleAt = ProcessInfo.processInfo.systemUptime
+    progressSpeed = 0
+    _ = progressRate.add(total, at: progressSampleAt)
+    let operation = epoch
+    progressTask = Task { [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+        guard let self, self.epoch == operation else { return }
+        self.refreshProgress()
+      }
+    }
+  }
+
+  private func sampleProgress(_ total: Int64, at now: TimeInterval) -> Double {
+    if now - progressSampleAt >= 0.25 {
+      progressSpeed = progressRate.add(total, at: now)
+      progressSampleAt = now
+    }
+    return progressSpeed
+  }
+
+  private func refreshProgress() {
+    guard case .transferring(let batch, _, _, _, _, _, _) = state else { return }
+    let index = receiving ? receiverCurrentFileIndex : senderFileIndex
+    guard batch.files.indices.contains(index) else { return }
+    let file = batch.files[index]
+    let written = receiving ? receiverWrittenBytes : acknowledgedBytes
+    let total = batch.files.prefix(index).reduce(Int64(0)) { $0 + $1.size } + written
+    let speed = sampleProgress(total, at: ProcessInfo.processInfo.systemUptime)
+    state = .transferring(batch: batch, fileIndex: index + 1, fileName: file.name,
+      fileBytes: written, fileSize: file.size, totalBytes: total, speedBps: speed)
+  }
+
   // MARK: - FeatureHandler conformance
 
   private func chunkLimit(_ descriptor: ChannelDescriptor?) -> Int {
-    descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 262144 ? 131072 : 3072
+    descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 262144 ? 262016 : 3072
   }
 
   func available(_ channel: any SecuredChannel) {
@@ -200,8 +248,17 @@ enum TransferEvent: Equatable {
     selectPreferredChannel()
     Task {
       guard self.channels[transport]?.descriptor == channel.descriptor else { return }
-      if let data = try? TransferMessage.capability(version: self.chunkLimit(channel.descriptor) > 3072 ? 2 : 1,
-        maxChunkBytes: Int64(self.chunkLimit(channel.descriptor)), maxWindow: self.chunkLimit(channel.descriptor) > 3072 ? 8 : 64).encode(maximumChunkBytes: self.chunkLimit(channel.descriptor)) { try? await self.sendWithBackpressure(data, on: channel, jobBound: false) }
+      let chunkSize = self.chunkLimit(channel.descriptor)
+      let versions: [Int64] = chunkSize > 131072 ? [2, 3] : [chunkSize > 3072 ? 2 : 1]
+      for version in versions {
+        guard self.channels[transport]?.descriptor == channel.descriptor else { return }
+        let chunk = version == 2 ? min(131072, chunkSize) : chunkSize
+        do {
+          let data = try TransferMessage.capability(version: version, maxChunkBytes: Int64(chunk),
+            maxWindow: chunk > 3072 ? 8 : 64).encode(maximumChunkBytes: chunkSize)
+          try await self.sendWithBackpressure(data, on: channel, jobBound: false)
+        } catch { return }
+      }
     }
   }
 
@@ -232,7 +289,9 @@ enum TransferEvent: Equatable {
 
   private func applyCapability(_ message: TransferMessage) {
     peerCompatible = true
-    peerMaxChunkBytes = min(message.number(1), message.number(0) == 2 ? Int64(chunkLimit(activeChannel?.descriptor)) : 3072)
+    let localLimit = Int64(chunkLimit(activeChannel?.descriptor))
+    let negotiatedLimit: Int64 = message.number(0) == 3 ? localLimit : message.number(0) == 2 ? min(131072, localLimit) : 3072
+    peerMaxChunkBytes = min(message.number(1), negotiatedLimit)
     peerMaxWindow = min(message.number(2), peerMaxChunkBytes > 3072 ? 8 : 64)
   }
 
@@ -1033,7 +1092,7 @@ enum TransferEvent: Equatable {
         var hasher = SHA256(), read: Int64 = 0
         while true {
           try Task.checkCancellation()
-          let chunk = try handle.read(upToCount: 65536) ?? Data()
+          let chunk = try handle.read(upToCount: 262144) ?? Data()
           if chunk.isEmpty { break }
           hasher.update(data: chunk); read += Int64(chunk.count)
         }
@@ -1123,7 +1182,6 @@ enum TransferEvent: Equatable {
     let operation = epoch
     let initialOffset = max(0, min(startOffset, batch.files[startFileIndex].size))
     var totalTransferred = completedBefore + initialOffset
-    var rate = TransferRate()
     var lastUiUpdate: TimeInterval = 0
 
     for fileIndex in startFileIndex..<batch.files.count {
@@ -1206,15 +1264,16 @@ enum TransferEvent: Equatable {
           let now = ProcessInfo.processInfo.systemUptime
           if now - lastUiUpdate >= 0.1 || fileBytesSent == file.size {
             lastUiUpdate = now
-            let speed = rate.add(totalTransferred, at: now)
+            let confirmed = totalTransferred - fileBytesSent + acknowledgedBytes
+            let speed = sampleProgress(confirmed, at: now)
 
             self.state = .transferring(
               batch: batch,
               fileIndex: fileIndex + 1,
               fileName: file.name,
-              fileBytes: fileBytesSent,
+              fileBytes: acknowledgedBytes,
               fileSize: file.size,
-              totalBytes: totalTransferred,
+              totalBytes: confirmed,
               speedBps: speed
             )
           }
@@ -1401,7 +1460,6 @@ enum TransferEvent: Equatable {
     receiverWrittenBytes = 0
     receiverTotalTransferred = 0
     lastAckedWrittenBytes = 0
-    receiverRate = TransferRate()
     lastReceiverUiUpdate = 0
 
     do { try await prepareReceiverForFile(at: 0, in: batch) }
@@ -1482,7 +1540,10 @@ enum TransferEvent: Equatable {
         if self.epoch == operation && self.receiverCurrentFileIndex == fileIndex {
           self.ackTask = nil
           let unacked = self.receiverWrittenBytes - self.lastAckedWrittenBytes
-          if unacked >= min(8, max(1, self.peerMaxWindow / 2)) * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes) {
+          // Flow-control ACK cadence: for LAN transfer (chunk size > 3072), ACK every 2 chunks
+          // (peerMaxWindow / 4) so sender credit never stalls. Standard/BLE retains 8-chunk cadence.
+          let ackCadence = self.peerMaxChunkBytes > 3072 ? max(1, self.peerMaxWindow / 4) : min(8, max(1, self.peerMaxWindow / 2))
+          if unacked >= ackCadence * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes) {
             self.flushAck()
           }
         }
@@ -1526,7 +1587,7 @@ enum TransferEvent: Equatable {
     let now = ProcessInfo.processInfo.systemUptime
     if now - lastReceiverUiUpdate >= 0.1 || receiverWrittenBytes == currentFile.size {
       lastReceiverUiUpdate = now
-      let speed = receiverRate.add(receiverTotalTransferred, at: now)
+      let speed = sampleProgress(receiverTotalTransferred, at: now)
 
       state = .transferring(
         batch: batch,
@@ -1539,9 +1600,11 @@ enum TransferEvent: Equatable {
       )
     }
 
-    // Ack every 8 chunks or at end of file
+    // Flow-control ACK cadence: for LAN transfer (chunk size > 3072), ACK every 2 chunks
+    // (peerMaxWindow / 4) so sender credit never stalls. Standard/BLE retains 8-chunk cadence.
     let unacked = receiverWrittenBytes - lastAckedWrittenBytes
-    if unacked >= min(8, max(1, peerMaxWindow / 2)) * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size {
+    let ackCadence = peerMaxChunkBytes > 3072 ? max(1, peerMaxWindow / 4) : min(8, max(1, peerMaxWindow / 2))
+    if unacked >= ackCadence * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size {
       flushAck()
     } else if receiverWrittenBytes > lastAckedWrittenBytes {
       scheduleAckTimer()
@@ -1670,6 +1733,7 @@ enum TransferEvent: Equatable {
   }
 
   private func cleanupActiveTransfer(selectChannel: Bool = true) {
+    progressTask?.cancel(); progressTask = nil; progressEpoch = nil
     preparation?.cancel(); preparation = nil; preparing = false
     clearOfferAssembly()
     pauseTimerTask?.cancel(); pauseTimerTask = nil

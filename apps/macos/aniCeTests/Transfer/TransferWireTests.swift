@@ -7,16 +7,16 @@ import XCTest
 final class TransferWireTests: XCTestCase {
   func testLargeChunksRequireExplicitLanBudget() throws {
     let batch = UUID().uuidString, file = UUID().uuidString
-    let message = TransferMessage.chunk(batch: batch, file: file, offset: 0, data: Data(repeating: 7, count: 131072))
+    let message = TransferMessage.chunk(batch: batch, file: file, offset: 0, data: Data(repeating: 7, count: 262016))
     XCTAssertThrowsError(try message.encode())
-    let encoded = try message.encode(maximumChunkBytes: 131072)
+    let encoded = try message.encode(maximumChunkBytes: 262016)
     XCTAssertNil(try SessionControl.application(encoded, maximumBytes: 262144))
-    XCTAssertEqual(try TransferMessage.decode(encoded, maximumChunkBytes: 131072)?.bytes(3).count, 131072)
+    XCTAssertEqual(try TransferMessage.decode(encoded, maximumChunkBytes: 262016)?.bytes(3).count, 262016)
     XCTAssertThrowsError(try TransferMessage.decode(encoded))
-    XCTAssertThrowsError(try TransferMessage.chunk(batch: batch, file: file, offset: 0, data: Data(repeating: 0, count: 131073)).encode(maximumChunkBytes: 131072))
-    let capability = try TransferMessage.capability(version: 2, maxChunkBytes: 131072, maxWindow: 8).encode(maximumChunkBytes: 131072)
+    XCTAssertThrowsError(try TransferMessage.chunk(batch: batch, file: file, offset: 0, data: Data(repeating: 0, count: 262017)).encode(maximumChunkBytes: 262016))
+    let capability = try TransferMessage.capability(version: 3, maxChunkBytes: 262016, maxWindow: 8).encode(maximumChunkBytes: 262016)
     XCTAssertThrowsError(try TransferMessage.decode(capability))
-    XCTAssertThrowsError(try TransferMessage.capability(version: 2, maxChunkBytes: 131072, maxWindow: 9).encode(maximumChunkBytes: 131072))
+    XCTAssertThrowsError(try TransferMessage.capability(version: 3, maxChunkBytes: 262016, maxWindow: 9).encode(maximumChunkBytes: 262016))
     XCTAssertThrowsError(try SessionCbor.decode(encoded))
   }
 

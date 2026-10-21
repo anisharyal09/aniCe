@@ -41,6 +41,59 @@ final class TransferModelTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testLanAdvertisesLegacyCapabilityBeforeLargeChunkExtension() async throws {
+    let owner = MacTransferModel()
+    let channel = MockSecuredChannel(maximumDataBytes: 262144)
+    owner.available(channel)
+    defer { owner.dismiss() }
+    for _ in 0..<100 {
+      if channel.sentData.count >= 2 { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertEqual(channel.sentData.count, 2)
+    let baseline = try XCTUnwrap(channel.sentData.first)
+    let extensionBytes = try XCTUnwrap(channel.sentData.last)
+    XCTAssertEqual(try TransferMessage.decode(baseline, maximumChunkBytes: 131072)?.number(0), 2)
+    XCTAssertEqual(try TransferMessage.decode(extensionBytes, maximumChunkBytes: 262016)?.number(0), 3)
+  }
+
+  func testSenderProgressCountsReceiverWritesInsteadOfSocketSubmissions() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(transport: "ble")
+    owner.available(channel)
+    defer { owner.dismiss() }
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    let url = tempDir.appendingPathComponent("source.bin")
+    try Data(repeating: 7, count: 12288).write(to: url)
+    await owner.sendFiles(urls: [url])
+    for _ in 0..<200 {
+      if case .waitingForPeerApproval = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .waitingForPeerApproval(let batch) = owner.state else { return XCTFail("Offer missing") }
+    _ = await owner.handle(try TransferMessage.accept(batch: batch.idString, files: []).encode(), on: channel.descriptor)
+    for _ in 0..<200 {
+      if try channel.sentData.filter({ try TransferMessage.decode($0)?.kind == 5 }).count >= 4 { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .transferring(_, _, _, let queuedProgress, _, let queuedTotal, _) = owner.state else { return XCTFail("Stream missing") }
+    XCTAssertEqual(queuedProgress, 0)
+    XCTAssertEqual(queuedTotal, 0)
+    _ = await owner.handle(try TransferMessage.ack(batch: batch.idString, file: batch.files[0].idString, written: 3072).encode(), on: channel.descriptor)
+    try await Task.sleep(for: .milliseconds(300))
+    guard case .transferring(_, _, _, let confirmed, _, let total, _) = owner.state else { return XCTFail("Stream missing") }
+    XCTAssertEqual(confirmed, 3072)
+    XCTAssertEqual(total, 3072)
+    guard case .transferring(_, _, _, _, _, _, let speed) = owner.state else { return XCTFail("Stream missing") }
+    XCTAssertGreaterThan(speed, 0)
+    for _ in 0..<30 {
+      if case .transferring(_, _, _, _, _, _, let currentSpeed) = owner.state, currentSpeed == 0 { break }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    guard case .transferring(_, _, _, _, _, let stalledTotal, let stalledSpeed) = owner.state else { return XCTFail("Stream missing") }
+    XCTAssertEqual(stalledTotal, 3072)
+    XCTAssertEqual(stalledSpeed, 0)
+  }
+
   func testLANWinsEitherConnectionOrderAndFallsBackOnlyOnItsRetirement() async throws {
     for lanFirst in [false, true] {
       let owner = MacTransferModel(), lan = MockSecuredChannel(instance: "lan")
@@ -867,7 +920,7 @@ final class TransferModelTests: XCTestCase {
 
 
 
-  func testLargerLanChunksStreamAcrossCreditWindows() async throws { try await verifyBatch(transport: "lan", maximumChunkBytes: 131072) }
+  func testLargerLanChunksStreamAcrossCreditWindows() async throws { try await verifyBatch(transport: "lan", maximumChunkBytes: 262016) }
 
   func testDirectionAndFinalizationAreObservableAcrossAFullRoundTrip() async throws {
     let capability = try TransferMessage.capability().encode(maximumChunkBytes: 3072)
@@ -929,7 +982,8 @@ final class TransferModelTests: XCTestCase {
 
   private func verifyBatch(transport: String, maximumChunkBytes: Int = 3072) async throws {
     let maximumDataBytes = maximumChunkBytes > 3072 ? 262144 : 4000
-    let capability = try TransferMessage.capability(version: maximumChunkBytes > 3072 ? 2 : 1, maxChunkBytes: Int64(maximumChunkBytes), maxWindow: maximumChunkBytes > 3072 ? 8 : 64).encode(maximumChunkBytes: maximumChunkBytes)
+    let capabilityVersion: Int64 = maximumChunkBytes > 131072 ? 3 : maximumChunkBytes > 3072 ? 2 : 1
+    let capability = try TransferMessage.capability(version: capabilityVersion, maxChunkBytes: Int64(maximumChunkBytes), maxWindow: maximumChunkBytes > 3072 ? 8 : 64).encode(maximumChunkBytes: maximumChunkBytes)
     let sender = MacTransferModel()
     let receiver = MacTransferModel()
 

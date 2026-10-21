@@ -114,6 +114,23 @@ final class LanTests: XCTestCase {
     owner.rendezvous.retired(channel.descriptor)
   }
 
+  func testRepeatedFeatureTrafficDoesNotRearmFailedConnectionAttempts() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claimActivity())
+    gate.trigger()
+    XCTAssertTrue(gate.claim())
+    for _ in 0..<100 {
+      gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+      XCTAssertFalse(gate.claimActivity())
+      XCTAssertFalse(gate.claim())
+    }
+    gate.trigger()
+    XCTAssertTrue(gate.claim())
+    gate.update(channel: "replacement", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claimActivity())
+  }
+
   func testAutomaticGateConsumesEachEventOnce() {
     var gate = LanAttemptGate()
     for index in 0..<20 {

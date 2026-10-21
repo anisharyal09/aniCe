@@ -28,7 +28,7 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
     }
 
     fun validate(maximumChunkBytes: Int = 3072) {
-        require(maximumChunkBytes in 1..131072)
+        require(maximumChunkBytes in 1..262016)
         fun check(v: Boolean) { if (!v) throw TransferWireException() }
         fun n(v: Cbor?, min: Long, max: Long) = (v as? Cbor.Integer)?.value?.let { it in min..max } == true
         fun t(v: Cbor?, max: Int, uuid: Boolean = false, empty: Boolean = false): Boolean {
@@ -54,7 +54,8 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
         when (kind) {
             1L -> { // capability
                 check(fields.size == 3 && (n(fields[0], 1, 1) && n(fields[1], 1, 3072) && n(fields[2], 1, 64) ||
-                    maximumChunkBytes > 3072 && n(fields[0], 2, 2) && n(fields[1], 1, maximumChunkBytes.toLong()) && n(fields[2], 1, 8)))
+                    maximumChunkBytes > 3072 && n(fields[0], 2, 2) && n(fields[1], 1, minOf(131072, maximumChunkBytes).toLong()) && n(fields[2], 1, 8) ||
+                    maximumChunkBytes > 131072 && n(fields[0], 3, 3) && n(fields[1], 1, maximumChunkBytes.toLong()) && n(fields[2], 1, 8)))
             }
             2L -> { // offer: [batch, sliceIndex, totalSlices, totalFiles, totalBytes, files]
                 check(fields.size == 6 && t(fields[0], 36, uuid = true) && n(fields[1], 0, 15) &&

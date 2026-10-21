@@ -4,6 +4,10 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ## [Unreleased]
 
+### Fixed
+
+- Coalesce ordinary BLE traffic into one LAN demand per channel and eligibility interval.
+
 ### Added
 
 - SMS Relay v3 defines deterministic CBOR capability negotiation, cursor-paginated conversations and history, acknowledged live message streams, multipart replies, phone-side search, active-SIM discovery and per-message subscription attribution inside authenticated DATA. Bodies are bounded to 24,576 UTF-8 bytes in up to eight fragments; records remain within 4,000 bytes and page limits are advertised per link. Composite cursors use byte-wise identifier ordering and terminal `(0, "")` pairs; incomplete provider reads and oversized timestamp groups do not advance them. Live events retry within their ten-minute pending lifetime, duplicate reply results are bounded, and `sendResult.dateMillis` carries the provider send time or phone send-queue time. Both applications must support v3 to exchange SMS.
@@ -14,6 +18,8 @@ Records shared communication-contract changes, compatibility implications, and p
 - Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
 
 ### Changed
+
+- Add LAN-only transfer capability 3 for 262,016-byte chunks within the existing 262,144-byte authenticated DATA record; advertise a capability-2 baseline first so older peers retain support, with standard/BLE limits unchanged.
 
 - Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.
 

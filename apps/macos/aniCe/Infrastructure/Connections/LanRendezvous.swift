@@ -82,11 +82,18 @@ struct LanAttemptGate {
   private var ready = false
   private var requests: Int64 = 0
   private var attempted = false
+  private var activityDemanded = false
   mutating func update(channel: String?, eligible: Bool, remoteEligible: Bool, ready: Bool, requests: Int64) {
+    if self.channel != channel || (eligible && !self.eligible) || (remoteEligible && !self.remoteEligible) { activityDemanded = false }
     if self.channel != channel || self.requests != requests || (eligible && !self.eligible)
       || (remoteEligible && !self.remoteEligible) || (ready && !self.ready) { attempted = false }
     self.channel = channel; self.eligible = eligible; self.remoteEligible = remoteEligible
     self.ready = ready; self.requests = requests
+  }
+  mutating func claimActivity() -> Bool {
+    guard !activityDemanded else { return false }
+    activityDemanded = true
+    return true
   }
   mutating func trigger() { attempted = false }
   mutating func claim() -> Bool { if attempted { return false }; attempted = true; return true }

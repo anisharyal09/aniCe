@@ -2,7 +2,7 @@
 
 Send batches of 1–128 files from the device overview over an already-authenticated local-network or Bluetooth connection. Local network has priority whenever it is secured. The peer must advertise transfer support. Bluetooth is available when local network is disconnected; it is slower and uses the existing secured BLE session. The receiver approves each batch; files transfer sequentially with bounded cumulative credit.
 
-Updated Android and Mac apps use bounded 128-KiB LAN chunks with an authenticated 256-KiB record profile. Bluetooth retains 3-KiB chunks. Both apps must be updated to use LAN revision 2; Android can still connect to an older Mac using the original smaller LAN records. Native identity and trust checks remain live. See the [LAN profile contract](../../protocol/lan/TRANSFER_PROFILE.md).
+Updated Android and Mac apps use LAN chunks up to 262,016 bytes with an authenticated 256-KiB record profile. Bluetooth retains 3-KiB chunks. Both apps must be updated to use the new transfer capability for larger chunks; older peers retain their negotiated limits. Native identity and trust checks remain live. See the [LAN profile contract](../../protocol/lan/TRANSFER_PROFILE.md).
 
 ## Connection changes
 
@@ -11,6 +11,10 @@ On Android, Connection details exposes local-network connection controls. The id
 Both transports must belong to the same authenticated device. Support and negotiated limits are checked separately on each connection. A new batch uses local network whenever it is secured, regardless of which connection became ready first. A batch already running on Bluetooth stays there unless local network becomes capable to the same peer, in which case the sender upgrades the active stream in place through the resume handshake. If local network arrives while the sender is between files, the upgrade happens at the next file.
 
 Losing the active connection while a batch is streaming pauses the batch instead of failing it. Both devices keep their verified partial and last acknowledged offset, show a paused card with frozen progress, and retain the partial in process memory for 15 minutes. Reconnecting local network to the same peer resumes automatically: the sender requests the retained offset and the receiving side verifies the prefix digest before continuing. If local network stays down while a secured Bluetooth channel exists, either device may choose Continue over Bluetooth. The sending device resumes directly from its acknowledged offset; the receiving device asks the sender to validate the prefix it already holds and stream the rest over Bluetooth, so the receiver never depends on the sender noticing the request. A Bluetooth continuation upgrades to local network automatically when a capable channel appears. Cancel deletes the partial immediately; the 15-minute timeout fails the batch and deletes it. Channel loss before streaming or during finalization still ends the batch. Files already published remain in place and are not overwritten. Pause is automatic on transport loss; there is no manual pause action while a channel is healthy.
+
+Android source selection waits for the requested LAN connection and its transfer capability before preparing the offer. A failed or timed-out LAN request can use a compatible secured Bluetooth channel when no LAN channel remains. A secured channel whose capability is still arriving gets a bounded capability wait.
+
+Sender progress counts receiver-acknowledged writes; receiver progress counts successful local writes. Rate samples are collected at least 250 ms apart, independently of chunk-driven progress updates. The bounded rate window therefore retains a consistent time span through bursts and decays during a stalled stream.
 
 ## Storage and preparation
 

@@ -15,6 +15,45 @@ struct ClipboardActivity: Identifiable {
   var textPreview: String? { sample.map { String($0.text.prefix(240)) } }
 }
 
+/// Supported timeout intervals for temporarily suspending clipboard observation and automatic sharing.
+/// Non-standard increments (11m, 21m, 45m, 3h, 9h) offer ergonomic short-term and extended breaks
+/// without polling or running idle background timers.
+enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
+  case untilTurnedOn = "Until turned back on"
+  case minutes11 = "For 11 minutes"
+  case minutes21 = "For 21 minutes"
+  case minutes45 = "For 45 minutes"
+  case hours3 = "For 3 hours"
+  case hours9 = "For 9 hours"
+
+  var id: String { rawValue }
+
+  /// Interval in seconds before observation resumes automatically.
+  /// Returns `nil` when paused indefinitely until manual user resumption.
+  var seconds: TimeInterval? {
+    switch self {
+    case .untilTurnedOn: return nil
+    case .minutes11: return 11 * 60
+    case .minutes21: return 21 * 60
+    case .minutes45: return 45 * 60
+    case .hours3: return 3 * 3600
+    case .hours9: return 9 * 3600
+    }
+  }
+
+  /// Compact badge representation displayed in status menus and tray headers.
+  var shortLabel: String {
+    switch self {
+    case .untilTurnedOn: return "until turned on"
+    case .minutes11: return "11m"
+    case .minutes21: return "21m"
+    case .minutes45: return "45m"
+    case .hours3: return "3h"
+    case .hours9: return "9h"
+    }
+  }
+}
+
 @MainActor @Observable final class MacClipboardModel: FeatureHandler {
   @Observable final class Link {
     let channel: any SecuredChannel
@@ -88,8 +127,61 @@ struct ClipboardActivity: Identifiable {
   private(set) var status = "Ready to share text"
   private(set) var preview: ClipboardSample?
   private(set) var recent: ClipboardActivity?
+  // Pause state: suspends both pasteboard observation and automatic broadcast without clearing history or unpairing.
+  private(set) var isPaused = false
+  /// The absolute timestamp when pause mode will expire automatically, or nil if paused indefinitely.
+  private(set) var pauseDeadline: Date?
+  /// Background task managing timed auto-resumption; cancelled immediately if user manually resumes or pauses again.
+  private var pauseTimer: Task<Void, Never>?
   var onLanRequired: () -> Void = {}
   var automaticAccessAllowed: Bool { native.automaticAccessAllowed }
+
+  /// Human-readable indicator of current pause status (e.g. "Paused (15m)", "Paused (2h)", "Paused until turned on").
+  var pauseStatusText: String? {
+    guard isPaused else { return nil }
+    if let pauseDeadline {
+      let remaining = max(0, pauseDeadline.timeIntervalSince(Date()))
+      if remaining >= 3600 {
+        let hours = Int(ceil(remaining / 3600))
+        return "Paused (\(hours)h)"
+      } else {
+        let mins = Int(ceil(remaining / 60))
+        return "Paused (\(mins)m)"
+      }
+    }
+    return "Paused until turned on"
+  }
+
+  /// Temporarily halts clipboard observation for the given duration.
+  /// Drops idle CPU consumption to 0% by tearing down the native pasteboard observer.
+  func pause(for duration: ClipboardPauseDuration) {
+    pauseTimer?.cancel()
+    pauseTimer = nil
+    isPaused = true
+    if let seconds = duration.seconds {
+      let deadline = Date().addingTimeInterval(seconds)
+      pauseDeadline = deadline
+      // Schedule background resumption task; sleeps until deadline then resumes on MainActor.
+      pauseTimer = Task { [weak self] in
+        do { try await Task.sleep(for: .seconds(seconds)) }
+        catch { return } // Task was cancelled by manual resume or new duration.
+        self?.resume()
+      }
+    } else {
+      pauseDeadline = nil
+    }
+    updateObservation()
+  }
+
+  /// Restores clipboard observation and clears any pending timer.
+  func resume() {
+    pauseTimer?.cancel()
+    pauseTimer = nil
+    isPaused = false
+    pauseDeadline = nil
+    updateObservation()
+  }
+
   init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
     self.history = history
     self.native = native; self.preferences = preferences; self.now = now; self.wait = wait
@@ -131,13 +223,13 @@ struct ClipboardActivity: Identifiable {
   }
   func refreshAccess() { updateObservation() }
   private func updateObservation() {
-    native.observe(!sleeping && (history.enabled || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
-      guard let self, !self.applying else { return }; self.sampleAutomatic()
+    native.observe(!sleeping && !isPaused && (history.enabled || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
+      guard let self, !self.applying, !self.isPaused else { return }; self.sampleAutomatic()
     }
-    if (automatic || history.enabled) && !native.automaticAccessAllowed { status = "Allow pasteboard access in System Settings, or paste text below" }
+    if !isPaused && (automatic || history.enabled) && !native.automaticAccessAllowed { status = "Allow pasteboard access in System Settings, or paste text below" }
   }
   private func sampleAutomatic() {
-    guard !sleeping, native.automaticAccessAllowed, let sample = native.read() else { return }
+    guard !sleeping, !isPaused, native.automaticAccessAllowed, let sample = native.read() else { return }
     captureLocal(sample)
     guard automatic, let peer = selected, candidates(peer).contains(where: { $0.remoteAutomatic }) else { return }
     guard sample.token != observedToken else { return }; observedToken = sample.token
@@ -151,19 +243,26 @@ struct ClipboardActivity: Identifiable {
     guard sample.token.isEmpty || sample.token != historyToken else { return }; historyToken = sample.token
     history.record(sample, origin: "mac")
   }
-  // Writes entry to system pasteboard with applying guard to suppress self-observation loop.
-  @discardableResult func copyHistory(_ entry: ClipboardHistoryEntry) -> Bool {
+  /// Writes arbitrary text directly to the system pasteboard while suppressing observation loops.
+  @discardableResult func copyText(_ text: String) -> Bool {
     applying = true
-    let copied = native.write(entry.text, sensitive: false)
+    let copied = native.write(text, sensitive: false)
     status = copied ? "Copied" : "Could not copy text"
     applying = false
     return copied
+  }
+  // Writes entry to system pasteboard with applying guard to suppress self-observation loop.
+  @discardableResult func copyHistory(_ entry: ClipboardHistoryEntry) -> Bool {
+    copyText(entry.text)
   }
   // Initiates an explicit manual submission to the selected peer over the secured channel.
   func sendHistory(_ entry: ClipboardHistoryEntry) { submit(ClipboardSample(text: entry.text), auto: false) }
   // Toggles pinned state to retain or release snippet during FIFO capacity eviction.
   func togglePin(_ entry: ClipboardHistoryEntry) { history.togglePin(entry.id) }
+  /// Removes a single entry from local history.
   func deleteHistory(_ entry: ClipboardHistoryEntry) { history.delete(entry.id) }
+  /// Removes multiple entries atomically from local history.
+  func deleteHistory(ids: Set<String>) { history.delete(ids) }
   // Purges history entries, preserving pinned snippets unless includePinned is explicitly true.
   func clearHistory(includePinned: Bool = false) { history.clear(includePinned: includePinned) }
   // Updates history capacity (20, 50, 100) and triggers immediate trim if downsized.
@@ -391,7 +490,7 @@ struct ClipboardActivity: Identifiable {
     defer { applying = false }
     return native.write(sample.text, sensitive: sample.sensitive)
   }
-  func invalidate() { recent = nil; cancel(); native.observe(false) {}; for d in links.values.map({ $0.channel.descriptor }) { retired(d) }; histories.removeAll(); preview = nil; schedule() }
+  func invalidate() { pauseTimer?.cancel(); pauseTimer = nil; isPaused = false; pauseDeadline = nil; recent = nil; cancel(); native.observe(false) {}; for d in links.values.map({ $0.channel.descriptor }) { retired(d) }; histories.removeAll(); preview = nil; schedule() }
   func prune(_ peers: [DeviceIdentity], confirmedTrust: Bool = false) {
     preferences.prune(peers)
     if confirmedTrust {

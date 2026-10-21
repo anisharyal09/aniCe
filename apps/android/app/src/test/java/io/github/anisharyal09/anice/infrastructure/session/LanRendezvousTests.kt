@@ -34,6 +34,22 @@ class LanRendezvousTests {
         gate.update("ble-2", true, true, true, 1)
         assertTrue(gate.claim()); assertFalse(gate.claim())
     }
+    @Test fun repeatedFeatureTrafficDoesNotRearmFailedConnectionAttempts() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, true, 0)
+        assertTrue(gate.claimActivity())
+        gate.trigger()
+        assertTrue(gate.claim())
+        repeat(100) {
+            gate.update("ble", true, true, true, 0)
+            assertFalse(gate.claimActivity())
+            assertFalse(gate.claim())
+        }
+        gate.trigger()
+        assertTrue(gate.claim())
+        gate.update("replacement", true, true, true, 0)
+        assertTrue(gate.claimActivity())
+    }
     @Test fun explicitRequestDoesNotChangePeerEligibilityOrEcho() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         try {

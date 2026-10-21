@@ -43,23 +43,23 @@ class TransferWireTests {
     fun chunkSlicingMatchesCanonicalEncodingAndOwnsItsBytes() {
         val batch = "11111111-1111-4111-8111-111111111111"
         val file = "22222222-2222-4222-8222-222222222222"
-        val source = ByteArray(131072 + 8) { (it % 251).toByte() }
-        val expected = ByteArray(131072) { (it % 251).toByte() }
-        val sliced = TransferMessage.chunkFrom(batch, file, 4096L, source, 131072)
+        val source = ByteArray(262016 + 8) { (it % 251).toByte() }
+        val expected = ByteArray(262016) { (it % 251).toByte() }
+        val sliced = TransferMessage.chunkFrom(batch, file, 4096L, source, 262016)
         // A reused read buffer frames exactly as an owning copy would.
         assertEquals(TransferMessage.chunk(batch, file, 4096L, expected), sliced)
-        val wire = sliced.encode(131072)
-        assertArrayEquals(TransferMessage.chunk(batch, file, 4096L, expected).encode(131072), wire)
+        val wire = sliced.encode(262016)
+        assertArrayEquals(TransferMessage.chunk(batch, file, 4096L, expected).encode(262016), wire)
         java.util.Arrays.fill(source, 0)
         // The node copies on construction, so the next read cannot reach an already framed chunk.
-        assertArrayEquals(expected, TransferMessage.decode(wire, 131072)!!.bytes(3))
-        assertArrayEquals(wire, sliced.encode(131072))
+        assertArrayEquals(expected, TransferMessage.decode(wire, 262016)!!.bytes(3))
+        assertArrayEquals(wire, sliced.encode(262016))
         try {
             sliced.encode()
-            fail("Standard limit accepted a 128-KiB chunk")
+            fail("Standard limit accepted a large LAN chunk")
         } catch (_: TransferWireException) {}
         try {
-            TransferMessage.chunkFrom(batch, file, 0L, source, 0).encode(131072)
+            TransferMessage.chunkFrom(batch, file, 0L, source, 0).encode(262016)
             fail("Empty chunk accepted")
         } catch (_: TransferWireException) {}
         assertThrows(IndexOutOfBoundsException::class.java) {

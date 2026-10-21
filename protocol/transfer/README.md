@@ -1,6 +1,6 @@
 # Local File Transfer Protocol v1
 
-The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2, record profile 3 and transfer capability 2. Standard profile 1/BLE limits and fixture bytes remain unchanged.
+The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2 and record profile 3. Transfer capability 2 retains 128-KiB chunks for compatibility; capability 3 enables chunks up to 262,016 bytes within the same authenticated record budget. Standard profile 1/BLE limits remain unchanged.
 
 
 [transfer.cddl](transfer.cddl) defines the authoritative message structure. Messages are deterministic RFC 8949 CBOR arrays transported inside authenticated DATA records bounded to 4,000 plaintext bytes. Existing session authentication, readiness, connection checks, EDHOC, exporter labels, AES-256-GCM framing and nonce ownership remain unchanged.
@@ -23,7 +23,7 @@ Every transfer message uses the four-element envelope `["aniCe transfer", 1, kin
 | 2 | `offer` | Sender → Receiver | `[batchId, sliceIndex, totalSlices, totalFiles, totalBytes, files]` | Proposes a batch of files; slices partition inventories of up to 128 files |
 | 3 | `accept` | Receiver → Sender | `[batchId, acceptedFiles]` | Receiver explicitly accepts the batch; empty list indicates all offered files accepted |
 | 4 | `reject` | Receiver → Sender | `[batchId, reason]` | Receiver rejects the batch with typed rationale |
-| 5 | `chunk` | Sender → Receiver | `[batchId, fileId, offset, data]` | Carries up to 3,072 bytes of sequential file content |
+| 5 | `chunk` | Sender → Receiver | `[batchId, fileId, offset, data]` | Carries up to 3,072 bytes on standard/BLE, 131,072 bytes with LAN capability 2, or 262,016 bytes with LAN capability 3 |
 | 6 | `ack` | Receiver → Sender | `[batchId, fileId, written]` | Cumulative acknowledgement of written bytes for flow control |
 | 7 | `file-result` | Bidirectional | `[batchId, fileId, result, hash]` | Final confirmation of file completion or error with verified SHA-256 digest |
 | 8 | `batch-result`| Bidirectional | `[batchId, result]` | Signals termination of the entire batch |
@@ -71,7 +71,7 @@ Every transfer message uses the four-element envelope `["aniCe transfer", 1, kin
 
 ## Flow Control and Credit
 
-- **Cumulative Window**: At most 64 unacknowledged chunks may be in flight simultaneously ($64 \times 3,072 = 196,608$ bytes).
+- **Cumulative Window**: Standard/BLE allows up to 64 unacknowledged 3,072-byte chunks. LAN capabilities 2 and 3 allow up to 8 unacknowledged chunks (up to 1 MiB and 2 MiB respectively).
 - **Acknowledgement Cadence**: The receiver emits an `ack` record every 8 chunks received ($24,576$ bytes), after a 20-ms timer expires with unacknowledged bytes pending, and immediately upon receiving the final chunk of a file.
 - **Credit Enforcement**: The sender tracks `inFlight = sentBytes - acknowledgedBytes`. When `inFlight >= maxWindow * maxChunkBytes`, the sender pauses and buffers at most one unsent chunk, resuming immediately upon receiving an `ack`.
 - **Integrity Calculation**: Receivers compute SHA-256 incrementally as chunks arrive. Final verification requires exact length match and hash equality before renaming to the final destination.

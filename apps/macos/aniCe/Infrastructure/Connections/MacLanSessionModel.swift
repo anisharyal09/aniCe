@@ -34,7 +34,7 @@ import Observation
     guard automatic, !automaticPaused, !sleeping, !quitting,
       descriptor.transport == "ble", rendezvous.channel?.descriptor == descriptor,
       state != "Secured", !allowing else { return }
-    guard (try? LanRendezvousWire.decode(bytes)) == nil else { return }
+    guard (try? LanRendezvousWire.decode(bytes)) == nil, automaticGate.claimActivity() else { return }
     _ = requestAutomaticConnection()
   }
   func requestAutomaticConnection() -> Bool {

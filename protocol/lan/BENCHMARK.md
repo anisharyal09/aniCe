@@ -41,7 +41,7 @@ The isolated in-memory bulk probe (`--profile bulk-probe`) confirms a ~10.8 MiB/
 
 ### Architectural constraints
 
-1. **KeyStore IPC ceiling:** Standard transfer v1 carries 3,072-byte chunks across 4,000-byte records, requiring 2,730 live KeyStore validations/second at 8 MiB/s. Hardware KeyStore IPC saturates at ~100–200 queries/s, capping standard records to ~300–600 KB/s. Profile 3 (131,072-byte chunks) amortizes validations to 64/s to operate within hardware capacity.
+1. **KeyStore IPC ceiling:** Standard transfer v1 carries 3,072-byte chunks across 4,000-byte records, requiring 2,730 live KeyStore validations/second at 8 MiB/s. Hardware KeyStore IPC saturates at ~100–200 queries/s, capping standard records to ~300–600 KB/s. Profile 3 capability 3 (262,016-byte chunks) halves record-validation frequency from capability 2 while retaining live validation for every authenticated record.
 2. **Ingress decoupling:** Bounded ordered ingress queues (`LanIngressQueue` / `LanQueueBudget`) decouple socket reads from application delivery, sizing read buffers to whole records (`profile.maximumEnvelope + 5`) to prevent TCP receive window collapse.
 3. **Off-main chunk decode:** Chunk CBOR decoding runs on `Dispatchers.Default` off presentation threads to prevent UI frame drops.
 4. **SAF provider latency:** Synchronous DocumentFile provider traversal adds per-chunk IPC overhead; throughput requires sequential streaming into exclusive staging files before atomic publication or link fallback.

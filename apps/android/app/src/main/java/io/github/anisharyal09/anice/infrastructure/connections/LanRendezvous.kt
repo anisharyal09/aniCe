@@ -93,11 +93,18 @@ internal class LanAttemptGate {
     private var ready = false
     private var requests = 0L
     private var attempted = false
+    private var activityDemanded = false
     fun update(channel: String?, eligible: Boolean, remoteEligible: Boolean, ready: Boolean, requests: Long) {
+        if (this.channel != channel || (eligible && !this.eligible) || (remoteEligible && !this.remoteEligible)) activityDemanded = false
         if (this.channel != channel || this.requests != requests || (eligible && !this.eligible) ||
             (remoteEligible && !this.remoteEligible) || (ready && !this.ready)) attempted = false
         this.channel = channel; this.eligible = eligible; this.remoteEligible = remoteEligible
         this.ready = ready; this.requests = requests
+    }
+    fun claimActivity(): Boolean {
+        if (activityDemanded) return false
+        activityDemanded = true
+        return true
     }
     fun trigger() { attempted = false }
     fun claim(): Boolean { if (attempted) return false; attempted = true; return true }

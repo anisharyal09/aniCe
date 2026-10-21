@@ -22,18 +22,33 @@ struct CompanionView: View {
         Text("aniCe").font(.headline)
         Spacer()
         Menu {
+          // Quick actions and clipboard tools
           Button("Quick Paste Tray (⌥⌘V)") {
             PasteTrayController.shared.show()
           }
+          if clipboard.isPaused {
+            Button("Resume clipboard (\(clipboard.pauseStatusText ?? "Paused"))") {
+              clipboard.resume()
+            }
+          } else {
+            Menu("Pause clipboard") {
+              ForEach(ClipboardPauseDuration.allCases) { duration in
+                Button(duration.rawValue) { clipboard.pause(for: duration) }
+              }
+            }
+          }
+
+          Divider()
+
+          // Device connection and pairing navigation
           if session.state == "Secured" || lan.state == "Secured" {
             Button("Disconnect device") { session.disconnect(); lan.disconnect() }
           }
           Button("Manage devices") { navigation.open(.devices, route: .pairing, present: openMain) }
-          if let peer = clipboard.selected, clipboard.supports(peer) {
-            Button(clipboard.automatic ? (clipboard.automaticAccessAllowed ? "Clipboard · Automatic" : "Clipboard · Automatic unavailable") : "Clipboard · Manual") {
-              navigation.openFeature(.clipboard); openMainWindow()
-            }
-          }
+
+          Divider()
+
+          // Preferences and application termination
           Button("Settings") { navigation.open(.settings, present: openMain) }
           Button("Quit aniCe") { NSApp.terminate(nil) }
         } label: { Image(systemName: "ellipsis") }
@@ -174,6 +189,7 @@ struct CompanionView: View {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let popover = NSPopover()
   private let playback: MacPlaybackModel
+  private let clipboard: MacClipboardModel
   private let onOpen: () -> Void
   private let onManage: () -> Void
   private let onDevices: () -> Void
@@ -181,6 +197,7 @@ struct CompanionView: View {
   init(content: CompanionView, onOpen: @escaping () -> Void,
     onManage: @escaping () -> Void, onDevices: @escaping () -> Void) {
     self.playback = content.playback
+    self.clipboard = content.clipboard
     self.onOpen = onOpen
     self.onManage = onManage
     self.onDevices = onDevices
@@ -209,7 +226,7 @@ struct CompanionView: View {
     if Self.showsContextMenu(eventType: event?.type,
       modifiers: event?.modifierFlags ?? []) {
       popover.performClose(nil)
-      item.popUpMenu(Self.makeMenu(target: self))
+      item.popUpMenu(Self.makeMenu(target: self, clipboard: clipboard))
     } else if popover.isShown {
       popover.performClose(nil)
     } else {
@@ -222,7 +239,11 @@ struct CompanionView: View {
     eventType == .rightMouseUp || eventType == .rightMouseDown || modifiers.contains(.control)
   }
 
-  static func makeMenu(target: AnyObject) -> NSMenu {
+  /// Constructs the right-click status bar menu with distinct sections:
+  /// 1. Navigation items (Open aniCe, Devices, Manage devices)
+  /// 2. Feature options (Clipboard Pause submenu or Resume action) separated by dividers
+  /// 3. App termination
+  static func makeMenu(target: AnyObject, clipboard: MacClipboardModel? = nil) -> NSMenu {
     let menu = NSMenu()
     for (title, action) in [("Open aniCe", #selector(openMain)),
                              ("Devices", #selector(openDevices)),
@@ -231,11 +252,51 @@ struct CompanionView: View {
       entry.target = target
       menu.addItem(entry)
     }
+
+    // Feature controls section (separated from navigation)
+    menu.addItem(.separator())
+    if let clipboard, clipboard.isPaused {
+      // Direct click resumes observation immediately if already paused.
+      let resume = NSMenuItem(title: "Resume clipboard (\(clipboard.pauseStatusText ?? "Paused"))", action: #selector(resumeClipboard), keyEquivalent: "")
+      resume.target = target
+      menu.addItem(resume)
+    } else {
+      // When active, clicking the parent item pauses indefinitely; submenu allows picking timed durations.
+      let pauseItem = NSMenuItem(title: "Pause clipboard", action: #selector(pauseClipboardItem), keyEquivalent: "")
+      pauseItem.target = target
+      let pauseSubmenu = NSMenu()
+      for duration in ClipboardPauseDuration.allCases {
+        let subItem = NSMenuItem(title: duration.rawValue, action: #selector(pauseDurationSelected(_:)), keyEquivalent: "")
+        subItem.target = target
+        subItem.representedObject = duration
+        pauseSubmenu.addItem(subItem)
+      }
+      pauseItem.submenu = pauseSubmenu
+      menu.addItem(pauseItem)
+    }
+
+    // App lifecycle section
     menu.addItem(.separator())
     let quit = NSMenuItem(title: "Quit aniCe", action: #selector(quitApp), keyEquivalent: "")
     quit.target = target
     menu.addItem(quit)
     return menu
+  }
+
+  /// AppKit action to resume observation when user clicks "Resume clipboard".
+  @objc private func resumeClipboard() {
+    clipboard.resume()
+  }
+
+  /// AppKit action when user directly clicks "Pause clipboard" root item (pauses until turned back on).
+  @objc private func pauseClipboardItem() {
+    clipboard.pause(for: .untilTurnedOn)
+  }
+
+  /// AppKit action when user selects a specific timed interval from the "Pause clipboard" submenu.
+  @objc private func pauseDurationSelected(_ sender: NSMenuItem) {
+    guard let duration = sender.representedObject as? ClipboardPauseDuration else { return }
+    clipboard.pause(for: duration)
   }
 
   @objc private func openMain() {

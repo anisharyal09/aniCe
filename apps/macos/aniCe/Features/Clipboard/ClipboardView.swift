@@ -18,6 +18,23 @@ struct ClipboardSettingsView: View {
       } else if let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
       Toggle("Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
         .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
+      HStack(spacing: 8) {
+        Text(model.isPaused ? (model.pauseStatusText ?? "Clipboard paused") : "Clipboard observation active")
+          .font(.caption)
+          .foregroundStyle(model.isPaused ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+        Spacer()
+        if model.isPaused {
+          Button("Resume") { model.resume() }
+            .buttonStyle(.bordered).controlSize(.small)
+        }
+        Menu(model.isPaused ? "Change" : "Pause…") {
+          ForEach(ClipboardPauseDuration.allCases) { duration in
+            Button(duration.rawValue) { model.pause(for: duration) }
+          }
+        }
+        .menuStyle(.borderedButton)
+        .controlSize(.small)
+      }
       if showHistory { HistoryPreference(history: model.history) }
       ClipboardAccessGuidance(model: model)
     }

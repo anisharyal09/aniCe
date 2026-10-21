@@ -1,6 +1,6 @@
 # aniCe LAN binding v1
 
-The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2, record profile 3 and transfer capability 2. Standard profile 1/BLE limits and fixture bytes remain unchanged.
+The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2 and record profile 3. File transfer capability 3 supports chunks up to 262,016 bytes; standard profile 1/BLE limits remain unchanged.
 
 See [automatic LAN rendezvous](AUTOMATIC.md) for opt-in authenticated BLE coordination of bounded admission on connection events and feature demand. Run-to-run recovery remains owned by BLE. Manual behavior below remains available.
 

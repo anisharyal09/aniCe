@@ -16,7 +16,7 @@ aniCe throughput is governed by the authenticated record path: every application
 | Queued envelopes | 8 / 32,768 bytes (standard); 4 / 1,048,700 bytes (profile 3) | protocol | [LAN transfer profile](../protocol/lan/TRANSFER_PROFILE.md) |
 | Frame assembly and write deadline | 10 s absolute | protocol | [LAN contract](../protocol/lan/README.md) |
 | Session CBOR budget | 4,096 bytes standard; 262,144 bytes profile 3; 512 items; 8 levels | protocol | [Session contract](../protocol/session/README.md) |
-| Transfer chunk and credit | 3,072 bytes / 64 chunks (v1); 131,072 bytes / 8 chunks (v2) | protocol | [Transfer contract](../protocol/transfer/README.md) |
+| Transfer chunk and credit | 3,072 bytes / 64 chunks (v1); 131,072 bytes / 8 chunks (v2); 262,016 bytes / 8 chunks (v3) | protocol | [Transfer contract](../protocol/transfer/README.md) |
 
 Wire bounds are contracts, not tuning knobs. Changing a record bound requires a protocol revision that both peers negotiate before EDHOC.
 
@@ -24,24 +24,24 @@ Wire bounds are contracts, not tuning knobs. Changing a record bound requires a 
 
 | Record payload | Records per second | Wall budget per record |
 | :--- | ---: | ---: |
-| 131,072 bytes (profile 3 v2 chunk) | 64.0 | 15.6 ms |
+| 262,016 bytes (profile 3 v3 chunk) | 32.0 | 31.3 ms |
 | 4,000 bytes (standard) | 2,097 | 477 µs |
 | 3,072 bytes (transfer v1 chunk over a standard record) | 2,730 | 366 µs |
 
-The gate is a record-rate gate, not a byte-rate gate. Native identity and trust validation runs once per authenticated record and is the only stage that may not be removed, so it sets the floor on record rate. Reaching 8 MiB/s with 4,000-byte records requires 2,097 live KeyStore or Keychain validations per second; the same payload carried in 131,072-byte records requires 64. That is why profile 3 exists, and why optimizations are expressed as work removed per record rather than per byte.
+The gate is a record-rate gate, not a byte-rate gate. Native identity and trust validation runs on every authenticated operation and is the only stage that may not be removed, so it sets the floor on record rate. Reaching 8 MiB/s with 4,000-byte records requires 2,097 records per second; 262,016-byte records reduce this to 32. That is why profile 3 exists, and why optimizations are expressed as work removed per record rather than per byte.
 
 ## 2. Verified bottlenecks and hardware boundaries
 
 Physical measurement and hardware constraints establish four throughput and latency boundaries on the authenticated record path. Specific test-run transfer telemetry is tracked in [LAN Benchmark Telemetry](../protocol/lan/BENCHMARK.md#verification-results).
 
-1. **Hardware KeyStore IPC ceiling:** Standard transfer v1 carries 3,072-byte chunks across 4,000-byte records. At 8 MiB/s, this requires 2,730 live KeyStore/Keychain validations per second. On physical Android devices, hardware KeyStore IPC (binder transaction to `keystore2` / Secure Element / TEE) caps out at roughly 100–200 queries per second. This hardware boundary caps standard-record physical throughput to ~300–600 KB/s regardless of link bandwidth. Profile 3 (131,072-byte chunks / 262,144-byte records) amortizes KeyStore queries down to 64 per second at 8 MiB/s, fitting within hardware capacity.
+1. **Hardware KeyStore IPC ceiling:** Standard transfer v1 carries 3,072-byte chunks across 4,000-byte records. At 8 MiB/s, this requires 2,730 live KeyStore/Keychain validations per second. On physical Android devices, hardware KeyStore IPC (binder transaction to `keystore2` / Secure Element / TEE) caps out at roughly 100–200 queries per second. This hardware boundary caps standard-record physical throughput to ~300–600 KB/s regardless of link bandwidth. Profile 3 v3 (262,016-byte chunks / 262,144-byte records) halves profile-3 record and validation frequency compared with capability 2; Android still performs two live validations per sent record and one per received record.
 2. **Ingress serialization:** Serializing socket reads with inline frame delivery forces the socket to sit unread during CBOR decoding, native identity verification, and application storage hops, collapsing TCP receive windows. Bounded ordered ingress queues (`LanIngressQueue` / `LanQueueBudget`) decouple transport socket reads from downstream consumption while preserving sequential delivery order.
 3. **Presentation thread saturation:** Incoming chunk CBOR decoding on presentation threads starves UI frame rendering pipelines, causing frame drops and input lag. Multi-kilobyte chunk decode must run off-main (e.g. `Dispatchers.Default`), restricting main-thread dispatch strictly to throttled state snapshots.
 4. **Storage Access Framework (SAF) binder latency:** Writing small chunks through Android's `DocumentFile` tree provider introduces synchronous IPC and file descriptor sync overhead per chunk. Throughput requires sequential streaming into exclusive staging files without per-chunk provider traversal, followed by verified atomic publication or link fallback.
 
 ## 3. Per-record cost model
 
-### Android, sending one 131,072-byte profile-3 chunk
+### Android, sending one 262,016-byte profile-3 chunk
 
 | Stage | Payload-sized allocations | Payload copies | Anchor |
 | :--- | ---: | ---: | :--- |
@@ -52,7 +52,7 @@ Physical measurement and hardware constraints establish four throughput and late
 | TCP framing into transport scratch | 0 | 1 | `LanFraming.kt:85`, `AndroidLanTransport.kt:18` |
 | Socket write | 0 | 0 | `AndroidLanTransport.kt:65` |
 
-### Android, receiving one 131,072-byte profile-3 chunk
+### Android, receiving one 262,016-byte profile-3 chunk
 
 | Stage | Payload-sized allocations | Payload copies | Anchor |
 | :--- | ---: | ---: | :--- |
@@ -118,8 +118,8 @@ Caching this validation is prohibited. See rule 2 in section 6.
 
 - **Per-record write watchdog.** `AndroidLanTransport.submit` launches one coroutine and one 10-second timer per record (`AndroidLanTransport.kt:55`). Moving the watchdog to transport lifetime would save roughly 1–2 µs per record against a 15.6 ms budget, and would change the deadline from per-record to earliest-in-flight. Rejected.
 - **Credit-wait fast path.** The `CompletableDeferred` handling in the transfer send loop samples the revision, appends the waiter, then re-checks credit. That ordering is what prevents a missed wakeup. A fast path would save one deferred allocation per stall, which is not on the byte path at all. Rejected.
-- **Output-offset `Cipher.doFinal`.** Writing ciphertext and tag directly into the record buffer would remove one 131,072-byte allocation and one copy per record on Android. It requires the output-offset overload, for which this repository has no precedent, and the host JVM unit suite cannot exercise Android's provider path. Deferred; see section 8.
-- **Pooling the receive assembly buffer.** Rejected, not deferred. `LanFraming.feed` allocates one `ByteArray(size)` per assembled envelope (`LanFraming.kt:53`) and the ingress consumer runs concurrently with the read loop, so the framing cannot know when that array is free. Reuse would need a per-record return round-trip and would put a use-after-hand-off hazard on the record path for a single 131,072-byte allocation. The ownership contract is stated at `LanFraming.kt:35`.
+- **Output-offset `Cipher.doFinal`.** Writing ciphertext and tag directly into the record buffer would remove one 262,016-byte allocation and one copy per record on Android. It requires the output-offset overload, for which this repository has no precedent, and the host JVM unit suite cannot exercise Android's provider path. Deferred; see section 8.
+- **Pooling the receive assembly buffer.** Rejected, not deferred. `LanFraming.feed` allocates one `ByteArray(size)` per assembled envelope (`LanFraming.kt:53`) and the ingress consumer runs concurrently with the read loop, so the framing cannot know when that array is free. Reuse would need a per-record return round-trip and would put a use-after-hand-off hazard on the record path for a single 262,016-byte allocation. The ownership contract is stated at `LanFraming.kt:35`.
 - **Read buffer sized below one record.** The read loop allocated 65,536 bytes against a 262,180-byte profile-3 envelope, so every record cost roughly five partial assemblies and several socket reads. Both platforms now size the read buffer to `profile.maximumEnvelope + 5`. TCP returns as soon as any byte is available, so a larger buffer does not delay a partial frame or the assembly deadline.
 - **Ingress serialized with delivery.** The read loop delivered every frame inline before issuing the next read, so the socket sat unread for the whole decode, native validation and delivery hop of each record. TCP backpressure then amplified every stall, which is why the same build swung by an order of magnitude between links. Both platforms now hand envelopes to a bounded single-consumer queue and return to reading immediately. Ordering is unchanged because one consumer drains sequentially, and the bound restates the existing admission limit rather than adding one. A full queue suspends the producer rather than dropping: every `AsyncStream` buffering policy discards an element instead, which would fail a valid transfer on a fast link. Ending the stream closes the hand-off without emptying it, so envelopes the read loop already handed over are still delivered before the end is reported: the peer's FIN commonly follows its last record, and a close that discarded the queue would drop the record carrying its CLOSE, which inline delivery always delivered.
 - **Direct main-thread chunk delivery.** The 262,016-byte `TransferMessage.decode` for a profile-3 chunk now runs on `Dispatchers.Default` and its result is published from there; storage writes already ran on `Dispatchers.IO`. The presentation thread now receives only state publication, still rate-limited to the existing 100 ms interval. Feature DATA delivery itself still enters through `Dispatchers.Main.immediate`: every feature handler publishes Compose state, so moving the whole dispatch off main would require per-feature marshalling and is not done.
@@ -128,7 +128,7 @@ Caching this validation is prohibited. See rule 2 in section 6.
 ## 8. Open candidates
 
 1. **Feature DATA dispatch.** Feature delivery still enters through `Dispatchers.Main.immediate`, where every feature handler publishes Compose state. Moving the whole dispatch off main needs per-feature marshalling; the transfer decode and the storage writes are already off the presentation thread, so the residual cost is state publication at the existing 100 ms interval.
-2. **Profile-3 production transfer rollout.** Negotiate and activate profile 3 (131,072-byte chunks / 262,144-byte records) for production file transfers, reducing native KeyStore validations from 2,730/s to 64/s to bypass the physical KeyStore IPC ceiling.
+2. **Larger authenticated records.** Capability 3 now fills the existing profile-3 DATA budget with up to 262,016-byte chunks. It reduces per-byte encryption and native trust-validation work; physical acceptance still requires measurement on target hardware.
 3. **Android encrypt-side allocation.** `RecordCipher.seal` allocates the ciphertext, then a record buffer and copies into it. Removing the intermediate allocation is the largest single remaining win on the send path.
 4. **macOS `SessionRecordCodec.open` copies.** The header, ciphertext and tag are each copied before `AES.GCM.SealedBox` is constructed. Slicing the record instead would remove three copies per record but extends the lifetime of the full record buffer.
 5. **macOS CBOR encoding growth.** `encodeValues` appends into a growing `Data`; Android measures and writes once. The macOS encoder is not yet symmetric.
