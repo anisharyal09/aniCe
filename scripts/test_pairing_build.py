@@ -108,6 +108,19 @@ with patch('platform.system', return_value=host), patch('platform.machine', retu
                                    ("armeabi-v7a", "armv7-linux-androideabi"), ("x86_64", "x86_64-linux-android")]:
                     self.assertEqual(triple.encode(), (android / "app/build/native" / abi / "libanice_pairing.so").read_bytes())
 
+            # Clean runners supply tool locations through the environment and have no private properties file.
+            properties.unlink()
+            log.unlink(missing_ok=True)
+            try:
+                clean_env = env | {'CARGO_HOME': str(homes[0]), 'RUSTUP_HOME': str(rustup), 'ANICE_NDK': str(ndk)}
+                run = subprocess.run([sys.executable, '-c', runner, str(root / 'scripts/build-pairing-native.py'), 'Linux', 'x86_64'],
+                                     env=clean_env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(len(log.read_text().splitlines()), 3)
+                self.assertFalse(properties.exists())
+            finally:
+                properties.write_bytes(saved_properties)
+
             # A partially installed NDK must fail before Cargo can replace any ABI output.
             compiler = ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android29-clang'
             compiler.unlink()
