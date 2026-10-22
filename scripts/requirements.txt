@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Pins host verification dependencies without adding runtime app dependencies.
+-r ../protocol/test-vectors/session/requirements.txt
+openstep-parser==2.0.1

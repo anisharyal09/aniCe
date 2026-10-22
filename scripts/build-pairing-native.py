@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Build pinned shared PAKE bridge. Tool paths can be supplied without changing global config."""
-import argparse, os, pathlib, shutil, subprocess
+import argparse, os, pathlib, platform, shutil, subprocess
 root = pathlib.Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(); p.add_argument('platform', choices=['macos','android']); args=p.parse_args()
 env=os.environ.copy()
@@ -22,6 +22,7 @@ if not cargo:
 manifest=root/'core/rust/pairing/Cargo.toml'; target=root/'core/rust/pairing/target'
 def build(triple): subprocess.run([cargo,'build','--locked','--release','--manifest-path',str(manifest),'--target',triple],env=env,check=True)
 if args.platform=='macos':
+    # The Mac library contains both CPU architectures so the same build input links on either Mac.
     for t in ['aarch64-apple-darwin','x86_64-apple-darwin']: build(t)
     out=root/'apps/macos/build/native';out.mkdir(parents=True,exist_ok=True)
     subprocess.run(['lipo','-create',*[str(target/t/'release/libanice_pairing.a') for t in ['aarch64-apple-darwin','x86_64-apple-darwin']],'-output',str(out/'libanice_pairing.a')],check=True)
@@ -30,8 +31,20 @@ else:
     sdk = sdk or local.get('sdk.dir')
     sdk = sdk or str(pathlib.Path.home()/'Library/Android/sdk')
     ndk=pathlib.Path(env.get('ANICE_NDK') or env.get('ANDROID_NDK_HOME') or local.get('ndk.dir') or str(pathlib.Path(sdk)/'ndk/27.3.13750724'))
-    tool=ndk/'toolchains/llvm/prebuilt/darwin-x86_64/bin'
-    if not tool.exists(): raise SystemExit('Set ANICE_NDK to an installed Android NDK r27d (27.3.13750724).')
+    host = platform.system()
+    # This tag selects the compiler's host, independently of the Android CPU targets below.
+    # NDK r27d uses darwin-x86_64 for its macOS tool directory on Apple Silicon too.
+    host_tag = {'Darwin': 'darwin-x86_64', 'Linux': 'linux-x86_64'}.get(host)
+    if host_tag is None or (host == 'Linux' and platform.machine() not in ('x86_64', 'AMD64')):
+        raise SystemExit('Unsupported Android NDK host: ' + host + '/' + platform.machine())
+    tool=ndk/'toolchains/llvm/prebuilt'/host_tag/'bin'
+    if not tool.is_dir(): raise SystemExit('Android NDK tools not found at ' + str(tool) + '; set ANICE_NDK to Android NDK r27d (27.3.13750724).')
+    compilers = ['aarch64-linux-android29-clang', 'armv7a-linux-androideabi29-clang', 'x86_64-linux-android29-clang', 'llvm-ar']
+    # Validate every ABI's tools before producing any new native outputs.
+    for compiler in compilers:
+        if not os.access(tool/compiler, os.X_OK):
+            raise SystemExit('Android NDK executable missing or not executable: ' + str(tool/compiler))
+    # Android devices using 16-KiB pages require compatible ELF load-segment alignment.
     env['RUSTFLAGS']=env.get('RUSTFLAGS','')+' -C link-arg=-Wl,-z,max-page-size=16384'
     for triple,clang,abi in [('aarch64-linux-android','aarch64-linux-android29','arm64-v8a'),('armv7-linux-androideabi','armv7a-linux-androideabi29','armeabi-v7a'),('x86_64-linux-android','x86_64-linux-android29','x86_64')]:
         upper=triple.replace('-','_').upper();env['CARGO_TARGET_'+upper+'_LINKER']=str(tool/(clang+'-clang'));env['CC_'+triple.replace('-','_')]=str(tool/(clang+'-clang'));env['AR_'+triple.replace('-','_')]=str(tool/'llvm-ar')

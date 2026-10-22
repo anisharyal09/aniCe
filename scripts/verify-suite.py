@@ -6,7 +6,7 @@ The gate deliberately distinguishes "the command exited zero" from "the tests
 executed".  It fails on zero-test reports, failures, errors, crashes,
 unreported tests, undocumented skips, fixture drift and missing toolchains.
 
-This is a local acceptance tool.  It is not CI configuration and does not
+This gate runs locally and under CI.  It does not
 replace physical radio, Keychain/Secure Enclave, minimum-OS or manual UI
 acceptance; those boundaries are named in docs/A&V/TEST_AUDIT.md.
 """
@@ -15,6 +15,7 @@ import argparse
 import fnmatch
 import json
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -23,7 +24,7 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,11 @@ DOCUMENTED_MACOS_SKIPS = {
 
 class GateError(RuntimeError):
     """A verification step failed, or its report cannot be trusted."""
+
+    def __init__(self, message, file=None, line=None):
+        super().__init__(message)
+        self.file = file
+        self.line = line
 
 
 @dataclass
@@ -116,6 +122,9 @@ def parse_junit_files(paths):
                 elif tag == "error":
                     outcome = "error"
                 elif tag in ("skipped", "ignored", "disabled"):
+                    # A reviewed skip never cancels failure evidence in the same test case.
+                    if outcome in ("failed", "error"):
+                        continue
                     outcome = "skipped"
                 else:
                     continue
@@ -149,6 +158,22 @@ def parse_junit_files(paths):
                         "%s declares %d tests but contains %d test cases; "
                         "the report is incomplete" % (path, declared, len(cases))
                     )
+
+        # Wrapper totals can be absent or consistent while a nested suite is still truncated.
+        for nested in root.iter():
+            if nested is root or nested.tag not in ("testsuite", "testsuites"):
+                continue
+            declared = nested.get("tests")
+            if declared is None:
+                continue
+            try:
+                declared = int(declared)
+            except ValueError:
+                raise GateError("%s has a non-numeric nested tests attribute" % path)
+            contained = sum(1 for _ in nested.iter("testcase"))
+            if declared != contained:
+                raise GateError("%s nested suite declares %d tests but contains %d; the report is incomplete"
+                                % (path, declared, contained))
 
         # Suite-level errors indicate the runner failed outside a test case.
         for suite in root.iter("testsuite"):
@@ -205,6 +230,9 @@ def unittest_results(log_path):
         raise GateError("Python harness tests skipped at least one test; log: %s" % log_path)
     if re.search(r"^FAILED", text, re.MULTILINE) or count == 0:
         raise GateError("Python harness tests failed or ran zero tests; log: %s" % log_path)
+    # A count line alone can survive a truncated run; expected failures are not passing tests.
+    if not re.search(r"^OK\s*$", text, re.MULTILINE):
+        raise GateError("Python harness tests lack a complete, unconditional OK result; log: %s" % log_path)
     if count < MINIMUMS["python"]:
         raise GateError(
             "Python harness suite ran %d tests, below the required floor of %d" %
@@ -378,7 +406,31 @@ def print_tail(path, lines=80):
         text = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return
-    print("\n".join(text[-lines:]))
+    # Prefix subprocess output so a diagnostic cannot inject workflow commands.
+    print("\n".join("| " + line for line in text[-lines:]))
+
+
+def write_json(path, document):
+    # Replace the report only after the full JSON is written; readers must not see a partial update.
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def workflow_error(error):
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    def escape(value, property_value=False):
+        # Actions interprets newlines and property separators; test output must remain message text.
+        value = str(value).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        return value.replace(":", "%3A").replace(",", "%2C") if property_value else value
+    properties = []
+    # A gate failure may have no source location; omit it rather than point at an unrelated line.
+    if getattr(error, "file", None):
+        properties.append("file=" + escape(error.file, True))
+    if getattr(error, "line", None):
+        properties.append("line=" + str(int(error.line)))
+    print("::error" + (" " + ",".join(properties) if properties else "") + "::" + escape(error), file=sys.stderr)
 
 
 def run_step(label, command, artifacts, cwd=ROOT, env=None, timeout=1800):
@@ -387,34 +439,53 @@ def run_step(label, command, artifacts, cwd=ROOT, env=None, timeout=1800):
     printable = " ".join(shlex.quote(str(part)) for part in command)
     print("\n[%s] %s" % (label, printable), flush=True)
     started = time.monotonic()
-    with log.open("w", encoding="utf-8") as stream:
-        try:
+    metadata = artifacts / (slug + ".command.json")
+    record = {"label": label, "command": [str(part) for part in command],
+              "cwd": str(cwd), "log": str(log), "status": "running",
+              "exit_code": None, "timeout_seconds": timeout, "elapsed_seconds": 0}
+    # Persist intent before launch so an interrupted run still identifies its active command.
+    write_json(metadata, record)
+    failure = None
+    try:
+        with log.open("w", encoding="utf-8") as stream:
             completed = subprocess.run(
                 [str(part) for part in command], cwd=str(cwd), env=env,
                 stdout=stream, stderr=subprocess.STDOUT, timeout=timeout,
             )
-        except FileNotFoundError as error:
-            raise GateError("%s could not start: %s" % (label, error))
-        except subprocess.TimeoutExpired:
-            print_tail(log)
-            raise GateError("%s timed out after %d seconds; log: %s" % (label, timeout, log))
+        record["exit_code"] = completed.returncode
+        if completed.returncode:
+            failure = GateError("%s failed with exit %d; log: %s" % (label, completed.returncode, log))
+    except OSError as error:
+        failure = GateError("%s could not run: %s; log: %s" % (label, error, log))
+    except subprocess.TimeoutExpired:
+        failure = GateError("%s timed out after %s seconds; log: %s" % (label, timeout, log))
+    except KeyboardInterrupt:
+        failure = GateError("%s interrupted; log: %s" % (label, log))
     elapsed = time.monotonic() - started
-    if completed.returncode:
+    # Command completion is separate from acceptance: the caller still validates test evidence.
+    record.update(status="failed" if failure else "completed", elapsed_seconds=round(elapsed, 3))
+    if failure:
+        record["error"] = str(failure)
+    try:
+        write_json(metadata, record)
+    except OSError as error:
+        # A reporting failure must retain the original command failure for diagnosis.
+        raise GateError((str(failure) + "; " if failure else "") + "Cannot save command diagnostics: " + str(error)) from error
+    if failure:
         print_tail(log)
-        raise GateError(
-            "%s failed with exit %d; log: %s" % (label, completed.returncode, log)
-        )
+        raise failure
     print("[%s] completed in %.1fs (log: %s)" % (label, elapsed, log))
     return log
 
 
-def toolchain_env():
+def toolchain_env(android=False, macos=False):
+    # Probe only selected platforms; Linux Android checks have no Xcode dependency.
     env = os.environ.copy()
-    if not env.get("JAVA_HOME"):
+    if android and not env.get("JAVA_HOME"):
         bundled = Path("/Applications/Android Studio.app/Contents/jbr/Contents/Home")
         if bundled.is_dir():
             env["JAVA_HOME"] = str(bundled)
-    if not env.get("DEVELOPER_DIR"):
+    if macos and not env.get("DEVELOPER_DIR"):
         developer = ""
         try:
             developer = subprocess.check_output(
@@ -427,7 +498,8 @@ def toolchain_env():
         if (Path(developer) / "Platforms/MacOSX.platform").is_dir():
             env["DEVELOPER_DIR"] = developer
     # Hosted Keychain tests skip unless this reaches the test runner.
-    env["TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS"] = "1"
+    if macos:
+        env["TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS"] = "1"
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     # Cargo may be installed but absent from a non-login shell's PATH.
     if not shutil.which("cargo", path=env.get("PATH", "")):
@@ -529,6 +601,7 @@ def run_vector_checks(interpreter, artifacts):
     for label, script, extra in checks:
         run_step(label, [interpreter, script] + extra, artifacts, cwd=script.parent)
     print("Vector oracles: %d independent fixture checks passed" % len(checks))
+    return len(checks)
 
 
 def run_python_meta_tests(env, artifacts):
@@ -551,11 +624,14 @@ def run_rust(env, artifacts):
 
 def run_android_jvm(env, artifacts):
     reports = ANDROID / "app/build/test-results/testDebugUnitTest"
-    shutil.rmtree(reports, ignore_errors=True)
-    shutil.rmtree(ANDROID / "app/build/reports/tests/testDebugUnitTest", ignore_errors=True)
+    # Old XML could make a runner that executes nothing appear successful. Cleanup errors must fail.
+    for folder in (reports, ANDROID / "app/build/reports/tests/testDebugUnitTest"):
+        if folder.exists():
+            shutil.rmtree(folder)
     run_step(
         "Android JVM tests and lint",
-        [ANDROID / "gradlew", "--console=plain", "testDebugUnitTest", "lintDebug"],
+        # Dependency caches remain usable, but cached task outputs must not replace test execution.
+        [ANDROID / "gradlew", "--console=plain", "--no-build-cache", "testDebugUnitTest", "lintDebug"],
         artifacts, cwd=ANDROID, env=env, timeout=2400,
     )
     paths = collect_junit_reports([reports])
@@ -565,7 +641,9 @@ def run_android_jvm(env, artifacts):
             "(expected %s)" % reports
         )
     results = parse_junit_files(paths)
-    validate_results(results, "Android JVM", MINIMUMS["android-jvm"])
+    # Keep individual results even when the acceptance checks below reject the suite.
+    write_json(artifacts / "android-tests.json", [asdict(result) for result in results])
+    return validate_results(results, "Android JVM", MINIMUMS["android-jvm"])
 
 
 def build_session_helper(env, artifacts):
@@ -634,19 +712,21 @@ def run_device_checks(args, env, artifacts, documented_android):
          "--output", str(artifacts / "session-interchange")],
         artifacts, env=env, timeout=2400,
     )
-    run_connected_android(env, artifacts, documented_android)
+    return run_connected_android(env, artifacts, documented_android)
 
 
 def run_connected_android(env, artifacts, documented):
+    # Connected tests need fresh reports for the same reason as the host JVM suite.
     for folder in (
         ANDROID / "app/build/outputs/androidTest-results/connected",
         ANDROID / "app/build/test-results/connectedDebugAndroidTest",
         ANDROID / "app/build/reports/androidTests/connected",
     ):
-        shutil.rmtree(folder, ignore_errors=True)
+        if folder.exists():
+            shutil.rmtree(folder)
     run_step(
         "Android connected tests",
-        [ANDROID / "gradlew", "--console=plain", "connectedDebugAndroidTest"],
+        [ANDROID / "gradlew", "--console=plain", "--no-build-cache", "connectedDebugAndroidTest"],
         artifacts, cwd=ANDROID, env=env, timeout=3600,
     )
     paths = collect_junit_reports([
@@ -655,8 +735,10 @@ def run_connected_android(env, artifacts, documented):
     ])
     if not paths:
         raise GateError("Android connected run produced no JUnit reports; the tests did not execute")
-    validate_results(
-        parse_junit_files(paths), "Android connected", MINIMUM_CONNECTED,
+    results = parse_junit_files(paths)
+    write_json(artifacts / "android-connected-tests.json", [asdict(result) for result in results])
+    return validate_results(
+        results, "Android connected", MINIMUM_CONNECTED,
         documented=documented,
     )
 
@@ -682,40 +764,117 @@ def main(argv=None):
     parser.add_argument("--strict-skips", action="store_true",
                         help="also reject the documented manual/real-player skips")
     parser.add_argument("--skip-rust", action="store_true", help="skip the Rust suite")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "build/reports/verification",
+                        help="report root; each invocation creates an isolated run directory")
     args = parser.parse_args(argv)
 
-    artifacts = Path(tempfile.mkdtemp(prefix="anice-verify-suite-")).resolve()
-    print("Verification artifacts: " + str(artifacts))
-    env = toolchain_env()
+    # Bare fast retains both local platform suites; CI selects Android explicitly.
+    host_checks = args.mode in ("fast", "all")
+    android = host_checks and (args.android or not args.macos)
+    macos = host_checks and (args.macos or not args.android)
+    device = args.mode in ("device", "all")
+    selected = {"structure": host_checks, "vectors": host_checks, "python": host_checks,
+                "rust": host_checks and not args.skip_rust, "android": android,
+                "macos": macos, "device": device}
+    summary = {"mode": args.mode, "status": "running", "suites": {
+        name: {"status": "pending" if included else "not_selected"}
+        for name, included in selected.items()}, "commands": [], "errors": []}
+    if host_checks and args.skip_rust:
+        # An explicit omission is recorded separately from a suite that was never selected.
+        summary["suites"]["rust"].update(status="not_executed", reason="--skip-rust")
+    summary["suites"]["android"]["reports"] = [str(ANDROID / "app/build/test-results/testDebugUnitTest"),
+                                                  str(ANDROID / "app/build/reports")]
+    artifacts = None
+    active = None
+    started = time.monotonic()
     documented_android = () if args.strict_skips else DOCUMENTED_ANDROID_SKIPS
     documented_macos = () if args.strict_skips else DOCUMENTED_MACOS_SKIPS
 
     try:
-        if args.mode in ("fast", "all"):
-            if args.android or args.macos:
-                host_platforms = [name for name, selected in (("android", args.android), ("macos", args.macos)) if selected]
-            else:
-                host_platforms = ["android", "macos"]
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        # Separate runs retain their own evidence, including when another invocation fails.
+        artifacts = Path(tempfile.mkdtemp(prefix="run-", dir=args.output_dir)).resolve()
+        print("Verification artifacts: " + str(artifacts), flush=True)
+        write_json(artifacts / "summary.json", summary)
+        if (macos or device) and platform.system() != "Darwin":
+            raise GateError("macOS hosted and device interchange checks require macOS; "
+                            "use fast --android for Linux host checks")
+        env = toolchain_env(android=android or device, macos=macos or device)
 
-            run_structure(artifacts)
+        def execute(name, function):
+            # Persist suite progress around execution so an unfinished run cannot resemble a pass.
+            nonlocal active
+            active = name
+            row = summary["suites"][name]
+            row["status"] = "running"
+            write_json(artifacts / "summary.json", summary)
+            suite_started = time.monotonic()
+            try:
+                result = function()
+            finally:
+                row["elapsed_seconds"] = round(time.monotonic() - suite_started, 3)
+            row["status"] = "passed"
+            if name == "device" and result is None:
+                row.update(status="not_executed", reason="No authorized device (--allow-no-device)")
+            elif isinstance(result, tuple):
+                # Native validators return accepted passes and the reviewed skip count.
+                row.update(passed=result[0], documented_skips=result[1])
+            elif isinstance(result, int):
+                row["checks" if name == "vectors" else "passed"] = result
+            write_json(artifacts / "summary.json", summary)
+            active = None
+
+        if host_checks:
+            execute("structure", lambda: run_structure(artifacts))
+            active = "vectors"
             interpreter = vector_interpreter(args.vector_python)
-            run_vector_checks(interpreter, artifacts)
-            run_python_meta_tests(env, artifacts)
+            execute("vectors", lambda: run_vector_checks(interpreter, artifacts))
+            execute("python", lambda: run_python_meta_tests(env, artifacts))
             if not args.skip_rust:
-                run_rust(env, artifacts)
-            if "android" in host_platforms:
-                run_android_jvm(env, artifacts)
-            if "macos" in host_platforms:
-                run_macos_with_skips(env, artifacts, documented_macos, args.allow_skip)
+                execute("rust", lambda: run_rust(env, artifacts))
+            if android:
+                execute("android", lambda: run_android_jvm(env, artifacts))
+            if macos:
+                execute("macos", lambda: run_macos_with_skips(env, artifacts, documented_macos, args.allow_skip))
+        if device:
+            execute("device", lambda: run_device_checks(args, env, artifacts, documented_android))
+        summary["status"] = "passed_with_omissions" if any(
+            row["status"] == "not_executed" for row in summary["suites"].values()) else "passed"
+    except (GateError, OSError, ValueError, subprocess.SubprocessError) as error:
+        summary["errors"].append(str(error))
+        summary["status"] = "failed"
+        if active:
+            summary["suites"][active]["status"] = "failed"
+        workflow_error(error)
+    except KeyboardInterrupt:
+        summary["errors"].append("Verification interrupted")
+        summary["status"] = "failed"
+        if active:
+            summary["suites"][active]["status"] = "failed"
+    finally:
+        summary["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        # Fail-fast execution leaves later suites unexecuted, not implicitly successful.
+        for row in summary["suites"].values():
+            if row["status"] == "pending":
+                row.update(status="not_executed", reason="Verification stopped before this suite")
+        if artifacts:
+            try:
+                summary["commands"] = [json.loads(path.read_text(encoding="utf-8"))
+                                       for path in sorted(artifacts.glob("*.command.json"))]
+                write_json(artifacts / "summary.json", summary)
+            except (OSError, ValueError) as error:
+                # A successful command cannot make an unreadable or unwritable final report green.
+                summary["status"] = "failed"
+                summary["errors"].append("Cannot save verification diagnostics: " + str(error))
+                workflow_error(error)
 
-        if args.mode in ("device", "all"):
-            run_device_checks(args, env, artifacts, documented_android)
-    except GateError as error:
-        print("\nVERIFICATION FAILED: " + str(error), file=sys.stderr)
+    if summary["status"] == "failed":
+        print("\nVERIFICATION FAILED:", file=sys.stderr)
+        for error in summary["errors"]:
+            print("\n".join("| " + line for line in error.splitlines()), file=sys.stderr)
         print("Artifacts: " + str(artifacts), file=sys.stderr)
         return 1
-
-    print("\nVERIFICATION PASSED")
+    print("\nVERIFICATION PASSED" + (" (omissions recorded)" if summary["status"] == "passed_with_omissions" else ""))
     print("Artifacts: " + str(artifacts))
     return 0
 
@@ -735,7 +894,8 @@ def run_macos_with_skips(env, artifacts, documented, extra):
         artifacts, cwd=MACOS, env=env, timeout=2400,
     )
     results = parse_xcode_results(bundle, log)
-    validate_results(
+    write_json(artifacts / "macos-tests.json", [asdict(result) for result in results])
+    return validate_results(
         results, "macOS hosted", MINIMUMS["macos"],
         documented=documented, extra=extra,
     )

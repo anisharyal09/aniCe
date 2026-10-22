@@ -4,11 +4,47 @@
 from pathlib import Path
 from collections import Counter
 import json
+import platform
 import re
 import subprocess
+import sys
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_project(path, engine=None):
+    # Both parsers feed the same membership checks; Linux must still inspect the Xcode project.
+    engine = engine or ('plutil' if platform.system() == 'Darwin' else 'openstep')
+    if engine == 'plutil':
+        project = json.loads(subprocess.check_output(
+            ['plutil', '-convert', 'json', '-o', '-', str(path)]))
+    elif engine == 'openstep':
+        try:
+            from openstep_parser import OpenStepDecoder
+        except ImportError as error:
+            raise RuntimeError(
+                'Portable Xcode project checks require openstep-parser; install '
+                'scripts/requirements.txt with the Python interpreter running this check.') from error
+        with path.open(encoding='utf-8') as stream:
+            try:
+                text = stream.read()
+                decoder = OpenStepDecoder()
+                start = text.index('{') if text.startswith('//') else decoder._parse_padding(text, 0)
+                # The pinned parser's public API discards the ending offset and accepts trailing garbage.
+                project, end = decoder._parse_dictionary(text, start)
+                if not re.fullmatch(r'(?:\s|/\*.*?\*/|//[^\r\n]*)*', text[end:], re.S):
+                    raise ValueError('Unexpected content after the Xcode project dictionary')
+            except Exception as error:
+                # The pinned parser raises bare Exception or IndexError for invalid syntax.
+                if type(error) not in (Exception, IndexError):
+                    raise
+                raise ValueError('Invalid OpenStep project: ' + str(error)) from error
+    else:
+        raise ValueError('Unknown project parser: ' + engine)
+    if not isinstance(project, dict) or not isinstance(project.get('objects'), dict) or not project.get('rootObject'):
+        raise ValueError('Xcode project is missing its objects or rootObject')
+    return project
 
 
 def dependency_errors(root):
@@ -40,6 +76,7 @@ def membership_errors(root, project):
     root = root.resolve()
     objects = project['objects']; paths = {}; errors = []
     base = root / 'apps/macos'
+    # Xcode groups resolve file references relative to their parents or the project source root.
     def walk(key, parent):
         obj = objects[key]
         tree = obj.get('sourceTree', '<group>')
@@ -65,6 +102,7 @@ def membership_errors(root, project):
         for path, count in counts.items():
             if count != 1: errors.append(f'{target["name"]}: duplicate source {path.relative_to(root)}')
         folder = base / target['name']
+        # The playback helper is compiled separately; its sources belong in build inputs, not app membership.
         helper_inputs = {base / 'aniCe/Features/NowPlaying/Adapter' / name for name in ('NowPlayingAdapter.swift', 'NowPlayingSelection.swift')}
         declared_inputs = {value for obj in objects.values() if obj.get('isa') == 'PBXShellScriptBuildPhase' for value in obj.get('inputPaths', [])}
         for path in folder.rglob('*.swift'):
@@ -81,7 +119,11 @@ def membership_errors(root, project):
 
 
 def main():
-    project = json.loads(subprocess.check_output(['plutil', '-convert', 'json', '-o', '-', str(ROOT / 'apps/macos/aniCe.xcodeproj/project.pbxproj')]))
+    try:
+        project = load_project(ROOT / 'apps/macos/aniCe.xcodeproj/project.pbxproj')
+    except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
+        print('Cannot read Xcode project: ' + str(error), file=sys.stderr)
+        return 1
     tracked = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '*.md'], cwd=ROOT, text=True).splitlines()
     docs = [ROOT / name for name in tracked if not name.startswith('.agents/') and (ROOT / name).is_file()]
     errors = dependency_errors(ROOT) + documentation_errors(ROOT, docs) + membership_errors(ROOT, project)
