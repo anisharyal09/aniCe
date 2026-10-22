@@ -10,6 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Linux CI for shared protocol and Android host checks, with pinned actions, dependency caches and failure artifacts. Verification writes isolated run reports under `build/reports/verification/` and emits GitHub error annotations; structure and Android native-build checks support Linux hosts.
+
 - Updated implementation summaries to remove outdated blanket acceptance-pending labels.
 
 - SMS relay v3 connects Android Messages with Mac notifications, inline replies, paged conversations, history, phone-side search and per-reply SIM selection over secured LAN/Bluetooth. Content stays in memory on the Mac. Live receipts and sends retain local observation order across provider refreshes; thread scans complete timestamp groups and continue past unreadable rows. Native composers expose SIM choice beside Send, with per-phone Mac notification, sound and preview controls.
@@ -20,7 +22,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 - Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
 
-- Strict local verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) prove the gate rejects those false-success shapes. No CI workflow is added.
+- Strict verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) exercise those false-success shapes.
 - `--check` drift verification for every independent vector generator (clipboard, SMS, transfer, media, find-device, identity, pairing, session handshake/control/record, LAN framing, bulk probe and LAN transfer). Identity checking compares all non-randomized fields and verifies committed signatures with OpenSSL.
 - Replaced the macOS transfer-ordering test that asserted a local reimplementation with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback.
 

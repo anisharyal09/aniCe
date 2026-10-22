@@ -29,6 +29,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Allow environment-configured native pairing builds without `local.properties`, while retaining incremental input tracking for local tool overrides when present.
+
 - Cap GATT fragment values at 512 bytes when MTU 517 would otherwise create invalid 514-byte writes, and refresh a stale descriptor handle within the existing single layout retry. Serialize session control issuance with receive/maintenance so concurrent DATA cannot issue a stale pending control on BLE or LAN. Coalesce concurrent BLE connection requests, recover saved setup on foreground return, and bound stale-locator rediscovery. Transfer leases survive channel replacement; BLE credits leave ingress headroom, admitted records finish across route changes, and prepared jobs retain checkpointed progress and completion receipts across restarts for 15 minutes. Publish terminal LAN state before retirement callbacks so paused work can request reconnection. Reduce routine checkpoint flushes and retain only silent service/background-offer notices. Show the active transfer route and log negotiated source limits and LAN failure categories. Start compatible Bluetooth offers while LAN setup runs in parallel and measure transfer rates over a five-second window.
 
 - Prefer negotiated LAN for transfers, bound traffic-triggered LAN attempts, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
