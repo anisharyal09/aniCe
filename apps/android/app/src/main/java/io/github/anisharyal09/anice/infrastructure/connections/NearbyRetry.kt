@@ -5,8 +5,15 @@ package io.github.anisharyal09.anice.infrastructure.connections
 /** Attempt-only backoff; addresses never confer trust or survive process restart. */
 internal class NearbyRetry {
   private var failures = 0
+  private var rediscoveryUsed = false
   private val excluded = linkedMapOf<String, Long>()
-  fun reset() { failures = 0; excluded.clear() }
+  fun reset() { failures = 0; rediscoveryUsed = false; excluded.clear() }
+  fun claimRediscovery(): Boolean {
+    if (failures < 2 || rediscoveryUsed) return false
+    rediscoveryUsed = true
+    return true
+  }
+  fun exclusionDelay(address: String, now: Long): Long = ((excluded[address] ?: now) - now).coerceAtLeast(0)
   fun next(jitter: Double): Long {
     require(jitter in -0.1..0.1)
     val seconds = longArrayOf(2, 5, 15, 30, 60, 90)[failures.coerceAtMost(5)]

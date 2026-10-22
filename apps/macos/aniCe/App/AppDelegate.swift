@@ -36,7 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             findNotifier?.handleAction(action, identifier: identifier)
         } else if category == MacSmsNotifier.category {
             _ = smsNotifier?.handleAction(category: category, action: action, identifier: identifier, userText: userText)
-        } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result {
+        } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result ||
+            category == MacTransferNotifier.Category.paused || category == MacTransferNotifier.Category.pausedSender {
             notifier?.handleAction(action, identifier: identifier)
         }
     }
@@ -45,8 +46,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         let category = notification.request.content.categoryIdentifier
         let known = category == MacFindDeviceNotifier.category || category == MacSmsNotifier.category ||
-            category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result
-        completionHandler(known ? [.banner, .list, .sound] : [])
+            category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result ||
+            category == MacTransferNotifier.Category.paused || category == MacTransferNotifier.Category.pausedSender
+        guard known else { completionHandler([]); return }
+        // Sound is chosen by the feature's saved preference, including silent updates to paused actions.
+        var presentation: UNNotificationPresentationOptions = [.banner, .list]
+        if notification.request.content.sound != nil { presentation.insert(.sound) }
+        completionHandler(presentation)
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

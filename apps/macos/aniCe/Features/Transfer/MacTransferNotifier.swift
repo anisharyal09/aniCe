@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Delivers native user notifications for incoming and completed file transfers.
+// Delivers optional background offer notices while keeping transfer progress and results in the app.
 import AppKit
 import Foundation
+import Observation
 import UserNotifications
+
+// Delivery and sound are independent local preferences; neither changes transfer approval or execution.
+@Observable @MainActor final class TransferNotificationPreferences {
+  private let storage: UserDefaults?
+  var enabled: Bool { didSet { storage?.set(enabled, forKey: "transfer.offerNotifications"); changed() } }
+  var sound: Bool { didSet { storage?.set(sound, forKey: "transfer.sound") } }
+  @ObservationIgnored var changed: () -> Void = {}
+  init(storage: UserDefaults? = nil) {
+    self.storage = storage
+    enabled = storage?.object(forKey: "transfer.offerNotifications") as? Bool ?? false
+    sound = storage?.object(forKey: "transfer.sound") as? Bool ?? true
+  }
+}
 
 // Narrow seam over UNUserNotificationCenter so pause/resume delivery and cleanup are testable.
 protocol TransferNotificationCenter: AnyObject {
@@ -107,15 +121,29 @@ struct TransferNotificationContent: Equatable {
   private weak var model: MacTransferModel?
   private let openMainWindow: () -> Void
   private let center: any TransferNotificationCenter
+  private let preferences: TransferNotificationPreferences
   private var hasRequestedAuth = false
   private var activeOfferIdentifier: String?
-  private var activePausedIdentifier: String?
 
   init(model: MacTransferModel, openMainWindow: @escaping () -> Void, center: any TransferNotificationCenter = UNUserNotificationCenter.current()) {
     self.model = model
     self.openMainWindow = openMainWindow
     self.center = center
+    preferences = model.notificationPreferences
     super.init()
+    if let native = center as? UNUserNotificationCenter {
+      // Remove banners from earlier builds without touching Messages or Find Device notifications.
+      native.getDeliveredNotifications { notices in
+        let categories = [Category.offer, Category.result, Category.paused, Category.pausedSender]
+        let ids = notices.filter { categories.contains($0.request.content.categoryIdentifier) }.map { $0.request.identifier }
+        native.removeDeliveredNotifications(withIdentifiers: ids)
+        native.removePendingNotificationRequests(withIdentifiers: ids)
+      }
+    }
+    preferences.changed = { [weak self] in
+      guard let self, !self.preferences.enabled else { return }
+      self.clearActiveOffer()
+    }
   }
 
   // Registers modal actions: Accept saves unattended to ~/Downloads; Choose folder foregrounds aniCe for destination selection; Decline rejects; Show in Finder reveals published files.
@@ -183,43 +211,15 @@ struct TransferNotificationContent: Equatable {
   func handle(_ event: TransferEvent) {
     switch event {
     case .incomingOffer(let batch):
-      requestAuthIfNeeded()
+      guard preferences.enabled, !NSApp.isActive else { return }
       let content = TransferNotificationContent.offer(batch: batch)
+      guard activeOfferIdentifier != content.identifier else { return }
       activeOfferIdentifier = content.identifier
       post(content)
 
-    case .paused(let batch, let reason, let canResumeOverBle):
-      requestAuthIfNeeded()
-      let content = TransferNotificationContent.paused(batch: batch, reason: reason, canResumeOverBle: canResumeOverBle)
-      activePausedIdentifier = content.identifier
-      post(content)
-
-    case .resumed:
-      clearActivePaused()
-
-    case .completed(let fileCount, let totalBytes):
+    case .paused, .resumed, .completed, .failed:
+      // Reconnection and progress transitions belong to the activity panel, not repeated system alerts.
       clearActiveOffer()
-      clearActivePaused()
-      let content = TransferNotificationContent.completed(
-        fileCount: fileCount,
-        totalBytes: totalBytes,
-        folder: model?.receiveFolder
-      )
-      post(content)
-
-    case .failed(let reason):
-      clearActiveOffer()
-      clearActivePaused()
-      let content = TransferNotificationContent.failed(reason: reason)
-      post(content)
-    }
-  }
-
-  private func clearActivePaused() {
-    if let id = activePausedIdentifier {
-      center.removeDeliveredNotifications(withIdentifiers: [id])
-      center.removePendingNotificationRequests(withIdentifiers: [id])
-      activePausedIdentifier = nil
     }
   }
 
@@ -240,12 +240,14 @@ struct TransferNotificationContent: Equatable {
   }
 
   private func post(_ notification: TransferNotificationContent) {
+    guard preferences.enabled else { return }
+    requestAuthIfNeeded()
     let content = UNMutableNotificationContent()
     content.title = notification.title
     content.body = notification.body
     content.categoryIdentifier = notification.categoryIdentifier
     content.userInfo = notification.userInfo
-    content.sound = .default
+    content.sound = preferences.sound ? .default : nil
 
     let request = UNNotificationRequest(
       identifier: notification.identifier,
@@ -263,6 +265,14 @@ struct TransferNotificationContent: Equatable {
   func handleAction(_ actionIdentifier: String, identifier: String? = nil) {
     if let identifier {
       center.removeDeliveredNotifications(withIdentifiers: [identifier])
+      // An old banner must never approve, decline or cancel a successor batch.
+      if [Action.accept, Action.decline].contains(actionIdentifier) {
+        guard let batch = model?.pendingOffer, identifier == "transfer-offer-\(batch.idString)" else { return }
+      }
+      if [Action.continueOverBluetooth, Action.cancelTransfer].contains(actionIdentifier) {
+        guard let model, case .paused(let batch, _, _, _, _, _, _, _) = model.state,
+          identifier == "transfer-paused-\(batch.idString)" else { return }
+      }
     }
     switch actionIdentifier {
     case Action.accept:
@@ -277,7 +287,9 @@ struct TransferNotificationContent: Equatable {
       }
 
     case Action.choose:
-      clearActiveOffer()
+      if identifier == nil || model?.pendingOffer.map({ "transfer-offer-\($0.idString)" }) == identifier {
+        clearActiveOffer()
+      }
       openMainWindow()
 
     case Action.decline:

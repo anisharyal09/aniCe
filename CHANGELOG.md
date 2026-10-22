@@ -26,7 +26,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 - Native text Clipboard v1 on Android and macOS, with manual sharing, per-device opt-in automatic sharing and direct native clipboard delivery over secured LAN or BLE.
 
-- File transfers now pause instead of failing when the active LAN or Bluetooth channel drops mid-stream. The verified partial is retained for 15 minutes, local-network reconnection resumes automatically at the last verified offset, and either device can explicitly continue over Bluetooth when LAN stays down (the receiver asks the sender to validate the prefix it already holds). Paused cards and notifications show frozen progress, Continue over Bluetooth where available and Cancel; pause remains automatic on transport loss, with no manual pause action. A capable LAN that appears during a Bluetooth stream upgrades the active transfer in place through the same resume handshake, so continuing over Bluetooth no longer keeps streaming over Bluetooth after Wi-Fi returns. On Android, a paused or active batch retains a secured Bluetooth fallback lease so the fallback survives and the channel does not connect/disconnect repeatedly.
+- File transfers now pause instead of failing when the active LAN or Bluetooth channel drops mid-stream. The verified partial is retained for 15 minutes, local-network reconnection resumes automatically at the last verified offset, and either device can explicitly continue over Bluetooth when LAN stays down (the receiver asks the sender to validate the prefix it already holds). Paused cards show frozen progress, Continue over Bluetooth where available and Cancel; pause remains automatic on transport loss, with no manual pause action. A capable LAN that appears during a Bluetooth stream upgrades the active transfer in place through the same resume handshake, so continuing over Bluetooth no longer keeps streaming over Bluetooth after Wi-Fi returns. On Android, a paused or active batch retains a secured Bluetooth fallback lease so the fallback survives and the channel does not connect/disconnect repeatedly.
 - Automatic BLE-coordinated LAN initiation on connection events, secured BLE feature activity, companion media demand and file selection. Automation is on when no preference is stored, a stored off still wins, and pairing exposes one post-pairing toggle that sets both the Bluetooth and LAN choices.
 
 ### Changed
@@ -36,6 +36,8 @@ Repository-wide structure, documentation, and development conventions belong her
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
 
 ### Fixed
+
+- Preserve independent BLE/LAN ownership while repairing BLE recovery, transfer cancellation and restart-safe pending work. Cap Android native GATT fragments at 512 bytes and serialize control issuance across DATA, receive and maintenance. Fence Mac LAN retirement to live routes/submissions and add file-transfer notification controls.
 
 - Repair LAN transfer startup, bound automatic connection demand from BLE traffic, and calculate sender progress from receiver acknowledgements.
 

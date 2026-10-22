@@ -3,6 +3,19 @@
 import AppKit
 import SwiftUI
 
+struct TransferNotificationControls: View {
+  let preferences: TransferNotificationPreferences
+  @Environment(\.colorScheme) private var scheme
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle("Background offer notifications", isOn: Binding(get: { preferences.enabled }, set: { preferences.enabled = $0 }))
+      Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
+        .disabled(!preferences.enabled)
+    }
+    .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+  }
+}
+
 // Hoisted file picker helper shared between TransferView and CompanionView.
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
@@ -29,14 +42,26 @@ struct TransferView: View {
   var compact: Bool = false
   var open: (() -> Void)? = nil
   @Environment(\.colorScheme) private var colorScheme
+  @State private var controlsOpen = false
   @State private var selectedFolder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory())
 
   var body: some View {
     VStack(alignment: .leading, spacing: compact ? 8 : 12) {
       if !compact {
-        if let open {
-          Button(action: open) { HStack { Text("Files"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.contentShape(Rectangle()) }.font(.headline).buttonStyle(.plain).accessibilityLabel("Open file transfer")
-        } else { Text("Files").font(.headline) }
+        HStack {
+          if let open {
+            Button(action: open) { HStack { Text("Files"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.contentShape(Rectangle()) }.font(.headline).buttonStyle(.plain).accessibilityLabel("Open file transfer")
+          } else { Text("Files").font(.headline) }
+          Spacer()
+          Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
+            .labelStyle(.iconOnly).buttonStyle(.borderless)
+            .help("File transfer notification settings")
+        }
+        if controlsOpen {
+          TransferNotificationControls(preferences: model.notificationPreferences)
+          Text("Optional incoming offers when aniCe is in the background. Progress and results stay here.")
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        }
       }
 
       if model.preparing {
@@ -227,6 +252,10 @@ struct TransferView: View {
           .lineLimit(1).truncationMode(.middle)
         Spacer()
         Text("\(fileIndex) of \(batch.files.count)").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      }
+      if let channel = model.activeChannel {
+        Text(channel.descriptor.transport == "lan" ? "Using local network" : "Using Bluetooth")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
 
       if saving {

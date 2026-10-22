@@ -533,6 +533,7 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     private fun finish(error: Exception, engine: SessionConnection) {
+        android.util.Log.i("aniCe-lan", "session ended type=${error.javaClass.simpleName} reason=${(error as? SessionException)?.reason} expiry=${engine.expiration} peerClosed=${engine.closedByPeer}")
         val notice =
             sessionNotice(
                 (error as? SessionException)?.reason,
@@ -612,7 +613,6 @@ class LanSessionController(private val app: AniCeApplication,
             workLease = false
             pickerLease = false
         }
-        app.features.retired("lan")
         generation++
         val old = connection
         connection = null
@@ -637,6 +637,8 @@ class LanSessionController(private val app: AniCeApplication,
         scope.launch(Dispatchers.IO) { old?.close() }
         state = ConnectionState.DISCONNECTED
         status = message
+        // A paused feature may request LAN from retired(); it must observe the terminal transport state.
+        app.features.retired("lan")
     }
 
     fun foreground(presentation: Any) {

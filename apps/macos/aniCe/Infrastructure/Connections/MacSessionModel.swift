@@ -3,8 +3,10 @@
 import AppKit
 import Foundation
 import Observation
+import OSLog
 
 @Observable @MainActor final class MacSessionModel {
+  private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "BLE lifecycle")
   var state = "Disconnected" { didSet { channelStateChanged() } }
   var status = "Allow your trusted Android device to connect."
   var selectedPeer: DeviceIdentity?
@@ -428,6 +430,7 @@ import Observation
     }
   }
   private func finish(_ error: Error, expiration: SessionExpiry?, peerClosed: Bool) {
+    Self.logger.notice("BLE ended: \(String(describing: error), privacy: .public) state=\(self.state, privacy: .public) expiry=\(String(describing: expiration), privacy: .public) peerClosed=\(peerClosed)")
     if automatic {
       if state != "Secured" {
         failCandidate("That connection could not authenticate. Waiting for a trusted device.")
@@ -472,6 +475,7 @@ import Observation
   }
 
   private func failCandidate(_ reason: String) {
+    Self.logger.notice("BLE candidate ended: \(reason, privacy: .public) state=\(self.state, privacy: .public) queued=\(self.inputCount)")
     let wasSecured = state == "Secured"
     let canResume = admission.retire(now())
     attempt += 1

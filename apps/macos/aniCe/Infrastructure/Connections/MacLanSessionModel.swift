@@ -4,8 +4,10 @@ import AppKit
 import Foundation
 @preconcurrency import Network
 import Observation
+import OSLog
 
 @Observable @MainActor final class MacLanSessionModel {
+  private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "LAN lifecycle")
   private(set) var state = "Disconnected" { didSet { channelStateChanged(); scheduleAutomatic() } }
   private(set) var status = "Allow your trusted Android to connect over the local network."
   private(set) var allowing = false
@@ -379,6 +381,7 @@ import Observation
     }
   }
   private func failCandidate(_ error: Error) {
+    Self.logger.notice("LAN session ended: \(String(describing: error), privacy: .public)")
     let secured = state == "Secured"
     let resume = admission.retire(ProcessInfo.processInfo.systemUptime)
     candidate += 1
@@ -445,6 +448,7 @@ import Observation
     end(message: message)
   }
   private func end(message: String = "Disconnected. Allow local-network connections to reconnect.") {
+    Self.logger.notice("LAN owner ended: \(message, privacy: .public) state=\(self.state, privacy: .public) allowing=\(self.allowing)")
     automaticAttempt = false
     registered = false
     generation += 1

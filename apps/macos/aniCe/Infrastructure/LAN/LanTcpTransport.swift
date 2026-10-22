@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Owns ordered Network.framework frames, a bounded ingress hand-off, and descriptor retirement.
 import Foundation
+import OSLog
 @preconcurrency import Network
 
 /// Bounded ordered hand-off between a transport read loop and its single delivery consumer.
@@ -64,6 +65,7 @@ actor LanIngressQueue {
 }
 
 actor LanTcpTransport {
+  private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "LAN transport")
   private let socket: NWConnection
   private let profile: SessionProfile
   private var framing: LanFraming
@@ -138,10 +140,16 @@ actor LanTcpTransport {
   }
   private func pathChanged(_ path: NWPath) {
     guard !closed, let interfaces else { return }
-    guard path.status == .satisfied,
-      path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet),
-      Set(path.availableInterfaces.map(\.index)) == interfaces
+    guard Self.permitsPath(original: interfaces,
+      current: Set(path.availableInterfaces.filter { $0.type == .wifi || $0.type == .wiredEthernet }.map(\.index)),
+      satisfied: path.status == .satisfied,
+      local: path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet))
     else { fail(SessionFailure.state); return }
+  }
+  // NWPath lists available interfaces, including candidates unrelated to this TCP connection.
+  // Adding/removing a VPN or peer-to-peer interface cannot invalidate a surviving local route.
+  nonisolated static func permitsPath(original: Set<Int>, current: Set<Int>, satisfied: Bool, local: Bool) -> Bool {
+    satisfied && local && !original.isDisjoint(with: current)
   }
   private func stateChanged(_ state: NWConnection.State) {
     guard !closed else { return }
@@ -151,7 +159,7 @@ actor LanTcpTransport {
       guard let path = socket.currentPath,
         path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
       else { fail(SessionFailure.state); return }
-      interfaces = Set(path.availableInterfaces.map(\.index))
+      interfaces = Set(path.availableInterfaces.filter { $0.type == .wifi || $0.type == .wiredEthernet }.map(\.index))
       receive()
     case .failed(let error), .waiting(let error): fail(error)
     case .cancelled: fail(SessionFailure.cancelled)
@@ -169,13 +177,13 @@ actor LanTcpTransport {
     defer { budget.release(envelope.count); changed?() }
     let token = nextWrite
     nextWrite += 1
-    try await withTaskCancellationHandler {
+    do { try await withTaskCancellationHandler {
       try Task.checkCancellation()
       try await withCheckedThrowingContinuation { continuation in
         writes[token] = continuation
         watchdogs[token] = Task { [weak self] in
           do { try await Task.sleep(for: .seconds(10)) } catch { return }
-          await self?.fail(SessionFailure.expired)
+          await self?.failWrite(token, error: SessionFailure.expired)
         }
         socket.send(
           content: bytes,
@@ -184,7 +192,11 @@ actor LanTcpTransport {
           })
       }
     } onCancel: {
-      Task { [weak self] in await self?.fail(SessionFailure.cancelled) }
+      Task { [weak self] in await self?.failWrite(token, error: SessionFailure.cancelled) }
+    } } catch {
+      // Cancellation before continuation registration still follows an admitted sealed record.
+      fail(error)
+      throw error
     }
   }
   private func sent(_ token: Int, error: NWError?) {
@@ -194,6 +206,12 @@ actor LanTcpTransport {
       pending.resume(throwing: error)
       fail(error)
     } else { pending.resume() }
+  }
+  private func failWrite(_ token: Int, error: Error) {
+    // Deadline/cancellation callbacks can arrive after completion; only an outstanding write owns retirement.
+    guard writes[token] != nil else { return }
+    Self.logger.notice("LAN outstanding write failed: \(String(describing: error), privacy: .public)")
+    fail(error)
   }
   private func receive() {
     guard !closed else { return }
@@ -244,10 +262,14 @@ actor LanTcpTransport {
   }
   private func assemblyExpired() {
     assemblyDeadline = nil
-    do { try framing.tick(); scheduleAssemblyDeadline() } catch { fail(error) }
+    do { try framing.tick(); scheduleAssemblyDeadline() } catch {
+      Self.logger.notice("LAN frame assembly failed: \(String(describing: error), privacy: .public)")
+      fail(error)
+    }
   }
   private func fail(_ error: Error) {
     guard !closed else { return }
+    Self.logger.notice("LAN transport ended: \(String(describing: error), privacy: .public)")
     let callback = ended
     close()
     callback?(error)

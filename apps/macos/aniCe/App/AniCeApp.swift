@@ -44,7 +44,10 @@ struct AniCeApp: App {
     _findDevice = State(initialValue: findDevice)
     let playback = MacPlaybackModel()
     _playback = State(initialValue: playback)
-    let transfer = MacTransferModel()
+    let identity = IdentityAssembly.makeModel()
+    let transfer = MacTransferModel(recoveryURL: IdentityView.isTesting ? nil : FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/aniCe/Transfers/checkpoint.json"), identity: identity.service,
+      notificationPreferences: TransferNotificationPreferences(storage: .standard))
     _transfer = State(initialValue: transfer)
     let transferNotifier = MacTransferNotifier(
       model: transfer,
@@ -62,7 +65,6 @@ struct AniCeApp: App {
     }
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
-    let identity = IdentityAssembly.makeModel()
     let radio = CoreBluetoothPeripheralAdapter()
     let discovery = MacDiscoveryModel(adapter: radio)
     _identity = State(initialValue: identity)
@@ -129,6 +131,7 @@ struct AniCeApp: App {
       if !navigation.automaticAfterPairing { session.allow() }
     }
     pairing.trustRemoved = {
+      transfer.invalidate()
       session.retireTrust(); lan.cancel(); clipboard.invalidate(); sms.invalidate()
       Task { @MainActor in
         await pairing.refresh()
@@ -137,6 +140,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()
       sms.invalidate(); smsPreferences.clear()
       lan.cancel()

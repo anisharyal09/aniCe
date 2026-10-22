@@ -63,6 +63,34 @@ import AppKit
   func release() { continuation?.resume(); continuation = nil }
 }
 @MainActor final class SessionLifecycleTests: XCTestCase {
+  func testGattSubmissionCompletionRetirementAndStaleCallbacksAreIndependent() async throws {
+    let waiters = GattSubmissionWaiters()
+    let first = UUID(), second = UUID()
+    let sent = Task { @MainActor in
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        waiters.insert(first, continuation)
+      }
+    }
+    let retired = Task { @MainActor in
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        waiters.insert(second, continuation)
+      }
+    }
+    for _ in 0..<100 {
+      if waiters.contains(first), waiters.contains(second) { break }
+      await Task.yield()
+    }
+    XCTAssertTrue(waiters.contains(first)); XCTAssertTrue(waiters.contains(second))
+    waiters.complete(UUID())
+    XCTAssertTrue(waiters.contains(first)); XCTAssertTrue(waiters.contains(second))
+    waiters.complete(first); waiters.complete(first)
+    try await sent.value
+    XCTAssertFalse(waiters.contains(first)); XCTAssertTrue(waiters.contains(second))
+    waiters.retire(); waiters.complete(second)
+    do { try await retired.value; XCTFail("Retired encrypted submission reported success") }
+    catch let error as SessionFailure { XCTAssertEqual(error, .cancelled) }
+    XCTAssertFalse(waiters.contains(second))
+  }
   func testCompanionFitsInlineDeviceStatusAndIncomingOffersWithoutStartingWork() async throws {
     XCTAssertTrue(IdentityView.isTesting)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

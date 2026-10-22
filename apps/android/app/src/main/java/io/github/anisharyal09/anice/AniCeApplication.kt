@@ -14,6 +14,7 @@ class AniCeApplication : Application() {
     private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
     override fun onCreate() {
         super.onCreate()
+        transfer.restoreOnLaunch()
         nowPlaying.presentationChanged={ mediaNotification.update() }
         mediaNotification.update()
         lanSessionController.onUnleasedBackgroundWork = {
@@ -116,7 +117,11 @@ class AniCeApplication : Application() {
     val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
     val transfer = io.github.anisharyal09.anice.features.transfer.TransferController(this)
-    private val transferNotification by lazy { io.github.anisharyal09.anice.features.transfer.TransferNotification(this, transfer) }
+    private val transferNotification by lazy {
+        io.github.anisharyal09.anice.features.transfer.TransferNotification(this, transfer) {
+            (lanOwner.isInitialized() && lanOwner.value.foreground) || (bleOwner.isInitialized() && bleOwner.value.foreground)
+        }
+    }
     // Notification adapters need the base context attached by Android after Application construction.
     val features by lazy {
         io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
@@ -139,6 +144,7 @@ class AniCeApplication : Application() {
 
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { transfer.invalidate() }
         nowPlaying.invalidate()
         if (smsOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post { sms.invalidate() }

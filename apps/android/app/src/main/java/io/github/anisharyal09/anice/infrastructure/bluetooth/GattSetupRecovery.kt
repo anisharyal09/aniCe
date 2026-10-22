@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Bounds service-cache rediscovery during native GATT setup without retrying authentication failures.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 /** Coalesce service changes while an ATT setup operation is pending; never retry authentication. */
@@ -12,6 +13,9 @@ internal class GattSetupRecovery {
     retriedMissingLayout = true
     return true
   }
+
+  // ATT Invalid Handle means a cached descriptor no longer belongs to the current service table.
+  fun retryInvalidHandle(status: Int): Boolean = status == 0x01 && retryMissingLayout()
 
   fun invalidate() {
     invalidated = true

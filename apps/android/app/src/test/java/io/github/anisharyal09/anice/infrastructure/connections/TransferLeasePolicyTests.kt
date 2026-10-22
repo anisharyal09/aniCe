@@ -51,10 +51,10 @@ class TransferLeasePolicyTests {
     }
 
     @Test fun pausedTransferKeepsLanWorkSoAutomaticLanCanResume() {
-        assertEquals(TransferLeases(true, false, false, false),
+        assertEquals(TransferLeases(true, false, true, false),
             transferLeases(null, connecting = false, backgroundAllowed = true,
                 selectingFiles = false, bleSecured = false, paused = true))
-        assertEquals(TransferLeases(true, false, false, false),
+        assertEquals(TransferLeases(true, false, true, false),
             transferLeases("lan", connecting = false, backgroundAllowed = true,
                 selectingFiles = false, bleSecured = false, paused = true))
         // A still-secured BLE channel keeps its fallback lease while the batch waits.

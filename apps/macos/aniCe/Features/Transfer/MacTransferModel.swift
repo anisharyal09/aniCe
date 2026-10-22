@@ -6,7 +6,7 @@ import Observation
 import CryptoKit
 import IOKit.pwr_mgt
 
-struct TransferFile: Identifiable, Equatable, Hashable, Sendable {
+struct TransferFile: Identifiable, Equatable, Hashable, Codable, Sendable {
   let id: UUID
   let name: String
   let size: Int64
@@ -16,7 +16,7 @@ struct TransferFile: Identifiable, Equatable, Hashable, Sendable {
   var idString: String { id.uuidString.lowercased() }
 }
 
-struct TransferBatch: Identifiable, Equatable, Sendable {
+struct TransferBatch: Identifiable, Equatable, Codable, Sendable {
   let id: UUID
   let files: [TransferFile]
   let totalBytes: Int64
@@ -31,7 +31,7 @@ enum TransferState: Equatable {
   case incomingOffer(batch: TransferBatch)
   case transferring(batch: TransferBatch, fileIndex: Int, fileName: String, fileBytes: Int64, fileSize: Int64, totalBytes: Int64, speedBps: Double)
   /// The secured channel retired mid-stream. The verified prefix and destination stay retained in
-  /// memory for `pauseTimeout`, so a reconnected channel can continue instead of restarting.
+  /// checkpoints for `pauseTimeout`, so a reconnected channel can continue instead of restarting.
   case paused(batch: TransferBatch, fileIndex: Int, fileName: String, fileBytes: Int64, fileSize: Int64, totalBytes: Int64, reason: String, canResumeOverBle: Bool)
   case completed(batchId: UUID, fileCount: Int, totalBytes: Int64)
   case rejected(batchId: UUID, reason: Int64)
@@ -50,7 +50,21 @@ enum TransferEvent: Equatable {
 }
 
 @Observable @MainActor final class MacTransferModel: FeatureHandler {
-  private(set) var state: TransferState = .idle { didSet { maintainProgressUpdates() } }
+  let notificationPreferences: TransferNotificationPreferences
+  private(set) var state: TransferState = .idle {
+    didSet {
+      if case .transferring(_, _, _, let bytes, _, _, _) = state,
+        case .paused(_, _, _, let previous, _, _, _, _) = oldValue, bytes > previous { pauseExpiresAt = nil; pauseDeadline = nil }
+      maintainProgressUpdates()
+      let force: Bool
+      switch (state, oldValue) {
+      case (.transferring(_, let index, _, _, _, _, _), .transferring(_, let previous, _, _, _, _, _)): force = index != previous
+      case (.transferring, _), (.incomingOffer, _), (.waitingForPeerApproval, _): force = true
+      default: force = false
+      }
+      checkpoint(force: force)
+    }
+  }
   private(set) var activeChannel: (any SecuredChannel)?
   private(set) var peerConnected = false
   private(set) var peerCompatible = false
@@ -111,9 +125,10 @@ enum TransferEvent: Equatable {
   private var epoch = UUID()
   private var capacityRevision = 0
 
-  // Pause/resume retention. Everything here lives for the current process only; a process death
-  // ends the batch and may leave a stale partial, exactly as an uncaught loss did before.
+  // Logical checkpoints survive process death; channel generations and sealed work remain process-local.
   private let pauseTimeout: Duration
+  private let resumeTimeout: Duration
+  private let confirmationTimeout: Duration
   private var pausedTransport: String?
   private var pausedFileIndex = 0
   private var pausedFileOffset: Int64 = 0
@@ -133,12 +148,195 @@ enum TransferEvent: Equatable {
     let fileId: String
     let fileSize: Int64
     let result: TransferMessage
+    let peerId: String
+    let peerFingerprint: String
   }
   /// The last verified result this receiver sent, replayable when a resume lands after the file.
+  private var retainedBatch: TransferBatch?
+  private var offerReplayed = false
+  private var restoredSender = false
   private var retainedFileResult: RetainedFileResult?
 
-  init(pauseTimeout: Duration = .seconds(900)) {
+  private let recoveryStore: TransferRecoveryStore?
+  private let recoveryIdentity: IdentityService?
+  private var recoveryTask: Task<Void, Never>?
+  private var recoveryWrite: Task<Void, Never>?
+  private var recoveryLocal: String?
+  private var recoveryPeer: ChannelDescriptor?
+  private var recoveryReady: Bool
+  private var pendingChannels: [String: any SecuredChannel] = [:]
+  private var checkpointAt: TimeInterval = 0
+  private var checkpointPosition: String?
+  private var pauseExpiresAt: Date?
+  private var pauseDeadline: ContinuousClock.Instant?
+  private let pauseClock = ContinuousClock()
+  private var resumeAttemptChannel: ChannelDescriptor?
+  private var nextResumeAttemptAt: TimeInterval = 0
+  private var interruptedOffer: TransferState?
+  private var finalizationRetired: ChannelDescriptor?
+  private var finalizationResumed = false
+  private var receiptExpiry: Task<Void, Never>?
+  private var receiptDeadline: ContinuousClock.Instant?
+  private var failedRecovery: TransferCheckpoint?
+
+  init(pauseTimeout: Duration = .seconds(900), recoveryURL: URL? = nil, identity: IdentityService? = nil,
+       resumeTimeout: Duration = .seconds(15), confirmationTimeout: Duration = .seconds(30),
+       notificationPreferences: TransferNotificationPreferences = TransferNotificationPreferences()) {
+    self.notificationPreferences = notificationPreferences
+    precondition(recoveryURL == nil || identity != nil)
     self.pauseTimeout = pauseTimeout
+    self.resumeTimeout = resumeTimeout
+    self.confirmationTimeout = confirmationTimeout
+    recoveryIdentity = identity
+    recoveryStore = recoveryURL.map(TransferRecoveryStore.init)
+    recoveryReady = recoveryURL == nil
+    if let recoveryStore, let identity {
+      recoveryTask = Task { [weak self] in
+        guard let self else { return }
+        let operation = self.epoch
+        do {
+          let local = try await identity.publicIdentity().fingerprint
+          self.recoveryLocal = local
+          if let saved = try await recoveryStore.load(), operation == self.epoch {
+            self.failedRecovery = saved
+            try await self.restoreRecovery(saved, local: local)
+            self.failedRecovery = nil
+          }
+        } catch { self.state = .failed(reason: "Cannot recover the pending transfer: \(error.localizedDescription)") }
+        self.recoveryReady = true
+        let pending = self.pendingChannels
+        self.pendingChannels.removeAll()
+        for channel in pending.values { self.available(channel) }
+      }
+    }
+  }
+
+  private func checkpoint(force: Bool = false, publishingIdentity: String? = nil) {
+    if finalizing, publishingIdentity == nil { return }
+    guard recoveryReady, let store = recoveryStore, let local = recoveryLocal, let batch = currentBatch else { return }
+    let stage: Int
+    switch interruptedOffer ?? state {
+    case .waitingForPeerApproval: stage = 1
+    case .incomingOffer: stage = 2
+    default: stage = publishingIdentity != nil ? 4 : 0
+    }
+    guard isTransferring || isPaused || stage != 0 else { return }
+    let now = ProcessInfo.processInfo.systemUptime
+    // Keep synchronous storage flushes off the frequent progress-publication cadence.
+    guard force || now - checkpointAt >= 5 else { return }
+    guard let peer = activeChannel?.descriptor ?? recoveryPeer else { return }
+    recoveryPeer = peer
+    let index = stage == 1 || stage == 2 ? 0 : receiving ? receiverCurrentFileIndex : senderFileIndex
+    guard batch.files.indices.contains(index) else { return }
+    if receiving, receiverStorage == nil, stage == 0 { return }
+    let offset: Int64 = stage == 1 || stage == 2 ? 0 : receiving ? receiverWrittenBytes : acknowledgedBytes
+    let position = "\(batch.id):\(index):\(offset):\(stage)"
+    if !force, checkpointPosition == position { return }
+    checkpointPosition = position
+    checkpointAt = now
+    let snapshot = TransferCheckpoint(localFingerprint: local, peerId: peer.peer.deviceId,
+      peerFingerprint: peer.peer.fingerprint, batch: batch, receiving: receiving || stage == 2, index: index,
+      offset: offset, folder: destinationFolder,
+      partial: receiverPartFileURL, transport: pausedTransport ?? peer.transport,
+      expiresAt: pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds)),
+      stage: stage, fileIdentity: publishingIdentity ?? "")
+    let previous = recoveryWrite, storage = receiving ? receiverStorage : nil
+    recoveryWrite = Task { [weak self] in
+      await previous?.value
+      do { try await storage?.flush(); try await store.save(snapshot) }
+      catch {
+        guard let self, self.currentBatch?.id == snapshot.batch.id else { return }
+        self.failTransfer(reason: "Cannot save transfer recovery: \(error.localizedDescription)")
+      }
+    }
+  }
+
+  private func restoreRecovery(_ snapshot: TransferCheckpoint, local: String) async throws {
+    var saved = snapshot
+    let operation = epoch
+    let remaining = saved.expiresAt.timeIntervalSinceNow
+    guard saved.localFingerprint == local, remaining > 0,
+      remaining <= Double(pauseTimeout.components.seconds) else {
+      if saved.receiving, saved.stage == 0 || saved.stage == 4, let folder = saved.folder, let partial = saved.partial {
+        let expired = saved
+        try await Task.detached {
+          try TransferReceiveStorage.discardOwned(folder: folder, partial: partial, batch: expired.batch.idString,
+            file: expired.batch.files[expired.index].idString)
+        }.value
+      }
+      try await recoveryStore?.clear()
+      state = .failed(reason: "The saved transfer expired or its local identity changed. Send the files again.")
+      return
+    }
+    if saved.stage == 4, let folder = saved.folder {
+      let candidate = saved
+      let published = try await Task.detached {
+        try TransferReceiveStorage.published(folder: folder, file: candidate.batch.files[candidate.index],
+          identity: candidate.fileIdentity)
+      }.value
+      guard operation == epoch else { return }
+      if let published {
+        if let partial = saved.partial {
+          try await Task.detached {
+            try TransferReceiveStorage.discardOwned(folder: folder, partial: partial, batch: candidate.batch.idString,
+              file: candidate.batch.files[candidate.index].idString)
+          }.value
+        }
+        publishedURLs.append(published)
+        if saved.index == saved.batch.files.count - 1 { saved.stage = 3 }
+        else {
+          let storage = TransferReceiveStorage()
+          saved.index += 1; saved.offset = 0; saved.stage = 0
+          let partial = try await storage.create(folder: folder, batch: saved.batch.idString,
+            file: saved.batch.files[saved.index].idString)
+          guard operation == epoch else { await storage.discard(); return }
+          receiverStorage = storage; receiverPartFileURL = partial
+          destinationFolder = folder; receiveFolder = folder; saved.partial = partial
+        }
+        try await recoveryStore?.save(saved)
+      }
+    }
+    if saved.stage == 3 {
+      let file = saved.batch.files[saved.batch.files.count - 1]
+      retainedFileResult = RetainedFileResult(batchId: saved.batch.idString, fileId: file.idString,
+        fileSize: file.size, result: TransferMessage.fileResult(batch: saved.batch.idString,
+          file: file.idString, result: 0, hash: file.sha256), peerId: saved.peerId, peerFingerprint: saved.peerFingerprint)
+      receiving = true
+      retainedBatch = saved.batch
+      state = .completed(batchId: saved.batch.id, fileCount: saved.batch.files.count, totalBytes: saved.batch.totalBytes)
+      expireReceipt(saved.batch.idString, after: remaining)
+      return
+    }
+    if saved.receiving, saved.stage == 0 || saved.stage == 4, receiverStorage == nil {
+      guard let folder = saved.folder, let partial = saved.partial else { throw CocoaError(.fileReadCorruptFile) }
+      let storage = TransferReceiveStorage()
+      try await storage.restore(folder: folder, partial: partial, batch: saved.batch.idString,
+        file: saved.batch.files[saved.index].idString, length: saved.offset)
+      guard operation == epoch else { await storage.discard(); return }
+      receiverStorage = storage; receiverPartFileURL = partial
+      destinationFolder = folder; receiveFolder = folder
+    }
+    currentBatch = saved.batch; receiving = saved.receiving; restoredSender = !saved.receiving
+    interruptedOffer = saved.stage == 1 ? .waitingForPeerApproval(batch: saved.batch)
+      : saved.stage == 2 ? .incomingOffer(batch: saved.batch) : nil
+    transferPeerDeviceId = saved.peerId; transferPeerFingerprint = saved.peerFingerprint
+    senderFileIndex = saved.index; receiverCurrentFileIndex = saved.index
+    acknowledgedBytes = saved.offset; receiverWrittenBytes = saved.offset; sentBytes = saved.offset
+    if saved.receiving, saved.index > 0 {
+      let file = saved.batch.files[saved.index - 1]
+      retainedFileResult = RetainedFileResult(batchId: saved.batch.idString, fileId: file.idString,
+        fileSize: file.size, result: TransferMessage.fileResult(batch: saved.batch.idString,
+          file: file.idString, result: 0, hash: file.sha256), peerId: saved.peerId, peerFingerprint: saved.peerFingerprint)
+    }
+    pausedFileIndex = saved.index; pausedFileOffset = saved.offset
+    pausedCompletedBytes = saved.batch.files.prefix(saved.index).reduce(0) { $0 + $1.size }
+    receiverTotalTransferred = pausedCompletedBytes + saved.offset
+    pausedTransport = saved.transport; pauseExpiresAt = saved.expiresAt; pauseDeadline = pauseClock.now.advanced(by: .seconds(remaining))
+    let file = saved.batch.files[saved.index]
+    state = .paused(batch: saved.batch, fileIndex: saved.index + 1, fileName: file.name,
+      fileBytes: saved.offset, fileSize: file.size, totalBytes: pausedCompletedBytes + saved.offset,
+      reason: "Waiting to reconnect", canResumeOverBle: false)
+    startPauseTimer()
   }
 
   /// True from the moment a received file's last chunk lands until it is hashed and published.
@@ -234,6 +432,7 @@ enum TransferEvent: Equatable {
   func available(_ channel: any SecuredChannel) {
     let transport = channel.descriptor.transport
     guard transport == "lan" || transport == "ble" else { return }
+    guard recoveryReady else { pendingChannels[transport] = channel; return }
     // A paused batch has no active channel, so its peer identity must outlive the channel that
     // paused it; otherwise a different peer's channel could be rebound to the retained prefix.
     let peerId = activeChannel?.descriptor.peer.deviceId ?? transferPeerDeviceId
@@ -255,7 +454,7 @@ enum TransferEvent: Equatable {
         let chunk = version == 2 ? min(131072, chunkSize) : chunkSize
         do {
           let data = try TransferMessage.capability(version: version, maxChunkBytes: Int64(chunk),
-            maxWindow: chunk > 3072 ? 8 : 64).encode(maximumChunkBytes: chunkSize)
+            maxWindow: transport == "ble" ? 4 : chunk > 3072 ? 8 : 64).encode(maximumChunkBytes: chunkSize)
           try await self.sendWithBackpressure(data, on: channel, jobBound: false)
         } catch { return }
       }
@@ -281,6 +480,7 @@ enum TransferEvent: Equatable {
     clearOfferAssembly()
     if let preferred, let capability = capabilities[preferred.descriptor.transport] { applyCapability(capability) }
     refreshPausedCapability()
+    if resumeInterruptedOffer() { return }
     if isPaused, activeChannel != nil, peerCompatible {
       // The sender drives LAN auto-resume; the receiver only asks after an explicit opt-in.
       if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
@@ -292,10 +492,11 @@ enum TransferEvent: Equatable {
     let localLimit = Int64(chunkLimit(activeChannel?.descriptor))
     let negotiatedLimit: Int64 = message.number(0) == 3 ? localLimit : message.number(0) == 2 ? min(131072, localLimit) : 3072
     peerMaxChunkBytes = min(message.number(1), negotiatedLimit)
-    peerMaxWindow = min(message.number(2), peerMaxChunkBytes > 3072 ? 8 : 64)
+    peerMaxWindow = min(message.number(2), activeChannel?.descriptor.transport == "ble" ? 4 : peerMaxChunkBytes > 3072 ? 8 : 64)
   }
 
   func retired(_ descriptor: ChannelDescriptor) {
+    if pendingChannels[descriptor.transport]?.descriptor == descriptor { pendingChannels[descriptor.transport] = nil }
     guard channels[descriptor.transport]?.descriptor == descriptor else { return }
     channels.removeValue(forKey: descriptor.transport)
     capabilities.removeValue(forKey: descriptor.transport)
@@ -305,15 +506,26 @@ enum TransferEvent: Equatable {
       return
     }
     let previous = state
+    recoveryPeer = descriptor
     activeChannel = nil
     peerConnected = false
     peerCompatible = false
-    if case .transferring(let batch, _, _, _, _, _, _) = previous, !finalizing {
+    if case .transferring = previous, finalizing {
+      finalizationRetired = descriptor
+    } else if case .transferring(let batch, _, _, _, _, _, _) = previous {
       pauseTransfer(batch: batch, transport: descriptor.transport)
+    } else if case .incomingOffer = previous {
+      pauseOffer(previous, descriptor: descriptor)
+    } else if case .waitingForPeerApproval = previous {
+      pauseOffer(previous, descriptor: descriptor)
+    } else if preparing {
+      // Source hashing belongs to the pending send, not the channel that started it.
     } else if case .paused = previous {
       // A resume attempt lost its channel before it completed; keep the retained prefix.
+      epoch = UUID()
       resumeTask?.cancel(); resumeTask = nil
       abandonStatus()
+      startPauseTimer()
     } else if isBusy {
       state = .failed(reason: "Connection closed. Send the files again using the remaining connection.")
       cleanupActiveTransfer()
@@ -338,9 +550,13 @@ enum TransferEvent: Equatable {
     guard descriptor == activeChannel?.descriptor else { return }
     checkCreditAndResume()
     flushAck()
+    if isPaused, !resumeInterruptedOffer() {
+      if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
+    }
   }
 
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
+    if !recoveryReady { await recoveryTask?.value }
     let message: TransferMessage
     do { guard let decoded = try TransferMessage.decode(bytes, maximumChunkBytes: chunkLimit(descriptor)) else { return .unrecognized }; message = decoded }
     catch is TransferWireError { return .discarded }
@@ -352,6 +568,7 @@ enum TransferEvent: Equatable {
         peerCompatible = true
         if !isTransferring, transferTask == nil { applyCapability(message) }
         if isPaused {
+          if resumeInterruptedOffer() { return .handled }
           refreshPausedCapability()
           if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
         }
@@ -375,20 +592,24 @@ enum TransferEvent: Equatable {
       return .handled
     }
     if message.kind == 9, message.string(0) == currentBatch?.idString {
-      await processMessage(message, peerName: descriptor.peer.deviceName)
+      await processMessage(message, peerName: descriptor.peer.deviceName, on: descriptor)
+      return .handled
+    }
+    if message.kind == 2, message.string(0) == currentBatch?.idString || message.string(0) == retainedBatch?.idString {
+      await processMessage(message, peerName: descriptor.peer.deviceName, on: descriptor)
       return .handled
     }
     guard descriptor == activeChannel?.descriptor else { return .discarded }
-    await processMessage(message, peerName: descriptor.peer.deviceName)
+    await processMessage(message, peerName: descriptor.peer.deviceName, on: descriptor)
     return .handled
   }
 
   // MARK: - Message Processing
 
-  private func processMessage(_ message: TransferMessage, peerName: String) async {
+  private func processMessage(_ message: TransferMessage, peerName: String, on descriptor: ChannelDescriptor) async {
     switch message.kind {
     case 2: // offer
-      handleOffer(message, peerName: peerName)
+      handleOffer(message, peerName: peerName, on: descriptor)
 
     case 3: // accept
       handleAccept(message)
@@ -406,6 +627,7 @@ enum TransferEvent: Equatable {
       guard let batch = currentBatch, let file = sendingFile,
         message.string(0) == batch.idString, message.string(1) == file.idString,
         message.number(2) != 0 || (sentBytes == file.size && message.bytes(3) == file.sha256) else { return }
+      if message.number(2) == 0 { pauseExpiresAt = nil; pauseDeadline = nil }
       if let waiter = fileResultContinuation { fileResultContinuation = nil; waiter.resume(returning: message) }
       else { receivedFileResult = message }
     case 8:
@@ -427,6 +649,56 @@ enum TransferEvent: Equatable {
 
   // MARK: - Pause and Resume
 
+  private func expirePausedIfNeeded() -> Bool {
+    guard isPaused, let deadline = pauseDeadline, pauseClock.now >= deadline else { return false }
+    failTransfer(reason: "Transfer paused for too long without a connection. Send the files again.")
+    return true
+  }
+
+  private func claimResumeAttempt(_ descriptor: ChannelDescriptor) -> Bool {
+    let now = ProcessInfo.processInfo.systemUptime
+    if resumeAttemptChannel == descriptor, now < nextResumeAttemptAt { return false }
+    resumeAttemptChannel = descriptor; nextResumeAttemptAt = now + 2
+    return true
+  }
+
+  private func pauseOnConfirmationTimeout() {
+    guard case .transferring(let batch, _, _, _, _, _, _) = state, let channel = activeChannel else { return }
+    pauseTransfer(batch: batch, transport: channel.descriptor.transport)
+    selectPreferredChannel()
+  }
+
+  private func pauseOffer(_ previous: TransferState, descriptor: ChannelDescriptor) {
+    guard let batch = currentBatch, let file = batch.files.first else { return }
+    interruptedOffer = previous
+    recoveryPeer = descriptor; pausedTransport = descriptor.transport
+    pauseExpiresAt = pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds))
+    pauseDeadline = pauseDeadline ?? pauseClock.now.advanced(by: pauseTimeout)
+    pausedFileIndex = 0; pausedFileOffset = 0; pausedCompletedBytes = 0
+    epoch = UUID()
+    state = .paused(batch: batch, fileIndex: 1, fileName: file.name, fileBytes: 0,
+      fileSize: file.size, totalBytes: 0, reason: "Waiting to reconnect", canResumeOverBle: false)
+    startPauseTimer(); checkpoint(force: true)
+  }
+
+  private func resumeInterruptedOffer() -> Bool {
+    if expirePausedIfNeeded() { return true }
+    guard let previous = interruptedOffer else { return false }
+    guard isPaused, peerCompatible, let channel = activeChannel else { return true }
+    if pausedTransport == "lan", channel.descriptor.transport == "ble", !allowBleResume {
+      refreshPausedCapability(); return true
+    }
+    interruptedOffer = nil
+    pauseTimerTask?.cancel(); pauseTimerTask = nil; pauseExpiresAt = nil; pauseDeadline = nil
+    if case .waitingForPeerApproval = previous { offerReplayed = true }
+    state = previous
+    acquireSleepAssertion()
+    if case .waitingForPeerApproval(let batch) = previous {
+      Task { [weak self] in await self?.sendOfferBatch(batch, channel: channel) }
+    }
+    return true
+  }
+
   private var isTransferring: Bool {
     if case .transferring = state { return true }
     return false
@@ -434,7 +706,7 @@ enum TransferEvent: Equatable {
 
   /// Retains a mid-stream batch after its active channel retired. Nothing is published, discarded
   /// or released here: the partial, destination and sleep assertion stay alive for `pauseTimeout`,
-  /// and only an explicit Cancel, a resume failure or the timer ends them.
+  /// and only Cancel, a permanent recovery failure or the timer ends them.
   private func pauseTransfer(batch: TransferBatch, transport: String) {
     let fileIndex = receiving ? receiverCurrentFileIndex : senderFileIndex
     guard batch.files.indices.contains(fileIndex) else {
@@ -447,6 +719,9 @@ enum TransferEvent: Equatable {
       return
     }
     pausedTransport = transport
+    recoveryPeer = activeChannel?.descriptor ?? recoveryPeer
+    pauseExpiresAt = pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds))
+    pauseDeadline = pauseDeadline ?? pauseClock.now.advanced(by: pauseTimeout)
     pausedFileIndex = fileIndex
     pausedFileOffset = max(0, min(receiving ? receiverWrittenBytes : acknowledgedBytes, file.size))
     pausedCompletedBytes = receiving
@@ -477,6 +752,7 @@ enum TransferEvent: Equatable {
       canResumeOverBle: false
     )
     startPauseTimer()
+    checkpoint(force: true)
     // Automatic LAN policy decides whether a new window may open; an explicit Disconnect still
     // wins, so a paused batch never forces LAN back on by itself.
     onLanRequired()
@@ -486,9 +762,9 @@ enum TransferEvent: Equatable {
   private func startPauseTimer() {
     pauseTimerTask?.cancel()
     let operation = epoch
-    let timeout = pauseTimeout
+    let deadline = pauseDeadline ?? pauseClock.now.advanced(by: pauseTimeout)
     pauseTimerTask = Task { [weak self] in
-      do { try await Task.sleep(for: timeout) } catch { return }
+      do { try await Task.sleep(until: deadline, clock: ContinuousClock()) } catch { return }
       guard let self, self.epoch == operation, self.isPaused else { return }
       self.failTransfer(reason: "Transfer paused for too long without a connection. Send the files again.")
     }
@@ -510,7 +786,9 @@ enum TransferEvent: Equatable {
     }
     refreshPausedCapability()
     guard peerCompatible else { return }
-    if receiving { requestPeerContinuation() } else { attemptResume() }
+    if !resumeInterruptedOffer() {
+      if receiving { requestPeerContinuation() } else { attemptResume() }
+    }
   }
 
   private func refreshPausedCapability() {
@@ -534,11 +812,13 @@ enum TransferEvent: Equatable {
   /// Sender-initiated handshake. The prefix hash proves the receiver's retained bytes are the ones
   /// this source would have sent; the receiver's answer is authoritative for the continue offset.
   private func attemptResume() {
+    if expirePausedIfNeeded() { return }
     guard case .paused(let batch, _, _, _, _, _, _, _) = state else { return }
     guard !receiving, resumeTask == nil, let channel = activeChannel, peerCompatible else { return }
     let transport = channel.descriptor.transport
     let allowed = transport == "lan" || pausedTransport != "lan" || allowBleResume
     guard allowed else { refreshPausedCapability(); return }
+    guard claimResumeAttempt(channel.descriptor) else { return }
     let fileIndex = pausedFileIndex
     guard batch.files.indices.contains(fileIndex) else { return }
     let file = batch.files[fileIndex]
@@ -548,6 +828,7 @@ enum TransferEvent: Equatable {
 
     resumeTask = Task { [weak self] in
       guard let self else { return }
+      defer { if self.epoch == operation { self.resumeTask = nil } }
       var offset = initialOffset
       var retriedOffset = false
       var restarted = false
@@ -563,9 +844,6 @@ enum TransferEvent: Equatable {
             return
           }
           guard let status = await self.requestStatus(request, on: channel) else {
-            if self.epoch == operation, !Task.isCancelled {
-              self.failTransfer(reason: "The other device did not answer the resume request.")
-            }
             return
           }
           guard self.epoch == operation, !Task.isCancelled else { return }
@@ -588,12 +866,12 @@ enum TransferEvent: Equatable {
             restarted = true
             offset = 0
           default:
-            self.failTransfer(reason: "The other device cannot continue this transfer. Send the files again.")
             return
           }
         }
         guard self.epoch == operation, !Task.isCancelled else { return }
         self.pauseTimerTask?.cancel(); self.pauseTimerTask = nil
+        self.acquireSleepAssertion()
         self.resumeTask = nil
         self.state = .transferring(
           batch: batch,
@@ -608,7 +886,7 @@ enum TransferEvent: Equatable {
         let streamOperation = self.epoch
         self.transferTask = Task { [weak self] in
           guard let self, streamOperation == self.epoch, self.activeChannel != nil else { return }
-          await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: offset, completedBefore: completedBefore)
+          await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: offset, completedBefore: completedBefore, recovered: true)
         }
       } catch is CancellationError {
         return
@@ -625,8 +903,10 @@ enum TransferEvent: Equatable {
   /// retained offset. The request follows the currently preferred channel, so a LAN that returns
   /// while the user is opting into Bluetooth wins instead of racing the sender.
   private func requestPeerContinuation() {
+    if expirePausedIfNeeded() { return }
     guard case .paused(let batch, _, _, _, _, _, _, _) = state, receiving,
-      allowBleResume, resumeTask == nil, activeChannel != nil, peerCompatible else { return }
+      allowBleResume, resumeTask == nil, let channel = activeChannel, peerCompatible else { return }
+    guard channel.descriptor.transport == "ble", claimResumeAttempt(channel.descriptor) else { return }
     let fileIndex = receiverCurrentFileIndex
     guard batch.files.indices.contains(fileIndex) else { return }
     let file = batch.files[fileIndex]
@@ -635,17 +915,19 @@ enum TransferEvent: Equatable {
       guard let self else { return }
       var restarted = false
       defer {
-        self.allowBleResume = false
-        if self.epoch == operation, self.isPaused { self.refreshPausedCapability() }
-        self.resumeTask = nil
+        if self.epoch == operation {
+          if self.isPaused { self.refreshPausedCapability() }
+          self.resumeTask = nil
+        }
       }
       loop: while true {
         guard self.epoch == operation, !Task.isCancelled else { return }
         guard let channel = self.activeChannel, self.peerCompatible,
-          let storage = self.receiverStorage else { break loop }
+          channel.descriptor.transport == "ble", let storage = self.receiverStorage else { break loop }
         let offset = max(0, min(self.receiverWrittenBytes, file.size))
         guard let prefix = try? await storage.prefixDigest(offset),
-          self.epoch == operation, !Task.isCancelled else { break loop }
+          self.epoch == operation, !Task.isCancelled,
+          self.activeChannel?.descriptor == channel.descriptor else { break loop }
         let message = TransferMessage.resume(
           batch: batch.idString, file: file.idString, offset: offset, prefixHash: prefix)
         guard let request = try? message.encode(
@@ -710,7 +992,7 @@ enum TransferEvent: Equatable {
       statusWaiter = finish
       statusWaiterToken = token
       statusTimeoutTask = Task { [weak self] in
-        do { try await Task.sleep(for: .seconds(15)) } catch { return }
+        do { try await Task.sleep(for: self?.resumeTimeout ?? .seconds(15)) } catch { return }
         guard let self, self.epoch == operation else { return }
         finish(nil)
       }
@@ -728,7 +1010,12 @@ enum TransferEvent: Equatable {
     // resume, or the receiver after a receiver-initiated Bluetooth continuation.
     let index = receiving ? receiverCurrentFileIndex : senderFileIndex
     guard batch.files.indices.contains(index),
-      message.string(1) == batch.files[index].idString else { return }
+      message.string(1) == batch.files[index].idString,
+      (0...batch.files[index].size).contains(message.number(2)) else { return }
+    if statusWaiter != nil, !receiving, message.number(3) == 0,
+      (0...batch.files[index].size).contains(message.number(2)) {
+      sendingFile = batch.files[index]; sentBytes = message.number(2)
+    }
     statusWaiter?(message)
   }
 
@@ -743,18 +1030,41 @@ enum TransferEvent: Equatable {
   /// Receiver side of the handshake: verify the retained prefix, rebind to the sender's chosen
   /// channel and answer with the offset the sender must continue from.
   private func handleResume(_ message: TransferMessage, on descriptor: ChannelDescriptor) async {
+    let operation = epoch
     guard let channel = channels[descriptor.transport], channel.descriptor == descriptor else { return }
+    _ = expirePausedIfNeeded()
+    if currentBatch == nil, let deadline = receiptDeadline, pauseClock.now >= deadline {
+      retainedFileResult = nil; retainedBatch = nil; receiptDeadline = nil
+      if let store = recoveryStore {
+        let previous = recoveryWrite
+        recoveryWrite = Task {
+          await previous?.value
+          do { try await store.clear() }
+          catch { NSLog("Transfer receipt cleanup failed: %@", error.localizedDescription) }
+        }
+      }
+    }
     let batchId = message.string(0)
     let fileId = message.string(1)
     let offset = message.number(2)
     let prefix = message.bytes(3)
 
-    if let retained = retainedFileResult, retained.batchId == batchId, retained.fileId == fileId {
+    let completedFile = retainedBatch.flatMap { $0.idString == batchId ? $0.files.first(where: { $0.idString == fileId }) : nil }
+      ?? currentBatch.flatMap { receiving && $0.idString == batchId ? $0.files.prefix(receiverCurrentFileIndex).first(where: { $0.idString == fileId }) : nil }
+    var retained = retainedFileResult
+    if let proof = retained, let file = completedFile {
+      retained = RetainedFileResult(batchId: batchId, fileId: fileId, fileSize: file.size,
+        result: TransferMessage.fileResult(batch: batchId, file: fileId, result: 0, hash: file.sha256),
+        peerId: proof.peerId, peerFingerprint: proof.peerFingerprint)
+    }
+    if let retained, retained.batchId == batchId, retained.fileId == fileId,
+      retained.peerId == descriptor.peer.deviceId, retained.peerFingerprint == descriptor.peer.fingerprint {
       // The file was already verified before the channel died. Replaying its result lets the
       // sender skip the last-chunk wait instead of failing on a resume for a closed file.
       bindResumeChannel(channel)
       await replyStatus(channel, batch: batchId, file: fileId, bytes: retained.fileSize, state: 0)
       try? await sendWithBackpressure(retained.result.encode(), on: channel, jobBound: false)
+      guard operation == epoch, channels[descriptor.transport]?.descriptor == descriptor else { return }
       continueAfterRetainedReplay()
       return
     }
@@ -785,19 +1095,26 @@ enum TransferEvent: Equatable {
       await replyStatus(channel, batch: batchId, file: fileId, bytes: receiverWrittenBytes, state: 1)
       return
     }
-    var matches = false
-    if offset >= 0 { matches = (try? await storage.matchesPrefix(offset, expected: prefix)) == true }
+    let matches: Bool
+    do { matches = try await storage.matchesPrefix(offset, expected: prefix) }
+    catch {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3)
+      return
+    }
+    guard operation == epoch, channels[descriptor.transport]?.descriptor == descriptor, receiverStorage === storage else { return }
     if !matches {
       guard await resetReceiverFile(batch, file) else {
         await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4)
         return
       }
+      guard operation == epoch, channels[descriptor.transport]?.descriptor == descriptor else { return }
       bindResumeChannel(channel)
       await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 2)
       return
     }
     bindResumeChannel(channel)
     pauseTimerTask?.cancel(); pauseTimerTask = nil
+    acquireSleepAssertion()
     lastAckedWrittenBytes = receiverWrittenBytes
     state = .transferring(
       batch: batch,
@@ -814,6 +1131,7 @@ enum TransferEvent: Equatable {
   }
 
   private func bindResumeChannel(_ channel: any SecuredChannel) {
+    if finalizing { finalizationResumed = true }
     activeChannel = channel
     peerConnected = true
     peerCompatible = true
@@ -828,6 +1146,11 @@ enum TransferEvent: Equatable {
   private func handlePeerResume(
     batchId: String, fileId: String, offset: Int64, prefix: Data, channel: any SecuredChannel
   ) async {
+    let lookup = epoch
+    if resumeTask != nil || upgradeTask != nil {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3)
+      return
+    }
     guard let batch = currentBatch, batch.idString == batchId else {
       await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4)
       return
@@ -864,12 +1187,22 @@ enum TransferEvent: Equatable {
       }
     }
 
-    let sent = max(0, min(sentBytes, file.size))
+    let sent = restoredSender ? file.size : max(0, min(sentBytes, file.size))
     guard offset >= 0, offset <= sent else {
       await replyStatus(channel, batch: batchId, file: fileId, bytes: sent, state: 1)
       return
     }
-    let matches = ((try? await filePrefixDigest(file, length: offset)) ?? Data()) == prefix
+    let matches: Bool
+    do { matches = try await filePrefixDigest(file, length: offset) == prefix }
+    catch { await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 4); return }
+    guard lookup == epoch, channels[channel.descriptor.transport]?.descriptor == channel.descriptor, senderFileIndex == fileIndex else { return }
+    if paused && isTransferring {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3); return
+    }
+    if channel.descriptor.transport == "ble", activeChannel?.descriptor.transport == "lan",
+      lastAckAt.map({ ProcessInfo.processInfo.systemUptime - $0 < 3 }) == true {
+      await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 3); return
+    }
     guard matches else {
       await replyStatus(channel, batch: batchId, file: fileId, bytes: 0, state: 2)
       return
@@ -904,9 +1237,10 @@ enum TransferEvent: Equatable {
     )
     onEvent?(.resumed)
     await replyStatus(channel, batch: batchId, file: fileId, bytes: offset, state: 0)
+    guard operation == epoch, activeChannel?.descriptor == channel.descriptor else { return }
     transferTask = Task { [weak self] in
       guard let self, operation == self.epoch, self.activeChannel != nil else { return }
-      await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: offset, completedBefore: completedBefore)
+      await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: offset, completedBefore: completedBefore, recovered: true)
     }
   }
 
@@ -928,7 +1262,7 @@ enum TransferEvent: Equatable {
     let streamEpoch = epoch
     upgradeTask = Task { [weak self] in
       guard let self else { return }
-      defer { self.upgradeTask = nil }
+      defer { if self.epoch == streamEpoch { self.upgradeTask = nil } }
       guard let prefix = try? await self.filePrefixDigest(file, length: offset),
         self.epoch == streamEpoch, !Task.isCancelled else { return }
       let message = TransferMessage.resume(
@@ -954,6 +1288,7 @@ enum TransferEvent: Equatable {
       self.fileResultContinuation = nil
       self.creditResume?(); self.creditResume = nil
       self.clearCapacityWaiters()
+      self.upgradeTask = nil
       self.epoch = UUID()
       let operation = self.epoch
       self.bindResumeChannel(lan)
@@ -969,7 +1304,7 @@ enum TransferEvent: Equatable {
       self.onEvent?(.resumed)
       self.transferTask = Task { [weak self] in
         guard let self, operation == self.epoch, self.activeChannel != nil else { return }
-        await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: startOffset, completedBefore: completedBefore)
+        await self.streamBatchFrom(batch, startFileIndex: fileIndex, startOffset: startOffset, completedBefore: completedBefore, recovered: true)
       }
     }
   }
@@ -998,14 +1333,15 @@ enum TransferEvent: Equatable {
 
   /// Recreates the current file from zero after the retained prefix failed verification.
   private func resetReceiverFile(_ batch: TransferBatch, _ file: TransferFile) async -> Bool {
+    let operation = epoch
     let previous = receiverStorage
     receiverStorage = nil
     receiverPartFileURL = nil
     await previous?.discard()
+    guard operation == epoch, currentBatch?.id == batch.id else { return false }
     receiverTotalTransferred = max(receiverTotalTransferred - receiverWrittenBytes, 0)
     receiverWrittenBytes = 0
     lastAckedWrittenBytes = 0
-    let operation = epoch
     do {
       try await prepareReceiverForFile(at: receiverCurrentFileIndex, in: batch)
       return operation == epoch
@@ -1034,7 +1370,8 @@ enum TransferEvent: Equatable {
       try Task.checkCancellation()
       guard (!jobBound || operation == epoch), channels[channel.descriptor.transport]?.descriptor == channel.descriptor else { throw SessionFailure.cancelled }
       let revision = capacityRevision
-      do { try await channel.sendData(data); return }
+      // An admitted encrypted record finishes even if a route change cancels its producer.
+      do { try await Task { try await channel.sendData(data) }.value; return }
       catch is SessionBackpressure {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
           if revision != capacityRevision { continuation.resume(); return }
@@ -1060,6 +1397,7 @@ enum TransferEvent: Equatable {
   }
 
   func sendFiles(urls: [URL]) async {
+    guard !isBusy else { return }
     if !isBusy, (1...128).contains(urls.count), activeChannel?.descriptor.transport != "lan" { onLanRequired() }
     selectPreferredChannel()
     guard let channel = activeChannel, peerConnected else {
@@ -1075,6 +1413,16 @@ enum TransferEvent: Equatable {
     guard preparation == nil, transferTask == nil else { return }
     let operation = epoch
     preparing = true
+    if let identity = recoveryIdentity, recoveryStore != nil {
+      do {
+        let local = try await identity.publicIdentity().fingerprint
+        guard operation == epoch else { return }
+        recoveryLocal = local
+      } catch { if operation == epoch { preparing = false; failTransfer(reason: "Cannot access transfer recovery identity") }; return }
+    }
+    transferPeerDeviceId = channel.descriptor.peer.deviceId
+    transferPeerFingerprint = channel.descriptor.peer.fingerprint
+    recoveryPeer = channel.descriptor
     let work = Task.detached(priority: .utility) { () throws -> ([TransferFile], Int64) in
       var files: [TransferFile] = []
       var total: Int64 = 0
@@ -1112,7 +1460,7 @@ enum TransferEvent: Equatable {
       if operation == epoch { preparing = false; preparation = nil; failTransfer(reason: "File preparation failed: \(error.localizedDescription)") }
       return
     }
-    guard operation == epoch, activeChannel?.descriptor == channel.descriptor else { return }
+    guard operation == epoch else { return }
     preparation = nil; preparing = false
 
     let batchId = UUID()
@@ -1124,6 +1472,16 @@ enum TransferEvent: Equatable {
     retainedFileResult = nil
     state = .waitingForPeerApproval(batch: batch)
     acquireSleepAssertion()
+
+    if activeChannel?.descriptor != channel.descriptor {
+      pauseOffer(.waitingForPeerApproval(batch: batch), descriptor: channel.descriptor)
+      selectPreferredChannel()
+    } else { await sendOfferBatch(batch, channel: channel) }
+  }
+
+  private func sendOfferBatch(_ batch: TransferBatch, channel: any SecuredChannel) async {
+    let operation = epoch
+    let files = batch.files, totalBytes = batch.totalBytes
 
     // Send offer slices
     let totalFiles = Int64(files.count)
@@ -1165,6 +1523,13 @@ enum TransferEvent: Equatable {
 
     guard transferTask == nil, let channel = activeChannel else { return }
     let operation = epoch
+    if offerReplayed {
+      offerReplayed = false
+      senderFileIndex = 0; acknowledgedBytes = 0; sendingFile = batch.files[0]
+      pauseTransfer(batch: batch, transport: channel.descriptor.transport)
+      selectPreferredChannel()
+      return
+    }
     transferTask = Task {
       guard operation == epoch, activeChannel?.descriptor == channel.descriptor else { return }
       await streamAcceptedBatch(batch)
@@ -1177,7 +1542,7 @@ enum TransferEvent: Equatable {
 
   /// Streams from `startFileIndex` at `startOffset`, where the receiver already retains
   /// `startOffset` bytes of that file and `completedBefore` complete bytes precede it.
-  private func streamBatchFrom(_ batch: TransferBatch, startFileIndex: Int, startOffset: Int64, completedBefore: Int64) async {
+  private func streamBatchFrom(_ batch: TransferBatch, startFileIndex: Int, startOffset: Int64, completedBefore: Int64, recovered: Bool = false) async {
     guard activeChannel != nil, batch.files.indices.contains(startFileIndex) else { return }
     let operation = epoch
     let initialOffset = max(0, min(startOffset, batch.files[startFileIndex].size))
@@ -1186,8 +1551,31 @@ enum TransferEvent: Equatable {
 
     for fileIndex in startFileIndex..<batch.files.count {
       guard operation == epoch else { return }
+      restoredSender = false
       let file = batch.files[fileIndex]
-      let initial = fileIndex == startFileIndex ? initialOffset : 0
+      var initial = fileIndex == startFileIndex ? initialOffset : 0
+      senderFileIndex = fileIndex
+      sendingFile = file; sentBytes = initial
+      acknowledgedBytes = initial
+      state = .transferring(batch: batch, fileIndex: fileIndex + 1, fileName: file.name,
+        fileBytes: initial, fileSize: file.size, totalBytes: totalTransferred, speedBps: 0)
+      if recovered || file.size == 0, fileIndex > startFileIndex, let channel = activeChannel {
+        let request = TransferMessage.resume(batch: batch.idString, file: file.idString, offset: 0,
+          prefixHash: Data(SHA256.hash(data: Data())))
+        guard let encoded = try? request.encode() else { failTransfer(reason: "Cannot encode transfer recovery request"); return }
+        let status = await requestStatus(encoded, on: channel)
+        guard operation == epoch else { return }
+        guard let status, status.number(3) == 0, (0...file.size).contains(status.number(2)) else {
+          pauseTransfer(batch: batch, transport: channel.descriptor.transport); return
+        }
+        initial = status.number(2); acknowledgedBytes = initial; sentBytes = initial
+        totalTransferred = batch.files.prefix(fileIndex).reduce(0) { $0 + $1.size } + initial
+        state = .transferring(batch: batch, fileIndex: fileIndex + 1, fileName: file.name,
+          fileBytes: initial, fileSize: file.size, totalBytes: totalTransferred, speedBps: 0)
+      }
+      checkpoint(force: true)
+      await recoveryWrite?.value
+      guard operation == epoch else { return }
       guard let url = file.localURL else {
         failTransfer(reason: "Failed reading local file \(file.name)")
         return
@@ -1208,6 +1596,7 @@ enum TransferEvent: Equatable {
       acknowledgedBytes = initial
       lastAckAt = nil
       streamStartedAt = ProcessInfo.processInfo.systemUptime
+      NSLog("aniCe transfer source: transport=%@ chunk=%lld window=%lld", activeChannel?.descriptor.transport ?? "none", peerMaxChunkBytes, peerMaxWindow)
       var fileBytesSent: Int64 = initial
       // A LAN capability that arrived while the previous file was finalizing is retried here,
       // at the new file's start, where the stream is no longer waiting on a file result.
@@ -1297,7 +1686,7 @@ enum TransferEvent: Equatable {
         else {
           let operation = epoch
           let deadline = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            do { try await Task.sleep(for: self?.confirmationTimeout ?? .seconds(30)) } catch { return }
             guard let self, self.epoch == operation else { return }
             self.fileResultContinuation?.resume(throwing: SessionFailure.expired)
             self.fileResultContinuation = nil
@@ -1305,7 +1694,7 @@ enum TransferEvent: Equatable {
           defer { deadline.cancel() }
           fileResult = try await withCheckedThrowingContinuation { self.fileResultContinuation = $0 }
         }
-      } catch { if !Task.isCancelled && operation == epoch { failTransfer(reason: "File confirmation timed out") }; return }
+      } catch { if !Task.isCancelled && operation == epoch { pauseOnConfirmationTimeout() }; return }
       guard operation == epoch else { return }
       if fileResult.number(2) != 0 {
         failTransfer(reason: "Receiver reported error for file \(file.name)")
@@ -1331,6 +1720,7 @@ enum TransferEvent: Equatable {
       message.string(0) == batch.idString, message.string(1) == file.idString else { return }
     let written = message.number(2)
     guard written >= acknowledgedBytes, written <= sentBytes, written <= file.size else { return }
+    if written > acknowledgedBytes { pauseExpiresAt = nil; pauseDeadline = nil }
     acknowledgedBytes = written
     lastAckAt = ProcessInfo.processInfo.systemUptime
     checkCreditAndResume()
@@ -1353,9 +1743,9 @@ enum TransferEvent: Equatable {
 
   // MARK: - Receiver Flow
 
-  private func handleOffer(_ message: TransferMessage, peerName: String) {
+  private func handleOffer(_ message: TransferMessage, peerName: String, on descriptor: ChannelDescriptor) {
     let batchIdStr = message.string(0)
-    guard !retiredBatches.contains(batchIdStr) else { return }
+    guard !retiredBatches.contains(batchIdStr) || retainedBatch?.idString == batchIdStr else { return }
     guard let batchUUID = UUID(uuidString: batchIdStr) else { return }
     let sliceIdx = message.number(1)
     let totalSlices = message.number(2)
@@ -1409,6 +1799,21 @@ enum TransferEvent: Equatable {
       clearOfferAssembly()
       let batch = TransferBatch(id: batchUUID, files: allFiles, totalBytes: totalBytes, peerName: peerName)
 
+      let remembered = currentBatch?.id == batch.id ? currentBatch : retainedBatch?.id == batch.id ? retainedBatch : nil
+      if let remembered {
+        guard remembered.files == batch.files, remembered.totalBytes == batch.totalBytes else { return }
+        if case .incomingOffer = state { return }
+        if let interruptedOffer, case .incomingOffer = interruptedOffer { return }
+        if receiving, currentBatch?.id == batch.id || retainedBatch?.id == batch.id,
+          let channel = channels[descriptor.transport] {
+          Task { [weak self] in
+            try? await self?.sendWithBackpressure(TransferMessage.accept(batch: batch.idString, files: []).encode(),
+              on: channel, jobBound: false)
+          }
+          return
+        }
+      }
+
       let isBusy: Bool
       switch state {
       case .waitingForPeerApproval, .incomingOffer, .transferring, .paused:
@@ -1446,6 +1851,11 @@ enum TransferEvent: Equatable {
     guard case .incomingOffer(let batch) = state, let channel = activeChannel else { return }
     let operation = epoch
     do {
+      if let identity = recoveryIdentity, recoveryStore != nil {
+        let local = try await identity.publicIdentity().fingerprint
+        guard operation == epoch else { return }
+        recoveryLocal = local
+      }
       try await TransferReceiveStorage.checkCapacity(destination, bytes: batch.totalBytes)
       guard operation == epoch else { return }
     } catch { if operation == epoch { failTransfer(reason: "Cannot use destination: \(error.localizedDescription)") }; return }
@@ -1540,8 +1950,7 @@ enum TransferEvent: Equatable {
         if self.epoch == operation && self.receiverCurrentFileIndex == fileIndex {
           self.ackTask = nil
           let unacked = self.receiverWrittenBytes - self.lastAckedWrittenBytes
-          // Flow-control ACK cadence: for LAN transfer (chunk size > 3072), ACK every 2 chunks
-          // (peerMaxWindow / 4) so sender credit never stalls. Standard/BLE retains 8-chunk cadence.
+          // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
           let ackCadence = self.peerMaxChunkBytes > 3072 ? max(1, self.peerMaxWindow / 4) : min(8, max(1, self.peerMaxWindow / 2))
           if unacked >= ackCadence * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes) {
             self.flushAck()
@@ -1562,10 +1971,9 @@ enum TransferEvent: Equatable {
   }
 
   private func handleChunk(_ message: TransferMessage) async {
-    guard case .transferring(let batch, _, _, _, _, let totalBytesTransferred, _) = state,
-          let dest = destinationFolder,
-          let storage = receiverStorage,
-          let partURL = receiverPartFileURL else { return }
+    guard case .transferring(let batch, _, _, _, _, _, _) = state,
+          destinationFolder != nil, let storage = receiverStorage,
+          receiverPartFileURL != nil else { return }
 
     let fileId = message.string(1)
     let offset = message.number(2)
@@ -1581,6 +1989,7 @@ enum TransferEvent: Equatable {
     do { try await storage.write(data) }
     catch { if operation == epoch { failTransfer(reason: "Destination write failed: \(error.localizedDescription)") }; return }
     guard operation == epoch, receiverStorage === storage else { return }
+    pauseExpiresAt = nil; pauseDeadline = nil
     receiverWrittenBytes += Int64(data.count)
     receiverTotalTransferred += Int64(data.count)
 
@@ -1600,8 +2009,7 @@ enum TransferEvent: Equatable {
       )
     }
 
-    // Flow-control ACK cadence: for LAN transfer (chunk size > 3072), ACK every 2 chunks
-    // (peerMaxWindow / 4) so sender credit never stalls. Standard/BLE retains 8-chunk cadence.
+    // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
     let unacked = receiverWrittenBytes - lastAckedWrittenBytes
     let ackCadence = peerMaxChunkBytes > 3072 ? max(1, peerMaxWindow / 4) : min(8, max(1, peerMaxWindow / 2))
     if unacked >= ackCadence * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size {
@@ -1615,8 +2023,9 @@ enum TransferEvent: Equatable {
 
   private func finalizeReceiverFile(_ batch: TransferBatch) async {
     guard !finalizing, batch.files.indices.contains(receiverCurrentFileIndex),
-      let storage = receiverStorage, let partURL = receiverPartFileURL, let dest = destinationFolder else { return }
+      let storage = receiverStorage, receiverPartFileURL != nil, destinationFolder != nil else { return }
     finalizing = true
+    finalizationResumed = false
     let operation = epoch
     let file = batch.files[receiverCurrentFileIndex]
     ackTimerTask?.cancel(); ackTimerTask = nil
@@ -1629,8 +2038,12 @@ enum TransferEvent: Equatable {
     }
     let digest: Data
     do {
+      checkpoint(force: true, publishingIdentity: try await storage.fileIdentity())
+      await recoveryWrite?.value
+      guard operation == epoch, receiverStorage === storage else { return }
       let finished = try await storage.finish(name: file.name, expected: file.sha256)
       digest = finished.digest
+      guard operation == epoch, receiverStorage === storage else { return }
       publishedURLs.append(finished.url)
     } catch {
       if operation == epoch {
@@ -1651,7 +2064,9 @@ enum TransferEvent: Equatable {
       batchId: batch.idString,
       fileId: file.idString,
       fileSize: file.size,
-      result: TransferMessage.fileResult(batch: batch.idString, file: file.idString, result: 0, hash: digest)
+      result: TransferMessage.fileResult(batch: batch.idString, file: file.idString, result: 0, hash: digest),
+      peerId: recoveryPeer?.peer.deviceId ?? transferPeerDeviceId ?? "",
+      peerFingerprint: recoveryPeer?.peer.fingerprint ?? transferPeerFingerprint ?? ""
     )
     receiverStorage = nil
     receiverPartFileURL = nil
@@ -1666,6 +2081,13 @@ enum TransferEvent: Equatable {
           self.state = .transferring(batch: batch, fileIndex: next + 1, fileName: batch.files[next].name,
             fileBytes: 0, fileSize: batch.files[next].size, totalBytes: self.receiverTotalTransferred, speedBps: 0)
         }
+        if let lost = self.finalizationRetired, !self.finalizationResumed || self.activeChannel == nil {
+          self.finalizationRetired = nil; self.finalizing = false
+          if next == batch.files.count { self.completeReceiver(batch) }
+          else { self.pauseTransfer(batch: batch, transport: lost.transport); self.selectPreferredChannel() }
+          return
+        }
+        self.finalizationRetired = nil
         try await self.sendWithBackpressure(TransferMessage.fileResult(batch: batch.idString, file: file.idString, result: 0, hash: digest).encode())
         guard operation == self.epoch else { return }
         self.finalizing = false
@@ -1674,14 +2096,60 @@ enum TransferEvent: Equatable {
         } else {
           try await self.sendWithBackpressure(TransferMessage.batchResult(batch: batch.idString, result: 0).encode())
           guard operation == self.epoch else { return }
-          self.state = .completed(batchId: batch.id, fileCount: batch.files.count, totalBytes: batch.totalBytes)
-          let count = batch.files.count
-          let bytes = batch.totalBytes
-          let wasReceiving = self.receiving
-          self.cleanupActiveTransfer()
-          if wasReceiving { self.onEvent?(.completed(fileCount: count, totalBytes: bytes)) }
+          self.completeReceiver(batch)
         }
-      } catch { if operation == self.epoch { self.failTransfer(reason: "Completion delivery failed") } }
+      } catch {
+        guard operation == self.epoch else { return }
+        if self.finalizationRetired != nil,
+          self.retainedFileResult?.fileId == batch.files.last?.idString {
+          self.finalizationRetired = nil; self.finalizing = false
+          self.completeReceiver(batch)
+        } else if let lost = self.finalizationRetired, self.receiverStorage != nil {
+          self.finalizationRetired = nil; self.finalizing = false
+          self.pauseTransfer(batch: batch, transport: lost.transport); self.selectPreferredChannel()
+        } else { self.failTransfer(reason: "Completion delivery failed") }
+      }
+    }
+  }
+
+  private func completeReceiver(_ batch: TransferBatch) {
+    let saved: TransferCheckpoint?
+    if let local = recoveryLocal, let peer = activeChannel?.descriptor ?? recoveryPeer {
+      saved = TransferCheckpoint(localFingerprint: local, peerId: peer.peer.deviceId,
+        peerFingerprint: peer.peer.fingerprint, batch: batch, receiving: true, index: batch.files.count - 1,
+        offset: batch.files[batch.files.count - 1].size, folder: nil, partial: nil, transport: peer.transport,
+        expiresAt: Date().addingTimeInterval(Double(pauseTimeout.components.seconds)), stage: 3)
+    } else { saved = nil }
+    state = .completed(batchId: batch.id, fileCount: batch.files.count, totalBytes: batch.totalBytes)
+    cleanupActiveTransfer()
+    retainedBatch = batch
+    if let saved, let store = recoveryStore {
+      let previous = recoveryWrite
+      recoveryWrite = Task {
+        await previous?.value
+        do { try await store.save(saved) }
+        catch { NSLog("Transfer receipt storage failed: %@", error.localizedDescription) }
+      }
+    }
+    expireReceipt(batch.idString, after: Double(pauseTimeout.components.seconds))
+    onEvent?(.completed(fileCount: batch.files.count, totalBytes: batch.totalBytes))
+  }
+
+  private func expireReceipt(_ batchId: String, after remaining: TimeInterval) {
+    receiptExpiry?.cancel()
+    receiptDeadline = pauseClock.now.advanced(by: .seconds(remaining))
+    receiptExpiry = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+      guard let self, self.retainedFileResult?.batchId == batchId, self.currentBatch == nil else { return }
+      self.retainedFileResult = nil; self.retainedBatch = nil; self.receiptDeadline = nil
+      if let store = self.recoveryStore {
+        let previous = self.recoveryWrite
+        self.recoveryWrite = Task {
+          await previous?.value
+          do { try await store.clear() }
+          catch { NSLog("Transfer receipt cleanup failed: %@", error.localizedDescription) }
+        }
+      }
     }
   }
 
@@ -1711,6 +2179,19 @@ enum TransferEvent: Equatable {
     cleanupActiveTransfer()
   }
 
+  func invalidate() {
+    let active = isBusy
+    retainedFileResult = nil
+    state = active ? .failed(reason: "Trust or identity changed. Send the files again after pairing.") : .idle
+    cleanupActiveTransfer()
+    let operation = epoch
+    Task { [weak self] in
+      guard let self, let identity = self.recoveryIdentity else { return }
+      let local = try? await identity.publicIdentity().fingerprint
+      if operation == self.epoch { self.recoveryLocal = local }
+    }
+  }
+
   private func failTransfer(reason: String) {
     if case .completed = state { return }
     if case .cancelled = state { return }
@@ -1733,6 +2214,33 @@ enum TransferEvent: Equatable {
   }
 
   private func cleanupActiveTransfer(selectChannel: Bool = true) {
+    retainedBatch = nil; offerReplayed = false; restoredSender = false
+    let failed = failedRecovery
+    failedRecovery = nil
+    if let failed, failed.receiving, failed.stage == 0 || failed.stage == 4,
+      let folder = failed.folder, let partial = failed.partial {
+      Task.detached {
+        do { try TransferReceiveStorage.discardOwned(folder: folder, partial: partial,
+          batch: failed.batch.idString, file: failed.batch.files[failed.index].idString) }
+        catch { NSLog("Retained partial cleanup failed: %@", error.localizedDescription) }
+      }
+    }
+    checkpointAt = 0; checkpointPosition = nil
+    finalizationRetired = nil
+    finalizationResumed = false
+    receiptExpiry?.cancel(); receiptExpiry = nil
+    receiptDeadline = nil
+    interruptedOffer = nil
+    if let store = recoveryStore {
+      let previous = recoveryWrite
+      recoveryWrite = Task {
+        await previous?.value
+        do { try await store.clear() }
+        catch { NSLog("Transfer recovery cleanup failed: %@", error.localizedDescription) }
+      }
+    }
+    recoveryPeer = nil; pauseExpiresAt = nil; pauseDeadline = nil
+    resumeAttemptChannel = nil; nextResumeAttemptAt = 0
     progressTask?.cancel(); progressTask = nil; progressEpoch = nil
     preparation?.cancel(); preparation = nil; preparing = false
     clearOfferAssembly()
@@ -1814,7 +2322,8 @@ struct TransferRate {
   private var size = 0
   private var next = 0
 
-  init(samples: Int = 8) {
+  // Twenty intervals at the 250-ms publication cadence span five seconds, including bursty LAN ACKs.
+  init(samples: Int = 21) {
     precondition(samples >= 2, "A rate needs two observations.")
     self.samples = samples
     counts = Array(repeating: 0, count: samples)
@@ -1970,6 +2479,80 @@ private actor TransferReceiveStorage {
     hasher.update(data: data)
   }
 
+  func flush() throws { try handle?.synchronize() }
+
+  func fileIdentity() throws -> String {
+    guard let partial else { throw CocoaError(.fileReadUnknown) }
+    return try Self.identity(partial)
+  }
+
+  private static func identity(_ url: URL) throws -> String {
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    guard let device = attributes[.systemNumber] as? NSNumber,
+      let inode = attributes[.systemFileNumber] as? NSNumber else { throw CocoaError(.fileReadUnknown) }
+    return "\(device):\(inode)"
+  }
+
+  static func discardOwned(folder: URL, partial: URL, batch: String, file: String) throws {
+    guard FileManager.default.fileExists(atPath: partial.path) else { return }
+    guard partial.deletingLastPathComponent().resolvingSymlinksInPath().path == folder.resolvingSymlinksInPath().path,
+      partial.lastPathComponent.hasPrefix(".anice-\(batch)-\(file)-"), partial.pathExtension == "part",
+      try partial.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == false else { throw CocoaError(.fileReadCorruptFile) }
+    try FileManager.default.removeItem(at: partial)
+  }
+
+  static func published(folder: URL, file: TransferFile, identity expected: String) throws -> URL? {
+    var ambiguous = false, checked = 0
+    for suffix in 0..<TransferPublisher.maximumSuffix {
+      let target = folder.appendingPathComponent(TransferPublisher.suffixed(file.name, suffix))
+      guard FileManager.default.fileExists(atPath: target.path),
+        try target.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == false else { continue }
+      let owned = try !expected.isEmpty && identity(target) == expected
+      guard try target.resourceValues(forKeys: [.fileSizeKey]).fileSize.map({ Int64($0) }) == file.size else {
+        if owned { throw CocoaError(.fileReadCorruptFile) }
+        continue
+      }
+      if !owned { checked += 1; if checked > 32 { ambiguous = true; continue } }
+      let reader = try FileHandle(forReadingFrom: target)
+      defer { try? reader.close() }
+      var digest = SHA256(), size: Int64 = 0
+      while let bytes = try reader.read(upToCount: 131072), !bytes.isEmpty {
+        digest.update(data: bytes); size += Int64(bytes.count)
+      }
+      guard size == file.size, Data(digest.finalize()) == file.sha256 else {
+        if owned { throw CocoaError(.fileReadCorruptFile) }
+        continue
+      }
+      if owned { return target }
+      ambiguous = true
+    }
+    if ambiguous { throw NSError(domain: "aniCe.TransferRecovery", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "The file may already be saved. Check the destination before sending it again."]) }
+    return nil
+  }
+
+  func restore(folder: URL, partial: URL, batch: String, file: String, length: Int64) throws {
+    guard length >= 0,
+      partial.deletingLastPathComponent().resolvingSymlinksInPath().path == folder.resolvingSymlinksInPath().path,
+      partial.lastPathComponent.hasPrefix(".anice-\(batch)-\(file)-"), partial.pathExtension == "part",
+      try partial.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == false else { throw CocoaError(.fileReadCorruptFile) }
+    let descriptor = open(partial.path, O_RDWR | O_NOFOLLOW)
+    guard descriptor >= 0 else { throw CocoaError(.fileReadUnknown) }
+    let writer = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    do {
+      var remaining = length
+      while remaining > 0 {
+        guard let bytes = try writer.read(upToCount: Int(min(remaining, 1 << 20))), !bytes.isEmpty else {
+          throw CocoaError(.fileReadCorruptFile)
+        }
+        hasher.update(data: bytes); remaining -= Int64(bytes.count)
+      }
+      try writer.truncate(atOffset: UInt64(length))
+      try writer.seek(toOffset: UInt64(length))
+    } catch { try? writer.close(); throw error }
+    self.folder = folder; self.partial = partial; handle = writer
+  }
+
   /// Flushes and hashes exactly `length` bytes of the retained partial. The receiver sends this
   /// digest so the sender can prove its own source prefix before switching transports.
   func prefixDigest(_ length: Int64) throws -> Data {
@@ -2069,5 +2652,86 @@ private actor TransferSendStorage {
   func close() {
     assert(!Thread.isMainThread)
     do { try handle.close() } catch { NSLog("Transfer source close failed: %@", error.localizedDescription) }
+  }
+}
+
+// Checkpoints contain logical work and file references; fresh channels always authenticate independently.
+struct TransferCheckpoint: Codable, Sendable {
+  var version = 1
+  let localFingerprint: String
+  let peerId: String
+  let peerFingerprint: String
+  let batch: TransferBatch
+  let receiving: Bool
+  var index: Int
+  var offset: Int64
+  let folder: URL?
+  var partial: URL?
+  let transport: String
+  let expiresAt: Date
+  var stage = 0
+  var fileIdentity = ""
+
+  func validate() throws {
+    let hex = Set("0123456789abcdef")
+    guard version == 1, localFingerprint.count == 64, peerFingerprint.count == 64,
+      localFingerprint.allSatisfy({ hex.contains($0) }), peerFingerprint.allSatisfy({ hex.contains($0) }),
+      UUID(uuidString: peerId) != nil, (1...128).contains(batch.files.count),
+      batch.files.indices.contains(index), Set(batch.files.map(\.id)).count == batch.files.count,
+      offset >= 0, offset <= batch.files[index].size, ["lan", "ble"].contains(transport),
+      expiresAt.timeIntervalSince1970.isFinite, (0...4).contains(stage) else { throw CocoaError(.fileReadCorruptFile) }
+    var total: Int64 = 0
+    for file in batch.files {
+      guard file.size >= 0, file.sha256.count == 32, (1...255).contains(file.name.utf8.count),
+        file.name != ".", file.name != "..", !file.name.contains("/"), !file.name.contains("\\"),
+        !file.name.unicodeScalars.contains(where: { $0.value < 32 }),
+        file.localURL == nil || file.localURL?.isFileURL == true else { throw CocoaError(.fileReadCorruptFile) }
+      let next = total.addingReportingOverflow(file.size)
+      guard !next.overflow else { throw CocoaError(.fileReadCorruptFile) }
+      total = next.partialValue
+    }
+    guard total == batch.totalBytes else { throw CocoaError(.fileReadCorruptFile) }
+    guard stage != 1 || !receiving, stage != 2 || receiving,
+      stage != 3 || (receiving && index == batch.files.count - 1 && offset == batch.files[index].size),
+      stage != 4 || (receiving && offset == batch.files[index].size) else { throw CocoaError(.fileReadCorruptFile) }
+  }
+}
+
+actor TransferRecoveryStore {
+  private let url: URL
+  init(_ url: URL) { self.url = url }
+
+  func load() throws -> TransferCheckpoint? {
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+    guard (1...1048576).contains(size) else { throw CocoaError(.fileReadCorruptFile) }
+    let saved = try JSONDecoder().decode(TransferCheckpoint.self, from: Data(contentsOf: url))
+    try saved.validate()
+    return saved
+  }
+
+  func save(_ snapshot: TransferCheckpoint) throws {
+    try snapshot.validate()
+    let bytes = try JSONEncoder().encode(snapshot)
+    guard bytes.count <= 1048576 else { throw CocoaError(.fileWriteUnknown) }
+    let folder = url.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o700])
+    let temporary = folder.appendingPathComponent("checkpoint-\(UUID().uuidString).tmp")
+    let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+    guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    do {
+      try handle.write(contentsOf: bytes); try handle.synchronize(); try handle.close()
+      guard rename(temporary.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+    } catch {
+      try? handle.close()
+      try? FileManager.default.removeItem(at: temporary)
+      throw error
+    }
+  }
+
+  func clear() throws {
+    if unlink(url.path) != 0, errno != ENOENT { throw CocoaError(.fileWriteUnknown) }
   }
 }

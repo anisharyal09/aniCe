@@ -530,6 +530,21 @@ class SessionChannelTests {
   }
 
   @Test
+  fun negotiatedMtuCannotExceedTheNativeGattAttributeLimit() {
+    val data = ByteArray(4096) { it.toByte() }
+    for (version in 1..2) for (capacity in listOf(20, 512, 514, Int.MAX_VALUE)) {
+      val frames = GattReassembler.fragments(data, 0, capacity, version)
+      assertTrue(frames.isNotEmpty())
+      assertEquals(minOf(capacity, 512), frames.first().size)
+      assertTrue(frames.all { it.size <= minOf(capacity, 512) })
+      val receiver = GattReassembler(version)
+      var result: ByteArray? = null
+      frames.forEach { result = receiver.receive(it) }
+      assertArrayEquals(data, result)
+    }
+  }
+
+  @Test
   fun fragmentationBoundariesAndMalformedTraffic() = runBlocking {
     val data = ByteArray(4096) { it.toByte() }
     val r = GattReassembler(2)

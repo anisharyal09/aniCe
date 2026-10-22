@@ -13,7 +13,8 @@ package io.github.anisharyal09.anice.features.transfer
  *
  * Samples are cumulative byte counts, so the caller passes the running total it already keeps.
  */
-internal class TransferRate(private val samples: Int = 8) {
+// Twenty intervals at the 250-ms publication cadence span five seconds, including bursty LAN ACKs.
+internal class TransferRate(private val samples: Int = 21) {
     init {
         require(samples >= 2) { "A rate needs two observations." }
     }

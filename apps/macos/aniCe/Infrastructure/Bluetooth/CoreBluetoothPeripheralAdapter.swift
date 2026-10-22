@@ -73,6 +73,21 @@ struct AdvertisingGate {
   }
 }
 
+@MainActor final class GattSubmissionWaiters {
+  private var pending: [UUID: CheckedContinuation<Void, Error>] = [:]
+  func contains(_ token: UUID) -> Bool { pending[token] != nil }
+  func insert(_ token: UUID, _ continuation: CheckedContinuation<Void, Error>) {
+    precondition(pending[token] == nil)
+    pending[token] = continuation
+  }
+  func complete(_ token: UUID) { pending.removeValue(forKey: token)?.resume() }
+  func retire() {
+    let old = pending
+    pending.removeAll()
+    for continuation in old.values { continuation.resume(throwing: SessionFailure.cancelled) }
+  }
+}
+
 @MainActor
 final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   @preconcurrency CBPeripheralManagerDelegate
@@ -105,8 +120,11 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   private struct PendingFragment {
     let bytes: Data
     let logicalSize: Int
+    var submission: UUID? = nil
   }
   private var queue: [PendingFragment] = []
+  private let submissions = GattSubmissionWaiters()
+  private var submissionDeadlines: [UUID: Task<Void, Never>] = [:]
   private var sendID: UInt64 = 0
   private var received = PairingReassembler()
   private var trafficBudget = 0
@@ -135,19 +153,32 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   func sendSession(_ message: Data) async throws {
     guard sessionCapacity(message.count), let central else { throw SessionBackpressure() }
     let op = channelGeneration
-    try append(
-      try GattReassembler.fragments(
-        message, id: sendID, capacity: central.maximumUpdateValueLength, version: 2), message.count)
-    sendID += 1
-    flush()
-    let deadline = ProcessInfo.processInfo.systemUptime + 10
-    while !queue.isEmpty {
-      guard op == channelGeneration, self.central != nil else { throw SessionFailure.cancelled }
-      guard ProcessInfo.processInfo.systemUptime < deadline else {
-        retirePairingConnection()
-        throw SessionFailure.expired
+    let token = UUID()
+    let frames = try GattReassembler.fragments(
+      message, id: sendID, capacity: central.maximumUpdateValueLength, version: 2)
+    try Task.checkCancellation()
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        do { try append(frames, message.count) }
+        catch { continuation.resume(throwing: error); return }
+        sendID += 1
+        queue[queue.count - 1].submission = token
+        submissions.insert(token, continuation)
+        submissionDeadlines[token] = Task { [weak self] in
+          do { try await Task.sleep(for: .seconds(10)) } catch { return }
+          guard let self, op == self.channelGeneration, self.submissions.contains(token) else { return }
+          self.retirePairingConnection()
+          self.disconnected()
+        }
+        flush()
       }
-      try await Task.sleep(for: .milliseconds(20))
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        guard let self, op == self.channelGeneration, self.submissions.contains(token) else { return }
+        // Cancellation after sealing retires the channel; a partial record cannot be replayed.
+        self.retirePairingConnection()
+        self.disconnected()
+      }
     }
     guard op == channelGeneration else { throw SessionFailure.cancelled }
   }
@@ -181,6 +212,10 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
         return
       }
       let completed = queue.removeFirst()
+      if let token = completed.submission {
+        submissionDeadlines.removeValue(forKey: token)?.cancel()
+        submissions.complete(token)
+      }
       if completed.logicalSize > 0 { queueBudget.release(completed.logicalSize); sessionChanged?() }
     }
   }
@@ -303,6 +338,9 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   }
   private func resetPairingChannel() {
     channelGeneration += 1
+    for task in submissionDeadlines.values { task.cancel() }
+    submissionDeadlines.removeAll()
+    submissions.retire()
     central = nil
     queue.removeAll()
     queueBudget.clear()

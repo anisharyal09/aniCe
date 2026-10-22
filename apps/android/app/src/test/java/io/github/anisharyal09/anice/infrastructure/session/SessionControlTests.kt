@@ -9,6 +9,55 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionControlTests {
+  @Test fun applicationSendCannotRaceAControlCapacityPreflight() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    val outgoing = java.util.ArrayDeque<ByteArray>()
+    val replies = java.util.ArrayDeque<ByteArray>()
+    val delivered = mutableListOf<ByteArray>()
+    val entered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    var hold = false
+    var preflights = 0
+    val client = SessionConnection(helper.engine(fixture, false), false, {
+      if (hold) {
+        preflights++
+        if (!entered.isCompleted) { entered.complete(Unit); release.await() }
+      }
+      true
+    }, { outgoing.add(it) }, {}, {}, true)
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+      { delivered.add(it) }, {}, true)
+    try {
+      client.start()
+      server.receive(outgoing.removeFirst())
+      client.receive(replies.removeFirst())
+      server.receive(outgoing.removeFirst())
+      client.receive(replies.removeFirst())
+      server.receive(outgoing.removeFirst())
+      hold = true
+      val ready = async(start = CoroutineStart.UNDISPATCHED) { client.receive(replies.removeFirst()) }
+      withTimeout(1000) { entered.await() }
+      val sending = async(start = CoroutineStart.UNDISPATCHED) { client.sendData(byteArrayOf(7)) }
+      // The receive-side HELLO owns the control state even while native queue preflight suspends.
+      assertEquals(1, preflights)
+      assertFalse(sending.isCompleted)
+      hold = false; release.complete(Unit)
+      withTimeout(5000) { ready.await(); sending.await() }
+      assertEquals("One HELLO and one application record", 2, outgoing.size)
+      var frames = 0
+      while (outgoing.isNotEmpty() || replies.isNotEmpty()) {
+        assertTrue(++frames <= 8)
+        if (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+        if (replies.isNotEmpty()) client.receive(replies.removeFirst())
+      }
+      assertEquals(true, client.controlSupport)
+      assertEquals(true, server.controlSupport)
+      assertArrayEquals(byteArrayOf(7), delivered.single())
+      assertFalse(client.isClosed); assertFalse(server.isClosed)
+    } finally { release.complete(Unit); client.close(); server.close() }
+  }
+
   @Test fun stalledNativeKeepaliveValidationCannotBlockHardDeadlineWatcher() = runBlocking {
     val helper = SessionTests()
     val fixture = helper.root().getJSONArray("valid").getJSONObject(0)

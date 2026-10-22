@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Fixed
 
+- Document checkpoint-backed transfer resume with existing kinds 10/11 and a four-chunk BLE implementation window; framing, capability ranges, session cryptography and fixture bytes remain unchanged.
+
 - Coalesce ordinary BLE traffic into one LAN demand per channel and eligibility interval.
 
 ### Added

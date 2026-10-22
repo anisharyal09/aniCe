@@ -11,6 +11,8 @@ import java.io.IOException
 import java.nio.file.AccessDeniedException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +52,41 @@ internal class TransferReceiveStorage(
         }
     }
 
+    suspend fun restore(batch: String, file: String, path: String, uri: String, length: Long): Pair<File?, Uri?> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(stream == null && length >= 0)
+            val prefix = ".anice-$batch-$file-"
+            val input = if (destination != null) {
+                val documentUri = Uri.parse(uri)
+                if (!destination.ownsPartial(documentUri, prefix)) throw IOException("Retained document is unavailable")
+                document = documentUri
+                destination.read(documentUri)
+            } else {
+                val owned = File(path)
+                if (owned.parentFile?.canonicalFile != folder.canonicalFile || !owned.name.startsWith(prefix) ||
+                    !owned.name.endsWith(".part") || Files.isSymbolicLink(owned.toPath()) || !owned.isFile) {
+                    throw IOException("Retained partial is unavailable")
+                }
+                partial = owned
+                FileInputStream(owned)
+            }
+            input.use {
+                var remaining = length
+                val buffer = ByteArray(131072)
+                while (remaining > 0) {
+                    val count = it.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                    if (count <= 0) throw IOException("Retained partial ended before its checkpoint")
+                    digest.update(buffer, 0, count); remaining -= count
+                }
+            }
+            stream = document?.let { ParcelFileDescriptor.AutoCloseOutputStream(destination!!.descriptor(it)) }
+                ?: FileOutputStream(partial, true)
+            stream!!.channel.truncate(length)
+            stream!!.channel.position(length)
+            Pair(partial, document)
+        }
+    }
+
     suspend fun write(bytes: ByteArray) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val output = stream ?: throw IOException("Received file is closed")
@@ -61,6 +98,57 @@ internal class TransferReceiveStorage(
     /** Pushes retained bytes to the provider before they are read back for resume verification. */
     suspend fun flush() = withContext(Dispatchers.IO) {
         mutex.withLock { stream?.fd?.sync() }
+    }
+
+    suspend fun fileIdentity(): String = withContext(Dispatchers.IO) {
+        mutex.withLock { partial?.let { identity(it) } ?: "" }
+    }
+
+    companion object {
+        private fun identity(file: File): String = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS).fileKey()?.toString() ?: ""
+
+        fun discardOwned(folder: File, path: String, batch: String, file: String) {
+            val owned = File(path)
+            if (!owned.exists()) return
+            if (owned.parentFile?.canonicalFile != folder.canonicalFile ||
+                !owned.name.startsWith(".anice-$batch-$file-") || !owned.name.endsWith(".part") ||
+                Files.isSymbolicLink(owned.toPath())) throw IOException("Unrecognized retained partial")
+            Files.delete(owned.toPath())
+        }
+
+        fun published(folder: File, file: TransferFile, fileIdentity: String): Boolean {
+            var ambiguous = false
+            var checked = 0
+            for (suffix in 0 until TransferNaming.MAXIMUM_SUFFIX) {
+                val target = File(folder, TransferNaming.suffixed(file.name, suffix))
+                if (!target.isFile || Files.isSymbolicLink(target.toPath())) continue
+                val owned = fileIdentity.isNotEmpty() && identity(target) == fileIdentity
+                if (target.length() != file.size) {
+                    if (owned) throw IOException("Published file size changed")
+                    continue
+                }
+                if (!owned && ++checked > 32) { ambiguous = true; continue }
+                val digest = MessageDigest.getInstance("SHA-256")
+                FileInputStream(target).use { input ->
+                    val buffer = ByteArray(131072)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) throw IOException("Published file made no progress")
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                if (!digest.digest().contentEquals(file.sha256)) {
+                    if (owned) throw IOException("Published file hash changed")
+                    continue
+                }
+                if (owned) return true
+                ambiguous = true
+            }
+            if (ambiguous) throw IOException("The file may already be saved. Check the destination before sending it again.")
+            return false
+        }
     }
 
     /**
@@ -94,8 +182,7 @@ internal class TransferReceiveStorage(
 
     /** Verifies that the retained partial still begins with the sender's [length]-byte prefix. */
     suspend fun matchesPrefix(length: Long, expected: ByteArray): Boolean =
-        try { prefixDigest(length).contentEquals(expected) }
-        catch (_: IOException) { false }
+        prefixDigest(length).contentEquals(expected)
 
     suspend fun finish(name: String, expected: ByteArray): ByteArray = withContext(Dispatchers.IO) {
         mutex.withLock {

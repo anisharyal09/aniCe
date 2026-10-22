@@ -21,6 +21,7 @@ import io.github.anisharyal09.anice.infrastructure.bluetooth.AndroidGattTranspor
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.connections.sessionNotice
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -66,6 +67,9 @@ class SessionController(application: Application) {
   var beforeDisconnect: () -> Unit = {}
   var beforeRequest: (DeviceIdentity) -> Unit = {}
   var radioChanged: (Boolean) -> Unit = {}
+  internal var foregroundChanged: () -> Unit = {}
+  internal var automaticRecoveryReserved: () -> Boolean = { false }
+  internal fun automaticPolicyChanged() = reconcileWorkRecovery()
   private var automaticAttempt = false
 
   @Volatile private var operation = 0L
@@ -80,6 +84,8 @@ class SessionController(application: Application) {
   private var workLease = false
   private var pickerLease = false
   private var worker: Job? = null
+  private var workRecovery: Job? = null
+  private var recoveryPaused = false
   var beforeConnect: () -> Unit = {}
   private var readySignal: CompletableDeferred<Unit>? = null
   private val maintenanceEvents = SessionMaintenance()
@@ -148,6 +154,7 @@ class SessionController(application: Application) {
   fun request(peer: DeviceIdentity) {
     if (!app.sessionPeers.permits(peer)) return
     selected = peer
+    recoveryPaused = false
     if (missingPermissions().isNotEmpty()) {
       awaitingPermissions = true
       status = "Allow Bluetooth access to connect."
@@ -167,8 +174,16 @@ class SessionController(application: Application) {
 
   @SuppressLint("MissingPermission")
   fun connect(peer: DeviceIdentity, candidate: BluetoothDevice? = null, automatic: Boolean = false) {
-    if (!foreground && companionOwner == null) return
+    if (!foreground && companionOwner == null && !workLease) return
     if (!app.sessionPeers.permits(peer)) return
+    if (selected?.deviceId == peer.deviceId && selected?.fingerprint == peer.fingerprint && selected?.publicKey == peer.publicKey &&
+        (state == ConnectionState.CONNECTING || state == ConnectionState.SECURED)) {
+      if (automatic) {
+        automaticAttempt = true
+        connection?.enableRenewal()
+      }
+      return
+    }
     cancel()
     lastFailure = null
     automaticAttempt = automatic
@@ -255,7 +270,7 @@ class SessionController(application: Application) {
               controls = true,
               // Include deep sleep: OS suspension must not extend record lifetime or PONG deadlines.
               now = { SystemClock.elapsedRealtime() },
-              renew = automatic,
+              renew = automaticAttempt,
               changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("ble") } },
             )
           connection = engine
@@ -305,6 +320,8 @@ class SessionController(application: Application) {
               break
             }
           }
+        } catch (e: TimeoutCancellationException) {
+          if (op == operation) fail("Bluetooth setup timed out. Retry the connection.")
         } catch (e: CancellationException) {
           throw e
         } catch (e: Exception) {
@@ -314,6 +331,8 @@ class SessionController(application: Application) {
   }
 
   internal fun securityInvalidated() {
+    recoveryPaused = true
+    workRecovery?.cancel(); workRecovery = null
     // Retire keys synchronously even when the mutation originates outside a presentation.
     val op = operation
     connection?.retire()
@@ -337,6 +356,8 @@ class SessionController(application: Application) {
   }
 
   fun disconnect() {
+    recoveryPaused = true
+    workRecovery?.cancel(); workRecovery = null
     beforeDisconnect()
     val engine = connection
     val op = operation
@@ -356,8 +377,6 @@ class SessionController(application: Application) {
   }
 
   fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
-    workLease = false
-    pickerLease = false
     app.features.retired("ble")
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++
@@ -381,9 +400,11 @@ class SessionController(application: Application) {
     // Publish terminal feedback with state; a resumed retry may immediately replace both.
     status = message
     publishProgress()
+    reconcileWorkRecovery()
   }
 
   private fun finish(error: Exception, engine: SessionConnection?) {
+    android.util.Log.i("aniCe-ble", "session ended type=${error.javaClass.simpleName} reason=${(error as? SessionException)?.reason} state=$state expiry=${engine?.expiration} peerClosed=${engine?.closedByPeer}")
     val notice =
       sessionNotice(
         (error as? SessionException)?.reason,
@@ -425,7 +446,8 @@ class SessionController(application: Application) {
   }
 
   fun adoptAutomatic(peer: DeviceIdentity): Boolean {
-    if (state != ConnectionState.SECURED || !hasCompanionOwner || selected?.deviceId != peer.deviceId ||
+    if ((state != ConnectionState.SECURED && state != ConnectionState.CONNECTING) ||
+      (!hasCompanionOwner && !foreground && !workLease) || selected?.deviceId != peer.deviceId ||
       selected?.fingerprint != peer.fingerprint || selected?.publicKey != peer.publicKey) return false
     automaticAttempt = true
     connection?.enableRenewal()
@@ -434,23 +456,53 @@ class SessionController(application: Application) {
 
   fun updateWorkLease(approved: Boolean, picking: Boolean) {
     val withdrawing = workLease || pickerLease
-    workLease = approved && state == ConnectionState.SECURED
+    workLease = approved
     pickerLease = picking && state == ConnectionState.SECURED
     if (withdrawing && !foreground && companionOwner == null && !workLease && !pickerLease) cancel()
+    reconcileWorkRecovery()
+  }
+
+  private fun reconcileWorkRecovery() {
+    if (!workLease || recoveryPaused || companionOwner != null || automaticRecoveryReserved()) {
+      workRecovery?.cancel(); workRecovery = null
+      return
+    }
+    if (workRecovery?.isActive == true) return
+    val peer = selected ?: return
+    workRecovery = scope.launch(start = CoroutineStart.LAZY) {
+      val retry = NearbyRetry()
+      while (isActive && workLease && !recoveryPaused && companionOwner == null && selected == peer) {
+        if (missingPermissions().isNotEmpty()) return@launch
+        if (state != ConnectionState.SECURED && state != ConnectionState.CONNECTING) connect(peer, automatic = true)
+        var authenticated = false
+        val result = progress.first {
+          if (it.state == ConnectionState.SECURED && !authenticated) { retry.reset(); authenticated = true }
+          it.renewal != null || it.state == ConnectionState.FAILED || it.state == ConnectionState.DISCONNECTED
+        }
+        if (result.renewal != null) { retireForRenewal(); continue }
+        delay(retry.next(kotlin.random.Random.nextDouble(-0.1, 0.1)))
+      }
+    }
+    workRecovery?.start()
   }
 
   fun onWorkServiceStopped() {
     if (!workLease) return
     workLease = false
+    reconcileWorkRecovery()
     if (!foreground && companionOwner == null && !pickerLease) cancel("Background transfer ownership ended.")
   }
 
   fun foreground(presentation: Any = this) {
+    val previous = foreground
     presentations.add(presentation)
+    if (!previous) foregroundChanged()
   }
 
   fun background(presentation: Any = this, changingConfigurations: Boolean = false) {
+    val previous = foreground
     presentations.remove(presentation)
+    if (previous && !foreground) foregroundChanged()
     // The system permission dialog temporarily backgrounds the app during explicit setup.
     if (!foreground && !changingConfigurations && !awaitingPermissions && companionOwner == null && !workLease && !pickerLease) cancel()
   }
@@ -458,6 +510,7 @@ class SessionController(application: Application) {
   fun acquireCompanion(owner: Any) {
     check(companionOwner == null || companionOwner === owner)
     companionOwner = owner
+    reconcileWorkRecovery()
     companionOwnershipChanged(true)
   }
 
@@ -466,6 +519,15 @@ class SessionController(application: Application) {
     companionOwner = null
     companionOwnershipChanged(false)
     if (retainForegroundSession(preserveForegroundSession || workLease || pickerLease, foreground || workLease || pickerLease, state, renewalReason != null)) {
+      automaticAttempt = false
+      connection?.disableRenewal()
+    } else cancel()
+    reconcileWorkRecovery()
+  }
+
+  internal fun releaseForegroundAutomatic(preserve: Boolean) {
+    if (!automaticAttempt || companionOwner != null) return
+    if (retainForegroundSession(preserve || workLease || pickerLease, foreground || workLease || pickerLease, state, renewalReason != null)) {
       automaticAttempt = false
       connection?.disableRenewal()
     } else cancel()
@@ -488,7 +550,12 @@ class SessionController(application: Application) {
             val engine=connection ?: throw SessionException(SessionFailure.CANCELLED)
             if(token!=channelToken || state!=ConnectionState.SECURED) throw SessionException(SessionFailure.CANCELLED)
             if(!engine.applicationAvailable || transport.hasCapacity(bytes.size+31) != true) throw SessionBackpressure()
-            withContext(Dispatchers.IO) { engine.sendData(bytes) }
+            try { withContext(Dispatchers.IO) { engine.sendData(bytes) } }
+            catch (error: SessionBackpressure) { throw error }
+            catch (error: Exception) {
+                android.util.Log.i("aniCe-ble", "DATA submission failed type=${error.javaClass.simpleName}", error)
+                throw error
+            }
         }
     }
   companion object {

@@ -33,6 +33,15 @@ class TransferRateTests {
     }
 
     @Test
+    fun defaultWindowKeepsBurstyConfirmationsButStillExpiresARealStall() {
+        val rate = TransferRate()
+        rate.add(0, 0)
+        for (sample in 1..12) assertEquals(262144000.0 / (sample * 250), rate.add(262144, sample * 250L), 0.001)
+        for (sample in 13..20) rate.add(262144, sample * 250L)
+        assertEquals(0.0, rate.add(262144, 5250), 0.0)
+    }
+
+    @Test
     fun aWindowShorterThanTwoObservationsCannotMeasureAnything() {
         assertThrows(IllegalArgumentException::class.java) { TransferRate(samples = 1) }
         assertThrows(IllegalArgumentException::class.java) { TransferRate(samples = 0) }

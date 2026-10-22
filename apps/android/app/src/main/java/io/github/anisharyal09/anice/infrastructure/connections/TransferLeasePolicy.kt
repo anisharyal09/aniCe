@@ -32,7 +32,7 @@ internal fun transferLeases(
     lanWork = backgroundAllowed && (activeTransport == "lan" || connecting || paused),
     lanPicker = selectingFiles,
     bleWork = backgroundAllowed && (
-        activeTransport == "ble" || (bleSecured && (activeTransport == null || busy || paused))
+        activeTransport == "ble" || paused || (bleSecured && (activeTransport == null || busy))
     ),
     blePicker = selectingFiles && bleSecured,
 )

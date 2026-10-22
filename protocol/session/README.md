@@ -106,7 +106,7 @@ Directional counters start at zero. Receive only the exact next value and advanc
 
 ## BLE binding
 
-The published service and three characteristic UUIDs remain as in pairing v1. Session v2 fragmentation header is `version:u8=2 | messageId:u32BE | totalLength:u16BE | offset:u16BE`. IDs start at zero per direction and increment per logical message, never wrap. Fragments are contiguous; logical length is 1..4096. MTU 23 gives 11 payload bytes per fragment. Reassembly deadline is ten seconds from first fragment, without extension.
+The published service and three characteristic UUIDs remain as in pairing v1. Session v2 fragmentation header is `version:u8=2 | messageId:u32BE | totalLength:u16BE | offset:u16BE`. IDs start at zero per direction and increment per logical message, never wrap. Fragments are contiguous; logical length is 1..4096. MTU 23 gives 11 payload bytes per fragment. Android caps characteristic values at `min(MTU - 3, 512)` bytes, including the header; MTU 517 therefore gives 503 session payload bytes per fragment. Reassembly deadline is ten seconds from first fragment, without extension.
 
 Each logical payload is `kind:u8 || payload`; kinds `1..4` carry unmodified EDHOC messages, `5` EDHOC error, `6` application record. Mode determines accepted fragmentation version; never sniff a fragment into another mode. One candidate, one receive buffer and at most eight queued logical messages/32 KiB are allowed. Backpressure is returned before sequence reservation. Queue budget includes sealed records/envelopes retained until submission completes.
 

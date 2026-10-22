@@ -101,7 +101,7 @@ Features → Now Playing → Playback setup provides remote playback to Android.
 
 ## Local File Transfer
 
-Overview → Files and the companion provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Mid-stream channel loss automatically pauses with in-memory partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; cross-launch resume after process death remains unavailable. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and the companion provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Mid-stream channel loss automatically pauses with checkpointed partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; private checkpoints retain prepared jobs across restarts for 15 minutes. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 

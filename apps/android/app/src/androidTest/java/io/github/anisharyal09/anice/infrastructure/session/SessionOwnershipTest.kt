@@ -19,6 +19,30 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SessionOwnershipTest {
+  @Test fun applicationConstructionDoesNotReadAnUnattachedContext() {
+    val detached = AniCeApplication()
+    assertNull(detached.baseContext)
+    assertEquals(io.github.anisharyal09.anice.features.transfer.TransferState.Idle, detached.transfer.state)
+  }
+  @Test fun duplicateConnectAndAutomaticAdoptionKeepTheAttemptGeneration() = runBlocking {
+    val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
+    val controller = app.sessionController
+    val peer = withContext(Dispatchers.IO) { app.identityService.getOrCreateIdentity().identity }
+      .copy(platform = "macos", deviceName = "Isolated attempt")
+    withContext(Dispatchers.Main) {
+      val owner = Any()
+      controller.acquireCompanion(owner)
+      try {
+        controller.connect(peer)
+        assumeTrue("Requires Bluetooth permissions and radio", controller.state == ConnectionState.CONNECTING)
+        val progress = controller.progress.value
+        assertTrue(controller.adoptAutomatic(peer))
+        controller.connect(peer, automatic = true)
+        assertSame(progress, controller.progress.value)
+        assertFalse(controller.adoptAutomatic(peer.copy(fingerprint = "different")))
+      } finally { controller.releaseCompanion(owner) }
+    }
+  }
   @Test fun automaticPreferenceNotifiesWithoutReadingStatus() = runBlocking {
     val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
     val policy = CompanionProbe.get(app)

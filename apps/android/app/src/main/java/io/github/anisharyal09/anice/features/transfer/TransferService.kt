@@ -17,7 +17,7 @@ class TransferService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!app.transfer.backgroundAllowed || !app.transfer.isBusy ||
-            !app.transfer.peerConnected && app.transfer.state !is TransferState.Connecting) {
+            !app.transfer.peerConnected && app.transfer.state !is TransferState.Connecting && !app.transfer.isPaused) {
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -26,7 +26,7 @@ class TransferService : Service() {
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Local file transfer")
             .setContentText("Transferring with your trusted device")
-            .setOngoing(true).setOnlyAlertOnce(true).build()
+            .setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build()
         try {
             ServiceCompat.startForeground(this, TransferNotification.NOTIFICATION_ID, notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)

@@ -214,7 +214,8 @@ class AndroidGattTransport(
             if (epoch == op && client === g && (!closing || allowClosing))
               try {
                 block()
-              } catch (_: Exception) {
+              } catch (error: Exception) {
+                Log.i("aniCe-ble", "GATT callback failed stage=$stage", error)
                 finish(false)
               }
           }
@@ -228,15 +229,14 @@ class AndroidGattTransport(
               "connection status=$status connected=${state == BluetoothProfile.STATE_CONNECTED}",
             )
             if (state == BluetoothProfile.STATE_DISCONNECTED) {
-              finish(closing)
+              finish(closing, if (!closing) "Bluetooth disconnected (GATT status $status, stage $stage)." else null)
             } else if (status != BluetoothGatt.GATT_SUCCESS) {
               finish(
                 false,
-                "Bluetooth connection failed. Start a fresh invitation and try again.",
+                "Bluetooth connection failed (GATT status $status). Retry the connection.",
                 retryCandidate = true,
               )
             } else if (state == BluetoothProfile.STATE_CONNECTED && stage == "connect") {
-              refreshGatt(g)
               stage = "mtu"
               progress("mtu", connectionDeadline)
               if (!g.requestMtu(517)) {
@@ -296,14 +296,7 @@ class AndroidGattTransport(
             }
             if (complete.isEmpty()) {
               if (setupRecovery.retryMissingLayout()) {
-                stage = "layoutRefresh"
-                progress("services", connectionDeadline)
-                Log.i("aniCe-pairing", "missing_layout_rediscovery with cache refresh")
-                refreshGatt(g)
-                handler.postDelayed(
-                  { if (epoch == op && stage == "layoutRefresh") services(g) },
-                  300,
-                )
+                rediscoverServices(g)
                 return@dispatch
               }
               finish(
@@ -375,6 +368,10 @@ class AndroidGattTransport(
                 write = null
                 indicate = null
                 services(g)
+                return@dispatch
+              }
+              if (setupRecovery.retryInvalidHandle(status)) {
+                rediscoverServices(g)
                 return@dispatch
               }
               require(
@@ -461,6 +458,18 @@ class AndroidGattTransport(
     }
   }
 
+  private fun rediscoverServices(g: BluetoothGatt) {
+    indicate?.let { g.setCharacteristicNotification(it, false) }
+    write = null
+    indicate = null
+    stage = "layoutRefresh"
+    progress("services", connectionDeadline)
+    Log.i("aniCe-pairing", "stale_layout_rediscovery with cache refresh")
+    refreshGatt(g)
+    val op = epoch
+    handler.postDelayed({ if (epoch == op && stage == "layoutRefresh") services(g) }, 300)
+  }
+
   fun hasCapacity(bytes: Int): Boolean =
     stage == "ready" && !closing && queueBudget.canReserve(bytes)
 
@@ -484,7 +493,8 @@ class AndroidGattTransport(
         )
       }
       flush()
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+      Log.i("aniCe-ble", "GATT enqueue failed size=${data.size} mtu=$mtu queued=${queue.size} writing=$writing", error)
       finish(false)
     }
   }
@@ -508,7 +518,10 @@ class AndroidGattTransport(
         }
         // A partial sealed record cannot be resumed or resealed after cancellation.
         continuation.invokeOnCancellation {
-          handler.post { if (pendingSends.remove(continuation)) finish(false) }
+          handler.post { if (pendingSends.remove(continuation)) {
+            Log.i("aniCe-ble", "GATT submission cancelled")
+            finish(false)
+          } }
         }
       }
     }
@@ -642,7 +655,13 @@ class AndroidGattTransport(
   }
 
   private fun failureMessage(): String =
-    when (stage) {
+    if (trustedSession) when (stage) {
+      "connect" -> "Could not reach your Mac over Bluetooth."
+      "mtu", "services", "layoutRefresh" -> "Could not discover the Mac’s Bluetooth service."
+      "subscribe" -> "Could not subscribe to the Mac’s Bluetooth reply channel."
+      "ready" -> "The Bluetooth connection was interrupted."
+      else -> "Bluetooth setup was interrupted."
+    } else when (stage) {
       "connect" ->
         "Could not connect to your Mac. Keep aniCe's pairing invitation open and try again."
       "mtu",
@@ -676,12 +695,7 @@ class AndroidGattTransport(
     Log.i("aniCe-pairing", "transport_end succeeded=$success")
     ended(
       success,
-      if (trustedSession && failure != null)
-        PairingTransportFailure(
-          "Secure connection was interrupted. Open Allow connections on your Mac and retry.",
-          failure.recovery,
-        )
-      else failure,
+      failure,
     )
   }
 }

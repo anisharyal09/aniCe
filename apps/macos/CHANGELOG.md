@@ -18,7 +18,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Clipboard panel, favourites and companion entry with credential-scoped automatic consent, permission-aware pasteboard observation, sensitive-content confirmation and bounded LAN/BLE delivery with idempotent fallback. Manual sends survive automatic clipboard changes during preparation; disabling automatic sharing immediately cancels pending automatic preparation.
 
-- Resilient file transfers: a mid-stream LAN or Bluetooth loss now pauses with retained partial storage, frozen progress in the transfer panel and menu-bar companion, and a native paused notification. A reconnected LAN to the same peer resumes automatically at the verified offset; either device can explicitly continue over Bluetooth from the panel or notification when LAN stays down, with the receiver asking the sender to validate the prefix it holds. Cancel deletes the partial, and a 15-minute pause timeout fails and cleans it up.
+- Resilient file transfers: a mid-stream LAN or Bluetooth loss now pauses with retained partial storage, frozen progress in the transfer panel and menu-bar companion. A reconnected LAN to the same peer resumes automatically at the verified offset; either device can explicitly continue over Bluetooth from the panel when LAN stays down, with the receiver asking the sender to validate the prefix it holds. Cancel deletes the partial, and a 15-minute pause timeout fails and cleans it up.
 - A live LAN that becomes capable during a Bluetooth stream upgrades the active transfer in place through the resume handshake, so a Bluetooth continuation moves back to local network as soon as Wi-Fi reconnects.
 - Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE admission coordination opens bounded Allow windows on connection events, successful BLE feature traffic, media demand or file-transfer demand; coordination traffic cannot initiate another window.
 
@@ -30,11 +30,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Complete BLE submissions from native callbacks and preserve admitted records across transfer upgrades. Retain interrupted offers, checkpointed streams and verified receipts for 15 minutes across restarts, reconcile native hard-link publication by file identity and hash, and bound BLE transfer credit below the ingress capacity. Reduce routine checkpoint flushes and keep pause/result/failure notices inside the app; background offers are opt-in. Keep live LAN sessions through unrelated interface changes, fence stale write retirement callbacks, and expose saved transfer notification/sound controls in Files and Settings. Route paused notification actions through the delegate with batch correlation and respect silent foreground presentation. Measure transfer rates over a five-second window and distinguish native frame/write timeouts in diagnostics.
+
 - Bound traffic-triggered LAN attempts, preserve LAN offer priority, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
 - SMS requests negotiate capability per channel, stage provider thread snapshots until completion, retain failed drafts and discard stale asynchronous assemblies. Notification settings and submission failures are visible; counters advance after macOS accepts a notification, and peer retirement clears notification targets.
 
-- A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and a paused batch keeps its sleep assertion, destination and secured Bluetooth fallback so automatic LAN or explicit Bluetooth continuation can finish it. The paused notification offers Continue over Bluetooth on the receiving device as well as the sender.
+- A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and a paused batch keeps its sleep assertion, destination and secured Bluetooth fallback so automatic LAN or explicit Bluetooth continuation can finish it. The paused panel offers Continue over Bluetooth on the receiving device as well as the sender.
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected, even on fresh installs with no stored preference.
 - Feature traffic no longer resumes LAN after an explicit Disconnect; manual Allow/Connect or a preference change resumes automation.
 

@@ -265,6 +265,13 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    controller.activeChannel?.let { channel ->
+                        Text(
+                            if (channel.descriptor.transport == "lan") "Using local network" else "Using Bluetooth",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     when {
                         saving -> LinearProgressIndicator(
                             modifier = Modifier

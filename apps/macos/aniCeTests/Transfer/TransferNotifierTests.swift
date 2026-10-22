@@ -185,24 +185,22 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(pausedSender.actions.last).options.contains(.destructive))
   }
 
-  func testPausedNotificationIsClearedOnResumeAndTerminalEvents() {
+  func testPauseAndTerminalTransitionsNeverPostAlertsEvenWhenOffersAreEnabled() {
     let model = MacTransferModel()
+    XCTAssertFalse(model.notificationPreferences.enabled)
+    model.notificationPreferences.enabled = true
     let center = SpyNotificationCenter()
     let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center)
     let batch = makeBatch(count: 1)
-
-    notifier.handle(.paused(batch: batch, reason: "Local network connection lost", canResumeOverBle: true))
-    let identifier = "transfer-paused-\(batch.idString)"
-    XCTAssertTrue(center.requestedAuthorization)
-    XCTAssertEqual(center.added.map(\.identifier), [identifier])
-    XCTAssertEqual(center.added.first?.content.categoryIdentifier, MacTransferNotifier.Category.pausedSender)
-
-    notifier.handle(.resumed)
-    XCTAssertEqual(center.removedDelivered, [identifier])
-    XCTAssertEqual(center.removedPending, [identifier])
-
+    for _ in 0..<20 {
+      notifier.handle(.paused(batch: batch, reason: "Local network connection lost", canResumeOverBle: true))
+      notifier.handle(.resumed)
+    }
     notifier.handle(.completed(fileCount: 1, totalBytes: 10))
-    XCTAssertEqual(center.removedDelivered, [identifier], "A resumed batch has no paused banner left to clear")
+    notifier.handle(.failed(reason: "Connection lost"))
+    XCTAssertFalse(center.requestedAuthorization)
+    XCTAssertTrue(center.added.isEmpty)
+    XCTAssertEqual(model.state, .idle)
   }
 
   func testPausedActionsAreIgnoredUnlessTheBatchIsStillPaused() {

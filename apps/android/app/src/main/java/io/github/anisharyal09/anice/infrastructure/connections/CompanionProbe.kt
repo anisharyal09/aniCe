@@ -24,7 +24,7 @@ import io.github.anisharyal09.anice.infrastructure.session.SessionFailure
 import io.github.anisharyal09.anice.R
 import java.util.Locale
 
-/** OS-owned nearby connection policy; association locates candidates, EDHOC alone authenticates them. */
+/** Foreground or OS-owned nearby connection policy; association locates candidates, EDHOC alone authenticates them. */
 @SuppressLint("UseKtx") // commit() success gates the probe; KTX edit(commit=true) discards that result.
 internal class CompanionProbe private constructor(private val app: AniCeApplication) {
   private val preferences = app.getSharedPreferences("companion_feasibility", Context.MODE_PRIVATE)
@@ -54,6 +54,8 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
       }
     }
     app.sessionController.radioChanged = { radioReady.value = it }
+    app.sessionController.foregroundChanged = { reconcileForeground() }
+    app.sessionController.automaticRecoveryReserved = { suspended || (monitor?.isActive == true && armed) }
   }
   var status by mutableStateOf("Automatic connection is off.")
     private set
@@ -66,6 +68,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   val fingerprint get() = preferences.getString("fingerprint", null)
   val available get() = Build.VERSION.SDK_INT >= 31 && app.resources.getBoolean(R.bool.companion_probe_supported) &&
     app.packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP)
+  init { reconcileForeground() }
 
   /** Resolve exactly one active record; a restored probe must also match its original local identity. */
   suspend fun trustedPeer(id: String, fingerprint: String? = null): DeviceIdentity = withContext(Dispatchers.IO) {
@@ -108,28 +111,36 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
       else error("Companion presence requires Android 12 or later")
       record("observation registered; authentication pending")
       status = "Waiting nearby."
-      presentOwner?.let { appeared(it) }
+      presentOwner?.let { appeared(it) } ?: reconcileForeground()
     } catch (error: Exception) {
       stop("Presence observation unavailable. Manual connections remain available.")
       throw error
     }
   }
 
-  /** Only a live system-bound service may retry; disappearance cancels its entire attempt chain. */
+  /** Native presence owns background retries; a foreground presentation can retain the same recovery policy. */
   @SuppressLint("MissingPermission")
   fun appeared(service: Any) {
     if (owner != null && owner !== service) return
     presentOwner = service
     if (!armed) return
+    if (owner == null) { monitor?.cancel(); monitor = null }
     owner = service
     if (suspended || monitor?.isActive == true) return
-    record("system presence appeared")
-    monitor = scope.launch {
+    startMonitor(service)
+  }
+
+  private fun eligible(service: Any?): Boolean = armed && !suspended &&
+    if (service == null) owner == null && app.sessionController.foreground else owner === service
+
+  private fun startMonitor(service: Any?) {
+    record(if (service == null) "foreground recovery started" else "system presence appeared")
+    monitor = scope.launch(start = CoroutineStart.LAZY) {
       try {
         val controller = app.sessionController
-        controller.acquireCompanion(service)
+        if (service != null) controller.acquireCompanion(service)
         retry.reset()
-        while (isActive && armed && owner === service && !suspended) {
+        while (isActive && eligible(service)) {
           val peer = trustedPeer(requireNotNull(peerId), requireNotNull(preferences.getString("fingerprint", null)))
           check(controller.missingPermissions().isEmpty()) { "Bluetooth permission unavailable." }
           checkAssociation()
@@ -140,15 +151,20 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
             radioReady.first { it }
           }
           val locator = bluetoothAddress(requireNotNull(address))
-          while (locator in retry.exclusions(SystemClock.elapsedRealtime())) delay(1000)
+          delay(retry.exclusionDelay(locator, SystemClock.elapsedRealtime()))
           ensureActive()
-          if (!armed || owner !== service || suspended) return@launch
+          if (!eligible(service)) return@launch
           while (!app.sessionPeers.permits(peer)) {
             status = "Waiting for the other device connection to end."
             app.sessionPeers.changes.first { app.sessionPeers.permits(peer) }
             ensureActive()
           }
-          if (!controller.adoptAutomatic(peer)) controller.connect(peer, adapter.getRemoteDevice(locator), automatic = true)
+          var rediscover = false
+          if (!controller.adoptAutomatic(peer)) {
+            rediscover = retry.claimRediscovery()
+            if (rediscover) record("rediscovering after repeated Bluetooth failures")
+            controller.connect(peer, if (rediscover) null else adapter.getRemoteDevice(locator), automatic = true)
+          }
           var authenticated = false
           controller.progress.first {
             if (controller.state == ConnectionState.SECURED && !authenticated) {
@@ -168,7 +184,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
             controller.controlSupport == false || controller.renewalReason != null ||
               controller.state == ConnectionState.FAILED || controller.state == ConnectionState.DISCONNECTED
           }
-          if (!armed || owner !== service || suspended) return@launch
+          if (!eligible(service)) return@launch
           if (controller.controlSupport == false) {
             pause("Update both apps before enabling automatic connections.")
             return@launch
@@ -181,11 +197,11 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
           // Revalidate before retry: revoked trust blocks operation; an unexpected candidate does not replace it.
           trustedPeer(peer.deviceId, peer.fingerprint)
           if (controller.lastFailure == SessionFailure.UNTRUSTED_PEER) {
-            if (!preferences.getBoolean("verified", false)) {
+            if (!rediscover && !preferences.getBoolean("verified", false)) {
               stop("That device did not match your trusted Mac. Set up automatic connection again.")
               return@launch
             }
-            retry.reject(locator, SystemClock.elapsedRealtime())
+            if (!rediscover) retry.reject(locator, SystemClock.elapsedRealtime())
           }
           if (authenticated) preferences.edit().putBoolean("verified", true).apply()
           status = "Waiting nearby."
@@ -197,6 +213,18 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
         pause("Check trust, Bluetooth permissions and device setup, then enable automatic connection again.")
       }
     }
+    monitor?.start()
+    app.sessionController.automaticPolicyChanged()
+  }
+
+  private fun reconcileForeground() {
+    if (owner != null) return
+    if (!armed || suspended || !app.sessionController.foreground) {
+      monitor?.cancel(); monitor = null
+      app.sessionController.automaticPolicyChanged()
+      return
+    }
+    if (monitor?.isActive != true) startMonitor(null)
   }
 
   private fun checkAssociation() {
@@ -215,24 +243,29 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     owner = null
     status = "Waiting nearby."
     record("presence disappeared or service unbound")
+    reconcileForeground()
   }
 
   fun suspend() {
     suspended = true
+    app.sessionController.automaticPolicyChanged()
     monitor?.cancel(); monitor = null
     owner?.let { app.sessionController.releaseCompanion(it) }
   }
   fun resumeAfterOperation() {
     suspended = false
-    if (armed) owner?.let { appeared(it) }
+    if (armed) { owner?.let { appeared(it) } ?: reconcileForeground() }
+    app.sessionController.automaticPolicyChanged()
   }
 
   /** Pause retains native observation for Resume; disable also stops observation. Disable may retain a secured foreground session as manual work. */
   fun pause(message: String = "Automatic connection is off.", disable: Boolean = false) {
     setupGeneration++
+    val foregroundOwned = owner == null && monitor?.isActive == true
     armedPreference = false
     monitor?.cancel(); monitor = null
     owner?.let { app.sessionController.releaseCompanion(it, preserveForegroundSession = disable) }; owner = null
+    if (foregroundOwned) app.sessionController.releaseForegroundAutomatic(disable)
     val edit = preferences.edit().putBoolean("paused", true).putBoolean("armed", false)
     if (disable) edit.putBoolean("automatic", false)
     val saved = edit.commit()

@@ -10,25 +10,26 @@ import android.provider.DocumentsContract
 import java.io.IOException
 import java.util.UUID
 
-internal class TransferDestination(private val context: Context, private val tree: Uri, modes: Int) {
+internal class TransferDestination(private val context: Context, val tree: Uri, modes: Int, restoredOwnedModes: Int? = null) {
     private val resolver = context.contentResolver
     private val flags = modes and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     private val previousModes = resolver.persistedUriPermissions.firstOrNull { it.uri == tree }?.let {
         (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
             (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
     } ?: 0
-    private val ownedModes = flags and previousModes.inv()
+    val ownedModes = restoredOwnedModes ?: (flags and previousModes.inv())
     private val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
     private var closed = false
 
     init {
+        require(ownedModes and flags.inv() == 0) { "Invalid retained folder grant." }
         require(flags == (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)) {
             "The folder must grant read and write access."
         }
         require(tree.authority in setOf("com.android.externalstorage.documents", "com.android.providers.downloads.documents")) {
             "Choose a folder from local device storage; this provider is not supported."
         }
-        resolver.takePersistableUriPermission(tree, flags)
+        if (restoredOwnedModes == null) resolver.takePersistableUriPermission(tree, flags)
     }
 
     fun preflight(bytes: Long) {
@@ -61,6 +62,21 @@ internal class TransferDestination(private val context: Context, private val tre
 
     fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
         ?: throw IOException("Cannot read the received document.")
+
+    fun ownsPartial(uri: Uri, prefix: String): Boolean {
+        if (uri.authority != tree.authority) return false
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(root))
+        resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { rows ->
+            while (rows.moveToNext()) {
+                if (rows.getString(0) == DocumentsContract.getDocumentId(uri)) {
+                    val name = rows.getString(1) ?: return false
+                    return name.startsWith(prefix) && name.endsWith(".part")
+                }
+            }
+        }
+        return false
+    }
 
     fun finish(uri: Uri, name: String): Uri {
         val taken = existingNames()

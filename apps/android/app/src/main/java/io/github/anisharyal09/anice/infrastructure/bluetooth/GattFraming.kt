@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Bounds native GATT fragment values, contiguous reassembly and logical queue admission.
 // Bounded GATT reassembly and MTU fragmentation for pairing (v1) and session (v2) wire messages.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
@@ -58,18 +59,20 @@ class GattReassembler(
   companion object {
     fun fragments(data: ByteArray, id: Long, capacity: Int, version: Int): List<ByteArray> {
       val header = if (version == 1) 7 else 9
+      // MTU 517 permits 514 ATT bytes, but a GATT attribute value is still limited to 512.
+      val fragmentCapacity = minOf(capacity, 512)
       if (
         version !in 1..2 ||
           data.size !in 1..4096 ||
           id !in 0..(if (version == 1) 65535L else 0xffffffffL) ||
-          capacity <= header
+          fragmentCapacity <= header
       )
         throw SessionException(SessionFailure.MALFORMED)
-      return (data.indices step (capacity - header)).map { offset ->
+      return (data.indices step (fragmentCapacity - header)).map { offset ->
         val b = ByteBuffer.allocate(header).put(version.toByte())
         if (version == 1) b.putShort(id.toShort()) else b.putInt(id.toInt())
         b.putShort(data.size.toShort()).putShort(offset.toShort()).array() +
-          data.copyOfRange(offset, minOf(data.size, offset + capacity - header))
+          data.copyOfRange(offset, minOf(data.size, offset + fragmentCapacity - header))
       }
     }
   }
