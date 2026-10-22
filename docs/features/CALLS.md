@@ -133,6 +133,12 @@ phone-audio handback and disconnect recovery. Caller ID, reject, hang-up, DTMF a
 hold require their own implementation and physical checks. An external Linux/USB
 bridge is a possible experiment, not an implemented or validated transport.
 
+## ADB-assisted alternative
+
+The separate [ADB call-audio experiment](CALL_AUDIO_ADB.md) captures phone downlink
+and injects Mac microphone audio through Android shell audio policy. It does not
+require a Mac HFP endpoint and does not change this native probe's result semantics.
+
 ## Source and regression checks
 
 Sources live in `apps/macos/CallAudioProbe/`:

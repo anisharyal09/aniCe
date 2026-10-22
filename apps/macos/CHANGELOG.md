@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Isolated launcher for the pinned experimental scrcpy microphone-injection client and matching Android server, preserving the installed scrcpy command and production app configuration.
+
 - Standalone call-audio diagnostic with native HFP service and SCO state, phone-address endpoint association, bounded input/output buffer checks, explicit microphone permission requests, interactive call controls and JSON results. Supports native audio transfer and passive phone-initiated SCO setup.
 
 - Compact Clipboard Share/History views and optional device-local history with 20 retained items, source-device labels and Copy/Send/Delete controls independent of automatic sharing. The overview and companion show five-minute recent clipboard previews with local Copy; the companion also offers direct clipboard sending.

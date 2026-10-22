@@ -10,6 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Pinned ADB-assisted call-audio experiment guide and isolated scrcpy launcher, with explicit routing, mute and lifecycle boundaries.
+
 - Add a call-audio probe guide covering standalone operation, permissions, result semantics and the boundary between endpoint exposure and duplex speech.
 
 - Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
