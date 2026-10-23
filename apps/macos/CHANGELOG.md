@@ -24,11 +24,25 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Large LAN transfers keep at most two chunks unacknowledged locally to limit bulk backlog on the shared control connection; negotiated record sizes and receiver capabilities are unchanged.
+
+- Post-command playback samples use the observation queue so a slow MediaRemote read cannot block the next playback command.
+
+- Session-control classification avoids copying file payloads before feature decoding while retaining CBOR validation.
+- LAN write watchdog failures preserve their timeout cause instead of reporting session expiry or generic cancellation.
+
+- Late file-transfer completion cannot clear a replacement batch after cancellation.
+- File-transfer ACK failures wait for a new capacity or receive event instead of immediately resubmitting themselves.
+
 - Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
 
 - Clipboard and file sending use compact labeled native controls. Clipboard preferences use small accent-colored checkboxes; History groups entries by date with a count/Clear all toolbar and adaptive row actions in both appearances. Clipboard help explains Android selection, Share-sheet and Quick Settings routes, connected-device requirements and manual sharing with automatic sharing off.
 
 ### Fixed
+
+- Recover automatic Bluetooth startup failures with supervised backoff that resets only after fifteen seconds of secured continuity; native radio and permission blocks retain state observation without retries.
+- Separate LAN listener retention from bounded admission, rearm automation on local-path recovery and retire failed DATA submissions through the session owner.
+- Decode transfer payloads off the main actor while preserving ordered delivery, cancellation and channel-generation checks.
 
 - Complete BLE submissions from native callbacks and preserve admitted records across transfer upgrades. Retain interrupted offers, checkpointed streams and verified receipts for 15 minutes across restarts, reconcile native hard-link publication by file identity and hash, and bound BLE transfer credit below the ingress capacity. Reduce routine checkpoint flushes and keep pause/result/failure notices inside the app; background offers are opt-in. Keep live LAN sessions through unrelated interface changes, fence stale write retirement callbacks, and expose saved transfer notification/sound controls in Files and Settings. Route paused notification actions through the delegate with batch correlation and respect silent foreground presentation. Measure transfer rates over a five-second window and distinguish native frame/write timeouts in diagnostics.
 

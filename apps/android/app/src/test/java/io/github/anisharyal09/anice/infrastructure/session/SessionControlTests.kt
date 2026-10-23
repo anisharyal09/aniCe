@@ -314,6 +314,24 @@ class SessionControlTests {
     reject(SessionFailure.MALFORMED) { SessionControl.application(byteArrayOf(0x84.toByte())) }
     reject(SessionFailure.MALFORMED) { SessionControl(ControlKind.PING, -1).encode() }
   }
+  @Test fun controlClassificationDoesNotMaterializeBulkBytesAndKeepsValidation() {
+    val payload = ByteArray(262016) { 0x5a }
+    val value = Cbor.Array(listOf(Cbor.Text("other"), Cbor.Bytes(payload)))
+    val encoded = SessionCbor.encode(value, 262144)
+    val classified = SessionCbor.decode(encoded, 262144, materializeBytes = false) as Cbor.Array
+    assertEquals(0, (classified.value[1] as Cbor.Bytes).value.size)
+    assertArrayEquals(payload, ((SessionCbor.decode(encoded, 262144) as Cbor.Array).value[1] as Cbor.Bytes).value)
+    assertNull(SessionControl.application(encoded, 262144))
+    reject(SessionFailure.MALFORMED) { SessionControl.application(encoded.copyOf(encoded.size - 1), 262144) }
+    reject(SessionFailure.MALFORMED) { SessionControl.application(encoded + byteArrayOf(0), 262144) }
+    val invalidControl = SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("aniCe control"), Cbor.Integer(1),
+      Cbor.Integer(3), Cbor.Map(listOf(Cbor.Text("requestId") to Cbor.Bytes(byteArrayOf(1)))))))
+    reject(SessionFailure.MALFORMED) { SessionControl.application(invalidControl) }
+    // Suppressing values must not suppress deterministic byte-string map-key ordering.
+    val badMap = byteArrayOf(0x81.toByte(), 0xa2.toByte(), 0x41, 2, 0, 0x41, 1, 0)
+    reject(SessionFailure.MALFORMED) { SessionCbor.decode(badMap, materializeBytes = false) }
+  }
+
   @Test fun livenessOrderingDeadlinesAndUnsignedBoundaries() {
     val (c, s) = pair()
     assertEquals(true, c.support); assertEquals(true, s.support)

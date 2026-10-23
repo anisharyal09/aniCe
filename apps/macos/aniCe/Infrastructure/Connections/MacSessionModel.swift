@@ -5,6 +5,23 @@ import Foundation
 import Observation
 import OSLog
 
+struct SessionStartupRecovery {
+  private var failures = 0
+  private(set) var stableDeadline: TimeInterval?
+  mutating func secured(_ now: TimeInterval) { stableDeadline = now + 15 }
+  mutating func retired() { stableDeadline = nil }
+  mutating func tick(_ now: TimeInterval) {
+    if let stableDeadline, now >= stableDeadline { failures = 0; self.stableDeadline = nil }
+  }
+  mutating func nextDelay() -> TimeInterval {
+    let delays: [TimeInterval] = [2, 5, 15, 30, 60, 90]
+    let delay = delays[min(failures, delays.count - 1)]
+    failures = min(failures + 1, delays.count)
+    stableDeadline = nil
+    return delay
+  }
+}
+
 @Observable @MainActor final class MacSessionModel {
   private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "BLE lifecycle")
   var state = "Disconnected" { didSet { channelStateChanged() } }
@@ -18,6 +35,8 @@ import OSLog
   private var sleeping = false
   private var quitting = false
   private var restart: Task<Void, Never>?
+  private var radioBlocked = false
+  private var startupRecovery = SessionStartupRecovery()
   private var cooldownUntil: TimeInterval?
   private let preferences: UserDefaults?
   var beforeAllow: () -> Void = {}
@@ -34,9 +53,22 @@ import OSLog
   var applicationDataReceived: (Data) async -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(attempt)":nil }
   func sendData(_ bytes: Data) async throws {
-    guard let connection, state == "Secured", adapter.sessionCapacity(bytes.count + 31), await connection.applicationAvailable else { throw SessionBackpressure() }
+    // Freeze ownership before the actor hop so an old send cannot retire a replacement channel.
     let token=channelToken
-    try await connection.sendData(bytes)
+    guard let connection, state == "Secured", adapter.sessionCapacity(bytes.count + 31) else { throw SessionBackpressure() }
+    let ready = await connection.applicationAvailable
+    guard token == channelToken, self.connection === connection else { throw SessionFailure.cancelled }
+    guard ready else { throw SessionBackpressure() }
+    do { try await connection.sendData(bytes) }
+    catch is SessionBackpressure { throw SessionBackpressure() }
+    catch {
+      if channelToken == token {
+        let expiration = await connection.expiration
+        let peerClosed = await connection.closedByPeer
+        if channelToken == token { finish(error, expiration: expiration, peerClosed: peerClosed) }
+      }
+      throw error
+    }
     guard channelToken==token else { throw SessionFailure.cancelled }
   }
   private var connection: SessionConnection?
@@ -201,8 +233,8 @@ import OSLog
         trustLocation = trust.location
         installCallbacks(op, target: target)
         adapter.sessionChanged = { [weak self] in
-          self?.channelCapacityChanged()
           guard let self, op == self.generation else { return }
+          self.channelCapacityChanged()
           self.tick()
         }
         startupDeadline = now() + 10
@@ -212,11 +244,18 @@ import OSLog
             defer { self.startMaintenance() }
             switch event {
             case .permissionPending:
+              if self.connection != nil { self.blocked(event) }
               self.startupDeadline = nil
               self.status = "Allow Bluetooth access to accept connections."
             case .initializing:
+              if self.connection != nil { self.blocked(.resetting) }
               if self.startupDeadline == nil { self.startupDeadline = self.now() + 10 }
-            case .available: self.adapter.publish()
+            case .available:
+              if self.radioBlocked {
+                // Radio recovery starts a fresh trust/reservation check, not the retired candidate slot.
+                self.radioBlocked = false
+                if self.automatic { self.reopen() } else { self.allow() }
+              } else { self.adapter.publish() }
             case .published: self.adapter.advertise()
             case .advertising:
               self.startupDeadline = nil
@@ -226,14 +265,11 @@ import OSLog
                   target.map { "Waiting for \($0.deviceName). On that phone, tap Connect." }
                   ?? "Waiting for one trusted Android. On your phone, tap Connect."
               }
-            case .off, .resetting:
-              if self.automatic {
-                self.startupDeadline = nil
-                self.status = "Waiting for Bluetooth."
-              } else { self.failWindow("Turn on Bluetooth, then retry.") }
+            case .off, .resetting, .denied, .unsupported:
+              self.blocked(event)
             default:
               self.failWindow(
-                "Bluetooth became unavailable. Check permissions and Bluetooth, then retry.")
+                "Bluetooth startup failed. Waiting to retry.", transient: true)
             }
           },
           read: { matches, offset in
@@ -356,6 +392,7 @@ import OSLog
       authenticatedPeer = peer
       handshakeDeadline = nil
       state = "Secured"
+      startupRecovery.secured(now())
       status = "Secured with \(peer.deviceName) · \(peer.fingerprint.prefix(8))."
       // Every authenticated operation validates current identity protection and peer trust.
       startMaintenance()
@@ -381,7 +418,7 @@ import OSLog
       let session: Int64?
       if self.checking { session = nil } else { session = await self.connection?.nextDeadline() }
       guard op == self.generation, candidate == self.attempt else { return nil }
-      return [self.startupDeadline, self.admitted ? self.handshakeDeadline : self.windowDeadline,
+      return [self.startupDeadline, self.startupRecovery.stableDeadline, self.admitted ? self.handshakeDeadline : self.windowDeadline,
         self.adapter.sessionDeadline, session.map { Double($0) / 1000 }].compactMap { $0 }.min()
     }, fire: { [weak self] in
       guard let self, op == self.generation, candidate == self.attempt else { return }
@@ -392,8 +429,9 @@ import OSLog
     guard allowing else { return }
     defer { startMaintenance() }
     let now = now()
+    if state == "Secured" { startupRecovery.tick(now) }
     if let startupDeadline, now >= startupDeadline {
-      failWindow("Bluetooth took too long to start. Retry.")
+      failWindow("Bluetooth took too long to start. Waiting to retry.", transient: true)
       return
     }
     if admitted, let handshakeDeadline, now >= handshakeDeadline {
@@ -437,7 +475,7 @@ import OSLog
       } else if error as? SessionFailure == .untrustedPeer {
         retireTrust()
         status = "Trust changed. Check your paired devices before enabling automatic connections."
-      } else { reopen(after: 2) }
+      } else { reopen(after: startupRecovery.nextDelay()) }
       return
     }
     if let failure = error as? SessionFailure, failure == .controlTimeout {
@@ -477,6 +515,7 @@ import OSLog
   private func failCandidate(_ reason: String) {
     Self.logger.notice("BLE candidate ended: \(reason, privacy: .public) state=\(self.state, privacy: .public) queued=\(self.inputCount)")
     let wasSecured = state == "Secured"
+    startupRecovery.retired()
     let canResume = admission.retire(now())
     attempt += 1
     checking = false
@@ -490,7 +529,7 @@ import OSLog
     if wasSecured || !canResume {
       if automatic {
         if !wasSecured && failures >= 5 { cooldownUntil = now() + 120 }
-        reopen(after: wasSecured ? 2 : failures >= 5 ? 120 : 0)
+        reopen(after: wasSecured ? startupRecovery.nextDelay() : failures >= 5 ? 120 : 0)
       } else { failWindow(reason) }
     } else {
       connection = nil
@@ -503,10 +542,39 @@ import OSLog
       }
     }
   }
-  private func failWindow(_ reason: String) {
+  private func failWindow(_ reason: String, transient: Bool = false) {
+    if transient && automatic && !suspended && !sleeping && !quitting {
+      let delay = startupRecovery.nextDelay()
+      Self.logger.notice("BLE startup recovery generation=\(self.generation) delay=\(delay)")
+      reopen(after: delay)
+      return
+    }
     cancel()
     state = "Failed"
     status = reason
+  }
+  private func blocked(_ event: PeripheralEvent) {
+    // Keep the native observer alive; a radio state change, not a retry timer, resumes availability.
+    restart?.cancel(); restart = nil
+    radioBlocked = true
+    startupRecovery.retired()
+    startupDeadline = nil
+    handshakeDeadline = nil
+    attempt += 1
+    admission.clear()
+    checking = false
+    inputCount = 0; inputBytes = 0
+    adapter.retirePairingConnection()
+    let old = connection
+    connection = nil; work = nil; authenticatedPeer = nil
+    peers.release("ble")
+    state = "Disconnected"
+    switch event {
+    case .denied: status = "Allow Bluetooth access in System Settings."
+    case .unsupported: status = "Bluetooth is not supported on this Mac."
+    default: status = "Waiting for Bluetooth."
+    }
+    Task { await old?.close() }
   }
   func checkConnection() {
     guard state == "Secured", let connection else { return }
@@ -546,6 +614,7 @@ import OSLog
   func cancel() {
     // Invalidate callbacks and suspended signing before retiring transport/key ownership.
     generation += 1
+    radioBlocked = false
     restart?.cancel()
     restart = nil
     attempt += 1
@@ -554,6 +623,7 @@ import OSLog
     checking = false
     deadlineWait.cancel()
     startupDeadline = nil
+    startupRecovery.retired()
     inputCount = 0
     inputBytes = 0
     handshakeDeadline = nil

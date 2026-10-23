@@ -21,6 +21,10 @@ import OSLog
   private var sleeping = false
   private var quitting = false
   private var registered = false
+  private var serviceRegistered = false
+  private var listenerReady = false
+  private var localPathAvailable = true
+  @ObservationIgnored private var pathMonitor: NWPathMonitor?
   private var automaticTask: Task<Void, Never>?
   private var automaticGate = LanAttemptGate()
 
@@ -53,11 +57,12 @@ import OSLog
     automaticTask = Task { [weak self] in
       await Task.yield()
       guard let self, !Task.isCancelled else { return }
-      let eligible = self.automatic && !self.automaticPaused && !self.sleeping && !self.quitting
+      let eligible = self.automatic && !self.automaticPaused && !self.sleeping && !self.quitting && self.localPathAvailable
       self.automaticGate.update(channel: self.rendezvous.channel?.descriptor.instance, eligible: eligible,
         remoteEligible: self.rendezvous.remote != nil && self.rendezvous.remote != 0,
         ready: false, requests: self.rendezvous.requests)
       self.rendezvous.update(!eligible ? 0 : self.state == "Secured" ? 3 : self.registered ? 2 : 1)
+      if !self.localPathAvailable, self.automatic, !self.automaticPaused, !self.sleeping, !self.quitting { return }
       guard eligible, let channel = self.rendezvous.channel, let remote = self.rendezvous.remote,
         remote != 0 else {
         if self.automaticAttempt, self.state != "Secured" { self.end() }
@@ -72,7 +77,8 @@ import OSLog
   private let identity: IdentityService
   private let store: @MainActor () async throws -> PeerTrustStore
   private let peers: SessionPeerReservation
-  private var listener: NWListener?
+  private let startListener: @MainActor (NWListener) -> Void
+  private(set) var listener: NWListener?
   private var transport: LanTcpTransport?
   private var trustLocation: URL?
   var channelStateChanged: () -> Void = {}
@@ -86,7 +92,12 @@ import OSLog
     let ready = await connection.applicationAvailable
     guard channelToken == token else { throw SessionFailure.cancelled }
     guard capacity, ready else { throw SessionBackpressure() }
-    try await connection.sendData(bytes)
+    do { try await connection.sendData(bytes) }
+    catch is SessionBackpressure { throw SessionBackpressure() }
+    catch {
+      if channelToken == token { failCandidate(error) }
+      throw error
+    }
     guard channelToken == token else { throw SessionFailure.cancelled }
   }
   private var connection: SessionConnection?
@@ -105,9 +116,11 @@ import OSLog
   init(
     identity: IdentityService, peers: SessionPeerReservation,
     preferences: UserDefaults? = nil,
+    startListener: @escaping @MainActor (NWListener) -> Void = { $0.start(queue: DispatchQueue(label: "aniCe LAN listener")) },
     store: @escaping @MainActor () async throws -> PeerTrustStore
   ) {
     self.preferences = preferences
+    self.startListener = startListener
     // Absent means the user never chose; an explicit stored false still disables automation.
     self.automatic = preferences.map { ($0.object(forKey: "lan.automatic") as? Bool) ?? true } ?? false
     self.identity = identity
@@ -156,7 +169,8 @@ import OSLog
         "Finish or stop the current Bluetooth admission before allowing a local-network connection."
       return
     }
-    end()
+    end(preserveListener: automatic && !automaticPaused && !sleeping && !quitting)
+    admission.clear() // Only a newly authorized Allow event starts another bounded admission window.
     automaticAttempt = automatically
     allowing = true
     state = "Connecting"
@@ -188,8 +202,17 @@ import OSLog
           return
         }
         let parameters = LanTcpTransport.parameters()
-        let server = try NWListener(using: parameters, on: .any)
+        if let current = listener {
+          switch current.state {
+          case .failed, .cancelled:
+            current.cancel(); listener = nil; listenerReady = false
+          default: break
+          }
+        }
+        let reused = listener != nil
+        let server = try listener ?? NWListener(using: parameters, on: .any)
         listener = server
+        observeLocalPath()
         // The service name is an ephemeral locator, never an identity or authentication claim.
         let txt = NWTXTRecord(["v": "2"])
         advertisement = NWListener.Service(
@@ -199,6 +222,17 @@ import OSLog
           Task { @MainActor in
             guard let self, op == self.generation else { return }
             switch state {
+            case .waiting(let error) where Self.waitsForNetwork(error):
+              self.listenerReady = false
+              self.registered = false
+              self.startupDeadline = nil
+              self.status = "Waiting for network…"
+              self.scheduleAutomatic()
+              self.maintain()
+            case .ready:
+              self.listenerReady = true
+              self.registered = self.serviceRegistered && self.allowing && !self.admission.admitted
+              self.scheduleAutomatic()
             case .failed(let error), .waiting(let error):
               self.failWindow(
                 "Local-network listener unavailable: \(error). Check network access and retry.")
@@ -211,7 +245,8 @@ import OSLog
             guard let self, op == self.generation else { return }
             defer { self.maintain() }
             if case .add = change {
-              self.registered = true
+              self.serviceRegistered = true
+              self.registered = self.listenerReady
               self.scheduleAutomatic()
               self.startupDeadline = nil
               self.admission.open(ProcessInfo.processInfo.systemUptime)
@@ -221,6 +256,10 @@ import OSLog
                   ? "Waiting for \(target.deviceName) to connect automatically…"
                   : "Waiting for \(target.deviceName). On that phone, connect over local network."
               }
+            } else {
+              self.serviceRegistered = false
+              self.registered = false
+              self.scheduleAutomatic()
             }
           }
         }
@@ -234,7 +273,7 @@ import OSLog
           }
         }
         startupDeadline = ProcessInfo.processInfo.systemUptime + 10
-        server.start(queue: DispatchQueue(label: "aniCe LAN listener"))
+        if !reused { startListener(server) }
         maintain()
       } catch { if op == generation { failWindow(error.localizedDescription) } }
     }
@@ -304,7 +343,7 @@ import OSLog
   }
   private func peerClosed(_ op: Int, _ attempt: Int) {
     guard op == generation, attempt == candidate else { return }
-    end(message: "Your Android ended the local-network session.")
+    retireSession(reason: "Your Android ended the local-network session.")
   }
   private func capacity(_ size: Int, _ op: Int, _ attempt: Int) async -> Bool {
     guard op == generation, attempt == candidate, let transport else { return false }
@@ -362,7 +401,7 @@ import OSLog
       return
     }
     if !admission.admitted, let deadline = admission.deadline, now >= deadline {
-      end(message: "Local-network Allow window expired.")
+      retireSession(reason: "Local-network Allow window expired.")
       return
     }
     if let handshakeDeadline, now >= handshakeDeadline {
@@ -393,8 +432,11 @@ import OSLog
     let old = connection
     connection = nil
     if secured || !resume || error is IdentityError {
-      failWindow(
-        "Local-network session ended: \(error.localizedDescription). Open Connection details and retry Local network.")
+      if error is IdentityError {
+        failWindow("Identity access changed. Check access before reconnecting.")
+      } else {
+        retireSession(reason: "Local-network session ended: \(error.localizedDescription).")
+      }
       Task { await old?.close() }
     } else {
       retiring = true
@@ -414,6 +456,33 @@ import OSLog
   private func failWindow(_ message: String) {
     end(message: message)
     state = "Failed"
+  }
+  func retireSession(reason: String) {
+    // A retained listening socket is not an open admission window or permission to re-advertise.
+    end(message: reason, preserveListener: automatic && !automaticPaused && !sleeping && !quitting)
+  }
+  nonisolated static func waitsForNetwork(_ error: NWError) -> Bool {
+    guard case .posix(let code) = error else { return false }
+    return [.ENETDOWN, .ENETUNREACH, .EHOSTUNREACH, .ENETRESET].contains(code)
+  }
+  private func observeLocalPath() {
+    guard pathMonitor == nil else { return }
+    let monitor = NWPathMonitor()
+    pathMonitor = monitor
+    monitor.pathUpdateHandler = { [weak self] path in
+      let available = path.status == .satisfied && path.availableInterfaces.contains {
+        $0.type == .wifi || $0.type == .wiredEthernet
+      }
+      Task { @MainActor in self?.localPathChanged(available) }
+    }
+    monitor.start(queue: DispatchQueue(label: "aniCe LAN availability"))
+  }
+  func localPathChanged(_ available: Bool) {
+    guard localPathAvailable != available else { return }
+    localPathAvailable = available
+    // Only an external unavailable-to-available edge rearms the attempt gate, never registration.
+    if available { automaticGate.trigger() }
+    scheduleAutomatic()
   }
   func checkConnection() {
     guard state == "Secured", let connection else { return }
@@ -447,10 +516,11 @@ import OSLog
     automaticPaused = true
     end(message: message)
   }
-  private func end(message: String = "Disconnected. Allow local-network connections to reconnect.") {
+  private func end(message: String = "Disconnected. Allow local-network connections to reconnect.", preserveListener: Bool = false) {
     Self.logger.notice("LAN owner ended: \(message, privacy: .public) state=\(self.state, privacy: .public) allowing=\(self.allowing)")
     automaticAttempt = false
     registered = false
+    serviceRegistered = false
     generation += 1
     candidate += 1
     allowing = false
@@ -459,11 +529,16 @@ import OSLog
     startupDeadline = nil
     handshakeDeadline = nil
     deadlineWait.cancel()
-    listener?.newConnectionHandler = nil
+    if preserveListener { listener?.newConnectionHandler = { socket in socket.cancel() } }
+    else { listener?.newConnectionHandler = nil }
     listener?.stateUpdateHandler = nil
     listener?.serviceRegistrationUpdateHandler = nil
-    listener?.cancel()
-    listener = nil
+    listener?.service = nil
+    if !preserveListener {
+      listener?.cancel()
+      listener = nil
+      listenerReady = false
+    }
     advertisement = nil
     let retiredTransport = transport
     Task { await retiredTransport?.close() }
@@ -473,7 +548,7 @@ import OSLog
     work?.cancel()
     work = nil
     authenticatedPeer = nil
-    admission.clear()
+    if !preserveListener { admission.clear() }
     peers.release("lan")
     Task { await old?.close() }
     state = "Disconnected"

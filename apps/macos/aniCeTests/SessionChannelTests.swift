@@ -224,6 +224,30 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual($0 as? SessionFailure, .malformed)
     }
   }
+  func testControlClassificationDoesNotMaterializeBulkBytesAndKeepsValidation() throws {
+    let payload = Data(repeating: 0x5a, count: 262016)
+    let value = SessionCBOR.array([.text("other"), .bytes(payload)])
+    let encoded = try SessionCbor.encode(value, maximumBytes: 262144)
+    XCTAssertEqual(try SessionCbor.decode(encoded, maximumBytes: 262144, materializeBytes: false),
+      .array([.text("other"), .bytes(Data())]))
+    XCTAssertEqual(try SessionCbor.decode(encoded, maximumBytes: 262144), value)
+    XCTAssertNil(try SessionControl.application(encoded, maximumBytes: 262144))
+    for malformed in [Data(encoded.dropLast()), encoded + Data([0])] {
+      XCTAssertThrowsError(try SessionControl.application(malformed, maximumBytes: 262144)) {
+        XCTAssertEqual($0 as? SessionFailure, .malformed)
+      }
+    }
+    let invalid = try SessionCbor.encode(.array([.text("aniCe control"), .integer(1), .integer(3),
+      .map([.init(.text("requestId"), .bytes(Data([1])))])]))
+    XCTAssertThrowsError(try SessionControl.application(invalid)) {
+      XCTAssertEqual($0 as? SessionFailure, .malformed)
+    }
+    let badMap = Data([0x81, 0xa2, 0x41, 2, 0, 0x41, 1, 0])
+    XCTAssertThrowsError(try SessionCbor.decode(badMap, materializeBytes: false)) {
+      XCTAssertEqual($0 as? SessionFailure, .malformed)
+    }
+  }
+
   private func controlPair(_ initialID: Int64 = 0) throws -> (SessionLiveness, SessionLiveness) {
     var c = SessionLiveness(responder: false, nextId: initialID)
     var s = SessionLiveness(responder: true)

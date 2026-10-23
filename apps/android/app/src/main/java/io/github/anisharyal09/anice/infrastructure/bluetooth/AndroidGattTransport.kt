@@ -339,7 +339,8 @@ class AndroidGattTransport(
                 d.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
                 g.writeDescriptor(d)
               }
-            require(started)
+            Log.i("aniCe-pairing", "reply_subscription_submit accepted=$started epoch=$op")
+            if (!started) finish(false, "Could not submit the Mac's Bluetooth reply subscription.", retryCandidate = true)
           }
 
         override fun onServiceChanged(g: BluetoothGatt) =
@@ -362,7 +363,7 @@ class AndroidGattTransport(
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) =
           dispatch(g) {
             if (stage == "subscribe") {
-              Log.i("aniCe-pairing", "reply_subscription status=$status")
+              Log.i("aniCe-pairing", "reply_subscription status=$status epoch=$op")
               if (setupRecovery.afterPendingOperation()) {
                 indicate?.let { g.setCharacteristicNotification(it, false) }
                 write = null
@@ -370,13 +371,16 @@ class AndroidGattTransport(
                 services(g)
                 return@dispatch
               }
-              if (setupRecovery.retryInvalidHandle(status)) {
+              if (setupRecovery.retrySubscriptionLayout(status)) {
                 rediscoverServices(g)
                 return@dispatch
               }
-              require(
-                d.characteristic.uuid == indicate?.uuid && status == BluetoothGatt.GATT_SUCCESS
-              )
+              val failure = setupRecovery.subscriptionFailure(status)
+              if (failure != null) {
+                finish(false, failure.message, retryCandidate = true, recovery = failure.recovery)
+                return@dispatch
+              }
+              require(d.characteristic.uuid == indicate?.uuid)
               stage = "ready"
               progress("checking", SystemClock.elapsedRealtime() + 10000)
               connected()
@@ -439,7 +443,10 @@ class AndroidGattTransport(
     }
     handler.postDelayed(
       {
-        if (epoch == op && stage != "ready") finish(false, failureMessage(), retryCandidate = true)
+        if (epoch == op && stage != "ready") {
+          Log.i("aniCe-ble", "setup_timeout stage=$stage epoch=$op")
+          finish(false, failureMessage(), retryCandidate = true)
+        }
       },
       15000,
     )

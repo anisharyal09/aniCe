@@ -668,7 +668,13 @@ class LanSessionController(private val app: AniCeApplication,
             val engine=connection ?: throw SessionException(SessionFailure.CANCELLED)
             if(token!=channelToken || state!=ConnectionState.SECURED) throw SessionException(SessionFailure.CANCELLED)
             if(!engine.applicationAvailable || transport?.hasCapacity(bytes.size+31) != true) throw SessionBackpressure()
-            withContext(Dispatchers.IO) { engine.sendData(bytes) }
+            try { withContext(Dispatchers.IO) { engine.sendData(bytes) } }
+            catch (error: SessionBackpressure) { throw error }
+            catch (error: Exception) {
+                // A closed engine has no future maintenance deadline; its owner must retire it now.
+                if (token == channelToken && connection === engine) finish(error, engine)
+                throw error
+            }
         }
     }
 

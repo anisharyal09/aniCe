@@ -156,6 +156,99 @@ class MediaTests {
         suspend fun wait(duration: Long) { val gate=CompletableDeferred<Unit>();waiters.add(now+duration to gate);gate.await() }
         fun advance(duration: Long) { now+=duration;val due=waiters.filter { it.first<=now };waiters.removeAll(due.toSet());due.forEach { it.second.complete(Unit) } }
     }
+    @Test fun discreteSlotIsBoundedAndContinuousIntentsKeepTheirFifoPosition() {
+        val timer = TestClock()
+        val owner = MediaController(Dispatchers.Unconfined, { timer.now }, timer::wait)
+        val out = mutableListOf<MediaMessage>()
+        owner.foreground(this)
+        owner.attach("ble", "b", "Mac") { out.add(MediaMessage.decode(it)!!) }
+        owner.receive("ble", "b", fixture("capability").encode()); subscribed(owner, "ble", "b", out)
+        fun result(code: Long = 0) {
+            val command = out.last { it.kind == 6L }
+            owner.receive("ble", "b", MediaMessage(7, listOf(command.fields[0], command.fields[1], Cbor.Integer(code))).encode())
+        }
+        owner.command(1)
+        owner.command(4, 30000)
+        owner.command(2)
+        owner.command(4, 45000)
+        assertFalse(owner.canAcceptPlayback)
+        owner.command(3)
+        assertTrue(owner.feedback.contains("already queued"))
+        assertEquals(1, out.count { it.kind == 6L })
+        result()
+        assertEquals(4L, out.last().number(4)); assertEquals(45000L, out.last().number(5))
+        result()
+        assertEquals(2L, out.last().number(4))
+        result()
+        assertEquals(3, out.count { it.kind == 6L }); assertFalse(owner.busy)
+        owner.invalidate()
+    }
+    @Test fun lateBackpressureCannotRestoreAnOlderRetainedSeek() {
+        val timer = TestClock()
+        val owner = MediaController(Dispatchers.Unconfined, { timer.now }, timer::wait)
+        val out = mutableListOf<MediaMessage>()
+        val gate = CompletableDeferred<Unit>()
+        var refuse = true
+        owner.foreground(this)
+        owner.attach("ble", "b", "Mac") { bytes ->
+            val message = MediaMessage.decode(bytes)!!
+            if (message.kind == 6L && refuse) { gate.await(); throw SessionBackpressure() }
+            out.add(message)
+        }
+        owner.receive("ble", "b", fixture("capability").encode()); subscribed(owner, "ble", "b", out)
+        owner.command(4, 30000); owner.command(4, 45000)
+        gate.complete(Unit)
+        owner.command(4, 80000)
+        refuse = false; owner.capacity("ble")
+        val first = out.last { it.kind == 6L }
+        owner.receive("ble", "b", MediaMessage(7, listOf(first.fields[0], first.fields[1], Cbor.Integer(0))).encode())
+        assertEquals(listOf(30000L, 80000L), out.filter { it.kind == 6L }.map { it.number(5) })
+        owner.invalidate()
+    }
+    @Test fun lostResultsExpiryAndTargetReplacementNeverReplayDeferredActions() {
+        val timer = TestClock()
+        val owner = MediaController(Dispatchers.Unconfined, { timer.now }, timer::wait)
+        val out = mutableListOf<MediaMessage>()
+        owner.foreground(this); owner.attach("ble", "b", "Mac") { out.add(MediaMessage.decode(it)!!) }
+        owner.receive("ble", "b", fixture("capability").encode()); subscribed(owner, "ble", "b", out)
+        owner.command(1); owner.command(3)
+        val first = out.last { it.kind == 6L }
+        timer.advance(6000)
+        assertFalse(owner.busy); assertEquals(1, out.count { it.kind == 6L })
+        owner.receive("ble", "b", MediaMessage(7, listOf(first.fields[0], first.fields[1], Cbor.Integer(0))).encode())
+        assertEquals(1, out.count { it.kind == 6L })
+        owner.command(1); owner.command(3)
+        val current = out.last { it.kind == 6L }
+        val replacement = owner.playback!!.message.copy(fields = owner.playback!!.message.fields.toMutableList().also {
+            it[2] = Cbor.Text("55555555-5555-4555-8555-555555555555")
+        })
+        owner.receive("ble", "b", replacement.encode())
+        owner.receive("ble", "b", MediaMessage(7, listOf(current.fields[0], current.fields[1], Cbor.Integer(0))).encode())
+        assertEquals(2, out.count { it.kind == 6L })
+        owner.command(1); owner.command(3); owner.closed("ble")
+        timer.advance(6000)
+        assertEquals(3, out.count { it.kind == 6L }); assertFalse(owner.busy)
+        owner.invalidate()
+    }
+    @Test fun queuedActionUsesItsOriginalDeadlineAndNonAppliedResultClearsIt() {
+        val timer = TestClock()
+        val owner = MediaController(Dispatchers.Unconfined, { timer.now }, timer::wait)
+        val out = mutableListOf<MediaMessage>()
+        owner.foreground(this); owner.attach("ble", "b", "Mac") { out.add(MediaMessage.decode(it)!!) }
+        owner.receive("ble", "b", fixture("capability").encode()); subscribed(owner, "ble", "b", out)
+        owner.command(1); owner.command(3)
+        timer.advance(5000)
+        val first = out.last { it.kind == 6L }
+        owner.receive("ble", "b", MediaMessage(7, listOf(first.fields[0], first.fields[1], Cbor.Integer(0))).encode())
+        assertEquals(2, out.count { it.kind == 6L }); assertTrue(owner.busy)
+        timer.advance(1000)
+        assertFalse(owner.busy)
+        owner.command(1); owner.command(3)
+        val failed = out.last { it.kind == 6L }
+        owner.receive("ble", "b", MediaMessage(7, listOf(failed.fields[0], failed.fields[1], Cbor.Integer(6))).encode())
+        assertEquals(3, out.count { it.kind == 6L }); assertTrue(owner.canAcceptPlayback)
+        owner.invalidate()
+    }
     @Test fun draggingAndLabelAreAtomicAndReplacementCancelsTheGesture() {
         val timer=TestClock();val owner=MediaController(Dispatchers.Unconfined,{timer.now},timer::wait);val out=mutableListOf<MediaMessage>()
         owner.foreground(this);owner.attach("ble","b","Mac") { out.add(MediaMessage.decode(it)!!) };owner.receive("ble","b",fixture("capability").encode());subscribed(owner,"ble","b",out)

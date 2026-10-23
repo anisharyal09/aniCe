@@ -183,7 +183,7 @@ actor LanTcpTransport {
         writes[token] = continuation
         watchdogs[token] = Task { [weak self] in
           do { try await Task.sleep(for: .seconds(10)) } catch { return }
-          await self?.failWrite(token, error: SessionFailure.expired)
+          await self?.failWrite(token, error: NWError.posix(.ETIMEDOUT))
         }
         socket.send(
           content: bytes,
@@ -209,7 +209,10 @@ actor LanTcpTransport {
   }
   private func failWrite(_ token: Int, error: Error) {
     // Deadline/cancellation callbacks can arrive after completion; only an outstanding write owns retirement.
-    guard writes[token] != nil else { return }
+    guard let pending = writes.removeValue(forKey: token) else { return }
+    watchdogs.removeValue(forKey: token)?.cancel()
+    // Preserve this write's cause before close retires the other outstanding operations.
+    pending.resume(throwing: error)
     Self.logger.notice("LAN outstanding write failed: \(String(describing: error), privacy: .public)")
     fail(error)
   }

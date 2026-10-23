@@ -77,4 +77,19 @@ class OutputVolumeTests {
         f.owner.commandOutputVolume(70);f.owner.commandOutputVolume(90);f.ack(7)
         assertEquals(40,f.owner.displayedOutputVolume);assertFalse(f.owner.busy);assertEquals(2,f.volume.count { it.kind==3L });f.owner.invalidate()
     }
+    @Test fun failedPlaybackDiscardsUnsubmittedOutputPreviewWithoutSendingIt() {
+        val f = Fixture(); f.connect(); f.negotiate(); f.sample()
+        f.owner.command(1)
+        val playback = f.media.last { it.kind == 6L }
+        f.owner.commandOutputVolume(90)
+        assertEquals(90, f.owner.displayedOutputVolume)
+        assertEquals(0, f.volume.count { it.kind == 3L })
+        f.owner.receive("ble", "b", MediaMessage(7,
+            listOf(playback.fields[0], playback.fields[1], Cbor.Integer(7))).encode())
+        assertEquals(40, f.owner.displayedOutputVolume)
+        assertEquals(0, f.volume.count { it.kind == 3L })
+        f.advance()
+        assertEquals(40, f.owner.displayedOutputVolume)
+        f.owner.invalidate()
+    }
 }

@@ -14,8 +14,15 @@ internal class GattSetupRecovery {
     return true
   }
 
-  // ATT Invalid Handle means a cached descriptor no longer belongs to the current service table.
-  fun retryInvalidHandle(status: Int): Boolean = status == 0x01 && retryMissingLayout()
+  // A stale handle can alias another service: macOS rejects its indication CCCD with 0xF5.
+  // Share the single layout refresh budget; this runs only before authentication.
+  fun retrySubscriptionLayout(status: Int): Boolean =
+    (status == 0x01 || status == 0xF5) && retryMissingLayout()
+
+  fun subscriptionFailure(status: Int): PairingTransportFailure? =
+    if (status == 0) null else PairingTransportFailure(
+      "Could not subscribe to the Mac's Bluetooth reply channel (GATT status $status)."
+    )
 
   fun invalidate() {
     invalidated = true

@@ -102,6 +102,17 @@ enum TransferEvent: Equatable {
 
   private var peerMaxChunkBytes: Int64 = 3072
   private var peerMaxWindow: Int64 = 64
+  // Two large chunks match the receiver's ACK cadence without filling the shared control stream.
+  private var sendCreditBytes: Int64 {
+    peerMaxChunkBytes * (activeChannel?.descriptor.transport == "lan" && peerMaxChunkBytes > 3072
+      ? min(peerMaxWindow, 2) : peerMaxWindow)
+  }
+  // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
+  private var hasSendCredit: Bool {
+    let next = min(peerMaxChunkBytes, max(0, (sendingFile?.size ?? sentBytes) - sentBytes))
+    return sentBytes - acknowledgedBytes <= sendCreditBytes - next
+  }
+
 
   private var retiredBatches: [String] = []
   private var currentBatch: TransferBatch?
@@ -557,11 +568,24 @@ enum TransferEvent: Equatable {
 
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
     if !recoveryReady { await recoveryTask?.value }
+    let operation = epoch
+    let limit = chunkLimit(descriptor)
     let message: TransferMessage
-    do { guard let decoded = try TransferMessage.decode(bytes, maximumChunkBytes: chunkLimit(descriptor)) else { return .unrecognized }; message = decoded }
+    // The ordered ingress consumer awaits one decode; no extra chunk queue or mutable state crosses actors.
+    let decode = Task.detached(priority: .userInitiated) {
+      try Task.checkCancellation()
+      let decoded = try TransferMessage.decode(bytes, maximumChunkBytes: limit)
+      try Task.checkCancellation()
+      return decoded
+    }
+    do {
+      guard let decoded = try await withTaskCancellationHandler(operation: { try await decode.value }, onCancel: { decode.cancel() }) else { return .unrecognized }
+      message = decoded
+    }
+    catch is CancellationError { return .discarded }
     catch is TransferWireError { return .discarded }
     catch { return .unrecognized }
-    guard channels[descriptor.transport]?.descriptor == descriptor else { return .discarded }
+    guard !Task.isCancelled, operation == epoch, channels[descriptor.transport]?.descriptor == descriptor else { return .discarded }
     if message.kind == 1 {
       capabilities[descriptor.transport] = message
       if descriptor == activeChannel?.descriptor {
@@ -1605,10 +1629,9 @@ enum TransferEvent: Equatable {
 
       while fileBytesSent < file.size {
         // Enforce credit flow control: at most maxWindow unacknowledged chunks
-        let inFlight = sentBytes - acknowledgedBytes
-        if inFlight >= peerMaxWindow * peerMaxChunkBytes {
+        if !hasSendCredit {
           await withCheckedContinuation { cont in
-            if self.sentBytes - self.acknowledgedBytes < self.peerMaxWindow * self.peerMaxChunkBytes {
+            if self.hasSendCredit {
               cont.resume()
             } else {
               self.creditResume = { cont.resume() }
@@ -1707,6 +1730,8 @@ enum TransferEvent: Equatable {
     if let encoded = try? batchResult.encode() {
       try? await sendWithBackpressure(encoded)
     }
+    // Final submission can suspend while a replacement batch acquires this owner.
+    guard operation == epoch else { return }
     state = .completed(batchId: batch.id, fileCount: batch.files.count, totalBytes: batch.totalBytes)
     let count = batch.files.count
     let bytes = batch.totalBytes
@@ -1727,8 +1752,7 @@ enum TransferEvent: Equatable {
   }
 
   private func checkCreditAndResume() {
-    let inFlight = sentBytes - acknowledgedBytes
-    if inFlight < peerMaxWindow * peerMaxChunkBytes {
+    if hasSendCredit {
       creditResume?()
       creditResume = nil
     }
@@ -1946,13 +1970,15 @@ enum TransferEvent: Equatable {
     guard let channel = activeChannel else { return }
     ackTask = Task { [weak self] in
       guard let self, operation == self.epoch, self.activeChannel?.descriptor == channel.descriptor else { return }
+      var submitted = false
       defer {
         if self.epoch == operation && self.receiverCurrentFileIndex == fileIndex {
           self.ackTask = nil
           let unacked = self.receiverWrittenBytes - self.lastAckedWrittenBytes
           // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
           let ackCadence = self.peerMaxChunkBytes > 3072 ? max(1, self.peerMaxWindow / 4) : min(8, max(1, self.peerMaxWindow / 2))
-          if unacked >= ackCadence * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes) {
+          // Failure waits for an external event; only success may drain newer credit.
+          if submitted && (unacked >= ackCadence * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes)) {
             self.flushAck()
           }
         }
@@ -1961,6 +1987,7 @@ enum TransferEvent: Equatable {
       if let encoded = try? ack.encode() {
         do {
           try await self.sendWithBackpressure(encoded, on: channel)
+          submitted = true
           guard operation == self.epoch, self.receiverCurrentFileIndex == fileIndex else { return }
           self.lastAckedWrittenBytes = max(self.lastAckedWrittenBytes, bytesToAck)
         } catch {

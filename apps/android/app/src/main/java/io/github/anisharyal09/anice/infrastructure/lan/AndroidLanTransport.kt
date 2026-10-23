@@ -45,6 +45,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
             socket.connect(java.net.InetSocketAddress(endpoint.address, endpoint.port), 5000)
             socket.soTimeout = 0
             socket.tcpNoDelay = true
+            socket.keepAlive = true
             if (closed) throw SessionException(SessionFailure.CANCELLED)
         }
 
@@ -57,9 +58,11 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
         }
         // Socket writes are blocking; closing the descriptor, rather than coroutine cancellation,
         // bounds them.
+        val timedOut = java.util.concurrent.atomic.AtomicBoolean()
         val watchdog =
             scope.launch {
                 delay(10000)
+                timedOut.set(true)
                 close()
             }
         try {
@@ -72,6 +75,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
             }
         } catch (error: Exception) {
             close()
+            if (timedOut.get()) throw SocketTimeoutException("Local-network write timed out after 10 seconds.").also { it.initCause(error) }
             throw error
         } finally {
             watchdog.cancel()

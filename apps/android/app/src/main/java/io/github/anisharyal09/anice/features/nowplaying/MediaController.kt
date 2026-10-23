@@ -69,11 +69,11 @@ class MediaController(
     }
 
     override fun retired(descriptor: ChannelDescriptor) {
-        closed(descriptor.transport)
+        if (links[descriptor.transport]?.token == descriptor.instance) closed(descriptor.transport)
     }
 
     override fun capacityAvailable(descriptor: ChannelDescriptor) {
-        capacity(descriptor.transport)
+        if (links[descriptor.transport]?.token == descriptor.instance) capacity(descriptor.transport)
     }
 
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray) =
@@ -111,7 +111,6 @@ class MediaController(
     private data class SeekIntent(val value: Long, val target: RemotePlayback)
 
     private var seekPresentation by mutableStateOf<SeekPresentation>(SeekPresentation.Authoritative)
-    private var retainedSeek: SeekIntent? = null
     private var seekGestureCancelled = false
     private var submitted = false
     private var pendingVolume = false
@@ -120,7 +119,6 @@ class MediaController(
         private set
     private var outputPreview by mutableStateOf<Int?>(null)
     private var outputTimeout: Job? = null
-    private var retainedOutput: Pair<Int, RemoteOutputVolume>? = null
     val displayedOutputVolume get() = outputPreview ?: outputVolume?.level
     val canControlOutputVolume get() = acknowledged && compactVisible && outputVolume != null
     private var volumePreview by mutableStateOf<Int?>(null)
@@ -129,6 +127,80 @@ class MediaController(
     val displayedVolume get() = volumePreview ?: playerVolume
     private var volumeTimeout: Job? = null
     var trace: (String, Long) -> Unit = { _, _ -> }
+    private enum class IntentSlot { PLAYBACK, SEEK, PLAYER_VOLUME, OUTPUT_VOLUME }
+    private data class Intent(
+        val slot: IntentSlot, val value: Long, val target: RemotePlayback?, val output: RemoteOutputVolume?,
+        val action: Long, val selection: String, val token: String, val subscription: String, val expires: Long,
+    )
+    // Four logical slots stay unsealed; replacement keeps FIFO position and never replays a command.
+    private val intents = mutableStateListOf<Intent>()
+    private var intentTimer: Job? = null
+    val canAcceptPlayback get() = acknowledged && intents.none { it.slot == IntentSlot.PLAYBACK }
+
+    private fun retain(slot: IntentSlot, value: Long, target: RemotePlayback? = null,
+                       output: RemoteOutputVolume? = null, action: Long = 0, selection: String = "",
+                       expires: Long) {
+        val link = links[active] ?: return
+        val sub = subscription ?: return
+        val intent = Intent(slot, value, target, output, action, selection, link.token, sub, expires)
+        val index = intents.indexOfFirst { it.slot == slot }
+        if (index >= 0 && slot == IntentSlot.PLAYBACK) {
+            feedback = "Busy. One action is already queued."
+        } else {
+            if (index >= 0) intents[index] = intent else intents.add(intent)
+            feedback = "Processing…"
+            trace("intent queued slot=$slot token=${link.token}", clock())
+            scheduleIntentExpiry()
+        }
+        presentationChanged()
+    }
+    private fun clearIntents() {
+        intents.forEach { clearIntentPreview(it.slot) }
+        intents.clear()
+        intentTimer?.cancel(); intentTimer = null
+    }
+    private fun clearIntentPreview(slot: IntentSlot) {
+        when (slot) {
+            IntentSlot.SEEK -> clearSeek()
+            IntentSlot.PLAYER_VOLUME -> volumePreview = null
+            IntentSlot.OUTPUT_VOLUME -> outputPreview = null
+            IntentSlot.PLAYBACK -> Unit
+        }
+    }
+    private fun scheduleIntentExpiry() {
+        intentTimer?.cancel()
+        val due = intents.minOfOrNull { it.expires } ?: return
+        intentTimer = scope.launch {
+            wait((due - clock()).coerceAtLeast(0))
+            val expired = intents.filter { clock() >= it.expires }
+            if (intents.removeAll(expired.toSet())) {
+                expired.forEach { clearIntentPreview(it.slot) }
+                feedback = "Queued action expired. Try again."
+                presentationChanged()
+            }
+            scheduleIntentExpiry()
+        }
+    }
+    private fun finishIntents(applied: Boolean) {
+        if (!applied) { clearIntents(); return }
+        while (intents.isNotEmpty() && !busy) {
+            val intent = intents.removeAt(0)
+            val valid = intent.token == links[active]?.token && intent.subscription == subscription &&
+                clock() < intent.expires && (intent.target?.let(::sameTarget) ?: true) &&
+                (intent.output?.let(::sameOutput) ?: true)
+            if (!valid) {
+                clearIntentPreview(intent.slot); clearIntents()
+                feedback = "Queued action is no longer valid. Try again."
+                break
+            }
+            when (intent.slot) {
+                IntentSlot.PLAYER_VOLUME -> acceptVolume(intent.value.toInt(), intent.target, intent.expires)
+                IntentSlot.OUTPUT_VOLUME -> acceptOutputVolume(intent.value.toInt(), intent.output, intent.expires)
+                else -> acceptCommand(intent.action, intent.value, intent.target, intent.selection, intent.expires)
+            }
+        }
+        scheduleIntentExpiry()
+    }
     var presentationChanged: () -> Unit = {}
     private var companion = false
     private var pauseDeadline: Long? = null
@@ -361,7 +433,6 @@ class MediaController(
         if (draggingSeek) seekGestureCancelled = true
         seekTimeout?.cancel()
         seekTimeout = null
-        retainedSeek = null
         seekPresentation = SeekPresentation.Authoritative
     }
 
@@ -373,6 +444,7 @@ class MediaController(
     }
 
     private fun retire() {
+        clearIntents()
         val old = active
         val sub = subscription
         active = null
@@ -439,7 +511,11 @@ class MediaController(
                 val next = RemotePlayback(message, clock())
                 val old = playback
                 if (old?.source != next.source || old.revision != next.revision || !old.hash.contentEquals(next.hash)) clearArtwork()
-                if (old?.source != next.source || old.revision != next.revision) clearVolume()
+                if (old?.source != next.source || old.revision != next.revision) {
+                    clearVolume()
+                    if (intents.isNotEmpty()) feedback = "Playback changed. Queued actions cleared."
+                    clearIntents()
+                }
                 val presentation = seekPresentation
                 val preview = when (presentation) {
                     is SeekPresentation.Pending -> presentation.preview
@@ -447,7 +523,7 @@ class MediaController(
                     else -> null
                 }
                 if (preview != null && (preview.message.string(0) != next.message.string(0) || preview.source != next.source || preview.revision != next.revision || next.actions and 8L == 0L)) clearSeek()
-                else if (presentation is SeekPresentation.Pending && retainedSeek == null && kotlin.math.abs(
+                else if (presentation is SeekPresentation.Pending && intents.none { it.slot == IntentSlot.SEEK } && kotlin.math.abs(
                         presentation.preview.elapsed(clock()) - next.elapsed(clock())
                     ) <= 1f
                 ) clearSeek()
@@ -471,7 +547,7 @@ class MediaController(
             }
 
             7L -> if (!pendingVolume && pending == message.number(1)) {
-                trace("result ${message.number(2)}", clock())
+                trace("result command=${message.number(1)} result=${message.number(2)} token=$token subscription=${message.string(0)}", clock())
                 pending = null
                 busy = false
                 submitted = false
@@ -487,12 +563,9 @@ class MediaController(
                     6L -> "Player busy. Try again."
                     else -> "Playback action failed."
                 }
-                if (message.number(2) == 0L) {
-                    val intent = retainedSeek
-                    retainedSeek = null
-                    if (intent != null && sameTarget(intent.target)) submitCommand(4, intent.value, intent.target, "")
-                }
+                finishIntents(message.number(2) == 0L)
                 presentationChanged()
+                trace("settled command=${message.number(1)} token=$token subscription=${message.string(0)}", clock())
             }
 
             8L -> if (kind == "lan" && acknowledged) acceptArtwork(message)
@@ -527,7 +600,7 @@ class MediaController(
             }
 
             4L -> if (pendingVolume && !pendingOutput && pending == message.number(1)) {
-                trace("volume result ${message.number(2)}", clock())
+                trace("volume_result command=${message.number(1)} result=${message.number(2)} token=$token subscription=${message.string(0)}", clock())
                 pending = null
                 busy = false
                 submitted = false
@@ -550,12 +623,9 @@ class MediaController(
                     6L -> "Player busy. Try again."
                     else -> "Player volume action failed."
                 }
-                if (result == 0L) {
-                    val intent = retainedSeek
-                    retainedSeek = null
-                    if (intent != null && sameTarget(intent.target)) submitCommand(4, intent.value, intent.target, "")
-                }
+                finishIntents(result == 0L)
                 presentationChanged()
+                trace("settled command=${message.number(1)} token=$token subscription=${message.string(0)}", clock())
             }
         }
         return true
@@ -565,10 +635,10 @@ class MediaController(
         outputVolume?.let { it.subscription == target.subscription && it.device == target.device && it.revision == target.revision } == true
 
     private fun clearOutputVolume() {
+        clearIntents()
         outputTimeout?.cancel()
         outputTimeout = null
         outputPreview = null
-        retainedOutput = null
         outputVolume = null
         if (pendingOutput) {
             val id = pending
@@ -625,7 +695,7 @@ class MediaController(
 
             4L -> if (pendingOutput && pending == message.number(1)) {
                 val result = message.number(2)
-                trace("output volume result $result", clock())
+                trace("output_result command=${message.number(1)} result=$result token=$token subscription=${message.string(0)}", clock())
                 pending = null
                 pendingOutput = false
                 pendingVolume = false
@@ -633,8 +703,6 @@ class MediaController(
                 submitted = false
                 timeout?.cancel()
                 timeout = null
-                val intent = retainedOutput
-                retainedOutput = null
                 if (result != 0L) {
                     outputPreview = null
                     outputTimeout?.cancel()
@@ -648,11 +716,9 @@ class MediaController(
                     6L -> "Mac is busy. Try again."
                     else -> "Mac output volume action failed."
                 }
-                if (result == 0L && intent != null && sameOutput(intent.second)) commandOutputVolume(
-                    intent.first,
-                    intent.second
-                )
+                finishIntents(result == 0L)
                 presentationChanged()
+                trace("settled command=${message.number(1)} token=$token subscription=${message.string(0)}", clock())
             }
         }
         return true
@@ -664,19 +730,16 @@ class MediaController(
         commandOutputVolume((level + direction * 5).coerceIn(0, 100), target)
     }
 
-    fun commandOutputVolume(value: Int, target: RemoteOutputVolume? = outputVolume) {
+    fun commandOutputVolume(value: Int, target: RemoteOutputVolume? = outputVolume) =
+        acceptOutputVolume(value, target, clock() + 6000)
+
+    private fun acceptOutputVolume(value: Int, target: RemoteOutputVolume?, expires: Long) {
         val selected = target ?: return
         val kind = active ?: return
         if (!canControlOutputVolume || !sameOutput(selected) || value !in 0..100 || links[kind]?.outputCapable != true) return
         if (busy) {
-            if (pendingOutput) {
-                retainedOutput = value to selected
-                outputPreview = value
-                presentationChanged()
-            } else {
-                feedback = "Mac is busy. Try again."
-                presentationChanged()
-            }
+            outputPreview = value
+            retain(IntentSlot.OUTPUT_VOLUME, value.toLong(), output = selected, expires = expires)
             return
         }
         if (counter == 4294967295L) {
@@ -692,7 +755,8 @@ class MediaController(
         pendingVolume = true
         busy = true
         submitted = false
-        feedback = ""
+        feedback = "Processing…"
+        trace("input command=$id token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
         outputTimeout = scope.launch {
             wait(6000)
             if (outputPreview != null && pending == null) feedback =
@@ -702,15 +766,15 @@ class MediaController(
             presentationChanged()
         }
         timeout = scope.launch {
-            wait(6000)
+            wait((expires - clock()).coerceAtLeast(0))
             if (pending == id) {
                 pending = null
                 pendingOutput = false
                 pendingVolume = false
                 busy = false
                 submitted = false
-                retainedOutput = null
                 outputPreview = null
+                clearIntents()
                 feedback = "Mac volume outcome unknown. It will not be retried."
                 links[kind]?.queue?.removeAll { it.commandID == id }
                 presentationChanged()
@@ -735,11 +799,19 @@ class MediaController(
         presentationChanged()
     }
 
-    fun commandVolume(value: Int, target: RemotePlayback? = playback) {
+    fun commandVolume(value: Int, target: RemotePlayback? = playback) =
+        acceptVolume(value, target, clock() + 6000)
+
+    private fun acceptVolume(value: Int, target: RemotePlayback?, expires: Long) {
         val snapshot = target ?: return
         val kind = active ?: return
         val sub = subscription ?: return
-        if (busy || !acknowledged || !sameTarget(snapshot) || playerVolume == null || links[kind]?.volumeCapable != true || value !in 0..100) return
+        if (!acknowledged || !sameTarget(snapshot) || playerVolume == null || links[kind]?.volumeCapable != true || value !in 0..100) return
+        if (busy) {
+            volumePreview = value
+            retain(IntentSlot.PLAYER_VOLUME, value.toLong(), target = snapshot, expires = expires)
+            return
+        }
         if (counter == 4294967295L) {
             retire()
             choose()
@@ -753,7 +825,8 @@ class MediaController(
         pendingVolume = true
         busy = true
         submitted = false
-        feedback = ""
+        feedback = "Processing…"
+        trace("input command=$id token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
         volumeTimeout = scope.launch {
             wait(6000)
             if (volumePreview != null && pending == null) feedback =
@@ -763,7 +836,7 @@ class MediaController(
             presentationChanged()
         }
         timeout = scope.launch {
-            wait(6000)
+            wait((expires - clock()).coerceAtLeast(0))
             if (pending == id) {
                 pending = null
                 pendingVolume = false
@@ -771,6 +844,7 @@ class MediaController(
                 submitted = false
                 clearSeek()
                 volumePreview = null
+                clearIntents()
                 feedback = "Volume outcome unknown. It will not be retried."
                 links[kind]?.queue?.removeAll { it.commandID == id }
                 presentationChanged()
@@ -839,7 +913,10 @@ class MediaController(
         }
     }
 
-    fun command(action: Long, value: Long = 0, target: RemotePlayback? = playback, selection: String = "") {
+    fun command(action: Long, value: Long = 0, target: RemotePlayback? = playback, selection: String = "") =
+        acceptCommand(action, value, target, selection, clock() + 6000)
+
+    private fun acceptCommand(action: Long, value: Long, target: RemotePlayback?, selection: String, expires: Long) {
         val snapshot = target ?: return
         if (!acknowledged || !sameTarget(snapshot)) {
             if (action == 4L) clearSeek()
@@ -859,22 +936,26 @@ class MediaController(
             previewSeek(intent)
             if (busy) {
                 val link = links[active]
-                if (!submitted && link?.sending == false && link.queue.any { it.commandID == pending && it.seek }) {
+                if (!submitted && link?.sending == false && intents.none { it.slot == IntentSlot.SEEK } && link.queue.any { it.commandID == pending && it.seek }) {
                     link.queue.removeAll { it.commandID == pending }
                     timeout?.cancel()
                     timeout = null
                     pending = null
                     busy = false
                 } else {
-                    retainedSeek = intent
+                    retain(IntentSlot.SEEK, value, target = snapshot, action = action, expires = expires)
                     return
                 }
             }
-        } else if (busy) return
-        submitCommand(action, value, snapshot, selection)
+        } else if (busy) {
+            if (action <= 3) retain(IntentSlot.PLAYBACK, value, target = snapshot, action = action, selection = selection, expires = expires)
+            else { feedback = "Finish the current action before changing player."; presentationChanged() }
+            return
+        }
+        submitCommand(action, value, snapshot, selection, expires)
     }
 
-    private fun submitCommand(action: Long, value: Long, snapshot: RemotePlayback, selection: String) {
+    private fun submitCommand(action: Long, value: Long, snapshot: RemotePlayback, selection: String, expires: Long = clock() + 6000) {
         val kind = active ?: return
         val sub = subscription ?: return
         if (!sameTarget(snapshot) || !acknowledged || (action == 4L && (!canSeek || value < 0 || value > (playback?.duration
@@ -898,15 +979,17 @@ class MediaController(
         pending = id
         submitted = false
         pendingVolume = false
-        feedback = ""
+        feedback = "Processing…"
+        trace("input command=$id token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
         // Install the deadline before sending: an immediate reply can finish this operation synchronously.
         timeout = scope.launch {
-            wait(6000)
+            wait((expires - clock()).coerceAtLeast(0))
             if (pending == id) {
                 pending = null
                 busy = false
                 submitted = false
                 clearSeek()
+                clearIntents()
                 feedback = "Action outcome unknown. It will not be retried."
                 links[kind]?.queue?.removeAll { it.commandID == id }
                 presentationChanged()
@@ -926,6 +1009,7 @@ class MediaController(
                 )
             )
         )
+        presentationChanged()
     }
 
     private fun queue(kind: String, message: MediaMessage) {
@@ -951,25 +1035,26 @@ class MediaController(
                     try {
                         if (message.commandID != null && pending == message.commandID) {
                             submitted = true
-                            trace("submission", clock())
+                            trace("submission command=${message.commandID} token=${link.token}", clock())
                         }
                         link.send(message.encode())
+                        if (message.commandID != null) trace("submitted command=${message.commandID} token=${link.token}", clock())
                     } catch (_: SessionBackpressure) {
                         if (message.commandID != null && pending == message.commandID) submitted = false
                         return@launch
                     } catch (_: SessionException) {
-                        closed(kind)
+                        if (links[kind] === link) closed(kind)
                         return@launch
                     } catch (error: Exception) {
                         if (error is CancellationException) throw error
-                        closed(kind)
+                        if (links[kind] === link) closed(kind)
                         return@launch
                     }
                     if (link.queue.firstOrNull() === message) link.queue.removeFirst()
                 }
             } finally {
                 link.sending = false
-                if (link.wake) {
+                if (links[kind] === link && link.wake) {
                     link.wake = false
                     capacity(kind)
                 }

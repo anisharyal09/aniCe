@@ -377,6 +377,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   }
   func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
     guard peripheral === manager else { return }
+    Self.logger.info("peripheral_state state=\(peripheral.state.rawValue) authorization=\(CBManager.authorization.rawValue) generation=\(self.channelGeneration)")
     if peripheral.state != .poweredOn {
       // Core Bluetooth owns database invalidation on radio reset/power loss.
       published = false
@@ -387,13 +388,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       outgoing = nil
       advertising.resetRadio()
       retirePairingConnection()
-      disconnected()
-      // Keep the state observer through radio-off/reset so automatic availability can recover.
-      if peripheral.state == .unauthorized || peripheral.state == .unsupported
-      {
-        peripheral.delegate = nil
-        manager = nil
-      }
+      // The state event retires the owner before any reconnect decision; retain its native observer.
     }
     switch peripheral.state {
     case .poweredOn: event?(.available)
@@ -448,6 +443,9 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     guard peripheral === manager, service === profile else { return }
     publishing = false
     published = error == nil
+    if let error = error as NSError? {
+      Self.logger.notice("profile_publication domain=\(error.domain, privacy: .public) code=\(error.code) generation=\(self.channelGeneration)")
+    }
     Self.logger.info("profile_publication succeeded=\(error == nil, privacy: .public)")
     event?(published ? .published : .failure)
   }
@@ -466,6 +464,9 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   }
   func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
     guard peripheral === manager else { return }
+    if let error = error as NSError? {
+      Self.logger.notice("advertising domain=\(error.domain, privacy: .public) code=\(error.code) generation=\(self.advertising.generation)")
+    }
     if advertising.complete() {
       Self.logger.info("advertising_confirmation succeeded=\(error == nil, privacy: .public)")
       event?(error == nil ? .advertising : .failure)

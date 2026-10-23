@@ -21,6 +21,16 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Large LAN transfers keep at most two chunks unacknowledged locally to limit bulk backlog on the shared control connection; negotiated record sizes and receiver capabilities are unchanged.
+
+- Session-control classification avoids copying file payloads before feature decoding while retaining CBOR validation.
+- LAN write watchdog failures preserve their timeout cause instead of reporting session expiry or generic cancellation.
+
+- File-transfer source opening and delayed completion discard retired batch callbacks before touching replacement state.
+- File-transfer ACK failures wait for a new capacity or receive event instead of immediately resubmitting themselves.
+
+- Bluetooth setup refreshes a stale service cache once when macOS rejects an indication subscription with status 245, sharing the existing invalid-handle recovery budget.
+
 - Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
 
 - Clipboard and file sending use quiet outlined icon-and-label controls. Clipboard preferences use the compact LAN-style checkbox; History shows a saved-count and Clear all toolbar. Pausing collection preserves saved history across app restarts, Forget device and Reset identity; Clear/Delete remain explicit. Clipboard content has a small horizontal inset.
@@ -28,6 +38,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 
 ### Fixed
+
+- Retire failed authenticated DATA submissions through their BLE/LAN owner while preserving recoverable backpressure and native Bluetooth subscription error statuses.
+- Bound unsubmitted media intents, coalesce continuous controls and show explicit pending/expiry feedback; uncertain commands never replay across connections.
 
 - Allow environment-configured native pairing builds without `local.properties`, while retaining incremental input tracking for local tool overrides when present.
 

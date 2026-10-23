@@ -18,6 +18,50 @@ private struct UnavailableLanIdentityStorage: IdentityStorage {
 }
 
 final class LanTests: XCTestCase {
+  @MainActor func testSessionRetirementRetainsListenerButRequiresFreshAdmission() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "listener.test.")
+    let local = try await identity.publicIdentity(), key = P256.Signing.PrivateKey()
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation)]))
+    let hash = Data(repeating: 8, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: peer, localFingerprint: local.fingerprint, method: .qr,
+      pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: peer.deviceId, hash: hash, receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let savedTrust = try Data(contentsOf: trust.location), reservation = SessionPeerReservation()
+    var starts = 0
+    // Native callbacks are injected without opening a socket or publishing a physical Bonjour service.
+    let owner = MacLanSessionModel(identity: identity, peers: reservation, startListener: { _ in starts += 1 }, store: { trust })
+    defer { owner.cancel() }
+    owner.setAutomatic(true)
+    owner.allow(selected: peer, bluetoothAllowing: false)
+    for _ in 0..<200 where owner.listener == nil { try await Task.sleep(for: .milliseconds(2)) }
+    let listener = try XCTUnwrap(owner.listener)
+    XCTAssertEqual(starts, 1)
+    let registered = try XCTUnwrap(listener.serviceRegistrationUpdateHandler)
+    listener.stateUpdateHandler?(.ready)
+    registered(.add(.service(name: "test", type: "_anice._tcp", domain: "local.", interface: nil)))
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertTrue(owner.allowing); XCTAssertNotNil(reservation.peer)
+    owner.retireSession(reason: "injected EOF")
+    XCTAssertTrue(owner.listener === listener)
+    XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service); XCTAssertNil(reservation.peer)
+    registered(.add(.service(name: "late", type: "_anice._tcp", domain: "local.", interface: nil)))
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service)
+    owner.allow(selected: peer, bluetoothAllowing: false)
+    for _ in 0..<200 where listener.service == nil { try await Task.sleep(for: .milliseconds(2)) }
+    XCTAssertTrue(owner.listener === listener); XCTAssertEqual(starts, 1)
+    XCTAssertNotNil(listener.service)
+    owner.cancel()
+    XCTAssertNil(owner.listener); XCTAssertNil(reservation.peer)
+    XCTAssertEqual(try Data(contentsOf: trust.location), savedTrust)
+  }
   @MainActor func testAutomaticLANRequiresBothPreferencesAndDisconnectPausesRetries() async throws {
     let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "isolated")
     let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation()) {
@@ -141,6 +185,40 @@ final class LanTests: XCTestCase {
     XCTAssertTrue(gate.claim()); XCTAssertFalse(gate.claim())
     gate.update(channel: "ble-2", eligible: true, remoteEligible: true, ready: false, requests: 1)
     XCTAssertTrue(gate.claim()); XCTAssertFalse(gate.claim())
+  }
+  func testListenerWaitingClassifiesOnlyNetworkUnavailabilityAsRecoverable() {
+    for code: POSIXErrorCode in [.ENETDOWN, .ENETUNREACH, .EHOSTUNREACH, .ENETRESET] {
+      XCTAssertTrue(MacLanSessionModel.waitsForNetwork(.posix(code)))
+    }
+    for code: POSIXErrorCode in [.EADDRINUSE, .EACCES, .EPERM, .ECONNRESET] {
+      XCTAssertFalse(MacLanSessionModel.waitsForNetwork(.posix(code)))
+    }
+  }
+  @MainActor func testPathReturnDoesNotOverrideDisconnectOrRepeatFailedAttempts() async throws {
+    let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "path.test.")
+    let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation()) { throw SessionFailure.state }
+    let channel = MockSecuredChannel(transport: "ble")
+    owner.setAutomatic(true)
+    owner.rendezvous.available(channel)
+    _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(1), on: channel.descriptor)
+    try await Task.sleep(for: .milliseconds(30))
+    let first = await identity.identityLoads
+    for _ in 0..<20 { owner.localPathChanged(true) }
+    try await Task.sleep(for: .milliseconds(30))
+    let duplicate = await identity.identityLoads
+    XCTAssertEqual(first, duplicate)
+    owner.localPathChanged(false)
+    try await Task.sleep(for: .milliseconds(20))
+    owner.localPathChanged(true)
+    try await Task.sleep(for: .milliseconds(30))
+    let returned = await identity.identityLoads
+    XCTAssertGreaterThan(returned, duplicate)
+    owner.disconnect()
+    owner.localPathChanged(false); owner.localPathChanged(true)
+    try await Task.sleep(for: .milliseconds(30))
+    let paused = await identity.identityLoads
+    XCTAssertEqual(paused, returned)
+    owner.rendezvous.retired(channel.descriptor)
   }
   @MainActor func testExplicitRendezvousDemandDoesNotOverrideDisabledPeer() async throws {
     let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
@@ -494,7 +572,7 @@ final class LanTests: XCTestCase {
     do {
       try await transport.submit(Data([1, 0]))
       XCTFail("Stalled submission succeeded")
-    } catch let failure as SessionFailure { XCTAssertEqual(failure, .cancelled) }
+    } catch let failure as NWError { XCTAssertEqual(failure, .posix(.ETIMEDOUT)) }
     XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - start, 10)
     XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 15)
     await assertCapacity(transport, 2, false)

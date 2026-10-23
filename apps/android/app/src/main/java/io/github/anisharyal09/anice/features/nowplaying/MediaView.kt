@@ -97,10 +97,10 @@ import kotlinx.coroutines.delay
                     if(media.duration>0) Text(mediaTime(media.duration/1000f),style=MaterialTheme.typography.bodySmall,fontFamily=FontFamily.Monospace)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.Center) {
-                    IconButton(onClick={owner.command(2)},enabled=!owner.busy && media.actions and 2L!=0L) { Icon(painterResource(R.drawable.ic_media_previous),contentDescription="Previous") }
-                    FilledIconButton(onClick={owner.command(1)},enabled=!owner.busy && media.actions and 1L!=0L,
+                    IconButton(onClick={owner.command(2)},enabled=owner.canAcceptPlayback && media.actions and 2L!=0L) { Icon(painterResource(R.drawable.ic_media_previous),contentDescription="Previous") }
+                    FilledIconButton(onClick={owner.command(1)},enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
                         colors=IconButtonDefaults.filledIconButtonColors(containerColor=MaterialTheme.colorScheme.selectionAccent,contentColor=MaterialTheme.colorScheme.onPrimary)) { Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play") }
-                    IconButton(onClick={owner.command(3)},enabled=!owner.busy && media.actions and 4L!=0L) { Icon(painterResource(R.drawable.ic_media_next),contentDescription="Next") }
+                    IconButton(onClick={owner.command(3)},enabled=owner.canAcceptPlayback && media.actions and 4L!=0L) { Icon(painterResource(R.drawable.ic_media_next),contentDescription="Next") }
                 }
                 if(!compact) owner.displayedVolume?.let { level ->
                     if (!compactVolume) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
@@ -109,7 +109,7 @@ import kotlinx.coroutines.delay
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     if (compactVolume) Text("Volume", style=MaterialTheme.typography.bodySmall)
-                    Slider(value=volumeDrag ?: level.toFloat(),valueRange=0f..100f,enabled=!owner.busy,
+                    Slider(value=volumeDrag ?: level.toFloat(),valueRange=0f..100f,enabled=owner.playerVolume!=null,
                         onValueChange={ if(!volumeCancelled) { if(volumeTarget==null) volumeTarget=owner.playback;volumeDrag=it } },
                         onValueChangeFinished={ val value=volumeDrag;val captured=volumeTarget;if(!volumeCancelled && value!=null && captured!=null) owner.commandVolume(value.toInt(),captured);volumeDrag=null;volumeTarget=null;volumeCancelled=false },
                         thumb={ Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape)) },

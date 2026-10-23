@@ -36,6 +36,14 @@ import Observation
   private var results: [Int64:Int64] = [:]
   private var resultOrder: [Int64] = []
   private var resultKinds: [Int64:Int] = [:]
+  private func timing(_ event: String, _ kind: String, _ sub: String, _ id: Int64, duration: TimeInterval = 0) {
+    #if DEBUG
+    if ProcessInfo.processInfo.environment["ANICE_MEDIA_TIMING"] == "1" {
+      NSLog("media_link %@ transport=%@ token=%@ subscription=%@ command=%lld at=%.3f duration_ms=%.3f",
+        event, kind, links[kind]?.token ?? "retired", sub, id, ProcessInfo.processInfo.systemUptime, duration * 1000)
+    }
+    #endif
+  }
   func channel(_ kind: String, token: String?, send: @escaping @MainActor (Data) async throws -> Void) {
     if links[kind]?.token == token { return }
     if subscribed == kind { retireSubscription() }
@@ -79,6 +87,8 @@ import Observation
   private func dispatchCommand(_ kind: String, sub: String, id: Int64, source: String, revision: String, action: Int64?, value: Int64, volumeScope: VolumeScope = .player) {
     guard let link=links[kind] else { return }
     let volume=action==nil, token=link.token
+    let receivedAt = ProcessInfo.processInfo.systemUptime
+    timing("received", kind, sub, id)
     let commandKind=volume ? (volumeScope == .output ? 2:1):0
     func respond(_ result: Int64) {
       if volume { enqueueVolume(PlayerVolumeMessage(kind:4,fields:[.text(sub),.integer(id),.integer(result)],scope:volumeScope),kind) }
@@ -90,6 +100,7 @@ import Observation
     highWater=id;inFlight.insert(id)
     let finish: @MainActor (Int64)->Void = { [weak self] result in
       guard let self, self.links[kind]?.token==token, self.subscribed==kind, self.subscription==sub else { return }
+      self.timing("native_result", kind, sub, id, duration: ProcessInfo.processInfo.systemUptime - receivedAt)
       self.inFlight.remove(id);self.results[id]=result;self.resultKinds[id]=commandKind;self.resultOrder.append(id)
       if self.resultOrder.count>32 { let old=self.resultOrder.removeFirst();self.results[old]=nil;self.resultKinds[old]=nil }
       if volume { self.enqueueVolume(PlayerVolumeMessage(kind:4,fields:[.text(sub),.integer(id),.integer(result)],scope:volumeScope),kind) }
@@ -149,6 +160,7 @@ import Observation
         if let next=volume ?? volumeSample {
           do { try await link.send(next.encode()) } catch { return }
           guard self.links[kind] === link else { return }
+          if next.kind == 4 { self.timing("result_submitted", kind, next.string(0), next.number(1)) }
           if volume != nil { if link.volumeControls.first==next { link.volumeControls.removeFirst() } }
           else if link.volumeSnapshot==next { link.volumeSnapshot=nil }
           else if link.outputSnapshot==next { link.outputSnapshot=nil }
@@ -166,6 +178,7 @@ import Observation
         catch is SessionBackpressure { return }
         catch { return }
         guard self.links[kind] === link else { return }
+        if message.kind == 7 { self.timing("result_submitted", kind, message.string(0), message.number(1)) }
         if priority==0 { if link.controls.first==message { link.controls.removeFirst() } }
         else if priority==1 { if link.snapshot==message { link.snapshot=nil } }
         else if message.fields[3] == .bytes(link.hash), message.string(2)==link.artworkRevision { link.offset += (try? message.fields[6].bytes().count) ?? 0 }

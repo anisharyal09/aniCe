@@ -62,6 +62,18 @@ import Foundation
     precondition(selected.wait(timeout:.now()+0.02) == .timedOut, "Selection bypassed its scan")
     release.signal()
     precondition(selected.wait(timeout:.now()+1) == .success)
+    let sampleWork = PlaybackDispatch()
+    let sampling = DispatchSemaphore(value:0), finishSample = DispatchSemaphore(value:0)
+    let validation = DispatchSemaphore(value:0), toggle = DispatchSemaphore(value:0)
+    sampleWork.submit(.sample) { sampling.signal(); finishSample.wait() }
+    precondition(sampling.wait(timeout:.now()+1) == .success)
+    sampleWork.submit(.validate(UUID(),PlaybackContext(pid:10,revision:UUID()))) { validation.signal() }
+    sampleWork.submit(.toggle) { toggle.signal() }
+    let validationReady = validation.wait(timeout:.now()+1)
+    let toggleReady = toggle.wait(timeout:.now()+1)
+    finishSample.signal()
+    precondition(validationReady == .success, "Blocked sample delayed validation")
+    precondition(toggleReady == .success, "Blocked sample delayed playback")
     print("PASS: 8 positive/17 negative requests, split/oversized/invalid UTF-8 framing, source ranking/manual gaps, PID bounds, read-only samples and scan/command isolation")
   }
 }

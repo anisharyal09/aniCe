@@ -96,6 +96,11 @@ class TransferController(
     private val resumeTimeoutMillis: Long = 15000L,
     private val confirmationTimeoutMillis: Long = 30000L,
     recoveryFile: File? = null,
+    private val openSource: (TransferFile) -> java.io.InputStream = { file ->
+        file.sourceFile?.let(::FileInputStream)
+            ?: file.sourceUri?.let { context?.contentResolver?.openInputStream(it) }
+            ?: throw java.io.IOException("Cannot open local source file")
+    },
     private val recoveryIdentity: suspend () -> String = {
         (context as io.github.anisharyal09.anice.AniCeApplication).identityService.getOrCreateIdentity().identity.fingerprint
     }
@@ -236,6 +241,20 @@ class TransferController(
 
     private var peerMaxChunkBytes: Long = 3072L
     private var peerMaxWindow: Long = 64L
+    // Two large chunks match the receiver's ACK cadence without filling the shared control stream.
+    private val sendCreditBytes: Long
+        get() {
+            val window = if (activeChannel?.descriptor?.transport == "lan" && peerMaxChunkBytes > 3072L)
+                minOf(peerMaxWindow, 2L) else peerMaxWindow
+            return peerMaxChunkBytes * window
+        }
+
+    // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
+    private val hasSendCredit: Boolean
+        get() {
+            val next = minOf(peerMaxChunkBytes, ((sendingFile?.size ?: sentBytes) - sentBytes).coerceAtLeast(0))
+            return sentBytes - acknowledgedBytes <= sendCreditBytes - next
+        }
 
     // Sender flow control & backpressure
     @Volatile private var sentBytes: Long = 0L
@@ -1505,11 +1524,6 @@ class TransferController(
         digest.digest()
     }
 
-    private fun openSource(file: TransferFile): java.io.InputStream =
-        file.sourceFile?.let(::FileInputStream)
-            ?: file.sourceUri?.let { context?.contentResolver?.openInputStream(it) }
-            ?: throw java.io.IOException("Cannot open local source file")
-
     private fun skipFully(stream: java.io.InputStream, length: Long) {
         var remaining = length
         val buffer = ByteArray(131072)
@@ -1804,6 +1818,11 @@ class TransferController(
                 return
             }
 
+            // Opening a provider can suspend across cancellation or replacement of this batch.
+            if (operation != epoch) {
+                withContext(NonCancellable + Dispatchers.IO) { opened.getAndSet(null)?.close() }
+                return
+            }
             sendingFile = file
             senderFileIndex = fileIndex
             // A result that arrived just before this file was re-entered belongs to this file.
@@ -1829,10 +1848,9 @@ class TransferController(
                 val buffer = ByteArray(peerMaxChunkBytes.toInt())
 
                 while (fileBytesSent < file.size) {
-                    val inFlight = sentBytes - acknowledgedBytes
-                    if (inFlight >= peerMaxWindow * peerMaxChunkBytes) {
+                    if (!hasSendCredit) {
                         val deferred = CompletableDeferred<Unit>().also { creditDeferred = it }
-                        if (sentBytes - acknowledgedBytes < peerMaxWindow * peerMaxChunkBytes) {
+                        if (hasSendCredit) {
                             creditDeferred = null
                         } else {
                             deferred.await()
@@ -1911,6 +1929,7 @@ class TransferController(
                 withContext(NonCancellable + Dispatchers.IO) { opened.getAndSet(null)?.close() }
             }
 
+            if (operation != epoch) return
             // Wait for file-result from receiver. Install the waiter in the same critical section
             // that consumes a result which already arrived, so neither ordering can lose it.
             val resultWaiter = CompletableDeferred<TransferMessage>()
@@ -1934,6 +1953,7 @@ class TransferController(
         val batchResult = TransferMessage.batchResult(batch = batch.id, result = 0L)
         runCatching { sendWithBackpressure(batchResult.encode()) }
         withContext(dispatcher) {
+            if (operation != epoch) return@withContext
             updateState(TransferState.Completed(batch.id, batch.files.size, batch.totalBytes))
             cleanupTransfer()
         }
@@ -1952,8 +1972,7 @@ class TransferController(
     }
 
     private fun checkCreditAndResume() {
-        val inFlight = sentBytes - acknowledgedBytes
-        if (inFlight < peerMaxWindow * peerMaxChunkBytes) {
+        if (hasSendCredit) {
             creditDeferred?.complete(Unit)
             creditDeferred = null
         }
@@ -2191,9 +2210,11 @@ class TransferController(
         val channel = activeChannel ?: return
         ackJob = scope.launch {
             if (operation != epoch || activeChannel !== channel) return@launch
+            var submitted = false
             try {
                 val ack = TransferMessage.ack(batch = batch.id, file = currentFile.id, written = bytesToAck)
                 sendWithBackpressure(ack.encode(), channel)
+                submitted = true
                 withContext(dispatcher) {
                     if (operation != epoch || receiverCurrentFileIndex != fileIndex) return@withContext
                     lastAckedWrittenBytes = maxOf(lastAckedWrittenBytes, bytesToAck)
@@ -2207,7 +2228,8 @@ class TransferController(
                     val unacked = receiverWrittenBytes - lastAckedWrittenBytes
                     // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
                     val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
-                    if (unacked >= ackCadence * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes)) {
+                    // Failure waits for an external event; only success may drain newer credit.
+                    if (submitted && (unacked >= ackCadence * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes))) {
                         flushAck()
                     }
                 }

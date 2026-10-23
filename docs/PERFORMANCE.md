@@ -63,6 +63,12 @@ Physical measurement and hardware constraints establish four throughput and late
 
 ### macOS
 
+Large-chunk LAN senders cap their local unacknowledged backlog at two negotiated chunks (at most 524,032 file bytes), rather than filling the eight-chunk receiver window. This matches the current large-window ACK cadence without increasing per-record crypto or validation work. Advertised receiver credit and wire bounds remain unchanged; throughput and latency under load depend on link conditions.
+
+Session-control classification validates full CBOR structure and canonical map order while omitting byte-string value materialization; the feature decoder still owns the payload copy. This removes one payload-sized allocation/copy per incoming transfer record on each platform without suppressing malformed-CBOR checks.
+
+Transfer payload decoding runs off the main actor in one awaited worker per ordered ingress delivery. Immutable bytes and the negotiated chunk bound cross that boundary; cancellation, transfer epoch and channel generation are checked before applying results. This removes chunk CBOR work from presentation without adding a buffering stage or changing record validation. Debug media timing records input/submission/result/presentation events on Android and receipt/native-result/result-submission events on Mac using local monotonic clocks and existing subscription/command identifiers. TCP submission denotes local acceptance, not a remote acknowledgement.
+
 `SessionRecordCodec.seal` builds one reserved record buffer instead of chaining `+` concatenations, and `LanFraming.encode` builds one reserved frame buffer for the same reason. The seal path still pays CryptoKit's own ciphertext and tag allocations, and `open` copies the header, ciphertext and tag out of the record before handing them to `AES.GCM.SealedBox`. Encoding uses `Data` append growth rather than a measured two-pass write.
 
 ### Non-payload cost per record
