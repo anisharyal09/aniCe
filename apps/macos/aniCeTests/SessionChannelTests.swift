@@ -80,6 +80,101 @@ private actor DeadlineValidationProbe {
   func validate() throws { loads += 1; if let fault { throw fault } }
 }
 final class SessionChannelTests: XCTestCase, @unchecked Sendable {
+  func testCancellingAnAdmittedSendPreservesHealthyChannelAndPeerSequence() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    for phase in ["capacity", "submission"] {
+      let outgoing = ChannelMailbox(), replies = ChannelMailbox(), gate = ChannelSubmissionGate()
+      let holding = OSAllocatedUnfairLock(initialState: false)
+      let client = SessionConnection(handshake: try helper.engine(fixture, server: false), responder: false,
+        capacity: { _ in
+          if phase == "capacity", holding.withLock({ $0 }) { await gate.pause() }
+          return true
+        }, submit: { bytes in
+          if phase == "submission", holding.withLock({ $0 }) { await gate.pause() }
+          await outgoing.append(bytes)
+        }, data: { _ in }, secured: {})
+      let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+        capacity: { _ in true }, submit: { await replies.append($0) }, data: { await replies.record($0) }, secured: {})
+      try await client.start()
+      for _ in 0..<3 { try await server.receive(outgoing.take()); try await client.receive(replies.take()) }
+      holding.withLock { $0 = true }
+      let send = Task { try await client.sendData(Data([7])) }
+      do {
+        for _ in 0..<10000 { if await gate.entered { break }; await Task.yield() }
+        let entered = await gate.entered
+        XCTAssertTrue(entered)
+        send.cancel(); holding.withLock { $0 = false }; await gate.release()
+        do { try await send.value; XCTFail("Cancelled send succeeded") } catch is CancellationError {}
+        let closed = await client.isClosed
+        XCTAssertFalse(closed)
+        try await client.sendData(Data([9]))
+        let count = await outgoing.messages.count
+        XCTAssertEqual(count, phase == "submission" ? 2 : 1)
+        for _ in 0..<count { try await server.receive(outgoing.take()) }
+        let delivered = await replies.data
+        XCTAssertEqual(delivered, phase == "submission" ? [Data([7]), Data([9])] : [Data([9])])
+        let serverClosed = await server.isClosed
+        XCTAssertFalse(serverClosed)
+      } catch {
+        holding.withLock { $0 = false }; await gate.release()
+        send.cancel(); _ = try? await send.value
+        await client.close(); await server.close(); throw error
+      }
+      await client.close(); await server.close()
+    }
+  }
+
+  func testCancellationProtectsOnlyNonceOwnedWork() async throws {
+    let row = try XCTUnwrap((helper.root("record-vectors")["valid"] as? [[String: Any]])?.first)
+    for phase in ["validation", "capacity", "submission", "postvalidation"] {
+      let gate = ChannelSubmissionGate(), output = ChannelMailbox()
+      let state = OSAllocatedUnfairLock(initialState: (hold: false, loads: 0))
+      let ch = try channel(validate: {
+        let pause = state.withLock { state in
+          state.loads += 1
+          return state.hold && (phase == "validation" && state.loads == 1 || phase == "postvalidation" && state.loads == 2)
+        }
+        if pause { await gate.pause() }
+      }, capacity: { _ in
+        if phase == "capacity", state.withLock({ $0.hold }) { await gate.pause() }
+        return true
+      }, submit: { bytes in
+        if phase == "submission", state.withLock({ $0.hold }) { await gate.pause() }
+        await output.append(bytes)
+      })
+      try await ch.send(.ready)
+      _ = try await ch.receive(SessionRecordCodec.seal(key: b(row, "key"), iv: b(row, "iv"),
+        id: b(row, "session"), direction: 2, kind: .readyAck, sequence: 0, plaintext: Data()))
+      state.withLock { $0 = (hold: true, loads: 0) }
+      let send = Task { try await ch.send(.data, plaintext: Data([7])) }
+      do {
+        for _ in 0..<10000 { if await gate.entered { break }; await Task.yield() }
+        let entered = await gate.entered
+        XCTAssertTrue(entered)
+        send.cancel()
+        let owned = phase == "submission" || phase == "postvalidation"
+        let sent = await ch.sent
+        XCTAssertEqual(sent, owned ? 2 : 1)
+        state.withLock { $0.hold = false }; await gate.release()
+        do { try await send.value; XCTFail("Cancelled send succeeded") } catch is CancellationError {}
+        let stage = await ch.stage, count = await output.messages.count, next = await ch.sent
+        XCTAssertEqual(stage, .secured)
+        XCTAssertEqual(count, owned ? 2 : 1); XCTAssertEqual(next, owned ? 2 : 1)
+        try await ch.send(.data, plaintext: Data([9]))
+        let messages = await output.messages
+        let last = try XCTUnwrap(messages.last)
+        let opened = try SessionRecordCodec.open(key: b(row, "key"), iv: b(row, "iv"), id: b(row, "session"),
+          direction: 1, expected: owned ? 2 : 1, record: last)
+        XCTAssertEqual(opened.1, Data([9]))
+      } catch {
+        state.withLock { $0.hold = false }; await gate.release()
+        send.cancel(); _ = try? await send.value
+        await ch.close(); throw error
+      }
+      await ch.close()
+    }
+  }
+
   func testPendingPongSurvivesLegalBulkSubmissionWithoutExtraQueueSlots() async throws {
     let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     for profile in [SessionProfile.standard, .lanTransfer] {

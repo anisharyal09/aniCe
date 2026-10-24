@@ -7,6 +7,7 @@ import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
+import io.github.anisharyal09.anice.infrastructure.session.SessionDataAdmission
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1039,34 +1040,38 @@ class TransferControllerTests {
         } finally { release.complete(Unit); owner.dismiss() }
     }
 
-    @Test fun cancellationDoesNotCancelSubmittedAckOrDamageNextOffer() = runBlocking {
+    @Test fun cancellationRemovesUnsealedAckWithoutDamagingNextOffer() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val channel = MockAndroidSecuredChannel()
-        owner.available(channel)
-        owner.handle(channel.descriptor, TransferMessage.capability().encode())
-        val (batch, file) = offered(owner, channel, 100_000)
+        val admission = SessionDataAdmission()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
         val release = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
-        var cancelled = false
-        channel.onSendData = { bytes ->
-            if (TransferMessage.decode(bytes)?.kind == 6L) {
-                started.complete(Unit)
-                try { release.await() } catch (error: kotlinx.coroutines.CancellationException) { cancelled = true; throw error }
-            }
+        val active = launch {
+            admission.run(true) { entered.complete(Unit); release.await() }
         }
-        owner.acceptIncomingOffer(tempDir)
-        repeat(8) { index -> owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, index * 3072L, ByteArray(3072)).encode()) }
-        kotlinx.coroutines.withTimeout(1000) { started.await() }
-        owner.cancelTransfer(local = false)
-        owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 8 * 3072L, ByteArray(3072)).encode())
-        assertEquals(TransferState.Cancelled, owner.state)
-        offered(owner, channel, 1L)
-        val next = owner.state
-        release.complete(Unit)
-        delay(20)
-        assertFalse("Logical cancellation must not cancel an already-submitted record", cancelled)
-        assertEquals(next, owner.state)
-        assertTrue(next is TransferState.IncomingOffer)
+        var submitted = false
+        try {
+            withTimeout(1000) { entered.await() }
+            owner.available(channel)
+            owner.handle(channel.descriptor, TransferMessage.capability().encode())
+            val (batch, file) = offered(owner, channel, 100_000)
+            channel.onSendData = { bytes ->
+                if (TransferMessage.decode(bytes)?.kind == 6L) admission.run(false) { submitted = true }
+            }
+            owner.acceptIncomingOffer(tempDir)
+            repeat(8) { index -> owner.handle(channel.descriptor,
+                TransferMessage.chunk(batch, file, index * 3072L, ByteArray(3072)).encode()) }
+            withTimeout(1000) { while (admission.pendingCount != 1) delay(1) }
+            owner.cancelTransfer(local = false)
+            withTimeout(1000) { while (admission.pendingCount != 0) delay(1) }
+            assertEquals(TransferState.Cancelled, owner.state)
+            offered(owner, channel, 1L)
+            val next = owner.state
+            release.complete(Unit); withTimeout(1000) { active.join() }
+            assertFalse("Cancelled transfer ACK must not acquire a nonce later", submitted)
+            assertEquals(next, owner.state)
+            assertTrue(next is TransferState.IncomingOffer)
+        } finally { release.complete(Unit); owner.dismiss(); active.cancel() }
     }
 
     @Test fun failedFinalizationCannotSendSuccess() = runBlocking {

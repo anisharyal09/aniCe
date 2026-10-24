@@ -6,7 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
+- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Transfer cleanup cancels queued stream, ACK and upgrade work; nonce-owned submission and post-write validation finish under session ownership. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
 
 - Messages provides SMS permission setup, live relay, paged conversations and history, phone-side search and active-SIM selection over existing secured sessions. Multipart replies report radio acceptance or an unconfirmed outcome without automatic resend. Provider scans complete timestamp groups and retain continuation cursors across unreadable batches; partial reads preserve completed state. Live receipts and sends keep local observation order when carrier clocks differ. The composer keeps SIM choice on the left and Send SMS at the far-right edge, with keyboard sending and readable long-label truncation.
 

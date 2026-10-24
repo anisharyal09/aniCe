@@ -261,6 +261,7 @@ actor SessionConnection {
       try ensure(op)
       liveness?.activity(now())
     } catch is SessionBackpressure { refused = true; throw SessionBackpressure() } catch {
+      if error is CancellationError, !closed, let channel, await channel.stage == .secured { throw error }
       await close()
       throw error
     }

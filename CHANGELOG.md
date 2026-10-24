@@ -10,7 +10,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
-- Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
+- Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Cancellation remains effective until nonce ownership; session-owned completion protects sealed records while transfer cleanup cancels queued producers. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
 
 - Connection diagnostics distinguish incomplete LAN frames by profile and byte counts; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
 

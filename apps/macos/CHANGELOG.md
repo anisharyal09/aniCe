@@ -6,7 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
+- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Transfer cleanup cancels queued stream, ACK and upgrade work; nonce-owned submission and post-write validation finish under session ownership. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
 
 - LAN frame-assembly timeout diagnostics include profile and received/expected byte counts.
 

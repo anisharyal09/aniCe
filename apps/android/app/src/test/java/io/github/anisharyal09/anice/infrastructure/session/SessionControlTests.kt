@@ -10,6 +10,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionControlTests {
+  @Test fun cancellingAnAdmittedSendPreservesHealthyChannelAndPeerSequence() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    for (phase in listOf("capacity", "submission")) {
+      val outgoing = java.util.ArrayDeque<ByteArray>()
+      val replies = java.util.ArrayDeque<ByteArray>()
+      val delivered = mutableListOf<ByteArray>()
+      val entered = CompletableDeferred<Unit>()
+      val release = CompletableDeferred<Unit>()
+      var hold = false
+      suspend fun pause() { entered.complete(Unit); withContext(NonCancellable) { release.await() } }
+      val client = SessionConnection(helper.engine(fixture, false), false,
+        { if (hold && phase == "capacity") pause(); true }, {
+          if (hold && phase == "submission") pause()
+          outgoing.add(it)
+        }, {}, {})
+      val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+        { delivered.add(it) }, {})
+      try {
+        client.start()
+        repeat(3) { server.receive(outgoing.removeFirst()); client.receive(replies.removeFirst()) }
+        hold = true
+        val send = launch { client.sendData(byteArrayOf(7)) }
+        withTimeout(1000) { entered.await() }
+        send.cancel(); hold = false; release.complete(Unit)
+        withTimeout(1000) { send.join() }
+        assertTrue(send.isCancelled)
+        assertFalse(client.isClosed)
+        client.sendData(byteArrayOf(9))
+        assertEquals(if (phase == "submission") 2 else 1, outgoing.size)
+        while (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+        assertEquals(if (phase == "submission") 2 else 1, delivered.size)
+        assertArrayEquals(byteArrayOf(9), delivered.last())
+        if (phase == "submission") assertArrayEquals(byteArrayOf(7), delivered.first())
+        assertFalse(server.isClosed)
+      } finally { release.complete(Unit); client.close(); server.close() }
+    }
+  }
+
   @Test fun pendingPongSurvivesLegalBulkSubmissionWithoutExtraQueueSlots() = runBlocking {
     val helper = SessionTests()
     val fixture = helper.root().getJSONArray("valid").getJSONObject(0)

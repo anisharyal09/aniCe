@@ -761,7 +761,7 @@ enum TransferEvent: Equatable {
     transferTask?.cancel(); transferTask = nil
     fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
     fileResultContinuation = nil
-    ackTask = nil
+    ackTask?.cancel(); ackTask = nil
     ackTimerTask?.cancel(); ackTimerTask = nil
     creditResume?(); creditResume = nil
     clearCapacityWaiters()
@@ -1400,8 +1400,8 @@ enum TransferEvent: Equatable {
       try Task.checkCancellation()
       guard (!jobBound || operation == epoch), channels[channel.descriptor.transport]?.descriptor == channel.descriptor else { throw SessionFailure.cancelled }
       let revision = capacityRevision
-      // An admitted encrypted record finishes even if a route change cancels its producer.
-      do { try await Task { try await channel.sendData(data) }.value; return }
+      // Admission stays cancellable; the session protects records only after nonce ownership.
+      do { try await channel.sendData(data); return }
       catch is SessionBackpressure {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
           if revision != capacityRevision { continuation.resume(); return }
@@ -2321,6 +2321,7 @@ enum TransferEvent: Equatable {
     clearOfferAssembly()
     pauseTimerTask?.cancel(); pauseTimerTask = nil
     resumeTask?.cancel(); resumeTask = nil
+    upgradeTask?.cancel(); upgradeTask = nil
     abandonStatus()
     allowBleResume = false
     pausedTransport = nil
@@ -2331,8 +2332,8 @@ enum TransferEvent: Equatable {
     transferPeerFingerprint = nil
     senderFileIndex = 0
     epoch = UUID()
-    // Retire logical work; an already-sealed submission must finish without cancelling the shared socket.
-    transferTask = nil
+    // Cancel unsealed work; SecureSession finishes nonce-owned submissions under the old epoch.
+    transferTask?.cancel(); transferTask = nil
     fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
     fileResultContinuation = nil
     receivedFileResult = nil
@@ -2344,7 +2345,7 @@ enum TransferEvent: Equatable {
     destinationFolder = nil
     sendingFile = nil
     finalizing = false
-    ackTask = nil
+    ackTask?.cancel(); ackTask = nil
     ackTimerTask?.cancel()
     ackTimerTask = nil
     let storage = receiverStorage

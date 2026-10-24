@@ -2,6 +2,7 @@
 // Verifies transfer engine lifecycle, cumulative flow control and adversarial chunk handling.
 import XCTest
 import CryptoKit
+import os
 @testable import aniCe
 
 @MainActor
@@ -1209,36 +1210,53 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(attempts, 2)
   }
 
-  func testCancellationRetiresAckEffectsAndKeepsNextOfferUsable() async throws {
-    let owner = MacTransferModel(), channel = MockSecuredChannel()
-    owner.available(channel)
-    try await offer(owner, channel, size: 100_000)
-    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
-    var release: CheckedContinuation<Void, Never>?
-    var cancelled = false
-    channel.onSendData = { bytes in
-      if try TransferMessage.decode(bytes)?.kind == 6 {
-        await withCheckedContinuation { release = $0 }
-        cancelled = Task.isCancelled
+  func testCancellationRemovesUnsealedAckWithoutDamagingNextOffer() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(), admission = SessionDataAdmission()
+    let submitted = OSAllocatedUnfairLock(initialState: false)
+    let release = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+    let active = Task {
+      try await admission.run(bulk: true) {
+        await withCheckedContinuation { continuation in
+          release.withLock { $0 = continuation }
+        }
       }
     }
-    await owner.acceptIncomingOffer(destination: tempDir)
-    for index in 0..<8 {
-      _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
-        offset: Int64(index * 3072), data: Data(repeating: 0, count: 3072)).encode(), on: channel.descriptor)
+    do {
+      for _ in 0..<200 { if release.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(5)) }
+      let pending = try XCTUnwrap(release.withLock { $0 })
+      owner.available(channel)
+      try await offer(owner, channel, size: 100_000)
+      guard case .incomingOffer(let batch) = owner.state else { throw SessionFailure.state }
+      channel.onSendData = { bytes in
+        if try TransferMessage.decode(bytes)?.kind == 6 {
+          try await admission.run(bulk: false) { submitted.withLock { $0 = true } }
+        }
+      }
+      await owner.acceptIncomingOffer(destination: tempDir)
+      for index in 0..<8 {
+        _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+          offset: Int64(index * 3072), data: Data(repeating: 0, count: 3072)).encode(), on: channel.descriptor)
+      }
+      for _ in 0..<200 { if await admission.pendingCount == 1 { break }; try await Task.sleep(for: .milliseconds(5)) }
+      let waiting = await admission.pendingCount
+      XCTAssertEqual(waiting, 1)
+      owner.cancelTransfer(local: false)
+      for _ in 0..<200 { if await admission.pendingCount == 0 { break }; try await Task.sleep(for: .milliseconds(5)) }
+      let remaining = await admission.pendingCount
+      XCTAssertEqual(remaining, 0)
+      XCTAssertEqual(owner.state, .cancelled)
+      try await offer(owner, channel, size: 1)
+      let next = owner.state
+      release.withLock { $0 = nil }; pending.resume(); try await active.value
+      XCTAssertFalse(submitted.withLock { $0 }, "Cancelled transfer ACK must not acquire a nonce later")
+      XCTAssertEqual(owner.state, next)
+    } catch {
+      let pending = release.withLock { value in let pending = value; value = nil; return pending }
+      pending?.resume()
+      active.cancel(); _ = try? await active.value
+      owner.dismiss(); throw error
     }
-    for _ in 0..<50 { if release != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
-    guard let pending = release else { return XCTFail("ACK was not submitted") }
-    owner.cancelTransfer(local: false)
-    _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
-      offset: 8 * 3072, data: Data(repeating: 0, count: 3072)).encode(), on: channel.descriptor)
-    XCTAssertEqual(owner.state, .cancelled)
-    try await offer(owner, channel, size: 1)
-    let next = owner.state
-    pending.resume()
-    try await Task.sleep(for: .milliseconds(20))
-    XCTAssertFalse(cancelled)
-    XCTAssertEqual(owner.state, next)
+    owner.dismiss()
   }
 
   func testFailedFinalizationCannotReportSuccess() async throws {

@@ -260,6 +260,9 @@ class SessionConnection(
     } catch (e: SessionBackpressure) {
       refused = true
       throw e
+    } catch (e: CancellationException) {
+      if (channel?.stage != ChannelStage.SECURED) close()
+      throw e
     } catch (e: Exception) {
       close()
       throw e

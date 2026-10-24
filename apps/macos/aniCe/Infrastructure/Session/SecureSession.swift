@@ -221,6 +221,7 @@ actor SecureSession {
     sending = true
     let op = generation
     var reserved = false
+    var completed = false
     let recordSequence = sent
     defer { if op == generation { sending = false } }
     do {
@@ -241,6 +242,8 @@ actor SecureSession {
       }
       // Include the record header, tag and envelope byte before consuming a nonce.
       guard await capacity(plaintext.count + 31) else { throw SessionBackpressure() }
+      try ensure(op)
+      try Task.checkCancellation()
       let sequence = try sendSequence.reserve()
       reserved = true  // A reserved nonce remains burned even when encryption/submission fails.
       if kind == .ready { stage = .readySent }
@@ -253,24 +256,33 @@ actor SecureSession {
           key: sendKey, iv: sendIV, id: sessionID, direction: responder ? 2 : 1, kind: kind,
           sequence: sequence, plaintext: plaintext, profile: profile)
       }
-      let submissionStart = SessionTiming.start()
-      do {
-        defer { SessionTiming.end(self, "submission", submissionStart, bytes: record.count,
-          profile: profile.rawValue, direction: "send", sequence: sequence, generation: op) }
-        try await submit(record)
-      }
-      // Native validation runs before sealing and after awaited submission; generation and deadline
-      // fencing around encryption is check(op) above and the check(op) below.
-      try await check(op, direction: "send", sequence: recordSequence)
-      activity = now()
-      if kind == .readyAck { stage = .secured }
-      if kind == .close { close() }
+      // This owned task starts only after sealing; producer cancellation cannot interrupt submission.
+      try await Task {
+        try self.checkTime(op)
+        let submissionStart = SessionTiming.start()
+        do {
+          defer { SessionTiming.end(self, "submission", submissionStart, bytes: record.count,
+            profile: profile.rawValue, direction: "send", sequence: sequence, generation: op) }
+          try await submit(record)
+        }
+        // Native validation runs before sealing and after awaited submission; generation and deadline
+        // fencing around encryption is check(op) above and the check(op) below.
+        try await check(op, direction: "send", sequence: recordSequence)
+        activity = now()
+        if kind == .readyAck { stage = .secured }
+        if kind == .close { close() }
+      }.value
+      completed = true
+      try Task.checkCancellation()
     } catch is SessionBackpressure {
       if reserved {
         close()
         throw SessionFailure.state
       }
       throw SessionBackpressure()
+    } catch is CancellationError {
+      if reserved && !completed { close() }
+      throw CancellationError()
     } catch {
       close()
       throw error

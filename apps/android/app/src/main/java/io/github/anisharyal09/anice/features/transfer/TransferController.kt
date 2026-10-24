@@ -690,8 +690,8 @@ class TransferController(
             val waiter = CompletableDeferred<Unit>()
             capacityWaiters.add(waiter)
             try {
-                // A route change may cancel the producer, but an admitted encrypted record must finish.
-                withContext(NonCancellable) { channel.sendData(data) }
+                // Admission stays cancellable; the session protects records only after nonce ownership.
+                channel.sendData(data)
                 return
             } catch (_: SessionBackpressure) {
                 if (revision == capacityRevision) withTimeout(10000) { waiter.await() }
@@ -875,6 +875,7 @@ class TransferController(
         fileResultDeferred?.cancel(); fileResultDeferred = null
         creditDeferred?.complete(Unit); creditDeferred = null
         resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         // Old-channel callbacks must not touch the retained batch after the channel is gone.
         epoch = UUID.randomUUID()
@@ -1327,6 +1328,7 @@ class TransferController(
         // discarded there once it rebinds.
         transferJob?.cancel(); transferJob = null
         resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         fileResultDeferred?.cancel(); fileResultDeferred = null
         creditDeferred?.complete(Unit); creditDeferred = null
@@ -2497,6 +2499,7 @@ class TransferController(
         clearOfferAssembly()
         pauseTimerJob?.cancel(); pauseTimerJob = null
         resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         allowBleResume = false
         pausedTransport = null
@@ -2507,8 +2510,9 @@ class TransferController(
         transferPeerFingerprint = null
         senderFileIndex = 0
         epoch = UUID.randomUUID()
-        // Already-sealed work finishes; epoch checks discard its callbacks without closing the shared socket.
-        transferJob = null
+        // Cancel unsealed work; SecureSession finishes nonce-owned submissions under the old epoch.
+        transferJob?.cancel(); transferJob = null
+        ackJob?.cancel(); ackJob = null
         synchronized(fileResultLock) {
             fileResultDeferred?.cancel()
             fileResultDeferred = null
