@@ -133,8 +133,9 @@ class TransferController(
      */
     fun onLanUnavailable(reason: String) {
         if (state !is TransferState.Connecting || pendingSend == null) return
+        awaitingLan = false
         val ble = channels["ble"]
-        if (ble != null && channels["lan"] == null) {
+        if (ble != null && (channels["lan"] == null || capabilities["lan"] == null)) {
             selectPreferredChannel()
             if (state !is TransferState.Connecting) return
             // Re-announce capability over Bluetooth to prompt the peer in case its capability was missed.
@@ -179,6 +180,7 @@ class TransferController(
 
     var onDemandLanConnection: (() -> Boolean)? = null
     private var pendingSend: (() -> Unit)? = null
+    private var awaitingLan = false
     private var connectTimeoutJob: Job? = null
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -241,13 +243,9 @@ class TransferController(
 
     private var peerMaxChunkBytes: Long = 3072L
     private var peerMaxWindow: Long = 64L
-    // Two large chunks match the receiver's ACK cadence without filling the shared control stream.
+    // The negotiated window keeps LAN chunks in flight across the receiver's two-chunk ACK cadence.
     private val sendCreditBytes: Long
-        get() {
-            val window = if (activeChannel?.descriptor?.transport == "lan" && peerMaxChunkBytes > 3072L)
-                minOf(peerMaxWindow, 2L) else peerMaxWindow
-            return peerMaxChunkBytes * window
-        }
+        get() = peerMaxChunkBytes * peerMaxWindow
 
     // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
     private val hasSendCredit: Boolean
@@ -587,7 +585,8 @@ class TransferController(
         // adopt a newly secured channel so the retained prefix can continue there.
         val canRebind = !isBusy || state is TransferState.Connecting || state is TransferState.Paused
         if (activeChannel != null && !canRebind) return
-        val preferred = channels["lan"] ?: channels["ble"]
+        val preferred = listOf("lan", "ble").firstOrNull { channels[it] != null && capabilities[it] != null }
+            ?.let { channels[it] } ?: channels["lan"] ?: channels["ble"]
         activeChannel = preferred
         peerConnected = preferred != null
         peerCompatible = false
@@ -614,7 +613,8 @@ class TransferController(
             else -> 3072L
         })
         peerMaxWindow = message.number(2).coerceAtMost(if (activeChannel?.descriptor?.transport == "ble") 4L else if (peerMaxChunkBytes > 3072) 8L else 64L)
-        if (state is TransferState.Connecting) {
+        if (state is TransferState.Connecting && (!awaitingLan || activeChannel?.descriptor?.transport == "lan")) {
+            awaitingLan = false
             connectTimeoutJob?.cancel(); connectTimeoutJob = null
             val send = pendingSend
             pendingSend = null
@@ -712,6 +712,7 @@ class TransferController(
         if (channels[descriptor.transport]?.descriptor != descriptor) return DataHandling.DISCARDED
         if (message.kind == 1L) {
             capabilities[descriptor.transport] = message
+            if (!isBusy || state is TransferState.Connecting || state is TransferState.Paused) selectPreferredChannel()
             if (descriptor == activeChannel?.descriptor) {
                 peerCompatible = true
                 if (state !is TransferState.Transferring && transferJob?.isActive != true) applyCapability(message)
@@ -722,6 +723,9 @@ class TransferController(
                 }
             } else if (state is TransferState.Paused) {
                 refreshPausedCapability()
+                if (activeChannel?.descriptor?.transport == "lan" && peerCompatible) {
+                    if (receiving) { if (allowBleResume) requestPeerContinuation() } else attemptResume()
+                }
             } else if (descriptor.transport == "lan" && state is TransferState.Transferring) {
                 // LAN is preferred even after a deliberate Bluetooth continuation. The receiver
                 // answers the resume while it is still transferring, so the stream can switch
@@ -1590,18 +1594,20 @@ class TransferController(
         }
         val channel = activeChannel
         val requestedLan = awaitLan && channel?.descriptor?.transport != "lan" && onDemandLanConnection?.invoke() == true
-        // LAN demand runs alongside a ready BLE send; a failed rendezvous cannot hold its offer hostage.
-        if (channel == null || !peerConnected || !peerCompatible) {
+        // A requested LAN route gets a bounded rendezvous before a ready BLE fallback is used.
+        if (requestedLan || channel == null || !peerConnected || !peerCompatible) {
             if (!requestedLan && channel == null) {
                 updateState(TransferState.Failed("No secured local-network or Bluetooth connection"))
                 return
             }
+            awaitingLan = requestedLan
             pendingSend = { prepareSources(sources, awaitLan = false, prepare = prepare) }
             updateState(TransferState.Connecting("your Mac"))
             onLeaseChanged?.invoke(true)
             connectTimeoutJob?.cancel()
             connectTimeoutJob = scope.launch {
-                delay(if (requestedLan) 30_000L else 3000L)
+                // A missing LAN-only route keeps the discovery window; a BLE fallback is bounded.
+                delay(if (requestedLan && channel == null) 30_000L else 3_000L)
                 if (state is TransferState.Connecting) {
                     onLanUnavailable(if (requestedLan) "Could not connect to your Mac over local network. Check Wi-Fi and Allow Connections on your Mac."
                         else "This peer has not advertised file transfer support")
@@ -1609,6 +1615,7 @@ class TransferController(
             }
             return
         }
+        awaitingLan = false
         if (preparation?.isActive == true || transferJob?.isActive == true) return
         val operation = epoch
         preparing = true
@@ -1633,6 +1640,8 @@ class TransferController(
                 withContext(dispatcher) {
                     if (operation == epoch) {
                         preparing = false; preparation = null
+                        // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
+                        if (channels["lan"] != null && capabilities["lan"] != null) selectPreferredChannel()
                         startOfferBatch(files, totalBytes, activeChannel?.takeIf {
                             it.descriptor.peer.deviceId == channel.descriptor.peer.deviceId &&
                                 it.descriptor.peer.fingerprint == channel.descriptor.peer.fingerprint
@@ -2481,6 +2490,7 @@ class TransferController(
         connectTimeoutJob?.cancel()
         connectTimeoutJob = null
         pendingSend = null
+        awaitingLan = false
         endPicker()
         destinationPreparation?.cancel(); destinationPreparation = null
         preparation?.cancel(); preparation = null; preparing = false

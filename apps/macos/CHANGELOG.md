@@ -24,7 +24,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Large LAN transfers keep at most two chunks unacknowledged locally to limit bulk backlog on the shared control connection; negotiated record sizes and receiver capabilities are unchanged.
+- Reserve file preparation before LAN rendezvous, wake on capability events under one deadline, and retire the wait on cancellation or dismissal. An incapable LAN channel no longer hides compatible Bluetooth.
+
+- Large LAN transfers keep the full negotiated eight-chunk window in flight so receiver acknowledgements overlap outbound chunks instead of stalling the pipeline; record sizes and receiver capabilities are unchanged.
 
 - Post-command playback samples use the observation queue so a slow MediaRemote read cannot block the next playback command.
 
@@ -41,12 +43,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Fixed
 
 - Recover automatic Bluetooth startup failures with supervised backoff that resets only after fifteen seconds of secured continuity; native radio and permission blocks retain state observation without retries.
+- Permit writing to the reply indication characteristic descriptor so CoreBluetooth allows Android clients to subscribe without reporting GATT status 3 (writeNotPermitted).
 - Separate LAN listener retention from bounded admission, rearm automation on local-path recovery and retire failed DATA submissions through the session owner.
 - Decode transfer payloads off the main actor while preserving ordered delivery, cancellation and channel-generation checks.
 
 - Complete BLE submissions from native callbacks and preserve admitted records across transfer upgrades. Retain interrupted offers, checkpointed streams and verified receipts for 15 minutes across restarts, reconcile native hard-link publication by file identity and hash, and bound BLE transfer credit below the ingress capacity. Reduce routine checkpoint flushes and keep pause/result/failure notices inside the app; background offers are opt-in. Keep live LAN sessions through unrelated interface changes, fence stale write retirement callbacks, and expose saved transfer notification/sound controls in Files and Settings. Route paused notification actions through the delegate with batch correlation and respect silent foreground presentation. Measure transfer rates over a five-second window and distinguish native frame/write timeouts in diagnostics.
 
-- Bound traffic-triggered LAN attempts, preserve LAN offer priority, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
+- Bound traffic-triggered LAN attempts, preserve LAN offer priority, and wait for a requested LAN route for a bounded interval before offering over a ready Bluetooth channel. Report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
 - SMS requests negotiate capability per channel, stage provider thread snapshots until completion, retain failed drafts and discard stale asynchronous assemblies. Notification settings and submission failures are visible; counters advance after macOS accepts a notification, and peer retirement clears notification targets.
 

@@ -328,6 +328,7 @@ class AndroidGattTransport(
             val d =
               r.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                 ?: throw PairingException()
+            Log.i("aniCe-ble", "subscribe_target epoch=$op characteristic=${r.uuid} instance=${r.instanceId} descriptor=${d.uuid} properties=${r.properties}")
             stage = "subscribe"
             progress("subscribe", connectionDeadline)
             @Suppress("DEPRECATION")
@@ -411,6 +412,8 @@ class AndroidGattTransport(
                 require(budget + bytes.size <= 32768)
                 budget += bytes.size
               }
+              if (trustedSession && bytes.firstOrNull() != 6.toByte())
+                Log.i("aniCe-ble", "received epoch=$op envelope=${bytes.firstOrNull()} bytes=${bytes.size}")
               message(bytes)
             }
             changed()
@@ -423,10 +426,16 @@ class AndroidGattTransport(
         ) =
           dispatch(g) {
             Log.i("aniCe-pairing", "write_completion status=$status session=$trustedSession")
-            require(c.uuid == write?.uuid && writing && status == BluetoothGatt.GATT_SUCCESS)
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+              val reason = "Bluetooth write failed (GATT status $status)."
+              finish(false, reason, cause = java.io.IOException(reason))
+              return@dispatch
+            }
+            require(c.uuid == write?.uuid && writing)
             // Only the final acknowledged fragment completes a logical-message submission.
             val completed = queue.removeFirst()
             if (completed.logicalSize != 0) {
+              if (trustedSession) Log.d("aniCe-ble", "submitted epoch=$op bytes=${completed.logicalSize}")
               queueBudget.release(completed.logicalSize)
               completed.submitted?.invoke()
               changed()
@@ -566,7 +575,10 @@ class AndroidGattTransport(
     require(started)
     val op = epoch
     handler.postDelayed(
-      { if (epoch == op && writing && queue.peekFirst() === f) finish(false) },
+      { if (epoch == op && writing && queue.peekFirst() === f) {
+        val reason = "Bluetooth write timed out after 10 seconds."
+        finish(false, reason, cause = java.net.SocketTimeoutException(reason))
+      } },
       10000,
     )
   }
@@ -603,7 +615,9 @@ class AndroidGattTransport(
     } else close()
   }
 
-  private fun closeClient() {
+  private fun closeClient(cause: Exception = io.github.anisharyal09.anice.infrastructure.session.SessionException(
+    io.github.anisharyal09.anice.infrastructure.session.SessionFailure.CANCELLED
+  )) {
     epoch++
     try {
       if (!closing) client?.disconnect()
@@ -619,14 +633,7 @@ class AndroidGattTransport(
     val pending = pendingSends.toList()
     pendingSends.clear()
     pending.forEach {
-      if (it.isActive)
-        it.resumeWith(
-          Result.failure(
-            io.github.anisharyal09.anice.infrastructure.session.SessionException(
-              io.github.anisharyal09.anice.infrastructure.session.SessionFailure.CANCELLED
-            )
-          )
-        )
+      if (it.isActive) it.resumeWith(Result.failure(cause))
     }
     writing = false
     closeAfterFlush = false
@@ -634,11 +641,13 @@ class AndroidGattTransport(
     incoming = GattReassembler(if (trustedSession) 2 else 1, SystemClock::elapsedRealtime)
   }
 
-  fun close() {
+  fun close(cause: Exception = io.github.anisharyal09.anice.infrastructure.session.SessionException(
+    io.github.anisharyal09.anice.infrastructure.session.SessionFailure.CANCELLED
+  )) {
     locating = false
     stopScan()
     search.clear()
-    closeClient()
+    closeClient(cause)
   }
 
   /**
@@ -685,6 +694,7 @@ class AndroidGattTransport(
     reason: String? = null,
     retryCandidate: Boolean = false,
     recovery: PairingTransportRecovery = PairingTransportRecovery.retry,
+    cause: Exception? = null,
   ) {
     val failure =
       if (success) null else PairingTransportFailure(reason ?: failureMessage(), recovery)
@@ -698,7 +708,8 @@ class AndroidGattTransport(
       return
     if (closedCallback) return
     closedCallback = true
-    close()
+    Log.i("aniCe-ble", "retire epoch=$epoch stage=$stage succeeded=$success reason=${failure?.message}")
+    if (cause != null) close(cause) else close()
     Log.i("aniCe-pairing", "transport_end succeeded=$success")
     ended(
       success,

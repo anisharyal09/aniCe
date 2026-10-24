@@ -74,7 +74,7 @@ struct AniCeApp: App {
     let lan = MacLanSessionModel(identity: identity.service, peers: peers, preferences: .standard, store: { try await pairing.sessionStore() })
     _lan = State(initialValue: lan)
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
-    transfer.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
+    transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     let smsPreferences = SmsPreferences(storage: .standard)
     _smsPreferences = State(initialValue: smsPreferences)
     let smsNotifier = MacSmsNotifier(preferences: smsPreferences)

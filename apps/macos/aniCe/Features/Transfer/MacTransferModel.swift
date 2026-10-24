@@ -70,7 +70,8 @@ enum TransferEvent: Equatable {
   private(set) var peerCompatible = false
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
   var onEvent: ((TransferEvent) -> Void)?
-  var onLanRequired: () -> Void = {}
+  /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
+  var onLanRequired: () -> Bool = { false }
 
   /// Exposes the active incoming offer batch, or nil outside .incomingOffer.
   /// Fences background notification actions against stale or out-of-order execution without extra state.
@@ -89,6 +90,7 @@ enum TransferEvent: Equatable {
   private(set) var receiveFolder: URL?
   private var channels: [String: any SecuredChannel] = [:]
   private var capabilities: [String: TransferMessage] = [:]
+  private var rendezvousWait: (() -> Void)?
   private var isBusy: Bool {
     if preparing || offerAssembly != nil { return true }
     switch state {
@@ -102,11 +104,8 @@ enum TransferEvent: Equatable {
 
   private var peerMaxChunkBytes: Int64 = 3072
   private var peerMaxWindow: Int64 = 64
-  // Two large chunks match the receiver's ACK cadence without filling the shared control stream.
-  private var sendCreditBytes: Int64 {
-    peerMaxChunkBytes * (activeChannel?.descriptor.transport == "lan" && peerMaxChunkBytes > 3072
-      ? min(peerMaxWindow, 2) : peerMaxWindow)
-  }
+  // The negotiated window keeps LAN chunks in flight across the receiver's two-chunk ACK cadence.
+  private var sendCreditBytes: Int64 { peerMaxChunkBytes * peerMaxWindow }
   // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
   private var hasSendCredit: Bool {
     let next = min(peerMaxChunkBytes, max(0, (sendingFile?.size ?? sentBytes) - sentBytes))
@@ -477,12 +476,13 @@ enum TransferEvent: Equatable {
     return false
   }
 
-  private func selectPreferredChannel() {
+  private func selectPreferredChannel(preparingRoute: Bool = false) {
     // A live batch remains bound to its channel generation. A paused batch, by contrast, must
     // adopt a newly secured channel so the retained prefix can continue there.
-    let canRebind = !isBusy || isPaused
+    let canRebind = !isBusy || isPaused || preparingRoute
     guard activeChannel == nil || canRebind else { return }
-    let preferred = channels["lan"] ?? channels["ble"]
+    let preferred = ["lan", "ble"].first(where: { channels[$0] != nil && capabilities[$0] != nil })
+      .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
     activeChannel = preferred
     peerConnected = preferred != nil
     peerCompatible = false
@@ -511,6 +511,7 @@ enum TransferEvent: Equatable {
     guard channels[descriptor.transport]?.descriptor == descriptor else { return }
     channels.removeValue(forKey: descriptor.transport)
     capabilities.removeValue(forKey: descriptor.transport)
+    rendezvousWait?()
     clearCapacityWaiters()
     guard descriptor == activeChannel?.descriptor else {
       refreshPausedCapability()
@@ -588,6 +589,8 @@ enum TransferEvent: Equatable {
     guard !Task.isCancelled, operation == epoch, channels[descriptor.transport]?.descriptor == descriptor else { return .discarded }
     if message.kind == 1 {
       capabilities[descriptor.transport] = message
+      if descriptor.transport == "lan" { rendezvousWait?() }
+      if !isBusy || isPaused { selectPreferredChannel() }
       if descriptor == activeChannel?.descriptor {
         peerCompatible = true
         if !isTransferring, transferTask == nil { applyCapability(message) }
@@ -598,6 +601,9 @@ enum TransferEvent: Equatable {
         }
       } else if isPaused {
         refreshPausedCapability()
+        if activeChannel?.descriptor.transport == "lan", peerCompatible {
+          if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
+        }
       } else if descriptor.transport == "lan", isTransferring {
         // LAN is preferred even after a deliberate Bluetooth continuation. The receiver answers
         // the resume while it is still transferring, so the stream can switch without a pause.
@@ -779,7 +785,7 @@ enum TransferEvent: Equatable {
     checkpoint(force: true)
     // Automatic LAN policy decides whether a new window may open; an explicit Disconnect still
     // wins, so a paused batch never forces LAN back on by itself.
-    onLanRequired()
+    _ = onLanRequired()
     onEvent?(.paused(batch: batch, reason: reason, canResumeOverBle: false))
   }
 
@@ -1420,23 +1426,53 @@ enum TransferEvent: Equatable {
     }
   }
 
-  func sendFiles(urls: [URL]) async {
-    guard !isBusy else { return }
-    if !isBusy, (1...128).contains(urls.count), activeChannel?.descriptor.transport != "lan" { onLanRequired() }
-    selectPreferredChannel()
-    guard let channel = activeChannel, peerConnected else {
-      state = .failed(reason: "No secured local-network or Bluetooth connection")
-      return
+  private func awaitLan(operation: UUID) async {
+    guard channels["lan"] == nil || capabilities["lan"] == nil else { return }
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        guard !Task.isCancelled, operation == epoch else { continuation.resume(); return }
+        var timeout: Task<Void, Never>?
+        rendezvousWait = { [weak self] in
+          guard let self, self.rendezvousWait != nil else { return }
+          self.rendezvousWait = nil
+          timeout?.cancel()
+          continuation.resume()
+        }
+        timeout = Task { [weak self] in
+          do { try await Task.sleep(for: .seconds(3)) } catch { return }
+          if self?.epoch == operation { self?.rendezvousWait?() }
+        }
+      }
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        if self?.epoch == operation { self?.rendezvousWait?() }
+      }
     }
-    guard peerCompatible else { state = .failed(reason: "This peer has not advertised file transfer support"); return }
+  }
+
+  func sendFiles(urls: [URL]) async {
+    guard !isBusy, !Task.isCancelled, preparation == nil, transferTask == nil else { return }
     guard (1...128).contains(urls.count) else {
       state = .failed(reason: "Transfer batch must contain 1 to 128 files")
       return
     }
-
-    guard preparation == nil, transferTask == nil else { return }
+    selectPreferredChannel()
     let operation = epoch
+    // Reserve the job and its peer before rendezvous or identity reads can suspend.
     preparing = true
+    transferPeerDeviceId = activeChannel?.descriptor.peer.deviceId
+    transferPeerFingerprint = activeChannel?.descriptor.peer.fingerprint
+    defer { if operation == epoch { preparing = false } }
+    let requestedLan = activeChannel?.descriptor.transport != "lan" && onLanRequired()
+    if requestedLan { await awaitLan(operation: operation) }
+    guard operation == epoch else { return }
+    guard !Task.isCancelled else { cancelTransfer(); return }
+    selectPreferredChannel(preparingRoute: true)
+    guard let initialChannel = activeChannel, peerConnected else {
+      failTransfer(reason: "No secured local-network or Bluetooth connection")
+      return
+    }
+    guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }
     if let identity = recoveryIdentity, recoveryStore != nil {
       do {
         let local = try await identity.publicIdentity().fingerprint
@@ -1444,9 +1480,9 @@ enum TransferEvent: Equatable {
         recoveryLocal = local
       } catch { if operation == epoch { preparing = false; failTransfer(reason: "Cannot access transfer recovery identity") }; return }
     }
-    transferPeerDeviceId = channel.descriptor.peer.deviceId
-    transferPeerFingerprint = channel.descriptor.peer.fingerprint
-    recoveryPeer = channel.descriptor
+    transferPeerDeviceId = initialChannel.descriptor.peer.deviceId
+    transferPeerFingerprint = initialChannel.descriptor.peer.fingerprint
+    recoveryPeer = initialChannel.descriptor
     let work = Task.detached(priority: .utility) { () throws -> ([TransferFile], Int64) in
       var files: [TransferFile] = []
       var total: Int64 = 0
@@ -1485,7 +1521,18 @@ enum TransferEvent: Equatable {
       return
     }
     guard operation == epoch else { return }
+    guard !Task.isCancelled else { cancelTransfer(); return }
     preparation = nil; preparing = false
+
+    // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
+    selectPreferredChannel(preparingRoute: true)
+    guard let channel = activeChannel, peerConnected,
+      channel.descriptor.peer.deviceId == initialChannel.descriptor.peer.deviceId,
+      channel.descriptor.peer.fingerprint == initialChannel.descriptor.peer.fingerprint else {
+      failTransfer(reason: "No secured local-network or Bluetooth connection")
+      return
+    }
+    guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }
 
     let batchId = UUID()
     let batch = TransferBatch(id: batchId, files: files, totalBytes: totalBytes, peerName: channel.descriptor.peer.deviceName)
@@ -2241,6 +2288,7 @@ enum TransferEvent: Equatable {
   }
 
   private func cleanupActiveTransfer(selectChannel: Bool = true) {
+    rendezvousWait?()
     retainedBatch = nil; offerReplayed = false; restoredSender = false
     let failed = failedRecovery
     failedRecovery = nil

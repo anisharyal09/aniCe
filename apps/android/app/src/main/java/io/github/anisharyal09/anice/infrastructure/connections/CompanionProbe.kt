@@ -166,12 +166,17 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
             controller.connect(peer, if (rediscover) null else adapter.getRemoteDevice(locator), automatic = true)
           }
           var authenticated = false
-          controller.progress.first {
+          var stable: Job? = null
+          try { controller.progress.first {
             if (controller.state == ConnectionState.SECURED && !authenticated) {
               // Explicit Connect may have replaced the attempt while this service still owns the lease.
               check(controller.adoptAutomatic(peer)) { "The selected connection changed." }
               authenticated = true
-              retry.reset()
+              retry.secured(SystemClock.elapsedRealtime())
+              stable = launch {
+                delay(15_000)
+                if (eligible(service) && controller.state == ConnectionState.SECURED) retry.tick(SystemClock.elapsedRealtime())
+              }
               preferences.edit().putBoolean("verified", true).apply()
               record("EDHOC and readiness verified")
             }
@@ -184,6 +189,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
             controller.controlSupport == false || controller.renewalReason != null ||
               controller.state == ConnectionState.FAILED || controller.state == ConnectionState.DISCONNECTED
           }
+          } finally { stable?.cancel(); retry.retired() }
           if (!eligible(service)) return@launch
           if (controller.controlSupport == false) {
             pause("Update both apps before enabling automatic connections.")

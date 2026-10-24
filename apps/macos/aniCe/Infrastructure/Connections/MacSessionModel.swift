@@ -204,7 +204,7 @@ struct SessionStartupRecovery {
         let trust = try await store()
         let peers = trust.list(localFingerprint: local.fingerprint).filter { $0.peer.platform == "android" }
         if automatic && peers.isEmpty { throw SessionFailure.untrustedPeer }
-        var target = target
+        var target = target ?? self.peers.peer ?? (peers.count == 1 ? peers.first?.peer : nil)
         if automatic, let saved = preferences?.string(forKey: "session.target") {
           let matches = peers.filter { $0.peer.deviceId == saved && $0.peer.fingerprint == preferences?.string(forKey: "session.fingerprint") }
           guard matches.count == 1 else { throw SessionFailure.untrustedPeer }
@@ -296,6 +296,7 @@ struct SessionStartupRecovery {
       guard let self, op == self.generation, self.allowing, self.admission.claim(self.now()) else {
         return false
       }
+      Self.logger.notice("BLE admitted generation=\(op) attempt=\(self.attempt)")
       self.handshakeDeadline = self.now() + 30
       self.startMaintenance()
       self.state = "Connecting"
@@ -339,6 +340,7 @@ struct SessionStartupRecovery {
         self.inputBytes + bytes.count <= 32768
       else { return false }
       let candidate = self.attempt
+      if bytes.first != 6 { Self.logger.notice("BLE receive generation=\(op) attempt=\(self.attempt) envelope=\(bytes.first ?? 0) bytes=\(bytes.count)") }
       self.inputCount += 1
       self.inputBytes += bytes.count
       // Chain bounded input work so handshake, readiness and records preserve transport order.
@@ -389,6 +391,7 @@ struct SessionStartupRecovery {
       let peer = try await connection.authenticatedPeer()
       guard op == generation, candidate == attempt else { return }
       guard peers.authenticate("ble", peer: peer) else { throw SessionFailure.untrustedPeer }
+      Self.logger.notice("BLE secured generation=\(op) attempt=\(candidate)")
       authenticatedPeer = peer
       handshakeDeadline = nil
       state = "Secured"

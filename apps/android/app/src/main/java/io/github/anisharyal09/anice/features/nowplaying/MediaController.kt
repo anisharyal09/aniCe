@@ -149,7 +149,7 @@ class MediaController(
         } else {
             if (index >= 0) intents[index] = intent else intents.add(intent)
             feedback = "Processing…"
-            trace("intent queued slot=$slot token=${link.token}", clock())
+            trace("intent queued slot=$slot transport=${active} token=${link.token}", clock())
             scheduleIntentExpiry()
         }
         presentationChanged()
@@ -547,7 +547,7 @@ class MediaController(
             }
 
             7L -> if (!pendingVolume && pending == message.number(1)) {
-                trace("result command=${message.number(1)} result=${message.number(2)} token=$token subscription=${message.string(0)}", clock())
+                trace("result command=${message.number(1)} result=${message.number(2)} transport=$active token=$token subscription=${message.string(0)}", clock())
                 pending = null
                 busy = false
                 submitted = false
@@ -600,7 +600,7 @@ class MediaController(
             }
 
             4L -> if (pendingVolume && !pendingOutput && pending == message.number(1)) {
-                trace("volume_result command=${message.number(1)} result=${message.number(2)} token=$token subscription=${message.string(0)}", clock())
+                trace("volume_result command=${message.number(1)} result=${message.number(2)} transport=$active token=$token subscription=${message.string(0)}", clock())
                 pending = null
                 busy = false
                 submitted = false
@@ -756,7 +756,7 @@ class MediaController(
         busy = true
         submitted = false
         feedback = "Processing…"
-        trace("input command=$id token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
+        trace("input command=$id transport=$kind token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
         outputTimeout = scope.launch {
             wait(6000)
             if (outputPreview != null && pending == null) feedback =
@@ -826,7 +826,7 @@ class MediaController(
         busy = true
         submitted = false
         feedback = "Processing…"
-        trace("input command=$id token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
+        trace("input command=$id transport=$kind token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
         volumeTimeout = scope.launch {
             wait(6000)
             if (volumePreview != null && pending == null) feedback =
@@ -980,7 +980,7 @@ class MediaController(
         submitted = false
         pendingVolume = false
         feedback = "Processing…"
-        trace("input command=$id token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
+        trace("input command=$id transport=$kind token=${links[kind]?.token} subscription=$subscription accepted=${expires - 6000}", clock())
         // Install the deadline before sending: an immediate reply can finish this operation synchronously.
         timeout = scope.launch {
             wait((expires - clock()).coerceAtLeast(0))
@@ -1035,10 +1035,10 @@ class MediaController(
                     try {
                         if (message.commandID != null && pending == message.commandID) {
                             submitted = true
-                            trace("submission command=${message.commandID} token=${link.token}", clock())
+                            trace("submission command=${message.commandID} transport=${active} token=${link.token}", clock())
                         }
                         link.send(message.encode())
-                        if (message.commandID != null) trace("submitted command=${message.commandID} token=${link.token}", clock())
+                        if (message.commandID != null) trace("submitted command=${message.commandID} transport=${active} token=${link.token}", clock())
                     } catch (_: SessionBackpressure) {
                         if (message.commandID != null && pending == message.commandID) submitted = false
                         return@launch

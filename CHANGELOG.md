@@ -33,6 +33,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Transfer preparation uses capability-aware LAN/BLE selection and cancellation-safe rendezvous; Android nearby recovery retains rediscovery eligibility after failed attempts.
+
 - Raise authenticated LAN file-transfer chunks to 262,016 bytes under transfer capability 3, reducing per-byte record overhead while retaining profile-3 limits and old-peer negotiation.
 
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
@@ -44,7 +46,7 @@ Repository-wide structure, documentation, and development conventions belong her
 - Repair LAN transfer startup, bound automatic connection demand from BLE traffic, and calculate sender progress from receiver acknowledgements.
 
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected. Android background Now Playing additionally requests and retains LAN (including artwork) while playing or inside the paused grace.
-- File selection and a pending send no longer retire a secured BLE channel; a send with a secured channel proceeds on it, and a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
+- File selection and a pending send no longer retire a secured BLE channel. A requested LAN route gets a bounded rendezvous before a compatible Bluetooth channel carries the offer; a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
 - Feature traffic no longer resumes LAN after an explicit Disconnect.
 - Settings and pairing are decluttered: one post-pairing toggle, one local-network preference, and a collapsed Background timeout row that still defaults to Never.
 

@@ -60,6 +60,11 @@ class AniCeApplication : Application() {
         }
         if(applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE!=0) {
             val timingTag="AniCeMediaTiming"
+            if (android.util.Log.isLoggable(timingTag, android.util.Log.DEBUG)) {
+                io.github.anisharyal09.anice.infrastructure.session.SessionTiming.sink = {
+                    android.util.Log.d(timingTag, it)
+                }
+            }
             nowPlaying.trace={ event,time ->
                 if(android.util.Log.isLoggable(timingTag,android.util.Log.DEBUG)) {
                     android.util.Log.d(timingTag,"$event $time")

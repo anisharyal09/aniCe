@@ -19,6 +19,93 @@ import org.junit.runner.RunWith
 /** Opt-in physical BLE regressions; each method requires its runner argument and Mac setup. */
 @RunWith(AndroidJUnit4::class)
 class PhysicalSessionNavigationTest {
+  @Test fun physicalReplySubscription() = runBlocking<Unit> {
+    assumeTrue("Supply physicalSubscription=true with an open Mac invitation",
+      InstrumentationRegistry.getArguments().getString("physicalSubscription") == "true")
+    val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
+    val ready = CompletableDeferred<Unit>()
+    val transport = withContext(Dispatchers.Main) {
+      io.github.anisharyal09.anice.infrastructure.bluetooth.AndroidGattTransport(
+        app, {}, { ready.complete(Unit) }, {},
+        { _, failure -> ready.completeExceptionally(AssertionError(failure?.message ?: "Subscription ended")) },
+        { stage, _ -> android.util.Log.i("aniCe-subscription-test", "stage=$stage") })
+    }
+    try {
+      withContext(Dispatchers.Main) { transport.startScan(qr = true) }
+      withTimeout(30_000) { ready.await() }
+      android.util.Log.i("aniCe-subscription-test", "reply subscription succeeded; authentication not attempted")
+    } finally {
+      withContext(Dispatchers.Main) { transport.close() }
+    }
+  }
+
+  @Test fun physicalMediaCommandLatency() = runBlocking {
+    val transport = InstrumentationRegistry.getArguments().getString("physicalMedia")
+    assumeTrue("Supply physicalMedia=ble or lan for real playback timing", transport != null)
+    require(transport == "ble" || transport == "lan")
+    val runner = InstrumentationRegistry.getInstrumentation()
+    val app = runner.targetContext.applicationContext as AniCeApplication
+    val media = app.nowPlaying
+    val active = media.javaClass.getDeclaredField("active").apply { isAccessible = true }
+    val rows = org.json.JSONArray()
+    val report = File(app.cacheDir, "physical-media-$transport.json")
+    var home: Activity? = null
+    val previous = withContext(Dispatchers.Main) { media.trace }
+    var result: CompletableDeferred<Pair<Long, Int>>? = null
+    var command: String? = null
+    val inputPattern = Regex("^input command=(\\d+)")
+    val resultPattern = Regex("^result command=(\\d+) result=(\\d+)")
+    try {
+      home = runner.startActivitySync(Intent().setClassName(app, "io.github.anisharyal09.anice.MainActivity")
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      withContext(Dispatchers.Main) {
+        media.foreground(this@PhysicalSessionNavigationTest)
+        media.trace = { event, time ->
+          previous(event, time)
+          inputPattern.find(event)?.let { command = it.groupValues[1] }
+          resultPattern.find(event)?.let {
+            if (it.groupValues[1] == command) result?.complete(time to it.groupValues[2].toInt())
+          }
+        }
+      }
+      withTimeout(90_000) {
+        while (withContext(Dispatchers.Main) {
+          active.get(media) != transport || media.playback?.actions?.and(1L) != 1L || media.busy
+        }) delay(100)
+      }
+      repeat(200) { index ->
+        val response = CompletableDeferred<Pair<Long, Int>>()
+        val started = withContext(Dispatchers.Main) {
+          assertEquals("Transport changed during measurement", transport, active.get(media))
+          assertFalse(media.busy)
+          result = response
+          command = null
+          val time = android.os.SystemClock.elapsedRealtime()
+          media.command(1)
+          time
+        }
+        val settled = withTimeoutOrNull(12_000) { response.await() }
+        val row = org.json.JSONObject().put("index", index).put("result", settled?.second ?: -1)
+          .put("elapsedMs", (settled?.first ?: android.os.SystemClock.elapsedRealtime()) - started)
+        rows.put(row)
+        android.util.Log.i("aniCe-media-benchmark", "transport=$transport sample=$row")
+        // An uncertain command is never replayed, including by the benchmark.
+        assertNotNull("Command result was not confirmed", settled)
+        assertEquals("Command failed", 0, settled!!.second)
+        delay(250)
+      }
+    } finally {
+      report.writeText(org.json.JSONObject().put("transport", transport).put("expected", 200)
+        .put("completed", rows.length()).put("samples", rows).toString())
+      withContext(Dispatchers.Main) {
+        media.trace = previous
+        media.background(this@PhysicalSessionNavigationTest, false)
+        home?.finish()
+      }
+    }
+    assertEquals(200, rows.length())
+  }
+
   @Test fun authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery() = runBlocking {
     val peerId = InstrumentationRegistry.getArguments().getString("physicalMacClose")
     assumeTrue("Supply physicalMacClose with automatic setup and a physical Mac", peerId != null)

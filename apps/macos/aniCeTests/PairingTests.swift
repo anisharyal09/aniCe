@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Verifies pairing contracts, durable trust and exclusive BLE ownership across native lifecycle faults.
+import CoreBluetooth
 import CryptoKit
 import Foundation
 import XCTest
@@ -632,11 +633,14 @@ extension PairingTests {
       let service = CoreBluetoothPeripheralAdapter.makeProfile()
       XCTAssertEqual(service.uuid.uuidString, BlePayloadCodec.serviceUUID)
       XCTAssertTrue(service.isPrimary)
-      let characteristics = try XCTUnwrap(service.characteristics)
+      let characteristics = try XCTUnwrap(service.characteristics as? [CBMutableCharacteristic])
       XCTAssertEqual(
         characteristics.map(\.uuid.uuidString),
         [BlePayloadCodec.characteristicUUID, PairingCodec.writeUUID, PairingCodec.indicateUUID])
       XCTAssertEqual(characteristics.map(\.properties), [.read, .write, .indicate])
+      XCTAssertEqual(
+        characteristics.map(\.permissions),
+        [.readable, .writeable, [.readable, .writeable]])
       XCTAssertTrue(characteristics.allSatisfy { $0.value == nil })
     }
   }

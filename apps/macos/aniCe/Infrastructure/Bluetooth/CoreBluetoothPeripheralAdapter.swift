@@ -413,7 +413,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
         permissions: .writeable),
       CBMutableCharacteristic(
         type: CBUUID(string: PairingCodec.indicateUUID), properties: .indicate, value: nil,
-        permissions: .readable),
+        permissions: [.readable, .writeable]),
     ]
     return service
   }

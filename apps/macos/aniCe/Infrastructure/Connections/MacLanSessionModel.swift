@@ -187,7 +187,7 @@ import OSLog
           $0.platform == "android"
         }
         guard op == generation else { return }
-        let target = selected ?? (active.count == 1 ? active.first : nil)
+        let target = selected ?? peers.peer ?? (active.count == 1 ? active.first : nil)
         guard let target,
           active.filter({
             $0.deviceId == target.deviceId && $0.fingerprint == target.fingerprint

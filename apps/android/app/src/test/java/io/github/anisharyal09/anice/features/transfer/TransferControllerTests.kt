@@ -168,10 +168,11 @@ class TransferControllerTests {
         owner.available(ble)
         owner.handle(ble.descriptor, TransferMessage.capability().encode())
         owner.available(lan)
-        assertSame(lan, owner.activeChannel)
-        assertFalse(owner.peerCompatible)
+        assertSame(ble, owner.activeChannel)
+        assertTrue(owner.peerCompatible)
         owner.retired(ble.descriptor)
         assertSame(lan, owner.activeChannel)
+        assertFalse(owner.peerCompatible)
         owner.handle(lan.descriptor, TransferMessage.capability().encode())
         val successor = MockAndroidSecuredChannel(instance = "successor")
         owner.available(successor)
@@ -815,7 +816,26 @@ class TransferControllerTests {
         owner.dismiss()
     }
 
-    @Test fun readyBluetoothStartsAnOfferWhileLanDemandIsPending() = runBlocking {
+    @Test fun incapableLanDoesNotSuppressBluetoothFallback() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        val lan = MockAndroidSecuredChannel(instance = "lan", transport = "lan")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        owner.available(lan)
+        owner.onDemandLanConnection = { true }
+        val source = File(tempDir, "fallback.bin").apply { writeBytes(byteArrayOf(1)) }
+        try {
+            owner.sendFiles(listOf(source))
+            assertTrue(owner.state is TransferState.Connecting)
+            owner.onLanUnavailable("LAN capability unavailable")
+            withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
+            assertTrue(owner.state is TransferState.WaitingForPeerApproval)
+            assertFalse(lan.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun readyBluetoothWaitsForRequestedLanBeforeOffering() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
         owner.available(ble)
@@ -825,18 +845,22 @@ class TransferControllerTests {
         val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(1024)) }
         try {
             owner.sendFiles(listOf(source))
-            withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
             assertEquals(1, demands)
+            assertTrue(owner.state is TransferState.Connecting)
+            delay(60)
+            assertTrue("BLE must not take the offer while requested LAN is pending",
+                ble.sentData.none { TransferMessage.decode(it)?.kind == 2L })
+            val lan = MockAndroidSecuredChannel(instance = "lan", transport = "lan", maximumDataBytes = 262144)
+            owner.available(lan)
+            owner.handle(lan.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+            withTimeout(2000) { while (lan.sentData.none { TransferMessage.decode(it, 262016)?.kind == 2L }) delay(5) }
             assertTrue(owner.state is TransferState.WaitingForPeerApproval)
-            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
-            owner.onLanUnavailable("Local network unavailable")
-            assertEquals(batch, (owner.state as TransferState.WaitingForPeerApproval).batch)
-            owner.handle(ble.descriptor, TransferMessage.capability().encode())
-            assertEquals(1, ble.sentData.count { TransferMessage.decode(it)?.kind == 2L })
+            assertEquals("lan", owner.activeChannel?.descriptor?.transport)
+            assertTrue(ble.sentData.none { TransferMessage.decode(it)?.kind == 2L })
         } finally { owner.dismiss() }
     }
 
-    @Test fun lateBluetoothCapabilityReleasesAPendingSendWithoutWaitingForLan() = runBlocking {
+    @Test fun bluetoothCapabilityDoesNotPreemptRequestedLanRendezvous() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
         owner.available(ble)
@@ -845,8 +869,11 @@ class TransferControllerTests {
         try {
             owner.sendFiles(listOf(source))
             assertTrue(owner.state is TransferState.Connecting)
-            assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
             owner.handle(ble.descriptor, TransferMessage.capability().encode())
+            delay(60)
+            assertTrue(owner.state is TransferState.Connecting)
+            assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+            owner.onLanUnavailable("Local network unavailable")
             withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
             assertTrue(owner.state is TransferState.WaitingForPeerApproval)
         } finally { owner.dismiss() }
@@ -1134,28 +1161,28 @@ class TransferControllerTests {
         val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
         owner.available(channel)
         owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
-        val source = File(tempDir, "credit.bin").apply { writeBytes(ByteArray(5 * 262016 + 7)) }
+        val source = File(tempDir, "credit.bin").apply { writeBytes(ByteArray(8 * 262016 + 7)) }
         fun chunks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 5L }
         try {
             owner.sendFiles(listOf(source))
             withTimeout(3000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
             val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
             owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
-            withTimeout(3000) { while (chunks().size < 2) delay(5) }
+            withTimeout(3000) { while (chunks().size < 8) delay(5) }
             delay(60)
-            assertEquals(2, chunks().size)
+            assertEquals("The sender must use the full negotiated eight-chunk window", 8, chunks().size)
             assertTrue(chunks().all { it.bytes(3).size == 262016 })
             owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 1).encode())
             delay(60)
-            assertEquals("Partial ACK cannot admit a whole chunk beyond the byte budget", 2, chunks().size)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 2L * 262016 + 1).encode())
+            assertEquals("Partial ACK cannot admit a whole chunk beyond the byte budget", 8, chunks().size)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 9L * 262016 + 1).encode())
             delay(60)
-            assertEquals("Unsubmitted bytes cannot grant credit", 2, chunks().size)
+            assertEquals("Unsubmitted bytes cannot grant credit", 8, chunks().size)
             owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 2L * 262016).encode())
-            withTimeout(3000) { while (chunks().size < 4) delay(5) }
+            withTimeout(3000) { while (chunks().size < 9) delay(5) }
             delay(60)
-            assertEquals(4, chunks().size)
-            assertEquals(listOf(0L, 262016L, 524032L, 786048L), chunks().map { it.number(2) })
+            assertEquals(9, chunks().size)
+            assertEquals((0L until 9L).map { it * 262016 }, chunks().map { it.number(2) })
             assertTrue(source.exists())
         } finally { owner.dismiss() }
     }

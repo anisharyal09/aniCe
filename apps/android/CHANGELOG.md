@@ -21,7 +21,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
-- Large LAN transfers keep at most two chunks unacknowledged locally to limit bulk backlog on the shared control connection; negotiated record sizes and receiver capabilities are unchanged.
+- Keep capable Bluetooth available while LAN capability is pending. Repeat bounded rediscovery after failed automatic attempts, reset backoff only after stable readiness, and preserve native GATT write failures through teardown.
+
+- Large LAN transfers keep the full negotiated eight-chunk window in flight so receiver acknowledgements overlap outbound chunks instead of stalling the pipeline; record sizes and receiver capabilities are unchanged.
 
 - Session-control classification avoids copying file payloads before feature decoding while retaining CBOR validation.
 - LAN write watchdog failures preserve their timeout cause instead of reporting session expiry or generic cancellation.
@@ -29,7 +31,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - File-transfer source opening and delayed completion discard retired batch callbacks before touching replacement state.
 - File-transfer ACK failures wait for a new capacity or receive event instead of immediately resubmitting themselves.
 
-- Bluetooth setup refreshes a stale service cache once when macOS rejects an indication subscription with status 245, sharing the existing invalid-handle recovery budget.
+- Bluetooth setup refreshes a stale service cache once when macOS rejects an indication subscription with status 3 or 245, sharing the existing invalid-handle recovery budget. Persistent rejection preserves the native status; authentication and authorization errors do not trigger a refresh.
 
 - Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
 
@@ -44,7 +46,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Allow environment-configured native pairing builds without `local.properties`, while retaining incremental input tracking for local tool overrides when present.
 
-- Cap GATT fragment values at 512 bytes when MTU 517 would otherwise create invalid 514-byte writes, and refresh a stale descriptor handle within the existing single layout retry. Serialize session control issuance with receive/maintenance so concurrent DATA cannot issue a stale pending control on BLE or LAN. Coalesce concurrent BLE connection requests, recover saved setup on foreground return, and bound stale-locator rediscovery. Transfer leases survive channel replacement; BLE credits leave ingress headroom, admitted records finish across route changes, and prepared jobs retain checkpointed progress and completion receipts across restarts for 15 minutes. Publish terminal LAN state before retirement callbacks so paused work can request reconnection. Reduce routine checkpoint flushes and retain only silent service/background-offer notices. Show the active transfer route and log negotiated source limits and LAN failure categories. Start compatible Bluetooth offers while LAN setup runs in parallel and measure transfer rates over a five-second window.
+- Cap GATT fragment values at 512 bytes when MTU 517 would otherwise create invalid 514-byte writes, and refresh a stale descriptor handle within the existing single layout retry. Serialize session control issuance with receive/maintenance so concurrent DATA cannot issue a stale pending control on BLE or LAN. Coalesce concurrent BLE connection requests, recover saved setup on foreground return, and bound stale-locator rediscovery. Transfer leases survive channel replacement; BLE credits leave ingress headroom, admitted records finish across route changes, and prepared jobs retain checkpointed progress and completion receipts across restarts for 15 minutes. Publish terminal LAN state before retirement callbacks so paused work can request reconnection. Reduce routine checkpoint flushes and retain only silent service/background-offer notices. Show the active transfer route and log negotiated source limits and LAN failure categories. Wait for requested LAN setup for a bounded interval before falling back to a compatible Bluetooth offer, and measure transfer rates over a five-second window.
 
 - Prefer negotiated LAN for transfers, bound traffic-triggered LAN attempts, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
@@ -53,7 +55,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and paused batches keep the transfer foreground service, LAN work lease and a secured BLE fallback lease so automatic LAN or explicit Bluetooth continuation can resume them.
 - Continuing over Bluetooth no longer causes the BLE channel to connect and disconnect repeatedly, and the paused card offers Continue over Bluetooth on the receiving device as well as the sender.
 - Selecting files or starting a send no longer retires a secured BLE channel: picker leases follow secured transports instead of the transfer's transiently selected channel, and a LAN attempt preserves existing transfer leases.
-- A failed LAN demand now fails a waiting send immediately instead of waiting for the connect timeout; a send with an already-secured compatible channel proceeds on it without waiting for LAN.
+- A failed LAN demand now releases a waiting send to the best secured channel immediately. A requested LAN route gets a bounded rendezvous before a ready Bluetooth channel carries the offer, so transfers do not start on Bluetooth while Wi-Fi is still connecting.
 - Feature traffic and playback demand no longer clear an explicit LAN Disconnect; manual reconnect or a preference change resumes automation.
 - Snapshot blocked transfer senders before resuming capacity waiters, preventing startup capability exchange from spinning on the main thread when BLE remains busy.
 - Settings collapses the background-timeout choices into one row (default Never) and renames the LAN toggle to Use local network automatically.

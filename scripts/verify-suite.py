@@ -56,6 +56,8 @@ DOCUMENTED_ANDROID_SKIPS = {
     "CompanionBindingTest#rebindRestoresMissingPresenceReplayAndDestroyedServiceStaysRetired",
     "PhysicalSessionIdleTest#connectedIdleCpuAndNativeValidationBudget",
     "PhysicalSessionNavigationTest#authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery",
+    "PhysicalSessionNavigationTest#physicalMediaCommandLatency",
+    "PhysicalSessionNavigationTest#physicalReplySubscription",
     "PhysicalSessionNavigationTest#automaticOwnerSurvivesRecentsRemovalAndQuietKeepalive",
     "PhysicalSessionNavigationTest#authenticatedConnectionSurvivesPresentationHandoffs",
 }

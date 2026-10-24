@@ -72,7 +72,7 @@ Every transfer message uses the four-element envelope `["aniCe transfer", 1, kin
 ## Flow Control and Credit
 
 - **Cumulative Window**: Standard/BLE allows up to 64 unacknowledged 3,072-byte chunks. LAN capabilities 2 and 3 allow up to 8 unacknowledged chunks (up to 1 MiB and 2 MiB respectively).
-- **Acknowledgement Cadence**: The receiver emits an `ack` record every 8 chunks received ($24,576$ bytes), after a 20-ms timer expires with unacknowledged bytes pending, and immediately upon receiving the final chunk of a file.
+- **Acknowledgement Cadence**: The receiver acknowledges when its unacknowledged bytes reach a quarter of the negotiated window on large-chunk LAN links (two chunks at the eight-chunk LAN window) or half of the window on standard/BLE links, capped at eight chunks. A 20-ms timer flushes smaller batches of written bytes, and receiving the final chunk of a file acknowledges immediately.
 - **Credit Enforcement**: The sender tracks `inFlight = sentBytes - acknowledgedBytes`. When `inFlight >= maxWindow * maxChunkBytes`, the sender pauses and buffers at most one unsent chunk, resuming immediately upon receiving an `ack`.
 - **Integrity Calculation**: Receivers compute SHA-256 incrementally as chunks arrive. Final verification requires exact length match and hash equality before renaming to the final destination.
 

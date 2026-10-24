@@ -10,6 +10,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+// Diagnostic identifiers are process-local object identities, never session key material.
+internal object SessionTiming {
+  @Volatile var sink: ((String) -> Unit)? = null
+  fun start(): Long = if (sink == null) 0 else System.nanoTime()
+  fun end(owner: Any, event: String, start: Long, bytes: Int = 0) {
+    if (start != 0L) sink?.invoke("record event=$event owner=${System.identityHashCode(owner)} bytes=$bytes duration_us=${(System.nanoTime() - start) / 1000}")
+  }
+}
+
 enum class SessionProfile(val wire: Int, val maximumPlaintext: Int, val maximumEnvelope: Int, val exporterLabel: String) {
   STANDARD(1, 4000, 4096, "aniCe session"),
   BULK_PROBE(2, 4194304, 4194335, "aniCe bulk probe"),
@@ -274,7 +283,8 @@ internal constructor(
 
   private suspend fun check(op: Long) {
     checkTime(op)
-    validate()
+    val validationStart = SessionTiming.start()
+    try { validate() } finally { SessionTiming.end(this, "validation", validationStart) }
     if (stage == ChannelStage.CLOSED || generation.get() != op)
       throw SessionException(SessionFailure.CANCELLED)
   }
@@ -337,7 +347,8 @@ internal constructor(
             }
           val record = sendCipher.seal(kind, sequence, plaintext, profile)
           checkTime(op)
-          submit(record)
+          val submissionStart = SessionTiming.start()
+          try { submit(record) } finally { SessionTiming.end(this, "submission", submissionStart, record.size) }
           // Native validation runs before sealing and after awaited submission; the generation and
           // deadline fence bracketing encryption is check(op) above and checkTime(op) here.
           check(op)
@@ -369,7 +380,9 @@ internal constructor(
             transition(op) { expiration = SessionExpiry.RECORD_LIMIT }
             throw SessionException(SessionFailure.EXPIRED)
           }
+          val decodeStart = SessionTiming.start()
           val result = receiveCipher.open(received, record, profile)
+          SessionTiming.end(this, "open", decodeStart, record.size)
           // Native identity/trust validation gates delivery after synchronous tag verification.
           check(op)
           val allowed =

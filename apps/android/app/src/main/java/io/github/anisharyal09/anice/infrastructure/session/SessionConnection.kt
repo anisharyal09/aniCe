@@ -142,7 +142,10 @@ class SessionConnection(
     }
     // Session control has already been flushed and the lock is released, so a slow or failing
     // application handler can no longer hold up maintenance or the next record.
-    delivery?.let { data(it) }
+    delivery?.let {
+      val deliveryStart = SessionTiming.start()
+      try { data(it) } finally { SessionTiming.end(this, "delivery", deliveryStart, it.size) }
+    }
   }
 
   private suspend fun makeChannel() {

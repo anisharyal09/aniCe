@@ -156,7 +156,11 @@ actor SessionConnection {
     changed()
     // Control has already been flushed and the gate is released, so a slow or failing application
     // handler can no longer hold up maintenance or the next record.
-    if let delivery { await data(delivery) }
+    if let delivery {
+      let deliveryStart = SessionTiming.start()
+      await data(delivery)
+      SessionTiming.end(self, "delivery", deliveryStart, bytes: delivery.count)
+    }
   }
   private func makeChannel(_ op: Int) async throws {
     // Exporting can suspend; close the newly created channel if ownership was retired meanwhile.

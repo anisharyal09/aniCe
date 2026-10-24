@@ -19,7 +19,7 @@ struct TransferNotificationControls: View {
 // Hoisted file picker helper shared between TransferView and CompanionView.
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
-  model.onLanRequired()
+  _ = model.onLanRequired()
   CompanionHost.currentHost?.isPickingFile = true
   defer {
     CompanionHost.currentHost?.isPickingFile = false

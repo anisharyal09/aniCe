@@ -7,14 +7,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NearbyRetryTests {
-  @Test fun rediscoveryIsBoundedPerFailureEpisodeAndExclusionsUseOneDeadline() {
+  @Test fun rediscoveryIsBoundedPerAttemptAndExclusionsUseOneDeadline() {
     val policy = NearbyRetry()
     assertFalse(policy.claimRediscovery())
     policy.next(0.0)
     assertFalse(policy.claimRediscovery())
     policy.next(0.0)
     assertTrue(policy.claimRediscovery())
-    repeat(20) { policy.next(0.0); assertFalse(policy.claimRediscovery()) }
+    repeat(20) {
+      assertFalse(policy.claimRediscovery())
+      policy.next(0.0)
+      assertTrue(policy.claimRediscovery())
+    }
     policy.reject("locator", 100)
     assertEquals(60_000L, policy.exclusionDelay("locator", 100))
     assertEquals(1L, policy.exclusionDelay("locator", 60_099))
@@ -24,6 +28,20 @@ class NearbyRetryTests {
     assertFalse(policy.claimRediscovery())
     repeat(2) { policy.next(0.0) }
     assertTrue(policy.claimRediscovery())
+  }
+  @Test fun onlyUninterruptedReadinessResetsBackoff() {
+    val policy = NearbyRetry()
+    repeat(5) { policy.next(0.0) }
+    policy.secured(100)
+    policy.tick(15_099)
+    assertEquals(90_000L, policy.next(0.0))
+    policy.retired()
+    policy.tick(50_000)
+    assertEquals(90_000L, policy.next(0.0))
+    policy.secured(60_000)
+    policy.tick(75_000)
+    assertEquals(2_000L, policy.next(0.0))
+    assertFalse(policy.claimRediscovery())
   }
   @Test fun boundedDelaysJitterAndEphemeralExclusions() {
     val policy = NearbyRetry()

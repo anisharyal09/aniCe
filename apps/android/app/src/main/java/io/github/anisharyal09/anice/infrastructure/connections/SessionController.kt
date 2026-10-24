@@ -109,7 +109,7 @@ class SessionController(application: Application) {
       { _, reason ->
         if (state == ConnectionState.SECURED) {
           cancel()
-          status = "Bluetooth connection ended. Reopen Allow connections on your Mac."
+          status = reason?.message ?: "Bluetooth connection ended."
         } else if (state == ConnectionState.CONNECTING) {
           fail(reason?.message ?: "Connection ended. Retry.")
         }
@@ -260,6 +260,7 @@ class SessionController(application: Application) {
               {
                 withContext(Dispatchers.Main.immediate) {
                   if (op == operation) {
+                    android.util.Log.i("aniCe-ble", "secured operation=$op token=$channelToken")
                     state = ConnectionState.SECURED
                     publishChannel()
                     status = ""
@@ -415,7 +416,7 @@ class SessionController(application: Application) {
     cancel()
     lastFailure = (error as? SessionException)?.reason
     state = notice.state
-    status = notice.text
+    status = if (error is java.io.IOException) error.message ?: notice.text else notice.text
     publishProgress()
   }
 

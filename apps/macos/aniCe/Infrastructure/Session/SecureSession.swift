@@ -3,6 +3,22 @@
 import CryptoKit
 import Foundation
 
+enum SessionTiming {
+  static let enabled: Bool = {
+    #if DEBUG
+    ProcessInfo.processInfo.environment["ANICE_MEDIA_TIMING"] == "1"
+    #else
+    false
+    #endif
+  }()
+  static func start() -> TimeInterval { enabled ? ProcessInfo.processInfo.systemUptime : 0 }
+  static func end(_ owner: AnyObject, _ event: String, _ start: TimeInterval, bytes: Int = 0) {
+    guard start != 0 else { return }
+    NSLog("record event=%@ owner=%@ bytes=%d duration_ms=%.3f", event,
+      String(describing: ObjectIdentifier(owner)), bytes, (ProcessInfo.processInfo.systemUptime - start) * 1000)
+  }
+}
+
 enum SessionProfile: UInt8, Sendable {
   case standard = 1, bulkProbe = 2, lanTransfer = 3
   var maximumPlaintext: Int { self == .standard ? 4000 : self == .lanTransfer ? 262144 : 4194304 }
@@ -168,6 +184,8 @@ actor SecureSession {
   }
   private func check(_ op: Int) async throws {
     try checkTime(op)
+    let validationStart = SessionTiming.start()
+    defer { SessionTiming.end(self, "validation", validationStart) }
     try await validate()
     try ensure(op)
   }
@@ -225,7 +243,11 @@ actor SecureSession {
       let record = try SessionRecordCodec.seal(
         key: sendKey, iv: sendIV, id: sessionID, direction: responder ? 2 : 1, kind: kind,
         sequence: sequence, plaintext: plaintext, profile: profile)
-      try await submit(record)
+      let submissionStart = SessionTiming.start()
+      do {
+        defer { SessionTiming.end(self, "submission", submissionStart, bytes: record.count) }
+        try await submit(record)
+      }
       // Native validation runs before sealing and after awaited submission; generation and deadline
       // fencing around encryption is check(op) above and the check(op) below.
       try await check(op)
