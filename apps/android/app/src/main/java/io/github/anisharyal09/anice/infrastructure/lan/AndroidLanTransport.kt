@@ -89,8 +89,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
             coroutineScope {
                 val framing = LanFraming(profile) { SystemClock.elapsedRealtime() }
                 val input = socket.getInputStream()
-                // One whole profile record fits one read. TCP returns as soon as any byte is available,
-                // so sizing the buffer to the record does not delay a partial frame.
+                // Reuse one record buffer; each read stops at the current header/body boundary.
                 val buffer = ByteArray(profile.maximumEnvelope + 5)
                 // Bounded ordered handoff. The capacity restates the documented admission bound
                 // (8 envelopes / 32,768 bytes standard, 4 envelopes / 1,048,700 bytes otherwise) and
@@ -128,7 +127,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                         val readStarted = if (profile != SessionProfile.STANDARD) System.nanoTime() else 0L
                         val count =
                             try {
-                                input.read(buffer)
+                                input.read(buffer, 0, framing.readLimit)
                             } catch (_: SocketTimeoutException) {
                                 framing.tick()
                                 continue

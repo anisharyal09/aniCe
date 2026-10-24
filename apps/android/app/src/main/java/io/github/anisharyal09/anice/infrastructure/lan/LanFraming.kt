@@ -19,6 +19,8 @@ class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, 
     }
 
     val nextDeadline: Long? get() = (started + 10000).takeIf { !failed && used != 0 }
+    // Stop socket reads at a frame boundary before the ingress queue can suspend the producer.
+    val readLimit: Int get() = if (used < 5) 5 - used else requireNotNull(body).size - offset
 
     private fun check(time: Long) {
         if (failed) throw SessionException(SessionFailure.CANCELLED)

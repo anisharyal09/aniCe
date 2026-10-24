@@ -218,9 +218,8 @@ actor LanTcpTransport {
   }
   private func receive() {
     guard !closed else { return }
-    // One whole profile record fits one read. TCP returns as soon as any byte is available, so sizing
-    // the buffer to the record does not delay a partial frame or its assembly deadline.
-    socket.receive(minimumIncompleteLength: 1, maximumLength: profile.maximumEnvelope + 5) {
+    // Never start another frame's deadline before waiting for room in the ingress queue.
+    socket.receive(minimumIncompleteLength: 1, maximumLength: framing.readLimit) {
       [weak self] data, _, complete, error in
       Task { await self?.received(data, complete: complete, error: error) }
     }
@@ -265,8 +264,9 @@ actor LanTcpTransport {
   }
   private func assemblyExpired() {
     assemblyDeadline = nil
+    let received = framing.partialBytes, expected = framing.expectedBytes ?? 5
     do { try framing.tick(); scheduleAssemblyDeadline() } catch {
-      Self.logger.notice("LAN frame assembly failed: \(String(describing: error), privacy: .public)")
+      Self.logger.notice("LAN frame assembly failed: \(String(describing: error), privacy: .public) profile=\(self.profile.rawValue) received=\(received) expected=\(expected)")
       fail(error)
     }
   }

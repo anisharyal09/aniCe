@@ -7,6 +7,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GattSetupRecoveryTests {
+  @Test fun profileReadMismatchSharesRefreshBudgetWithoutRetryingAuthenticationErrors() {
+    for (status in listOf(0, 1, 2, 10)) {
+      val recovery = GattSetupRecovery()
+      assertTrue(recovery.retryProfileRead(status))
+      assertFalse(recovery.retryProfileRead(status))
+      assertFalse(recovery.retrySubscriptionLayout(3))
+    }
+    val recovery = GattSetupRecovery()
+    for (status in listOf(5, 8, 15, 133, 257)) assertFalse(recovery.retryProfileRead(status))
+    assertTrue(recovery.retrySubscriptionLayout(3))
+    assertFalse(recovery.retryProfileRead(0))
+  }
+
   @Test fun subscriptionFailuresPreserveNativeStatus() {
     val recovery = GattSetupRecovery()
     assertNull(recovery.subscriptionFailure(0))

@@ -78,6 +78,27 @@ class MediaTests {
         assertEquals(10f,paused.elapsed(999999),0.01f)
         assertEquals(-1,RemotePlayback(fixture("live-stream"),0).duration.toInt())
     }
+    @Test fun commandExpiredBeforeAdmissionReportsNotSentAndNeverReplays() {
+        val timer = TestClock()
+        val owner = MediaController(Dispatchers.Unconfined, { timer.now }, timer::wait)
+        val out = mutableListOf<MediaMessage>()
+        var blocked = false
+        owner.foreground(this)
+        owner.attach("ble", "b", "Mac") {
+            if (blocked) throw SessionBackpressure()
+            out.add(MediaMessage.decode(it)!!)
+        }
+        owner.receive("ble", "b", fixture("capability").encode()); subscribed(owner, "ble", "b", out)
+        blocked = true
+        owner.command(1)
+        assertTrue(owner.busy)
+        timer.advance(6000)
+        assertFalse(owner.busy)
+        assertTrue(owner.feedback.contains("not sent"))
+        blocked = false; owner.capacity("ble")
+        assertEquals(0, out.count { it.kind == 6L })
+        owner.invalidate()
+    }
     @Test fun seekPreviewSurvivesOldSamplesAndAppliedResultUntilPositionConfirmation() {
         var now=0L
         val owner=MediaController(Dispatchers.Unconfined,{now});val out=mutableListOf<MediaMessage>()

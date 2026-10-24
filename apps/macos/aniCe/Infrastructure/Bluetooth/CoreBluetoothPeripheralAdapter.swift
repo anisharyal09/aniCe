@@ -379,13 +379,15 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     guard peripheral === manager else { return }
     Self.logger.info("peripheral_state state=\(peripheral.state.rawValue) authorization=\(CBManager.authorization.rawValue) generation=\(self.channelGeneration)")
     if peripheral.state != .poweredOn {
-      // Core Bluetooth owns database invalidation on radio reset/power loss.
-      published = false
-      publishing = false
-      profile = nil
-      characteristic = nil
-      incoming = nil
-      outgoing = nil
+      // Powered-off pauses advertising but retains the database; re-adding duplicates the service.
+      if Self.invalidatesServices(peripheral.state) {
+        published = false
+        publishing = false
+        profile = nil
+        characteristic = nil
+        incoming = nil
+        outgoing = nil
+      }
       advertising.resetRadio()
       retirePairingConnection()
       // The state event retires the owner before any reconnect decision; retain its native observer.
@@ -400,6 +402,9 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       event?(CBManager.authorization == .notDetermined ? .permissionPending : .initializing)
     @unknown default: event?(.failure)
     }
+  }
+  nonisolated static func invalidatesServices(_ state: CBManagerState) -> Bool {
+    state.rawValue < CBManagerState.poweredOff.rawValue
   }
   /// The public UUID layout is constant in every mode. Access is gated separately.
   static func makeProfile() -> CBMutableService {

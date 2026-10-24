@@ -628,6 +628,14 @@ extension PairingTests {
 }
 
 extension PairingTests {
+  func testPowerOffRetainsGattDatabaseButResetInvalidatesIt() {
+    for state: CBManagerState in [.poweredOn, .poweredOff] {
+      XCTAssertFalse(CoreBluetoothPeripheralAdapter.invalidatesServices(state))
+    }
+    for state: CBManagerState in [.unknown, .resetting, .unsupported, .unauthorized] {
+      XCTAssertTrue(CoreBluetoothPeripheralAdapter.invalidatesServices(state))
+    }
+  }
   @MainActor func testPublicGattProfileIsStableAcrossDiscoveryAndPairingWindows() throws {
     for _ in 0..<4 {
       let service = CoreBluetoothPeripheralAdapter.makeProfile()

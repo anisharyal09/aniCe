@@ -12,6 +12,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanTests {
+    @Test fun frameBoundedReadsExcludeIngressWaitFromNextAssembly() {
+        for (profile in listOf(SessionProfile.STANDARD, SessionProfile.LAN_TRANSFER)) {
+            var clock = 0L
+            val framing = LanFraming(profile) { clock }
+            val payload = ByteArray(profile.maximumEnvelope) { 7 }
+            val wire = LanFraming.encode(payload, profile)
+            repeat(3) {
+                assertEquals(5, framing.readLimit)
+                assertTrue(decode(framing, wire.copyOfRange(0, 2)).isEmpty())
+                assertEquals(3, framing.readLimit)
+                assertTrue(decode(framing, wire.copyOfRange(2, 5)).isEmpty())
+                assertEquals(payload.size, framing.readLimit)
+                assertTrue(decode(framing, wire.copyOfRange(5, 6)).isEmpty())
+                assertEquals(payload.size - 1, framing.readLimit)
+                assertArrayEquals(payload, decode(framing, wire.copyOfRange(6, wire.size)).single())
+                assertNull(framing.nextDeadline)
+                clock += 11000 // A full ingress queue waits between complete frames.
+                framing.tick()
+            }
+            decode(framing, wire.copyOfRange(0, 1))
+            clock += 10000
+            try { framing.tick(); fail("Partial frame deadline was extended") }
+            catch (error: SessionException) { assertEquals(SessionFailure.EXPIRED, error.reason) }
+        }
+    }
     private fun bytes(text: String) = text.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
     private fun decode(framing: LanFraming, wire: ByteArray): List<ByteArray> {

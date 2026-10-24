@@ -103,6 +103,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
       .putBoolean("verified", preferences.getBoolean("verified", false) && peerId == peer.deviceId &&
         preferences.getString("fingerprint", null) == peer.fingerprint && this.address == locator && associationId == id)
       .putBoolean("automatic", true).putBoolean("paused", false).putBoolean("armed", true).commit())
+    retry.reset()
     armedPreference = true
     try {
       if (Build.VERSION.SDK_INT >= 36) manager.startObservingDevicePresence(
@@ -139,7 +140,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
       try {
         val controller = app.sessionController
         if (service != null) controller.acquireCompanion(service)
-        retry.reset()
+        // Ownership handoffs retain failures; stable readiness or explicit setup resets history.
         while (isActive && eligible(service)) {
           val peer = trustedPeer(requireNotNull(peerId), requireNotNull(preferences.getString("fingerprint", null)))
           check(controller.missingPermissions().isEmpty()) { "Bluetooth permission unavailable." }

@@ -24,6 +24,8 @@ Android reception opens the system folder picker. Local external-storage and Dow
 
 Transfer v1 offers include full-file SHA-256, so senders prepare hashes before offering. Preparation runs off the UI thread, is cancellable and displays Preparing files. Streaming completion digests require a separately versioned contract; existing v1 bytes remain unchanged.
 
+LAN receive backpressure waits between complete frames; frame-bounded socket reads prevent the queue wait from consuming the next frame's ten-second assembly deadline. Transfer DATA and playback traffic share the selected authenticated stream. Records already submitted to TCP remain ordered and cannot be overtaken by a later control command; see the [record-path performance guide](../PERFORMANCE.md).
+
 ## Execution and presentation
 
 BLE advertises and uses at most four outstanding chunks, leaving capacity for controls within its eight-message ingress bound. Large-chunk LAN senders use the full negotiated window of up to eight outstanding 262,016-byte chunks (at most 2,096,128 file bytes) so the receiver's two-chunk ACK cadence never stalls the pipeline. Receivers still accept their advertised window; chunk size, ACK format and negotiated limits are unchanged. Transport upgrades finish an admitted encrypted record before retiring its producer; cancellation never replays or reseals that record.

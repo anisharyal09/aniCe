@@ -21,6 +21,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline. Playback and volume actions that expire before submission report that they were not sent; submitted actions with missing results remain uncertain and are never replayed.
+
+- Foreground and companion-service handoffs retain Bluetooth retry history and candidate exclusions until authenticated readiness remains stable.
+- Bluetooth setup validates the existing discovery payload before subscribing to replies; stale read targets and duplicate pairing profiles share the single service-cache refresh budget without retrying authentication errors. Persistent duplicate profiles stop connection setup without assuming extra Mac app copies are running.
+
 - Keep capable Bluetooth available while LAN capability is pending. Repeat bounded rediscovery after failed automatic attempts, reset backoff only after stable readiness, and preserve native GATT write failures through teardown.
 
 - Large LAN transfers keep the full negotiated eight-chunk window in flight so receiver acknowledgements overlap outbound chunks instead of stalling the pipeline; record sizes and receiver capabilities are unchanged.

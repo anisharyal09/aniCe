@@ -32,6 +32,8 @@ One application-scoped `MacPlaybackModel` owns selection, revisions, permissions
 
 Commands validate the selected process/recording and never fall back to global playback commands.
 
+Playback and volume actions that expire before submission report that they were not sent. Once submission begins, a missing result is reported as an unknown outcome and the command is never automatically replayed. Controls and artwork do not use separate simultaneous subscriptions: LAN controls share the ordered stream with file transfers, so already-submitted transfer bytes cannot be reprioritized behind a later control command.
+
 Android submits one media operation at a time. While it is pending, seek, player volume and Mac output volume each retain their latest unsubmitted target; Play/Pause, Previous and Next share one additional intent slot. Retained intents preserve acceptance order and expire six seconds after acceptance. Target/revision changes, channel retirement and unsuccessful or uncertain results clear them. Controls expose pending or full-queue feedback instead of disabling the whole playback surface. Submitted commands never replay.
 
 Each subscription uses one already-secured channel, preferring compatible LAN and otherwise BLE. Channel changes require a fresh subscription and snapshot; submitted commands never replay. Artwork is LAN-only, in memory, bounded to 256 pixels/64 KiB with 2 KiB chunks and a ten-second assembly deadline. Companion-owned background playback holds a bounded media demand lease while it is playing or inside the paused grace, so LAN may be requested and retained in the background; the lease is released when playback stops, the grace expires, or companion ownership is lost.

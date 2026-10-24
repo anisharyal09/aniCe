@@ -15,6 +15,10 @@ struct LanFraming {
     self.now = now
   }
   var nextDeadline: TimeInterval? { !failed && !header.isEmpty ? started + 10 : nil }
+  // Stop socket reads at a frame boundary before the ingress queue can suspend the producer.
+  var readLimit: Int { header.count < 5 ? 5 - header.count : length - body.count }
+  var partialBytes: Int { header.count + body.count }
+  var expectedBytes: Int? { header.count == 5 ? length + 5 : nil }
   private mutating func check(_ time: TimeInterval) throws {
     guard !failed else { throw SessionFailure.cancelled }
     if !header.isEmpty, time - started >= 10 {

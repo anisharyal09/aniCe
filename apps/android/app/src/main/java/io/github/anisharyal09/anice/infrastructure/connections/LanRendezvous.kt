@@ -33,20 +33,22 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
     private var local = 0
     private var sent: Int? = null
     private var sending: Job? = null
+    private var wake = false
     fun update(state: Int) { local = state; flush() }
     override fun available(channel: SecuredChannel) {
         if (channel.descriptor.transport != "ble") return
-        sending?.cancel(); sending = null
+        sending?.cancel(); sending = null; wake = false
         this.channel = channel; remote = null; sent = null; requestPending = false
         changed(); flush()
     }
     override fun retired(descriptor: ChannelDescriptor) {
         if (channel?.descriptor != descriptor) return
-        sending?.cancel(); sending = null; channel = null; remote = null; sent = null; requestPending = false
+        sending?.cancel(); sending = null; wake = false; channel = null; remote = null; sent = null; requestPending = false
         changed()
     }
     override fun capacityAvailable(descriptor: ChannelDescriptor) {
-        if (channel?.descriptor == descriptor) flush()
+        if (channel?.descriptor != descriptor) return
+        if (sending?.isActive == true) wake = true else flush()
     }
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
         if (channel?.descriptor != descriptor) return DataHandling.UNRECOGNIZED
@@ -79,6 +81,11 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
                 throw error
             } catch (_: Exception) {
                 // Failed submissions close the session; retirement clears this advertisement.
+            } finally {
+                if (channel === target && currentCoroutineContext().isActive) {
+                    sending = null
+                    if (wake) { wake = false; flush() }
+                }
             }
         }
         sending = work

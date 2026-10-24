@@ -7,6 +7,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NearbyRetryTests {
+  @Test fun retiringAnOwnerPreservesRediscoveryAndCandidateExclusions() {
+    val policy = NearbyRetry()
+    repeat(2) { policy.next(0.0) }
+    policy.reject("stale", 100)
+    policy.secured(200)
+    policy.retired()
+    policy.tick(20_000)
+    assertTrue(policy.claimRediscovery())
+    assertEquals(15_000L, policy.next(0.0))
+    assertEquals(40_100L, policy.exclusionDelay("stale", 20_000))
+    policy.secured(30_000)
+    policy.tick(45_000)
+    assertFalse(policy.claimRediscovery())
+    assertEquals(2_000L, policy.next(0.0))
+  }
+
   @Test fun rediscoveryIsBoundedPerAttemptAndExclusionsUseOneDeadline() {
     val policy = NearbyRetry()
     assertFalse(policy.claimRediscovery())

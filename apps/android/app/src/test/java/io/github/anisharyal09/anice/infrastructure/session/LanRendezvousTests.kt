@@ -34,6 +34,32 @@ class LanRendezvousTests {
         gate.update("ble-2", true, true, true, 1)
         assertTrue(gate.claim()); assertFalse(gate.claim())
     }
+    @Test fun capacityDuringSuspendedRefusalWakesRendezvousWithoutAnotherEvent() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val link = LanRendezvous(scope) {}
+            val gate = CompletableDeferred<Unit>()
+            val sent = mutableListOf<Int?>()
+            var attempts = 0
+            val channel = object : SecuredChannel {
+                override val descriptor = Channel().descriptor
+                override suspend fun sendData(bytes: ByteArray) {
+                    if (++attempts == 1) { gate.await(); throw SessionBackpressure() }
+                    sent.add(LanRendezvousWire.decode(bytes))
+                }
+            }
+            link.available(channel); yield()
+            link.update(1)
+            link.capacityAvailable(channel.descriptor)
+            gate.complete(Unit)
+            repeat(4) { yield() }
+            assertEquals(listOf(1), sent)
+            assertEquals(2, attempts)
+            link.retired(channel.descriptor)
+            link.capacityAvailable(channel.descriptor); yield()
+            assertEquals(2, attempts)
+        } finally { scope.cancel() }
+    }
     @Test fun repeatedFeatureTrafficDoesNotRearmFailedConnectionAttempts() {
         val gate = LanAttemptGate()
         gate.update("ble", true, true, true, 0)

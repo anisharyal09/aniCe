@@ -289,6 +289,26 @@ final class LanTests: XCTestCase {
     XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0])
     link.retired(channel.descriptor)
   }
+  @MainActor func testRendezvousRetainsCapacityWakeDuringSubmission() async throws {
+    let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
+    var attempts = 0
+    channel.onSendData = { _ in
+      attempts += 1
+      if attempts == 1 {
+        link.update(1)
+        link.capacityAvailable(channel.descriptor)
+        throw SessionBackpressure()
+      }
+    }
+    link.available(channel)
+    for _ in 0..<100 where attempts < 2 { await Task.yield() }
+    XCTAssertEqual(attempts, 2)
+    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0, 1])
+    link.retired(channel.descriptor)
+    link.capacityAvailable(channel.descriptor)
+    await Task.yield()
+    XCTAssertEqual(attempts, 2)
+  }
 
   @MainActor func testTCPPeerLossDetectionDoesNotWaitForDefaultIdleTimeouts() throws {
     let parameters = LanTcpTransport.parameters()
@@ -371,6 +391,30 @@ final class LanTests: XCTestCase {
       XCTAssertThrowsError(try LanFraming.encode(Data(repeating: 0, count: size))) {
         XCTAssertEqual($0 as? SessionFailure, .malformed)
       }
+    }
+  }
+  func testFrameBoundedReadsExcludeIngressWaitFromNextAssembly() throws {
+    for profile: SessionProfile in [.standard, .lanTransfer] {
+      var clock: TimeInterval = 0
+      var framing = LanFraming(now: { clock }, profile: profile)
+      let payload = Data(repeating: 7, count: profile.maximumEnvelope)
+      let wire = try LanFraming.encode(payload, profile: profile)
+      for _ in 0..<3 {
+        XCTAssertEqual(framing.readLimit, 5)
+        XCTAssertTrue(try feed(Data(wire.prefix(2)), into: &framing).isEmpty)
+        XCTAssertEqual(framing.readLimit, 3)
+        XCTAssertTrue(try feed(Data(wire[2..<5]), into: &framing).isEmpty)
+        XCTAssertEqual(framing.readLimit, payload.count)
+        XCTAssertTrue(try feed(Data(wire[5..<6]), into: &framing).isEmpty)
+        XCTAssertEqual(framing.readLimit, payload.count - 1)
+        XCTAssertEqual(try feed(Data(wire.dropFirst(6)), into: &framing), [payload])
+        XCTAssertNil(framing.nextDeadline)
+        clock += 11 // A full ingress queue waits between complete frames.
+        XCTAssertNoThrow(try framing.tick())
+      }
+      _ = try feed(Data(wire.prefix(1)), into: &framing)
+      clock += 10
+      XCTAssertThrowsError(try framing.tick()) { XCTAssertEqual($0 as? SessionFailure, .expired) }
     }
   }
   func testBufferClockIsSampledOnceAndSlicesPreserveOffsets() throws {

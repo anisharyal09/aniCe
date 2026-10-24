@@ -288,9 +288,13 @@ class AndroidGattTransport(
               "profile_count=${profiles.size} complete_profile_count=${complete.size}",
             )
             if (complete.size > 1) {
+              if (setupRecovery.retryMissingLayout()) {
+                rediscoverServices(g)
+                return@dispatch
+              }
               finish(
                 false,
-                "More than one pairing service was found on this Mac. Quit extra copies of aniCe and restart the Mac app.",
+                "Duplicate aniCe Bluetooth services remain after rediscovery. Connection stopped because the service is ambiguous.",
               )
               return@dispatch
             }
@@ -324,25 +328,65 @@ class AndroidGattTransport(
             )
             write = w
             indicate = r
-            require(g.setCharacteristicNotification(r, true))
-            val d =
-              r.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-                ?: throw PairingException()
-            Log.i("aniCe-ble", "subscribe_target epoch=$op characteristic=${r.uuid} instance=${r.instanceId} descriptor=${d.uuid} properties=${r.properties}")
-            stage = "subscribe"
-            progress("subscribe", connectionDeadline)
-            @Suppress("DEPRECATION")
-            val started =
-              if (Build.VERSION.SDK_INT >= 33)
-                g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE) ==
-                  BluetoothStatusCodes.SUCCESS
-              else {
-                d.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                g.writeDescriptor(d)
-              }
-            Log.i("aniCe-pairing", "reply_subscription_submit accepted=$started epoch=$op")
-            if (!started) finish(false, "Could not submit the Mac's Bluetooth reply subscription.", retryCandidate = true)
+            val discovery = s.getCharacteristic(UUID.fromString(BlePayloadCodec.CHARACTERISTIC_UUID))
+            if (discovery == null) {
+              if (setupRecovery.retryMissingLayout()) rediscoverServices(g)
+              else finish(false, "The Mac's Bluetooth discovery channel is unavailable.")
+              return@dispatch
+            }
+            stage = "profile"
+            progress("services", connectionDeadline)
+            require(g.readCharacteristic(discovery))
           }
+
+        @Deprecated("Legacy callback required before API 33")
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
+          if (Build.VERSION.SDK_INT < 33) {
+            @Suppress("DEPRECATION") val value = c.value?.clone() ?: byteArrayOf()
+            profileRead(g, c, value, status)
+          }
+        }
+
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+          profileRead(g, c, value.clone(), status)
+        }
+
+        private fun profileRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) = dispatch(g) {
+          if (stage != "profile" || c.uuid != UUID.fromString(BlePayloadCodec.CHARACTERISTIC_UUID)) return@dispatch
+          if (setupRecovery.afterPendingOperation()) { services(g); return@dispatch }
+          val valid = status == BluetoothGatt.GATT_SUCCESS && try {
+            BlePayloadCodec.decode(value); true
+          } catch (_: IllegalArgumentException) { false }
+          Log.i("aniCe-ble", "profile_read epoch=$op status=$status valid=$valid instance=${c.instanceId}")
+          if (!valid) {
+            if (setupRecovery.retryProfileRead(status)) rediscoverServices(g)
+            else finish(false, "Could not verify the Mac's Bluetooth service layout (GATT status $status).")
+            return@dispatch
+          }
+          subscribe(g)
+        }
+
+        private fun subscribe(g: BluetoothGatt) {
+          val r = requireNotNull(indicate)
+          require(g.setCharacteristicNotification(r, true))
+          val d =
+            r.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+              ?: throw PairingException()
+          Log.i("aniCe-ble", "subscribe_target epoch=$op characteristic=${r.uuid} instance=${r.instanceId} descriptor=${d.uuid} properties=${r.properties}")
+          stage = "subscribe"
+          progress("subscribe", connectionDeadline)
+          @Suppress("DEPRECATION")
+          val started =
+            if (Build.VERSION.SDK_INT >= 33)
+              g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE) ==
+                BluetoothStatusCodes.SUCCESS
+            else {
+              d.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+              g.writeDescriptor(d)
+            }
+          Log.i("aniCe-pairing", "reply_subscription_submit accepted=$started epoch=$op")
+          if (!started) finish(false, "Could not submit the Mac's Bluetooth reply subscription.", retryCandidate = true)
+        }
 
         override fun onServiceChanged(g: BluetoothGatt) =
           dispatch(g) {
@@ -352,6 +396,7 @@ class AndroidGattTransport(
               "mtu",
               "services",
               "layoutRefresh",
+              "profile",
               "subscribe" -> setupRecovery.invalidate()
               else ->
                 finish(
@@ -673,7 +718,7 @@ class AndroidGattTransport(
   private fun failureMessage(): String =
     if (trustedSession) when (stage) {
       "connect" -> "Could not reach your Mac over Bluetooth."
-      "mtu", "services", "layoutRefresh" -> "Could not discover the Mac’s Bluetooth service."
+      "mtu", "services", "layoutRefresh", "profile" -> "Could not discover the Mac’s Bluetooth service."
       "subscribe" -> "Could not subscribe to the Mac’s Bluetooth reply channel."
       "ready" -> "The Bluetooth connection was interrupted."
       else -> "Bluetooth setup was interrupted."

@@ -768,6 +768,7 @@ class MediaController(
         timeout = scope.launch {
             wait((expires - clock()).coerceAtLeast(0))
             if (pending == id) {
+                val outcomeUnknown = submitted
                 pending = null
                 pendingOutput = false
                 pendingVolume = false
@@ -775,7 +776,8 @@ class MediaController(
                 submitted = false
                 outputPreview = null
                 clearIntents()
-                feedback = "Mac volume outcome unknown. It will not be retried."
+                feedback = if (outcomeUnknown) "Mac volume outcome unknown. It will not be retried."
+                    else "Mac volume was not sent. Connection is busy. Try again."
                 links[kind]?.queue?.removeAll { it.commandID == id }
                 presentationChanged()
             }
@@ -838,6 +840,7 @@ class MediaController(
         timeout = scope.launch {
             wait((expires - clock()).coerceAtLeast(0))
             if (pending == id) {
+                val outcomeUnknown = submitted
                 pending = null
                 pendingVolume = false
                 busy = false
@@ -845,7 +848,8 @@ class MediaController(
                 clearSeek()
                 volumePreview = null
                 clearIntents()
-                feedback = "Volume outcome unknown. It will not be retried."
+                feedback = if (outcomeUnknown) "Volume outcome unknown. It will not be retried."
+                    else "Volume was not sent. Connection is busy. Try again."
                 links[kind]?.queue?.removeAll { it.commandID == id }
                 presentationChanged()
             }
@@ -985,12 +989,14 @@ class MediaController(
         timeout = scope.launch {
             wait((expires - clock()).coerceAtLeast(0))
             if (pending == id) {
+                val outcomeUnknown = submitted
                 pending = null
                 busy = false
                 submitted = false
                 clearSeek()
                 clearIntents()
-                feedback = "Action outcome unknown. It will not be retried."
+                feedback = if (outcomeUnknown) "Action outcome unknown. It will not be retried."
+                    else "Action was not sent. Connection is busy. Try again."
                 links[kind]?.queue?.removeAll { it.commandID == id }
                 presentationChanged()
             }
