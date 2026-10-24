@@ -14,8 +14,11 @@ import kotlinx.coroutines.withContext
 internal object SessionTiming {
   @Volatile var sink: ((String) -> Unit)? = null
   fun start(): Long = if (sink == null) 0 else System.nanoTime()
-  fun end(owner: Any, event: String, start: Long, bytes: Int = 0) {
-    if (start != 0L) sink?.invoke("record event=$event owner=${System.identityHashCode(owner)} bytes=$bytes duration_us=${(System.nanoTime() - start) / 1000}")
+  fun end(owner: Any, event: String, start: Long, bytes: Int = 0,
+    profile: Int = 0, direction: String = "none", sequence: ULong = ULong.MAX_VALUE, generation: Long = -1) {
+    if (start == 0L) return
+    val end = System.nanoTime()
+    sink?.invoke("record event=$event owner=${System.identityHashCode(owner)} profile=$profile direction=$direction sequence=${if (sequence == ULong.MAX_VALUE) "none" else sequence.toString()} generation=$generation bytes=$bytes start_ns=$start end_ns=$end duration_us=${(end - start) / 1000}")
   }
 }
 
@@ -281,10 +284,10 @@ internal constructor(
     try { checkTime(generation.get()) } catch (e: SessionException) { close(); throw e }
   }
 
-  private suspend fun check(op: Long) {
+  private suspend fun check(op: Long, direction: String = "maintenance", sequence: ULong = ULong.MAX_VALUE) {
     checkTime(op)
     val validationStart = SessionTiming.start()
-    try { validate() } finally { SessionTiming.end(this, "validation", validationStart) }
+    try { validate() } finally { SessionTiming.end(this, "validation", validationStart, profile = profile.wire, direction = direction, sequence = sequence, generation = op) }
     if (stage == ChannelStage.CLOSED || generation.get() != op)
       throw SessionException(SessionFailure.CANCELLED)
   }
@@ -320,8 +323,9 @@ internal constructor(
       serializeSend {
         val op = generation.get()
         var reserved = false
+        val recordSequence = sent
         try {
-          check(op)
+          check(op, "send", recordSequence)
           if (plaintext.size > profile.maximumPlaintext || (kind != RecordKind.DATA && plaintext.isNotEmpty()))
             throw SessionException(SessionFailure.MALFORMED)
           val permitted =
@@ -345,13 +349,15 @@ internal constructor(
                 reserved = true
               } // Burn before invoking encryption; failures are terminal.
             }
-          val record = sendCipher.seal(kind, sequence, plaintext, profile)
+          val sealStart = SessionTiming.start()
+          val record = try { sendCipher.seal(kind, sequence, plaintext, profile) }
+          finally { SessionTiming.end(this, "seal", sealStart, plaintext.size, profile.wire, "send", sequence, op) }
           checkTime(op)
           val submissionStart = SessionTiming.start()
-          try { submit(record) } finally { SessionTiming.end(this, "submission", submissionStart, record.size) }
+          try { submit(record) } finally { SessionTiming.end(this, "submission", submissionStart, record.size, profile.wire, "send", sequence, op) }
           // Native validation runs before sealing and after awaited submission; the generation and
           // deadline fence bracketing encryption is check(op) above and checkTime(op) here.
-          check(op)
+          check(op, "send", recordSequence)
           transition(op) {
             activity = now()
             if (kind == RecordKind.READY_ACK) stage = ChannelStage.SECURED
@@ -381,10 +387,10 @@ internal constructor(
             throw SessionException(SessionFailure.EXPIRED)
           }
           val decodeStart = SessionTiming.start()
-          val result = receiveCipher.open(received, record, profile)
-          SessionTiming.end(this, "open", decodeStart, record.size)
+          val result = try { receiveCipher.open(received, record, profile) }
+          finally { SessionTiming.end(this, "open", decodeStart, record.size, profile.wire, "receive", received, op) }
           // Native identity/trust validation gates delivery after synchronous tag verification.
-          check(op)
+          check(op, "receive", received)
           val allowed =
             when (result.first) {
               RecordKind.READY -> responder && stage == ChannelStage.WAITING

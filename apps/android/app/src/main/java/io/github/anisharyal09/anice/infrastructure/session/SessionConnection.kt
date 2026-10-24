@@ -2,10 +2,74 @@
 // Owns authenticated envelope ordering and deadline-driven transport-independent session maintenance.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** BLE-independent ordering owner; queues live in the transport, never in authentication. */
+// Only admission waiters are retained here; callers keep plaintext and SecureSession owns sealing.
+internal class SessionDataAdmission {
+  private class Waiter(val bulk: Boolean) {
+    val ready = CompletableDeferred<Unit>()
+    var granted = false
+  }
+  private val lock = Any()
+  private val waiters = mutableListOf<Waiter>()
+  private var active = false
+  private var closed = false
+  private var interactiveTurns = 0
+  internal val pendingCount get() = synchronized(lock) { waiters.size }
+
+  suspend fun run(bulk: Boolean, action: suspend () -> Unit) {
+    currentCoroutineContext().ensureActive()
+    val waiter = synchronized(lock) {
+      if (closed) throw SessionException(SessionFailure.CANCELLED)
+      if (!active) { active = true; null } else {
+        if (waiters.size >= 8) throw SessionBackpressure()
+        Waiter(bulk).also { waiters.add(it) }
+      }
+    }
+    if (waiter != null) {
+      try { waiter.ready.await() } catch (error: CancellationException) {
+        val next = synchronized(lock) {
+          if (!waiters.remove(waiter) && waiter.granted) releaseLocked() else null
+        }
+        next?.ready?.complete(Unit)
+        throw error
+      }
+    }
+    try {
+      currentCoroutineContext().ensureActive()
+      synchronized(lock) { if (closed) throw SessionException(SessionFailure.CANCELLED) }
+      action()
+    } finally {
+      val next = synchronized(lock) { releaseLocked() }
+      next?.ready?.complete(Unit)
+    }
+  }
+  private fun releaseLocked(): Waiter? {
+    if (waiters.isEmpty()) { active = false; interactiveTurns = 0; return null }
+    // Four small-record turns bound bulk starvation; classification uses size until explicit feature priority exists.
+    val bulk = waiters.indexOfFirst { it.bulk }
+    val interactive = waiters.indexOfFirst { !it.bulk }
+    val index = if (interactive < 0 || interactiveTurns >= 4 && bulk >= 0) bulk else interactive
+    return waiters.removeAt(index).also {
+      it.granted = true
+      interactiveTurns = if (it.bulk) 0 else minOf(4, interactiveTurns + 1)
+    }
+  }
+  fun close() {
+    val pending = synchronized(lock) {
+      closed = true
+      waiters.toList().also { waiters.clear() }
+    }
+    pending.forEach { it.ready.completeExceptionally(SessionException(SessionFailure.CANCELLED)) }
+  }
+}
+
+/** BLE-independent ordering owner; sealed record queues remain in the transport. */
 class SessionConnection(
   private val handshake: SessionHandshakeEngine,
   private val responder: Boolean,
@@ -140,11 +204,10 @@ class SessionConnection(
         throw e
       } finally { changed() }
     }
-    // Session control has already been flushed and the lock is released, so a slow or failing
-    // application handler can no longer hold up maintenance or the next record.
+    // Application delivery releases the maintenance lock; transport callers still await it in record order.
     delivery?.let {
       val deliveryStart = SessionTiming.start()
-      try { data(it) } finally { SessionTiming.end(this, "delivery", deliveryStart, it.size) }
+      try { data(it) } finally { SessionTiming.end(this, "delivery", deliveryStart, it.size, profile = profile.wire, direction = "receive") }
     }
   }
 
@@ -170,24 +233,19 @@ class SessionConnection(
     }
   }
 
-  private val sendOperation = Mutex()
+  private val dataAdmission = SessionDataAdmission()
 
-  private suspend fun <T> applicationOperation(block: suspend () -> T): T {
-    if (!sendOperation.tryLock()) throw SessionBackpressure()
-    var refused = false
-    try {
-      return block()
-    } catch (error: SessionBackpressure) {
-      refused = true
-      throw error
-    } finally {
-      sendOperation.unlock()
-      if (!refused) changed()
+  val applicationAvailable get() = !closed && channel != null && deadline == 0L && liveness?.renewalReason == null
+  suspend fun sendData(bytes: ByteArray) {
+    val admissionStart = SessionTiming.start()
+    dataAdmission.run(bytes.size > SessionProfile.STANDARD.maximumPlaintext) {
+      SessionTiming.end(this, "admission", admissionStart, bytes.size, profile = profile.wire, direction = "send")
+      sendAdmittedData(bytes)
     }
   }
 
-  val applicationAvailable get() = !closed && channel != null && deadline == 0L && !sendOperation.isLocked && liveness?.renewalReason == null
-  suspend fun sendData(bytes: ByteArray) = applicationOperation {
+  private suspend fun sendAdmittedData(bytes: ByteArray) {
+    var refused = false
     try {
       // Receive and maintenance also flush controls; pending/issuing/submitted share their serializer.
       val ch = operation.withLock {
@@ -200,11 +258,12 @@ class SessionConnection(
       ch.send(RecordKind.DATA, bytes)
       operation.withLock { requireOpen(); liveness?.activity(now()) }
     } catch (e: SessionBackpressure) {
+      refused = true
       throw e
     } catch (e: Exception) {
       close()
       throw e
-    }
+    } finally { if (!refused) changed() }
   }
 
   @Volatile internal var maintenanceRuns = 0L
@@ -265,6 +324,7 @@ class SessionConnection(
   fun retire() =
     synchronized(ownership) {
       closed = true
+      dataAdmission.close()
       expiration = expiration ?: channel?.expiration
       channel?.close()
       channel = null

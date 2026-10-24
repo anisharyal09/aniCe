@@ -671,6 +671,7 @@ class LanSessionController(private val app: AniCeApplication,
             try { withContext(Dispatchers.IO) { engine.sendData(bytes) } }
             catch (error: SessionBackpressure) { throw error }
             catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException && !engine.isClosed) throw error
                 // A closed engine has no future maintenance deadline; its owner must retire it now.
                 if (token == channelToken && connection === engine) finish(error, engine)
                 throw error

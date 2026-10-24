@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
+
 - LAN frame-assembly timeout diagnostics include profile and received/expected byte counts.
 
 - Messages provides native SMS notifications with inline Reply, paged phone conversations and history, bounded phone-side search and optional SIM selection. Per-phone notification, sound and preview controls are shared by Settings and the panel. Provisional replies use wall-clock timestamps and remain separate from history until confirmed; known provider identities and send-queue bounds prevent unrelated identical replies from merging. Local submit/receive order survives provider refreshes and carrier clock differences. Content remains in memory and clears with the last secured link.

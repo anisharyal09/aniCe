@@ -95,6 +95,7 @@ import OSLog
     do { try await connection.sendData(bytes) }
     catch is SessionBackpressure { throw SessionBackpressure() }
     catch {
+      if error is CancellationError, await !connection.isClosed { throw error }
       if channelToken == token { failCandidate(error) }
       throw error
     }

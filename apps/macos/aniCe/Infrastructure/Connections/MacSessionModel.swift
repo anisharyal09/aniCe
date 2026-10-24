@@ -62,6 +62,7 @@ struct SessionStartupRecovery {
     do { try await connection.sendData(bytes) }
     catch is SessionBackpressure { throw SessionBackpressure() }
     catch {
+      if error is CancellationError, await !connection.isClosed { throw error }
       if channelToken == token {
         let expiration = await connection.expiration
         let peerClosed = await connection.closedByPeer

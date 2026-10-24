@@ -106,7 +106,10 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                         try {
                             for (envelope in queue) {
                                 val deliveryStarted = if (profile != SessionProfile.STANDARD) System.nanoTime() else 0L
-                                deliver(envelope)
+                                val deliveryStart = SessionTiming.start()
+                                try { deliver(envelope) } finally {
+                                    SessionTiming.end(this@AndroidLanTransport, "ingress_delivery", deliveryStart, envelope.size, profile = profile.wire, direction = "receive")
+                                }
                                 if (profile != SessionProfile.STANDARD) deliveryNanos += System.nanoTime() - deliveryStarted
                             }
                         } catch (error: Throwable) {
@@ -142,7 +145,12 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                         while (offset < count) {
                             val envelope = framing.feed(buffer, offset, count - offset, receivedAt)
                             offset += framing.consumed
-                            if (envelope != null) queue.send(envelope)
+                            if (envelope != null) {
+                                val admissionStart = SessionTiming.start()
+                                try { queue.send(envelope) } finally {
+                                    SessionTiming.end(this@AndroidLanTransport, "ingress_backpressure", admissionStart, envelope.size, profile = profile.wire, direction = "receive")
+                                }
+                            }
                         }
                     }
                 } catch (error: Exception) {

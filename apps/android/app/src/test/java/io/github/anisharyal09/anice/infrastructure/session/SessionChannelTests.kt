@@ -23,6 +23,31 @@ class SessionChannelTests {
     }
   }
 
+  @Test fun recordTimingCorrelatesStagesAndRetainsFailedAuthenticationTiming() = runBlocking {
+    val lines = java.util.Collections.synchronizedList(mutableListOf<String>())
+    val previous = SessionTiming.sink
+    val ch = channel()
+    try {
+      SessionTiming.sink = { lines.add(it) }
+      ch.send(RecordKind.READY)
+      val sent = lines.toList()
+      assertEquals(2, sent.count { it.contains("event=validation ") })
+      assertTrue(sent.any { it.contains("event=seal ") })
+      assertTrue(sent.any { it.contains("event=submission ") })
+      assertTrue(sent.all { it.contains("profile=1 direction=send sequence=0 generation=0 ") })
+      assertTrue(sent.all { it.contains("start_ns=") && it.contains("end_ns=") })
+      lines.clear()
+      rejects(SessionFailure.MALFORMED) { ch.receive(byteArrayOf()) }
+      assertEquals(1, lines.size)
+      assertTrue(lines.single().contains("event=open "))
+      assertTrue(lines.single().contains("profile=1 direction=receive sequence=0 generation=0 "))
+      assertEquals(0uL, ch.received)
+      assertEquals(ChannelStage.CLOSED, ch.stage)
+      SessionTiming.sink = null
+      assertEquals(0L, SessionTiming.start())
+    } finally { SessionTiming.sink = previous; ch.close() }
+  }
+
   @Test fun nativeRevocationIsCheckedBeforeDeliveryWithoutAdvancingCounter() = runBlocking {
     var revoked = false
     var loads = 0

@@ -554,6 +554,7 @@ class SessionController(application: Application) {
             try { withContext(Dispatchers.IO) { engine.sendData(bytes) } }
             catch (error: SessionBackpressure) { throw error }
             catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException && !engine.isClosed) throw error
                 android.util.Log.i("aniCe-ble", "DATA submission failed type=${error.javaClass.simpleName}", error)
                 if (token == channelToken && connection === engine) finish(error, engine)
                 throw error

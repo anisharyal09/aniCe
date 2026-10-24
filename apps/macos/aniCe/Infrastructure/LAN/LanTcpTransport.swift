@@ -134,7 +134,11 @@ actor LanTcpTransport {
     do {
       while let bytes = await ingress.pop() {
         guard let deliver else { return }
-        try await deliver(bytes)
+        let deliveryStart = SessionTiming.start()
+        do {
+          defer { SessionTiming.end(self, "ingress_delivery", deliveryStart, bytes: bytes.count, profile: profile.rawValue, direction: "receive") }
+          try await deliver(bytes)
+        }
       }
     } catch { fail(error) }
   }
@@ -237,7 +241,11 @@ actor LanTcpTransport {
           // Reading must not wait on delivery: the previous shape held the socket unread for the whole
           // decode, native validation and actor hop of every record, so TCP backpressure amplified
           // each stall. Only a full hand-off suspends the reader.
-          if let frame { await ingress.push(frame) }
+          if let frame {
+            let admissionStart = SessionTiming.start()
+            await ingress.push(frame)
+            SessionTiming.end(self, "ingress_backpressure", admissionStart, bytes: frame.count, profile: profile.rawValue, direction: "receive")
+          }
         }
       }
       guard !closed else { return }

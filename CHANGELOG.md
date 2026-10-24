@@ -10,6 +10,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
+
 - Connection diagnostics distinguish incomplete LAN frames by profile and byte counts; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
 
 - Linux CI for shared protocol and Android host checks, with pinned actions, dependency caches and failure artifacts. Verification writes isolated run reports under `build/reports/verification/` and emits GitHub error annotations; structure and Android native-build checks support Linux hosts.
