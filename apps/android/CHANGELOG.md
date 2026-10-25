@@ -27,6 +27,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Resolve LAN services during the bounded browse and stream at most eight deduplicated endpoints into authentication. Stop remaining discovery on selected-peer secured readiness; route producer failures through connection error handling, fence lost services and late callbacks, serialize legacy resolution, and release browse resources on consumer exit, cancellation or deadline.
+
 - Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
 
 - LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline. Playback and volume actions that expire before submission report that they were not sent; submitted actions with missing results remain uncertain and are never replayed.

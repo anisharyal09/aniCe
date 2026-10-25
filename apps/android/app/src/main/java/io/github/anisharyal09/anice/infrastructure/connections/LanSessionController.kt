@@ -244,7 +244,7 @@ class LanSessionController(private val app: AniCeApplication,
         automaticAttempt = automatically
         selected = peer
         state = ConnectionState.CONNECTING
-        status = "Finding your Mac (includes a 15-second browse)…"
+        status = "Finding your Mac…"
         receivedChecks = 0
         val op = generation
         worker =
@@ -330,201 +330,200 @@ class LanSessionController(private val app: AniCeApplication,
                     )
                     watching = callback
                     val deadline = SystemClock.elapsedRealtime() + 90000
-                    val endpoints =
-                        withTimeout(90000) {
-                            discovery.discover(network) { networks.getLinkProperties(network) }
-                        }
-                    if (endpoints.isEmpty())
-                        error(
-                            "No local-network connection was found. Check Allow connections, network permissions and the shared Wi-Fi network."
-                        )
-                    var lastError: Exception? = null
-                    for (endpoint in endpoints) {
-                        ensureActive()
-                        if (op != generation) return@launch
-                        val remaining = deadline - SystemClock.elapsedRealtime()
-                        if (remaining <= 0) break
-                        val maintenanceEvents = SessionMaintenance()
-                        val tcp = AndroidLanTransport(scope, endpoint.profile) { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } }
-                        transport = tcp
-                        try {
-                            withTimeout(remaining) { tcp.connect(endpoint) }
-                        } catch (error: TimeoutCancellationException) {
-                            tcp.close()
-                            lastError = error
-                            continue
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: java.io.IOException) {
-                            tcp.close()
-                            lastError = error
-                            continue
-                        }
-                        // Identity/storage/signing failures terminate discovery instead of probing
-                        // more peers.
-                        val handshake =
-                            withContext(Dispatchers.IO) {
-                                SessionHandshakeEngine.initiator(
-                                    app.identityService,
-                                    app.trustStore,
-                                    target,
-                                    SystemClock::elapsedRealtime,
-                                )
+                    discovery.endpoints(network) { networks.getLinkProperties(network) }.consumeLanEndpoints { endpoints ->
+                        var lastError: Exception? = null
+                        var foundEndpoint = false
+                        for (endpoint in endpoints) {
+                            foundEndpoint = true
+                            ensureActive()
+                            if (op != generation) return@consumeLanEndpoints
+                            val remaining = deadline - SystemClock.elapsedRealtime()
+                            if (remaining <= 0) break
+                            val maintenanceEvents = SessionMaintenance()
+                            val tcp = AndroidLanTransport(scope, endpoint.profile) { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } }
+                            transport = tcp
+                            try {
+                                withTimeout(remaining) { tcp.connect(endpoint) }
+                            } catch (error: TimeoutCancellationException) {
+                                tcp.close()
+                                lastError = error
+                                continue
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: java.io.IOException) {
+                                tcp.close()
+                                lastError = error
+                                continue
                             }
-                        if (op != generation) {
-                            handshake.close()
-                            return@launch
-                        }
-                        val signal = CompletableDeferred<Unit>()
-                        val terminal = CompletableDeferred<Exception>()
-                        ready = signal
-                        val engine =
-                            SessionConnection(
-                                handshake,
-                                false,
-                                { bytes -> op == generation && tcp.hasCapacity(bytes) },
-                                { bytes ->
-                                    if (op != generation)
-                                        throw SessionException(SessionFailure.CANCELLED)
-                                    tcp.submit(bytes)
-                                },
-                                { bytes ->
-                                    val handled =
-                                        if (op == generation)
-                                            withContext(Dispatchers.Main.immediate) {
-                                                if (op == generation) app.features.handle("lan", channelToken, bytes)
-                                                else DataHandling.DISCARDED
-                                            }
-                                        else DataHandling.UNRECOGNIZED
-                                    if (
-                                        op == generation &&
-                                            handled == DataHandling.UNRECOGNIZED &&
-                                            bytes.contentEquals(SessionController.CHECK)
-                                    ) {
-                                        withContext(Dispatchers.Main.immediate) {
-                                            if (op == generation) {
-                                                receivedChecks++
-                                                status = "Local-network connection check received."
-                                            }
-                                        }
-                                    }
-                                },
-                                {
-                                    withContext(Dispatchers.Main.immediate) {
-                                        if(op==generation) { tcp.markSecured(); state=ConnectionState.SECURED; publishChannel() }
-                                    }
-                                    signal.complete(Unit)
-                                },
-                                controls = true,
-                                now = { SystemClock.elapsedRealtime() },
-                                changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } },
-                                profile = endpoint.profile,
-                                drain = { withContext(Dispatchers.Main.immediate) {
-                                    if (op == generation) app.features.drain("lan", channelToken)
-                                } },
-                            )
-                        connection = engine
-                        receiver =
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    tcp.receive(drained = { withContext(Dispatchers.Main.immediate) {
-                                        if (op == generation && connection === engine) app.features.drain("lan", channelToken)
-                                    } }) { bytes ->
-                                        engine.receive(bytes)
-                                        if (terminal.isCompleted) throw terminal.await()
-                                        if (engine.isClosed)
-                                            throw java.io.EOFException(
-                                                "Your Mac ended the local-network connection."
-                                            )
-                                    }
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    terminal.complete(error)
-                                    signal.completeExceptionally(error)
-                                    withContext(Dispatchers.Main.immediate) {
+                            // Identity/storage/signing failures terminate discovery instead of probing
+                            // more peers.
+                            val handshake =
+                                withContext(Dispatchers.IO) {
+                                    SessionHandshakeEngine.initiator(
+                                        app.identityService,
+                                        app.trustStore,
+                                        target,
+                                        SystemClock::elapsedRealtime,
+                                    )
+                                }
+                            if (op != generation) {
+                                handshake.close()
+                                return@consumeLanEndpoints
+                            }
+                            val signal = CompletableDeferred<Unit>()
+                            val terminal = CompletableDeferred<Exception>()
+                            ready = signal
+                            val engine =
+                                SessionConnection(
+                                    handshake,
+                                    false,
+                                    { bytes -> op == generation && tcp.hasCapacity(bytes) },
+                                    { bytes ->
+                                        if (op != generation)
+                                            throw SessionException(SessionFailure.CANCELLED)
+                                        tcp.submit(bytes)
+                                    },
+                                    { bytes ->
+                                        val handled =
+                                            if (op == generation)
+                                                withContext(Dispatchers.Main.immediate) {
+                                                    if (op == generation) app.features.handle("lan", channelToken, bytes)
+                                                    else DataHandling.DISCARDED
+                                                }
+                                            else DataHandling.UNRECOGNIZED
                                         if (
                                             op == generation &&
-                                                connection === engine &&
-                                                state == ConnectionState.SECURED
-                                        )
-                                            finish(error, engine)
-                                    }
-                                }
-                            }
-                        maintenance =
-                            scope.launch(Dispatchers.IO) {
-                                var controlWork: Job? = null
-                                suspend fun failed(error: Exception) {
-                                    terminal.complete(error)
-                                    signal.completeExceptionally(error)
-                                    withContext(Dispatchers.Main.immediate) {
-                                        if (op == generation && connection === engine && state == ConnectionState.SECURED)
-                                            finish(error, engine)
-                                    }
-                                }
-                                try {
-                                    while (isActive && op == generation) {
-                                        val requested = maintenanceEvents.await(
-                                            engine.nextDeadline(controlWork?.isActive != true), SystemClock::elapsedRealtime)
-                                        if (op != generation) break
-                                        engine.checkDeadlines()
-                                        if (requested) {
-                                            if (controlWork?.isActive == true) maintenanceEvents.deferWork()
-                                            else controlWork = launch {
-                                                try { engine.tick() }
-                                                catch (error: CancellationException) { throw error }
-                                                catch (error: Exception) { failed(error) }
-                                            }.also { work -> work.invokeOnCompletion { maintenanceEvents.resnapshot() } }
+                                                handled == DataHandling.UNRECOGNIZED &&
+                                                bytes.contentEquals(SessionController.CHECK)
+                                        ) {
+                                            withContext(Dispatchers.Main.immediate) {
+                                                if (op == generation) {
+                                                    receivedChecks++
+                                                    status = "Local-network connection check received."
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        withContext(Dispatchers.Main.immediate) {
+                                            if(op==generation) { tcp.markSecured(); state=ConnectionState.SECURED; publishChannel() }
+                                        }
+                                        signal.complete(Unit)
+                                    },
+                                    controls = true,
+                                    now = { SystemClock.elapsedRealtime() },
+                                    changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } },
+                                    profile = endpoint.profile,
+                                    drain = { withContext(Dispatchers.Main.immediate) {
+                                        if (op == generation) app.features.drain("lan", channelToken)
+                                    } },
+                                )
+                            connection = engine
+                            receiver =
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        tcp.receive(drained = { withContext(Dispatchers.Main.immediate) {
+                                            if (op == generation && connection === engine) app.features.drain("lan", channelToken)
+                                        } }) { bytes ->
+                                            engine.receive(bytes)
+                                            if (terminal.isCompleted) throw terminal.await()
+                                            if (engine.isClosed)
+                                                throw java.io.EOFException(
+                                                    "Your Mac ended the local-network connection."
+                                                )
+                                        }
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        terminal.complete(error)
+                                        signal.completeExceptionally(error)
+                                        withContext(Dispatchers.Main.immediate) {
+                                            if (
+                                                op == generation &&
+                                                    connection === engine &&
+                                                    state == ConnectionState.SECURED
+                                            )
+                                                finish(error, engine)
                                         }
                                     }
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    failed(error)
                                 }
+                            maintenance =
+                                scope.launch(Dispatchers.IO) {
+                                    var controlWork: Job? = null
+                                    suspend fun failed(error: Exception) {
+                                        terminal.complete(error)
+                                        signal.completeExceptionally(error)
+                                        withContext(Dispatchers.Main.immediate) {
+                                            if (op == generation && connection === engine && state == ConnectionState.SECURED)
+                                                finish(error, engine)
+                                        }
+                                    }
+                                    try {
+                                        while (isActive && op == generation) {
+                                            val requested = maintenanceEvents.await(
+                                                engine.nextDeadline(controlWork?.isActive != true), SystemClock::elapsedRealtime)
+                                            if (op != generation) break
+                                            engine.checkDeadlines()
+                                            if (requested) {
+                                                if (controlWork?.isActive == true) maintenanceEvents.deferWork()
+                                                else controlWork = launch {
+                                                    try { engine.tick() }
+                                                    catch (error: CancellationException) { throw error }
+                                                    catch (error: Exception) { failed(error) }
+                                                }.also { work -> work.invokeOnCompletion { maintenanceEvents.resnapshot() } }
+                                            }
+                                        }
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        failed(error)
+                                    }
+                                }
+                            try {
+                                withTimeout(
+                                    minOf(
+                                        40000,
+                                        (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1),
+                                    )
+                                ) {
+                                    withContext(Dispatchers.IO) { engine.start() }
+                                    signal.await()
+                                }
+                                if (op != generation) return@consumeLanEndpoints
+                                if (terminal.isCompleted) throw terminal.await()
+                                if (engine.isClosed)
+                                    throw java.io.EOFException(
+                                        "Local-network connection ended during confirmation."
+                                    )
+                                state = ConnectionState.SECURED
+                                publishChannel()
+                                status = ""
+                                // Resolution is anonymous; selected-peer readiness releases any remaining browse.
+                                endpoints.cancel()
+                                awaitCancellation()
+                            } catch (error: TimeoutCancellationException) {
+                                lastError = error
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: SessionException) {
+                                lastError = error
+                            } catch (error: java.io.IOException) {
+                                lastError = error
                             }
-                        try {
-                            withTimeout(
-                                minOf(
-                                    40000,
-                                    (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1),
-                                )
-                            ) {
-                                withContext(Dispatchers.IO) { engine.start() }
-                                signal.await()
-                            }
-                            if (op != generation) return@launch
-                            if (terminal.isCompleted) throw terminal.await()
-                            if (engine.isClosed)
-                                throw java.io.EOFException(
-                                    "Local-network connection ended during confirmation."
-                                )
-                            state = ConnectionState.SECURED
-                            publishChannel()
-                            status = ""
-                            awaitCancellation()
-                        } catch (error: TimeoutCancellationException) {
-                            lastError = error
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: SessionException) {
-                            lastError = error
-                        } catch (error: java.io.IOException) {
-                            lastError = error
+                            receiver?.cancel()
+                            maintenance?.cancel()
+                            tcp.close()
+                            engine.retire()
+                            withContext(NonCancellable + Dispatchers.IO) { engine.close() }
+                            app.features.retired("lan")
+                            connection = null
                         }
-                        receiver?.cancel()
-                        maintenance?.cancel()
-                        tcp.close()
-                        engine.retire()
-                        withContext(NonCancellable + Dispatchers.IO) { engine.close() }
-                        app.features.retired("lan")
-                        connection = null
+                        throw lastError
+                            ?: IllegalStateException(
+                                if (foundEndpoint) "No endpoint authenticated as your selected Mac. Retry."
+                                else "No local-network connection was found. Check Allow connections, network permissions and the shared Wi-Fi network."
+                            )
                     }
-                    throw lastError
-                        ?: IllegalStateException(
-                            "No endpoint authenticated as your selected Mac. Retry."
-                        )
                 } catch (error: TimeoutCancellationException) {
                     if (op == generation)
                         failed("Local-network discovery or authentication timed out. Retry.")

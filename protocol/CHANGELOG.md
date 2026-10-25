@@ -25,6 +25,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Changed
 
+- Document overlapping Android LAN discovery, serial resolution and endpoint authentication under the existing 15-second browse and 90-second connection bounds; framing and authentication contracts are unchanged.
+
 - Add LAN-only transfer capability 3 for 262,016-byte chunks within the existing 262,144-byte authenticated DATA record; advertise a capability-2 baseline first so older peers retain support, with standard/BLE limits unchanged.
 
 - Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.

@@ -238,7 +238,7 @@ class LanNativeTest {
             receiver =
                 launch(Dispatchers.IO) {
                     try {
-                        socket.receive(channel::receive)
+                        socket.receive(deliver = channel::receive)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (error: Exception) {

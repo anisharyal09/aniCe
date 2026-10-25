@@ -39,6 +39,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Start Android LAN authentication as discovery candidates resolve, removing the fixed browse wait while retaining bounded discovery and selected-peer authentication.
+
 - Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
 
 - Retain the Mac Bluetooth service database across radio power-off and preserve LAN rendezvous capacity wakeups on both platforms. LAN reads stop at frame boundaries so ingress backpressure cannot consume the next frame's assembly deadline. Android distinguishes unsent media actions from submitted actions with unknown outcomes.
