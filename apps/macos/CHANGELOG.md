@@ -53,6 +53,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Recover large LAN chunks after a slow-path fallback even when continuous traffic keeps the small window occupied. Drain outstanding bytes under a one-chunk local budget before timing a fresh probe. Exclude source preparation and fully drained idle time from slow-path classification while retaining submission-to-ACK timing; log credit-only window changes.
+
+- Re-arm ACK coalescing for newer written bytes when their timer expires during a pending submission. Clear credit continuation ownership before resumption; failed ACK submissions still wait for an external capacity event.
+
 - Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
 
 - Defer LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.

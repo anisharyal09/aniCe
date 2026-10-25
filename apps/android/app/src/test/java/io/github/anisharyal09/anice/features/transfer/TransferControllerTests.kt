@@ -51,15 +51,144 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun lanProbeExcludesSourcePreparationButCountsTheWholeSubmission() {
+        for (latency in listOf(100L, 101L)) {
+            val window = TransferSendWindow(262016, 8, true, 0)
+            window.beginSubmission(3000)
+            window.beginSubmission(3090)
+            window.acknowledged(3000 + latency, fullyConfirmed = true)
+            window.advance()
+            assertEquals(if (latency == 100L) 262016L else 4096L, window.chunkBytes)
+        }
+        val fast = TransferSendWindow(262016, 8, true, 0)
+        fast.beginSubmission(0)
+        fast.acknowledged(50, fullyConfirmed = true); fast.advance()
+        fast.beginSubmission(5000, windowEmpty = true)
+        fast.acknowledged(5050, fullyConfirmed = true); fast.advance()
+        assertEquals("Source idle time with no outstanding bytes cannot mark LAN slow", 262016L, fast.chunkBytes)
+        fast.beginSubmission(6000, windowEmpty = false)
+        fast.acknowledged(6051, fullyConfirmed = false); fast.advance()
+        assertEquals("An outstanding-data stall must still shrink the window", 4096L, fast.chunkBytes)
+        val resumed = TransferSendWindow(262016, 8, true, 0)
+        resumed.beginSubmission(3000)
+        resumed.acknowledged(3101, fullyConfirmed = true); resumed.advance()
+        resumed.acknowledged(7999, fullyConfirmed = true); resumed.advance()
+        assertEquals("Recovery interval starts at actual probe submission", 8192L, resumed.creditBytes)
+        resumed.acknowledged(8000, fullyConfirmed = true); resumed.advance()
+        assertEquals(4096L, resumed.creditBytes)
+        resumed.beginSubmission(11000)
+        resumed.acknowledged(11050, fullyConfirmed = false); resumed.advance()
+        assertEquals("Partial confirmation must not open a large window", 4096L, resumed.creditBytes)
+        resumed.acknowledged(11101, fullyConfirmed = true); resumed.advance()
+        assertEquals("A slow retry probe must remain constrained", 8192L, resumed.creditBytes)
+    }
+
+    @Test fun sustainedSmallChunkTrafficDrainsForAFreshLanProbe() = runBlocking {
+        val now = java.util.concurrent.atomic.AtomicLong(0)
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { now.get() })
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        val source = File(tempDir, "requalify.bin").apply { writeBytes(ByteArray(10 * 262016)) }
+        fun chunks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 5L }
+        suspend fun awaitChunks(count: Int) { withTimeout(3000) { while (chunks().size < count) delay(5) } }
+        try {
+            owner.sendFiles(listOf(source))
+            withTimeout(3000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            awaitChunks(1)
+            now.set(101)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
+            awaitChunks(3)
+            repeat(3) { index ->
+                now.set(200L + index * 100)
+                owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, (index + 2) * 4096L).encode())
+                awaitChunks(index + 4)
+            }
+            // One ACK per chunk keeps the two-chunk pipeline occupied indefinitely without a drain.
+            now.set(5000)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 5 * 4096L).encode())
+            delay(60)
+            assertEquals("Requalification must stop replacing acknowledged chunks", 6, chunks().size)
+            now.set(5010)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 6 * 4096L).encode())
+            awaitChunks(7)
+            assertEquals(4096, chunks().last().bytes(3).size)
+            now.set(5060)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 7 * 4096L).encode())
+            awaitChunks(8)
+            assertEquals(262016, chunks()[7].bytes(3).size)
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun pendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() = runBlocking {
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        val (batch, file) = offered(owner, channel, 32768)
+        fun acks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 6L }
+        channel.onSendData = { bytes ->
+            if (TransferMessage.decode(bytes, 262016)?.kind == 6L && acks().size == 1) release.await()
+        }
+        try {
+            owner.acceptIncomingOffer(tempDir)
+            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(4096)).encode(262016))
+            withTimeout(1000) { while (acks().isEmpty()) delay(5) }
+            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 4096, ByteArray(4096)).encode(262016))
+            // The second chunk's timer fires while the first ACK is still being submitted.
+            delay(60)
+            assertEquals(1, acks().size)
+            release.complete(Unit)
+            withTimeout(1000) { while (acks().size < 2) delay(5) }
+            assertEquals(listOf(4096L, 8192L), acks().map { it.number(2) })
+            delay(60)
+            assertEquals("No ACK polling after credit is drained", 2, acks().size)
+        } finally { release.complete(Unit); owner.dismiss() }
+    }
+
+    @Test fun shrinkingLanWindowRetainsTheReplacementCreditWaiter() = runBlocking {
+        val now = java.util.concurrent.atomic.AtomicLong(0)
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { now.get() })
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        val source = File(tempDir, "shrinking-window.bin").apply { writeBytes(ByteArray(10 * 262016)) }
+        fun chunks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 5L }
+        try {
+            owner.sendFiles(listOf(source))
+            withTimeout(3000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            withTimeout(3000) { while (chunks().isEmpty()) delay(5) }
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
+            withTimeout(3000) { while (chunks().size < 9) delay(5) }
+            delay(60)
+            assertTrue(chunks().drop(1).all { it.bytes(3).size == 262016 })
+            now.set(2000)
+            // This wakes the old large-window waiter, which must register a new small-window wait inline.
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 262016).encode())
+            assertEquals(9, chunks().size)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 8 * 262016).encode())
+            withTimeout(1000) { while (chunks().size < 11) delay(5) }
+            assertTrue(chunks().takeLast(2).all { it.bytes(3).size == 4096 })
+            assertTrue(source.exists())
+        } finally { owner.dismiss() }
+    }
+
     @Test fun constrainedLanRequalifiesOnlyWithADrainedWindowAndANewCompleteProbe() {
         val window = TransferSendWindow(262016, 8, true, 0)
         window.acknowledged(101, fullyConfirmed = true); window.advance()
         window.acknowledged(4999, fullyConfirmed = true); window.advance()
         assertEquals(8192L, window.creditBytes)
-        window.acknowledged(5000, fullyConfirmed = false); window.advance()
-        assertEquals("Outstanding bytes prevent another probe", 8192L, window.creditBytes)
-        window.acknowledged(5000, fullyConfirmed = true)
+        window.acknowledged(5000, fullyConfirmed = false)
         assertEquals("The current source read retains its budget", 8192L, window.creditBytes)
+        window.advance()
+        assertEquals("Drain outstanding bytes before another probe", 4096L, window.creditBytes)
+        window.acknowledged(5000, fullyConfirmed = true)
+        assertEquals(4096L, window.creditBytes)
         window.advance()
         assertEquals(4096L, window.creditBytes)
         window.acknowledged(5090, fullyConfirmed = false); window.advance()

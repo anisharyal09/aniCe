@@ -787,7 +787,7 @@ enum TransferEvent: Equatable {
     fileResultContinuation = nil
     ackTask?.cancel(); ackTask = nil
     ackTimerTask?.cancel(); ackTimerTask = nil
-    creditResume?(); creditResume = nil
+    resumeCredit()
     clearCapacityWaiters()
     resumeTask?.cancel(); resumeTask = nil
     upgradeTask?.cancel(); upgradeTask = nil
@@ -1274,7 +1274,7 @@ enum TransferEvent: Equatable {
     abandonStatus()
     fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
     fileResultContinuation = nil
-    creditResume?(); creditResume = nil
+    resumeCredit()
     clearCapacityWaiters()
     pauseTimerTask?.cancel(); pauseTimerTask = nil
     epoch = UUID()
@@ -1340,7 +1340,7 @@ enum TransferEvent: Equatable {
       self.transferTask?.cancel(); self.transferTask = nil
       self.fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
       self.fileResultContinuation = nil
-      self.creditResume?(); self.creditResume = nil
+      self.resumeCredit()
       self.clearCapacityWaiters()
       self.upgradeTask = nil
       self.epoch = UUID()
@@ -1705,8 +1705,9 @@ enum TransferEvent: Equatable {
       while fileBytesSent < file.size {
         while true {
           let previousChunk = senderChunkBytes
+          let previousCredit = sendCreditBytes
           sendWindow?.advance()
-          if previousChunk != senderChunkBytes {
+          if previousChunk != senderChunkBytes || previousCredit != sendCreditBytes {
             NSLog("aniCe transfer send window: chunk=%lld credit=%lld", senderChunkBytes, sendCreditBytes)
           }
           if hasSendCredit { break }
@@ -1747,6 +1748,7 @@ enum TransferEvent: Equatable {
         }
 
         do {
+          sendWindow?.beginSubmission(ProcessInfo.processInfo.systemUptime, windowEmpty: sentBytes == acknowledgedBytes)
           sentBytes += Int64(chunkData.count)
           try await sendWithBackpressure(encoded)
           guard operation == epoch else { await source.close(); return }
@@ -1834,11 +1836,15 @@ enum TransferEvent: Equatable {
     checkCreditAndResume()
   }
 
+  private func resumeCredit() {
+    // Detach before waking so cleanup cannot clear a successor's credit wait.
+    let waiting = creditResume
+    creditResume = nil
+    waiting?()
+  }
+
   private func checkCreditAndResume() {
-    if hasSendCredit {
-      creditResume?()
-      creditResume = nil
-    }
+    if hasSendCredit { resumeCredit() }
   }
 
   private func handleReject(_ message: TransferMessage) {
@@ -2063,6 +2069,9 @@ enum TransferEvent: Equatable {
           // Failure waits for an external event; only success may drain newer credit.
           if submitted && (unacked >= ackCadence * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes)) {
             self.flushAck()
+          } else if submitted && unacked > 0 {
+            // A coalescing timer may have expired while this ACK was still submitting.
+            self.scheduleAckTimer()
           }
         }
       }
@@ -2390,8 +2399,7 @@ enum TransferEvent: Equatable {
     receiverStorage = nil
     receiverPartFileURL = nil
     Task { await storage?.discard() }
-    creditResume?()
-    creditResume = nil
+    resumeCredit()
     clearCapacityWaiters()
     receiverTotalTransferred = 0
     releaseSleepAssertion()
@@ -2958,10 +2966,13 @@ struct TransferSendWindow {
   let maximumWindow: Int64
   let lan: Bool
   private var probing: Bool
+  private var probeSubmitted = false
   private var constrained = false
   private var lastAcknowledgedAt: TimeInterval
   private var probeStartedAt: TimeInterval
   private var reprobe = false
+  private var drainRequested = false
+  private var draining = false
   private var decision: Bool?
   init(maximumChunk: Int64, maximumWindow: Int64, lan: Bool, started: TimeInterval) {
     self.maximumChunk = maximumChunk; self.maximumWindow = maximumWindow; self.lan = lan
@@ -2970,13 +2981,28 @@ struct TransferSendWindow {
     probeStartedAt = started
   }
   var chunkBytes: Int64 { probing || constrained ? min(4096, maximumChunk) : maximumChunk }
-  var creditBytes: Int64 { chunkBytes * (probing ? 1 : constrained ? min(2, maximumWindow) : maximumWindow) }
+  var creditBytes: Int64 { chunkBytes * (probing || draining ? 1 : constrained ? min(2, maximumWindow) : maximumWindow) }
+  // Source IO and encoding precede submission and cannot measure the path's acknowledgement delay.
+  mutating func beginSubmission(_ now: TimeInterval, windowEmpty: Bool = false) {
+    if probing && !probeSubmitted {
+      lastAcknowledgedAt = now
+      probeStartedAt = now
+      probeSubmitted = true
+    } else if !probing && windowEmpty {
+      lastAcknowledgedAt = now
+    }
+  }
   // Only advancing, correlated ACKs reach this method; duplicates cannot qualify a fast path.
   mutating func acknowledged(_ now: TimeInterval, fullyConfirmed: Bool) {
     if probing && !fullyConfirmed { return }
     let elapsed = now - lastAcknowledgedAt
-    if probing { if decision == nil { decision = elapsed > 0.1 } }
-    else if constrained { if fullyConfirmed && now - probeStartedAt >= 5 { reprobe = true } }
+    // Compare at nanosecond precision rather than floating-point subtraction noise at 100 ms.
+    if probing { if decision == nil { decision = (elapsed * 1_000_000_000).rounded() > 100_000_000 } }
+    else if constrained {
+      if now - probeStartedAt >= 5 {
+        if fullyConfirmed { reprobe = true } else { drainRequested = true }
+      }
+    }
     else if lan && maximumChunk > 4096 && elapsed > 1 { decision = true }
     lastAcknowledgedAt = now
   }
@@ -2984,6 +3010,8 @@ struct TransferSendWindow {
   mutating func advance() {
     if let decision { constrained = decision; probing = false }
     decision = nil
-    if reprobe { probing = true; probeStartedAt = lastAcknowledgedAt; reprobe = false }
+    // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
+    if drainRequested { draining = true; drainRequested = false }
+    if reprobe { probing = true; probeSubmitted = false; draining = false; probeStartedAt = lastAcknowledgedAt; reprobe = false }
   }
 }

@@ -51,6 +51,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Fixed
 
+- Repair transfer credit wakeups and ACK coalescing so window shrinkage and overlapping submissions cannot strand progress. Recover large LAN chunks under continuous traffic and exclude source preparation or fully drained idle time from slow-path classification.
+
 - Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
 
 - Defer macOS LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.

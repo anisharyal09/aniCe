@@ -914,7 +914,7 @@ class TransferController(
         ackJob?.cancel(); ackJob = null
         ackTimerJob?.cancel(); ackTimerJob = null
         fileResultDeferred?.cancel(); fileResultDeferred = null
-        creditDeferred?.complete(Unit); creditDeferred = null
+        resumeCredit()
         resumeJob?.cancel(); resumeJob = null
         upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
@@ -1372,7 +1372,7 @@ class TransferController(
         upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         fileResultDeferred?.cancel(); fileResultDeferred = null
-        creditDeferred?.complete(Unit); creditDeferred = null
+        resumeCredit()
         pauseTimerJob?.cancel(); pauseTimerJob = null
         epoch = UUID.randomUUID()
         val operation = epoch
@@ -1461,7 +1461,7 @@ class TransferController(
                 val lan = channels["lan"] ?: return@withContext
                 transferJob?.cancel(); transferJob = null
                 fileResultDeferred?.cancel(); fileResultDeferred = null
-                creditDeferred?.complete(Unit); creditDeferred = null
+                resumeCredit()
                 epoch = UUID.randomUUID()
                 val operation = epoch
                 activeChannel = lan
@@ -1905,8 +1905,9 @@ class TransferController(
                 while (fileBytesSent < file.size) {
                     while (true) {
                         val previousChunk = senderChunkBytes
+                        val previousCredit = sendCreditBytes
                         sendWindow?.advance()
-                        if (context != null && previousChunk != senderChunkBytes)
+                        if (context != null && (previousChunk != senderChunkBytes || previousCredit != sendCreditBytes))
                             android.util.Log.i("aniCe-transfer", "send window chunk=$senderChunkBytes credit=$sendCreditBytes")
                         if (hasSendCredit) break
                         val deferred = CompletableDeferred<Unit>().also { creditDeferred = it }
@@ -1949,8 +1950,10 @@ class TransferController(
                     )
 
                     try {
+                        val encoded = chunkMsg.encode(chunkLimit(activeChannel?.descriptor))
+                        sendWindow?.beginSubmission(clock(), windowEmpty = sentBytes == acknowledgedBytes)
                         sentBytes += chunkSize
-                        sendWithBackpressure(chunkMsg.encode(chunkLimit(activeChannel?.descriptor)))
+                        sendWithBackpressure(encoded)
                         if (operation != epoch) return
                         fileBytesSent += chunkSize
                         totalTransferred += chunkSize
@@ -2034,11 +2037,15 @@ class TransferController(
         checkCreditAndResume()
     }
 
+    private fun resumeCredit() {
+        // Detach before waking: an immediate dispatcher can register the next waiter inline.
+        val waiting = creditDeferred
+        creditDeferred = null
+        waiting?.complete(Unit)
+    }
+
     private fun checkCreditAndResume() {
-        if (hasSendCredit) {
-            creditDeferred?.complete(Unit)
-            creditDeferred = null
-        }
+        if (hasSendCredit) resumeCredit()
     }
 
     private fun handleReject(message: TransferMessage) {
@@ -2294,6 +2301,9 @@ class TransferController(
                     // Failure waits for an external event; only success may drain newer credit.
                     if (submitted && (unacked >= ackCadence * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes))) {
                         flushAck()
+                    } else if (submitted && unacked > 0) {
+                        // A coalescing timer may have expired while this ACK was still submitting.
+                        scheduleAckTimer()
                     }
                 }
             }
@@ -2614,8 +2624,7 @@ class TransferController(
                 }
             }
         }
-        creditDeferred?.complete(Unit)
-        creditDeferred = null
+        resumeCredit()
         clearCapacityWaiters()
         receiverTotalTransferred = 0L
         onLeaseChanged?.invoke(false)
@@ -2627,23 +2636,40 @@ class TransferController(
 internal class TransferSendWindow(private val maximumChunk: Long, private val maximumWindow: Long,
     private val lan: Boolean, started: Long) {
     private var probing = lan && maximumChunk > 4096
+    private var probeSubmitted = false
     private var constrained = false
     private var lastAcknowledgedAt = started
     private var probeStartedAt = started
     private var reprobe = false
+    private var drainRequested = false
+    private var draining = false
     private var decision: Boolean? = null
     val chunkBytes get() = if (probing || constrained) minOf(4096L, maximumChunk) else maximumChunk
     val creditBytes get() = chunkBytes * when {
-        probing -> 1L
+        probing || draining -> 1L
         constrained -> minOf(2L, maximumWindow)
         else -> maximumWindow
+    }
+    // Source IO and encoding precede submission and cannot measure the path's acknowledgement delay.
+    fun beginSubmission(now: Long, windowEmpty: Boolean = false) {
+        if (probing && !probeSubmitted) {
+            lastAcknowledgedAt = now
+            probeStartedAt = now
+            probeSubmitted = true
+        } else if (!probing && windowEmpty) {
+            lastAcknowledgedAt = now
+        }
     }
     // Only advancing, correlated ACKs reach this method; duplicates cannot qualify a fast path.
     fun acknowledged(now: Long, fullyConfirmed: Boolean) {
         if (probing && !fullyConfirmed) return
         val elapsed = now - lastAcknowledgedAt
         if (probing) { if (decision == null) decision = elapsed > 100 }
-        else if (constrained) { if (fullyConfirmed && now - probeStartedAt >= 5000) reprobe = true }
+        else if (constrained) {
+            if (now - probeStartedAt >= 5000) {
+                if (fullyConfirmed) reprobe = true else drainRequested = true
+            }
+        }
         else if (lan && maximumChunk > 4096 && elapsed > 1000) decision = true
         lastAcknowledgedAt = now
     }
@@ -2651,6 +2677,8 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
     fun advance() {
         decision?.let { constrained = it; probing = false }
         decision = null
-        if (reprobe) { probing = true; probeStartedAt = lastAcknowledgedAt; reprobe = false }
+        // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
+        if (drainRequested) { draining = true; drainRequested = false }
+        if (reprobe) { probing = true; probeSubmitted = false; draining = false; probeStartedAt = lastAcknowledgedAt; reprobe = false }
     }
 }

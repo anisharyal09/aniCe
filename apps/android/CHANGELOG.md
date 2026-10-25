@@ -53,6 +53,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Recover large LAN chunks after a slow-path fallback even when continuous traffic keeps the small window occupied. Drain outstanding bytes under a one-chunk local budget before timing a fresh probe. Exclude source preparation and fully drained idle time from slow-path classification while retaining submission-to-ACK timing; log credit-only window changes.
+
+- Preserve replacement credit waiters when immediate coroutine resumption shrinks the LAN send window. Re-arm ACK coalescing for newer written bytes after a pending ACK succeeds, without retrying failed submissions in a loop.
+
 - Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
 
 - Retire failed authenticated DATA submissions through their BLE/LAN owner while preserving recoverable backpressure and native Bluetooth subscription error statuses.

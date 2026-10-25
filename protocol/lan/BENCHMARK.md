@@ -29,7 +29,7 @@ Keep aniCe visible and the phone unlocked during foreground acceptance. On the A
 
 Application-level file transfer between Mac and Android over Wi-Fi with Bluetooth disconnected:
 - **5 GHz Mobile Hotspot (near-field external AP):**
-  - **Mac → Phone:** 7.0–10.5 MB/s (average ~8.0 MB/s), satisfying the 8 MiB/s acceptance gate.
+  - **Mac → Phone:** 7.0–10.5 MB/s (average ~8.0 MB/s, or ~7.63 MiB/s). The average is below the 8 MiB/s gate (8.39 MB/s).
   - **Phone → Mac:** 3.0–5.2 MB/s (average ~4.0 MB/s).
 - **Attenuated Wi-Fi router (2.4 GHz, 3–5m range):** ~1.0 MB/s symmetric across both directions.
 - **UI & Ingress:** Smooth progress rendering and rolling-window rate tracking; presentation thread starvation and TCP window stalls resolved.

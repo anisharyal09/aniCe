@@ -29,15 +29,83 @@ final class MockSecuredChannel: SecuredChannel {
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
 
+  func testLanProbeExcludesSourcePreparationButCountsTheWholeSubmission() {
+    for latency in [0.1, 0.101] {
+      var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
+      window.beginSubmission(3)
+      window.beginSubmission(3.09)
+      window.acknowledged(3 + latency, fullyConfirmed: true); window.advance()
+      XCTAssertEqual(window.chunkBytes, latency == 0.1 ? 262016 : 4096)
+    }
+    var fast = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
+    fast.beginSubmission(0)
+    fast.acknowledged(0.05, fullyConfirmed: true); fast.advance()
+    fast.beginSubmission(5, windowEmpty: true)
+    fast.acknowledged(5.05, fullyConfirmed: true); fast.advance()
+    XCTAssertEqual(fast.chunkBytes, 262016, "Source idle time with no outstanding bytes cannot mark LAN slow")
+    fast.beginSubmission(6, windowEmpty: false)
+    fast.acknowledged(6.051, fullyConfirmed: false); fast.advance()
+    XCTAssertEqual(fast.chunkBytes, 4096, "An outstanding-data stall must still shrink the window")
+    var resumed = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
+    resumed.beginSubmission(3)
+    resumed.acknowledged(3.101, fullyConfirmed: true); resumed.advance()
+    resumed.acknowledged(7.999, fullyConfirmed: true); resumed.advance()
+    XCTAssertEqual(resumed.creditBytes, 8192, "Recovery interval starts at actual probe submission")
+    resumed.acknowledged(8, fullyConfirmed: true); resumed.advance()
+    XCTAssertEqual(resumed.creditBytes, 4096)
+    resumed.beginSubmission(11)
+    resumed.acknowledged(11.05, fullyConfirmed: false); resumed.advance()
+    XCTAssertEqual(resumed.creditBytes, 4096, "Partial confirmation must not open a large window")
+    resumed.acknowledged(11.101, fullyConfirmed: true); resumed.advance()
+    XCTAssertEqual(resumed.creditBytes, 8192, "A slow retry probe must remain constrained")
+  }
+
+  func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(maximumDataBytes: 262144)
+    let firstAck = expectation(description: "First ACK submission held")
+    let nextAck = expectation(description: "Newer credit acknowledged after submission")
+    var release: CheckedContinuation<Void, Never>?
+    func acks() -> [TransferMessage] {
+      channel.sentData.compactMap { try? TransferMessage.decode($0, maximumChunkBytes: 262016) }.filter { $0.kind == 6 }
+    }
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability(version: 3, maxChunkBytes: 262016, maxWindow: 8).encode(maximumChunkBytes: 262016), on: channel.descriptor)
+    try await offer(owner, channel, size: 32768)
+    guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
+    channel.onSendData = { bytes in
+      guard (try? TransferMessage.decode(bytes, maximumChunkBytes: 262016))?.kind == 6 else { return }
+      if acks().count == 1 {
+        await withCheckedContinuation { release = $0; firstAck.fulfill() }
+      } else if acks().count == 2 { nextAck.fulfill() }
+    }
+    defer { release?.resume(); owner.dismiss(); channel.onSendData = nil }
+    await owner.acceptIncomingOffer(destination: tempDir)
+    for offset in [0, 4096] {
+      _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+        offset: Int64(offset), data: Data(repeating: 0, count: 4096)).encode(maximumChunkBytes: 262016), on: channel.descriptor)
+      if offset == 0 { await fulfillment(of: [firstAck], timeout: 1) }
+    }
+    // Let the second chunk's timer expire while the first ACK is still being submitted.
+    try await Task.sleep(for: .milliseconds(60))
+    XCTAssertEqual(acks().count, 1)
+    release?.resume(); release = nil
+    await fulfillment(of: [nextAck], timeout: 1)
+    XCTAssertEqual(acks().map { $0.number(2) }, [4096, 8192])
+    try await Task.sleep(for: .milliseconds(60))
+    XCTAssertEqual(acks().count, 2, "No ACK polling after credit is drained")
+  }
+
   func testConstrainedLanRequalifiesOnlyWithADrainedWindowAndANewCompleteProbe() {
     var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     window.acknowledged(0.101, fullyConfirmed: true); window.advance()
     window.acknowledged(4.999, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.creditBytes, 8192)
-    window.acknowledged(5, fullyConfirmed: false); window.advance()
-    XCTAssertEqual(window.creditBytes, 8192, "Outstanding bytes prevent another probe")
-    window.acknowledged(5, fullyConfirmed: true)
+    window.acknowledged(5, fullyConfirmed: false)
     XCTAssertEqual(window.creditBytes, 8192, "The current source read retains its budget")
+    window.advance()
+    XCTAssertEqual(window.creditBytes, 4096, "Drain outstanding bytes before another probe")
+    window.acknowledged(5, fullyConfirmed: true)
+    XCTAssertEqual(window.creditBytes, 4096)
     window.advance()
     XCTAssertEqual(window.creditBytes, 4096)
     window.acknowledged(5.09, fullyConfirmed: false); window.advance()

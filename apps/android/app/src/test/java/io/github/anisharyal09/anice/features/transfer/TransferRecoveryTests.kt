@@ -199,8 +199,10 @@ class TransferRecoveryTests {
             folder = "", partial = "", stage = 1))
         TransferRecoveryStore(receiverJournal).save(base.copy(batch = batch.copy(files = files.map { it.copy(sourceFile = null) }),
             receiving = true, index = 2, offset = 0, folder = "", partial = "", stage = 3))
-        val sender = TransferController(dispatcher = Dispatchers.Unconfined, recoveryFile = sourceJournal, recoveryIdentity = { local })
-        val receiver = TransferController(dispatcher = Dispatchers.Unconfined, recoveryFile = receiverJournal, recoveryIdentity = { local })
+        // Restore both owners on one serial dispatcher; Unconfined resumes them on competing IO threads.
+        val dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher
+        val sender = TransferController(dispatcher = dispatcher, recoveryFile = sourceJournal, recoveryIdentity = { local })
+        val receiver = TransferController(dispatcher = dispatcher, recoveryFile = receiverJournal, recoveryIdentity = { local })
         try {
             withTimeout(2000) { while (sender.state !is TransferState.Paused || receiver.state !is TransferState.Completed) delay(5) }
             val outgoing = MockAndroidSecuredChannel(instance = "sender-new")
