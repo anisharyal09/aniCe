@@ -104,11 +104,12 @@ enum TransferEvent: Equatable {
 
   private var peerMaxChunkBytes: Int64 = 3072
   private var peerMaxWindow: Int64 = 64
-  // The negotiated window keeps LAN chunks in flight across the receiver's two-chunk ACK cadence.
-  private var sendCreditBytes: Int64 { peerMaxChunkBytes * peerMaxWindow }
+  private var sendWindow: TransferSendWindow?
+  private var senderChunkBytes: Int64 { sendWindow?.chunkBytes ?? peerMaxChunkBytes }
+  private var sendCreditBytes: Int64 { sendWindow?.creditBytes ?? (peerMaxChunkBytes * peerMaxWindow) }
   // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
   private var hasSendCredit: Bool {
-    let next = min(peerMaxChunkBytes, max(0, (sendingFile?.size ?? sentBytes) - sentBytes))
+    let next = min(senderChunkBytes, max(0, (sendingFile?.size ?? sentBytes) - sentBytes))
     return sentBytes - acknowledgedBytes <= sendCreditBytes - next
   }
 
@@ -132,7 +133,11 @@ enum TransferEvent: Equatable {
   private var receivedFileResult: TransferMessage?
   private var sendingFile: TransferFile?
   private var senderFileIndex = 0
-  private var epoch = UUID()
+  @ObservationIgnored private lazy var ingress = TransferIngress { [weak self] descriptor, operation, bytes in
+    guard let self, self.epoch == operation, let channel = self.channels[descriptor.transport], channel.descriptor == descriptor else { return }
+    if await self.handle(bytes, on: descriptor) == .handled, self.epoch == operation { channel.received(bytes) }
+  }
+  private var epoch = UUID() { didSet { ingress.invalidate() } }
   private var capacityRevision = 0
 
   // Logical checkpoints survive process death; channel generations and sealed work remain process-local.
@@ -509,6 +514,7 @@ enum TransferEvent: Equatable {
   func retired(_ descriptor: ChannelDescriptor) {
     if pendingChannels[descriptor.transport]?.descriptor == descriptor { pendingChannels[descriptor.transport] = nil }
     guard channels[descriptor.transport]?.descriptor == descriptor else { return }
+    ingress.invalidate(descriptor)
     channels.removeValue(forKey: descriptor.transport)
     capabilities.removeValue(forKey: descriptor.transport)
     rendezvousWait?()
@@ -567,12 +573,32 @@ enum TransferEvent: Equatable {
     }
   }
 
+  func ingest(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
+    let kind = TransferMessage.peekKind(bytes)
+    if kind == 10, !(await ingress.drain()) { retired(descriptor); return .discarded }
+    guard kind == 5 else { return await handle(bytes, on: descriptor) }
+    let operation = epoch
+    // Peer limits describe its receiver; this FIFO must cover our advertised receive credit.
+    let chunk = chunkLimit(descriptor)
+    let window = descriptor.transport == "ble" ? 4 : chunk > 3072 ? 8 : 64
+    let accepted = await ingress.enqueue(bytes, on: descriptor, epoch: operation,
+      byteLimit: min(chunk * window + 65536, 2 * 1024 * 1024), recordLimit: min(64, window * 8)) { [weak self] in
+        self?.epoch == operation && self?.channels[descriptor.transport]?.descriptor == descriptor
+      }
+    return accepted ? .queued : .discarded
+  }
+
+  func drain(_ descriptor: ChannelDescriptor) async {
+    guard channels[descriptor.transport]?.descriptor == descriptor else { return }
+    if !(await ingress.drain(descriptor)) { retired(descriptor) }
+  }
+
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
     if !recoveryReady { await recoveryTask?.value }
     let operation = epoch
     let limit = chunkLimit(descriptor)
     let message: TransferMessage
-    // The ordered ingress consumer awaits one decode; no extra chunk queue or mutable state crosses actors.
+    // Only the FIFO worker decodes chunks; mutable transfer state stays on MainActor.
     let decode = Task.detached(priority: .userInitiated) {
       try Task.checkCancellation()
       let decoded = try TransferMessage.decode(bytes, maximumChunkBytes: limit)
@@ -630,6 +656,7 @@ enum TransferEvent: Equatable {
       return .handled
     }
     guard descriptor == activeChannel?.descriptor else { return .discarded }
+    if message.kind == 5 { return await handleChunk(message) }
     await processMessage(message, peerName: descriptor.peer.deviceName, on: descriptor)
     return .handled
   }
@@ -646,9 +673,6 @@ enum TransferEvent: Equatable {
 
     case 4: // reject
       handleReject(message)
-
-    case 5: // chunk
-      await handleChunk(message)
 
     case 6: // ack
       handleAck(message)
@@ -1666,8 +1690,12 @@ enum TransferEvent: Equatable {
       sentBytes = initial
       acknowledgedBytes = initial
       lastAckAt = nil
-      streamStartedAt = ProcessInfo.processInfo.systemUptime
-      NSLog("aniCe transfer source: transport=%@ chunk=%lld window=%lld", activeChannel?.descriptor.transport ?? "none", peerMaxChunkBytes, peerMaxWindow)
+      let startedAt = ProcessInfo.processInfo.systemUptime
+      streamStartedAt = startedAt
+      sendWindow = TransferSendWindow(maximumChunk: peerMaxChunkBytes, maximumWindow: peerMaxWindow,
+        lan: activeChannel?.descriptor.transport == "lan", started: startedAt)
+      NSLog("aniCe transfer source: transport=%@ chunk=%lld credit=%lld maxChunk=%lld window=%lld",
+        activeChannel?.descriptor.transport ?? "none", senderChunkBytes, sendCreditBytes, peerMaxChunkBytes, peerMaxWindow)
       var fileBytesSent: Int64 = initial
       // A LAN capability that arrived while the previous file was finalizing is retried here,
       // at the new file's start, where the stream is no longer waiting on a file result.
@@ -1675,8 +1703,13 @@ enum TransferEvent: Equatable {
       var upgradeChecked = false
 
       while fileBytesSent < file.size {
-        // Enforce credit flow control: at most maxWindow unacknowledged chunks
-        if !hasSendCredit {
+        while true {
+          let previousChunk = senderChunkBytes
+          sendWindow?.advance()
+          if previousChunk != senderChunkBytes {
+            NSLog("aniCe transfer send window: chunk=%lld credit=%lld", senderChunkBytes, sendCreditBytes)
+          }
+          if hasSendCredit { break }
           await withCheckedContinuation { cont in
             if self.hasSendCredit {
               cont.resume()
@@ -1690,7 +1723,7 @@ enum TransferEvent: Equatable {
           return
         }
 
-        let chunkSize = min(Int(peerMaxChunkBytes), Int(file.size - fileBytesSent))
+        let chunkSize = min(Int(senderChunkBytes), Int(file.size - fileBytesSent))
         let chunkData: Data
         do { chunkData = try await source.read(chunkSize) }
         catch { await source.close(); if operation == epoch { failTransfer(reason: "Source read failed") }; return }
@@ -1792,7 +1825,10 @@ enum TransferEvent: Equatable {
       message.string(0) == batch.idString, message.string(1) == file.idString else { return }
     let written = message.number(2)
     guard written >= acknowledgedBytes, written <= sentBytes, written <= file.size else { return }
-    if written > acknowledgedBytes { pauseExpiresAt = nil; pauseDeadline = nil }
+    if written > acknowledgedBytes {
+      pauseExpiresAt = nil; pauseDeadline = nil
+      sendWindow?.acknowledged(ProcessInfo.processInfo.systemUptime, fullyConfirmed: written == sentBytes)
+    }
     acknowledgedBytes = written
     lastAckAt = ProcessInfo.processInfo.systemUptime
     checkCreditAndResume()
@@ -2044,25 +2080,25 @@ enum TransferEvent: Equatable {
     }
   }
 
-  private func handleChunk(_ message: TransferMessage) async {
+  private func handleChunk(_ message: TransferMessage) async -> DataHandling {
     guard case .transferring(let batch, _, _, _, _, _, _) = state,
           destinationFolder != nil, let storage = receiverStorage,
-          receiverPartFileURL != nil else { return }
+          receiverPartFileURL != nil else { return .discarded }
 
     let fileId = message.string(1)
     let offset = message.number(2)
     let data = message.bytes(3)
 
-    guard batch.files.indices.contains(receiverCurrentFileIndex) else { return }
+    guard batch.files.indices.contains(receiverCurrentFileIndex) else { return .discarded }
     let currentFile = batch.files[receiverCurrentFileIndex]
-    guard currentFile.idString == fileId else { return }
-    guard offset == receiverWrittenBytes else { return }
+    guard currentFile.idString == fileId else { return .discarded }
+    guard offset == receiverWrittenBytes else { return .discarded }
 
-    guard message.string(0) == batch.idString, data.count <= chunkLimit(activeChannel?.descriptor), Int64(data.count) <= currentFile.size - receiverWrittenBytes else { return }
+    guard message.string(0) == batch.idString, data.count <= chunkLimit(activeChannel?.descriptor), Int64(data.count) <= currentFile.size - receiverWrittenBytes else { return .discarded }
     let operation = epoch
     do { try await storage.write(data) }
-    catch { if operation == epoch { failTransfer(reason: "Destination write failed: \(error.localizedDescription)") }; return }
-    guard operation == epoch, receiverStorage === storage else { return }
+    catch { if operation == epoch { failTransfer(reason: "Destination write failed: \(error.localizedDescription)") }; return .discarded }
+    guard operation == epoch, receiverStorage === storage else { return .discarded }
     pauseExpiresAt = nil; pauseDeadline = nil
     receiverWrittenBytes += Int64(data.count)
     receiverTotalTransferred += Int64(data.count)
@@ -2093,6 +2129,7 @@ enum TransferEvent: Equatable {
     }
 
     if receiverWrittenBytes == currentFile.size { await finalizeReceiverFile(batch) }
+    return .handled
   }
 
   private func finalizeReceiverFile(_ batch: TransferBatch) async {
@@ -2344,6 +2381,7 @@ enum TransferEvent: Equatable {
     currentBatch = nil
     destinationFolder = nil
     sendingFile = nil
+    sendWindow = nil
     finalizing = false
     ackTask?.cancel(); ackTask = nil
     ackTimerTask?.cancel()
@@ -2538,6 +2576,8 @@ private actor TransferReceiveStorage {
   }
 
   func create(folder: URL, batch: String, file: String) throws -> URL {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_create", started, direction: "receive") }
     assert(!Thread.isMainThread)
     let url = folder.appendingPathComponent(".anice-\(batch)-\(file)-\(UUID().uuidString).part")
     let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
@@ -2549,15 +2589,24 @@ private actor TransferReceiveStorage {
   }
 
   func write(_ data: Data) throws {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_write", started, bytes: data.count, direction: "receive") }
     assert(!Thread.isMainThread)
+    try Task.checkCancellation()
     guard let handle else { throw CocoaError(.fileWriteUnknown) }
     try handle.write(contentsOf: data)
     hasher.update(data: data)
   }
 
-  func flush() throws { try handle?.synchronize() }
+  func flush() throws {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_flush", started, direction: "receive") }
+    try handle?.synchronize()
+  }
 
   func fileIdentity() throws -> String {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_fileIdentity", started, direction: "receive") }
     guard let partial else { throw CocoaError(.fileReadUnknown) }
     return try Self.identity(partial)
   }
@@ -2608,6 +2657,8 @@ private actor TransferReceiveStorage {
   }
 
   func restore(folder: URL, partial: URL, batch: String, file: String, length: Int64) throws {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_restore", started, direction: "receive") }
     guard length >= 0,
       partial.deletingLastPathComponent().resolvingSymlinksInPath().path == folder.resolvingSymlinksInPath().path,
       partial.lastPathComponent.hasPrefix(".anice-\(batch)-\(file)-"), partial.pathExtension == "part",
@@ -2632,6 +2683,8 @@ private actor TransferReceiveStorage {
   /// Flushes and hashes exactly `length` bytes of the retained partial. The receiver sends this
   /// digest so the sender can prove its own source prefix before switching transports.
   func prefixDigest(_ length: Int64) throws -> Data {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_prefixDigest", started, direction: "receive") }
     assert(!Thread.isMainThread)
     guard length >= 0, let handle, let partial else { throw CocoaError(.fileReadUnknown) }
     try handle.synchronize()
@@ -2656,6 +2709,8 @@ private actor TransferReceiveStorage {
   }
 
   func finish(name: String, expected: Data) throws -> (digest: Data, url: URL) {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_finish", started, direction: "receive") }
     assert(!Thread.isMainThread)
     guard let handle, let partial, let folder else { throw CocoaError(.fileWriteUnknown) }
     let digest = Data(hasher.finalize())
@@ -2670,6 +2725,8 @@ private actor TransferReceiveStorage {
   }
 
   func discard() {
+    let started = SessionTiming.start()
+    defer { SessionTiming.end(self, "storage_discard", started, direction: "receive") }
     assert(!Thread.isMainThread)
     do {
       try handle?.close(); handle = nil
@@ -2809,5 +2866,124 @@ actor TransferRecoveryStore {
 
   func clear() throws {
     if unlink(url.path) != 0, errno != ENOENT { throw CocoaError(.fileWriteUnknown) }
+  }
+}
+
+// MainActor owns admission and accounting; one FIFO consumer owns chunk decode and storage awaits.
+@MainActor final class TransferIngress {
+  private struct Entry { let descriptor: ChannelDescriptor; let epoch: UUID; let bytes: Data }
+  private let consume: @MainActor (ChannelDescriptor, UUID, Data) async -> Void
+  private var pending: [Entry] = []
+  private var worker: Task<Void, Never>?
+  private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+  private var active: ChannelDescriptor?
+  private var count = 0
+  private var bytes = 0
+  init(consume: @escaping @MainActor (ChannelDescriptor, UUID, Data) async -> Void) { self.consume = consume }
+  // Capacity includes the active write until it completes, not merely entries still in FIFO.
+  func enqueue(_ data: Data, on descriptor: ChannelDescriptor, epoch: UUID,
+    byteLimit: Int, recordLimit: Int, live: () -> Bool) async -> Bool {
+    guard data.count <= byteLimit else { return false }
+    let started = SessionTiming.start()
+    while live(), !Task.isCancelled {
+      if count < recordLimit, bytes <= byteLimit - data.count {
+        SessionTiming.end(self, "transfer_ingress_admission", started, bytes: data.count,
+          profile: descriptor.maximumDataBytes > 4000 ? 3 : 1, direction: "receive")
+        pending.append(Entry(descriptor: descriptor, epoch: epoch, bytes: data))
+        count += 1; bytes += data.count
+        startWorker()
+        return true
+      }
+      await changed()
+    }
+    return false
+  }
+  private func startWorker() {
+    guard worker == nil, !pending.isEmpty else { return }
+    // A successor epoch must not inherit the cancelled consumer's task context.
+    worker = Task { @MainActor in await self.run() }
+  }
+  private func run() async {
+    defer { worker = nil; startWorker(); wake() }
+    while !Task.isCancelled, !pending.isEmpty {
+      let next = pending.removeFirst()
+      active = next.descriptor
+      let started = SessionTiming.start()
+      await consume(next.descriptor, next.epoch, next.bytes)
+      SessionTiming.end(self, "transfer_ingress_delivery", started, bytes: next.bytes.count,
+        profile: next.descriptor.maximumDataBytes > 4000 ? 3 : 1, direction: "receive")
+      active = nil; count -= 1; bytes -= next.bytes.count; wake()
+    }
+  }
+  func invalidate(_ descriptor: ChannelDescriptor? = nil) {
+    pending.removeAll { next in
+      guard descriptor == nil || next.descriptor == descriptor else { return false }
+      count -= 1; bytes -= next.bytes.count; return true
+    }
+    // Actor entry checks cancellation before writing; a synchronous write already running may finish.
+    if active != nil, descriptor == nil || active == descriptor { worker?.cancel() }
+    wake()
+  }
+  func drain(_ descriptor: ChannelDescriptor? = nil, timeout: Duration = .seconds(10)) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    let timer = Task { [weak self] in
+      do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
+      self?.wake()
+    }
+    defer { timer.cancel() }
+    func hasWork() -> Bool {
+      guard let descriptor else { return count > 0 }
+      return active == descriptor || pending.contains { $0.descriptor == descriptor }
+    }
+    while hasWork(), !Task.isCancelled, ContinuousClock.now < deadline { await changed() }
+    return !hasWork()
+  }
+  private func changed() async {
+    let id = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if Task.isCancelled { continuation.resume() } else { waiters[id] = continuation }
+      }
+    } onCancel: { Task { @MainActor in self.waiters.removeValue(forKey: id)?.resume() } }
+  }
+  private func wake() {
+    let current = waiters.values; waiters.removeAll()
+    for waiter in current { waiter.resume() }
+  }
+}
+
+// Bounds unacknowledged LAN bytes before allowing the negotiated high-throughput window.
+struct TransferSendWindow {
+  let maximumChunk: Int64
+  let maximumWindow: Int64
+  let lan: Bool
+  private var probing: Bool
+  private var constrained = false
+  private var lastAcknowledgedAt: TimeInterval
+  private var probeStartedAt: TimeInterval
+  private var reprobe = false
+  private var decision: Bool?
+  init(maximumChunk: Int64, maximumWindow: Int64, lan: Bool, started: TimeInterval) {
+    self.maximumChunk = maximumChunk; self.maximumWindow = maximumWindow; self.lan = lan
+    probing = lan && maximumChunk > 4096
+    lastAcknowledgedAt = started
+    probeStartedAt = started
+  }
+  var chunkBytes: Int64 { probing || constrained ? min(4096, maximumChunk) : maximumChunk }
+  var creditBytes: Int64 { chunkBytes * (probing ? 1 : constrained ? min(2, maximumWindow) : maximumWindow) }
+  // Only advancing, correlated ACKs reach this method; duplicates cannot qualify a fast path.
+  mutating func acknowledged(_ now: TimeInterval, fullyConfirmed: Bool) {
+    if probing && !fullyConfirmed { return }
+    let elapsed = now - lastAcknowledgedAt
+    if probing { if decision == nil { decision = elapsed > 0.1 } }
+    else if constrained { if fullyConfirmed && now - probeStartedAt >= 5 { reprobe = true } }
+    else if lan && maximumChunk > 4096 && elapsed > 1 { decision = true }
+    lastAcknowledgedAt = now
+  }
+  // Apply shrinkage between records, never while a previously admitted source read is suspended.
+  mutating func advance() {
+    if let decision { constrained = decision; probing = false }
+    decision = nil
+    if reprobe { probing = true; probeStartedAt = lastAcknowledgedAt; reprobe = false }
   }
 }

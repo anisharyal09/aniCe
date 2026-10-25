@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Bounds TCP frame allocation and assembly independently of session authentication.
+// Bounds TCP frame allocation and assembly deadlines across secured readiness.
 package io.github.anisharyal09.anice.infrastructure.lan
 
 import io.github.anisharyal09.anice.infrastructure.session.*
 
-class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, private val now: () -> Long = { System.nanoTime() / 1_000_000 }) {
+class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD,
+    private val secured: () -> Boolean = { false }, private val now: () -> Long = { System.nanoTime() / 1_000_000 }) {
     private val header = ByteArray(5)
     private var used = 0
     private var body: ByteArray? = null
     private var offset = 0
     private var started = 0L
+    private var progressed = 0L
     private var failed = false
 
     private fun reject(reason: SessionFailure): Nothing {
@@ -18,13 +20,18 @@ class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, 
         throw SessionException(reason)
     }
 
-    val nextDeadline: Long? get() = (started + 10000).takeIf { !failed && used != 0 }
+    val nextDeadline: Long? get() {
+        if (failed || used == 0) return null
+        // Only established encrypted records may outlive ten seconds; trickling still has an absolute bound.
+        val lifetime = if (secured() && offset > 0 && body?.get(0) == 6.toByte()) 60000L else 10000L
+        return minOf(started + lifetime, progressed + 10000)
+    }
     // Stop socket reads at a frame boundary before the ingress queue can suspend the producer.
     val readLimit: Int get() = if (used < 5) 5 - used else requireNotNull(body).size - offset
 
     private fun check(time: Long) {
         if (failed) throw SessionException(SessionFailure.CANCELLED)
-        if (used != 0 && time - started >= 10000) reject(SessionFailure.EXPIRED)
+        if (nextDeadline?.let { time >= it } == true) reject(SessionFailure.EXPIRED)
     }
 
     fun tick() = check(now())
@@ -43,6 +50,7 @@ class LanFraming(private val profile: SessionProfile = SessionProfile.STANDARD, 
         consumed = 0
         while (consumed < length) {
             if (used == 0) started = receivedAt
+            progressed = receivedAt
             if (used < 5) {
                 val count = minOf(5 - used, length - consumed)
                 System.arraycopy(buffer, start + consumed, header, used, count)

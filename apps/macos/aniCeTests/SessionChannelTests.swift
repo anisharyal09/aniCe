@@ -961,10 +961,11 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     let outI = ChannelMailbox()
     let outR = ChannelMailbox()
+    let drain = ChannelSubmissionGate()
     let c = SessionConnection(
       handshake: try helper.engine(v, server: false), responder: false, capacity: { _ in true },
       submit: { await outI.append($0) }, data: { await outI.record($0) },
-      secured: { await outI.secure() })
+      secured: { await outI.secure() }, drain: { await drain.pause() })
     let s = SessionConnection(
       handshake: try helper.engine(v, server: true), responder: true, capacity: { _ in true },
       submit: { await outR.append($0) }, data: { await outR.record($0) },
@@ -1007,7 +1008,12 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(serverData, [bytes])
     XCTAssertEqual(clientData, [Data([7])])
     try await s.disconnect()
-    try await deliver(outR, c, &incomingI, 4)
+    let closing = Task { try await c.receive(await outR.take()) }
+    for _ in 0..<10000 { if await drain.entered { break }; await Task.yield() }
+    let entered = await drain.entered, beforeClose = await c.isClosed
+    XCTAssertTrue(entered); XCTAssertFalse(beforeClose)
+    await drain.release()
+    try await closing.value
     let ci = await c.isClosed
     let sr = await s.isClosed
     XCTAssertTrue(ci)

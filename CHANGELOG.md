@@ -10,9 +10,11 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Isolate authenticated transfer chunks in bounded feature-owned FIFOs while interactive delivery continues. Include active writes in byte/record accounting, fence cancelled generations, drain accepted work on normal close, and report successful receive activity only after handling. Android receiver storage shares one injected single-parallelism IO dispatcher; opt-in timings distinguish ingress admission, consumption and storage work.
+
 - Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Cancellation remains effective until nonce ownership; session-owned completion protects sealed records while transfer cleanup cancels queued producers. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
 
-- Connection diagnostics distinguish incomplete LAN frames by profile and byte counts; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
+- Connection diagnostics distinguish incomplete LAN frames by profile, byte counts and read age. Opt-in timings separate socket reads, Mac callback scheduling and Android writer admission, dispatch and blocking writes; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
 
 - Linux CI for shared protocol and Android host checks, with pinned actions, dependency caches and failure artifacts. Verification writes isolated run reports under `build/reports/verification/` and emits GitHub error annotations; structure and Android native-build checks support Linux hosts.
 
@@ -37,6 +39,8 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+
 - Retain the Mac Bluetooth service database across radio power-off and preserve LAN rendezvous capacity wakeups on both platforms. LAN reads stop at frame boundaries so ingress backpressure cannot consume the next frame's assembly deadline. Android distinguishes unsent media actions from submitted actions with unknown outcomes.
 
 - Transfer preparation uses capability-aware LAN/BLE selection and cancellation-safe rendezvous; Android nearby recovery retains rediscovery eligibility after failed attempts.
@@ -46,6 +50,10 @@ Repository-wide structure, documentation, and development conventions belong her
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
 
 ### Fixed
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
+- Defer macOS LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.
 
 - Preserve independent BLE/LAN ownership while repairing BLE recovery, transfer cancellation and restart-safe pending work. Cap Android native GATT fragments at 512 bytes and serialize control issuance across DATA, receive and maintenance. Fence Mac LAN retirement to live routes/submissions and add file-transfer notification controls.
 

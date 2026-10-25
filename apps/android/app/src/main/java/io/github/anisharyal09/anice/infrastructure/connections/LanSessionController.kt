@@ -411,7 +411,7 @@ class LanSessionController(private val app: AniCeApplication,
                                 },
                                 {
                                     withContext(Dispatchers.Main.immediate) {
-                                        if(op==generation) { state=ConnectionState.SECURED; publishChannel() }
+                                        if(op==generation) { tcp.markSecured(); state=ConnectionState.SECURED; publishChannel() }
                                     }
                                     signal.complete(Unit)
                                 },
@@ -419,12 +419,17 @@ class LanSessionController(private val app: AniCeApplication,
                                 now = { SystemClock.elapsedRealtime() },
                                 changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } },
                                 profile = endpoint.profile,
+                                drain = { withContext(Dispatchers.Main.immediate) {
+                                    if (op == generation) app.features.drain("lan", channelToken)
+                                } },
                             )
                         connection = engine
                         receiver =
                             scope.launch(Dispatchers.IO) {
                                 try {
-                                    tcp.receive { bytes ->
+                                    tcp.receive(drained = { withContext(Dispatchers.Main.immediate) {
+                                        if (op == generation && connection === engine) app.features.drain("lan", channelToken)
+                                    } }) { bytes ->
                                         engine.receive(bytes)
                                         if (terminal.isCompleted) throw terminal.await()
                                         if (engine.isClosed)

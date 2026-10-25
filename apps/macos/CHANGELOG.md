@@ -6,6 +6,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- LAN frame timeout diagnostics include pending-read age and last-read progress; opt-in timings separate socket reads from transport-actor callback delay.
+
+- Queue authenticated transfer chunks in a bounded feature-owned FIFO while other handlers continue. Count active writes against capacity, keep storage actor-owned and presentation on MainActor, fence cancelled generations, and drain accepted work on normal close. Add opt-in ingress admission/consumption and storage-operation durations, including failed storage operations.
+
 - Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Transfer cleanup cancels queued stream, ACK and upgrade work; nonce-owned submission and post-write validation finish under session ownership. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
 
 - LAN frame-assembly timeout diagnostics include profile and received/expected byte counts.
@@ -28,11 +32,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+
 - Preserve the published Bluetooth service table across powered-off states; reset states still invalidate it. LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline.
 
 - Reserve file preparation before LAN rendezvous, wake on capability events under one deadline, and retire the wait on cancellation or dismissal. An incapable LAN channel no longer hides compatible Bluetooth.
 
-- Large LAN transfers keep the full negotiated eight-chunk window in flight so receiver acknowledgements overlap outbound chunks instead of stalling the pipeline; record sizes and receiver capabilities are unchanged.
 
 - Post-command playback samples use the observation queue so a slow MediaRemote read cannot block the next playback command.
 
@@ -47,6 +52,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Clipboard and file sending use compact labeled native controls. Clipboard preferences use small accent-colored checkboxes; History groups entries by date with a count/Clear all toolbar and adaptive row actions in both appearances. Clipboard help explains Android selection, Share-sheet and Quick Settings routes, connected-device requirements and manual sharing with automatic sharing off.
 
 ### Fixed
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
+- Defer LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.
 
 - Recover automatic Bluetooth startup failures with supervised backoff that resets only after fifteen seconds of secured continuity; native radio and permission blocks retain state observation without retries.
 - Permit writing to the reply indication characteristic descriptor so CoreBluetooth allows Android clients to subscribe without reporting GATT status 3 (writeNotPermitted).

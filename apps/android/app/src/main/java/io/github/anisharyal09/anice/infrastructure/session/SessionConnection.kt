@@ -82,6 +82,7 @@ class SessionConnection(
   @Volatile private var renew: Boolean = false,
   private val changed: () -> Unit = {},
   private val profile: SessionProfile = SessionProfile.STANDARD,
+  private val drain: suspend () -> Unit = {},
 ) {
   private val liveness = if (controls) SessionLiveness(responder) else null
   val controlSupport get() = liveness?.support
@@ -172,6 +173,7 @@ class SessionConnection(
             }
             RecordKind.CLOSE -> {
               closedByPeer = true
+              drain()
               close()
             }
           }

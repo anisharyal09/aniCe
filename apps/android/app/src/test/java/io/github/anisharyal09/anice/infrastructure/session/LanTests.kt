@@ -12,6 +12,58 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanTests {
+    @Test fun securedRecordProgressOutlivesTenSecondsAndResetsAtFrameBoundary() {
+        for (profile in listOf(SessionProfile.STANDARD, SessionProfile.LAN_TRANSFER)) {
+            var clock = 0L
+            val framing = LanFraming(profile, secured = { true }) { clock }
+            val payload = byteArrayOf(6, 1, 2, 3)
+            val wire = LanFraming.encode(payload, profile)
+            assertTrue(decode(framing, wire.copyOfRange(0, 6)).isEmpty())
+            clock = 9000
+            assertTrue(decode(framing, wire.copyOfRange(6, 7)).isEmpty())
+            assertEquals(19000L, framing.nextDeadline)
+            clock = 18000
+            assertArrayEquals(payload, decode(framing, wire.copyOfRange(7, wire.size)).single())
+            assertNull(framing.nextDeadline)
+            clock = 90000
+            framing.tick()
+            assertTrue(decode(framing, wire.copyOfRange(0, 6)).isEmpty())
+            assertEquals(100000L, framing.nextDeadline)
+        }
+    }
+
+    @Test fun progressCannotReviveStalledFramesOrExtendTheirAbsoluteLifetime() {
+        for (secured in listOf(false, true)) {
+            for (kind in listOf(1, 6)) {
+                var clock = 0L
+                val framing = LanFraming(secured = { secured }, now = { clock })
+                val wire = LanFraming.encode(ByteArray(100) { if (it == 0) kind.toByte() else 7 })
+                decode(framing, wire.copyOfRange(0, 6))
+                clock = 9000
+                decode(framing, wire.copyOfRange(6, 7))
+                clock = 10000
+                if (!secured || kind != 6) {
+                    reject(SessionFailure.EXPIRED) { framing.tick() }
+                } else {
+                    framing.tick()
+                    decode(framing, byteArrayOf()) // Empty delivery cannot refresh progress.
+                    clock = 19000
+                    reject(SessionFailure.EXPIRED) { decode(framing, wire.copyOfRange(7, wire.size)) }
+                }
+                reject(SessionFailure.CANCELLED) { framing.end() }
+                assertNull(framing.nextDeadline)
+            }
+        }
+        var clock = 0L
+        val trickle = LanFraming(secured = { true }, now = { clock })
+        val wire = LanFraming.encode(ByteArray(100) { if (it == 0) 6 else 7 })
+        decode(trickle, wire.copyOfRange(0, 6))
+        for (time in 9000L..54000L step 9000L) { clock = time; decode(trickle, byteArrayOf(7)) }
+        assertEquals(60000L, trickle.nextDeadline)
+        clock = 60000
+        reject(SessionFailure.EXPIRED) { decode(trickle, byteArrayOf(7)) }
+    }
+
     @Test fun frameBoundedReadsExcludeIngressWaitFromNextAssembly() {
         for (profile in listOf(SessionProfile.STANDARD, SessionProfile.LAN_TRANSFER)) {
             var clock = 0L

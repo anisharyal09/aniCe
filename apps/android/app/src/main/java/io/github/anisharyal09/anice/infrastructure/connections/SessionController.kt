@@ -272,6 +272,9 @@ class SessionController(application: Application) {
               // Include deep sleep: OS suspension must not extend record lifetime or PONG deadlines.
               now = { SystemClock.elapsedRealtime() },
               renew = automaticAttempt,
+              drain = { withContext(Dispatchers.Main.immediate) {
+                if (op == operation) app.features.drain("ble", channelToken)
+              } },
               changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("ble") } },
             )
           connection = engine

@@ -50,6 +50,7 @@ struct SessionStartupRecovery {
   private var trustLocation: URL?
   var channelStateChanged: () -> Void = {}
   var channelCapacityChanged: () -> Void = {}
+  var applicationDataDrained: () async -> Void = {}
   var applicationDataReceived: (Data) async -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(attempt)":nil }
   func sendData(_ bytes: Data) async throws {
@@ -326,7 +327,10 @@ struct SessionStartupRecovery {
             changed: { [weak self] in Task { @MainActor in
               guard let self, op == self.generation, candidate == self.attempt else { return }
               self.startMaintenance(); self.channelCapacityChanged()
-            } })
+            } }, drain: { [weak self] in
+              guard let self else { return }
+              await self.drainApplication(op, candidate)
+            })
           self.startMaintenance()
         } catch {
           if op == self.generation, candidate == self.attempt {
@@ -405,6 +409,10 @@ struct SessionStartupRecovery {
         failCandidate("The authenticated device is no longer available. Retry from Android.")
       }
     }
+  }
+  private func drainApplication(_ op: Int, _ candidate: Int) async {
+    guard op == generation, candidate == attempt else { return }
+    await applicationDataDrained()
   }
   private func received(_ bytes: Data, _ op: Int, _ candidate: Int) async {
     guard op == generation, candidate == attempt else { return }

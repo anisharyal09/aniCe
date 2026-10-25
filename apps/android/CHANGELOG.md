@@ -6,6 +6,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Opt-in LAN timings distinguish writer admission, IO dispatch, blocking socket writes and reads.
+
+- Queue authenticated transfer chunks in a bounded FIFO before returning to shared feature delivery. Count active writes against capacity, preserve write/ACK order, invalidate pending work on cancellation or retirement, and drain accepted work on normal EOF or authenticated close. Run receiver storage, provider setup, cleanup and checkpoint writes on one injected single-parallelism IO dispatcher, with opt-in ingress and storage wait/work timing.
+
 - Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Transfer cleanup cancels queued stream, ACK and upgrade work; nonce-owned submission and post-write validation finish under session ownership. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
 
 - Messages provides SMS permission setup, live relay, paged conversations and history, phone-side search and active-SIM selection over existing secured sessions. Multipart replies report radio acceptance or an unconfirmed outcome without automatic resend. Provider scans complete timestamp groups and retain continuation cursors across unreadable batches; partial reads preserve completed state. Live receipts and sends keep local observation order when carrier clocks differ. The composer keeps SIM choice on the left and Send SMS at the far-right edge, with keyboard sending and readable long-label truncation.
@@ -23,6 +27,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+
 - LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline. Playback and volume actions that expire before submission report that they were not sent; submitted actions with missing results remain uncertain and are never replayed.
 
 - Foreground and companion-service handoffs retain Bluetooth retry history and candidate exclusions until authenticated readiness remains stable.
@@ -30,7 +36,6 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Keep capable Bluetooth available while LAN capability is pending. Repeat bounded rediscovery after failed automatic attempts, reset backoff only after stable readiness, and preserve native GATT write failures through teardown.
 
-- Large LAN transfers keep the full negotiated eight-chunk window in flight so receiver acknowledgements overlap outbound chunks instead of stalling the pipeline; record sizes and receiver capabilities are unchanged.
 
 - Session-control classification avoids copying file payloads before feature decoding while retaining CBOR validation.
 - LAN write watchdog failures preserve their timeout cause instead of reporting session expiry or generic cancellation.
@@ -47,6 +52,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 
 ### Fixed
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
 
 - Retire failed authenticated DATA submissions through their BLE/LAN owner while preserving recoverable backpressure and native Bluetooth subscription error statuses.
 - Bound unsubmitted media intents, coalesce continuous controls and show explicit pending/expiry feedback; uncertain commands never replay across connections.

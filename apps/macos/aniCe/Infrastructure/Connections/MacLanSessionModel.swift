@@ -83,6 +83,7 @@ import OSLog
   private var trustLocation: URL?
   var channelStateChanged: () -> Void = {}
   var channelCapacityChanged: () -> Void = {}
+  var applicationDataDrained: () async -> Void = {}
   var applicationDataReceived: (Data) async -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(candidate)":nil }
   func sendData(_ bytes: Data) async throws {
@@ -313,7 +314,7 @@ import OSLog
           changed: { [weak self] in Task { @MainActor in
             guard let self, op == self.generation, attempt == self.candidate else { return }
             self.maintain(); self.channelCapacityChanged()
-          } }, profile: .lanTransfer)
+          } }, profile: .lanTransfer, drain: { [weak self] in await self?.drainApplication(op, attempt) })
         connection = engine
         maintain()
         await tcp.start(
@@ -327,7 +328,7 @@ import OSLog
               guard let self, op == self.generation, attempt == self.candidate else { return }
               self.failCandidate(error)
             }
-          }, changed: { [weak self] in
+          }, drained: { [weak self] in await self?.drainApplication(op, attempt) }, changed: { [weak self] in
             Task { @MainActor in
               guard let self, op == self.generation, attempt == self.candidate else { return }
               self.channelCapacityChanged()
@@ -336,6 +337,10 @@ import OSLog
           })
       } catch { if op == generation, attempt == candidate { failCandidate(error) } }
     }
+  }
+  private func drainApplication(_ op: Int, _ attempt: Int) async {
+    guard op == generation, attempt == candidate else { return }
+    await applicationDataDrained()
   }
   private func handshakeReceived(_ op: Int, _ attempt: Int) {
     guard op == generation, attempt == candidate else { return }
@@ -364,6 +369,8 @@ import OSLog
       let peer = try await connection.authenticatedPeer()
       guard op == generation, attempt == candidate else { return }
       guard peers.authenticate("lan", peer: peer) else { throw SessionFailure.untrustedPeer }
+      await transport?.markSecured()
+      guard op == generation, attempt == candidate else { return }
       authenticatedPeer = peer
       handshakeDeadline = nil
       state = "Secured"

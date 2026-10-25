@@ -6,6 +6,8 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Fixed
 
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
 - Clarify file-transfer acknowledgement cadence as window-relative: a quarter-window for large LAN chunks and up to eight chunks for standard/BLE, retaining the 20-ms flush and final-chunk acknowledgement. Wire messages, capability ranges and limits are unchanged.
 
 - Document checkpoint-backed transfer resume with existing kinds 10/11 and a four-chunk BLE implementation window; framing, capability ranges, session cryptography and fixture bytes remain unchanged.

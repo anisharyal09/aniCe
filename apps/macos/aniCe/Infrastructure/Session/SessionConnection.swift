@@ -77,6 +77,7 @@ actor SessionConnection {
   private var liveness: SessionLiveness?
   private let now: @Sendable () -> Int64
   private var renew: Bool
+  private let drain: @Sendable () async -> Void
   private let changed: @Sendable () -> Void
   private var deadline: Int64?
   var controlSupport: Bool? { liveness?.support }
@@ -92,8 +93,10 @@ actor SessionConnection {
     now: @escaping @Sendable () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) },
     renew: Bool = false,
     changed: @escaping @Sendable () -> Void = {},
-    profile: SessionProfile = .standard
+    profile: SessionProfile = .standard,
+    drain: @escaping @Sendable () async -> Void = {}
   ) {
+    self.drain = drain
     self.profile = profile
     self.handshake = handshake
     self.responder = responder
@@ -176,6 +179,7 @@ actor SessionConnection {
           } else { delivery = result.1 }
         case .close:
           closedByPeer = true
+          await drain()
           await close()
         }
         if !closed { try await flushControl(op) }

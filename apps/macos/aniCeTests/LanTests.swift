@@ -3,6 +3,7 @@
 import CryptoKit
 import Foundation
 import Network
+import os
 import XCTest
 
 @testable import aniCe
@@ -15,6 +16,19 @@ private struct UnavailableLanIdentityStorage: IdentityStorage {
   func createKey(tag: String) throws -> StoredPublicKey { throw IdentityError.storageUnavailable("injected") }
   func sign(tag: String, message: Data) throws -> Data { throw IdentityError.storageUnavailable("injected") }
   func deleteKey(tag: String) throws { throw IdentityError.storageUnavailable("injected") }
+}
+
+private actor ReceiveDrainProbe {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private(set) var delivered = [Data]()
+  let failure: SessionFailure?
+  init(failure: SessionFailure? = nil) { self.failure = failure }
+  func deliver(_ bytes: Data) async throws {
+    delivered.append(bytes)
+    if delivered.count == 1 { await withCheckedContinuation { continuation = $0 } }
+    if let failure { throw failure }
+  }
+  func release() { continuation?.resume(); continuation = nil }
 }
 
 final class LanTests: XCTestCase {
@@ -393,6 +407,61 @@ final class LanTests: XCTestCase {
       }
     }
   }
+  func testSecuredRecordProgressOutlivesTenSecondsAndResetsAtFrameBoundary() throws {
+    for profile: SessionProfile in [.standard, .lanTransfer] {
+      var clock: TimeInterval = 0
+      var framing = LanFraming(now: { clock }, profile: profile)
+      framing.secured = true
+      let payload = Data([6, 1, 2, 3])
+      let wire = try LanFraming.encode(payload, profile: profile)
+      XCTAssertTrue(try feed(Data(wire.prefix(6)), into: &framing).isEmpty)
+      clock = 9
+      XCTAssertTrue(try feed(Data(wire[6..<7]), into: &framing).isEmpty)
+      XCTAssertEqual(framing.nextDeadline, 19)
+      clock = 18
+      XCTAssertEqual(try feed(Data(wire.dropFirst(7)), into: &framing), [payload])
+      XCTAssertNil(framing.nextDeadline)
+      clock = 90
+      XCTAssertNoThrow(try framing.tick())
+      XCTAssertTrue(try feed(Data(wire.prefix(6)), into: &framing).isEmpty)
+      XCTAssertEqual(framing.nextDeadline, 100)
+    }
+  }
+  func testProgressCannotReviveStalledFramesOrExtendTheirAbsoluteLifetime() throws {
+    for secured in [false, true] {
+      for kind: UInt8 in [1, 6] {
+        var clock: TimeInterval = 0
+        var framing = LanFraming(now: { clock })
+        framing.secured = secured
+        let wire = try LanFraming.encode(Data([kind] + Array(repeating: UInt8(7), count: 99)))
+        _ = try feed(Data(wire.prefix(6)), into: &framing)
+        clock = 9
+        _ = try feed(Data(wire[6..<7]), into: &framing)
+        clock = 10
+        if !secured || kind != 6 {
+          XCTAssertThrowsError(try framing.tick()) { XCTAssertEqual($0 as? SessionFailure, .expired) }
+        } else {
+          XCTAssertNoThrow(try framing.tick())
+          _ = try feed(Data(), into: &framing) // Empty delivery cannot refresh progress.
+          clock = 19
+          XCTAssertThrowsError(try feed(Data(wire.dropFirst(7)), into: &framing)) {
+            XCTAssertEqual($0 as? SessionFailure, .expired)
+          }
+        }
+        XCTAssertThrowsError(try framing.end()) { XCTAssertEqual($0 as? SessionFailure, .cancelled) }
+        XCTAssertNil(framing.nextDeadline)
+      }
+    }
+    var clock: TimeInterval = 0
+    var trickle = LanFraming(now: { clock })
+    trickle.secured = true
+    let wire = try LanFraming.encode(Data([6] + Array(repeating: UInt8(7), count: 99)))
+    _ = try feed(Data(wire.prefix(6)), into: &trickle)
+    for time in stride(from: 9, through: 54, by: 9) { clock = Double(time); _ = try feed(Data([7]), into: &trickle) }
+    XCTAssertEqual(trickle.nextDeadline, 60)
+    clock = 60
+    XCTAssertThrowsError(try feed(Data([7]), into: &trickle)) { XCTAssertEqual($0 as? SessionFailure, .expired) }
+  }
   func testFrameBoundedReadsExcludeIngressWaitFromNextAssembly() throws {
     for profile: SessionProfile in [.standard, .lanTransfer] {
       var clock: TimeInterval = 0
@@ -639,6 +708,86 @@ final class LanTests: XCTestCase {
 
   @MainActor private func socket() -> NWConnection {
     NWConnection(host: "127.0.0.1", port: 9, using: .tcp)
+  }
+
+  @MainActor func testNormalEOFWaitsForAcceptedDeliveryBeforeNotifyingOwner() async throws {
+    let transport = LanTcpTransport(socket(), profile: .lanTransfer), probe = ReceiveDrainProbe()
+    let feature = ReceiveDrainProbe()
+    let ended = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+    let started = await transport.startDelivery(deliver: { try await probe.deliver($0) },
+      ended: { error in ended.withLock { $0 = error } }, drained: { try? await feature.deliver(Data([9])) })
+    XCTAssertTrue(started)
+    let duplicate = await transport.startDelivery(deliver: { _ in XCTFail("Second consumer started") }, ended: { _ in })
+    XCTAssertFalse(duplicate)
+    let queue = await transport.ingressQueue
+    let expected = (0..<4).map { Data([UInt8($0)]) }
+    for bytes in expected { await queue.push(bytes) }
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    try await transport.finishReceiving()
+    XCTAssertNil(ended.withLock { $0 }, "EOF must not retire the session while delivery is suspended")
+    await probe.release()
+    for _ in 0..<10000 { if await feature.delivered.count == 1 { break }; await Task.yield() }
+    let featureCount = await feature.delivered.count
+    XCTAssertEqual(featureCount, 1)
+    XCTAssertNil(ended.withLock { $0 }, "EOF must also await the feature-owned ingress")
+    await feature.release()
+    for _ in 0..<10000 { if ended.withLock({ $0 != nil }) { break }; await Task.yield() }
+    XCTAssertEqual(ended.withLock { $0 as? SessionFailure }, .cancelled)
+    let delivered = await probe.delivered
+    XCTAssertEqual(delivered, expected)
+    await assertCapacity(transport, 2, false)
+  }
+
+  @MainActor func testDeliveryFailureDuringEOFDrainPreservesItsCause() async throws {
+    let transport = LanTcpTransport(socket()), probe = ReceiveDrainProbe(failure: .authentication)
+    let ended = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+    await transport.startDelivery(deliver: { try await probe.deliver($0) },
+      ended: { error in ended.withLock { $0 = error } })
+    let queue = await transport.ingressQueue
+    await queue.push(Data([1])); await queue.push(Data([2]))
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    try await transport.finishReceiving(); await probe.release()
+    for _ in 0..<10000 { if ended.withLock({ $0 != nil }) { break }; await Task.yield() }
+    XCTAssertEqual(ended.withLock { $0 as? SessionFailure }, .authentication)
+    let count = await probe.delivered.count
+    XCTAssertEqual(count, 1)
+    await assertCapacity(transport, 2, false)
+  }
+
+  @MainActor func testExplicitCloseInterruptsEOFDrainWithoutDeliveringLaterRecords() async throws {
+    let transport = LanTcpTransport(socket()), probe = ReceiveDrainProbe()
+    let ended = OSAllocatedUnfairLock(initialState: false)
+    await transport.startDelivery(deliver: { try await probe.deliver($0) }, ended: { _ in ended.withLock { $0 = true } })
+    let queue = await transport.ingressQueue
+    await queue.push(Data([1])); await queue.push(Data([2]))
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    try await transport.finishReceiving(); await transport.close(); await probe.release()
+    for _ in 0..<100 { await Task.yield() }
+    let count = await probe.delivered.count
+    XCTAssertEqual(count, 1)
+    XCTAssertFalse(ended.withLock { $0 })
+    await assertCapacity(transport, 2, false)
+  }
+
+  @MainActor func testStalledEOFDrainRetiresAtTheAbsoluteDeadline() async throws {
+    let transport = LanTcpTransport(socket()), probe = ReceiveDrainProbe()
+    let ended = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+    await transport.startDelivery(deliver: { try await probe.deliver($0) },
+      ended: { error in ended.withLock { $0 = error } })
+    let queue = await transport.ingressQueue
+    await queue.push(Data([1])); await queue.push(Data([2]))
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    let start = ProcessInfo.processInfo.systemUptime
+    try await transport.finishReceiving()
+    for _ in 0..<600 { if ended.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(25)) }
+    XCTAssertEqual(ended.withLock { $0 as? NWError }, .posix(.ETIMEDOUT))
+    XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - start, 10)
+    XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 15)
+    await assertCapacity(transport, 2, false)
+    await probe.release()
+    for _ in 0..<100 { await Task.yield() }
+    let count = await probe.delivered.count
+    XCTAssertEqual(count, 1)
   }
 
   /// With no consumer running, a pushed envelope must stay until it is popped, and `pop` must report

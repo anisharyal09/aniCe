@@ -15,6 +15,14 @@ struct TransferMessage: Equatable, Sendable {
     return bytes
   }
 
+  private static let header = Data([0x84, 0x6e]) + Data("aniCe transfer".utf8) + Data([1])
+  // Session CBOR rejects non-minimal lengths; classification never replaces full validation.
+  static func peekKind(_ bytes: Data) -> UInt8? {
+    guard bytes.count > header.count, bytes.starts(with: header) else { return nil }
+    let kind = bytes[bytes.startIndex + header.count]
+    return (1...11).contains(kind) ? kind : nil
+  }
+
   static func decode(_ bytes: Data, maximumChunkBytes: Int = 3072) throws -> Self? {
     guard bytes.count <= (maximumChunkBytes > 3072 ? 262144 : 4000) else { throw TransferWireError.malformed }
     guard case .array(let row) = try SessionCbor.decode(bytes, maximumBytes: maximumChunkBytes > 3072 ? 262144 : 4096), row.first == .text("aniCe transfer") else { return nil }

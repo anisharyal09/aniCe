@@ -18,6 +18,8 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
     // Framed writes reuse this scratch space; the writer mutex serializes every use of it.
     private val frame = ByteArray(profile.maximumEnvelope + 5)
     @Volatile private var closed = false
+    @Volatile private var secured = false
+    fun markSecured() { secured = true }
     var readNanos = 0L
         private set
     var deliveryNanos = 0L
@@ -66,11 +68,18 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                 close()
             }
         try {
+            val writerStart = SessionTiming.start()
             writer.withLock {
+                SessionTiming.end(this, "socket_writer_wait", writerStart, envelope.size, profile = profile.wire, direction = "send")
+                val dispatchStart = SessionTiming.start()
                 withContext(Dispatchers.IO) {
+                    SessionTiming.end(this@AndroidLanTransport, "socket_write_dispatch", dispatchStart, envelope.size, profile = profile.wire, direction = "send")
                     if (closed) throw SessionException(SessionFailure.CANCELLED)
                     val framed = LanFraming.encodeInto(frame, envelope, profile)
-                    socket.getOutputStream().write(frame, 0, framed)
+                    val writeStart = SessionTiming.start()
+                    try { socket.getOutputStream().write(frame, 0, framed) } finally {
+                        SessionTiming.end(this@AndroidLanTransport, "socket_write", writeStart, framed, profile = profile.wire, direction = "send")
+                    }
                 }
             }
         } catch (error: Exception) {
@@ -84,10 +93,10 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
         }
     }
 
-    suspend fun receive(deliver: suspend (ByteArray) -> Unit) =
+    suspend fun receive(drained: suspend () -> Unit = {}, deliver: suspend (ByteArray) -> Unit) =
         withContext(Dispatchers.IO) {
             coroutineScope {
-                val framing = LanFraming(profile) { SystemClock.elapsedRealtime() }
+                val framing = LanFraming(profile, secured = { secured }) { SystemClock.elapsedRealtime() }
                 val input = socket.getInputStream()
                 // Reuse one record buffer; each read stops at the current header/body boundary.
                 val buffer = ByteArray(profile.maximumEnvelope + 5)
@@ -128,12 +137,15 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                             (it - SystemClock.elapsedRealtime()).coerceIn(1, 10000).toInt()
                         } ?: 0
                         val readStarted = if (profile != SessionProfile.STANDARD) System.nanoTime() else 0L
+                        val readTiming = SessionTiming.start()
                         val count =
                             try {
                                 input.read(buffer, 0, framing.readLimit)
                             } catch (_: SocketTimeoutException) {
                                 framing.tick()
                                 continue
+                            } finally {
+                                SessionTiming.end(this@AndroidLanTransport, "socket_read", readTiming, profile = profile.wire, direction = "receive")
                             }
                         if (profile != SessionProfile.STANDARD) readNanos += System.nanoTime() - readStarted
                         if (count < 0) {
@@ -158,11 +170,15 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                 } finally {
                     queue.close()
                 }
-                // The hand-off drains before the stream end is reported. `Channel.close` leaves the
-                // buffered envelopes for the consumer, but throwing here cancels this scope and would
-                // discard them, losing a record that arrived before the end — which inline delivery
-                // never did. A cancelled read loop is not drained: there, stopping is the point.
-                consumer.join()
+                // FIN can follow the final result; one deadline covers both frame and feature drains.
+                // Path failure or explicit cancellation must not start another buffered delivery.
+                if (ended is java.io.EOFException) {
+                    val complete = withTimeoutOrNull(10000) { consumer.join(); drained(); true } ?: false
+                    if (!complete) {
+                        consumer.cancelAndJoin()
+                        throw SocketTimeoutException("Local-network receive drain timed out after 10 seconds.")
+                    }
+                } else { consumer.cancelAndJoin() }
                 if (ended != null) throw ended
             }
         }

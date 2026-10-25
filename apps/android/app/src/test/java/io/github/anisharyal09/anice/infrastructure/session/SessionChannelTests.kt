@@ -368,6 +368,8 @@ class SessionChannelTests {
     var securedR = 0
     val dataI = mutableListOf<ByteArray>()
     val dataR = mutableListOf<ByteArray>()
+    val draining = kotlinx.coroutines.CompletableDeferred<Unit>()
+    val drained = kotlinx.coroutines.CompletableDeferred<Unit>()
     val c =
       SessionConnection(
         h.engine(v, false),
@@ -376,6 +378,7 @@ class SessionChannelTests {
         { outboundI.add(it) },
         { dataI.add(it) },
         { securedI++ },
+        drain = { draining.complete(Unit); drained.await() },
       )
     val s =
       SessionConnection(
@@ -424,7 +427,14 @@ class SessionChannelTests {
     assertArrayEquals(payload, dataR.single())
     assertArrayEquals(byteArrayOf(7), dataI.single())
     s.disconnect()
-    deliver(outboundR, c, incomingI, idR)
+    val closing = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext()).async {
+      deliver(outboundR, c, incomingI, idR)
+    }
+    kotlinx.coroutines.withTimeout(1000) { draining.await() }
+    assertFalse("Authenticated close must drain accepted feature work", closing.isCompleted)
+    assertFalse(c.isClosed)
+    drained.complete(Unit)
+    closing.await()
     assertTrue(c.isClosed)
     assertTrue(s.isClosed)
     assertTrue(c.closedByPeer)

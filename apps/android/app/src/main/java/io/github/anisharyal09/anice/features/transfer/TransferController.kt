@@ -96,6 +96,7 @@ class TransferController(
     private val resumeTimeoutMillis: Long = 15000L,
     private val confirmationTimeoutMillis: Long = 30000L,
     recoveryFile: File? = null,
+    private val receiveDispatcher: CoroutineDispatcher = transferReceiveDispatcher,
     private val openSource: (TransferFile) -> java.io.InputStream = { file ->
         file.sourceFile?.let(::FileInputStream)
             ?: file.sourceUri?.let { context?.contentResolver?.openInputStream(it) }
@@ -191,7 +192,21 @@ class TransferController(
     var preparing by mutableStateOf(false); private set
     private var transferJob: Job? = null
 
+    private val ingress by lazy {
+        TransferIngress(scope) { descriptor, operation, bytes ->
+            val channel = channels[descriptor.transport]
+            try {
+                if (operation == epoch && channel?.descriptor == descriptor && handle(descriptor, bytes) == DataHandling.HANDLED && operation == epoch) {
+                    channel.received(bytes)
+                }
+            } catch (error: CancellationException) { throw error }
+              catch (error: Exception) {
+                if (operation == epoch) failTransfer("Transfer receive failed: ${error.message}")
+            }
+        }
+    }
     private var epoch = UUID.randomUUID()
+        set(value) { field = value; ingress.invalidate() }
     private var capacityRevision = 0L
     private var sendingFile: TransferFile? = null
     private var senderFileIndex = 0
@@ -243,14 +258,15 @@ class TransferController(
 
     private var peerMaxChunkBytes: Long = 3072L
     private var peerMaxWindow: Long = 64L
-    // The negotiated window keeps LAN chunks in flight across the receiver's two-chunk ACK cadence.
+    private var sendWindow: TransferSendWindow? = null
+    private val senderChunkBytes get() = sendWindow?.chunkBytes ?: peerMaxChunkBytes
     private val sendCreditBytes: Long
-        get() = peerMaxChunkBytes * peerMaxWindow
+        get() = sendWindow?.creditBytes ?: (peerMaxChunkBytes * peerMaxWindow)
 
     // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
     private val hasSendCredit: Boolean
         get() {
-            val next = minOf(peerMaxChunkBytes, ((sendingFile?.size ?: sentBytes) - sentBytes).coerceAtLeast(0))
+            val next = minOf(senderChunkBytes, ((sendingFile?.size ?: sentBytes) - sentBytes).coerceAtLeast(0))
             return sentBytes - acknowledgedBytes <= sendCreditBytes - next
         }
 
@@ -339,7 +355,7 @@ class TransferController(
             catch (error: Exception) { updateState(TransferState.Failed("Cannot recover the pending transfer: ${error.message}")) }
             finally { recoveryReady.complete(Unit); selectPreferredChannel() }
         }
-        scope.launch(Dispatchers.IO) {
+        scope.launch(receiveDispatcher) {
             for (write in recoveryWrites) {
                 try {
                     if (write.snapshot == null) store.clear()
@@ -402,7 +418,7 @@ class TransferController(
         val operation = epoch
         val remaining = saved.expiresAt - System.currentTimeMillis()
         if (local != saved.localFingerprint || remaining !in 1..pauseTimeoutMillis) {
-            withContext(Dispatchers.IO) {
+            withContext(receiveDispatcher) {
                 if (saved.receiving && (saved.stage == 0 || saved.stage == 4)) {
                     val destination = if (saved.tree.isNotEmpty()) TransferDestination(requireNotNull(context), Uri.parse(saved.tree),
                         android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, saved.treeModes) else null
@@ -427,12 +443,12 @@ class TransferController(
         }
         if (saved.stage == 4 && saved.tree.isEmpty()) {
             val file = saved.batch.files[saved.index]
-            val published = withContext(Dispatchers.IO) { TransferReceiveStorage.published(File(saved.folder), file, saved.fileIdentity) }
+            val published = withContext(receiveDispatcher) { TransferReceiveStorage.published(File(saved.folder), file, saved.fileIdentity) }
             if (published) {
-                withContext(Dispatchers.IO) { TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id) }
+                withContext(receiveDispatcher) { TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id) }
                 if (saved.index == saved.batch.files.lastIndex) saved = saved.copy(stage = 3)
                 else {
-                    val storage = TransferReceiveStorage(File(saved.folder), null)
+                    val storage = TransferReceiveStorage(File(saved.folder), null, ioDispatcher = receiveDispatcher)
                     val next = saved.index + 1
                     val paths = storage.create(saved.batch.id, saved.batch.files[next].id)
                     if (operation != epoch) { storage.discard(); return }
@@ -440,7 +456,7 @@ class TransferController(
                     destinationDirectory = File(saved.folder)
                     saved = saved.copy(index = next, offset = 0, stage = 0, partial = paths.first?.absolutePath ?: "")
                 }
-                withContext(Dispatchers.IO) { recoveryStore?.save(saved) }
+                withContext(receiveDispatcher) { recoveryStore?.save(saved) }
             }
         }
         if (operation != epoch) return
@@ -459,7 +475,7 @@ class TransferController(
             val folder = File(saved.folder)
             val destination = if (saved.tree.isNotEmpty()) TransferDestination(requireNotNull(context), Uri.parse(saved.tree),
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, saved.treeModes) else null
-            val storage = TransferReceiveStorage(folder, destination)
+            val storage = TransferReceiveStorage(folder, destination, ioDispatcher = receiveDispatcher)
             try {
                 val paths = storage.restore(batch.id, batch.files[saved.index].id, saved.partial, saved.document, saved.offset)
                 receiverStorage = storage; receiverPartFile = paths.first; receiverPartDocument = paths.second
@@ -467,7 +483,7 @@ class TransferController(
             } catch (error: Exception) { destination?.close(); throw error }
         }
         if (operation != epoch) {
-            withContext(NonCancellable + Dispatchers.IO) { receiverStorage?.discard(); documentDestination?.close() }
+            withContext(NonCancellable + receiveDispatcher) { receiverStorage?.discard(); documentDestination?.close() }
             receiverStorage = null; documentDestination = null
             return
         }
@@ -625,6 +641,7 @@ class TransferController(
 
     override fun retired(descriptor: ChannelDescriptor) {
         if (channels[descriptor.transport]?.descriptor != descriptor) return
+        ingress.invalidate(descriptor)
         channels.remove(descriptor.transport)
         capabilities.remove(descriptor.transport)
         clearCapacityWaiters()
@@ -699,17 +716,41 @@ class TransferController(
         }
     }
 
+    override suspend fun ingest(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+        val kind = TransferMessage.peekKind(bytes)
+        // A resume must observe all earlier writes; a blocked provider cannot retain it indefinitely.
+        if (kind == 10 && withTimeoutOrNull(10000) { ingress.drain(); true } != true) {
+            retired(descriptor); return DataHandling.DISCARDED
+        }
+        if (kind != 5) return handle(descriptor, bytes)
+        val operation = epoch
+        // Peer limits describe its receiver; this FIFO must cover our advertised receive credit.
+        val chunk = chunkLimit(descriptor)
+        val window = if (descriptor.transport == "ble") 4 else if (chunk > 3072) 8 else 64
+        val accepted = ingress.enqueue(descriptor, operation, bytes,
+            minOf(chunk * window + 65536, 2 * 1024 * 1024), minOf(64, window * 8)) {
+            operation == epoch && channels[descriptor.transport]?.descriptor == descriptor
+        }
+        return if (accepted) DataHandling.QUEUED else DataHandling.DISCARDED
+    }
+
+    override suspend fun drain(descriptor: ChannelDescriptor) {
+        if (channels[descriptor.transport]?.descriptor != descriptor) return
+        val drained = withTimeoutOrNull(10000) { ingress.drain(descriptor); true } ?: false
+        if (!drained) retired(descriptor)
+    }
+
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
         recoveryReady.await()
+        val operation = epoch
         val limit = chunkLimit(descriptor)
-        // A profile-3 chunk record carries 131 KiB of CBOR. Decoding it on a background dispatcher
-        // keeps that work off the presentation thread, where it previously blocked frame rendering.
+        // Chunk CBOR decoding stays on Default; storage uses its separate IO lane.
         val message = try {
             withContext(Dispatchers.Default) { TransferMessage.decode(bytes, limit) }
                 ?: return DataHandling.UNRECOGNIZED
         } catch (_: TransferWireException) { return DataHandling.DISCARDED }
           catch (_: SessionException) { return DataHandling.UNRECOGNIZED }
-        if (channels[descriptor.transport]?.descriptor != descriptor) return DataHandling.DISCARDED
+        if (operation != epoch || channels[descriptor.transport]?.descriptor != descriptor) return DataHandling.DISCARDED
         if (message.kind == 1L) {
             capabilities[descriptor.transport] = message
             if (!isBusy || state is TransferState.Connecting || state is TransferState.Paused) selectPreferredChannel()
@@ -753,6 +794,7 @@ class TransferController(
             return DataHandling.HANDLED
         }
         if (descriptor != activeChannel?.descriptor) return DataHandling.DISCARDED
+        if (message.kind == 5L) return handleChunk(message)
         processMessage(message, descriptor.peer.deviceName, descriptor)
         return DataHandling.HANDLED
     }
@@ -762,7 +804,6 @@ class TransferController(
             2L -> handleOffer(message, peerName, descriptor)
             3L -> handleAccept(message)
             4L -> handleReject(message)
-            5L -> handleChunk(message)
             6L -> handleAck(message)
             7L -> {
                 val batch = currentBatch ?: return
@@ -1064,7 +1105,7 @@ class TransferController(
                     if (!peerCompatible || channel.descriptor.transport != "ble") break
                     val storage = receiverStorage ?: break
                     val offset = receiverWrittenBytes.coerceIn(0L, file.size)
-                    val prefix = withContext(Dispatchers.IO) {
+                    val prefix = withContext(receiveDispatcher) {
                         runCatching { storage.prefixDigest(offset) }.getOrNull()
                     } ?: break
                     if (operation != epoch || activeChannel !== channel) break
@@ -1488,7 +1529,7 @@ class TransferController(
         receiverStorage = null
         receiverPartFile = null
         receiverPartDocument = null
-        withContext(Dispatchers.IO) { runCatching { previous?.discard() } }
+        withContext(receiveDispatcher) { runCatching { previous?.discard() } }
         if (operation != epoch || currentBatch?.id != batch.id) return false
         receiverTotalTransferred = (receiverTotalTransferred - receiverWrittenBytes).coerceAtLeast(0L)
         receiverWrittenBytes = 0L
@@ -1846,8 +1887,11 @@ class TransferController(
             sentBytes = initial
             acknowledgedBytes = initial
             lastAckAtMillis = null
-            streamStartedAtMillis = clock()
-            if (context != null) android.util.Log.i("aniCe-transfer", "source transport=${activeChannel?.descriptor?.transport} chunk=$peerMaxChunkBytes window=$peerMaxWindow")
+            val startedAt = clock()
+            streamStartedAtMillis = startedAt
+            sendWindow = TransferSendWindow(peerMaxChunkBytes, peerMaxWindow,
+                activeChannel?.descriptor?.transport == "lan", startedAt)
+            if (context != null) android.util.Log.i("aniCe-transfer", "source transport=${activeChannel?.descriptor?.transport} chunk=$senderChunkBytes credit=$sendCreditBytes maxChunk=$peerMaxChunkBytes window=$peerMaxWindow")
             var fileBytesSent = initial
             // A LAN capability that arrived while the previous file was finalizing is retried here,
             // at the new file's start, where the stream is no longer waiting on a file result.
@@ -1859,7 +1903,12 @@ class TransferController(
                 val buffer = ByteArray(peerMaxChunkBytes.toInt())
 
                 while (fileBytesSent < file.size) {
-                    if (!hasSendCredit) {
+                    while (true) {
+                        val previousChunk = senderChunkBytes
+                        sendWindow?.advance()
+                        if (context != null && previousChunk != senderChunkBytes)
+                            android.util.Log.i("aniCe-transfer", "send window chunk=$senderChunkBytes credit=$sendCreditBytes")
+                        if (hasSendCredit) break
                         val deferred = CompletableDeferred<Unit>().also { creditDeferred = it }
                         if (hasSendCredit) {
                             creditDeferred = null
@@ -1870,7 +1919,7 @@ class TransferController(
 
                     if (!coroutineContext.isActive || operation != epoch || activeChannel == null) return
 
-                    val chunkSize = (file.size - fileBytesSent).coerceAtMost(peerMaxChunkBytes).toInt()
+                    val chunkSize = (file.size - fileBytesSent).coerceAtMost(senderChunkBytes).toInt()
                     val readBytes = try { withContext(Dispatchers.IO) {
                         var filled = 0
                         while (filled < chunkSize) {
@@ -1976,7 +2025,10 @@ class TransferController(
         if (message.string(0) != batch.id || message.string(1) != file.id) return
         val written = message.number(2)
         if (written < acknowledgedBytes || written > sentBytes || written > file.size) return
-        if (written > acknowledgedBytes) { pauseExpiresAt = null; pauseDeadline = null }
+        if (written > acknowledgedBytes) {
+            pauseExpiresAt = null; pauseDeadline = null
+            sendWindow?.acknowledged(clock(), fullyConfirmed = written == sentBytes)
+        }
         acknowledgedBytes = written
         lastAckAtMillis = clock()
         checkCreditAndResume()
@@ -2093,20 +2145,20 @@ class TransferController(
             try {
                 receiveCleanup?.join()
                 if (operation != epoch) return@launch
-                destination = withContext(Dispatchers.IO) {
+                destination = withContext(receiveDispatcher) {
                     TransferDestination(ctx, tree, modes).also { target ->
                         owned.set(target)
                         try { target.preflight(current.batch.totalBytes) }
                         catch (error: Exception) { target.close(); throw error }
                     }
                 }
-                if (operation != epoch || activeChannel == null) { withContext(NonCancellable + Dispatchers.IO) { destination.close() }; return@launch }
+                if (operation != epoch || activeChannel == null) { withContext(NonCancellable + receiveDispatcher) { destination.close() }; return@launch }
                 documentDestination = destination
                 owned.set(null)
                 acceptIncomingOffer(File(ctx.filesDir, "unused-document-destination"))
-            } catch (error: CancellationException) { withContext(NonCancellable + Dispatchers.IO) { owned.getAndSet(null)?.close() }; throw error }
+            } catch (error: CancellationException) { withContext(NonCancellable + receiveDispatcher) { owned.getAndSet(null)?.close() }; throw error }
             catch (error: Exception) {
-                withContext(NonCancellable + Dispatchers.IO) { owned.getAndSet(null)?.close() }
+                withContext(NonCancellable + receiveDispatcher) { owned.getAndSet(null)?.close() }
                 if (operation == epoch) failTransfer("Cannot use this folder: ${error.message}. Choose another local folder.")
             }
         }
@@ -2188,7 +2240,7 @@ class TransferController(
         receiverWrittenBytes = 0L
         lastAckedWrittenBytes = 0L
         val operation = epoch
-        val storage = TransferReceiveStorage(destDir, documentDestination)
+        val storage = TransferReceiveStorage(destDir, documentDestination, ioDispatcher = receiveDispatcher)
         try {
             val (partial, document) = storage.create(batch.id, file.id)
             if (operation != epoch) { storage.discard(); throw SessionException(SessionFailure.CANCELLED) }
@@ -2248,25 +2300,25 @@ class TransferController(
         }
     }
 
-    private suspend fun handleChunk(message: TransferMessage) {
-        val current = state as? TransferState.Transferring ?: return
-        val destDir = destinationDirectory ?: return
-        val storage = receiverStorage ?: return
-        if (receiverPartFile == null && receiverPartDocument == null) return
+    private suspend fun handleChunk(message: TransferMessage): DataHandling {
+        val current = state as? TransferState.Transferring ?: return DataHandling.DISCARDED
+        if (destinationDirectory == null) return DataHandling.DISCARDED
+        val storage = receiverStorage ?: return DataHandling.DISCARDED
+        if (receiverPartFile == null && receiverPartDocument == null) return DataHandling.DISCARDED
 
         val fileId = message.string(1)
         val offset = message.number(2)
         val data = message.bytes(3)
 
-        if (receiverCurrentFileIndex !in current.batch.files.indices) return
+        if (receiverCurrentFileIndex !in current.batch.files.indices) return DataHandling.DISCARDED
         val currentFile = current.batch.files[receiverCurrentFileIndex]
-        if (currentFile.id != fileId || offset != receiverWrittenBytes) return
+        if (currentFile.id != fileId || offset != receiverWrittenBytes) return DataHandling.DISCARDED
 
-        if (message.string(0) != current.batch.id || data.size > chunkLimit(activeChannel?.descriptor) || data.size.toLong() > currentFile.size - receiverWrittenBytes) return
+        if (message.string(0) != current.batch.id || data.size > chunkLimit(activeChannel?.descriptor) || data.size.toLong() > currentFile.size - receiverWrittenBytes) return DataHandling.DISCARDED
         val operation = epoch
         try { storage.write(data) }
-        catch (error: java.io.IOException) { if (operation == epoch) failTransfer("Destination write failed: ${error.message}"); return }
-        if (operation != epoch || receiverStorage !== storage) return
+        catch (error: java.io.IOException) { if (operation == epoch) failTransfer("Destination write failed: ${error.message}"); return DataHandling.DISCARDED }
+        if (operation != epoch || receiverStorage !== storage) return DataHandling.DISCARDED
         pauseExpiresAt = null; pauseDeadline = null
         receiverWrittenBytes += data.size
         receiverTotalTransferred += data.size
@@ -2298,6 +2350,7 @@ class TransferController(
         }
 
         if (receiverWrittenBytes == currentFile.size) finalizeReceiverFile(current.batch)
+        return DataHandling.HANDLED
     }
 
     private suspend fun finalizeReceiverFile(batch: TransferBatch) = withContext(NonCancellable) {
@@ -2522,6 +2575,7 @@ class TransferController(
         currentBatch = null
         destinationDirectory = null
         sendingFile = null
+        sendWindow = null
         finalizing = false
         ackTimerJob?.cancel()
         ackTimerJob = null
@@ -2534,7 +2588,7 @@ class TransferController(
         receiverPartFile = null
         receiverPartDocument = null
         documentDestination = null
-        receiveCleanup = scope.launch(Dispatchers.IO) {
+        receiveCleanup = scope.launch(receiveDispatcher) {
             try {
                 storage?.discard()
                 if (failed?.receiving == true && (failed.stage == 0 || failed.stage == 4)) {
@@ -2566,5 +2620,37 @@ class TransferController(
         receiverTotalTransferred = 0L
         onLeaseChanged?.invoke(false)
         if (selectChannel) selectPreferredChannel()
+    }
+}
+
+// Bounds unacknowledged LAN bytes before allowing the negotiated high-throughput window.
+internal class TransferSendWindow(private val maximumChunk: Long, private val maximumWindow: Long,
+    private val lan: Boolean, started: Long) {
+    private var probing = lan && maximumChunk > 4096
+    private var constrained = false
+    private var lastAcknowledgedAt = started
+    private var probeStartedAt = started
+    private var reprobe = false
+    private var decision: Boolean? = null
+    val chunkBytes get() = if (probing || constrained) minOf(4096L, maximumChunk) else maximumChunk
+    val creditBytes get() = chunkBytes * when {
+        probing -> 1L
+        constrained -> minOf(2L, maximumWindow)
+        else -> maximumWindow
+    }
+    // Only advancing, correlated ACKs reach this method; duplicates cannot qualify a fast path.
+    fun acknowledged(now: Long, fullyConfirmed: Boolean) {
+        if (probing && !fullyConfirmed) return
+        val elapsed = now - lastAcknowledgedAt
+        if (probing) { if (decision == null) decision = elapsed > 100 }
+        else if (constrained) { if (fullyConfirmed && now - probeStartedAt >= 5000) reprobe = true }
+        else if (lan && maximumChunk > 4096 && elapsed > 1000) decision = true
+        lastAcknowledgedAt = now
+    }
+    // Apply shrinkage between records, never while a previously admitted source read is suspended.
+    fun advance() {
+        decision?.let { constrained = it; probing = false }
+        decision = null
+        if (reprobe) { probing = true; probeStartedAt = lastAcknowledgedAt; reprobe = false }
     }
 }
