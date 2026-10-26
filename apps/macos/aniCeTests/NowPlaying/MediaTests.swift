@@ -10,6 +10,37 @@ import Observation
 @testable import aniCe
 
 final class MediaTests: XCTestCase {
+  func testPipeRetainsReplyOrderAcrossBatchedAndSplitCallbacks() {
+    let pipe=PlaybackPipe()
+    XCTAssertTrue(pipe.append(Data("metadata\ncapab".utf8)))
+    XCTAssertTrue(pipe.scheduleDrain())
+    XCTAssertTrue(pipe.append(Data("ilities\nnext metadata\npartial".utf8)))
+    XCTAssertFalse(pipe.scheduleDrain())
+    XCTAssertEqual(pipe.take().map { String(decoding:$0,as:UTF8.self) },["metadata","capabilities","next metadata"])
+    XCTAssertTrue(pipe.take().isEmpty)
+    XCTAssertTrue(pipe.append(Data(" reply\n".utf8)))
+    XCTAssertTrue(pipe.scheduleDrain())
+    XCTAssertEqual(pipe.take(),[Data("partial reply".utf8)])
+  }
+  func testPipeBoundsRepliesWaitingForMainActorDelivery() {
+    let pipe=PlaybackPipe(),limit=17*1024*1024
+    XCTAssertTrue(pipe.append(Data(repeating:97,count:limit-1)+Data([10])))
+    XCTAssertFalse(pipe.append(Data([97,10])))
+    XCTAssertEqual(pipe.take().map(\.count),[limit-1])
+    XCTAssertTrue(pipe.append(Data([97,10])))
+    XCTAssertEqual(pipe.take(),[Data([97])])
+  }
+  @MainActor func testPipeDrainStopsWhenAReplyRetiresTheHelperGeneration() {
+    let bridge=MediaProcessBridge(),pipe=PlaybackPipe(),generation=bridge.generation
+    var received: [Data]=[]
+    bridge.received = { [weak bridge] bytes in received.append(bytes);bridge?.stop() }
+    XCTAssertTrue(pipe.append(Data("first\nstale capabilities\n".utf8)))
+    bridge.drain(pipe,generation:generation)
+    XCTAssertEqual(received,[Data("first".utf8)])
+    XCTAssertTrue(pipe.append(Data("old callback\n".utf8)))
+    bridge.drain(pipe,generation:generation)
+    XCTAssertEqual(received.count,1)
+  }
   @MainActor func testReferencePlayerLayoutRendersBothThemesAndUnavailableStatesWithoutCommands() throws {
     var requests = 0
     let preferences = try XCTUnwrap(UserDefaults(suiteName: "anice.visual." + UUID().uuidString))
@@ -274,6 +305,19 @@ final class CapabilityRepairTests: XCTestCase {
     XCTAssertEqual(timed.expire()?["capabilityState"] as? String,"unavailable");XCTAssertNil(timed.expire())
     XCTAssertEqual(timed.complete(["canSeek":true])?["canSeek"] as? Bool,true);XCTAssertNil(timed.complete(["canSeek":false]))
   }
+  func testCapabilityPublicationWaitIsBoundedAndAllowsLateCompletion() {
+    let early=RecordingCapabilities(), late=RecordingCapabilities()
+    XCTAssertNil(early.complete(["capabilityState":"ready","canSeek":true]))
+    XCTAssertTrue(early.wait(until:.now()))
+    XCTAssertEqual(early.currentValues?["canSeek"] as? Bool,true)
+    XCTAssertFalse(late.wait(until:.now()))
+    let context: [String:Any]=["pid":10,"playbackRevision":UUID().uuidString]
+    XCTAssertNil(late.arm(context))
+    XCTAssertEqual(late.complete(["canSeek":true])?["pid"] as? Int,10)
+    XCTAssertTrue(late.wait(until:.now()))
+    XCTAssertNil(late.complete(["canSeek":false]))
+    XCTAssertFalse(late.wait(until:.now()),"Duplicate callbacks must not signal a second completion")
+  }
   func testLateCapabilitiesKeepLatestNativePlaybackState() {
     var controls=NativePlaybackControls()
     controls.sample(["isPlaying":true]);controls.sample(["isPlaying":false])
@@ -303,6 +347,100 @@ final class CapabilityRepairTests: XCTestCase {
     var stale=capabilities;stale["playbackRevision"]=UUID().uuidString;stale["canToggle"]=false
     model.read(try JSONSerialization.data(withJSONObject:stale));XCTAssertEqual(model.playback,beforeStale)
     model.refreshCapabilities();XCTAssertEqual(model.playback.source,confirmed.source)
+  }
+  @MainActor func testUnavailableCapabilitiesKeepSeekUntilSupportIsExplicitlyRemoved() throws {
+    let model=MacPlaybackModel(requestSink:{ _ in true }), pid=ProcessInfo.processInfo.processIdentifier, recording=UUID()
+    let row: [String:Any]=["pid":pid,"playbackRevision":recording.uuidString,"sources":[["pid":pid,"bundleIdentifier":"test.player","isMusicApp":false,"isPlaying":true,"hasTrack":true]],"kMRMediaRemoteNowPlayingInfoTitle":"Track","kMRMediaRemoteNowPlayingInfoDuration":100,"isPlaying":true,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true,"capabilityState":"ready"]
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.playback.actions,9)
+    let revision=model.playback.revision
+    var unavailable=row
+    unavailable["capabilityState"]="unavailable"
+    unavailable.removeValue(forKey:"canToggle");unavailable.removeValue(forKey:"canSeek")
+    model.read(try JSONSerialization.data(withJSONObject:unavailable))
+    XCTAssertEqual(model.playback.actions,9)
+    XCTAssertEqual(model.playback.revision,revision)
+    let pending=RecordingCapabilities()
+    XCTAssertNil(pending.arm(["capabilitiesOnly":true,"pid":pid,"playbackRevision":recording.uuidString,"canSendCommandsDirectly":true]))
+    model.read(try JSONSerialization.data(withJSONObject:XCTUnwrap(pending.expire())))
+    XCTAssertEqual(model.playback.actions,9)
+    XCTAssertEqual(model.playback.revision,revision)
+    model.read(try JSONSerialization.data(withJSONObject:XCTUnwrap(pending.complete(["capabilityState":"ready","canSeek":true,"canToggle":true]))))
+    XCTAssertEqual(model.playback.actions,9)
+    XCTAssertEqual(model.playback.revision,revision)
+    var reply: [String:Any]=["capabilitiesOnly":true,"pid":pid,"playbackRevision":recording.uuidString,"capabilityState":"ready","canSeek":false,"canToggle":true]
+    model.read(try JSONSerialization.data(withJSONObject:reply))
+    XCTAssertEqual(model.playback.actions,1)
+    XCTAssertNotEqual(model.playback.revision,revision)
+    reply["canSeek"]=true;reply["playbackRevision"]=UUID().uuidString
+    model.read(try JSONSerialization.data(withJSONObject:reply))
+    XCTAssertEqual(model.playback.actions,1)
+    reply["playbackRevision"]=recording.uuidString;reply.removeValue(forKey:"canSeek");reply["capabilityState"]="unsupported"
+    model.read(try JSONSerialization.data(withJSONObject:reply))
+    XCTAssertEqual(model.playback.actions,0)
+    model.read(try JSONSerialization.data(withJSONObject:unavailable))
+    XCTAssertEqual(model.playback.actions,0,"Unknown support must not invent seek capability")
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    var live=row;live["kMRMediaRemoteNowPlayingInfoDuration"]=0
+    model.read(try JSONSerialization.data(withJSONObject:live))
+    XCTAssertEqual(model.playback.actions,1,"A live stream must still hide seek")
+  }
+  @MainActor func testMetadataGapRetainsOnlyTheSameRecordingsKnownTimeline() throws {
+    let model=MacPlaybackModel(requestSink:{ _ in true }), pid=ProcessInfo.processInfo.processIdentifier
+    let row: [String:Any]=["pid":pid,"playbackRevision":UUID().uuidString,"sources":[["pid":pid,"bundleIdentifier":"test.player","isMusicApp":false,"isPlaying":false,"hasTrack":true]],"kMRMediaRemoteNowPlayingInfoTitle":"Track","kMRMediaRemoteNowPlayingInfoDuration":100,"kMRMediaRemoteNowPlayingInfoElapsedTime":42,"kMRMediaRemoteNowPlayingInfoPlaybackRate":0,"isPlaying":false,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true,"capabilityState":"ready"]
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    let confirmed=model.playback
+    XCTAssertEqual(confirmed.actions,9)
+    var gap=row
+    for key in ["kMRMediaRemoteNowPlayingInfoDuration","kMRMediaRemoteNowPlayingInfoElapsedTime","kMRMediaRemoteNowPlayingInfoPlaybackRate"] { gap.removeValue(forKey:key) }
+    model.read(try JSONSerialization.data(withJSONObject:gap))
+    XCTAssertEqual(model.playback.duration,100000)
+    XCTAssertEqual(model.playback.position,42000)
+    XCTAssertEqual(model.playback.actions,9)
+    XCTAssertEqual(model.playback.revision,confirmed.revision)
+    gap["playbackRevision"]=UUID().uuidString
+    model.read(try JSONSerialization.data(withJSONObject:gap))
+    XCTAssertEqual(model.playback.duration,-1,"Another recording cannot inherit a duration")
+    XCTAssertEqual(model.playback.position,-1)
+    XCTAssertEqual(model.playback.actions,1)
+    let invalid: [Any]=[0,-1,"invalid",true]
+    XCTAssertGreaterThanOrEqual(invalid.count,4)
+    for value in invalid {
+      model.read(try JSONSerialization.data(withJSONObject:row))
+      var explicit=row;explicit["kMRMediaRemoteNowPlayingInfoDuration"]=value
+      model.read(try JSONSerialization.data(withJSONObject:explicit))
+      XCTAssertEqual(model.playback.actions,1,"Explicit unknown or invalid duration removes seek")
+    }
+  }
+  @MainActor func testPositionSampleRecoversDurationOnlyForTheCurrentRecording() throws {
+    let model=MacPlaybackModel(requestSink:{ _ in true }),pid=ProcessInfo.processInfo.processIdentifier,recording=UUID()
+    let row: [String:Any]=["pid":pid,"playbackRevision":recording.uuidString,"sources":[["pid":pid,"bundleIdentifier":"test.player","isMusicApp":false,"isPlaying":true,"hasTrack":true]],"kMRMediaRemoteNowPlayingInfoTitle":"Track","isPlaying":true,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true,"capabilityState":"ready"]
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.playback.duration,-1);XCTAssertEqual(model.playback.actions,1)
+    model.read(try JSONSerialization.data(withJSONObject:["sampleOnly":true,"pid":pid,"playbackRevision":recording.uuidString]))
+    XCTAssertEqual(model.playback.position,-1,"A sample without timing must not invent position zero")
+    var sample: [String:Any]=["sampleOnly":true,"pid":pid,"playbackRevision":recording.uuidString,"kMRMediaRemoteNowPlayingInfoDuration":100,"kMRMediaRemoteNowPlayingInfoElapsedTime":20,"isPlaying":true]
+    model.read(try JSONSerialization.data(withJSONObject:sample))
+    XCTAssertEqual(model.playback.duration,100000);XCTAssertEqual(model.playback.actions,9)
+    let confirmed=model.playback
+    sample["playbackRevision"]=UUID().uuidString;sample["kMRMediaRemoteNowPlayingInfoDuration"]=0
+    model.read(try JSONSerialization.data(withJSONObject:sample));XCTAssertEqual(model.playback,confirmed)
+    sample["playbackRevision"]=recording.uuidString
+    model.read(try JSONSerialization.data(withJSONObject:sample))
+    XCTAssertEqual(model.playback.duration,0);XCTAssertEqual(model.playback.actions,1)
+  }
+  func testUnavailableNativeCapabilitiesPreserveDirectedPlayPause() {
+    var controls=NativePlaybackControls()
+    controls.sample(["isPlaying":true]);controls.capabilities(["canPause":true])
+    XCTAssertEqual(controls.command,1)
+    controls.capabilities(["capabilityState":"unavailable"])
+    XCTAssertEqual(controls.command,1)
+    controls.capabilities(["capabilityState":"ready","canPause":false])
+    XCTAssertEqual(controls.command,2)
+    controls.capabilities(["canPlay":true]);controls.sample(["isPlaying":false])
+    XCTAssertEqual(controls.command,0)
+    controls.capabilities(["capabilityState":"unsupported"])
+    XCTAssertEqual(controls.command,2)
   }
   @MainActor func testSameSourceRecordingChangeRetainsCapabilitiesWithoutActionFlicker() throws {
     let model=MacPlaybackModel(requestSink:{ _ in true }), pid=ProcessInfo.processInfo.processIdentifier

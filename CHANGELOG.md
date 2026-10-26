@@ -57,6 +57,14 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Fixed
 
+- Deliver packaged Now Playing replies in pipe order and publish promptly resolved capabilities with metadata. Retain known support through discovery failures and timing only for the same recording. Position samples can recover duration; explicit support removal and invalid timing still disable seeking.
+
+- Serialize receiver resume verification with chunk writes through transport takeover. Release cancelled macOS resume waiters and fence source-close completion before accessing replacement transfer results.
+
+- Separate raw TCP diagnostic completion waiting from data-read timeout so locally accepted bytes can drain before peer confirmation.
+
+- Preserve native Bluetooth write-admission failures through Android transport teardown instead of replacing them with cancellation; include operation context in failure and stale-callback diagnostics.
+
 - Preserve Android Bluetooth retry history through brief secured intervals during approved-transfer recovery. Reset only after fifteen uninterrupted seconds of authenticated readiness.
 
 - Repair transfer credit wakeups and ACK coalescing so window shrinkage and overlapping submissions cannot strand progress. Recover large LAN chunks under continuous traffic and exclude source preparation or fully drained idle time from slow-path classification.

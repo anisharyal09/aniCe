@@ -243,6 +243,45 @@ class TransferControllerTests {
         partial.acknowledged(150, fullyConfirmed = true); partial.advance()
         assertEquals("Partial ACK must not reset the probe's start time", 131072L, partial.creditBytes)
     }
+    @Test fun receiverResumeExcludesLaterOldChannelWritesUntilRebindingCompletes() = runBlocking {
+        val lane = QueuedTransferStorageDispatcher()
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher, receiveDispatcher = lane)
+        val ble = MockAndroidSecuredChannel(instance = "old", transport = "ble")
+        val lan = MockAndroidSecuredChannel(instance = "new")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        val (batch, file) = offered(owner, ble, 3)
+        suspend fun pumpUntil(done: () -> Boolean) = withTimeout(2000) {
+            while (!done()) { if (lane.pending > 0) lane.runNext(); kotlinx.coroutines.yield() }
+        }
+        val accept = async { owner.acceptIncomingOffer(tempDir) }
+        pumpUntil { accept.isCompleted }; accept.await()
+        owner.available(lan)
+        owner.handle(lan.descriptor, TransferMessage.capability().encode())
+        val resume = async {
+            owner.ingest(lan.descriptor, TransferMessage.resume(batch, file, 0,
+                MessageDigest.getInstance("SHA-256").digest(ByteArray(0))).encode())
+        }
+        try {
+            withTimeout(1000) { while (lane.pending == 0) delay(1) }
+            assertEquals(DataHandling.QUEUED, owner.ingest(ble.descriptor,
+                TransferMessage.chunk(batch, file, 0, byteArrayOf(1)).encode()))
+            delay(50)
+            assertEquals("An old-channel write crossed resume verification", 1, lane.pending)
+            pumpUntil { resume.isCompleted }; assertEquals(DataHandling.QUEUED, resume.await())
+            val rebound = async { owner.drain(lan.descriptor) }
+            pumpUntil { rebound.isCompleted }; rebound.await()
+            val status = lan.sentData.mapNotNull { TransferMessage.decode(it) }.single { it.kind == 11L }
+            assertEquals(0L, status.number(2)); assertEquals(0L, status.number(3))
+            owner.ingest(lan.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(3)).encode())
+            pumpUntil { owner.state is TransferState.Completed }
+            assertArrayEquals(ByteArray(3), File(tempDir, "empty.bin").readBytes())
+        } finally {
+            resume.cancel(); owner.dismiss()
+            pumpUntil { lane.pending == 0 && tempDir.listFiles()!!.none { it.name.endsWith(".part") } }
+        }
+    }
+
     @Test fun orderedDeliveryContinuesWhileTransferStorageWaits() = runBlocking {
         val lane = QueuedTransferStorageDispatcher()
         val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher, receiveDispatcher = lane)

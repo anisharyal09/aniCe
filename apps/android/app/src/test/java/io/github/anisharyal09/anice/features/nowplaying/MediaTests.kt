@@ -280,6 +280,23 @@ class MediaTests {
         assertEquals(0,out.count { it.kind==6L });assertFalse(owner.draggingSeek)
         owner.beginSeek();owner.dragSeek(80000);owner.releaseSeek();assertEquals(1,out.count { it.kind==6L });owner.invalidate()
     }
+    @Test fun missingTimingCancelsTheDragAndBlocksSeekingUntilAValidSnapshotReturns() {
+        val timer=TestClock();val owner=MediaController(Dispatchers.Unconfined,{timer.now},timer::wait);val out=mutableListOf<MediaMessage>()
+        owner.foreground(this);owner.attach("ble","b","Mac") { out.add(MediaMessage.decode(it)!!) };owner.receive("ble","b",fixture("capability").encode());subscribed(owner,"ble","b",out)
+        val known=owner.playback!!.message
+        owner.beginSeek();owner.dragSeek(45000)
+        val missing=known.copy(fields=known.fields.toMutableList().also {
+            it[2]=Cbor.Text("55555555-5555-4555-8555-555555555555")
+            it[7]=Cbor.Integer(-1);it[8]=Cbor.Integer(-1);it[10]=Cbor.Integer(1)
+        })
+        owner.receive("ble","b",missing.encode())
+        assertFalse(owner.canSeek);owner.releaseSeek();owner.dragSeek(30000);owner.releaseSeek();owner.command(4,30000)
+        assertEquals(0,out.count { it.kind==6L })
+        owner.receive("ble","b",known.encode())
+        assertTrue(owner.canSeek);owner.beginSeek();owner.dragSeek(30000);owner.releaseSeek()
+        assertEquals(listOf(30000L),out.filter { it.kind==6L }.map { it.number(5) })
+        owner.invalidate()
+    }
     @Test fun rapidReleaseReplacesOnlyUnsentSeekAndRetainsLatestBehindExecution() {
         val timer=TestClock();val owner=MediaController(Dispatchers.Unconfined,{timer.now},timer::wait);val out=mutableListOf<MediaMessage>();var full=false
         owner.foreground(this);owner.attach("ble","b","Mac") { if(full) throw SessionBackpressure();out.add(MediaMessage.decode(it)!!) };owner.receive("ble","b",fixture("capability").encode());subscribed(owner,"ble","b",out)

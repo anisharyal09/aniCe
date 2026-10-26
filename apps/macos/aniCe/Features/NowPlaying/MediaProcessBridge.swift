@@ -2,15 +2,34 @@
 // Owns the packaged helper process, bounded newline framing and generation-fenced pipe delivery.
 import Foundation
 
-private final class PlaybackPipe: @unchecked Sendable {
+final class PlaybackPipe: @unchecked Sendable {
   private let lock = NSLock()
   private var bytes = Data()
-  func append(_ data: Data) -> [Data]? {
+  private var pending: [Data] = []
+  private var pendingBytes = 0
+  private var drainScheduled = false
+  func append(_ data: Data) -> Bool {
     lock.lock(); defer { lock.unlock() }
-    guard bytes.count + data.count <= 17*1024*1024 else { return nil }
-    bytes.append(data); var result: [Data] = []
-    while let i = bytes.firstIndex(of:10) { result.append(Data(bytes.prefix(upTo:i))); bytes.removeSubrange(...i) }
+    guard bytes.count + pendingBytes + data.count <= 17*1024*1024 else { return false }
+    bytes.append(data)
+    while let i = bytes.firstIndex(of:10) {
+      let line=Data(bytes.prefix(upTo:i))
+      pending.append(line);pendingBytes += line.count+1
+      bytes.removeSubrange(...i)
+    }
+    return true
+  }
+  func take() -> [Data] {
+    lock.lock(); defer { lock.unlock() }
+    let result=pending;pending=[];pendingBytes=0
+    drainScheduled=false
     return result
+  }
+  func scheduleDrain() -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    guard !pending.isEmpty, !drainScheduled else { return false }
+    drainScheduled=true
+    return true
   }
 }
 @MainActor final class MediaProcessBridge {
@@ -35,11 +54,25 @@ private final class PlaybackPipe: @unchecked Sendable {
     outgoing.fileHandleForReading.readabilityHandler = { [weak self] file in
       let data=file.availableData
       if data.isEmpty { file.readabilityHandler=nil; return }
-      guard let lines=reader.append(data) else { Task { @MainActor in if self?.generation==gen { self?.failure("Playback adapter output exceeded its limit") } }; return }
-      for line in lines { Task { @MainActor [weak self] in guard self?.generation==gen else { return }; self?.received(line) } }
+      guard reader.append(data) else {
+        file.readabilityHandler=nil
+        Task { @MainActor in if self?.generation==gen { self?.failure("Playback adapter output exceeded its limit") } }
+        return
+      }
+      guard reader.scheduleDrain() else { return }
+      // One FIFO drain preserves metadata/capability order across independently scheduled callbacks.
+      Task { @MainActor [weak self] in
+        self?.drain(reader,generation:gen)
+      }
     }
     child.terminationHandler = { [weak self] _ in Task { @MainActor in if self?.generation==gen { self?.failure("Playback adapter stopped") } } }
     do { try child.run(); started() } catch { failure("Playback adapter could not start") }
+  }
+  func drain(_ reader: PlaybackPipe, generation expected: UUID) {
+    for line in reader.take() {
+      guard generation==expected else { return }
+      received(line)
+    }
   }
   func stop() {
     generation=UUID()

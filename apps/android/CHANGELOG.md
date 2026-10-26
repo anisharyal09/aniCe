@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Record stale GATT callback drops and include connection/write failure stage, status, MTU, queue depth, write state, and operation epoch in BLE transport diagnostics. Successful fragment callbacks no longer emit routine log entries.
+
 - Parameterize the isolated raw TCP diagnostic by payload size and Wi-Fi lock request, reporting lock ownership alongside bidirectional rates and checksum results.
 
 - Opt-in LAN timings distinguish writer admission, IO dispatch, blocking socket writes and reads.
@@ -57,9 +59,13 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
-- Stop resetting transfer-owned Bluetooth retry history immediately at secured readiness. Evaluate the existing fifteen-second stability deadline across progress transitions and clear it on recovery cancellation; retain the bounded retry schedule for short-lived connections.
+- Run receiver resume verification and channel rebinding in the chunk FIFO so later old-channel writes cannot invalidate the reported resume offset.
 
-- Recover large LAN chunks after a slow-path fallback even when continuous traffic keeps the small window occupied. Drain outstanding bytes under a one-chunk local budget before timing a fresh probe. Exclude source preparation and fully drained idle time from slow-path classification while retaining submission-to-ACK timing; log credit-only window changes.
+- Give the raw TCP diagnostic's final receiver-confirmation ACK sixty seconds to drain locally accepted TCP backlog; data reads retain their ten-second no-progress bound.
+
+- Preserve immediate native Bluetooth write-submission errors through adapter teardown and pending-send completion. Distinguish synchronous `BluetoothStatusCodes` from asynchronous GATT completion status; legacy rejection reports unavailable status without inventing a code.
+
+- Stop resetting transfer-owned Bluetooth retry history immediately at secured readiness. Evaluate the existing fifteen-second stability deadline across progress transitions and clear it on recovery cancellation; retain the bounded retry schedule for short-lived connections.
 
 - Preserve replacement credit waiters when immediate coroutine resumption shrinks the LAN send window. Re-arm ACK coalescing for newer written bytes after a pending ACK succeeds, without retrying failed submissions in a loop.
 

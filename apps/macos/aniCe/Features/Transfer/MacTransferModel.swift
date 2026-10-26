@@ -144,6 +144,7 @@ enum TransferEvent: Equatable {
   private let pauseTimeout: Duration
   private let resumeTimeout: Duration
   private let confirmationTimeout: Duration
+  private let closeSource: @Sendable (FileHandle) throws -> Void
   private var pausedTransport: String?
   private var pausedFileIndex = 0
   private var pausedFileOffset: Int64 = 0
@@ -154,6 +155,7 @@ enum TransferEvent: Equatable {
   private var statusWaiter: ((TransferMessage?) -> Void)?
   private var statusWaiterToken: UUID?
   private var statusTimeoutTask: Task<Void, Never>?
+  private var statusSubmissionTask: Task<Void, Never>?
   private var allowBleResume = false
   private var transferPeerDeviceId: String?
   private var transferPeerFingerprint: String?
@@ -196,12 +198,14 @@ enum TransferEvent: Equatable {
 
   init(pauseTimeout: Duration = .seconds(900), recoveryURL: URL? = nil, identity: IdentityService? = nil,
        resumeTimeout: Duration = .seconds(15), confirmationTimeout: Duration = .seconds(30),
-       notificationPreferences: TransferNotificationPreferences = TransferNotificationPreferences()) {
+       notificationPreferences: TransferNotificationPreferences = TransferNotificationPreferences(),
+       closeSource: @escaping @Sendable (FileHandle) throws -> Void = { try $0.close() }) {
     self.notificationPreferences = notificationPreferences
     precondition(recoveryURL == nil || identity != nil)
     self.pauseTimeout = pauseTimeout
     self.resumeTimeout = resumeTimeout
     self.confirmationTimeout = confirmationTimeout
+    self.closeSource = closeSource
     recoveryIdentity = identity
     recoveryStore = recoveryURL.map(TransferRecoveryStore.init)
     recoveryReady = recoveryURL == nil
@@ -576,7 +580,8 @@ enum TransferEvent: Equatable {
   func ingest(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
     let kind = TransferMessage.peekKind(bytes)
     if kind == 10, !(await ingress.drain()) { retired(descriptor); return .discarded }
-    guard kind == 5 else { return await handle(bytes, on: descriptor) }
+    // Receiver takeover shares the chunk consumer so later old-channel writes cannot cross it.
+    guard kind == 5 || (kind == 10 && receiving) else { return await handle(bytes, on: descriptor) }
     let operation = epoch
     // Peer limits describe its receiver; this FIFO must cover our advertised receive credit.
     let chunk = chunkLimit(descriptor)
@@ -1041,6 +1046,9 @@ enum TransferEvent: Equatable {
         self.statusWaiterToken = nil
         self.statusTimeoutTask?.cancel()
         self.statusTimeoutTask = nil
+        // An accepted reply may precede local send completion; only abandonment cancels submission.
+        if message == nil { self.statusSubmissionTask?.cancel() }
+        self.statusSubmissionTask = nil
         continuation.resume(returning: message)
       }
       statusWaiter = finish
@@ -1050,7 +1058,7 @@ enum TransferEvent: Equatable {
         guard let self, self.epoch == operation else { return }
         finish(nil)
       }
-      Task { [weak self] in
+      statusSubmissionTask = Task { [weak self] in
         guard let self else { return }
         do { try await self.sendWithBackpressure(request, on: channel, jobBound: false) }
         catch { finish(nil) }
@@ -1075,10 +1083,12 @@ enum TransferEvent: Equatable {
 
   private func abandonStatus() {
     let waiter = statusWaiter
+    // The completion validates this token before releasing its suspended caller.
+    waiter?(nil)
     statusWaiter = nil
     statusWaiterToken = nil
     statusTimeoutTask?.cancel(); statusTimeoutTask = nil
-    waiter?(nil)
+    statusSubmissionTask?.cancel(); statusSubmissionTask = nil
   }
 
   /// Receiver side of the handshake: verify the retained prefix, rebind to the sender's chosen
@@ -1677,7 +1687,7 @@ enum TransferEvent: Equatable {
       }
 
       let source: TransferSendStorage
-      do { source = try await TransferSendStorage.open(url, skipping: initial) }
+      do { source = try await TransferSendStorage.open(url, skipping: initial, close: closeSource) }
       catch { if operation == epoch { failTransfer(reason: "Cannot open source file") }; return }
       guard operation == epoch else { await source.close(); return }
 
@@ -1783,6 +1793,7 @@ enum TransferEvent: Equatable {
       }
 
       await source.close()
+      guard operation == epoch, !Task.isCancelled else { return }
 
       // Wait for file-result from receiver
       let fileResult: TransferMessage
@@ -2568,7 +2579,7 @@ enum TransferPublisher {
   }
 }
 
-// Each received file has one storage actor; transport delivery awaits checked writes before ACK credit.
+// Each received file has one storage actor; checked writes precede ACK credit.
 private actor TransferReceiveStorage {
   private var handle: FileHandle?
   private var partial: URL?
@@ -2747,9 +2758,13 @@ private actor TransferReceiveStorage {
 
 private actor TransferSendStorage {
   private let handle: FileHandle
-  private init(_ url: URL) throws { handle = try FileHandle(forReadingFrom: url) }
-  static func open(_ url: URL, skipping offset: Int64 = 0) async throws -> TransferSendStorage {
-    let storage = try await Task.detached { try TransferSendStorage(url) }.value
+  private let closeHandle: @Sendable (FileHandle) throws -> Void
+  private init(_ url: URL, close: @escaping @Sendable (FileHandle) throws -> Void) throws {
+    handle = try FileHandle(forReadingFrom: url); closeHandle = close
+  }
+  static func open(_ url: URL, skipping offset: Int64 = 0,
+    close: @escaping @Sendable (FileHandle) throws -> Void) async throws -> TransferSendStorage {
+    let storage = try await Task.detached { try TransferSendStorage(url, close: close) }.value
     if offset > 0 { try await storage.skip(offset) }
     return storage
   }
@@ -2792,7 +2807,7 @@ private actor TransferSendStorage {
   }
   func close() {
     assert(!Thread.isMainThread)
-    do { try handle.close() } catch { NSLog("Transfer source close failed: %@", error.localizedDescription) }
+    do { try closeHandle(handle) } catch { NSLog("Transfer source close failed: %@", error.localizedDescription) }
   }
 }
 
@@ -2877,7 +2892,7 @@ actor TransferRecoveryStore {
   }
 }
 
-// MainActor owns admission and accounting; one FIFO consumer owns chunk decode and storage awaits.
+// MainActor owns admission and accounting; one FIFO consumer orders chunks, receiver resumes and storage awaits.
 @MainActor final class TransferIngress {
   private struct Entry { let descriptor: ChannelDescriptor; let epoch: UUID; let bytes: Data }
   private let consume: @MainActor (ChannelDescriptor, UUID, Data) async -> Void

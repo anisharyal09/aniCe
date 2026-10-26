@@ -325,6 +325,41 @@ class SessionChannelTests {
   }
 
   @Test
+  fun nativeWriteRejectionPreservesItsCauseAndCannotReplayTheSealedRecord() = runBlocking {
+    val statuses = listOf(201, null)
+    assertEquals(2, statuses.size)
+    for (status in statuses) {
+      var failure: java.io.IOException? = null
+      var submissions = 0
+      val ch = channel(submit = {
+        submissions++
+        failure?.let { throw it }
+      })
+      try {
+        ch.send(RecordKind.READY)
+        val v = vectors().getJSONArray("valid").getJSONObject(0)
+        ch.receive(SessionRecordCodec.seal(b(v, "key"), b(v, "iv"), b(v, "session"),
+          2, RecordKind.READY_ACK, 0uL, byteArrayOf()))
+        failure = assertThrows(java.io.IOException::class.java) { requireGattWriteSubmission(status) }
+        try {
+          ch.send(RecordKind.DATA, byteArrayOf(7))
+          fail("Write rejection was accepted")
+        } catch (error: java.io.IOException) {
+          // Coroutine stack recovery may copy the exception while retaining its original cause.
+          assertEquals(failure?.message, error.message)
+          assertSame(failure, generateSequence<Throwable>(error) { it.cause }.last())
+        }
+        assertEquals(ChannelStage.CLOSED, ch.stage)
+        assertEquals(2uL, ch.sent)
+        assertEquals(2, submissions)
+        rejects(SessionFailure.CANCELLED) { ch.send(RecordKind.DATA, byteArrayOf(7)) }
+        assertEquals(2uL, ch.sent)
+        assertEquals(2, submissions)
+      } finally { ch.close() }
+    }
+  }
+
+  @Test
   fun timeoutRevocationAndSuspendedSubmissionAreTerminal() = runBlocking {
     var now = 0L
     val expired = channel(now = { now })

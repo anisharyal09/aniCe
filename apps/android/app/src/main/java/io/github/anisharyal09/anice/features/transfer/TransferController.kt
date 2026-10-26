@@ -722,7 +722,8 @@ class TransferController(
         if (kind == 10 && withTimeoutOrNull(10000) { ingress.drain(); true } != true) {
             retired(descriptor); return DataHandling.DISCARDED
         }
-        if (kind != 5) return handle(descriptor, bytes)
+        // Receiver takeover shares the chunk consumer so later old-channel writes cannot cross it.
+        if (kind != 5 && !(kind == 10 && receiving)) return handle(descriptor, bytes)
         val operation = epoch
         // Peer limits describe its receiver; this FIFO must cover our advertised receive credit.
         val chunk = chunkLimit(descriptor)

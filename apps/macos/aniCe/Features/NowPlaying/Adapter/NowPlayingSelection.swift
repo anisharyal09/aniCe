@@ -313,6 +313,8 @@ enum NativePlayback {
         guard current, target.isRunning else { return nil }
         var reply: [String: Any] = ["sampleOnly": true, "pid": requested.pid, "playbackRevision": requested.revision.uuidString]
         if let state { reply["isPlaying"] = state }
+        // Timing can become available after the initial metadata publication.
+        reply["kMRMediaRemoteNowPlayingInfoDuration"] = fresh["kMRMediaRemoteNowPlayingInfoDuration"]
         let rate = (fresh["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? NSNumber)?.doubleValue ?? 0
         if let elapsed = (fresh["kMRMediaRemoteNowPlayingInfoElapsedTime"] as? NSNumber)?.doubleValue {
             let age = (fresh["kMRMediaRemoteNowPlayingInfoTimestamp"] as? Date).map { max(0, Date().timeIntervalSince($0)) } ?? 0

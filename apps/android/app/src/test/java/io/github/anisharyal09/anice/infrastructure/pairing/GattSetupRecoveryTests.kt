@@ -1,12 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Exercises bounded native service-cache recovery and rejection of unrelated ATT failures.
+// Exercises bounded service-cache recovery and native GATT submission failure reporting.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import io.github.anisharyal09.anice.infrastructure.bluetooth.GattSetupRecovery
+import io.github.anisharyal09.anice.infrastructure.bluetooth.requireGattWriteSubmission
+import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Test
 
 class GattSetupRecoveryTests {
+  @Test fun immediateWriteRejectionPreservesUnknownNativeStatusesAsIoFailures() {
+    requireGattWriteSubmission(0)
+    val statuses = listOf(-1, 1, 3, 133, 201, Int.MAX_VALUE)
+    assertEquals(6, statuses.size)
+    for (status in statuses) {
+      val failure = assertThrows(IOException::class.java) { requireGattWriteSubmission(status) }
+      assertEquals("Bluetooth write submission rejected (BluetoothStatusCodes $status).", failure.message)
+      assertFalse(failure.message!!.contains("GATT status"))
+    }
+  }
+
+  @Test fun legacyWriteRejectionDoesNotInventANativeStatus() {
+    val failure = assertThrows(IOException::class.java) { requireGattWriteSubmission(null) }
+    assertEquals("Bluetooth write submission rejected (legacy API returned false).", failure.message)
+  }
+
   @Test fun profileReadMismatchSharesRefreshBudgetWithoutRetryingAuthenticationErrors() {
     for (status in listOf(0, 1, 2, 10)) {
       val recovery = GattSetupRecovery()

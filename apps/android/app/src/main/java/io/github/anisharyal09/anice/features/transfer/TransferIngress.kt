@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Bounds authenticated transfer chunks under the feature's serial owner until ordered consumption completes.
+// Bounds authenticated chunks and receiver resume requests under one ordered feature consumer.
 package io.github.anisharyal09.anice.features.transfer
 
 import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor

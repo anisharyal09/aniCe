@@ -76,6 +76,121 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(resumed.creditBytes, 131072, "A slow retry probe must remain constrained")
   }
 
+  func testReceiverResumeRunsInTheChunkConsumerBeforeLaterOldChannelData() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(instance: "old", transport: "ble")
+    let lan = MockSecuredChannel(instance: "new", peer: ble.descriptor.peer)
+    defer { owner.dismiss() }
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    try await offer(owner, ble, size: 3)
+    let batch = try XCTUnwrap(owner.pendingOffer)
+    await owner.acceptIncomingOffer(destination: tempDir)
+    owner.available(lan)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    let resume = try TransferMessage.resume(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, prefixHash: Data(SHA256.hash(data: Data()))).encode()
+    let admitted = await owner.ingest(resume, on: lan.descriptor)
+    XCTAssertEqual(admitted, .queued)
+    _ = await owner.ingest(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data([1])).encode(), on: ble.descriptor)
+    await owner.drain(lan.descriptor)
+    let status = try XCTUnwrap(statuses(lan).last)
+    XCTAssertEqual(status.number(2), 0); XCTAssertEqual(status.number(3), 0)
+    _ = await owner.ingest(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
+      offset: 0, data: Data(repeating: 0, count: 3)).encode(), on: lan.descriptor)
+    await owner.drain(lan.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = owner.state else { return XCTFail("Rebound transfer did not complete") }
+    XCTAssertEqual(try Data(contentsOf: tempDir.appendingPathComponent("empty.bin")), Data(repeating: 0, count: 3))
+  }
+
+  func testCancelledResumeReleasesItsSuspendedOwner() async throws {
+    let cases = [false, true]
+    XCTAssertEqual(cases.count, 2)
+    for blockedSubmission in cases {
+      var owner: MacTransferModel? = MacTransferModel()
+      weak var released = owner
+      let lan = MockSecuredChannel(instance: "lan")
+      let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+      defer { owner?.dismiss(); ble.onSendData = nil }
+      for channel in [lan, ble] {
+        owner!.available(channel)
+        _ = await owner!.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+      }
+      try await offer(owner!, lan, size: 3)
+      await owner!.acceptIncomingOffer(destination: tempDir)
+      owner!.retired(lan.descriptor)
+      let requested = expectation(description: "Resume waits for peer status")
+      ble.onSendData = { bytes in
+        if try TransferMessage.decode(bytes)?.kind == 10 {
+          requested.fulfill()
+          if blockedSubmission { try await Task.sleep(for: .seconds(30)) }
+        }
+      }
+      owner!.resumeOverBluetooth()
+      await fulfillment(of: [requested], timeout: 2)
+      owner!.cancelTransfer(local: false)
+      owner = nil
+      for _ in 0..<200 {
+        if released == nil { break }
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      XCTAssertNil(released, "Cancellation left a resume continuation retaining the model")
+    }
+  }
+
+  func testCancelledSourceCloseCannotStealReplacementConfirmation() async throws {
+    let entered = expectation(description: "Old source close held")
+    let replacementClosed = expectation(description: "Replacement source closed")
+    let oldCloseReturned = expectation(description: "Old source close released")
+    let release = DispatchSemaphore(value: 0)
+    let calls = OSAllocatedUnfairLock(initialState: 0)
+    let owner = MacTransferModel(closeSource: { handle in
+      try handle.close()
+      let first = calls.withLock { value in value += 1; return value == 1 }
+      if first {
+        entered.fulfill()
+        XCTAssertEqual(release.wait(timeout: .now() + 5), .success, "Old source close was not released")
+        oldCloseReturned.fulfill()
+      } else { replacementClosed.fulfill() }
+    })
+    let channel = MockSecuredChannel()
+    defer { release.signal(); channel.onSendData = nil; owner.dismiss() }
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    let source = tempDir.appendingPathComponent("source.bin")
+    try Data([1, 2, 3]).write(to: source)
+    channel.onSendData = { bytes in
+      guard let chunk = try TransferMessage.decode(bytes), chunk.kind == 5 else { return }
+      _ = await owner.handle(try TransferMessage.ack(batch: chunk.string(0), file: chunk.string(1),
+        written: chunk.number(2) + Int64(chunk.bytes(3).count)).encode(), on: channel.descriptor)
+    }
+    await owner.sendFiles(urls: [source])
+    guard case .waitingForPeerApproval(let first) = owner.state else { return XCTFail("Missing first offer") }
+    _ = await owner.handle(try TransferMessage.accept(batch: first.idString).encode(), on: channel.descriptor)
+    await fulfillment(of: [entered], timeout: 2)
+    owner.cancelTransfer(local: false)
+    await owner.sendFiles(urls: [source])
+    guard case .waitingForPeerApproval(let next) = owner.state else { return XCTFail("Missing replacement offer") }
+    _ = await owner.handle(try TransferMessage.accept(batch: next.idString).encode(), on: channel.descriptor)
+    await fulfillment(of: [replacementClosed], timeout: 2)
+    for _ in 0..<20 { await Task.yield() }
+    release.signal()
+    await fulfillment(of: [oldCloseReturned], timeout: 2)
+    for _ in 0..<20 { await Task.yield() }
+    _ = await owner.handle(try TransferMessage.fileResult(batch: next.idString, file: next.files[0].idString,
+      result: 0, hash: next.files[0].sha256).encode(), on: channel.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed(let batch, _, _) = owner.state else { return XCTFail("Old close stole replacement completion") }
+    XCTAssertEqual(batch, next.id)
+  }
+
   func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel(maximumDataBytes: 262144)
     let firstAck = expectation(description: "First ACK submission held")

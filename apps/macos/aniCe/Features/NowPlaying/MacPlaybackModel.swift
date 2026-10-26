@@ -187,7 +187,7 @@ private final class PlaybackEvent: @unchecked Sendable {
   private func trace(_ event: String) {
     #if DEBUG
     if ProcessInfo.processInfo.environment["ANICE_MEDIA_TIMING"]=="1" {
-      NSLog("media %@ %.3f pid=%d source=%@ revision=%@ actions=%lld native=%lld scripting=%lld capability=%@",event,ProcessInfo.processInfo.systemUptime,permissionTarget?.pid ?? 0,playback.source,playback.revision,playback.actions,routes.native,routes.scripting,capabilityState)
+      NSLog("media %@ %.3f pid=%d source=%@ revision=%@ actions=%lld native=%lld scripting=%lld capability=%@ duration=%lld position=%lld",event,ProcessInfo.processInfo.systemUptime,permissionTarget?.pid ?? 0,playback.source,playback.revision,playback.actions,routes.native,routes.scripting,capabilityState,playback.duration,playback.position)
     }
     #endif
   }
@@ -206,8 +206,11 @@ private final class PlaybackEvent: @unchecked Sendable {
     if row["sampleOnly"] as? Bool == true {
       guard let context=PlaybackContext(reply:row), context==nativeContext, !playback.source.isEmpty else { return }
       let now=ProcessInfo.processInfo.systemUptime
-      let continuing=Int64(playback.elapsed(at:now)*1000)
+      let continuing=playback.position>=0 ? Int64(min(604800000,playback.elapsed(at:now)*1000)) : -1
       playback.position=sample("kMRMediaRemoteNowPlayingInfoElapsedTime",scale:1000,max:604800000,missing:continuing)
+      if row["kMRMediaRemoteNowPlayingInfoDuration"] != nil {
+        playback.duration=sample("kMRMediaRemoteNowPlayingInfoDuration",scale:1000,max:604800000,missing:-1)
+      }
       if playback.duration>0 { playback.position=min(playback.position,playback.duration) }
       if let playing=row["isPlaying"] as? Bool { playback.state=playing ? 1:2 }
       let oldActions=playback.actions
@@ -220,7 +223,11 @@ private final class PlaybackEvent: @unchecked Sendable {
     if row["capabilitiesOnly"] as? Bool==true {
       guard PlaybackContext(reply:row)==nativeContext, !playback.source.isEmpty else { return }
       capabilityState=row["capabilityState"] as? String ?? "unavailable"
-      for key in ["canSendCommandsDirectly","canToggle","canPlay","canPause","canSkipPrevious","canSkipNext","canSeek"] { nativeCapabilities[key]=row[key] as? Bool ?? false }
+      // A discovery timeout carries no support verdict; only explicit values replace known capabilities.
+      if capabilityState=="unsupported" { nativeCapabilities=[:] }
+      else {
+        for key in ["canSendCommandsDirectly","canToggle","canPlay","canPause","canSkipPrevious","canSkipNext","canSeek"] { if let value=row[key] as? Bool { nativeCapabilities[key]=value } }
+      }
       let actions=resolvedActions(state:playback.state,duration:playback.duration)
       if actions != playback.actions { finish(1);playback.revision=UUID().uuidString;playback.actions=actions }
       trace("capabilities");publish();return
@@ -240,16 +247,21 @@ private final class PlaybackEvent: @unchecked Sendable {
     let source=sources.first { $0.pid==context?.pid }
     var next=MediaPlayback()
     if let source, let context {
+      // Partial metadata may omit timing; retain it only within the native recording and process identity.
+      let continuing=nativeContext==context && playback.source==source.id
+      let position=continuing && playback.position>=0 ? Int64(playback.elapsed(at:next.sampledAt)*1000) : -1
       next.source=source.id; next.title=bounded(row["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? "",512)
       next.artist=bounded(row["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? "",256); next.player=source.name
-      next.state=(row["isPlaying"] as? Bool).map { $0 ? 1:2 } ?? 0
-      next.position=sample("kMRMediaRemoteNowPlayingInfoElapsedTime",scale:1000,max:604800000,missing:-1)
-      next.duration=sample("kMRMediaRemoteNowPlayingInfoDuration",scale:1000,max:604800000,missing:-1)
-      next.rate=sample("kMRMediaRemoteNowPlayingInfoPlaybackRate",scale:1000,max:16000,missing:0)
+      next.state=(row["isPlaying"] as? Bool).map { $0 ? 1:2 } ?? (continuing ? playback.state:0)
+      next.position=sample("kMRMediaRemoteNowPlayingInfoElapsedTime",scale:1000,max:604800000,missing:row["kMRMediaRemoteNowPlayingInfoElapsedTime"]==nil ? position:-1)
+      next.duration=sample("kMRMediaRemoteNowPlayingInfoDuration",scale:1000,max:604800000,missing:continuing && row["kMRMediaRemoteNowPlayingInfoDuration"]==nil ? playback.duration:-1)
+      next.rate=sample("kMRMediaRemoteNowPlayingInfoPlaybackRate",scale:1000,max:16000,missing:continuing && row["kMRMediaRemoteNowPlayingInfoPlaybackRate"]==nil ? playback.rate:0)
+      if next.duration>0 { next.position=min(next.position,next.duration) }
+      if next.state==2 { next.rate=0 }
       permissionTarget=source
       if playback.source != next.source { automation=nil }
       capabilityState=row["capabilityState"] as? String ?? "ready"
-      if playback.source != next.source { nativeCapabilities=[:] }
+      if playback.source != next.source || capabilityState=="unsupported" { nativeCapabilities=[:] }
       for key in ["canSendCommandsDirectly","canToggle","canPlay","canPause","canSkipPrevious","canSkipNext","canSeek"] { if let value=row[key] as? Bool { nativeCapabilities[key]=value } }
       if playback.source != next.source, let url=NSRunningApplication(processIdentifier:source.pid)?.bundleURL { automation=PlaybackAutomationCapabilities.load(bundleURL:url) }
       next.actions=resolvedActions(state:next.state,duration:next.duration)

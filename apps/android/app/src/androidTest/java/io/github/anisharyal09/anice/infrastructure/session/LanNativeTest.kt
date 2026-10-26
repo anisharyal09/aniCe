@@ -104,6 +104,8 @@ class LanNativeTest {
                 val sendStart = SystemClock.elapsedRealtimeNanos()
                 repeat(total / outgoing.size) { socket.getOutputStream().write(if (framed) LanFraming.encode(outgoing, SessionProfile.BULK_PROBE) else outgoing) }
                 socket.getOutputStream().flush()
+                // Local writes may leave TCP backlog; the final ACK waits for peer consumption.
+                socket.soTimeout = 60000
                 require(socket.getInputStream().read() == 1)
                 val sendSeconds = (SystemClock.elapsedRealtimeNanos() - sendStart) / 1e9
                 File(directory, "result.json").writeText(JSONObject().put("bytes", total).put("framed", framed)

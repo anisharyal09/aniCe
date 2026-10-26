@@ -176,6 +176,7 @@ struct PlaybackDispatch: Sendable {
 /// Pairs one capability callback with its initial recording sample, regardless of callback order.
 final class RecordingCapabilities: @unchecked Sendable {
     private let lock = NSLock()
+    private let ready = DispatchSemaphore(value: 0)
     private var context: [String: Any]?
     private var values: [String: Any]?
     private var delivered = false
@@ -194,7 +195,13 @@ final class RecordingCapabilities: @unchecked Sendable {
     }
     func complete(_ values: [String: Any]) -> [String: Any]? {
         lock.lock(); defer { lock.unlock() }
-        guard !completed else { return nil };completed=true;delivered=false;self.values=values;return take()
+        guard !completed else { return nil }
+        completed=true;delivered=false;self.values=values
+        ready.signal()
+        return take()
+    }
+    func wait(until deadline: DispatchTime) -> Bool {
+        ready.wait(timeout:deadline) == .success
     }
     var currentValues: [String: Any]? {
         lock.lock(); defer { lock.unlock() }
@@ -211,9 +218,10 @@ struct NativePlaybackControls {
         else if let rate = (info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? NSNumber)?.doubleValue, rate.isFinite { playing = rate > 0 }
     }
     mutating func capabilities(_ info: [String: Any]) {
-        toggle = info["canToggle"] as? Bool ?? false
-        play = info["canPlay"] as? Bool ?? false
-        pause = info["canPause"] as? Bool ?? false
+        if info["capabilityState"] as? String == "unsupported" { toggle=false;play=false;pause=false;return }
+        if let value=info["canToggle"] as? Bool { toggle=value }
+        if let value=info["canPlay"] as? Bool { play=value }
+        if let value=info["canPause"] as? Bool { pause=value }
     }
     var command: Int32 {
         if toggle { return 2 }

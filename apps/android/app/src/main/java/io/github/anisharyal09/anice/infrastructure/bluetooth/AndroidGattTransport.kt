@@ -211,12 +211,25 @@ class AndroidGattTransport(
       object : BluetoothGattCallback() {
         private fun dispatch(g: BluetoothGatt, allowClosing: Boolean = false, block: () -> Unit) {
           handler.post {
-            if (epoch == op && client === g && (!closing || allowClosing))
+            if (epoch != op || client !== g) {
+              Log.i(
+                "aniCe-ble",
+                "gatt_callback_stale callback_epoch=$op current_epoch=$epoch stage=$stage " +
+                  "same_gatt=${client === g} closing=$closing mtu=$mtu queued=${queue.size} writing=$writing",
+              )
+              return@post
+            }
+            if (!closing || allowClosing)
               try {
                 block()
               } catch (error: Exception) {
-                Log.i("aniCe-ble", "GATT callback failed stage=$stage", error)
-                finish(false)
+                Log.i(
+                  "aniCe-ble",
+                  "gatt_callback_failed epoch=$op stage=$stage mtu=$mtu queued=${queue.size} " +
+                    "writing=$writing closing=$closing",
+                  error,
+                )
+                finish(false, reason = (error as? java.io.IOException)?.message, cause = error)
               }
           }
         }
@@ -225,8 +238,9 @@ class AndroidGattTransport(
           dispatch(g, allowClosing = true) {
             if (closing && state != BluetoothProfile.STATE_DISCONNECTED) return@dispatch
             Log.i(
-              "aniCe-pairing",
-              "connection status=$status connected=${state == BluetoothProfile.STATE_CONNECTED}",
+              "aniCe-ble",
+              "gatt_connection epoch=$op stage=$stage status=$status connected=${state == BluetoothProfile.STATE_CONNECTED} " +
+                "mtu=$mtu queued=${queue.size} writing=$writing closing=$closing",
             )
             if (state == BluetoothProfile.STATE_DISCONNECTED) {
               finish(closing, if (!closing) "Bluetooth disconnected (GATT status $status, stage $stage)." else null)
@@ -470,8 +484,12 @@ class AndroidGattTransport(
           status: Int,
         ) =
           dispatch(g) {
-            Log.i("aniCe-pairing", "write_completion status=$status session=$trustedSession")
             if (status != BluetoothGatt.GATT_SUCCESS) {
+              Log.i(
+                "aniCe-ble",
+                "gatt_write_failed epoch=$op stage=$stage status=$status session=$trustedSession " +
+                  "mtu=$mtu queued=${queue.size} writing=$writing closing=$closing",
+              )
               val reason = "Bluetooth write failed (GATT status $status)."
               finish(false, reason, cause = java.io.IOException(reason))
               return@dispatch
@@ -556,7 +574,7 @@ class AndroidGattTransport(
       flush()
     } catch (error: Exception) {
       Log.i("aniCe-ble", "GATT enqueue failed size=${data.size} mtu=$mtu queued=${queue.size} writing=$writing", error)
-      finish(false)
+      finish(false, reason = (error as? java.io.IOException)?.message, cause = error)
     }
   }
 
@@ -608,16 +626,15 @@ class AndroidGattTransport(
     val c = write ?: throw PairingException()
     writing = true
     @Suppress("DEPRECATION")
-    val started =
+    val status =
       if (Build.VERSION.SDK_INT >= 33)
-        g.writeCharacteristic(c, f.bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-          BluetoothStatusCodes.SUCCESS
+        g.writeCharacteristic(c, f.bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
       else {
         c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         c.value = f.bytes
-        g.writeCharacteristic(c)
+        if (g.writeCharacteristic(c)) BluetoothStatusCodes.SUCCESS else null
       }
-    require(started)
+    requireGattWriteSubmission(status)
     val op = epoch
     handler.postDelayed(
       { if (epoch == op && writing && queue.peekFirst() === f) {
@@ -632,8 +649,8 @@ class AndroidGattTransport(
     closeAfterFlush = true
     try {
       flush()
-    } catch (_: Exception) {
-      finish(false)
+    } catch (error: Exception) {
+      finish(false, reason = (error as? java.io.IOException)?.message, cause = error)
     }
   }
 
@@ -765,3 +782,11 @@ class AndroidGattTransport(
 
 // Pairing keeps the same adapter API and v1 profile.
 typealias AndroidPairingTransport = AndroidGattTransport
+
+internal fun requireGattWriteSubmission(status: Int?) {
+  // Submission uses BluetoothStatusCodes; completion uses a separate GATT status namespace.
+  if (status != BluetoothStatusCodes.SUCCESS) {
+    val detail = if (status == null) "legacy API returned false" else "BluetoothStatusCodes $status"
+    throw java.io.IOException("Bluetooth write submission rejected ($detail).")
+  }
+}
