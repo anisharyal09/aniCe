@@ -76,6 +76,33 @@ class LanRendezvousTests {
         gate.update("replacement", true, true, true, 0)
         assertTrue(gate.claimActivity())
     }
+    @Test fun activityDemandResetsOnlyForANewChannelOrEligibilityInterval() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, false, 0)
+        assertTrue(gate.claimActivity())
+        gate.trigger()
+        assertTrue(gate.claim())
+        for (requests in 0L..3L) {
+            for (ready in listOf(false, true, false)) {
+                gate.update("ble", true, true, ready, requests)
+                assertFalse("Listener and explicit-request events cannot renew ordinary activity", gate.claimActivity())
+                gate.trigger()
+                assertTrue(gate.claim())
+                assertFalse(gate.claim())
+                assertFalse(gate.claimActivity())
+            }
+        }
+        gate.update("ble", false, true, false, 3)
+        assertFalse(gate.claimActivity())
+        gate.update("ble", true, true, false, 3)
+        assertTrue(gate.claimActivity()); assertFalse(gate.claimActivity())
+        gate.update("ble", true, false, false, 3)
+        assertFalse(gate.claimActivity())
+        gate.update("ble", true, true, false, 3)
+        assertTrue(gate.claimActivity()); assertFalse(gate.claimActivity())
+        gate.update("replacement", true, true, false, 3)
+        assertTrue(gate.claimActivity()); assertFalse(gate.claimActivity())
+    }
     @Test fun explicitRequestDoesNotChangePeerEligibilityOrEcho() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         try {

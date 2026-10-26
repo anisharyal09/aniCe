@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Distinguish native LAN connection waiting and failure transitions in transport diagnostics before channel retirement.
+
 - LAN frame timeout diagnostics include pending-read age and last-read progress; opt-in timings separate socket reads from transport-actor callback delay.
 
 - Queue authenticated transfer chunks in a bounded feature-owned FIFO while other handlers continue. Count active writes against capacity, keep storage actor-owned and presentation on MainActor, fence cancelled generations, and drain accepted work on normal close. Add opt-in ingress admission/consumption and storage-operation durations, including failed storage operations.
@@ -32,7 +34,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
 
 - Preserve the published Bluetooth service table across powered-off states; reset states still invalidate it. LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline.
 

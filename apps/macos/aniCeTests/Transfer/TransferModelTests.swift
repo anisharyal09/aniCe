@@ -29,13 +29,29 @@ final class MockSecuredChannel: SecuredChannel {
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
 
+  func testDelayedLanAmortizesValidationWithoutExceedingPeerCredit() {
+    for latency in [0.101, 0.6, 1.5] {
+      for maximumChunk: Int64 in [3072, 4096, 5000, 65535, 65536, 131072, 262016] {
+        for maximumWindow: Int64 in [1, 2, 8] {
+          var window = TransferSendWindow(maximumChunk: maximumChunk, maximumWindow: maximumWindow, lan: true, started: 0)
+          window.beginSubmission(0)
+          window.acknowledged(latency, fullyConfirmed: true); window.advance()
+          let expectedChunk = min(maximumChunk, 65536)
+          XCTAssertEqual(window.chunkBytes, expectedChunk)
+          XCTAssertEqual(window.creditBytes, expectedChunk * (maximumChunk > 4096 ? min(maximumWindow, 2) : maximumWindow))
+          XCTAssertLessThanOrEqual(window.creditBytes, maximumChunk * maximumWindow)
+        }
+      }
+    }
+  }
+
   func testLanProbeExcludesSourcePreparationButCountsTheWholeSubmission() {
     for latency in [0.1, 0.101] {
       var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
       window.beginSubmission(3)
       window.beginSubmission(3.09)
       window.acknowledged(3 + latency, fullyConfirmed: true); window.advance()
-      XCTAssertEqual(window.chunkBytes, latency == 0.1 ? 262016 : 4096)
+      XCTAssertEqual(window.chunkBytes, latency == 0.1 ? 262016 : 65536)
     }
     var fast = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     fast.beginSubmission(0)
@@ -45,19 +61,19 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(fast.chunkBytes, 262016, "Source idle time with no outstanding bytes cannot mark LAN slow")
     fast.beginSubmission(6, windowEmpty: false)
     fast.acknowledged(6.051, fullyConfirmed: false); fast.advance()
-    XCTAssertEqual(fast.chunkBytes, 4096, "An outstanding-data stall must still shrink the window")
+    XCTAssertEqual(fast.chunkBytes, 65536, "An outstanding-data stall must still shrink the window")
     var resumed = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     resumed.beginSubmission(3)
     resumed.acknowledged(3.101, fullyConfirmed: true); resumed.advance()
     resumed.acknowledged(7.999, fullyConfirmed: true); resumed.advance()
-    XCTAssertEqual(resumed.creditBytes, 8192, "Recovery interval starts at actual probe submission")
+    XCTAssertEqual(resumed.creditBytes, 131072, "Recovery interval starts at actual probe submission")
     resumed.acknowledged(8, fullyConfirmed: true); resumed.advance()
     XCTAssertEqual(resumed.creditBytes, 4096)
     resumed.beginSubmission(11)
     resumed.acknowledged(11.05, fullyConfirmed: false); resumed.advance()
     XCTAssertEqual(resumed.creditBytes, 4096, "Partial confirmation must not open a large window")
     resumed.acknowledged(11.101, fullyConfirmed: true); resumed.advance()
-    XCTAssertEqual(resumed.creditBytes, 8192, "A slow retry probe must remain constrained")
+    XCTAssertEqual(resumed.creditBytes, 131072, "A slow retry probe must remain constrained")
   }
 
   func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {
@@ -99,18 +115,18 @@ final class TransferModelTests: XCTestCase {
     var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     window.acknowledged(0.101, fullyConfirmed: true); window.advance()
     window.acknowledged(4.999, fullyConfirmed: true); window.advance()
-    XCTAssertEqual(window.creditBytes, 8192)
+    XCTAssertEqual(window.creditBytes, 131072)
     window.acknowledged(5, fullyConfirmed: false)
-    XCTAssertEqual(window.creditBytes, 8192, "The current source read retains its budget")
+    XCTAssertEqual(window.creditBytes, 131072, "The current source read retains its budget")
     window.advance()
-    XCTAssertEqual(window.creditBytes, 4096, "Drain outstanding bytes before another probe")
+    XCTAssertEqual(window.creditBytes, 65536, "Drain outstanding bytes before another probe")
     window.acknowledged(5, fullyConfirmed: true)
-    XCTAssertEqual(window.creditBytes, 4096)
+    XCTAssertEqual(window.creditBytes, 65536)
     window.advance()
     XCTAssertEqual(window.creditBytes, 4096)
     window.acknowledged(5.09, fullyConfirmed: false); window.advance()
     window.acknowledged(5.15, fullyConfirmed: true); window.advance()
-    XCTAssertEqual(window.creditBytes, 8192, "Partial confirmation cannot disguise a slow probe")
+    XCTAssertEqual(window.creditBytes, 131072, "Partial confirmation cannot disguise a slow probe")
     window.acknowledged(10, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.creditBytes, 4096)
     window.acknowledged(10.05, fullyConfirmed: true); window.advance()
@@ -124,16 +140,16 @@ final class TransferModelTests: XCTestCase {
       window.acknowledged(delay, fullyConfirmed: true)
       XCTAssertEqual(window.creditBytes, 4096, "An admitted read keeps its window")
       window.advance()
-      XCTAssertEqual(window.chunkBytes, delay == 0.1 ? 262016 : 4096)
-      XCTAssertEqual(window.creditBytes, delay == 0.1 ? 2096128 : 8192)
+      XCTAssertEqual(window.chunkBytes, delay == 0.1 ? 262016 : 65536)
+      XCTAssertEqual(window.creditBytes, delay == 0.1 ? 2096128 : 131072)
       window.acknowledged(delay + 1.001, fullyConfirmed: true); window.advance()
-      XCTAssertEqual(window.chunkBytes, 4096); XCTAssertEqual(window.creditBytes, 8192)
+      XCTAssertEqual(window.chunkBytes, 65536); XCTAssertEqual(window.creditBytes, 131072)
       window.acknowledged(delay + 1.002, fullyConfirmed: true); window.advance()
-      XCTAssertEqual(window.creditBytes, 8192, "Fast subsequent ACKs cannot oscillate the window")
+      XCTAssertEqual(window.creditBytes, 131072, "Fast subsequent ACKs cannot oscillate the window")
     }
     var single = TransferSendWindow(maximumChunk: 5000, maximumWindow: 1, lan: true, started: 0)
     single.acknowledged(0.101, fullyConfirmed: true); single.advance()
-    XCTAssertEqual(single.creditBytes, 4096)
+    XCTAssertEqual(single.creditBytes, 5000)
     var ble = TransferSendWindow(maximumChunk: 3072, maximumWindow: 4, lan: false, started: 0)
     ble.acknowledged(5, fullyConfirmed: true); ble.advance()
     XCTAssertEqual(ble.chunkBytes, 3072); XCTAssertEqual(ble.creditBytes, 12288)
@@ -141,7 +157,7 @@ final class TransferModelTests: XCTestCase {
     partial.acknowledged(0.09, fullyConfirmed: false); partial.advance()
     XCTAssertEqual(partial.creditBytes, 4096)
     partial.acknowledged(0.15, fullyConfirmed: true); partial.advance()
-    XCTAssertEqual(partial.creditBytes, 8192, "Partial ACK must not reset the probe's start time")
+    XCTAssertEqual(partial.creditBytes, 131072, "Partial ACK must not reset the probe's start time")
   }
 
   func testIngressBoundsIncludeActiveWriteAndCancellationRemovesWaiter() async throws {
@@ -1617,12 +1633,12 @@ final class TransferModelTests: XCTestCase {
     _ = await owner.handle(try TransferMessage.ack(batch: batch.idString, file: batch.files[0].idString, written: 9 * 262016 + 1).encode(), on: channel.descriptor)
     try await Task.sleep(for: .milliseconds(60))
     XCTAssertEqual(chunks().count, 3, "Unsubmitted bytes cannot grant credit")
-    _ = await owner.handle(try TransferMessage.ack(batch: batch.idString, file: batch.files[0].idString, written: 8192).encode(), on: channel.descriptor)
+    _ = await owner.handle(try TransferMessage.ack(batch: batch.idString, file: batch.files[0].idString, written: 69632).encode(), on: channel.descriptor)
     for _ in 0..<300 { if chunks().count >= 4 { break }; try await Task.sleep(for: .milliseconds(10)) }
     try await Task.sleep(for: .milliseconds(60))
     XCTAssertEqual(chunks().count, 4)
-    XCTAssertTrue(chunks().allSatisfy { $0.bytes(3).count == 4096 })
-    XCTAssertEqual(chunks().map { $0.number(2) }, (0..<4).map { Int64($0) * 4096 })
+    XCTAssertEqual(chunks().map { $0.bytes(3).count }, [4096, 65536, 65536, 65536])
+    XCTAssertEqual(chunks().map { $0.number(2) }, [0, 4096, 69632, 135168])
     XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
   }
 

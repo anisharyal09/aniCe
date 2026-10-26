@@ -115,6 +115,26 @@ final class LanTests: XCTestCase {
     while await identity.identityLoads < 2, ContinuousClock.now < requestDeadline { try await Task.sleep(for: .milliseconds(5)) }
     let requestedLoads = await identity.identityLoads
     XCTAssertEqual(requestedLoads, 2)
+    let failureDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while owner.state != "Failed", ContinuousClock.now < failureDeadline { try await Task.sleep(for: .milliseconds(5)) }
+    XCTAssertEqual(owner.state, "Failed")
+    let publicationDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while !channel.sentData.contains(where: { (try? LanRendezvousWire.decode($0)) == 4 }), ContinuousClock.now < publicationDeadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let requestsBefore = channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 4 }.count
+    XCTAssertEqual(requestsBefore, 1, "The first activity must publish exactly one demand")
+    // Let scheduling run between records so a failed attempt cannot hide behind burst coalescing.
+    for _ in 0..<100 {
+      owner.onApplicationActivity(channel.descriptor, activity)
+      _ = await owner.rendezvous.handle(try LanRendezvousWire.encode(1), on: channel.descriptor)
+      await Task.yield()
+    }
+    try await Task.sleep(for: .milliseconds(30))
+    let repeatedLoads = await identity.identityLoads
+    XCTAssertEqual(repeatedLoads, 2, "Ordinary BLE activity restarted a failed LAN attempt")
+    XCTAssertEqual(channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 4 }.count, requestsBefore,
+      "Ordinary activity repeatedly published explicit LAN demand")
     owner.disconnect()
     owner.onApplicationActivity(channel.descriptor, activity)
     _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(1), on: channel.descriptor)
@@ -187,6 +207,31 @@ final class LanTests: XCTestCase {
     XCTAssertTrue(gate.claim())
     gate.update(channel: "replacement", eligible: true, remoteEligible: true, ready: true, requests: 0)
     XCTAssertTrue(gate.claimActivity())
+  }
+
+  func testActivityDemandResetsOnlyForANewChannelOrEligibilityInterval() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 0)
+    XCTAssertTrue(gate.claimActivity())
+    gate.trigger(); XCTAssertTrue(gate.claim())
+    for requests: Int64 in 0...3 {
+      for ready in [false, true, false] {
+        gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: ready, requests: requests)
+        XCTAssertFalse(gate.claimActivity(), "Listener and explicit-request events cannot renew ordinary activity")
+        gate.trigger(); XCTAssertTrue(gate.claim()); XCTAssertFalse(gate.claim())
+        XCTAssertFalse(gate.claimActivity())
+      }
+    }
+    gate.update(channel: "ble", eligible: false, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertTrue(gate.claimActivity()); XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "ble", eligible: true, remoteEligible: false, ready: false, requests: 3)
+    XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertTrue(gate.claimActivity()); XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "replacement", eligible: true, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertTrue(gate.claimActivity()); XCTAssertFalse(gate.claimActivity())
   }
 
   func testAutomaticGateConsumesEachEventOnce() {

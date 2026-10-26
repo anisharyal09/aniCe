@@ -2980,7 +2980,11 @@ struct TransferSendWindow {
     lastAcknowledgedAt = started
     probeStartedAt = started
   }
-  var chunkBytes: Int64 { probing || constrained ? min(4096, maximumChunk) : maximumChunk }
+  // Sustained fallback amortizes live per-record validation under a 128-KiB fallback backlog cap.
+  var chunkBytes: Int64 {
+    if probing { return min(4096, maximumChunk) }
+    return constrained ? min(65536, maximumChunk) : maximumChunk
+  }
   var creditBytes: Int64 { chunkBytes * (probing || draining ? 1 : constrained ? min(2, maximumWindow) : maximumWindow) }
   // Source IO and encoding precede submission and cannot measure the path's acknowledgement delay.
   mutating func beginSubmission(_ now: TimeInterval, windowEmpty: Bool = false) {

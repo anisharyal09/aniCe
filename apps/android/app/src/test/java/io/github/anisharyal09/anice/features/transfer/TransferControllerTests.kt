@@ -51,6 +51,22 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun delayedLanAmortizesValidationWithoutExceedingPeerCredit() {
+        for (latency in listOf(101L, 600L, 1500L)) {
+            for (maximumChunk in listOf(3072L, 4096L, 5000L, 65535L, 65536L, 131072L, 262016L)) {
+                for (maximumWindow in listOf(1L, 2L, 8L)) {
+                    val window = TransferSendWindow(maximumChunk, maximumWindow, true, 0)
+                    window.beginSubmission(0)
+                    window.acknowledged(latency, fullyConfirmed = true); window.advance()
+                    val expectedChunk = minOf(maximumChunk, 65536L)
+                    assertEquals(expectedChunk, window.chunkBytes)
+                    assertEquals(expectedChunk * (if (maximumChunk > 4096) minOf(maximumWindow, 2L) else maximumWindow), window.creditBytes)
+                    assertTrue(window.creditBytes <= maximumChunk * maximumWindow)
+                }
+            }
+        }
+    }
+
     @Test fun lanProbeExcludesSourcePreparationButCountsTheWholeSubmission() {
         for (latency in listOf(100L, 101L)) {
             val window = TransferSendWindow(262016, 8, true, 0)
@@ -58,7 +74,7 @@ class TransferControllerTests {
             window.beginSubmission(3090)
             window.acknowledged(3000 + latency, fullyConfirmed = true)
             window.advance()
-            assertEquals(if (latency == 100L) 262016L else 4096L, window.chunkBytes)
+            assertEquals(if (latency == 100L) 262016L else 65536L, window.chunkBytes)
         }
         val fast = TransferSendWindow(262016, 8, true, 0)
         fast.beginSubmission(0)
@@ -68,22 +84,22 @@ class TransferControllerTests {
         assertEquals("Source idle time with no outstanding bytes cannot mark LAN slow", 262016L, fast.chunkBytes)
         fast.beginSubmission(6000, windowEmpty = false)
         fast.acknowledged(6051, fullyConfirmed = false); fast.advance()
-        assertEquals("An outstanding-data stall must still shrink the window", 4096L, fast.chunkBytes)
+        assertEquals("An outstanding-data stall must still shrink the window", 65536L, fast.chunkBytes)
         val resumed = TransferSendWindow(262016, 8, true, 0)
         resumed.beginSubmission(3000)
         resumed.acknowledged(3101, fullyConfirmed = true); resumed.advance()
         resumed.acknowledged(7999, fullyConfirmed = true); resumed.advance()
-        assertEquals("Recovery interval starts at actual probe submission", 8192L, resumed.creditBytes)
+        assertEquals("Recovery interval starts at actual probe submission", 131072L, resumed.creditBytes)
         resumed.acknowledged(8000, fullyConfirmed = true); resumed.advance()
         assertEquals(4096L, resumed.creditBytes)
         resumed.beginSubmission(11000)
         resumed.acknowledged(11050, fullyConfirmed = false); resumed.advance()
         assertEquals("Partial confirmation must not open a large window", 4096L, resumed.creditBytes)
         resumed.acknowledged(11101, fullyConfirmed = true); resumed.advance()
-        assertEquals("A slow retry probe must remain constrained", 8192L, resumed.creditBytes)
+        assertEquals("A slow retry probe must remain constrained", 131072L, resumed.creditBytes)
     }
 
-    @Test fun sustainedSmallChunkTrafficDrainsForAFreshLanProbe() = runBlocking {
+    @Test fun sustainedConstrainedTrafficDrainsForAFreshLanProbe() = runBlocking {
         val now = java.util.concurrent.atomic.AtomicLong(0)
         val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { now.get() })
         val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
@@ -103,20 +119,20 @@ class TransferControllerTests {
             awaitChunks(3)
             repeat(3) { index ->
                 now.set(200L + index * 100)
-                owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, (index + 2) * 4096L).encode())
+                owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + (index + 1) * 65536L).encode())
                 awaitChunks(index + 4)
             }
             // One ACK per chunk keeps the two-chunk pipeline occupied indefinitely without a drain.
             now.set(5000)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 5 * 4096L).encode())
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 4 * 65536L).encode())
             delay(60)
             assertEquals("Requalification must stop replacing acknowledged chunks", 6, chunks().size)
             now.set(5010)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 6 * 4096L).encode())
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 5 * 65536L).encode())
             awaitChunks(7)
             assertEquals(4096, chunks().last().bytes(3).size)
             now.set(5060)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 7 * 4096L).encode())
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192L + 5 * 65536L).encode())
             awaitChunks(8)
             assertEquals(262016, chunks()[7].bytes(3).size)
         } finally { owner.dismiss() }
@@ -173,7 +189,7 @@ class TransferControllerTests {
             assertEquals(9, chunks().size)
             owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 8 * 262016).encode())
             withTimeout(1000) { while (chunks().size < 11) delay(5) }
-            assertTrue(chunks().takeLast(2).all { it.bytes(3).size == 4096 })
+            assertTrue(chunks().takeLast(2).all { it.bytes(3).size == 65536 })
             assertTrue(source.exists())
         } finally { owner.dismiss() }
     }
@@ -182,18 +198,18 @@ class TransferControllerTests {
         val window = TransferSendWindow(262016, 8, true, 0)
         window.acknowledged(101, fullyConfirmed = true); window.advance()
         window.acknowledged(4999, fullyConfirmed = true); window.advance()
-        assertEquals(8192L, window.creditBytes)
+        assertEquals(131072L, window.creditBytes)
         window.acknowledged(5000, fullyConfirmed = false)
-        assertEquals("The current source read retains its budget", 8192L, window.creditBytes)
+        assertEquals("The current source read retains its budget", 131072L, window.creditBytes)
         window.advance()
-        assertEquals("Drain outstanding bytes before another probe", 4096L, window.creditBytes)
+        assertEquals("Drain outstanding bytes before another probe", 65536L, window.creditBytes)
         window.acknowledged(5000, fullyConfirmed = true)
-        assertEquals(4096L, window.creditBytes)
+        assertEquals(65536L, window.creditBytes)
         window.advance()
         assertEquals(4096L, window.creditBytes)
         window.acknowledged(5090, fullyConfirmed = false); window.advance()
         window.acknowledged(5150, fullyConfirmed = true); window.advance()
-        assertEquals("Partial confirmation cannot disguise a slow probe", 8192L, window.creditBytes)
+        assertEquals("Partial confirmation cannot disguise a slow probe", 131072L, window.creditBytes)
         window.acknowledged(10000, fullyConfirmed = true); window.advance()
         assertEquals(4096L, window.creditBytes)
         window.acknowledged(10050, fullyConfirmed = true); window.advance()
@@ -207,17 +223,17 @@ class TransferControllerTests {
             window.acknowledged(delay, fullyConfirmed = true)
             assertEquals("An admitted read keeps its window", 4096L, window.creditBytes)
             window.advance()
-            assertEquals(if (delay == 100L) 262016L else 4096L, window.chunkBytes)
-            assertEquals(if (delay == 100L) 2096128L else 8192L, window.creditBytes)
+            assertEquals(if (delay == 100L) 262016L else 65536L, window.chunkBytes)
+            assertEquals(if (delay == 100L) 2096128L else 131072L, window.creditBytes)
             window.acknowledged(delay + 1001, fullyConfirmed = true)
             window.advance()
-            assertEquals(4096L, window.chunkBytes); assertEquals(8192L, window.creditBytes)
+            assertEquals(65536L, window.chunkBytes); assertEquals(131072L, window.creditBytes)
             window.acknowledged(delay + 1002, fullyConfirmed = true); window.advance()
-            assertEquals("Fast subsequent ACKs cannot oscillate the window", 8192L, window.creditBytes)
+            assertEquals("Fast subsequent ACKs cannot oscillate the window", 131072L, window.creditBytes)
         }
         val single = TransferSendWindow(5000, 1, true, 0)
         single.acknowledged(101, fullyConfirmed = true); single.advance()
-        assertEquals(4096L, single.creditBytes)
+        assertEquals(5000L, single.creditBytes)
         val ble = TransferSendWindow(3072, 4, false, 0)
         ble.acknowledged(5000, fullyConfirmed = true); ble.advance()
         assertEquals(3072L, ble.chunkBytes); assertEquals(12288L, ble.creditBytes)
@@ -225,7 +241,7 @@ class TransferControllerTests {
         partial.acknowledged(90, fullyConfirmed = false); partial.advance()
         assertEquals(4096L, partial.creditBytes)
         partial.acknowledged(150, fullyConfirmed = true); partial.advance()
-        assertEquals("Partial ACK must not reset the probe's start time", 8192L, partial.creditBytes)
+        assertEquals("Partial ACK must not reset the probe's start time", 131072L, partial.creditBytes)
     }
     @Test fun orderedDeliveryContinuesWhileTransferStorageWaits() = runBlocking {
         val lane = QueuedTransferStorageDispatcher()
@@ -1490,12 +1506,12 @@ class TransferControllerTests {
             owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 9L * 262016 + 1).encode())
             delay(60)
             assertEquals("Unsubmitted bytes cannot grant credit", 3, chunks().size)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192).encode())
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 69632).encode())
             withTimeout(3000) { while (chunks().size < 4) delay(5) }
             delay(60)
             assertEquals(4, chunks().size)
-            assertTrue(chunks().all { it.bytes(3).size == 4096 })
-            assertEquals((0L until 4L).map { it * 4096 }, chunks().map { it.number(2) })
+            assertEquals(listOf(4096, 65536, 65536, 65536), chunks().map { it.bytes(3).size })
+            assertEquals(listOf(0L, 4096L, 69632L, 135168L), chunks().map { it.number(2) })
             assertTrue(source.exists())
         } finally { owner.dismiss() }
     }

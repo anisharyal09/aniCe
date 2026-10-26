@@ -10,6 +10,12 @@ internal class NearbyRetry {
   fun secured(now: Long) { stableDeadline = now + 15_000 }
   fun retired() { stableDeadline = null }
   fun tick(now: Long) { if (stableDeadline?.let { now >= it } == true) reset() }
+  fun observeReadiness(ready: Boolean, now: Long) {
+    if (ready && stableDeadline == null) secured(now)
+    // Complete a matured stability interval before clearing its deadline when readiness ends.
+    tick(now)
+    if (!ready) retired()
+  }
   private val excluded = linkedMapOf<String, Long>()
   fun reset() { stableDeadline = null; failures = 0; rediscoveryUsed = false; excluded.clear() }
   fun claimRediscovery(): Boolean {

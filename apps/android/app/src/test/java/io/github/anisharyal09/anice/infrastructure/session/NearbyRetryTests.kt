@@ -7,6 +7,48 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NearbyRetryTests {
+  @Test fun repeatedShortReadinessIntervalsKeepIncreasingRetryDelay() {
+    val policy = NearbyRetry()
+    val expected = listOf(2000L, 5000L, 15000L, 30000L, 60000L, 90000L, 90000L)
+    assertEquals(7, expected.size)
+    expected.forEachIndexed { index, delay ->
+      val started = index * 2000L
+      policy.observeReadiness(true, started)
+      policy.observeReadiness(false, started + 1000)
+      assertEquals(delay, policy.next(0.0))
+    }
+  }
+
+  @Test fun workReadinessPreservesFailureHistoryUntilFifteenContinuousSeconds() {
+    for (duration in listOf(1000L, 14000L, 14999L, 15000L)) {
+      val policy = NearbyRetry()
+      repeat(2) { policy.next(0.0) }
+      policy.reject("rejected-locator", 0)
+      policy.observeReadiness(true, 100)
+      policy.observeReadiness(true, 100 + duration / 2)
+      policy.observeReadiness(false, 100 + duration)
+      assertEquals("Incorrect reset after $duration ms", if (duration >= 15000) 2000L else 15000L, policy.next(0.0))
+      assertEquals(if (duration >= 15000) emptySet<String>() else setOf("rejected-locator"), policy.exclusions(15100))
+    }
+  }
+
+  @Test fun interruptedWorkReadinessAndOwnerCancellationCannotCompleteAnOldDeadline() {
+    val policy = NearbyRetry()
+    repeat(2) { policy.next(0.0) }
+    policy.observeReadiness(true, 0)
+    policy.observeReadiness(false, 14000)
+    policy.observeReadiness(true, 14001)
+    policy.observeReadiness(false, 15000)
+    assertEquals("Separate readiness intervals were combined", 15000L, policy.next(0.0))
+    policy.observeReadiness(true, 20000)
+    policy.retired()
+    policy.observeReadiness(false, 50000)
+    assertEquals("Cancelled ownership reset the failure history", 30000L, policy.next(0.0))
+    policy.observeReadiness(true, 60000)
+    policy.observeReadiness(false, 75000)
+    assertEquals(2000L, policy.next(0.0))
+  }
+
   @Test fun retiringAnOwnerPreservesRediscoveryAndCandidateExclusions() {
     val policy = NearbyRetry()
     repeat(2) { policy.next(0.0) }

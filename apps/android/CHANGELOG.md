@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Parameterize the isolated raw TCP diagnostic by payload size and Wi-Fi lock request, reporting lock ownership alongside bidirectional rates and checksum results.
+
 - Opt-in LAN timings distinguish writer admission, IO dispatch, blocking socket writes and reads.
 
 - Queue authenticated transfer chunks in a bounded FIFO before returning to shared feature delivery. Count active writes against capacity, preserve write/ACK order, invalidate pending work on cancellation or retirement, and drain accepted work on normal EOF or authenticated close. Run receiver storage, provider setup, cleanup and checkpoint writes on one injected single-parallelism IO dispatcher, with opt-in ingress and storage wait/work timing.
@@ -29,7 +31,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Resolve LAN services during the bounded browse and stream at most eight deduplicated endpoints into authentication. Stop remaining discovery on selected-peer secured readiness; route producer failures through connection error handling, fence lost services and late callbacks, serialize legacy resolution, and release browse resources on consumer exit, cancellation or deadline.
 
-- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
 
 - LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline. Playback and volume actions that expire before submission report that they were not sent; submitted actions with missing results remain uncertain and are never replayed.
 
@@ -54,6 +56,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Clipboard help explains Share → Send to Mac for text and links, the small sending panel, and the difference between manual sending and focus-limited automatic sharing.
 
 ### Fixed
+
+- Stop resetting transfer-owned Bluetooth retry history immediately at secured readiness. Evaluate the existing fifteen-second stability deadline across progress transitions and clear it on recovery cancellation; retain the bounded retry schedule for short-lived connections.
 
 - Recover large LAN chunks after a slow-path fallback even when continuous traffic keeps the small window occupied. Drain outstanding bytes under a one-chunk local budget before timing a fresh probe. Exclude source preparation and fully drained idle time from slow-path classification while retaining submission-to-ACK timing; log credit-only window changes.
 

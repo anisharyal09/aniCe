@@ -28,6 +28,8 @@ If the Mac still shows Secured after abrupt phone network loss, choose Disconnec
 
 Mac TCP requests keepalive probes after ten idle seconds, at five-second intervals, with three unanswered probes; retransmission timeout is twenty seconds. These OS probes detect an unreachable socket and do not extend authenticated session activity. Detection still depends on native TCP scheduling; abrupt peer network loss can leave controls visible briefly before failure is reported. [Network.framework options](https://developer.apple.com/documentation/network/nwprotocoltcp/options).
 
+The Mac transport logs Network.framework `waiting` and `failed` transitions separately with their native error before retiring the channel. Both remain terminal in the current owner; no waiting-state recovery window extends the connection or its write deadlines.
+
 ## Lifecycle and transfer feasibility
 
 Both TCP readers stop at the remaining frame header or body boundary before handing complete frames to the bounded ingress queue. Queue backpressure therefore waits between frames rather than consuming a later frame's assembly budget. Before secured readiness, partial frames expire after ten seconds absolute. Established encrypted-record frames may continue while bytes arrive within ten seconds of each other, bounded to sixty seconds total; partial headers and handshake envelopes retain ten seconds absolute. Byte progress does not count as authenticated activity. LAN rendezvous also retains capacity notifications received during a pending submission, so a pre-seal refusal cannot lose that wakeup.

@@ -30,10 +30,17 @@ import org.junit.runner.RunWith
 class LanNativeTest {
     @Test
     fun rawSocketBaseline(): Unit = runBlocking(Dispatchers.IO) {
-        val framed = InstrumentationRegistry.getArguments().getString("aniceRawFrames") == "true"
-        val run = InstrumentationRegistry.getArguments().getString("aniceRawRun")
+        val args = InstrumentationRegistry.getArguments()
+        val framed = args.getString("aniceRawFrames") == "true"
+        val run = args.getString("aniceRawRun")
         assumeTrue("Isolated socket diagnostic requires aniceRawRun", run != null)
         require(UUID.fromString(run).toString() == run)
+        val useWifiLock = args.getString("aniceRawWifiLock")?.let {
+            require(it == "true" || it == "false")
+            it.toBoolean()
+        } ?: true
+        val totalMiB = args.getString("aniceRawMiB")?.toInt() ?: 100
+        require(totalMiB in listOf(4, 16, 100))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val directory = File(context.filesDir, "raw-lan-$run").apply { mkdirs() }
         val manager = context.getSystemService(ConnectivityManager::class.java)
@@ -57,13 +64,13 @@ class LanNativeTest {
                     delay(250)
                 } while (true)
             }
-            lock.acquire()
+            if (useWifiLock) lock.acquire()
             File(directory, "server.json").writeText(JSONObject().put("address", address.hostAddress)
                 .put("port", server.localPort).toString())
             server.accept().use { socket ->
                 socket.soTimeout = 10000
                 socket.tcpNoDelay = true
-                val total = 100 * 1048576
+                val total = totalMiB * 1048576
                 val buffer = ByteArray(65536)
                 val framing = if (framed) LanFraming(SessionProfile.BULK_PROBE) { SystemClock.elapsedRealtime() } else null
                 val digest = java.security.MessageDigest.getInstance("SHA-256")
@@ -100,7 +107,8 @@ class LanNativeTest {
                 require(socket.getInputStream().read() == 1)
                 val sendSeconds = (SystemClock.elapsedRealtimeNanos() - sendStart) / 1e9
                 File(directory, "result.json").writeText(JSONObject().put("bytes", total).put("framed", framed)
-                    .put("androidReceiveMiBs", 100 / receiveSeconds).put("androidSendMiBs", 100 / sendSeconds)
+                    .put("wifiLockRequested", useWifiLock).put("wifiLockHeld", lock.isHeld)
+                    .put("androidReceiveMiBs", totalMiB / receiveSeconds).put("androidSendMiBs", totalMiB / sendSeconds)
                     .put("receivedSha256", receivedDigest).toString())
             }
             withTimeout(30000) { while (!File(directory, "ack").exists()) delay(100) }

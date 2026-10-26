@@ -478,11 +478,12 @@ class SessionController(application: Application) {
       while (isActive && workLease && !recoveryPaused && companionOwner == null && selected == peer) {
         if (missingPermissions().isNotEmpty()) return@launch
         if (state != ConnectionState.SECURED && state != ConnectionState.CONNECTING) connect(peer, automatic = true)
-        var authenticated = false
-        val result = progress.first {
-          if (it.state == ConnectionState.SECURED && !authenticated) { retry.reset(); authenticated = true }
-          it.renewal != null || it.state == ConnectionState.FAILED || it.state == ConnectionState.DISCONNECTED
-        }
+        val result = try {
+          progress.first {
+            retry.observeReadiness(it.state == ConnectionState.SECURED, SystemClock.elapsedRealtime())
+            it.renewal != null || it.state == ConnectionState.FAILED || it.state == ConnectionState.DISCONNECTED
+          }
+        } finally { retry.retired() }
         if (result.renewal != null) { retireForRenewal(); continue }
         delay(retry.next(kotlin.random.Random.nextDouble(-0.1, 0.1)))
       }

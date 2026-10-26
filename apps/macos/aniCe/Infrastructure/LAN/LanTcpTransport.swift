@@ -180,7 +180,12 @@ actor LanTcpTransport {
       else { fail(SessionFailure.state); return }
       interfaces = Set(path.availableInterfaces.filter { $0.type == .wifi || $0.type == .wiredEthernet }.map(\.index))
       receive()
-    case .failed(let error), .waiting(let error): fail(error)
+    case .failed(let error):
+      Self.logger.notice("LAN connection failed: \(String(describing: error), privacy: .public)")
+      fail(error)
+    case .waiting(let error):
+      Self.logger.notice("LAN connection waiting: \(String(describing: error), privacy: .public)")
+      fail(error)
     case .cancelled: fail(SessionFailure.cancelled)
     default: break
     }

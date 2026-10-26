@@ -2644,7 +2644,12 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
     private var drainRequested = false
     private var draining = false
     private var decision: Boolean? = null
-    val chunkBytes get() = if (probing || constrained) minOf(4096L, maximumChunk) else maximumChunk
+    // Sustained fallback amortizes live per-record validation under a 128-KiB fallback backlog cap.
+    val chunkBytes get() = when {
+        probing -> minOf(4096L, maximumChunk)
+        constrained -> minOf(65536L, maximumChunk)
+        else -> maximumChunk
+    }
     val creditBytes get() = chunkBytes * when {
         probing || draining -> 1L
         constrained -> minOf(2L, maximumWindow)

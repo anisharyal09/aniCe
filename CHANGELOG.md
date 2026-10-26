@@ -10,6 +10,10 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Support matched raw TCP diagnostics with normal Wi-Fi policy or a temporary performance lock, independently of authenticated application transfers.
+
+- Log Mac LAN waiting and failed states separately while preserving existing channel retirement and timeout behavior.
+
 - Isolate authenticated transfer chunks in bounded feature-owned FIFOs while interactive delivery continues. Include active writes in byte/record accounting, fence cancelled generations, drain accepted work on normal close, and report successful receive activity only after handling. Android receiver storage shares one injected single-parallelism IO dispatcher; opt-in timings distinguish ingress admission, consumption and storage work.
 
 - Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Cancellation remains effective until nonce ownership; session-owned completion protects sealed records while transfer cleanup cancels queued producers. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
@@ -41,7 +45,7 @@ Repository-wide structure, documentation, and development conventions belong her
 
 - Start Android LAN authentication as discovery candidates resolve, removing the fixed browse wait while retaining bounded discovery and selected-peer authentication.
 
-- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 4,096-byte chunks within peer credit; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
 
 - Retain the Mac Bluetooth service database across radio power-off and preserve LAN rendezvous capacity wakeups on both platforms. LAN reads stop at frame boundaries so ingress backpressure cannot consume the next frame's assembly deadline. Android distinguishes unsent media actions from submitted actions with unknown outcomes.
 
@@ -52,6 +56,8 @@ Repository-wide structure, documentation, and development conventions belong her
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
 
 ### Fixed
+
+- Preserve Android Bluetooth retry history through brief secured intervals during approved-transfer recovery. Reset only after fifteen uninterrupted seconds of authenticated readiness.
 
 - Repair transfer credit wakeups and ACK coalescing so window shrinkage and overlapping submissions cannot strand progress. Recover large LAN chunks under continuous traffic and exclude source preparation or fully drained idle time from slow-path classification.
 
