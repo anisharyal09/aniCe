@@ -6,9 +6,9 @@ Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, n
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
-## Development milestone
+## Current release
 
-Current build: **0.2.0-dev · build 2**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are implemented and manually exercised; this version also includes the native UI overhaul. This is an unreleased development milestone.
+Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
 
 ## Nearby discovery
 

@@ -6,9 +6,9 @@ The goal is to bring the continuity of native single-vendor ecosystems (like App
 
 The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. Authenticated connections, native feature workflows and UI have been exercised on physical Mac and Android hardware. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.
 
-## Current development milestone
+## Current release
 
-**0.2.0-dev · build 2**, following 0.1.0. Now Playing, bidirectional Local File Transfer, Find Device, text Clipboard with optional local history and Android sharing actions, and SMS relay from Android to Mac with Mac notifications and replies are implemented, alongside the native Home/Devices/Features/Favourites/Settings/About redesign.
+**v0.3.0 · build 3**, following v0.2.0. Now Playing, bidirectional Local File Transfer, Find Device, text Clipboard with optional local history and Android sharing actions, and SMS relay from Android to Mac with Mac notifications and replies are implemented.
 
 Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use on an Apple M5 MacBook Air and Samsung Galaxy A34.
 

@@ -48,7 +48,7 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
             )
             val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
-            version?.let { Text("Version $it", style = MaterialTheme.typography.bodyMedium) }
+            version?.let { Text("Version v$it", style = MaterialTheme.typography.bodyMedium) }
             Text("Connect your Mac and Android.", style = MaterialTheme.typography.bodyMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Made by", style = MaterialTheme.typography.bodyMedium)

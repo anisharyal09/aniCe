@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+## [v0.3.0]
+
 ### Added
 
 - Record stale GATT callback drops and include connection/write failure stage, status, MTU, queue depth, write state, and operation epoch in BLE transport diagnostics. Successful fragment callbacks no longer emit routine log entries.
@@ -30,6 +32,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Background companion playback holds a bounded media demand lease while playing or inside the paused grace, so Now Playing can request and retain LAN (and receive artwork) in the background.
 
 ### Changed
+
+- Set `versionName` to `0.3.0`, `versionCode` to 3, and About to display the `v0.3.0` prefix.
 
 - Resolve LAN services during the bounded browse and stream at most eight deduplicated endpoints into authentication. Stop remaining discovery on selected-peer secured readiness; route producer failures through connection error handling, fence lost services and late callbacks, serialize legacy resolution, and release browse resources on consumer exit, cancellation or deadline.
 

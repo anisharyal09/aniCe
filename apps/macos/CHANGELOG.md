@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+## [v0.3.0]
+
 ### Added
 
 - Distinguish native LAN connection waiting and failure transitions in transport diagnostics before channel retirement.
@@ -33,6 +35,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Automatic LAN is on when no preference has been stored; a stored off still wins, and pairing exposes one post-pairing toggle for both Bluetooth and LAN. Authenticated BLE admission coordination opens bounded Allow windows on connection events, successful BLE feature traffic, media demand or file-transfer demand; coordination traffic cannot initiate another window.
 
 ### Changed
+
+- Set the marketing version to `0.3.0`, build number to 3, and About to display `v0.3.0`; removed the development-channel suffix from release metadata.
 
 - Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
 

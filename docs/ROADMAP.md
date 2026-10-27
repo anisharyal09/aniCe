@@ -8,9 +8,9 @@
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
 | **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
-| **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard and Android→Mac SMS relay implemented; native UI overhaul in 0.2.0-dev. | In progress |
+| **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard and Android→Mac SMS relay implemented. | In progress |
 
-Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current milestone: 0.2.0-dev, build 2.
+Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current release: v0.3.0, build 3. New work is tracked under Unreleased.
 
 ---
 

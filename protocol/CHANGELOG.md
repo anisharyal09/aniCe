@@ -1,8 +1,10 @@
 # Protocol changelog
 
-Records shared communication-contract changes, compatibility implications, and protocol releases independently of application versions. Repository scaffolding and shared documentation are recorded in the [root changelog](../CHANGELOG.md).
+Records shared communication-contract changes and compatibility implications. Protocol contracts remain independently versioned; this section groups the contract changes included with application release v0.3.0. Repository-wide changes are recorded in the [root changelog](../CHANGELOG.md).
 
 ## [Unreleased]
+
+## [v0.3.0]
 
 ### Fixed
 

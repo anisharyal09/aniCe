@@ -8,6 +8,10 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ## [Unreleased]
 
+## [v0.3.0]
+
+Application release v0.3.0, build 3.
+
 ### Added
 
 - Support matched raw TCP diagnostics with normal Wi-Fi policy or a temporary performance lock, independently of authenticated application transfers.
@@ -42,6 +46,8 @@ Repository-wide structure, documentation, and development conventions belong her
 - Automatic BLE-coordinated LAN initiation on connection events, secured BLE feature activity, companion media demand and file selection. Automation is on when no preference is stored, a stored off still wins, and pairing exposes one post-pairing toggle that sets both the Bluetooth and LAN choices.
 
 ### Changed
+
+- Set Android and macOS app metadata and About screens to display `v0.3.0` (build 3).
 
 - Start Android LAN authentication as discovery candidates resolve, removing the fixed browse wait while retaining bounded discovery and selected-peer authentication.
 

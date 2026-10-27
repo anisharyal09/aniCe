@@ -3,7 +3,6 @@
 <!-- Declares local network and explicit player Automation permission purposes. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>AniCeReleaseChannel</key><string>dev</string>
 <key>NSAppleEventsUsageDescription</key><string>aniCe controls the media player you select when you explicitly allow playback control.</string>
 <key>NSBonjourServices</key><array><string>_anice._tcp</string></array>
 <key>NSLocalNetworkUsageDescription</key><string>aniCe uses your local network to connect securely to your paired devices.</string>

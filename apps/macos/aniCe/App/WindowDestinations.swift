@@ -96,7 +96,7 @@ ScrollView {
               Text("aniCe").font(.title2.weight(.semibold))
               if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
                 let channel = Bundle.main.object(forInfoDictionaryKey: "AniCeReleaseChannel") as? String ?? ""
-                Text("Version " + version + (channel.isEmpty ? "" : "-" + channel)).font(.callout)
+                Text("Version v" + version + (channel.isEmpty ? "" : "-" + channel)).font(.callout)
               }
               Text("Connect your Mac and Android.").font(.callout)
               HStack(alignment: .firstTextBaseline, spacing: 4) {
