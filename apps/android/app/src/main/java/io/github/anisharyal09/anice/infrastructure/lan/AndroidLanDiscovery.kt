@@ -21,6 +21,9 @@ internal class NsdResolutionFailure(val code: Int) :
 internal data class LanEndpoint(val network: Network, val address: InetAddress, val port: Int, val profile: SessionProfile = SessionProfile.STANDARD)
 
 internal object LanAddress {
+    fun retainsLocalAddress(bound: InetAddress?, initial: Set<InetAddress>, current: Set<InetAddress>): Boolean =
+        if (bound != null) bound in current else initial.isEmpty() || current.intersect(initial).isNotEmpty()
+
     fun scoped(address: InetAddress, interfaceIndex: Int?): InetAddress {
         if (address !is Inet6Address || !address.isLinkLocalAddress) return address
         val index = requireNotNull(interfaceIndex) { "Wi-Fi interface is unavailable. Retry." }

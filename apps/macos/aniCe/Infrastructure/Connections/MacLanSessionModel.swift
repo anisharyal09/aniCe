@@ -68,7 +68,9 @@ import OSLog
         if self.automaticAttempt, self.state != "Secured" { self.end() }
         return
       }
-      if self.state == "Secured" || self.allowing { _ = self.automaticGate.claim(); return }
+      if self.state == "Secured" || self.allowing {
+        _ = self.automaticGate.claim(connected: self.state == "Secured"); return
+      }
       guard self.automaticGate.claim() else { return }
       self.allow(selected: channel.descriptor.peer, bluetoothAllowing: false, automatically: true)
     }

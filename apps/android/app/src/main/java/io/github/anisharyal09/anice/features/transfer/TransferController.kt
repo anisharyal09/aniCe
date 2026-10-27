@@ -298,6 +298,7 @@ class TransferController(
     private var receiverWrittenBytes: Long = 0L
     private var receiverTotalTransferred: Long = 0L
     private var lastAckedWrittenBytes: Long = 0L
+    private var receiverAckChunkBytes = 3072L
     private var ackJob: Job? = null
     private var ackTimerJob: Job? = null
     private var lastReceiverUiUpdate: Long = 0L
@@ -2247,6 +2248,7 @@ class TransferController(
         receiverCurrentFileIndex = index
         receiverWrittenBytes = 0L
         lastAckedWrittenBytes = 0L
+        receiverAckChunkBytes = 3072L
         val operation = epoch
         val storage = TransferReceiveStorage(destDir, documentDestination, ioDispatcher = receiveDispatcher)
         try {
@@ -2297,10 +2299,9 @@ class TransferController(
                     if (operation != epoch || receiverCurrentFileIndex != fileIndex) return@withContext
                     ackJob = null
                     val unacked = receiverWrittenBytes - lastAckedWrittenBytes
-                    // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
-                    val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
+                    val ackThreshold = transferAckThreshold(peerMaxChunkBytes, peerMaxWindow, receiverAckChunkBytes)
                     // Failure waits for an external event; only success may drain newer credit.
-                    if (submitted && (unacked >= ackCadence * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes))) {
+                    if (submitted && (unacked >= ackThreshold || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes))) {
                         flushAck()
                     } else if (submitted && unacked > 0) {
                         // A coalescing timer may have expired while this ACK was still submitting.
@@ -2333,6 +2334,7 @@ class TransferController(
         pauseExpiresAt = null; pauseDeadline = null
         receiverWrittenBytes += data.size
         receiverTotalTransferred += data.size
+        receiverAckChunkBytes = data.size.toLong()
 
         val now = clock()
         if (now - lastReceiverUiUpdate >= 100L || receiverWrittenBytes == currentFile.size) {
@@ -2351,10 +2353,9 @@ class TransferController(
             )
         }
 
-        // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
         val unacked = receiverWrittenBytes - lastAckedWrittenBytes
-        val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
-        if (unacked >= ackCadence * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size) {
+        val ackThreshold = transferAckThreshold(peerMaxChunkBytes, peerMaxWindow, receiverAckChunkBytes)
+        if (unacked >= ackThreshold || receiverWrittenBytes == currentFile.size) {
             flushAck()
         } else if (receiverWrittenBytes > lastAckedWrittenBytes) {
             scheduleAckTimer()
@@ -2633,6 +2634,13 @@ class TransferController(
     }
 }
 
+// Reduced LAN chunks need immediate credit to keep the sender's smaller pipeline supplied.
+internal fun transferAckThreshold(maximumChunk: Long, maximumWindow: Long, chunkBytes: Long): Long {
+    if (maximumChunk <= 3072) return maximumChunk * minOf(8L, maxOf(1L, maximumWindow / 2))
+    val chunk = minOf(maximumChunk, chunkBytes)
+    return chunk * if (maximumChunk > 4096 && chunk < maximumChunk) 1L else maxOf(1L, maximumWindow / 4)
+}
+
 // Bounds unacknowledged LAN bytes before allowing the negotiated high-throughput window.
 internal class TransferSendWindow(private val maximumChunk: Long, private val maximumWindow: Long,
     private val lan: Boolean, started: Long) {
@@ -2645,6 +2653,7 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
     private var drainRequested = false
     private var draining = false
     private var decision: Boolean? = null
+    private var timelySince: Long? = null
     // Sustained fallback amortizes live per-record validation under a 128-KiB fallback backlog cap.
     val chunkBytes get() = when {
         probing -> minOf(4096L, maximumChunk)
@@ -2663,6 +2672,7 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
             probeStartedAt = now
             probeSubmitted = true
         } else if (!probing && windowEmpty) {
+            if (now - lastAcknowledgedAt > 100) timelySince = null
             lastAcknowledgedAt = now
         }
     }
@@ -2672,7 +2682,10 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
         val elapsed = now - lastAcknowledgedAt
         if (probing) { if (decision == null) decision = elapsed > 100 }
         else if (constrained) {
-            if (now - probeStartedAt >= 5000) {
+            if (elapsed > 100) timelySince = null else if (timelySince == null) timelySince = lastAcknowledgedAt
+            // Batched ACK arrivals cannot qualify recovery without a full second of steady progress.
+            val stable = timelySince?.let { now - it >= 1000 } == true
+            if (draining && fullyConfirmed || stable && now - probeStartedAt >= 5000) {
                 if (fullyConfirmed) reprobe = true else drainRequested = true
             }
         }
@@ -2681,7 +2694,7 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
     }
     // Apply shrinkage between records, never while a previously admitted source read is suspended.
     fun advance() {
-        decision?.let { constrained = it; probing = false }
+        decision?.let { constrained = it; probing = false; timelySince = null }
         decision = null
         // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
         if (drainRequested) { draining = true; drainRequested = false }

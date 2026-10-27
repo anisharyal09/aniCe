@@ -50,12 +50,12 @@ class LanSessionController(private val app: AniCeApplication,
     private val automaticGate = LanAttemptGate()
     internal val rendezvous = LanRendezvous(scope, ::scheduleAutomatic)
     private val power = app.getSystemService(android.os.PowerManager::class.java)
-    private val automaticNetworks = mutableSetOf<Network>()
+    private val automaticNetworks = mutableMapOf<Network, Set<java.net.InetAddress>>()
     private val automaticNetworkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
+        override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
             scope.launch {
-                automaticNetworks.add(network)
-                scheduleAutomatic()
+                wifiAddressesChanged(network, if (properties.interfaceName == null) emptySet() else
+                    properties.linkAddresses.map { it.address }.toSet())
             }
         }
         override fun onLost(network: Network) {
@@ -64,6 +64,16 @@ class LanSessionController(private val app: AniCeApplication,
     }
     private val automaticEligible get() = automatic && !automaticPaused && automaticNetworks.isNotEmpty() &&
         ((foreground && power.isInteractive) || workLease || pickerLease || mediaLease)
+
+    internal fun wifiAddressesChanged(network: Network, assigned: Set<java.net.InetAddress>) {
+        val addresses = assigned.filterNot { it.isAnyLocalAddress || it.isLoopbackAddress || it.isMulticastAddress }.toSet()
+        val previous = automaticNetworks[network].orEmpty()
+        if (addresses == previous) return
+        if (addresses.isEmpty()) automaticNetworks.remove(network) else automaticNetworks[network] = addresses
+        scheduleAutomatic()
+        // IP reprovisioning can restore a usable address without a new Network/onAvailable.
+        if (automaticEligible && addresses.any { it !in previous }) requestAutomaticConnection()
+    }
 
     fun setAutomaticEnabled(enabled: Boolean) {
         automatic = enabled
@@ -87,7 +97,7 @@ class LanSessionController(private val app: AniCeApplication,
                 return@launch
             }
             if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) {
-                automaticGate.claim()
+                automaticGate.claim(connected = state == ConnectionState.SECURED)
                 return@launch
             }
             if (rendezvous.remote != 2) return@launch
@@ -283,7 +293,8 @@ class LanSessionController(private val app: AniCeApplication,
                         networks.allNetworks.firstOrNull {
                             networks.getNetworkCapabilities(it)?.let { caps ->
                                 caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-                                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                                    (!automatically || automaticNetworks.containsKey(it))
                             } == true
                         } ?: error("Connect this phone and your Mac to the same local network.")
                     val callback =
@@ -311,11 +322,11 @@ class LanSessionController(private val app: AniCeApplication,
                                 val initialAddrs =
                                     initial?.linkAddresses?.map { it.address }?.toSet().orEmpty()
                                 val currentAddrs = properties.linkAddresses.map { it.address }.toSet()
-                                val allAddrsLost =
-                                    initialAddrs.isNotEmpty() && currentAddrs.intersect(initialAddrs).isEmpty()
-                                if (changed == network && (interfaceLost || allAddrsLost))
+                                if (changed == network)
                                     scope.launch {
-                                        if (op == generation)
+                                        if (op != generation) return@launch
+                                        val bound = transport?.localAddress
+                                        if (interfaceLost || !LanAddress.retainsLocalAddress(bound, initialAddrs, currentAddrs))
                                             this@LanSessionController.end(
                                                 "Wi-Fi address changed. On your Mac, allow local-network connections again, then reconnect here."
                                             )
@@ -344,6 +355,9 @@ class LanSessionController(private val app: AniCeApplication,
                             transport = tcp
                             try {
                                 withTimeout(remaining) { tcp.connect(endpoint) }
+                                if (networks.getLinkProperties(network)?.linkAddresses?.none {
+                                        it.address == tcp.localAddress
+                                    } != false) throw java.io.IOException("Wi-Fi address changed during connection. Retry.")
                             } catch (error: TimeoutCancellationException) {
                                 tcp.close()
                                 lastError = error

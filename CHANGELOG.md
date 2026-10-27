@@ -57,6 +57,10 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Fixed
 
+- Recover LAN after Wi-Fi address restoration and retain authenticated reconnect requests through delayed channel retirement.
+
+- Avoid repeated transfer drain/probe cycles on delayed LAN paths and return receive credit immediately for chunks smaller than the negotiated LAN maximum.
+
 - Deliver packaged Now Playing replies in pipe order and publish promptly resolved capabilities with metadata. Retain known support through discovery failures and timing only for the same recording. Position samples can recover duration; explicit support removal and invalid timing still disable seeking.
 
 - Serialize receiver resume verification with chunk writes through transport takeover. Release cancelled macOS resume waiters and fence source-close completion before accessing replacement transfer results.

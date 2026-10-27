@@ -32,6 +32,23 @@ private actor ReceiveDrainProbe {
 }
 
 final class LanTests: XCTestCase {
+  func testRequestWhileConnectedWaitsForRetirementAndIsConsumedOnlyOnce() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
+    for _ in 0..<20 { XCTAssertFalse(gate.claim(connected: true)) }
+    XCTAssertFalse(gate.claim(), "Retirement alone cannot authorize another attempt")
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+    for _ in 0..<20 {
+      gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+      XCTAssertFalse(gate.claim(connected: true), "A healthy connection must not be replaced")
+    }
+    XCTAssertTrue(gate.claim(), "The peer's request must survive delayed local socket retirement")
+    XCTAssertFalse(gate.claim())
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+    XCTAssertFalse(gate.claim(), "Duplicate state must not create a reconnect loop")
+  }
+
   @MainActor func testSessionRetirementRetainsListenerButRequiresFreshAdmission() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

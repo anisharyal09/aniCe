@@ -55,6 +55,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Retain authenticated LAN reconnect requests received while the old channel still appears secured, consuming them only when a fresh attempt starts.
+
+- Keep delayed LAN transfer pipelines running until recent ACK timing qualifies recovery; return credit immediately for qualification probes and chunks smaller than the negotiated LAN maximum.
+
 - Drain packaged-helper replies through one bounded MainActor FIFO and wait up to 200 ms for native command discovery before publishing metadata; playback commands retain their separate queue. Late capability replies remain recording-bound; discovery failures preserve known support, and position samples can recover duration.
 
 - Run receiver resume verification and channel rebinding in the chunk FIFO. Release resume continuations before invalidating their tokens and cancel abandoned pending request submission. Reject cancelled or replaced senders after source closure before they consume or install file-result waiters.

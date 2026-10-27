@@ -29,9 +29,55 @@ final class MockSecuredChannel: SecuredChannel {
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
 
+  func testLanAcknowledgementsFitTheChunksActuallyReceived() {
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 4096), 4096)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 4096, maximumWindow: 8, chunkBytes: 4096), 8192)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 65536), 65536)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 131072), 131072)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 131072, maximumWindow: 8, chunkBytes: 65536), 65536)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 262015), 262015)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 65536, maximumWindow: 8, chunkBytes: 65536), 131072)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 262016), 524032)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 5000, maximumWindow: 1, chunkBytes: 65536), 5000)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 3072, maximumWindow: 4, chunkBytes: 4096), 6144)
+    XCTAssertEqual(transferAckThreshold(maximumChunk: 3072, maximumWindow: 64, chunkBytes: 1), 24576)
+  }
+
+  func testDelayedLanDoesNotDrainForRecoveryUntilProgressIsConsistentlyTimely() {
+    var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
+    window.beginSubmission(0)
+    window.acknowledged(0.101, fullyConfirmed: true); window.advance()
+    for now in 1...30 {
+      window.acknowledged(Double(now), fullyConfirmed: false); window.advance()
+      XCTAssertEqual(window.creditBytes, 131072, "A delayed path must keep its existing pipeline")
+    }
+    for millis in [30050, 30100, 30300] + Array(stride(from: 30350, through: 31200, by: 50)) {
+      window.acknowledged(Double(millis) / 1000, fullyConfirmed: false); window.advance()
+      XCTAssertEqual(window.creditBytes, 131072, "A slow ACK resets recovery qualification")
+    }
+    window.acknowledged(31.3, fullyConfirmed: false); window.advance()
+    XCTAssertEqual(window.creditBytes, 65536)
+    window.acknowledged(31.55, fullyConfirmed: true); window.advance()
+    XCTAssertEqual(window.creditBytes, 4096, "A slow drain completion must not strand the one-chunk budget")
+    window.beginSubmission(31.6)
+    window.acknowledged(31.7, fullyConfirmed: true); window.advance()
+    XCTAssertEqual(window.creditBytes, 2096128)
+  }
+
+  func testConstrainedSourceIdleCannotQualifyRecovery() {
+    var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
+    window.beginSubmission(0)
+    for now in [0.101, 0.15, 0.2] { window.acknowledged(now, fullyConfirmed: true); window.advance() }
+    window.beginSubmission(10, windowEmpty: true)
+    window.acknowledged(10.05, fullyConfirmed: true); window.advance()
+    XCTAssertEqual(window.creditBytes, 131072, "Source idle is not sustained ACK progress")
+  }
+
   func testDelayedLanAmortizesValidationWithoutExceedingPeerCredit() {
     for latency in [0.101, 0.6, 1.5] {
-      for maximumChunk: Int64 in [3072, 4096, 5000, 65535, 65536, 131072, 262016] {
+      let chunkLimits: [Int64] = [3072, 4096, 5000, 65535, 65536, 131071, 131072, 131073, 262016]
+      XCTAssertGreaterThanOrEqual(chunkLimits.count, 9)
+      for maximumChunk in chunkLimits {
         for maximumWindow: Int64 in [1, 2, 8] {
           var window = TransferSendWindow(maximumChunk: maximumChunk, maximumWindow: maximumWindow, lan: true, started: 0)
           window.beginSubmission(0)
@@ -67,7 +113,11 @@ final class TransferModelTests: XCTestCase {
     resumed.acknowledged(3.101, fullyConfirmed: true); resumed.advance()
     resumed.acknowledged(7.999, fullyConfirmed: true); resumed.advance()
     XCTAssertEqual(resumed.creditBytes, 131072, "Recovery interval starts at actual probe submission")
-    resumed.acknowledged(8, fullyConfirmed: true); resumed.advance()
+    for millis in stride(from: 8000, through: 8900, by: 50) {
+      resumed.acknowledged(Double(millis) / 1000, fullyConfirmed: true); resumed.advance()
+      XCTAssertEqual(resumed.creditBytes, 131072)
+    }
+    resumed.acknowledged(9, fullyConfirmed: true); resumed.advance()
     XCTAssertEqual(resumed.creditBytes, 4096)
     resumed.beginSubmission(11)
     resumed.acknowledged(11.05, fullyConfirmed: false); resumed.advance()
@@ -200,8 +250,8 @@ final class TransferModelTests: XCTestCase {
       channel.sentData.compactMap { try? TransferMessage.decode($0, maximumChunkBytes: 262016) }.filter { $0.kind == 6 }
     }
     owner.available(channel)
-    _ = await owner.handle(try TransferMessage.capability(version: 3, maxChunkBytes: 262016, maxWindow: 8).encode(maximumChunkBytes: 262016), on: channel.descriptor)
-    try await offer(owner, channel, size: 32768)
+    _ = await owner.handle(try TransferMessage.capability(version: 2, maxChunkBytes: 8192, maxWindow: 8).encode(maximumChunkBytes: 262016), on: channel.descriptor)
+    try await offer(owner, channel, size: 65536)
     guard case .incomingOffer(let batch) = owner.state else { return XCTFail("Missing offer") }
     channel.onSendData = { bytes in
       guard (try? TransferMessage.decode(bytes, maximumChunkBytes: 262016))?.kind == 6 else { return }
@@ -211,9 +261,9 @@ final class TransferModelTests: XCTestCase {
     }
     defer { release?.resume(); owner.dismiss(); channel.onSendData = nil }
     await owner.acceptIncomingOffer(destination: tempDir)
-    for offset in [0, 4096] {
+    for offset in [0, 8192] {
       _ = await owner.handle(try TransferMessage.chunk(batch: batch.idString, file: batch.files[0].idString,
-        offset: Int64(offset), data: Data(repeating: 0, count: 4096)).encode(maximumChunkBytes: 262016), on: channel.descriptor)
+        offset: Int64(offset), data: Data(repeating: 0, count: 8192)).encode(maximumChunkBytes: 262016), on: channel.descriptor)
       if offset == 0 { await fulfillment(of: [firstAck], timeout: 1) }
     }
     // Let the second chunk's timer expire while the first ACK is still being submitted.
@@ -221,7 +271,7 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(acks().count, 1)
     release?.resume(); release = nil
     await fulfillment(of: [nextAck], timeout: 1)
-    XCTAssertEqual(acks().map { $0.number(2) }, [4096, 8192])
+    XCTAssertEqual(acks().map { $0.number(2) }, [8192, 16384])
     try await Task.sleep(for: .milliseconds(60))
     XCTAssertEqual(acks().count, 2, "No ACK polling after credit is drained")
   }
@@ -229,7 +279,7 @@ final class TransferModelTests: XCTestCase {
   func testConstrainedLanRequalifiesOnlyWithADrainedWindowAndANewCompleteProbe() {
     var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     window.acknowledged(0.101, fullyConfirmed: true); window.advance()
-    window.acknowledged(4.999, fullyConfirmed: true); window.advance()
+    for millis in stride(from: 3800, through: 4900, by: 100) { window.acknowledged(Double(millis) / 1000, fullyConfirmed: true); window.advance() }
     XCTAssertEqual(window.creditBytes, 131072)
     window.acknowledged(5, fullyConfirmed: false)
     XCTAssertEqual(window.creditBytes, 131072, "The current source read retains its budget")
@@ -242,9 +292,9 @@ final class TransferModelTests: XCTestCase {
     window.acknowledged(5.09, fullyConfirmed: false); window.advance()
     window.acknowledged(5.15, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.creditBytes, 131072, "Partial confirmation cannot disguise a slow probe")
-    window.acknowledged(10, fullyConfirmed: true); window.advance()
+    for millis in stride(from: 10000, through: 11000, by: 50) { window.acknowledged(Double(millis) / 1000, fullyConfirmed: true); window.advance() }
     XCTAssertEqual(window.creditBytes, 4096)
-    window.acknowledged(10.05, fullyConfirmed: true); window.advance()
+    window.acknowledged(11.05, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.chunkBytes, 262016); XCTAssertEqual(window.creditBytes, 2096128)
   }
 

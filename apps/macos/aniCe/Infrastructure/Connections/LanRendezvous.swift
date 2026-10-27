@@ -103,5 +103,5 @@ struct LanAttemptGate {
     return true
   }
   mutating func trigger() { attempted = false }
-  mutating func claim() -> Bool { if attempted { return false }; attempted = true; return true }
+  mutating func claim(connected: Bool = false) -> Bool { if connected || attempted { return false }; attempted = true; return true }
 }

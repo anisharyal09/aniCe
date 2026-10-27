@@ -19,6 +19,8 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
     private val frame = ByteArray(profile.maximumEnvelope + 5)
     @Volatile private var closed = false
     @Volatile private var secured = false
+    @Volatile var localAddress: java.net.InetAddress? = null
+        private set
     fun markSecured() { secured = true }
     var readNanos = 0L
         private set
@@ -45,6 +47,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
             }
             endpoint.network.bindSocket(socket)
             socket.connect(java.net.InetSocketAddress(endpoint.address, endpoint.port), 5000)
+            localAddress = socket.localAddress
             socket.soTimeout = 0
             socket.tcpNoDelay = true
             socket.keepAlive = true

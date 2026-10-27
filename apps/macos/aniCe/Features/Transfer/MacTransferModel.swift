@@ -383,6 +383,7 @@ enum TransferEvent: Equatable {
   private var receiverWrittenBytes: Int64 = 0
   private var receiverTotalTransferred: Int64 = 0
   private var lastAckedWrittenBytes: Int64 = 0
+  private var receiverAckChunkBytes: Int64 = 3072
   private var ackTask: Task<Void, Never>?
   private var ackTimerTask: Task<Void, Never>?
   private var lastReceiverUiUpdate: TimeInterval = 0
@@ -2037,6 +2038,7 @@ enum TransferEvent: Equatable {
     receiverCurrentFileIndex = index
     receiverWrittenBytes = 0
     lastAckedWrittenBytes = 0
+    receiverAckChunkBytes = 3072
     let operation = epoch
     let storage = TransferReceiveStorage()
     do {
@@ -2075,10 +2077,10 @@ enum TransferEvent: Equatable {
         if self.epoch == operation && self.receiverCurrentFileIndex == fileIndex {
           self.ackTask = nil
           let unacked = self.receiverWrittenBytes - self.lastAckedWrittenBytes
-          // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
-          let ackCadence = self.peerMaxChunkBytes > 3072 ? max(1, self.peerMaxWindow / 4) : min(8, max(1, self.peerMaxWindow / 2))
+          let ackThreshold = transferAckThreshold(maximumChunk: self.peerMaxChunkBytes,
+            maximumWindow: self.peerMaxWindow, chunkBytes: self.receiverAckChunkBytes)
           // Failure waits for an external event; only success may drain newer credit.
-          if submitted && (unacked >= ackCadence * self.peerMaxChunkBytes || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes)) {
+          if submitted && (unacked >= ackThreshold || (self.receiverWrittenBytes == currentFile.size && self.receiverWrittenBytes > self.lastAckedWrittenBytes)) {
             self.flushAck()
           } else if submitted && unacked > 0 {
             // A coalescing timer may have expired while this ACK was still submitting.
@@ -2122,6 +2124,7 @@ enum TransferEvent: Equatable {
     pauseExpiresAt = nil; pauseDeadline = nil
     receiverWrittenBytes += Int64(data.count)
     receiverTotalTransferred += Int64(data.count)
+    receiverAckChunkBytes = Int64(data.count)
 
     let now = ProcessInfo.processInfo.systemUptime
     if now - lastReceiverUiUpdate >= 0.1 || receiverWrittenBytes == currentFile.size {
@@ -2139,10 +2142,10 @@ enum TransferEvent: Equatable {
       )
     }
 
-    // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
     let unacked = receiverWrittenBytes - lastAckedWrittenBytes
-    let ackCadence = peerMaxChunkBytes > 3072 ? max(1, peerMaxWindow / 4) : min(8, max(1, peerMaxWindow / 2))
-    if unacked >= ackCadence * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size {
+    let ackThreshold = transferAckThreshold(maximumChunk: peerMaxChunkBytes,
+      maximumWindow: peerMaxWindow, chunkBytes: receiverAckChunkBytes)
+    if unacked >= ackThreshold || receiverWrittenBytes == currentFile.size {
       flushAck()
     } else if receiverWrittenBytes > lastAckedWrittenBytes {
       scheduleAckTimer()
@@ -2975,6 +2978,13 @@ actor TransferRecoveryStore {
   }
 }
 
+// Reduced LAN chunks need immediate credit to keep the sender's smaller pipeline supplied.
+func transferAckThreshold(maximumChunk: Int64, maximumWindow: Int64, chunkBytes: Int64) -> Int64 {
+  if maximumChunk <= 3072 { return maximumChunk * min(8, max(1, maximumWindow / 2)) }
+  let chunk = min(maximumChunk, chunkBytes)
+  return chunk * (maximumChunk > 4096 && chunk < maximumChunk ? 1 : max(1, maximumWindow / 4))
+}
+
 // Bounds unacknowledged LAN bytes before allowing the negotiated high-throughput window.
 struct TransferSendWindow {
   let maximumChunk: Int64
@@ -2989,6 +2999,7 @@ struct TransferSendWindow {
   private var drainRequested = false
   private var draining = false
   private var decision: Bool?
+  private var timelySince: TimeInterval?
   init(maximumChunk: Int64, maximumWindow: Int64, lan: Bool, started: TimeInterval) {
     self.maximumChunk = maximumChunk; self.maximumWindow = maximumWindow; self.lan = lan
     probing = lan && maximumChunk > 4096
@@ -3008,6 +3019,7 @@ struct TransferSendWindow {
       probeStartedAt = now
       probeSubmitted = true
     } else if !probing && windowEmpty {
+      if ((now - lastAcknowledgedAt) * 1_000_000_000).rounded() > 100_000_000 { timelySince = nil }
       lastAcknowledgedAt = now
     }
   }
@@ -3016,9 +3028,13 @@ struct TransferSendWindow {
     if probing && !fullyConfirmed { return }
     let elapsed = now - lastAcknowledgedAt
     // Compare at nanosecond precision rather than floating-point subtraction noise at 100 ms.
-    if probing { if decision == nil { decision = (elapsed * 1_000_000_000).rounded() > 100_000_000 } }
+    let timely = (elapsed * 1_000_000_000).rounded() <= 100_000_000
+    if probing { if decision == nil { decision = !timely } }
     else if constrained {
-      if now - probeStartedAt >= 5 {
+      if !timely { timelySince = nil } else if timelySince == nil { timelySince = lastAcknowledgedAt }
+      // Batched ACK arrivals cannot qualify recovery without a full second of steady progress.
+      let stable = timelySince.map { ((now - $0) * 1_000_000_000).rounded() >= 1_000_000_000 } ?? false
+      if draining && fullyConfirmed || stable && now - probeStartedAt >= 5 {
         if fullyConfirmed { reprobe = true } else { drainRequested = true }
       }
     }
@@ -3027,7 +3043,7 @@ struct TransferSendWindow {
   }
   // Apply shrinkage between records, never while a previously admitted source read is suspended.
   mutating func advance() {
-    if let decision { constrained = decision; probing = false }
+    if let decision { constrained = decision; probing = false; timelySince = nil }
     decision = nil
     // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
     if drainRequested { draining = true; drainRequested = false }

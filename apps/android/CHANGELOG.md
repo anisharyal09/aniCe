@@ -59,6 +59,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Retire LAN when its bound local address disappears, detect address restoration on the same Wi-Fi network, and retain pending reconnect requests until channel retirement.
+
+- Gate LAN recovery probes on one second of timely advancing ACKs, and return credit immediately for qualification probes and chunks smaller than the negotiated LAN maximum.
+
 - Run receiver resume verification and channel rebinding in the chunk FIFO so later old-channel writes cannot invalidate the reported resume offset.
 
 - Give the raw TCP diagnostic's final receiver-confirmation ACK sixty seconds to drain locally accepted TCP backlog; data reads retain their ten-second no-progress bound.

@@ -51,9 +51,55 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun lanAcknowledgementsFitTheChunksActuallyReceived() {
+        assertEquals(4096L, transferAckThreshold(262016, 8, 4096))
+        assertEquals(8192L, transferAckThreshold(4096, 8, 4096))
+        assertEquals(65536L, transferAckThreshold(262016, 8, 65536))
+        assertEquals(131072L, transferAckThreshold(262016, 8, 131072))
+        assertEquals(65536L, transferAckThreshold(131072, 8, 65536))
+        assertEquals(262015L, transferAckThreshold(262016, 8, 262015))
+        assertEquals(131072L, transferAckThreshold(65536, 8, 65536))
+        assertEquals(524032L, transferAckThreshold(262016, 8, 262016))
+        assertEquals(5000L, transferAckThreshold(5000, 1, 65536))
+        assertEquals(6144L, transferAckThreshold(3072, 4, 4096))
+        assertEquals(24576L, transferAckThreshold(3072, 64, 1))
+    }
+
+    @Test fun delayedLanDoesNotDrainForRecoveryUntilProgressIsConsistentlyTimely() {
+        val window = TransferSendWindow(262016, 8, true, 0)
+        window.beginSubmission(0)
+        window.acknowledged(101, fullyConfirmed = true); window.advance()
+        for (now in 1000L..30000L step 1000) {
+            window.acknowledged(now, fullyConfirmed = false); window.advance()
+            assertEquals("A delayed path must keep its existing pipeline", 131072L, window.creditBytes)
+        }
+        for (now in listOf(30050L, 30100L, 30300L) + (30350L..31200L step 50)) {
+            window.acknowledged(now, fullyConfirmed = false); window.advance()
+            assertEquals("A slow ACK resets recovery qualification", 131072L, window.creditBytes)
+        }
+        window.acknowledged(31300, fullyConfirmed = false); window.advance()
+        assertEquals(65536L, window.creditBytes)
+        window.acknowledged(31550, fullyConfirmed = true); window.advance()
+        assertEquals("A slow drain completion must not strand the one-chunk budget", 4096L, window.creditBytes)
+        window.beginSubmission(31600)
+        window.acknowledged(31700, fullyConfirmed = true); window.advance()
+        assertEquals(2096128L, window.creditBytes)
+    }
+
+    @Test fun constrainedSourceIdleCannotQualifyRecovery() {
+        val window = TransferSendWindow(262016, 8, true, 0)
+        window.beginSubmission(0)
+        for (now in listOf(101L, 150L, 200L)) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
+        window.beginSubmission(10000, windowEmpty = true)
+        window.acknowledged(10050, fullyConfirmed = true); window.advance()
+        assertEquals("Source idle is not sustained ACK progress", 131072L, window.creditBytes)
+    }
+
     @Test fun delayedLanAmortizesValidationWithoutExceedingPeerCredit() {
         for (latency in listOf(101L, 600L, 1500L)) {
-            for (maximumChunk in listOf(3072L, 4096L, 5000L, 65535L, 65536L, 131072L, 262016L)) {
+            val chunkLimits = listOf(3072L, 4096L, 5000L, 65535L, 65536L, 131071L, 131072L, 131073L, 262016L)
+            assertTrue(chunkLimits.size >= 9)
+            for (maximumChunk in chunkLimits) {
                 for (maximumWindow in listOf(1L, 2L, 8L)) {
                     val window = TransferSendWindow(maximumChunk, maximumWindow, true, 0)
                     window.beginSubmission(0)
@@ -90,7 +136,11 @@ class TransferControllerTests {
         resumed.acknowledged(3101, fullyConfirmed = true); resumed.advance()
         resumed.acknowledged(7999, fullyConfirmed = true); resumed.advance()
         assertEquals("Recovery interval starts at actual probe submission", 131072L, resumed.creditBytes)
-        resumed.acknowledged(8000, fullyConfirmed = true); resumed.advance()
+        for (now in 8000L..8900L step 50) {
+            resumed.acknowledged(now, fullyConfirmed = true); resumed.advance()
+            assertEquals(131072L, resumed.creditBytes)
+        }
+        resumed.acknowledged(9000, fullyConfirmed = true); resumed.advance()
         assertEquals(4096L, resumed.creditBytes)
         resumed.beginSubmission(11000)
         resumed.acknowledged(11050, fullyConfirmed = false); resumed.advance()
@@ -117,24 +167,24 @@ class TransferControllerTests {
             now.set(101)
             owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
             awaitChunks(3)
-            repeat(3) { index ->
-                now.set(200L + index * 100)
+            for ((index, time) in (listOf(200L, 300L, 400L, 5000L) + (5050L..5950L step 50)).withIndex()) {
+                now.set(time)
                 owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + (index + 1) * 65536L).encode())
                 awaitChunks(index + 4)
             }
-            // One ACK per chunk keeps the two-chunk pipeline occupied indefinitely without a drain.
-            now.set(5000)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 4 * 65536L).encode())
+            // Short ACK bursts do not qualify recovery; a full second of steady progress does.
+            now.set(6000)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 24 * 65536L).encode())
             delay(60)
-            assertEquals("Requalification must stop replacing acknowledged chunks", 6, chunks().size)
-            now.set(5010)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 5 * 65536L).encode())
-            awaitChunks(7)
+            assertEquals("Requalification must stop replacing acknowledged chunks", 26, chunks().size)
+            now.set(6010)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 25 * 65536L).encode())
+            awaitChunks(27)
             assertEquals(4096, chunks().last().bytes(3).size)
-            now.set(5060)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192L + 5 * 65536L).encode())
-            awaitChunks(8)
-            assertEquals(262016, chunks()[7].bytes(3).size)
+            now.set(6060)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192L + 25 * 65536L).encode())
+            awaitChunks(28)
+            assertEquals(262016, chunks()[27].bytes(3).size)
         } finally { owner.dismiss() }
     }
 
@@ -143,23 +193,23 @@ class TransferControllerTests {
         val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
         val release = kotlinx.coroutines.CompletableDeferred<Unit>()
         owner.available(channel)
-        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
-        val (batch, file) = offered(owner, channel, 32768)
+        owner.handle(channel.descriptor, TransferMessage.capability(2, 8192, 8).encode(262016))
+        val (batch, file) = offered(owner, channel, 65536)
         fun acks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 6L }
         channel.onSendData = { bytes ->
             if (TransferMessage.decode(bytes, 262016)?.kind == 6L && acks().size == 1) release.await()
         }
         try {
             owner.acceptIncomingOffer(tempDir)
-            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(4096)).encode(262016))
+            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(8192)).encode(262016))
             withTimeout(1000) { while (acks().isEmpty()) delay(5) }
-            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 4096, ByteArray(4096)).encode(262016))
+            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 8192, ByteArray(8192)).encode(262016))
             // The second chunk's timer fires while the first ACK is still being submitted.
             delay(60)
             assertEquals(1, acks().size)
             release.complete(Unit)
             withTimeout(1000) { while (acks().size < 2) delay(5) }
-            assertEquals(listOf(4096L, 8192L), acks().map { it.number(2) })
+            assertEquals(listOf(8192L, 16384L), acks().map { it.number(2) })
             delay(60)
             assertEquals("No ACK polling after credit is drained", 2, acks().size)
         } finally { release.complete(Unit); owner.dismiss() }
@@ -197,7 +247,7 @@ class TransferControllerTests {
     @Test fun constrainedLanRequalifiesOnlyWithADrainedWindowAndANewCompleteProbe() {
         val window = TransferSendWindow(262016, 8, true, 0)
         window.acknowledged(101, fullyConfirmed = true); window.advance()
-        window.acknowledged(4999, fullyConfirmed = true); window.advance()
+        for (now in 3800L..4900L step 100) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
         assertEquals(131072L, window.creditBytes)
         window.acknowledged(5000, fullyConfirmed = false)
         assertEquals("The current source read retains its budget", 131072L, window.creditBytes)
@@ -210,9 +260,9 @@ class TransferControllerTests {
         window.acknowledged(5090, fullyConfirmed = false); window.advance()
         window.acknowledged(5150, fullyConfirmed = true); window.advance()
         assertEquals("Partial confirmation cannot disguise a slow probe", 131072L, window.creditBytes)
-        window.acknowledged(10000, fullyConfirmed = true); window.advance()
+        for (now in 10000L..11000L step 50) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
         assertEquals(4096L, window.creditBytes)
-        window.acknowledged(10050, fullyConfirmed = true); window.advance()
+        window.acknowledged(11050, fullyConfirmed = true); window.advance()
         assertEquals(262016L, window.chunkBytes); assertEquals(2096128L, window.creditBytes)
     }
 
@@ -1394,7 +1444,7 @@ class TransferControllerTests {
     }
 
     @Test fun cancellationRemovesUnsealedAckWithoutDamagingNextOffer() = runBlocking {
-        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
         val channel = MockAndroidSecuredChannel()
         val admission = SessionDataAdmission()
         val entered = kotlinx.coroutines.CompletableDeferred<Unit>()

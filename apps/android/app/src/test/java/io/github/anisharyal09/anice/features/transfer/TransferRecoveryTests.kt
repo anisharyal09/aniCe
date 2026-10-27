@@ -28,7 +28,9 @@ class TransferRecoveryTests {
         val journal = File(folder, "private/checkpoint")
         val saved = snapshot(folder)
         TransferRecoveryStore(journal).save(saved)
-        val owner = TransferController(dispatcher = Dispatchers.Unconfined, recoveryFile = journal, recoveryIdentity = { local })
+        val serial = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as CoroutineDispatcher
+        val owner = TransferController(dispatcher = serial, receiveDispatcher = serial,
+            recoveryFile = journal, recoveryIdentity = { local })
         try {
             withTimeout(2000) { while (owner.state !is TransferState.Paused) delay(5) }
             assertEquals(1L, File(saved.partial).length())

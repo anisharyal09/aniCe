@@ -114,5 +114,5 @@ internal class LanAttemptGate {
         return true
     }
     fun trigger() { attempted = false }
-    fun claim(): Boolean { if (attempted) return false; attempted = true; return true }
+    fun claim(connected: Boolean = false): Boolean { if (connected || attempted) return false; attempted = true; return true }
 }
