@@ -2,6 +2,7 @@
 // Tests control oracle fixtures, compatibility, ping ordering and encrypted renewal failures.
 package io.github.anisharyal09.anice.infrastructure.session
 
+import io.github.anisharyal09.anice.infrastructure.lan.LanQueueBudget
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import io.github.anisharyal09.anice.infrastructure.connections.retainForegroundSession
 import kotlinx.coroutines.*
@@ -9,6 +10,223 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionControlTests {
+  @Test fun cancellingAnAdmittedSendPreservesHealthyChannelAndPeerSequence() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    for (phase in listOf("capacity", "submission")) {
+      val outgoing = java.util.ArrayDeque<ByteArray>()
+      val replies = java.util.ArrayDeque<ByteArray>()
+      val delivered = mutableListOf<ByteArray>()
+      val entered = CompletableDeferred<Unit>()
+      val release = CompletableDeferred<Unit>()
+      var hold = false
+      suspend fun pause() { entered.complete(Unit); withContext(NonCancellable) { release.await() } }
+      val client = SessionConnection(helper.engine(fixture, false), false,
+        { if (hold && phase == "capacity") pause(); true }, {
+          if (hold && phase == "submission") pause()
+          outgoing.add(it)
+        }, {}, {})
+      val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+        { delivered.add(it) }, {})
+      try {
+        client.start()
+        repeat(3) { server.receive(outgoing.removeFirst()); client.receive(replies.removeFirst()) }
+        hold = true
+        val send = launch { client.sendData(byteArrayOf(7)) }
+        withTimeout(1000) { entered.await() }
+        send.cancel(); hold = false; release.complete(Unit)
+        withTimeout(1000) { send.join() }
+        assertTrue(send.isCancelled)
+        assertFalse(client.isClosed)
+        client.sendData(byteArrayOf(9))
+        assertEquals(if (phase == "submission") 2 else 1, outgoing.size)
+        while (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+        assertEquals(if (phase == "submission") 2 else 1, delivered.size)
+        assertArrayEquals(byteArrayOf(9), delivered.last())
+        if (phase == "submission") assertArrayEquals(byteArrayOf(7), delivered.first())
+        assertFalse(server.isClosed)
+      } finally { release.complete(Unit); client.close(); server.close() }
+    }
+  }
+
+  @Test fun pendingPongSurvivesLegalBulkSubmissionWithoutExtraQueueSlots() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    for (profile in listOf(SessionProfile.STANDARD, SessionProfile.LAN_TRANSFER)) {
+      var clock = 0L
+      var hold = false
+      val entered = CompletableDeferred<Unit>()
+      val release = CompletableDeferred<Unit>()
+      val outgoing = java.util.ArrayDeque<ByteArray>()
+      val replies = java.util.ArrayDeque<ByteArray>()
+      val budget = LanQueueBudget(profile)
+      val client = SessionConnection(helper.engine(fixture, false), false, { true }, { outgoing.add(it) },
+        {}, {}, controls = true, now = { clock }, profile = profile)
+      val server = SessionConnection(helper.engine(fixture, true), true,
+        { synchronized(budget) { budget.canReserve(it) } }, { bytes ->
+          synchronized(budget) { budget.reserve(bytes.size) }
+          try {
+            if (hold) { entered.complete(Unit); release.await() }
+            replies.add(bytes)
+          } finally { synchronized(budget) { budget.release(bytes.size) } }
+        }, {}, {}, controls = true, now = { clock }, profile = profile)
+      suspend fun pump() {
+        repeat(32) {
+          if (outgoing.isEmpty() && replies.isEmpty()) return
+          if (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+          if (replies.isNotEmpty()) client.receive(replies.removeFirst())
+        }
+        fail("Unbounded control exchange")
+      }
+      try {
+        client.start(); pump()
+        assertEquals(true, client.controlSupport); assertEquals(true, server.controlSupport)
+        clock = 59000; hold = true
+        val bulk = async { server.sendData(ByteArray(profile.maximumPlaintext)) }
+        withTimeout(1000) { entered.await() }
+        assertEquals(1, synchronized(budget) { budget.messages })
+        clock = 60000; client.tick(); server.receive(outgoing.removeFirst())
+        assertEquals(80000L, client.nextDeadline())
+        server.tick()
+        assertTrue("PONG cannot overtake the active sealed send", replies.isEmpty())
+        assertEquals("Spare legal slots cannot bypass the send serializer", 1, synchronized(budget) { budget.messages })
+        // Complete within the transport's existing absolute ten-second write bound.
+        clock = 68000; hold = false; release.complete(Unit)
+        withTimeout(1000) { bulk.await() }
+        server.tick(); pump()
+        assertEquals(0, synchronized(budget) { budget.messages })
+        assertEquals(128000L, client.nextDeadline())
+        clock = 80000; client.checkDeadlines()
+        assertFalse(client.isClosed); assertFalse(server.isClosed)
+      } finally { release.complete(Unit); client.close(); server.close() }
+    }
+  }
+
+  @Test fun cancellingUnsealedFeatureSendKeepsSessionAndNonceOrderIntact() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    val outgoing = java.util.ArrayDeque<ByteArray>()
+    val replies = java.util.ArrayDeque<ByteArray>()
+    val delivered = mutableListOf<ByteArray>()
+    val entered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    var hold = false
+    val client = SessionConnection(helper.engine(fixture, false), false, { true }, {
+      if (hold) { entered.complete(Unit); release.await() }
+      outgoing.add(it)
+    }, {}, {})
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+      { delivered.add(it) }, {})
+    try {
+      client.start()
+      repeat(3) { server.receive(outgoing.removeFirst()); client.receive(replies.removeFirst()) }
+      hold = true
+      val active = async(start = CoroutineStart.UNDISPATCHED) { client.sendData(byteArrayOf(1)) }
+      withTimeout(1000) { entered.await() }
+      val cancelled = async(start = CoroutineStart.UNDISPATCHED) { client.sendData(byteArrayOf(2)) }
+      cancelled.cancelAndJoin()
+      assertFalse(client.isClosed)
+      hold = false; release.complete(Unit); withTimeout(1000) { active.await() }
+      client.sendData(byteArrayOf(3))
+      assertEquals("Cancellation must emit no record or consume its nonce", 2, outgoing.size)
+      while (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+      assertEquals(2, delivered.size)
+      assertArrayEquals(byteArrayOf(1), delivered[0]); assertArrayEquals(byteArrayOf(3), delivered[1])
+      assertFalse(client.isClosed); assertFalse(server.isClosed)
+    } finally { release.complete(Unit); client.close(); server.close() }
+  }
+
+  @Test fun concurrentFeatureSendsWaitBeforeSealingAndPreserveNonceOrder() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    val outgoing = java.util.ArrayDeque<ByteArray>()
+    val replies = java.util.ArrayDeque<ByteArray>()
+    val delivered = mutableListOf<ByteArray>()
+    val entered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    var hold = false
+    val client = SessionConnection(helper.engine(fixture, false), false, { true }, {
+      if (hold) { entered.complete(Unit); release.await() }
+      outgoing.add(it)
+    }, {}, {})
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+      { delivered.add(it) }, {})
+    try {
+      client.start()
+      repeat(3) { server.receive(outgoing.removeFirst()); client.receive(replies.removeFirst()) }
+      hold = true
+      val bulk = async(start = CoroutineStart.UNDISPATCHED) { client.sendData(byteArrayOf(1)) }
+      withTimeout(1000) { entered.await() }
+      val control = async(start = CoroutineStart.UNDISPATCHED) { client.sendData(byteArrayOf(2)) }
+      assertFalse("Concurrent feature must wait, rather than lose admission", control.isCompleted)
+      hold = false; release.complete(Unit)
+      withTimeout(1000) { bulk.await(); control.await() }
+      assertEquals(2, outgoing.size)
+      while (outgoing.isNotEmpty()) server.receive(outgoing.removeFirst())
+      assertEquals(2, delivered.size)
+      assertArrayEquals(byteArrayOf(1), delivered[0]); assertArrayEquals(byteArrayOf(2), delivered[1])
+      assertFalse(client.isClosed); assertFalse(server.isClosed)
+    } finally { release.complete(Unit); client.close(); server.close() }
+  }
+
+  @Test fun dataAdmissionPrioritizesControlsWithoutStarvingBulk() = runBlocking {
+    val admission = SessionDataAdmission()
+    val release = CompletableDeferred<Unit>()
+    val order = mutableListOf<Int>()
+    val first = async(start = CoroutineStart.UNDISPATCHED) {
+      admission.run(true) { order.add(0); release.await() }
+    }
+    val pending = (1..8).map { index ->
+      async(start = CoroutineStart.UNDISPATCHED) {
+        admission.run(index == 1 || index == 8) { order.add(index) }
+      }
+    }
+    assertEquals(8, admission.pendingCount)
+    try { admission.run(false) { fail("Over-capacity work ran") }; fail("Unbounded admission") }
+    catch (_: SessionBackpressure) {}
+    release.complete(Unit)
+    withTimeout(1000) { first.await(); pending.awaitAll() }
+    assertEquals(listOf(0, 2, 3, 4, 5, 1, 6, 7, 8), order)
+    assertEquals(0, admission.pendingCount)
+  }
+
+  @Test fun dataAdmissionCancellationAndRetirementReleaseEveryWaiter() = runBlocking {
+    supervisorScope {
+      val admission = SessionDataAdmission()
+      val release = CompletableDeferred<Unit>()
+      val active = async(start = CoroutineStart.UNDISPATCHED) { admission.run(true) { release.await() } }
+      val cancelled = async(start = CoroutineStart.UNDISPATCHED) {
+        admission.run(false) { fail("Cancelled work ran") }
+      }
+      cancelled.cancelAndJoin()
+      assertEquals(0, admission.pendingCount)
+      val waiting = (1..8).map {
+        async(start = CoroutineStart.UNDISPATCHED) { admission.run(false) { fail("Retired work ran") } }
+      }
+      admission.close()
+      waiting.forEach {
+        try { it.await(); fail("Retired waiter succeeded") }
+        catch (e: SessionException) { assertEquals(SessionFailure.CANCELLED, e.reason) }
+      }
+      assertEquals(0, admission.pendingCount)
+      release.complete(Unit); active.await()
+      try { admission.run(false) { fail("Closed admission reopened") }; fail("Closed admission succeeded") }
+      catch (e: SessionException) { assertEquals(SessionFailure.CANCELLED, e.reason) }
+    }
+  }
+
+  @Test fun cancellationRacingAdmissionCannotStrandTheNextProducer() = runBlocking {
+    repeat(64) {
+      val admission = SessionDataAdmission()
+      val release = CompletableDeferred<Unit>()
+      val active = async(start = CoroutineStart.UNDISPATCHED) { admission.run(true) { release.await() } }
+      val waiting = async(start = CoroutineStart.UNDISPATCHED) { admission.run(false) {} }
+      release.complete(Unit); waiting.cancel()
+      withTimeout(1000) { active.await(); waiting.cancelAndJoin(); admission.run(false) {} }
+      assertEquals(0, admission.pendingCount)
+    }
+  }
+
   @Test fun applicationSendCannotRaceAControlCapacityPreflight() = runBlocking {
     val helper = SessionTests()
     val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
@@ -314,6 +532,24 @@ class SessionControlTests {
     reject(SessionFailure.MALFORMED) { SessionControl.application(byteArrayOf(0x84.toByte())) }
     reject(SessionFailure.MALFORMED) { SessionControl(ControlKind.PING, -1).encode() }
   }
+  @Test fun controlClassificationDoesNotMaterializeBulkBytesAndKeepsValidation() {
+    val payload = ByteArray(262016) { 0x5a }
+    val value = Cbor.Array(listOf(Cbor.Text("other"), Cbor.Bytes(payload)))
+    val encoded = SessionCbor.encode(value, 262144)
+    val classified = SessionCbor.decode(encoded, 262144, materializeBytes = false) as Cbor.Array
+    assertEquals(0, (classified.value[1] as Cbor.Bytes).value.size)
+    assertArrayEquals(payload, ((SessionCbor.decode(encoded, 262144) as Cbor.Array).value[1] as Cbor.Bytes).value)
+    assertNull(SessionControl.application(encoded, 262144))
+    reject(SessionFailure.MALFORMED) { SessionControl.application(encoded.copyOf(encoded.size - 1), 262144) }
+    reject(SessionFailure.MALFORMED) { SessionControl.application(encoded + byteArrayOf(0), 262144) }
+    val invalidControl = SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("aniCe control"), Cbor.Integer(1),
+      Cbor.Integer(3), Cbor.Map(listOf(Cbor.Text("requestId") to Cbor.Bytes(byteArrayOf(1)))))))
+    reject(SessionFailure.MALFORMED) { SessionControl.application(invalidControl) }
+    // Suppressing values must not suppress deterministic byte-string map-key ordering.
+    val badMap = byteArrayOf(0x81.toByte(), 0xa2.toByte(), 0x41, 2, 0, 0x41, 1, 0)
+    reject(SessionFailure.MALFORMED) { SessionCbor.decode(badMap, materializeBytes = false) }
+  }
+
   @Test fun livenessOrderingDeadlinesAndUnsignedBoundaries() {
     val (c, s) = pair()
     assertEquals(true, c.support); assertEquals(true, s.support)

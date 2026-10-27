@@ -20,6 +20,90 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LanOwnershipTest {
+    @Test fun restoredAddressesRequestOneAttemptAndRespectBackgroundAndDisconnect() = runBlocking {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
+        val controller = withContext(Dispatchers.Main) { LanSessionController(app) }
+        val manager = app.getSystemService(ConnectivityManager::class.java)
+        val wifi = requireNotNull(manager.allNetworks.firstOrNull {
+            manager.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        })
+        val network = android.net.Network.fromNetworkHandle(wifi.networkHandle + (199999L shl 32))
+        val sent = mutableListOf<Int?>()
+        val channel = object : io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel {
+            override val descriptor = io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor(
+                "address-restoration-test", "ble",
+                io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity(
+                    "00000000-0000-4000-8000-000000000001", "Test Mac", "macos", "mock-key", "mock-fingerprint"))
+            override suspend fun sendData(bytes: ByteArray) { sent.add(io.github.anisharyal09.anice.infrastructure.connections.LanRendezvousWire.decode(bytes)) }
+        }
+        fun addresses(vararg values: String) = values.map { java.net.InetAddress.getByName(it) }.toSet()
+        suspend fun changed(values: Set<java.net.InetAddress>) = withContext(Dispatchers.Main) {
+            controller.wifiAddressesChanged(network, values)
+        }
+        fun requests() = sent.count { it == 4 }
+        try {
+            withContext(Dispatchers.Main) {
+                org.junit.Assume.assumeTrue("Automatic LAN must be enabled", controller.automatic)
+                controller.rendezvous.available(channel)
+                controller.rendezvous.handle(channel.descriptor,
+                    io.github.anisharyal09.anice.infrastructure.connections.LanRendezvousWire.encode(1))
+                controller.updateWorkLease(approved = true, picking = false)
+            }
+            delay(100)
+            val callback = controller.javaClass.getDeclaredField("automaticNetworkCallback").apply { isAccessible = true }
+                .get(controller) as ConnectivityManager.NetworkCallback
+            val both = addresses("192.0.2.10", "fe80::1")
+            val ipv6Only = addresses("fe80::1")
+            var before = withContext(Dispatchers.Main) { requests() }
+            callback.onAvailable(network)
+            changed(addresses("0.0.0.0"))
+            delay(100)
+            withContext(Dispatchers.Main) { assertEquals("No usable address means no demand", before, requests()) }
+            changed(both)
+            delay(100)
+            withContext(Dispatchers.Main) { assertEquals(before + 1, requests()) }
+            before++
+            changed(ipv6Only)
+            delay(50)
+            repeat(20) { changed(both) }
+            delay(100)
+            withContext(Dispatchers.Main) {
+                assertEquals("Restoring IPv4 on the same Network must request only once", before + 1, requests())
+                assertEquals(ConnectionState.DISCONNECTED, controller.state)
+                controller.updateWorkLease(approved = false, picking = false)
+            }
+            delay(100)
+            before = withContext(Dispatchers.Main) { requests() }
+            changed(ipv6Only)
+            changed(both)
+            delay(100)
+            withContext(Dispatchers.Main) {
+                assertEquals("Unleased background discovery stays disabled", before, requests())
+                controller.updateWorkLease(approved = true, picking = false)
+            }
+            delay(100)
+            before = withContext(Dispatchers.Main) { requests() }
+            changed(ipv6Only)
+            changed(both)
+            delay(100)
+            withContext(Dispatchers.Main) { assertEquals("Approved background work permits restoration", before + 1, requests()) }
+            withContext(Dispatchers.Main) { controller.cancel() }
+            delay(50)
+            before = withContext(Dispatchers.Main) { requests() }
+            changed(ipv6Only)
+            changed(both)
+            callback.onLost(network)
+            callback.onLost(network)
+            delay(100)
+            withContext(Dispatchers.Main) {
+                assertEquals("Restoration cannot override explicit Disconnect", before, requests())
+                assertFalse(controller.requestAutomaticConnection())
+            }
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main) { controller.dispose() }
+        }
+    }
+
     @Test fun lostNetworkRetiresOwnerAndIgnoresStaleCallbacks() = exercise("lost")
 
     @Test fun changedInterfaceRetiresOwnerAndIgnoresStaleCallbacks() = exercise("changed")

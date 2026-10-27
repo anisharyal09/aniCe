@@ -5,10 +5,26 @@ package io.github.anisharyal09.anice.infrastructure.session
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+// Diagnostic identifiers are process-local object identities, never session key material.
+internal object SessionTiming {
+  @Volatile var sink: ((String) -> Unit)? = null
+  fun start(): Long = if (sink == null) 0 else System.nanoTime()
+  fun end(owner: Any, event: String, start: Long, bytes: Int = 0,
+    profile: Int = 0, direction: String = "none", sequence: ULong = ULong.MAX_VALUE, generation: Long = -1) {
+    if (start == 0L) return
+    val end = System.nanoTime()
+    sink?.invoke("record event=$event owner=${System.identityHashCode(owner)} profile=$profile direction=$direction sequence=${if (sequence == ULong.MAX_VALUE) "none" else sequence.toString()} generation=$generation bytes=$bytes start_ns=$start end_ns=$end duration_us=${(end - start) / 1000}")
+  }
+}
 
 enum class SessionProfile(val wire: Int, val maximumPlaintext: Int, val maximumEnvelope: Int, val exporterLabel: String) {
   STANDARD(1, 4000, 4096, "aniCe session"),
@@ -272,9 +288,10 @@ internal constructor(
     try { checkTime(generation.get()) } catch (e: SessionException) { close(); throw e }
   }
 
-  private suspend fun check(op: Long) {
+  private suspend fun check(op: Long, direction: String = "maintenance", sequence: ULong = ULong.MAX_VALUE) {
     checkTime(op)
-    validate()
+    val validationStart = SessionTiming.start()
+    try { validate() } finally { SessionTiming.end(this@SecureSession, "validation", validationStart, profile = profile.wire, direction = direction, sequence = sequence, generation = op) }
     if (stage == ChannelStage.CLOSED || generation.get() != op)
       throw SessionException(SessionFailure.CANCELLED)
   }
@@ -310,8 +327,10 @@ internal constructor(
       serializeSend {
         val op = generation.get()
         var reserved = false
+        var completed = false
+        val recordSequence = sent
         try {
-          check(op)
+          check(op, "send", recordSequence)
           if (plaintext.size > profile.maximumPlaintext || (kind != RecordKind.DATA && plaintext.isNotEmpty()))
             throw SessionException(SessionFailure.MALFORMED)
           val permitted =
@@ -328,29 +347,41 @@ internal constructor(
           }
           // Include the record header, tag and envelope byte before consuming a nonce.
           if (!capacity(plaintext.size + 31)) throw SessionBackpressure()
-          val sequence =
+          currentCoroutineContext().ensureActive()
+          // Producer cancellation cannot interrupt a nonce-owned record or its post-write validation.
+          withContext(NonCancellable) {
+            val sequence =
+              transition(op) {
+                if (kind == RecordKind.READY) stage = ChannelStage.READY_SENT
+                sendSequence.reserve().also {
+                  reserved = true
+                } // Burn before invoking encryption; failures are terminal.
+              }
+            val sealStart = SessionTiming.start()
+            val record = try { sendCipher.seal(kind, sequence, plaintext, profile) }
+            finally { SessionTiming.end(this@SecureSession, "seal", sealStart, plaintext.size, profile.wire, "send", sequence, op) }
+            checkTime(op)
+            val submissionStart = SessionTiming.start()
+            try { submit(record) } finally { SessionTiming.end(this@SecureSession, "submission", submissionStart, record.size, profile.wire, "send", sequence, op) }
+            // Native validation runs before sealing and after awaited submission; the generation and
+            // deadline fence bracketing encryption is check(op) above and checkTime(op) here.
+            check(op, "send", recordSequence)
             transition(op) {
-              if (kind == RecordKind.READY) stage = ChannelStage.READY_SENT
-              sendSequence.reserve().also {
-                reserved = true
-              } // Burn before invoking encryption; failures are terminal.
+              activity = now()
+              if (kind == RecordKind.READY_ACK) stage = ChannelStage.SECURED
+              if (kind == RecordKind.CLOSE) close()
             }
-          val record = sendCipher.seal(kind, sequence, plaintext, profile)
-          checkTime(op)
-          submit(record)
-          // Native validation runs before sealing and after awaited submission; the generation and
-          // deadline fence bracketing encryption is check(op) above and checkTime(op) here.
-          check(op)
-          transition(op) {
-            activity = now()
-            if (kind == RecordKind.READY_ACK) stage = ChannelStage.SECURED
-            if (kind == RecordKind.CLOSE) close()
+            completed = true
           }
+          currentCoroutineContext().ensureActive()
         } catch (e: SessionBackpressure) {
           if (reserved) {
             close()
             throw SessionException(SessionFailure.STATE)
           }
+          throw e
+        } catch (e: CancellationException) {
+          if (reserved && !completed) close()
           throw e
         } catch (e: Exception) {
           close()
@@ -369,9 +400,11 @@ internal constructor(
             transition(op) { expiration = SessionExpiry.RECORD_LIMIT }
             throw SessionException(SessionFailure.EXPIRED)
           }
-          val result = receiveCipher.open(received, record, profile)
+          val decodeStart = SessionTiming.start()
+          val result = try { receiveCipher.open(received, record, profile) }
+          finally { SessionTiming.end(this@SecureSession, "open", decodeStart, record.size, profile.wire, "receive", received, op) }
           // Native identity/trust validation gates delivery after synchronous tag verification.
-          check(op)
+          check(op, "receive", received)
           val allowed =
             when (result.first) {
               RecordKind.READY -> responder && stage == ChannelStage.WAITING

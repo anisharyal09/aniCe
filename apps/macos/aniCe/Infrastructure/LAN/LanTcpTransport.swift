@@ -77,9 +77,15 @@ actor LanTcpTransport {
   private var writes = [Int: CheckedContinuation<Void, Error>]()
   private var watchdogs = [Int: Task<Void, Never>]()
   private var deliver: (@Sendable (Data) async throws -> Void)?
+  private var drained: (@Sendable () async -> Void)?
   private var ended: (@Sendable (Error) -> Void)?
   private var assemblyWatchdog: Task<Void, Never>?
+  private var receiveDrainWatchdog: Task<Void, Never>?
+  private var finishingReceive = false
   private var assemblyDeadline: TimeInterval?
+  private var readStarted: TimeInterval?
+  private var lastReadAt: TimeInterval?
+  private var lastReadBytes = 0
   // The read loop hands every assembled envelope here and returns to `socket.receive` immediately, so
   // the socket stays read while an earlier record is still being decoded, validated and written. The
   // capacity restates the documented admission bound (8 envelopes standard, 4 otherwise) rather than
@@ -108,12 +114,11 @@ actor LanTcpTransport {
   func start(
     deliver: @escaping @Sendable (Data) async throws -> Void,
     ended: @escaping @Sendable (Error) -> Void,
+    drained: @escaping @Sendable () async -> Void = {},
     changed: @escaping @Sendable () -> Void = {}
   ) {
-    guard !closed else { return }
+    guard startDelivery(deliver: deliver, ended: ended, drained: drained) else { return }
     self.changed = changed
-    self.deliver = deliver
-    self.ended = ended
     socket.pathUpdateHandler = { [weak self] path in
       Task { await self?.pathChanged(path) }
     }
@@ -121,21 +126,35 @@ actor LanTcpTransport {
       Task { await self?.stateChanged(state) }
     }
     socket.start(queue: DispatchQueue(label: "aniCe LAN connection"))
-    // Not stored: the consumer ends by itself once the hand-off is closed and drained, so there is no
-    // handle to cancel and no owner to leak. It holds the transport weakly.
+  }
+  // Delivery can be driven independently of socket startup; it still has exactly one consumer.
+  @discardableResult func startDelivery(
+    deliver: @escaping @Sendable (Data) async throws -> Void,
+    ended: @escaping @Sendable (Error) -> Void,
+    drained: @escaping @Sendable () async -> Void = {}
+  ) -> Bool {
+    guard !closed, self.deliver == nil else { return false }
+    self.deliver = deliver
+    self.ended = ended
+    self.drained = drained
     Task { [weak self] in await self?.drain() }
+    return true
   }
   /// A delivery failure reaches the same terminal handling as an inline one, and remains the reported
   /// cause: `fail` closes the transport, which is what releases a reader suspended in the hand-off.
-  /// The consumer retires `deliver` when it ends, so a close that leaves envelopes behind still lets
-  /// them be delivered before the closure goes away.
+  /// Normal EOF drains accepted frames; explicit close stops before the next delivery callback.
   private func drain() async {
-    defer { deliver = nil }
+    defer { deliver = nil; drained = nil }
     do {
       while let bytes = await ingress.pop() {
-        guard let deliver else { return }
-        try await deliver(bytes)
+        guard !closed, let deliver else { return }
+        let deliveryStart = SessionTiming.start()
+        do {
+          defer { SessionTiming.end(self, "ingress_delivery", deliveryStart, bytes: bytes.count, profile: profile.rawValue, direction: "receive") }
+          try await deliver(bytes)
+        }
       }
+      if finishingReceive, !closed { await drained?(); fail(SessionFailure.cancelled) }
     } catch { fail(error) }
   }
   private func pathChanged(_ path: NWPath) {
@@ -161,12 +180,18 @@ actor LanTcpTransport {
       else { fail(SessionFailure.state); return }
       interfaces = Set(path.availableInterfaces.filter { $0.type == .wifi || $0.type == .wiredEthernet }.map(\.index))
       receive()
-    case .failed(let error), .waiting(let error): fail(error)
+    case .failed(let error):
+      Self.logger.notice("LAN connection failed: \(String(describing: error), privacy: .public)")
+      fail(error)
+    case .waiting(let error):
+      Self.logger.notice("LAN connection waiting: \(String(describing: error), privacy: .public)")
+      fail(error)
     case .cancelled: fail(SessionFailure.cancelled)
     default: break
     }
   }
   func capacity(_ size: Int) -> Bool { !closed && budget.canReserve(size) }
+  func markSecured() { framing.secured = true; scheduleAssemblyDeadline() }
   /// Exposed so the hand-off ordering and the documented admission bound stay verifiable without a
   /// live Wi-Fi socket, which the hosted suite cannot open.
   var ingressQueue: LanIngressQueue { ingress }
@@ -183,7 +208,7 @@ actor LanTcpTransport {
         writes[token] = continuation
         watchdogs[token] = Task { [weak self] in
           do { try await Task.sleep(for: .seconds(10)) } catch { return }
-          await self?.failWrite(token, error: SessionFailure.expired)
+          await self?.failWrite(token, error: NWError.posix(.ETIMEDOUT))
         }
         socket.send(
           content: bytes,
@@ -209,21 +234,33 @@ actor LanTcpTransport {
   }
   private func failWrite(_ token: Int, error: Error) {
     // Deadline/cancellation callbacks can arrive after completion; only an outstanding write owns retirement.
-    guard writes[token] != nil else { return }
+    guard let pending = writes.removeValue(forKey: token) else { return }
+    watchdogs.removeValue(forKey: token)?.cancel()
+    // Preserve this write's cause before close retires the other outstanding operations.
+    pending.resume(throwing: error)
     Self.logger.notice("LAN outstanding write failed: \(String(describing: error), privacy: .public)")
     fail(error)
   }
   private func receive() {
-    guard !closed else { return }
-    // One whole profile record fits one read. TCP returns as soon as any byte is available, so sizing
-    // the buffer to the record does not delay a partial frame or its assembly deadline.
-    socket.receive(minimumIncompleteLength: 1, maximumLength: profile.maximumEnvelope + 5) {
+    guard !closed, !finishingReceive else { return }
+    readStarted = ProcessInfo.processInfo.systemUptime
+    let timingStart = SessionTiming.start()
+    // Never start another frame's deadline before waiting for room in the ingress queue.
+    socket.receive(minimumIncompleteLength: 1, maximumLength: framing.readLimit) {
       [weak self] data, _, complete, error in
-      Task { await self?.received(data, complete: complete, error: error) }
+      let callbackAt = ProcessInfo.processInfo.systemUptime
+      Task { await self?.received(data, complete: complete, error: error,
+        timingStart: timingStart, callbackAt: callbackAt) }
     }
   }
-  private func received(_ data: Data?, complete: Bool, error: NWError?) async {
+  private func received(_ data: Data?, complete: Bool, error: NWError?,
+    timingStart: TimeInterval, callbackAt: TimeInterval) async {
     guard !closed else { return }
+    SessionTiming.end(self, "socket_read", timingStart, bytes: data?.count ?? 0, profile: profile.rawValue, direction: "receive")
+    SessionTiming.end(self, "socket_callback_wait", timingStart == 0 ? 0 : callbackAt,
+      bytes: data?.count ?? 0, profile: profile.rawValue, direction: "receive")
+    readStarted = nil
+    if let data, !data.isEmpty { lastReadAt = callbackAt; lastReadBytes = data.count }
     do {
       if let data {
         let receivedAt = try framing.beginBuffer()
@@ -235,22 +272,39 @@ actor LanTcpTransport {
           // Reading must not wait on delivery: the previous shape held the socket unread for the whole
           // decode, native validation and actor hop of every record, so TCP backpressure amplified
           // each stall. Only a full hand-off suspends the reader.
-          if let frame { await ingress.push(frame) }
+          if let frame {
+            let admissionStart = SessionTiming.start()
+            await ingress.push(frame)
+            SessionTiming.end(self, "ingress_backpressure", admissionStart, bytes: frame.count, profile: profile.rawValue, direction: "receive")
+          }
         }
       }
       guard !closed else { return }
       if let error { throw error }
       if complete {
-        try framing.end()
-        throw SessionFailure.cancelled
+        try await finishReceiving()
+        return
       }
       changed?()
       receive()
     } catch { fail(error) }
   }
+  func finishReceiving() async throws {
+    guard !closed, !finishingReceive else { return }
+    try framing.end()
+    finishingReceive = true
+    // FIN follows complete frames; notify the owner only after their delivery, within ten seconds.
+    receiveDrainWatchdog = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(10)) } catch { return }
+      await self?.fail(NWError.posix(.ETIMEDOUT))
+    }
+    await ingress.close()
+  }
   private func scheduleAssemblyDeadline() {
     let next = framing.nextDeadline
     guard next != assemblyDeadline else { return }
+    // Progress can move the deadline later; the earlier watchdog can recheck without a timer per packet.
+    if let next, let current = assemblyDeadline, next > current { return }
     assemblyDeadline = next
     assemblyWatchdog?.cancel()
     guard let deadline = next else { assemblyWatchdog = nil; return }
@@ -262,8 +316,13 @@ actor LanTcpTransport {
   }
   private func assemblyExpired() {
     assemblyDeadline = nil
+    let received = framing.partialBytes, expected = framing.expectedBytes ?? 5
     do { try framing.tick(); scheduleAssemblyDeadline() } catch {
-      Self.logger.notice("LAN frame assembly failed: \(String(describing: error), privacy: .public)")
+      // Read age distinguishes a pending socket read from delayed application delivery without logging endpoints.
+      let now = ProcessInfo.processInfo.systemUptime
+      let readAge = readStarted.map { Int((now - $0) * 1000) } ?? -1
+      let progressAge = lastReadAt.map { Int((now - $0) * 1000) } ?? -1
+      Self.logger.notice("LAN frame assembly failed: \(String(describing: error), privacy: .public) profile=\(self.profile.rawValue) received=\(received) expected=\(expected) read_pending_ms=\(readAge) last_read_age_ms=\(progressAge) last_read_bytes=\(self.lastReadBytes)")
       fail(error)
     }
   }
@@ -277,11 +336,11 @@ actor LanTcpTransport {
   func close() {
     guard !closed else { return }
     closed = true
+    receiveDrainWatchdog?.cancel()
+    receiveDrainWatchdog = nil
     assemblyWatchdog?.cancel()
     assemblyWatchdog = nil
-    // The hand-off is closed but not emptied, and the consumer is not cancelled: it delivers the
-    // envelopes the read loop already handed over and then ends by itself, which is what keeps a
-    // stream end from discarding a record that arrived before it. Everything else retires now.
+    // Wake both ingress ends; retirement prevents the consumer from starting another delivery.
     ended = nil
     Task { await ingress.close() }
     socket.stateUpdateHandler = nil

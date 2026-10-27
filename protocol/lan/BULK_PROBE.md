@@ -6,7 +6,7 @@ Discovery uses the isolated `_anicebulk._tcp` service with TXT `v=1`; standard d
 
 ## Framing and records
 
-TCP framing is `version:u8=2 || envelopeLength:u32be || envelope`, bounded to 2–4,194,335 bytes. Handshake envelopes (kinds 1–5) retain the 4,096-byte bound; encrypted-record envelope kind 6 may use the larger bound. One partial frame and the fixed ten-second assembly deadline remain.
+TCP framing is `version:u8=2 || envelopeLength:u32be || envelope`, bounded to 2–4,194,335 bytes. Handshake envelopes (kinds 1–5) retain the 4,096-byte bound; encrypted-record envelope kind 6 may use the larger bound. One partial frame follows the [LAN assembly deadline policy](README.md); standalone framing probes retain the ten-second absolute limit unless secured readiness is explicitly established.
 
 AES-256-GCM records retain the existing 14-byte header layout: `version:u8=2 || kind:u8 || sequence:u64be || plaintextLength:u32be`. DATA plaintext is bounded to 4,194,304 bytes; readiness/close plaintext remains empty. The 16-byte tag, strict directional sequence, nonce XOR construction, AAD `header || sessionID || direction:u8`, one-hour lifetime and `2^20` directional record limit remain.
 

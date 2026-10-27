@@ -96,6 +96,12 @@ class TransferController(
     private val resumeTimeoutMillis: Long = 15000L,
     private val confirmationTimeoutMillis: Long = 30000L,
     recoveryFile: File? = null,
+    private val receiveDispatcher: CoroutineDispatcher = transferReceiveDispatcher,
+    private val openSource: (TransferFile) -> java.io.InputStream = { file ->
+        file.sourceFile?.let(::FileInputStream)
+            ?: file.sourceUri?.let { context?.contentResolver?.openInputStream(it) }
+            ?: throw java.io.IOException("Cannot open local source file")
+    },
     private val recoveryIdentity: suspend () -> String = {
         (context as io.github.anisharyal09.anice.AniCeApplication).identityService.getOrCreateIdentity().identity.fingerprint
     }
@@ -128,8 +134,9 @@ class TransferController(
      */
     fun onLanUnavailable(reason: String) {
         if (state !is TransferState.Connecting || pendingSend == null) return
+        awaitingLan = false
         val ble = channels["ble"]
-        if (ble != null && channels["lan"] == null) {
+        if (ble != null && (channels["lan"] == null || capabilities["lan"] == null)) {
             selectPreferredChannel()
             if (state !is TransferState.Connecting) return
             // Re-announce capability over Bluetooth to prompt the peer in case its capability was missed.
@@ -174,6 +181,7 @@ class TransferController(
 
     var onDemandLanConnection: (() -> Boolean)? = null
     private var pendingSend: (() -> Unit)? = null
+    private var awaitingLan = false
     private var connectTimeoutJob: Job? = null
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -184,7 +192,21 @@ class TransferController(
     var preparing by mutableStateOf(false); private set
     private var transferJob: Job? = null
 
+    private val ingress by lazy {
+        TransferIngress(scope) { descriptor, operation, bytes ->
+            val channel = channels[descriptor.transport]
+            try {
+                if (operation == epoch && channel?.descriptor == descriptor && handle(descriptor, bytes) == DataHandling.HANDLED && operation == epoch) {
+                    channel.received(bytes)
+                }
+            } catch (error: CancellationException) { throw error }
+              catch (error: Exception) {
+                if (operation == epoch) failTransfer("Transfer receive failed: ${error.message}")
+            }
+        }
+    }
     private var epoch = UUID.randomUUID()
+        set(value) { field = value; ingress.invalidate() }
     private var capacityRevision = 0L
     private var sendingFile: TransferFile? = null
     private var senderFileIndex = 0
@@ -236,6 +258,17 @@ class TransferController(
 
     private var peerMaxChunkBytes: Long = 3072L
     private var peerMaxWindow: Long = 64L
+    private var sendWindow: TransferSendWindow? = null
+    private val senderChunkBytes get() = sendWindow?.chunkBytes ?: peerMaxChunkBytes
+    private val sendCreditBytes: Long
+        get() = sendWindow?.creditBytes ?: (peerMaxChunkBytes * peerMaxWindow)
+
+    // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
+    private val hasSendCredit: Boolean
+        get() {
+            val next = minOf(senderChunkBytes, ((sendingFile?.size ?: sentBytes) - sentBytes).coerceAtLeast(0))
+            return sentBytes - acknowledgedBytes <= sendCreditBytes - next
+        }
 
     // Sender flow control & backpressure
     @Volatile private var sentBytes: Long = 0L
@@ -265,6 +298,7 @@ class TransferController(
     private var receiverWrittenBytes: Long = 0L
     private var receiverTotalTransferred: Long = 0L
     private var lastAckedWrittenBytes: Long = 0L
+    private var receiverAckChunkBytes = 3072L
     private var ackJob: Job? = null
     private var ackTimerJob: Job? = null
     private var lastReceiverUiUpdate: Long = 0L
@@ -322,7 +356,7 @@ class TransferController(
             catch (error: Exception) { updateState(TransferState.Failed("Cannot recover the pending transfer: ${error.message}")) }
             finally { recoveryReady.complete(Unit); selectPreferredChannel() }
         }
-        scope.launch(Dispatchers.IO) {
+        scope.launch(receiveDispatcher) {
             for (write in recoveryWrites) {
                 try {
                     if (write.snapshot == null) store.clear()
@@ -385,7 +419,7 @@ class TransferController(
         val operation = epoch
         val remaining = saved.expiresAt - System.currentTimeMillis()
         if (local != saved.localFingerprint || remaining !in 1..pauseTimeoutMillis) {
-            withContext(Dispatchers.IO) {
+            withContext(receiveDispatcher) {
                 if (saved.receiving && (saved.stage == 0 || saved.stage == 4)) {
                     val destination = if (saved.tree.isNotEmpty()) TransferDestination(requireNotNull(context), Uri.parse(saved.tree),
                         android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, saved.treeModes) else null
@@ -410,12 +444,12 @@ class TransferController(
         }
         if (saved.stage == 4 && saved.tree.isEmpty()) {
             val file = saved.batch.files[saved.index]
-            val published = withContext(Dispatchers.IO) { TransferReceiveStorage.published(File(saved.folder), file, saved.fileIdentity) }
+            val published = withContext(receiveDispatcher) { TransferReceiveStorage.published(File(saved.folder), file, saved.fileIdentity) }
             if (published) {
-                withContext(Dispatchers.IO) { TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id) }
+                withContext(receiveDispatcher) { TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id) }
                 if (saved.index == saved.batch.files.lastIndex) saved = saved.copy(stage = 3)
                 else {
-                    val storage = TransferReceiveStorage(File(saved.folder), null)
+                    val storage = TransferReceiveStorage(File(saved.folder), null, ioDispatcher = receiveDispatcher)
                     val next = saved.index + 1
                     val paths = storage.create(saved.batch.id, saved.batch.files[next].id)
                     if (operation != epoch) { storage.discard(); return }
@@ -423,7 +457,7 @@ class TransferController(
                     destinationDirectory = File(saved.folder)
                     saved = saved.copy(index = next, offset = 0, stage = 0, partial = paths.first?.absolutePath ?: "")
                 }
-                withContext(Dispatchers.IO) { recoveryStore?.save(saved) }
+                withContext(receiveDispatcher) { recoveryStore?.save(saved) }
             }
         }
         if (operation != epoch) return
@@ -442,7 +476,7 @@ class TransferController(
             val folder = File(saved.folder)
             val destination = if (saved.tree.isNotEmpty()) TransferDestination(requireNotNull(context), Uri.parse(saved.tree),
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, saved.treeModes) else null
-            val storage = TransferReceiveStorage(folder, destination)
+            val storage = TransferReceiveStorage(folder, destination, ioDispatcher = receiveDispatcher)
             try {
                 val paths = storage.restore(batch.id, batch.files[saved.index].id, saved.partial, saved.document, saved.offset)
                 receiverStorage = storage; receiverPartFile = paths.first; receiverPartDocument = paths.second
@@ -450,7 +484,7 @@ class TransferController(
             } catch (error: Exception) { destination?.close(); throw error }
         }
         if (operation != epoch) {
-            withContext(NonCancellable + Dispatchers.IO) { receiverStorage?.discard(); documentDestination?.close() }
+            withContext(NonCancellable + receiveDispatcher) { receiverStorage?.discard(); documentDestination?.close() }
             receiverStorage = null; documentDestination = null
             return
         }
@@ -568,7 +602,8 @@ class TransferController(
         // adopt a newly secured channel so the retained prefix can continue there.
         val canRebind = !isBusy || state is TransferState.Connecting || state is TransferState.Paused
         if (activeChannel != null && !canRebind) return
-        val preferred = channels["lan"] ?: channels["ble"]
+        val preferred = listOf("lan", "ble").firstOrNull { channels[it] != null && capabilities[it] != null }
+            ?.let { channels[it] } ?: channels["lan"] ?: channels["ble"]
         activeChannel = preferred
         peerConnected = preferred != null
         peerCompatible = false
@@ -595,7 +630,8 @@ class TransferController(
             else -> 3072L
         })
         peerMaxWindow = message.number(2).coerceAtMost(if (activeChannel?.descriptor?.transport == "ble") 4L else if (peerMaxChunkBytes > 3072) 8L else 64L)
-        if (state is TransferState.Connecting) {
+        if (state is TransferState.Connecting && (!awaitingLan || activeChannel?.descriptor?.transport == "lan")) {
+            awaitingLan = false
             connectTimeoutJob?.cancel(); connectTimeoutJob = null
             val send = pendingSend
             pendingSend = null
@@ -606,6 +642,7 @@ class TransferController(
 
     override fun retired(descriptor: ChannelDescriptor) {
         if (channels[descriptor.transport]?.descriptor != descriptor) return
+        ingress.invalidate(descriptor)
         channels.remove(descriptor.transport)
         capabilities.remove(descriptor.transport)
         clearCapacityWaiters()
@@ -671,8 +708,8 @@ class TransferController(
             val waiter = CompletableDeferred<Unit>()
             capacityWaiters.add(waiter)
             try {
-                // A route change may cancel the producer, but an admitted encrypted record must finish.
-                withContext(NonCancellable) { channel.sendData(data) }
+                // Admission stays cancellable; the session protects records only after nonce ownership.
+                channel.sendData(data)
                 return
             } catch (_: SessionBackpressure) {
                 if (revision == capacityRevision) withTimeout(10000) { waiter.await() }
@@ -680,19 +717,45 @@ class TransferController(
         }
     }
 
+    override suspend fun ingest(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+        val kind = TransferMessage.peekKind(bytes)
+        // A resume must observe all earlier writes; a blocked provider cannot retain it indefinitely.
+        if (kind == 10 && withTimeoutOrNull(10000) { ingress.drain(); true } != true) {
+            retired(descriptor); return DataHandling.DISCARDED
+        }
+        // Receiver takeover shares the chunk consumer so later old-channel writes cannot cross it.
+        if (kind != 5 && !(kind == 10 && receiving)) return handle(descriptor, bytes)
+        val operation = epoch
+        // Peer limits describe its receiver; this FIFO must cover our advertised receive credit.
+        val chunk = chunkLimit(descriptor)
+        val window = if (descriptor.transport == "ble") 4 else if (chunk > 3072) 8 else 64
+        val accepted = ingress.enqueue(descriptor, operation, bytes,
+            minOf(chunk * window + 65536, 2 * 1024 * 1024), minOf(64, window * 8)) {
+            operation == epoch && channels[descriptor.transport]?.descriptor == descriptor
+        }
+        return if (accepted) DataHandling.QUEUED else DataHandling.DISCARDED
+    }
+
+    override suspend fun drain(descriptor: ChannelDescriptor) {
+        if (channels[descriptor.transport]?.descriptor != descriptor) return
+        val drained = withTimeoutOrNull(10000) { ingress.drain(descriptor); true } ?: false
+        if (!drained) retired(descriptor)
+    }
+
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
         recoveryReady.await()
+        val operation = epoch
         val limit = chunkLimit(descriptor)
-        // A profile-3 chunk record carries 131 KiB of CBOR. Decoding it on a background dispatcher
-        // keeps that work off the presentation thread, where it previously blocked frame rendering.
+        // Chunk CBOR decoding stays on Default; storage uses its separate IO lane.
         val message = try {
             withContext(Dispatchers.Default) { TransferMessage.decode(bytes, limit) }
                 ?: return DataHandling.UNRECOGNIZED
         } catch (_: TransferWireException) { return DataHandling.DISCARDED }
           catch (_: SessionException) { return DataHandling.UNRECOGNIZED }
-        if (channels[descriptor.transport]?.descriptor != descriptor) return DataHandling.DISCARDED
+        if (operation != epoch || channels[descriptor.transport]?.descriptor != descriptor) return DataHandling.DISCARDED
         if (message.kind == 1L) {
             capabilities[descriptor.transport] = message
+            if (!isBusy || state is TransferState.Connecting || state is TransferState.Paused) selectPreferredChannel()
             if (descriptor == activeChannel?.descriptor) {
                 peerCompatible = true
                 if (state !is TransferState.Transferring && transferJob?.isActive != true) applyCapability(message)
@@ -703,6 +766,9 @@ class TransferController(
                 }
             } else if (state is TransferState.Paused) {
                 refreshPausedCapability()
+                if (activeChannel?.descriptor?.transport == "lan" && peerCompatible) {
+                    if (receiving) { if (allowBleResume) requestPeerContinuation() } else attemptResume()
+                }
             } else if (descriptor.transport == "lan" && state is TransferState.Transferring) {
                 // LAN is preferred even after a deliberate Bluetooth continuation. The receiver
                 // answers the resume while it is still transferring, so the stream can switch
@@ -730,6 +796,7 @@ class TransferController(
             return DataHandling.HANDLED
         }
         if (descriptor != activeChannel?.descriptor) return DataHandling.DISCARDED
+        if (message.kind == 5L) return handleChunk(message)
         processMessage(message, descriptor.peer.deviceName, descriptor)
         return DataHandling.HANDLED
     }
@@ -739,7 +806,6 @@ class TransferController(
             2L -> handleOffer(message, peerName, descriptor)
             3L -> handleAccept(message)
             4L -> handleReject(message)
-            5L -> handleChunk(message)
             6L -> handleAck(message)
             7L -> {
                 val batch = currentBatch ?: return
@@ -850,8 +916,9 @@ class TransferController(
         ackJob?.cancel(); ackJob = null
         ackTimerJob?.cancel(); ackTimerJob = null
         fileResultDeferred?.cancel(); fileResultDeferred = null
-        creditDeferred?.complete(Unit); creditDeferred = null
+        resumeCredit()
         resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         // Old-channel callbacks must not touch the retained batch after the channel is gone.
         epoch = UUID.randomUUID()
@@ -1040,7 +1107,7 @@ class TransferController(
                     if (!peerCompatible || channel.descriptor.transport != "ble") break
                     val storage = receiverStorage ?: break
                     val offset = receiverWrittenBytes.coerceIn(0L, file.size)
-                    val prefix = withContext(Dispatchers.IO) {
+                    val prefix = withContext(receiveDispatcher) {
                         runCatching { storage.prefixDigest(offset) }.getOrNull()
                     } ?: break
                     if (operation != epoch || activeChannel !== channel) break
@@ -1304,9 +1371,10 @@ class TransferController(
         // discarded there once it rebinds.
         transferJob?.cancel(); transferJob = null
         resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         fileResultDeferred?.cancel(); fileResultDeferred = null
-        creditDeferred?.complete(Unit); creditDeferred = null
+        resumeCredit()
         pauseTimerJob?.cancel(); pauseTimerJob = null
         epoch = UUID.randomUUID()
         val operation = epoch
@@ -1395,7 +1463,7 @@ class TransferController(
                 val lan = channels["lan"] ?: return@withContext
                 transferJob?.cancel(); transferJob = null
                 fileResultDeferred?.cancel(); fileResultDeferred = null
-                creditDeferred?.complete(Unit); creditDeferred = null
+                resumeCredit()
                 epoch = UUID.randomUUID()
                 val operation = epoch
                 activeChannel = lan
@@ -1463,7 +1531,7 @@ class TransferController(
         receiverStorage = null
         receiverPartFile = null
         receiverPartDocument = null
-        withContext(Dispatchers.IO) { runCatching { previous?.discard() } }
+        withContext(receiveDispatcher) { runCatching { previous?.discard() } }
         if (operation != epoch || currentBatch?.id != batch.id) return false
         receiverTotalTransferred = (receiverTotalTransferred - receiverWrittenBytes).coerceAtLeast(0L)
         receiverWrittenBytes = 0L
@@ -1504,11 +1572,6 @@ class TransferController(
         }
         digest.digest()
     }
-
-    private fun openSource(file: TransferFile): java.io.InputStream =
-        file.sourceFile?.let(::FileInputStream)
-            ?: file.sourceUri?.let { context?.contentResolver?.openInputStream(it) }
-            ?: throw java.io.IOException("Cannot open local source file")
 
     private fun skipFully(stream: java.io.InputStream, length: Long) {
         var remaining = length
@@ -1576,18 +1639,20 @@ class TransferController(
         }
         val channel = activeChannel
         val requestedLan = awaitLan && channel?.descriptor?.transport != "lan" && onDemandLanConnection?.invoke() == true
-        // LAN demand runs alongside a ready BLE send; a failed rendezvous cannot hold its offer hostage.
-        if (channel == null || !peerConnected || !peerCompatible) {
+        // A requested LAN route gets a bounded rendezvous before a ready BLE fallback is used.
+        if (requestedLan || channel == null || !peerConnected || !peerCompatible) {
             if (!requestedLan && channel == null) {
                 updateState(TransferState.Failed("No secured local-network or Bluetooth connection"))
                 return
             }
+            awaitingLan = requestedLan
             pendingSend = { prepareSources(sources, awaitLan = false, prepare = prepare) }
             updateState(TransferState.Connecting("your Mac"))
             onLeaseChanged?.invoke(true)
             connectTimeoutJob?.cancel()
             connectTimeoutJob = scope.launch {
-                delay(if (requestedLan) 30_000L else 3000L)
+                // A missing LAN-only route keeps the discovery window; a BLE fallback is bounded.
+                delay(if (requestedLan && channel == null) 30_000L else 3_000L)
                 if (state is TransferState.Connecting) {
                     onLanUnavailable(if (requestedLan) "Could not connect to your Mac over local network. Check Wi-Fi and Allow Connections on your Mac."
                         else "This peer has not advertised file transfer support")
@@ -1595,6 +1660,7 @@ class TransferController(
             }
             return
         }
+        awaitingLan = false
         if (preparation?.isActive == true || transferJob?.isActive == true) return
         val operation = epoch
         preparing = true
@@ -1619,6 +1685,8 @@ class TransferController(
                 withContext(dispatcher) {
                     if (operation == epoch) {
                         preparing = false; preparation = null
+                        // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
+                        if (channels["lan"] != null && capabilities["lan"] != null) selectPreferredChannel()
                         startOfferBatch(files, totalBytes, activeChannel?.takeIf {
                             it.descriptor.peer.deviceId == channel.descriptor.peer.deviceId &&
                                 it.descriptor.peer.fingerprint == channel.descriptor.peer.fingerprint
@@ -1804,6 +1872,11 @@ class TransferController(
                 return
             }
 
+            // Opening a provider can suspend across cancellation or replacement of this batch.
+            if (operation != epoch) {
+                withContext(NonCancellable + Dispatchers.IO) { opened.getAndSet(null)?.close() }
+                return
+            }
             sendingFile = file
             senderFileIndex = fileIndex
             // A result that arrived just before this file was re-entered belongs to this file.
@@ -1816,8 +1889,11 @@ class TransferController(
             sentBytes = initial
             acknowledgedBytes = initial
             lastAckAtMillis = null
-            streamStartedAtMillis = clock()
-            if (context != null) android.util.Log.i("aniCe-transfer", "source transport=${activeChannel?.descriptor?.transport} chunk=$peerMaxChunkBytes window=$peerMaxWindow")
+            val startedAt = clock()
+            streamStartedAtMillis = startedAt
+            sendWindow = TransferSendWindow(peerMaxChunkBytes, peerMaxWindow,
+                activeChannel?.descriptor?.transport == "lan", startedAt)
+            if (context != null) android.util.Log.i("aniCe-transfer", "source transport=${activeChannel?.descriptor?.transport} chunk=$senderChunkBytes credit=$sendCreditBytes maxChunk=$peerMaxChunkBytes window=$peerMaxWindow")
             var fileBytesSent = initial
             // A LAN capability that arrived while the previous file was finalizing is retried here,
             // at the new file's start, where the stream is no longer waiting on a file result.
@@ -1829,10 +1905,15 @@ class TransferController(
                 val buffer = ByteArray(peerMaxChunkBytes.toInt())
 
                 while (fileBytesSent < file.size) {
-                    val inFlight = sentBytes - acknowledgedBytes
-                    if (inFlight >= peerMaxWindow * peerMaxChunkBytes) {
+                    while (true) {
+                        val previousChunk = senderChunkBytes
+                        val previousCredit = sendCreditBytes
+                        sendWindow?.advance()
+                        if (context != null && (previousChunk != senderChunkBytes || previousCredit != sendCreditBytes))
+                            android.util.Log.i("aniCe-transfer", "send window chunk=$senderChunkBytes credit=$sendCreditBytes")
+                        if (hasSendCredit) break
                         val deferred = CompletableDeferred<Unit>().also { creditDeferred = it }
-                        if (sentBytes - acknowledgedBytes < peerMaxWindow * peerMaxChunkBytes) {
+                        if (hasSendCredit) {
                             creditDeferred = null
                         } else {
                             deferred.await()
@@ -1841,7 +1922,7 @@ class TransferController(
 
                     if (!coroutineContext.isActive || operation != epoch || activeChannel == null) return
 
-                    val chunkSize = (file.size - fileBytesSent).coerceAtMost(peerMaxChunkBytes).toInt()
+                    val chunkSize = (file.size - fileBytesSent).coerceAtMost(senderChunkBytes).toInt()
                     val readBytes = try { withContext(Dispatchers.IO) {
                         var filled = 0
                         while (filled < chunkSize) {
@@ -1871,8 +1952,10 @@ class TransferController(
                     )
 
                     try {
+                        val encoded = chunkMsg.encode(chunkLimit(activeChannel?.descriptor))
+                        sendWindow?.beginSubmission(clock(), windowEmpty = sentBytes == acknowledgedBytes)
                         sentBytes += chunkSize
-                        sendWithBackpressure(chunkMsg.encode(chunkLimit(activeChannel?.descriptor)))
+                        sendWithBackpressure(encoded)
                         if (operation != epoch) return
                         fileBytesSent += chunkSize
                         totalTransferred += chunkSize
@@ -1911,6 +1994,7 @@ class TransferController(
                 withContext(NonCancellable + Dispatchers.IO) { opened.getAndSet(null)?.close() }
             }
 
+            if (operation != epoch) return
             // Wait for file-result from receiver. Install the waiter in the same critical section
             // that consumes a result which already arrived, so neither ordering can lose it.
             val resultWaiter = CompletableDeferred<TransferMessage>()
@@ -1934,6 +2018,7 @@ class TransferController(
         val batchResult = TransferMessage.batchResult(batch = batch.id, result = 0L)
         runCatching { sendWithBackpressure(batchResult.encode()) }
         withContext(dispatcher) {
+            if (operation != epoch) return@withContext
             updateState(TransferState.Completed(batch.id, batch.files.size, batch.totalBytes))
             cleanupTransfer()
         }
@@ -1945,18 +2030,24 @@ class TransferController(
         if (message.string(0) != batch.id || message.string(1) != file.id) return
         val written = message.number(2)
         if (written < acknowledgedBytes || written > sentBytes || written > file.size) return
-        if (written > acknowledgedBytes) { pauseExpiresAt = null; pauseDeadline = null }
+        if (written > acknowledgedBytes) {
+            pauseExpiresAt = null; pauseDeadline = null
+            sendWindow?.acknowledged(clock(), fullyConfirmed = written == sentBytes)
+        }
         acknowledgedBytes = written
         lastAckAtMillis = clock()
         checkCreditAndResume()
     }
 
+    private fun resumeCredit() {
+        // Detach before waking: an immediate dispatcher can register the next waiter inline.
+        val waiting = creditDeferred
+        creditDeferred = null
+        waiting?.complete(Unit)
+    }
+
     private fun checkCreditAndResume() {
-        val inFlight = sentBytes - acknowledgedBytes
-        if (inFlight < peerMaxWindow * peerMaxChunkBytes) {
-            creditDeferred?.complete(Unit)
-            creditDeferred = null
-        }
+        if (hasSendCredit) resumeCredit()
     }
 
     private fun handleReject(message: TransferMessage) {
@@ -2063,20 +2154,20 @@ class TransferController(
             try {
                 receiveCleanup?.join()
                 if (operation != epoch) return@launch
-                destination = withContext(Dispatchers.IO) {
+                destination = withContext(receiveDispatcher) {
                     TransferDestination(ctx, tree, modes).also { target ->
                         owned.set(target)
                         try { target.preflight(current.batch.totalBytes) }
                         catch (error: Exception) { target.close(); throw error }
                     }
                 }
-                if (operation != epoch || activeChannel == null) { withContext(NonCancellable + Dispatchers.IO) { destination.close() }; return@launch }
+                if (operation != epoch || activeChannel == null) { withContext(NonCancellable + receiveDispatcher) { destination.close() }; return@launch }
                 documentDestination = destination
                 owned.set(null)
                 acceptIncomingOffer(File(ctx.filesDir, "unused-document-destination"))
-            } catch (error: CancellationException) { withContext(NonCancellable + Dispatchers.IO) { owned.getAndSet(null)?.close() }; throw error }
+            } catch (error: CancellationException) { withContext(NonCancellable + receiveDispatcher) { owned.getAndSet(null)?.close() }; throw error }
             catch (error: Exception) {
-                withContext(NonCancellable + Dispatchers.IO) { owned.getAndSet(null)?.close() }
+                withContext(NonCancellable + receiveDispatcher) { owned.getAndSet(null)?.close() }
                 if (operation == epoch) failTransfer("Cannot use this folder: ${error.message}. Choose another local folder.")
             }
         }
@@ -2157,8 +2248,9 @@ class TransferController(
         receiverCurrentFileIndex = index
         receiverWrittenBytes = 0L
         lastAckedWrittenBytes = 0L
+        receiverAckChunkBytes = 3072L
         val operation = epoch
-        val storage = TransferReceiveStorage(destDir, documentDestination)
+        val storage = TransferReceiveStorage(destDir, documentDestination, ioDispatcher = receiveDispatcher)
         try {
             val (partial, document) = storage.create(batch.id, file.id)
             if (operation != epoch) { storage.discard(); throw SessionException(SessionFailure.CANCELLED) }
@@ -2191,9 +2283,11 @@ class TransferController(
         val channel = activeChannel ?: return
         ackJob = scope.launch {
             if (operation != epoch || activeChannel !== channel) return@launch
+            var submitted = false
             try {
                 val ack = TransferMessage.ack(batch = batch.id, file = currentFile.id, written = bytesToAck)
                 sendWithBackpressure(ack.encode(), channel)
+                submitted = true
                 withContext(dispatcher) {
                     if (operation != epoch || receiverCurrentFileIndex != fileIndex) return@withContext
                     lastAckedWrittenBytes = maxOf(lastAckedWrittenBytes, bytesToAck)
@@ -2205,38 +2299,42 @@ class TransferController(
                     if (operation != epoch || receiverCurrentFileIndex != fileIndex) return@withContext
                     ackJob = null
                     val unacked = receiverWrittenBytes - lastAckedWrittenBytes
-                    // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
-                    val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
-                    if (unacked >= ackCadence * peerMaxChunkBytes || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes)) {
+                    val ackThreshold = transferAckThreshold(peerMaxChunkBytes, peerMaxWindow, receiverAckChunkBytes)
+                    // Failure waits for an external event; only success may drain newer credit.
+                    if (submitted && (unacked >= ackThreshold || (receiverWrittenBytes == currentFile.size && receiverWrittenBytes > lastAckedWrittenBytes))) {
                         flushAck()
+                    } else if (submitted && unacked > 0) {
+                        // A coalescing timer may have expired while this ACK was still submitting.
+                        scheduleAckTimer()
                     }
                 }
             }
         }
     }
 
-    private suspend fun handleChunk(message: TransferMessage) {
-        val current = state as? TransferState.Transferring ?: return
-        val destDir = destinationDirectory ?: return
-        val storage = receiverStorage ?: return
-        if (receiverPartFile == null && receiverPartDocument == null) return
+    private suspend fun handleChunk(message: TransferMessage): DataHandling {
+        val current = state as? TransferState.Transferring ?: return DataHandling.DISCARDED
+        if (destinationDirectory == null) return DataHandling.DISCARDED
+        val storage = receiverStorage ?: return DataHandling.DISCARDED
+        if (receiverPartFile == null && receiverPartDocument == null) return DataHandling.DISCARDED
 
         val fileId = message.string(1)
         val offset = message.number(2)
         val data = message.bytes(3)
 
-        if (receiverCurrentFileIndex !in current.batch.files.indices) return
+        if (receiverCurrentFileIndex !in current.batch.files.indices) return DataHandling.DISCARDED
         val currentFile = current.batch.files[receiverCurrentFileIndex]
-        if (currentFile.id != fileId || offset != receiverWrittenBytes) return
+        if (currentFile.id != fileId || offset != receiverWrittenBytes) return DataHandling.DISCARDED
 
-        if (message.string(0) != current.batch.id || data.size > chunkLimit(activeChannel?.descriptor) || data.size.toLong() > currentFile.size - receiverWrittenBytes) return
+        if (message.string(0) != current.batch.id || data.size > chunkLimit(activeChannel?.descriptor) || data.size.toLong() > currentFile.size - receiverWrittenBytes) return DataHandling.DISCARDED
         val operation = epoch
         try { storage.write(data) }
-        catch (error: java.io.IOException) { if (operation == epoch) failTransfer("Destination write failed: ${error.message}"); return }
-        if (operation != epoch || receiverStorage !== storage) return
+        catch (error: java.io.IOException) { if (operation == epoch) failTransfer("Destination write failed: ${error.message}"); return DataHandling.DISCARDED }
+        if (operation != epoch || receiverStorage !== storage) return DataHandling.DISCARDED
         pauseExpiresAt = null; pauseDeadline = null
         receiverWrittenBytes += data.size
         receiverTotalTransferred += data.size
+        receiverAckChunkBytes = data.size.toLong()
 
         val now = clock()
         if (now - lastReceiverUiUpdate >= 100L || receiverWrittenBytes == currentFile.size) {
@@ -2255,16 +2353,16 @@ class TransferController(
             )
         }
 
-        // ACK before the credit window fills: a quarter-window on large LAN chunks, half on BLE.
         val unacked = receiverWrittenBytes - lastAckedWrittenBytes
-        val ackCadence = if (peerMaxChunkBytes > 3072L) maxOf(1L, peerMaxWindow / 4) else minOf(8L, maxOf(1L, peerMaxWindow / 2))
-        if (unacked >= ackCadence * peerMaxChunkBytes || receiverWrittenBytes == currentFile.size) {
+        val ackThreshold = transferAckThreshold(peerMaxChunkBytes, peerMaxWindow, receiverAckChunkBytes)
+        if (unacked >= ackThreshold || receiverWrittenBytes == currentFile.size) {
             flushAck()
         } else if (receiverWrittenBytes > lastAckedWrittenBytes) {
             scheduleAckTimer()
         }
 
         if (receiverWrittenBytes == currentFile.size) finalizeReceiverFile(current.batch)
+        return DataHandling.HANDLED
     }
 
     private suspend fun finalizeReceiverFile(batch: TransferBatch) = withContext(NonCancellable) {
@@ -2459,12 +2557,14 @@ class TransferController(
         connectTimeoutJob?.cancel()
         connectTimeoutJob = null
         pendingSend = null
+        awaitingLan = false
         endPicker()
         destinationPreparation?.cancel(); destinationPreparation = null
         preparation?.cancel(); preparation = null; preparing = false
         clearOfferAssembly()
         pauseTimerJob?.cancel(); pauseTimerJob = null
         resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
         statusDeferred?.cancel(); statusDeferred = null
         allowBleResume = false
         pausedTransport = null
@@ -2475,8 +2575,9 @@ class TransferController(
         transferPeerFingerprint = null
         senderFileIndex = 0
         epoch = UUID.randomUUID()
-        // Already-sealed work finishes; epoch checks discard its callbacks without closing the shared socket.
-        transferJob = null
+        // Cancel unsealed work; SecureSession finishes nonce-owned submissions under the old epoch.
+        transferJob?.cancel(); transferJob = null
+        ackJob?.cancel(); ackJob = null
         synchronized(fileResultLock) {
             fileResultDeferred?.cancel()
             fileResultDeferred = null
@@ -2486,6 +2587,7 @@ class TransferController(
         currentBatch = null
         destinationDirectory = null
         sendingFile = null
+        sendWindow = null
         finalizing = false
         ackTimerJob?.cancel()
         ackTimerJob = null
@@ -2498,7 +2600,7 @@ class TransferController(
         receiverPartFile = null
         receiverPartDocument = null
         documentDestination = null
-        receiveCleanup = scope.launch(Dispatchers.IO) {
+        receiveCleanup = scope.launch(receiveDispatcher) {
             try {
                 storage?.discard()
                 if (failed?.receiving == true && (failed.stage == 0 || failed.stage == 4)) {
@@ -2524,11 +2626,78 @@ class TransferController(
                 }
             }
         }
-        creditDeferred?.complete(Unit)
-        creditDeferred = null
+        resumeCredit()
         clearCapacityWaiters()
         receiverTotalTransferred = 0L
         onLeaseChanged?.invoke(false)
         if (selectChannel) selectPreferredChannel()
+    }
+}
+
+// Reduced LAN chunks need immediate credit to keep the sender's smaller pipeline supplied.
+internal fun transferAckThreshold(maximumChunk: Long, maximumWindow: Long, chunkBytes: Long): Long {
+    if (maximumChunk <= 3072) return maximumChunk * minOf(8L, maxOf(1L, maximumWindow / 2))
+    val chunk = minOf(maximumChunk, chunkBytes)
+    return chunk * if (maximumChunk > 4096 && chunk < maximumChunk) 1L else maxOf(1L, maximumWindow / 4)
+}
+
+// Bounds unacknowledged LAN bytes before allowing the negotiated high-throughput window.
+internal class TransferSendWindow(private val maximumChunk: Long, private val maximumWindow: Long,
+    private val lan: Boolean, started: Long) {
+    private var probing = lan && maximumChunk > 4096
+    private var probeSubmitted = false
+    private var constrained = false
+    private var lastAcknowledgedAt = started
+    private var probeStartedAt = started
+    private var reprobe = false
+    private var drainRequested = false
+    private var draining = false
+    private var decision: Boolean? = null
+    private var timelySince: Long? = null
+    // Sustained fallback amortizes live per-record validation under a 128-KiB fallback backlog cap.
+    val chunkBytes get() = when {
+        probing -> minOf(4096L, maximumChunk)
+        constrained -> minOf(65536L, maximumChunk)
+        else -> maximumChunk
+    }
+    val creditBytes get() = chunkBytes * when {
+        probing || draining -> 1L
+        constrained -> minOf(2L, maximumWindow)
+        else -> maximumWindow
+    }
+    // Source IO and encoding precede submission and cannot measure the path's acknowledgement delay.
+    fun beginSubmission(now: Long, windowEmpty: Boolean = false) {
+        if (probing && !probeSubmitted) {
+            lastAcknowledgedAt = now
+            probeStartedAt = now
+            probeSubmitted = true
+        } else if (!probing && windowEmpty) {
+            if (now - lastAcknowledgedAt > 100) timelySince = null
+            lastAcknowledgedAt = now
+        }
+    }
+    // Only advancing, correlated ACKs reach this method; duplicates cannot qualify a fast path.
+    fun acknowledged(now: Long, fullyConfirmed: Boolean) {
+        if (probing && !fullyConfirmed) return
+        val elapsed = now - lastAcknowledgedAt
+        if (probing) { if (decision == null) decision = elapsed > 100 }
+        else if (constrained) {
+            if (elapsed > 100) timelySince = null else if (timelySince == null) timelySince = lastAcknowledgedAt
+            // Batched ACK arrivals cannot qualify recovery without a full second of steady progress.
+            val stable = timelySince?.let { now - it >= 1000 } == true
+            if (draining && fullyConfirmed || stable && now - probeStartedAt >= 5000) {
+                if (fullyConfirmed) reprobe = true else drainRequested = true
+            }
+        }
+        else if (lan && maximumChunk > 4096 && elapsed > 1000) decision = true
+        lastAcknowledgedAt = now
+    }
+    // Apply shrinkage between records, never while a previously admitted source read is suspended.
+    fun advance() {
+        decision?.let { constrained = it; probing = false; timelySince = null }
+        decision = null
+        // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
+        if (drainRequested) { draining = true; drainRequested = false }
+        if (reprobe) { probing = true; probeSubmitted = false; draining = false; probeStartedAt = lastAcknowledgedAt; reprobe = false }
     }
 }

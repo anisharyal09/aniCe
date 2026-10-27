@@ -23,19 +23,21 @@ Concurrent Now Playing latency, the 100-ms control RTT/25-ms added-latency gates
 
 Keep aniCe visible and the phone unlocked during foreground acceptance. On the API-36 test phone, Android maps the high-performance lock to low-latency mode and ignores it for a background UID even when `isHeld` is true. Verify effective lock state separately; process importance at start/end is recorded and does not itself prove radio mode. Background-service acceptance requires its own measurement.
 
+The isolated `LanNativeTest#rawSocketBaseline` accepts a canonical UUID in `aniceRawRun`, `aniceRawMiB=4|16|100` (default 100), and `aniceRawWifiLock=true|false` (default true). Both modes require foreground execution and use the same bidirectional byte counts and SHA-256 checks. Results include the requested and held lock states; effective radio mode must be read separately from Android Wi-Fi diagnostics. This raw TCP path excludes session records, transfer credit and destination storage. Android data reads allow ten seconds without progress; the final receiver-confirmation ACK allows sixty seconds because local write completion can precede TCP backlog drainage. These diagnostic bounds do not change production transport deadlines. Its `finally` block releases any held lock, closes the server and deletes the run-owned directory.
+
 ## Verification results
 
-### Physical file transfer (200 MB batch)
+### Earlier physical file transfer (200 MB batch)
 
 Application-level file transfer between Mac and Android over Wi-Fi with Bluetooth disconnected:
 - **5 GHz Mobile Hotspot (near-field external AP):**
-  - **Mac → Phone:** 7.0–10.5 MB/s (average ~8.0 MB/s), satisfying the 8 MiB/s acceptance gate.
+  - **Mac → Phone:** 7.0–10.5 MB/s (average ~8.0 MB/s, or ~7.63 MiB/s). The average is below the 8 MiB/s gate (8.39 MB/s).
   - **Phone → Mac:** 3.0–5.2 MB/s (average ~4.0 MB/s).
 - **Attenuated Wi-Fi router (2.4 GHz, 3–5m range):** ~1.0 MB/s symmetric across both directions.
-- **UI & Ingress:** Smooth progress rendering and rolling-window rate tracking; presentation thread starvation and TCP window stalls resolved.
+- **UI & Ingress:** Progress rendering and rolling-window rate tracking were smooth during these measurements.
 - **Topology:** Phone-hosted hotspot loopback routing remains an open topic; measurements reflect connection via a shared external AP or router.
 
-### Synthetic bulk probe (Harness baseline)
+### Earlier synthetic bulk probe (Harness baseline)
 
 The isolated in-memory bulk probe (`--profile bulk-probe`) confirms a ~10.8 MiB/s wire baseline across both directions, satisfying the transport throughput floor in the absence of disk I/O.
 

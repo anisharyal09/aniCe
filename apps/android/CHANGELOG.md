@@ -6,6 +6,16 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Record stale GATT callback drops and include connection/write failure stage, status, MTU, queue depth, write state, and operation epoch in BLE transport diagnostics. Successful fragment callbacks no longer emit routine log entries.
+
+- Parameterize the isolated raw TCP diagnostic by payload size and Wi-Fi lock request, reporting lock ownership alongside bidirectional rates and checksum results.
+
+- Opt-in LAN timings distinguish writer admission, IO dispatch, blocking socket writes and reads.
+
+- Queue authenticated transfer chunks in a bounded FIFO before returning to shared feature delivery. Count active writes against capacity, preserve write/ACK order, invalidate pending work on cancellation or retirement, and drain accepted work on normal EOF or authenticated close. Run receiver storage, provider setup, cleanup and checkpoint writes on one injected single-parallelism IO dispatcher, with opt-in ingress and storage wait/work timing.
+
+- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Transfer cleanup cancels queued stream, ACK and upgrade work; nonce-owned submission and post-write validation finish under session ownership. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
+
 - Messages provides SMS permission setup, live relay, paged conversations and history, phone-side search and active-SIM selection over existing secured sessions. Multipart replies report radio acceptance or an unconfirmed outcome without automatic resend. Provider scans complete timestamp groups and retain continuation cursors across unreadable batches; partial reads preserve completed state. Live receipts and sends keep local observation order when carrier clocks differ. The composer keeps SIM choice on the left and Send SMS at the far-right edge, with keyboard sending and readable long-label truncation.
 
 - Send to Mac through supported text-selection menus, the text Share sheet and a Quick Settings tile with a compact screen-and-arrow icon. The tile uses native placement setup, one focused capture and sensitive-text confirmation. Clipboard retains Share/History views, with optional device-local history, 20/50/100-item capacity choices, date groups, source-device labels and Copy/Send/Delete controls. Home shows the latest successful clipboard activity for five minutes with an eligible-text preview and local Copy.
@@ -21,6 +31,26 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Resolve LAN services during the bounded browse and stream at most eight deduplicated endpoints into authentication. Stop remaining discovery on selected-peer secured readiness; route producer failures through connection error handling, fence lost services and late callbacks, serialize legacy resolution, and release browse resources on consumer exit, cancellation or deadline.
+
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+
+- LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline. Playback and volume actions that expire before submission report that they were not sent; submitted actions with missing results remain uncertain and are never replayed.
+
+- Foreground and companion-service handoffs retain Bluetooth retry history and candidate exclusions until authenticated readiness remains stable.
+- Bluetooth setup validates the existing discovery payload before subscribing to replies; stale read targets and duplicate pairing profiles share the single service-cache refresh budget without retrying authentication errors. Persistent duplicate profiles stop connection setup without assuming extra Mac app copies are running.
+
+- Keep capable Bluetooth available while LAN capability is pending. Repeat bounded rediscovery after failed automatic attempts, reset backoff only after stable readiness, and preserve native GATT write failures through teardown.
+
+
+- Session-control classification avoids copying file payloads before feature decoding while retaining CBOR validation.
+- LAN write watchdog failures preserve their timeout cause instead of reporting session expiry or generic cancellation.
+
+- File-transfer source opening and delayed completion discard retired batch callbacks before touching replacement state.
+- File-transfer ACK failures wait for a new capacity or receive event instead of immediately resubmitting themselves.
+
+- Bluetooth setup refreshes a stale service cache once when macOS rejects an indication subscription with status 3 or 245, sharing the existing invalid-handle recovery budget. Persistent rejection preserves the native status; authentication and authorization errors do not trigger a refresh.
+
 - Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
 
 - Clipboard and file sending use quiet outlined icon-and-label controls. Clipboard preferences use the compact LAN-style checkbox; History shows a saved-count and Clear all toolbar. Pausing collection preserves saved history across app restarts, Forget device and Reset identity; Clear/Delete remain explicit. Clipboard content has a small horizontal inset.
@@ -29,9 +59,28 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Retire LAN when its bound local address disappears, detect address restoration on the same Wi-Fi network, and retain pending reconnect requests until channel retirement.
+
+- Gate LAN recovery probes on one second of timely advancing ACKs, and return credit immediately for qualification probes and chunks smaller than the negotiated LAN maximum.
+
+- Run receiver resume verification and channel rebinding in the chunk FIFO so later old-channel writes cannot invalidate the reported resume offset.
+
+- Give the raw TCP diagnostic's final receiver-confirmation ACK sixty seconds to drain locally accepted TCP backlog; data reads retain their ten-second no-progress bound.
+
+- Preserve immediate native Bluetooth write-submission errors through adapter teardown and pending-send completion. Distinguish synchronous `BluetoothStatusCodes` from asynchronous GATT completion status; legacy rejection reports unavailable status without inventing a code.
+
+- Stop resetting transfer-owned Bluetooth retry history immediately at secured readiness. Evaluate the existing fifteen-second stability deadline across progress transitions and clear it on recovery cancellation; retain the bounded retry schedule for short-lived connections.
+
+- Preserve replacement credit waiters when immediate coroutine resumption shrinks the LAN send window. Re-arm ACK coalescing for newer written bytes after a pending ACK succeeds, without retrying failed submissions in a loop.
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
+- Retire failed authenticated DATA submissions through their BLE/LAN owner while preserving recoverable backpressure and native Bluetooth subscription error statuses.
+- Bound unsubmitted media intents, coalesce continuous controls and show explicit pending/expiry feedback; uncertain commands never replay across connections.
+
 - Allow environment-configured native pairing builds without `local.properties`, while retaining incremental input tracking for local tool overrides when present.
 
-- Cap GATT fragment values at 512 bytes when MTU 517 would otherwise create invalid 514-byte writes, and refresh a stale descriptor handle within the existing single layout retry. Serialize session control issuance with receive/maintenance so concurrent DATA cannot issue a stale pending control on BLE or LAN. Coalesce concurrent BLE connection requests, recover saved setup on foreground return, and bound stale-locator rediscovery. Transfer leases survive channel replacement; BLE credits leave ingress headroom, admitted records finish across route changes, and prepared jobs retain checkpointed progress and completion receipts across restarts for 15 minutes. Publish terminal LAN state before retirement callbacks so paused work can request reconnection. Reduce routine checkpoint flushes and retain only silent service/background-offer notices. Show the active transfer route and log negotiated source limits and LAN failure categories. Start compatible Bluetooth offers while LAN setup runs in parallel and measure transfer rates over a five-second window.
+- Cap GATT fragment values at 512 bytes when MTU 517 would otherwise create invalid 514-byte writes, and refresh a stale descriptor handle within the existing single layout retry. Serialize session control issuance with receive/maintenance so concurrent DATA cannot issue a stale pending control on BLE or LAN. Coalesce concurrent BLE connection requests, recover saved setup on foreground return, and bound stale-locator rediscovery. Transfer leases survive channel replacement; BLE credits leave ingress headroom, admitted records finish across route changes, and prepared jobs retain checkpointed progress and completion receipts across restarts for 15 minutes. Publish terminal LAN state before retirement callbacks so paused work can request reconnection. Reduce routine checkpoint flushes and retain only silent service/background-offer notices. Show the active transfer route and log negotiated source limits and LAN failure categories. Wait for requested LAN setup for a bounded interval before falling back to a compatible Bluetooth offer, and measure transfer rates over a five-second window.
 
 - Prefer negotiated LAN for transfers, bound traffic-triggered LAN attempts, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
@@ -40,7 +89,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - A lost active connection no longer fails the batch or deletes its verified partial; streaming losses pause instead, and paused batches keep the transfer foreground service, LAN work lease and a secured BLE fallback lease so automatic LAN or explicit Bluetooth continuation can resume them.
 - Continuing over Bluetooth no longer causes the BLE channel to connect and disconnect repeatedly, and the paused card offers Continue over Bluetooth on the receiving device as well as the sender.
 - Selecting files or starting a send no longer retires a secured BLE channel: picker leases follow secured transports instead of the transfer's transiently selected channel, and a LAN attempt preserves existing transfer leases.
-- A failed LAN demand now fails a waiting send immediately instead of waiting for the connect timeout; a send with an already-secured compatible channel proceeds on it without waiting for LAN.
+- A failed LAN demand now releases a waiting send to the best secured channel immediately. A requested LAN route gets a bounded rendezvous before a ready Bluetooth channel carries the offer, so transfers do not start on Bluetooth while Wi-Fi is still connecting.
 - Feature traffic and playback demand no longer clear an explicit LAN Disconnect; manual reconnect or a preference change resumes automation.
 - Snapshot blocked transfer senders before resuming capacity waiters, preventing startup capability exchange from spinning on the main thread when BLE remains busy.
 - Settings collapses the background-timeout choices into one row (default Never) and renames the LAN toggle to Use local network automatically.

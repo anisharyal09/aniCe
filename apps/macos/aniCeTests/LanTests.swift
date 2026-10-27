@@ -3,6 +3,7 @@
 import CryptoKit
 import Foundation
 import Network
+import os
 import XCTest
 
 @testable import aniCe
@@ -17,7 +18,81 @@ private struct UnavailableLanIdentityStorage: IdentityStorage {
   func deleteKey(tag: String) throws { throw IdentityError.storageUnavailable("injected") }
 }
 
+private actor ReceiveDrainProbe {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private(set) var delivered = [Data]()
+  let failure: SessionFailure?
+  init(failure: SessionFailure? = nil) { self.failure = failure }
+  func deliver(_ bytes: Data) async throws {
+    delivered.append(bytes)
+    if delivered.count == 1 { await withCheckedContinuation { continuation = $0 } }
+    if let failure { throw failure }
+  }
+  func release() { continuation?.resume(); continuation = nil }
+}
+
 final class LanTests: XCTestCase {
+  func testRequestWhileConnectedWaitsForRetirementAndIsConsumedOnlyOnce() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
+    for _ in 0..<20 { XCTAssertFalse(gate.claim(connected: true)) }
+    XCTAssertFalse(gate.claim(), "Retirement alone cannot authorize another attempt")
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+    for _ in 0..<20 {
+      gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+      XCTAssertFalse(gate.claim(connected: true), "A healthy connection must not be replaced")
+    }
+    XCTAssertTrue(gate.claim(), "The peer's request must survive delayed local socket retirement")
+    XCTAssertFalse(gate.claim())
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+    XCTAssertFalse(gate.claim(), "Duplicate state must not create a reconnect loop")
+  }
+
+  @MainActor func testSessionRetirementRetainsListenerButRequiresFreshAdmission() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "listener.test.")
+    let local = try await identity.publicIdentity(), key = P256.Signing.PrivateKey()
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation)]))
+    let hash = Data(repeating: 8, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: peer, localFingerprint: local.fingerprint, method: .qr,
+      pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: peer.deviceId, hash: hash, receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let savedTrust = try Data(contentsOf: trust.location), reservation = SessionPeerReservation()
+    var starts = 0
+    // Native callbacks are injected without opening a socket or publishing a physical Bonjour service.
+    let owner = MacLanSessionModel(identity: identity, peers: reservation, startListener: { _ in starts += 1 }, store: { trust })
+    defer { owner.cancel() }
+    owner.setAutomatic(true)
+    owner.allow(selected: peer, bluetoothAllowing: false)
+    for _ in 0..<200 where owner.listener == nil { try await Task.sleep(for: .milliseconds(2)) }
+    let listener = try XCTUnwrap(owner.listener)
+    XCTAssertEqual(starts, 1)
+    let registered = try XCTUnwrap(listener.serviceRegistrationUpdateHandler)
+    listener.stateUpdateHandler?(.ready)
+    registered(.add(.service(name: "test", type: "_anice._tcp", domain: "local.", interface: nil)))
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertTrue(owner.allowing); XCTAssertNotNil(reservation.peer)
+    owner.retireSession(reason: "injected EOF")
+    XCTAssertTrue(owner.listener === listener)
+    XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service); XCTAssertNil(reservation.peer)
+    registered(.add(.service(name: "late", type: "_anice._tcp", domain: "local.", interface: nil)))
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service)
+    owner.allow(selected: peer, bluetoothAllowing: false)
+    for _ in 0..<200 where listener.service == nil { try await Task.sleep(for: .milliseconds(2)) }
+    XCTAssertTrue(owner.listener === listener); XCTAssertEqual(starts, 1)
+    XCTAssertNotNil(listener.service)
+    owner.cancel()
+    XCTAssertNil(owner.listener); XCTAssertNil(reservation.peer)
+    XCTAssertEqual(try Data(contentsOf: trust.location), savedTrust)
+  }
   @MainActor func testAutomaticLANRequiresBothPreferencesAndDisconnectPausesRetries() async throws {
     let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "isolated")
     let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation()) {
@@ -57,6 +132,26 @@ final class LanTests: XCTestCase {
     while await identity.identityLoads < 2, ContinuousClock.now < requestDeadline { try await Task.sleep(for: .milliseconds(5)) }
     let requestedLoads = await identity.identityLoads
     XCTAssertEqual(requestedLoads, 2)
+    let failureDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while owner.state != "Failed", ContinuousClock.now < failureDeadline { try await Task.sleep(for: .milliseconds(5)) }
+    XCTAssertEqual(owner.state, "Failed")
+    let publicationDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while !channel.sentData.contains(where: { (try? LanRendezvousWire.decode($0)) == 4 }), ContinuousClock.now < publicationDeadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let requestsBefore = channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 4 }.count
+    XCTAssertEqual(requestsBefore, 1, "The first activity must publish exactly one demand")
+    // Let scheduling run between records so a failed attempt cannot hide behind burst coalescing.
+    for _ in 0..<100 {
+      owner.onApplicationActivity(channel.descriptor, activity)
+      _ = await owner.rendezvous.handle(try LanRendezvousWire.encode(1), on: channel.descriptor)
+      await Task.yield()
+    }
+    try await Task.sleep(for: .milliseconds(30))
+    let repeatedLoads = await identity.identityLoads
+    XCTAssertEqual(repeatedLoads, 2, "Ordinary BLE activity restarted a failed LAN attempt")
+    XCTAssertEqual(channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 4 }.count, requestsBefore,
+      "Ordinary activity repeatedly published explicit LAN demand")
     owner.disconnect()
     owner.onApplicationActivity(channel.descriptor, activity)
     _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(1), on: channel.descriptor)
@@ -131,6 +226,31 @@ final class LanTests: XCTestCase {
     XCTAssertTrue(gate.claimActivity())
   }
 
+  func testActivityDemandResetsOnlyForANewChannelOrEligibilityInterval() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 0)
+    XCTAssertTrue(gate.claimActivity())
+    gate.trigger(); XCTAssertTrue(gate.claim())
+    for requests: Int64 in 0...3 {
+      for ready in [false, true, false] {
+        gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: ready, requests: requests)
+        XCTAssertFalse(gate.claimActivity(), "Listener and explicit-request events cannot renew ordinary activity")
+        gate.trigger(); XCTAssertTrue(gate.claim()); XCTAssertFalse(gate.claim())
+        XCTAssertFalse(gate.claimActivity())
+      }
+    }
+    gate.update(channel: "ble", eligible: false, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertTrue(gate.claimActivity()); XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "ble", eligible: true, remoteEligible: false, ready: false, requests: 3)
+    XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertTrue(gate.claimActivity()); XCTAssertFalse(gate.claimActivity())
+    gate.update(channel: "replacement", eligible: true, remoteEligible: true, ready: false, requests: 3)
+    XCTAssertTrue(gate.claimActivity()); XCTAssertFalse(gate.claimActivity())
+  }
+
   func testAutomaticGateConsumesEachEventOnce() {
     var gate = LanAttemptGate()
     for index in 0..<20 {
@@ -141,6 +261,40 @@ final class LanTests: XCTestCase {
     XCTAssertTrue(gate.claim()); XCTAssertFalse(gate.claim())
     gate.update(channel: "ble-2", eligible: true, remoteEligible: true, ready: false, requests: 1)
     XCTAssertTrue(gate.claim()); XCTAssertFalse(gate.claim())
+  }
+  func testListenerWaitingClassifiesOnlyNetworkUnavailabilityAsRecoverable() {
+    for code: POSIXErrorCode in [.ENETDOWN, .ENETUNREACH, .EHOSTUNREACH, .ENETRESET] {
+      XCTAssertTrue(MacLanSessionModel.waitsForNetwork(.posix(code)))
+    }
+    for code: POSIXErrorCode in [.EADDRINUSE, .EACCES, .EPERM, .ECONNRESET] {
+      XCTAssertFalse(MacLanSessionModel.waitsForNetwork(.posix(code)))
+    }
+  }
+  @MainActor func testPathReturnDoesNotOverrideDisconnectOrRepeatFailedAttempts() async throws {
+    let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "path.test.")
+    let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation()) { throw SessionFailure.state }
+    let channel = MockSecuredChannel(transport: "ble")
+    owner.setAutomatic(true)
+    owner.rendezvous.available(channel)
+    _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(1), on: channel.descriptor)
+    try await Task.sleep(for: .milliseconds(30))
+    let first = await identity.identityLoads
+    for _ in 0..<20 { owner.localPathChanged(true) }
+    try await Task.sleep(for: .milliseconds(30))
+    let duplicate = await identity.identityLoads
+    XCTAssertEqual(first, duplicate)
+    owner.localPathChanged(false)
+    try await Task.sleep(for: .milliseconds(20))
+    owner.localPathChanged(true)
+    try await Task.sleep(for: .milliseconds(30))
+    let returned = await identity.identityLoads
+    XCTAssertGreaterThan(returned, duplicate)
+    owner.disconnect()
+    owner.localPathChanged(false); owner.localPathChanged(true)
+    try await Task.sleep(for: .milliseconds(30))
+    let paused = await identity.identityLoads
+    XCTAssertEqual(paused, returned)
+    owner.rendezvous.retired(channel.descriptor)
   }
   @MainActor func testExplicitRendezvousDemandDoesNotOverrideDisabledPeer() async throws {
     let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
@@ -210,6 +364,26 @@ final class LanTests: XCTestCase {
     for _ in 0..<10 { await Task.yield() }
     XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0])
     link.retired(channel.descriptor)
+  }
+  @MainActor func testRendezvousRetainsCapacityWakeDuringSubmission() async throws {
+    let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
+    var attempts = 0
+    channel.onSendData = { _ in
+      attempts += 1
+      if attempts == 1 {
+        link.update(1)
+        link.capacityAvailable(channel.descriptor)
+        throw SessionBackpressure()
+      }
+    }
+    link.available(channel)
+    for _ in 0..<100 where attempts < 2 { await Task.yield() }
+    XCTAssertEqual(attempts, 2)
+    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0, 1])
+    link.retired(channel.descriptor)
+    link.capacityAvailable(channel.descriptor)
+    await Task.yield()
+    XCTAssertEqual(attempts, 2)
   }
 
   @MainActor func testTCPPeerLossDetectionDoesNotWaitForDefaultIdleTimeouts() throws {
@@ -293,6 +467,85 @@ final class LanTests: XCTestCase {
       XCTAssertThrowsError(try LanFraming.encode(Data(repeating: 0, count: size))) {
         XCTAssertEqual($0 as? SessionFailure, .malformed)
       }
+    }
+  }
+  func testSecuredRecordProgressOutlivesTenSecondsAndResetsAtFrameBoundary() throws {
+    for profile: SessionProfile in [.standard, .lanTransfer] {
+      var clock: TimeInterval = 0
+      var framing = LanFraming(now: { clock }, profile: profile)
+      framing.secured = true
+      let payload = Data([6, 1, 2, 3])
+      let wire = try LanFraming.encode(payload, profile: profile)
+      XCTAssertTrue(try feed(Data(wire.prefix(6)), into: &framing).isEmpty)
+      clock = 9
+      XCTAssertTrue(try feed(Data(wire[6..<7]), into: &framing).isEmpty)
+      XCTAssertEqual(framing.nextDeadline, 19)
+      clock = 18
+      XCTAssertEqual(try feed(Data(wire.dropFirst(7)), into: &framing), [payload])
+      XCTAssertNil(framing.nextDeadline)
+      clock = 90
+      XCTAssertNoThrow(try framing.tick())
+      XCTAssertTrue(try feed(Data(wire.prefix(6)), into: &framing).isEmpty)
+      XCTAssertEqual(framing.nextDeadline, 100)
+    }
+  }
+  func testProgressCannotReviveStalledFramesOrExtendTheirAbsoluteLifetime() throws {
+    for secured in [false, true] {
+      for kind: UInt8 in [1, 6] {
+        var clock: TimeInterval = 0
+        var framing = LanFraming(now: { clock })
+        framing.secured = secured
+        let wire = try LanFraming.encode(Data([kind] + Array(repeating: UInt8(7), count: 99)))
+        _ = try feed(Data(wire.prefix(6)), into: &framing)
+        clock = 9
+        _ = try feed(Data(wire[6..<7]), into: &framing)
+        clock = 10
+        if !secured || kind != 6 {
+          XCTAssertThrowsError(try framing.tick()) { XCTAssertEqual($0 as? SessionFailure, .expired) }
+        } else {
+          XCTAssertNoThrow(try framing.tick())
+          _ = try feed(Data(), into: &framing) // Empty delivery cannot refresh progress.
+          clock = 19
+          XCTAssertThrowsError(try feed(Data(wire.dropFirst(7)), into: &framing)) {
+            XCTAssertEqual($0 as? SessionFailure, .expired)
+          }
+        }
+        XCTAssertThrowsError(try framing.end()) { XCTAssertEqual($0 as? SessionFailure, .cancelled) }
+        XCTAssertNil(framing.nextDeadline)
+      }
+    }
+    var clock: TimeInterval = 0
+    var trickle = LanFraming(now: { clock })
+    trickle.secured = true
+    let wire = try LanFraming.encode(Data([6] + Array(repeating: UInt8(7), count: 99)))
+    _ = try feed(Data(wire.prefix(6)), into: &trickle)
+    for time in stride(from: 9, through: 54, by: 9) { clock = Double(time); _ = try feed(Data([7]), into: &trickle) }
+    XCTAssertEqual(trickle.nextDeadline, 60)
+    clock = 60
+    XCTAssertThrowsError(try feed(Data([7]), into: &trickle)) { XCTAssertEqual($0 as? SessionFailure, .expired) }
+  }
+  func testFrameBoundedReadsExcludeIngressWaitFromNextAssembly() throws {
+    for profile: SessionProfile in [.standard, .lanTransfer] {
+      var clock: TimeInterval = 0
+      var framing = LanFraming(now: { clock }, profile: profile)
+      let payload = Data(repeating: 7, count: profile.maximumEnvelope)
+      let wire = try LanFraming.encode(payload, profile: profile)
+      for _ in 0..<3 {
+        XCTAssertEqual(framing.readLimit, 5)
+        XCTAssertTrue(try feed(Data(wire.prefix(2)), into: &framing).isEmpty)
+        XCTAssertEqual(framing.readLimit, 3)
+        XCTAssertTrue(try feed(Data(wire[2..<5]), into: &framing).isEmpty)
+        XCTAssertEqual(framing.readLimit, payload.count)
+        XCTAssertTrue(try feed(Data(wire[5..<6]), into: &framing).isEmpty)
+        XCTAssertEqual(framing.readLimit, payload.count - 1)
+        XCTAssertEqual(try feed(Data(wire.dropFirst(6)), into: &framing), [payload])
+        XCTAssertNil(framing.nextDeadline)
+        clock += 11 // A full ingress queue waits between complete frames.
+        XCTAssertNoThrow(try framing.tick())
+      }
+      _ = try feed(Data(wire.prefix(1)), into: &framing)
+      clock += 10
+      XCTAssertThrowsError(try framing.tick()) { XCTAssertEqual($0 as? SessionFailure, .expired) }
     }
   }
   func testBufferClockIsSampledOnceAndSlicesPreserveOffsets() throws {
@@ -494,7 +747,7 @@ final class LanTests: XCTestCase {
     do {
       try await transport.submit(Data([1, 0]))
       XCTFail("Stalled submission succeeded")
-    } catch let failure as SessionFailure { XCTAssertEqual(failure, .cancelled) }
+    } catch let failure as NWError { XCTAssertEqual(failure, .posix(.ETIMEDOUT)) }
     XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - start, 10)
     XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 15)
     await assertCapacity(transport, 2, false)
@@ -517,6 +770,86 @@ final class LanTests: XCTestCase {
 
   @MainActor private func socket() -> NWConnection {
     NWConnection(host: "127.0.0.1", port: 9, using: .tcp)
+  }
+
+  @MainActor func testNormalEOFWaitsForAcceptedDeliveryBeforeNotifyingOwner() async throws {
+    let transport = LanTcpTransport(socket(), profile: .lanTransfer), probe = ReceiveDrainProbe()
+    let feature = ReceiveDrainProbe()
+    let ended = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+    let started = await transport.startDelivery(deliver: { try await probe.deliver($0) },
+      ended: { error in ended.withLock { $0 = error } }, drained: { try? await feature.deliver(Data([9])) })
+    XCTAssertTrue(started)
+    let duplicate = await transport.startDelivery(deliver: { _ in XCTFail("Second consumer started") }, ended: { _ in })
+    XCTAssertFalse(duplicate)
+    let queue = await transport.ingressQueue
+    let expected = (0..<4).map { Data([UInt8($0)]) }
+    for bytes in expected { await queue.push(bytes) }
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    try await transport.finishReceiving()
+    XCTAssertNil(ended.withLock { $0 }, "EOF must not retire the session while delivery is suspended")
+    await probe.release()
+    for _ in 0..<10000 { if await feature.delivered.count == 1 { break }; await Task.yield() }
+    let featureCount = await feature.delivered.count
+    XCTAssertEqual(featureCount, 1)
+    XCTAssertNil(ended.withLock { $0 }, "EOF must also await the feature-owned ingress")
+    await feature.release()
+    for _ in 0..<10000 { if ended.withLock({ $0 != nil }) { break }; await Task.yield() }
+    XCTAssertEqual(ended.withLock { $0 as? SessionFailure }, .cancelled)
+    let delivered = await probe.delivered
+    XCTAssertEqual(delivered, expected)
+    await assertCapacity(transport, 2, false)
+  }
+
+  @MainActor func testDeliveryFailureDuringEOFDrainPreservesItsCause() async throws {
+    let transport = LanTcpTransport(socket()), probe = ReceiveDrainProbe(failure: .authentication)
+    let ended = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+    await transport.startDelivery(deliver: { try await probe.deliver($0) },
+      ended: { error in ended.withLock { $0 = error } })
+    let queue = await transport.ingressQueue
+    await queue.push(Data([1])); await queue.push(Data([2]))
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    try await transport.finishReceiving(); await probe.release()
+    for _ in 0..<10000 { if ended.withLock({ $0 != nil }) { break }; await Task.yield() }
+    XCTAssertEqual(ended.withLock { $0 as? SessionFailure }, .authentication)
+    let count = await probe.delivered.count
+    XCTAssertEqual(count, 1)
+    await assertCapacity(transport, 2, false)
+  }
+
+  @MainActor func testExplicitCloseInterruptsEOFDrainWithoutDeliveringLaterRecords() async throws {
+    let transport = LanTcpTransport(socket()), probe = ReceiveDrainProbe()
+    let ended = OSAllocatedUnfairLock(initialState: false)
+    await transport.startDelivery(deliver: { try await probe.deliver($0) }, ended: { _ in ended.withLock { $0 = true } })
+    let queue = await transport.ingressQueue
+    await queue.push(Data([1])); await queue.push(Data([2]))
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    try await transport.finishReceiving(); await transport.close(); await probe.release()
+    for _ in 0..<100 { await Task.yield() }
+    let count = await probe.delivered.count
+    XCTAssertEqual(count, 1)
+    XCTAssertFalse(ended.withLock { $0 })
+    await assertCapacity(transport, 2, false)
+  }
+
+  @MainActor func testStalledEOFDrainRetiresAtTheAbsoluteDeadline() async throws {
+    let transport = LanTcpTransport(socket()), probe = ReceiveDrainProbe()
+    let ended = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+    await transport.startDelivery(deliver: { try await probe.deliver($0) },
+      ended: { error in ended.withLock { $0 = error } })
+    let queue = await transport.ingressQueue
+    await queue.push(Data([1])); await queue.push(Data([2]))
+    for _ in 0..<10000 { if await probe.delivered.count == 1 { break }; await Task.yield() }
+    let start = ProcessInfo.processInfo.systemUptime
+    try await transport.finishReceiving()
+    for _ in 0..<600 { if ended.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(25)) }
+    XCTAssertEqual(ended.withLock { $0 as? NWError }, .posix(.ETIMEDOUT))
+    XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - start, 10)
+    XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 15)
+    await assertCapacity(transport, 2, false)
+    await probe.release()
+    for _ in 0..<100 { await Task.yield() }
+    let count = await probe.delivered.count
+    XCTAssertEqual(count, 1)
   }
 
   /// With no consumer running, a pushed envelope must stay until it is popped, and `pop` must report

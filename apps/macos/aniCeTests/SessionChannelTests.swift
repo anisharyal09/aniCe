@@ -80,6 +80,295 @@ private actor DeadlineValidationProbe {
   func validate() throws { loads += 1; if let fault { throw fault } }
 }
 final class SessionChannelTests: XCTestCase, @unchecked Sendable {
+  func testCancellingAnAdmittedSendPreservesHealthyChannelAndPeerSequence() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    for phase in ["capacity", "submission"] {
+      let outgoing = ChannelMailbox(), replies = ChannelMailbox(), gate = ChannelSubmissionGate()
+      let holding = OSAllocatedUnfairLock(initialState: false)
+      let client = SessionConnection(handshake: try helper.engine(fixture, server: false), responder: false,
+        capacity: { _ in
+          if phase == "capacity", holding.withLock({ $0 }) { await gate.pause() }
+          return true
+        }, submit: { bytes in
+          if phase == "submission", holding.withLock({ $0 }) { await gate.pause() }
+          await outgoing.append(bytes)
+        }, data: { _ in }, secured: {})
+      let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+        capacity: { _ in true }, submit: { await replies.append($0) }, data: { await replies.record($0) }, secured: {})
+      try await client.start()
+      for _ in 0..<3 { try await server.receive(outgoing.take()); try await client.receive(replies.take()) }
+      holding.withLock { $0 = true }
+      let send = Task { try await client.sendData(Data([7])) }
+      do {
+        for _ in 0..<10000 { if await gate.entered { break }; await Task.yield() }
+        let entered = await gate.entered
+        XCTAssertTrue(entered)
+        send.cancel(); holding.withLock { $0 = false }; await gate.release()
+        do { try await send.value; XCTFail("Cancelled send succeeded") } catch is CancellationError {}
+        let closed = await client.isClosed
+        XCTAssertFalse(closed)
+        try await client.sendData(Data([9]))
+        let count = await outgoing.messages.count
+        XCTAssertEqual(count, phase == "submission" ? 2 : 1)
+        for _ in 0..<count { try await server.receive(outgoing.take()) }
+        let delivered = await replies.data
+        XCTAssertEqual(delivered, phase == "submission" ? [Data([7]), Data([9])] : [Data([9])])
+        let serverClosed = await server.isClosed
+        XCTAssertFalse(serverClosed)
+      } catch {
+        holding.withLock { $0 = false }; await gate.release()
+        send.cancel(); _ = try? await send.value
+        await client.close(); await server.close(); throw error
+      }
+      await client.close(); await server.close()
+    }
+  }
+
+  func testCancellationProtectsOnlyNonceOwnedWork() async throws {
+    let row = try XCTUnwrap((helper.root("record-vectors")["valid"] as? [[String: Any]])?.first)
+    for phase in ["validation", "capacity", "submission", "postvalidation"] {
+      let gate = ChannelSubmissionGate(), output = ChannelMailbox()
+      let state = OSAllocatedUnfairLock(initialState: (hold: false, loads: 0))
+      let ch = try channel(validate: {
+        let pause = state.withLock { state in
+          state.loads += 1
+          return state.hold && (phase == "validation" && state.loads == 1 || phase == "postvalidation" && state.loads == 2)
+        }
+        if pause { await gate.pause() }
+      }, capacity: { _ in
+        if phase == "capacity", state.withLock({ $0.hold }) { await gate.pause() }
+        return true
+      }, submit: { bytes in
+        if phase == "submission", state.withLock({ $0.hold }) { await gate.pause() }
+        await output.append(bytes)
+      })
+      try await ch.send(.ready)
+      _ = try await ch.receive(SessionRecordCodec.seal(key: b(row, "key"), iv: b(row, "iv"),
+        id: b(row, "session"), direction: 2, kind: .readyAck, sequence: 0, plaintext: Data()))
+      state.withLock { $0 = (hold: true, loads: 0) }
+      let send = Task { try await ch.send(.data, plaintext: Data([7])) }
+      do {
+        for _ in 0..<10000 { if await gate.entered { break }; await Task.yield() }
+        let entered = await gate.entered
+        XCTAssertTrue(entered)
+        send.cancel()
+        let owned = phase == "submission" || phase == "postvalidation"
+        let sent = await ch.sent
+        XCTAssertEqual(sent, owned ? 2 : 1)
+        state.withLock { $0.hold = false }; await gate.release()
+        do { try await send.value; XCTFail("Cancelled send succeeded") } catch is CancellationError {}
+        let stage = await ch.stage, count = await output.messages.count, next = await ch.sent
+        XCTAssertEqual(stage, .secured)
+        XCTAssertEqual(count, owned ? 2 : 1); XCTAssertEqual(next, owned ? 2 : 1)
+        try await ch.send(.data, plaintext: Data([9]))
+        let messages = await output.messages
+        let last = try XCTUnwrap(messages.last)
+        let opened = try SessionRecordCodec.open(key: b(row, "key"), iv: b(row, "iv"), id: b(row, "session"),
+          direction: 1, expected: owned ? 2 : 1, record: last)
+        XCTAssertEqual(opened.1, Data([9]))
+      } catch {
+        state.withLock { $0.hold = false }; await gate.release()
+        send.cancel(); _ = try? await send.value
+        await ch.close(); throw error
+      }
+      await ch.close()
+    }
+  }
+
+  func testPendingPongSurvivesLegalBulkSubmissionWithoutExtraQueueSlots() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    for profile in [SessionProfile.standard, .lanTransfer] {
+      let clock = ChannelClock(), outgoing = ChannelMailbox(), replies = ChannelMailbox()
+      let hold = ChannelSubmissionGate()
+      let holding = OSAllocatedUnfairLock(initialState: false)
+      let budget = OSAllocatedUnfairLock(initialState: LanQueueBudget(profile: profile))
+      let client = SessionConnection(handshake: try helper.engine(fixture, server: false), responder: false,
+        capacity: { _ in true }, submit: { await outgoing.append($0) }, data: { _ in }, secured: {},
+        controls: true, now: { Int64(clock.read() * 1000) }, profile: profile)
+      let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+        capacity: { size in budget.withLock { $0.canReserve(size) } }, submit: { bytes in
+          try budget.withLock { try $0.reserve(bytes.count) }
+          defer { budget.withLock { $0.release(bytes.count) } }
+          if holding.withLock({ $0 }) { await hold.pause() }
+          await replies.append(bytes)
+        }, data: { _ in }, secured: {}, controls: true,
+        now: { Int64(clock.read() * 1000) }, profile: profile)
+      func pump() async throws {
+        for _ in 0..<32 {
+          let hasI = await !outgoing.messages.isEmpty, hasR = await !replies.messages.isEmpty
+          if !hasI && !hasR { return }
+          if hasI { try await server.receive(outgoing.take()) }
+          if await !replies.messages.isEmpty { try await client.receive(replies.take()) }
+        }
+        XCTFail("Unbounded control exchange")
+      }
+      try await client.start(); try await pump()
+      let clientSupport = await client.controlSupport, serverSupport = await server.controlSupport
+      XCTAssertEqual(clientSupport, true); XCTAssertEqual(serverSupport, true)
+      clock.set(59); holding.withLock { $0 = true }
+      let bulk = Task { try await server.sendData(Data(repeating: 0, count: profile.maximumPlaintext)) }
+      do {
+        for _ in 0..<10000 { if await hold.entered { break }; await Task.yield() }
+        let entered = await hold.entered
+        XCTAssertTrue(entered)
+        XCTAssertEqual(budget.withLock { $0.messages }, 1)
+        clock.set(60); try await client.tick(); try await server.receive(outgoing.take())
+        let deadline = await client.nextDeadline()
+        XCTAssertEqual(deadline, 80000)
+        try await server.tick()
+        let pending = await replies.messages
+        XCTAssertTrue(pending.isEmpty, "PONG cannot overtake the active sealed send")
+        XCTAssertEqual(budget.withLock { $0.messages }, 1, "Spare legal slots cannot bypass the send serializer")
+        // Complete within the transport's existing absolute ten-second write bound.
+        clock.set(68); holding.withLock { $0 = false }; await hold.release()
+        try await bulk.value
+        try await server.tick(); try await pump()
+        XCTAssertEqual(budget.withLock { $0.messages }, 0)
+        let next = await client.nextDeadline()
+        XCTAssertEqual(next, 128000)
+        clock.set(80); try await client.tick()
+        let clientClosed = await client.isClosed, serverClosed = await server.isClosed
+        XCTAssertFalse(clientClosed); XCTAssertFalse(serverClosed)
+      } catch {
+        holding.withLock { $0 = false }; await hold.release()
+        bulk.cancel(); _ = try? await bulk.value
+        await client.close(); await server.close()
+        throw error
+      }
+      await client.close(); await server.close()
+    }
+  }
+
+  func testCancellingUnsealedFeatureSendKeepsSessionAndNonceOrderIntact() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    let outgoing = ChannelMailbox(), replies = ChannelMailbox(), hold = ChannelSubmissionGate()
+    let holding = OSAllocatedUnfairLock(initialState: false)
+    let client = SessionConnection(handshake: try helper.engine(fixture, server: false), responder: false,
+      capacity: { _ in true }, submit: { bytes in
+        if holding.withLock({ $0 }) { await hold.pause() }
+        await outgoing.append(bytes)
+      }, data: { _ in }, secured: {})
+    let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+      capacity: { _ in true }, submit: { await replies.append($0) }, data: { await replies.record($0) }, secured: {})
+    try await client.start()
+    for _ in 0..<3 { try await server.receive(outgoing.take()); try await client.receive(replies.take()) }
+    holding.withLock { $0 = true }
+    let active = Task { try await client.sendData(Data([1])) }
+    for _ in 0..<10000 { if await hold.entered { break }; await Task.yield() }
+    let cancelled = Task { try await client.sendData(Data([2])) }
+    for _ in 0..<100 { await Task.yield() }
+    cancelled.cancel()
+    do { try await cancelled.value; XCTFail("Cancelled waiter sent DATA") } catch is CancellationError {}
+    let closed = await client.isClosed
+    XCTAssertFalse(closed)
+    holding.withLock { $0 = false }; await hold.release(); try await active.value
+    try await client.sendData(Data([3]))
+    let count = await outgoing.messages.count
+    XCTAssertEqual(count, 2, "Cancellation must emit no record or consume its nonce")
+    for _ in 0..<count { try await server.receive(outgoing.take()) }
+    let received = await replies.data
+    XCTAssertEqual(received, [Data([1]), Data([3])])
+    let serverClosed = await server.isClosed
+    XCTAssertFalse(serverClosed)
+    await client.close(); await server.close()
+  }
+
+  func testConcurrentFeatureSendsWaitBeforeSealingAndPreserveNonceOrder() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    let outgoing = ChannelMailbox(), replies = ChannelMailbox(), hold = ChannelSubmissionGate()
+    let holding = OSAllocatedUnfairLock(initialState: false)
+    let client = SessionConnection(handshake: try helper.engine(fixture, server: false), responder: false,
+      capacity: { _ in true }, submit: { bytes in
+        if holding.withLock({ $0 }) { await hold.pause() }
+        await outgoing.append(bytes)
+      }, data: { _ in }, secured: {})
+    let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+      capacity: { _ in true }, submit: { await replies.append($0) }, data: { await replies.record($0) }, secured: {})
+    try await client.start()
+    for _ in 0..<3 { try await server.receive(outgoing.take()); try await client.receive(replies.take()) }
+    holding.withLock { $0 = true }
+    let first = Task { try await client.sendData(Data([1])) }
+    for _ in 0..<10000 { if await hold.entered { break }; await Task.yield() }
+    let second = Task { try await client.sendData(Data([2])) }
+    // Both calls must enter admission before the suspended native submission completes.
+    for _ in 0..<100 { await Task.yield() }
+    holding.withLock { $0 = false }; await hold.release()
+    try await first.value; try await second.value
+    let count = await outgoing.messages.count
+    XCTAssertEqual(count, 2)
+    for _ in 0..<count { try await server.receive(outgoing.take()) }
+    let received = await replies.data
+    XCTAssertEqual(received, [Data([1]), Data([2])])
+    let clientClosed = await client.isClosed, serverClosed = await server.isClosed
+    XCTAssertFalse(clientClosed); XCTAssertFalse(serverClosed)
+    await client.close(); await server.close()
+  }
+
+  func testDataAdmissionPrioritizesControlsWithoutStarvingBulk() async throws {
+    let admission = SessionDataAdmission(), hold = ChannelSubmissionGate(), order = ChannelMailbox()
+    let active = Task { try await admission.run(bulk: true) { await order.record(Data([0])); await hold.pause() } }
+    for _ in 0..<10000 { if await hold.entered { break }; await Task.yield() }
+    let entered = await hold.entered
+    XCTAssertTrue(entered)
+    var pending: [Task<Void, Error>] = []
+    for index in 1...8 {
+      pending.append(Task { try await admission.run(bulk: index == 1 || index == 8) { await order.record(Data([UInt8(index)])) } })
+      for _ in 0..<10000 { if await admission.pendingCount == index { break }; await Task.yield() }
+      let count = await admission.pendingCount
+      XCTAssertEqual(count, index)
+    }
+    do { try await admission.run(bulk: false) { XCTFail("Over-capacity work ran") }; XCTFail("Unbounded admission") }
+    catch is SessionBackpressure {}
+    await hold.release()
+    try await active.value
+    for task in pending { try await task.value }
+    let received = await order.data.map { Int($0[0]) }
+    XCTAssertEqual(received, [0, 2, 3, 4, 5, 1, 6, 7, 8])
+    let remaining = await admission.pendingCount
+    XCTAssertEqual(remaining, 0)
+  }
+
+  func testDataAdmissionCancellationAndRetirementReleaseEveryWaiter() async throws {
+    let admission = SessionDataAdmission(), hold = ChannelSubmissionGate()
+    let active = Task { try await admission.run(bulk: true) { await hold.pause() } }
+    for _ in 0..<10000 { if await hold.entered { break }; await Task.yield() }
+    let cancelled = Task { try await admission.run(bulk: false) { XCTFail("Cancelled work ran") } }
+    for _ in 0..<10000 { if await admission.pendingCount == 1 { break }; await Task.yield() }
+    cancelled.cancel()
+    do { try await cancelled.value; XCTFail("Cancelled waiter succeeded") } catch is CancellationError {}
+    let count = await admission.pendingCount
+    XCTAssertEqual(count, 0)
+    var pending: [Task<Void, Error>] = []
+    for index in 1...8 {
+      pending.append(Task { try await admission.run(bulk: false) { XCTFail("Retired work ran") } })
+      for _ in 0..<10000 { if await admission.pendingCount == index { break }; await Task.yield() }
+    }
+    await admission.close()
+    for task in pending {
+      do { try await task.value; XCTFail("Retired waiter succeeded") }
+      catch { XCTAssertEqual(error as? SessionFailure, .cancelled) }
+    }
+    await hold.release(); try await active.value
+    do { try await admission.run(bulk: false) { XCTFail("Closed admission reopened") }; XCTFail("Closed admission succeeded") }
+    catch { XCTAssertEqual(error as? SessionFailure, .cancelled) }
+  }
+
+  func testCancellationRacingAdmissionCannotStrandTheNextProducer() async throws {
+    for _ in 0..<64 {
+      let admission = SessionDataAdmission(), hold = ChannelSubmissionGate()
+      let active = Task { try await admission.run(bulk: true) { await hold.pause() } }
+      for _ in 0..<10000 { if await hold.entered { break }; await Task.yield() }
+      let waiting = Task { try await admission.run(bulk: false) {} }
+      for _ in 0..<10000 { if await admission.pendingCount == 1 { break }; await Task.yield() }
+      await hold.release(); waiting.cancel()
+      try await active.value
+      do { try await waiting.value } catch is CancellationError {}
+      try await admission.run(bulk: false) {}
+      let count = await admission.pendingCount
+      XCTAssertEqual(count, 0)
+    }
+  }
+
   private let helper = SessionFixtures()
   private func b(_ v: [String: Any], _ name: String) throws -> Data { try helper.b(v, name) }
   private func reject(_ reason: SessionFailure, _ action: () async throws -> Void) async throws {
@@ -224,6 +513,30 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual($0 as? SessionFailure, .malformed)
     }
   }
+  func testControlClassificationDoesNotMaterializeBulkBytesAndKeepsValidation() throws {
+    let payload = Data(repeating: 0x5a, count: 262016)
+    let value = SessionCBOR.array([.text("other"), .bytes(payload)])
+    let encoded = try SessionCbor.encode(value, maximumBytes: 262144)
+    XCTAssertEqual(try SessionCbor.decode(encoded, maximumBytes: 262144, materializeBytes: false),
+      .array([.text("other"), .bytes(Data())]))
+    XCTAssertEqual(try SessionCbor.decode(encoded, maximumBytes: 262144), value)
+    XCTAssertNil(try SessionControl.application(encoded, maximumBytes: 262144))
+    for malformed in [Data(encoded.dropLast()), encoded + Data([0])] {
+      XCTAssertThrowsError(try SessionControl.application(malformed, maximumBytes: 262144)) {
+        XCTAssertEqual($0 as? SessionFailure, .malformed)
+      }
+    }
+    let invalid = try SessionCbor.encode(.array([.text("aniCe control"), .integer(1), .integer(3),
+      .map([.init(.text("requestId"), .bytes(Data([1])))])]))
+    XCTAssertThrowsError(try SessionControl.application(invalid)) {
+      XCTAssertEqual($0 as? SessionFailure, .malformed)
+    }
+    let badMap = Data([0x81, 0xa2, 0x41, 2, 0, 0x41, 1, 0])
+    XCTAssertThrowsError(try SessionCbor.decode(badMap, materializeBytes: false)) {
+      XCTAssertEqual($0 as? SessionFailure, .malformed)
+    }
+  }
+
   private func controlPair(_ initialID: Int64 = 0) throws -> (SessionLiveness, SessionLiveness) {
     var c = SessionLiveness(responder: false, nextId: initialID)
     var s = SessionLiveness(responder: true)
@@ -648,10 +961,11 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     let v = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     let outI = ChannelMailbox()
     let outR = ChannelMailbox()
+    let drain = ChannelSubmissionGate()
     let c = SessionConnection(
       handshake: try helper.engine(v, server: false), responder: false, capacity: { _ in true },
       submit: { await outI.append($0) }, data: { await outI.record($0) },
-      secured: { await outI.secure() })
+      secured: { await outI.secure() }, drain: { await drain.pause() })
     let s = SessionConnection(
       handshake: try helper.engine(v, server: true), responder: true, capacity: { _ in true },
       submit: { await outR.append($0) }, data: { await outR.record($0) },
@@ -694,7 +1008,12 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(serverData, [bytes])
     XCTAssertEqual(clientData, [Data([7])])
     try await s.disconnect()
-    try await deliver(outR, c, &incomingI, 4)
+    let closing = Task { try await c.receive(await outR.take()) }
+    for _ in 0..<10000 { if await drain.entered { break }; await Task.yield() }
+    let entered = await drain.entered, beforeClose = await c.isClosed
+    XCTAssertTrue(entered); XCTAssertFalse(beforeClose)
+    await drain.release()
+    try await closing.value
     let ci = await c.isClosed
     let sr = await s.isClosed
     XCTAssertTrue(ci)

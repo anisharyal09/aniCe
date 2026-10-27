@@ -6,6 +6,10 @@ Records shared communication-contract changes, compatibility implications, and p
 
 ### Fixed
 
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
+- Clarify file-transfer acknowledgement cadence as window-relative: a quarter-window for large LAN chunks and up to eight chunks for standard/BLE, retaining the 20-ms flush and final-chunk acknowledgement. Wire messages, capability ranges and limits are unchanged.
+
 - Document checkpoint-backed transfer resume with existing kinds 10/11 and a four-chunk BLE implementation window; framing, capability ranges, session cryptography and fixture bytes remain unchanged.
 
 - Coalesce ordinary BLE traffic into one LAN demand per channel and eligibility interval.
@@ -20,6 +24,8 @@ Records shared communication-contract changes, compatibility implications, and p
 - Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
 
 ### Changed
+
+- Document overlapping Android LAN discovery, serial resolution and endpoint authentication under the existing 15-second browse and 90-second connection bounds; framing and authentication contracts are unchanged.
 
 - Add LAN-only transfer capability 3 for 262,016-byte chunks within the existing 262,144-byte authenticated DATA record; advertise a capability-2 baseline first so older peers retain support, with standard/BLE limits unchanged.
 

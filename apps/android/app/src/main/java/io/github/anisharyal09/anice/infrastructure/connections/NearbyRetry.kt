@@ -6,8 +6,18 @@ package io.github.anisharyal09.anice.infrastructure.connections
 internal class NearbyRetry {
   private var failures = 0
   private var rediscoveryUsed = false
+  private var stableDeadline: Long? = null
+  fun secured(now: Long) { stableDeadline = now + 15_000 }
+  fun retired() { stableDeadline = null }
+  fun tick(now: Long) { if (stableDeadline?.let { now >= it } == true) reset() }
+  fun observeReadiness(ready: Boolean, now: Long) {
+    if (ready && stableDeadline == null) secured(now)
+    // Complete a matured stability interval before clearing its deadline when readiness ends.
+    tick(now)
+    if (!ready) retired()
+  }
   private val excluded = linkedMapOf<String, Long>()
-  fun reset() { failures = 0; rediscoveryUsed = false; excluded.clear() }
+  fun reset() { stableDeadline = null; failures = 0; rediscoveryUsed = false; excluded.clear() }
   fun claimRediscovery(): Boolean {
     if (failures < 2 || rediscoveryUsed) return false
     rediscoveryUsed = true
@@ -16,6 +26,8 @@ internal class NearbyRetry {
   fun exclusionDelay(address: String, now: Long): Long = ((excluded[address] ?: now) - now).coerceAtLeast(0)
   fun next(jitter: Double): Long {
     require(jitter in -0.1..0.1)
+    // A discovery is bounded per attempt, not permanently exhausted by an unavailable peer.
+    rediscoveryUsed = false
     val seconds = longArrayOf(2, 5, 15, 30, 60, 90)[failures.coerceAtMost(5)]
     if (failures < 5) failures++
     return (seconds * 1000 * (1 + jitter)).toLong().coerceAtMost(90_000L)

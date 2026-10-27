@@ -174,13 +174,13 @@ object SessionCbor {
     }
   }
 
-  fun decode(data: ByteArray, maximumBytes: Int = MAX_BYTES): Cbor =
-    decodeSequence(data, maximumBytes).let {
+  fun decode(data: ByteArray, maximumBytes: Int = MAX_BYTES, materializeBytes: Boolean = true): Cbor =
+    decodeSequence(data, maximumBytes, materializeBytes).let {
       if (it.size != 1) fail()
       it.single()
     }
 
-  fun decodeSequence(data: ByteArray, maximumBytes: Int = MAX_BYTES): List<Cbor> {
+  fun decodeSequence(data: ByteArray, maximumBytes: Int = MAX_BYTES, materializeBytes: Boolean = true): List<Cbor> {
     require(maximumBytes in 1..262144)
     if (data.size > maximumBytes) fail()
     var offset = 0
@@ -234,7 +234,8 @@ object SessionCbor {
           if (n > maximumBytes || n > data.size - offset) fail()
           val start = offset
           offset += n.toInt()
-          if (major == 2) Cbor.Bytes(data, start, offset)
+          // Control classification validates every byte-string bound without copying file payloads.
+          if (major == 2) if (materializeBytes) Cbor.Bytes(data, start, offset) else Cbor.Bytes(byteArrayOf())
           else {
             val text =
               try {

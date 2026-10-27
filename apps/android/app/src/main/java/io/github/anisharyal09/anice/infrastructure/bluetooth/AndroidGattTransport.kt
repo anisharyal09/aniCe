@@ -211,12 +211,25 @@ class AndroidGattTransport(
       object : BluetoothGattCallback() {
         private fun dispatch(g: BluetoothGatt, allowClosing: Boolean = false, block: () -> Unit) {
           handler.post {
-            if (epoch == op && client === g && (!closing || allowClosing))
+            if (epoch != op || client !== g) {
+              Log.i(
+                "aniCe-ble",
+                "gatt_callback_stale callback_epoch=$op current_epoch=$epoch stage=$stage " +
+                  "same_gatt=${client === g} closing=$closing mtu=$mtu queued=${queue.size} writing=$writing",
+              )
+              return@post
+            }
+            if (!closing || allowClosing)
               try {
                 block()
               } catch (error: Exception) {
-                Log.i("aniCe-ble", "GATT callback failed stage=$stage", error)
-                finish(false)
+                Log.i(
+                  "aniCe-ble",
+                  "gatt_callback_failed epoch=$op stage=$stage mtu=$mtu queued=${queue.size} " +
+                    "writing=$writing closing=$closing",
+                  error,
+                )
+                finish(false, reason = (error as? java.io.IOException)?.message, cause = error)
               }
           }
         }
@@ -225,8 +238,9 @@ class AndroidGattTransport(
           dispatch(g, allowClosing = true) {
             if (closing && state != BluetoothProfile.STATE_DISCONNECTED) return@dispatch
             Log.i(
-              "aniCe-pairing",
-              "connection status=$status connected=${state == BluetoothProfile.STATE_CONNECTED}",
+              "aniCe-ble",
+              "gatt_connection epoch=$op stage=$stage status=$status connected=${state == BluetoothProfile.STATE_CONNECTED} " +
+                "mtu=$mtu queued=${queue.size} writing=$writing closing=$closing",
             )
             if (state == BluetoothProfile.STATE_DISCONNECTED) {
               finish(closing, if (!closing) "Bluetooth disconnected (GATT status $status, stage $stage)." else null)
@@ -288,9 +302,13 @@ class AndroidGattTransport(
               "profile_count=${profiles.size} complete_profile_count=${complete.size}",
             )
             if (complete.size > 1) {
+              if (setupRecovery.retryMissingLayout()) {
+                rediscoverServices(g)
+                return@dispatch
+              }
               finish(
                 false,
-                "More than one pairing service was found on this Mac. Quit extra copies of aniCe and restart the Mac app.",
+                "Duplicate aniCe Bluetooth services remain after rediscovery. Connection stopped because the service is ambiguous.",
               )
               return@dispatch
             }
@@ -324,23 +342,65 @@ class AndroidGattTransport(
             )
             write = w
             indicate = r
-            require(g.setCharacteristicNotification(r, true))
-            val d =
-              r.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-                ?: throw PairingException()
-            stage = "subscribe"
-            progress("subscribe", connectionDeadline)
-            @Suppress("DEPRECATION")
-            val started =
-              if (Build.VERSION.SDK_INT >= 33)
-                g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE) ==
-                  BluetoothStatusCodes.SUCCESS
-              else {
-                d.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                g.writeDescriptor(d)
-              }
-            require(started)
+            val discovery = s.getCharacteristic(UUID.fromString(BlePayloadCodec.CHARACTERISTIC_UUID))
+            if (discovery == null) {
+              if (setupRecovery.retryMissingLayout()) rediscoverServices(g)
+              else finish(false, "The Mac's Bluetooth discovery channel is unavailable.")
+              return@dispatch
+            }
+            stage = "profile"
+            progress("services", connectionDeadline)
+            require(g.readCharacteristic(discovery))
           }
+
+        @Deprecated("Legacy callback required before API 33")
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
+          if (Build.VERSION.SDK_INT < 33) {
+            @Suppress("DEPRECATION") val value = c.value?.clone() ?: byteArrayOf()
+            profileRead(g, c, value, status)
+          }
+        }
+
+        override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+          profileRead(g, c, value.clone(), status)
+        }
+
+        private fun profileRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) = dispatch(g) {
+          if (stage != "profile" || c.uuid != UUID.fromString(BlePayloadCodec.CHARACTERISTIC_UUID)) return@dispatch
+          if (setupRecovery.afterPendingOperation()) { services(g); return@dispatch }
+          val valid = status == BluetoothGatt.GATT_SUCCESS && try {
+            BlePayloadCodec.decode(value); true
+          } catch (_: IllegalArgumentException) { false }
+          Log.i("aniCe-ble", "profile_read epoch=$op status=$status valid=$valid instance=${c.instanceId}")
+          if (!valid) {
+            if (setupRecovery.retryProfileRead(status)) rediscoverServices(g)
+            else finish(false, "Could not verify the Mac's Bluetooth service layout (GATT status $status).")
+            return@dispatch
+          }
+          subscribe(g)
+        }
+
+        private fun subscribe(g: BluetoothGatt) {
+          val r = requireNotNull(indicate)
+          require(g.setCharacteristicNotification(r, true))
+          val d =
+            r.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+              ?: throw PairingException()
+          Log.i("aniCe-ble", "subscribe_target epoch=$op characteristic=${r.uuid} instance=${r.instanceId} descriptor=${d.uuid} properties=${r.properties}")
+          stage = "subscribe"
+          progress("subscribe", connectionDeadline)
+          @Suppress("DEPRECATION")
+          val started =
+            if (Build.VERSION.SDK_INT >= 33)
+              g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_INDICATION_VALUE) ==
+                BluetoothStatusCodes.SUCCESS
+            else {
+              d.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+              g.writeDescriptor(d)
+            }
+          Log.i("aniCe-pairing", "reply_subscription_submit accepted=$started epoch=$op")
+          if (!started) finish(false, "Could not submit the Mac's Bluetooth reply subscription.", retryCandidate = true)
+        }
 
         override fun onServiceChanged(g: BluetoothGatt) =
           dispatch(g) {
@@ -350,6 +410,7 @@ class AndroidGattTransport(
               "mtu",
               "services",
               "layoutRefresh",
+              "profile",
               "subscribe" -> setupRecovery.invalidate()
               else ->
                 finish(
@@ -362,7 +423,7 @@ class AndroidGattTransport(
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) =
           dispatch(g) {
             if (stage == "subscribe") {
-              Log.i("aniCe-pairing", "reply_subscription status=$status")
+              Log.i("aniCe-pairing", "reply_subscription status=$status epoch=$op")
               if (setupRecovery.afterPendingOperation()) {
                 indicate?.let { g.setCharacteristicNotification(it, false) }
                 write = null
@@ -370,13 +431,16 @@ class AndroidGattTransport(
                 services(g)
                 return@dispatch
               }
-              if (setupRecovery.retryInvalidHandle(status)) {
+              if (setupRecovery.retrySubscriptionLayout(status)) {
                 rediscoverServices(g)
                 return@dispatch
               }
-              require(
-                d.characteristic.uuid == indicate?.uuid && status == BluetoothGatt.GATT_SUCCESS
-              )
+              val failure = setupRecovery.subscriptionFailure(status)
+              if (failure != null) {
+                finish(false, failure.message, retryCandidate = true, recovery = failure.recovery)
+                return@dispatch
+              }
+              require(d.characteristic.uuid == indicate?.uuid)
               stage = "ready"
               progress("checking", SystemClock.elapsedRealtime() + 10000)
               connected()
@@ -407,6 +471,8 @@ class AndroidGattTransport(
                 require(budget + bytes.size <= 32768)
                 budget += bytes.size
               }
+              if (trustedSession && bytes.firstOrNull() != 6.toByte())
+                Log.i("aniCe-ble", "received epoch=$op envelope=${bytes.firstOrNull()} bytes=${bytes.size}")
               message(bytes)
             }
             changed()
@@ -418,11 +484,21 @@ class AndroidGattTransport(
           status: Int,
         ) =
           dispatch(g) {
-            Log.i("aniCe-pairing", "write_completion status=$status session=$trustedSession")
-            require(c.uuid == write?.uuid && writing && status == BluetoothGatt.GATT_SUCCESS)
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+              Log.i(
+                "aniCe-ble",
+                "gatt_write_failed epoch=$op stage=$stage status=$status session=$trustedSession " +
+                  "mtu=$mtu queued=${queue.size} writing=$writing closing=$closing",
+              )
+              val reason = "Bluetooth write failed (GATT status $status)."
+              finish(false, reason, cause = java.io.IOException(reason))
+              return@dispatch
+            }
+            require(c.uuid == write?.uuid && writing)
             // Only the final acknowledged fragment completes a logical-message submission.
             val completed = queue.removeFirst()
             if (completed.logicalSize != 0) {
+              if (trustedSession) Log.d("aniCe-ble", "submitted epoch=$op bytes=${completed.logicalSize}")
               queueBudget.release(completed.logicalSize)
               completed.submitted?.invoke()
               changed()
@@ -439,7 +515,10 @@ class AndroidGattTransport(
     }
     handler.postDelayed(
       {
-        if (epoch == op && stage != "ready") finish(false, failureMessage(), retryCandidate = true)
+        if (epoch == op && stage != "ready") {
+          Log.i("aniCe-ble", "setup_timeout stage=$stage epoch=$op")
+          finish(false, failureMessage(), retryCandidate = true)
+        }
       },
       15000,
     )
@@ -495,7 +574,7 @@ class AndroidGattTransport(
       flush()
     } catch (error: Exception) {
       Log.i("aniCe-ble", "GATT enqueue failed size=${data.size} mtu=$mtu queued=${queue.size} writing=$writing", error)
-      finish(false)
+      finish(false, reason = (error as? java.io.IOException)?.message, cause = error)
     }
   }
 
@@ -547,19 +626,21 @@ class AndroidGattTransport(
     val c = write ?: throw PairingException()
     writing = true
     @Suppress("DEPRECATION")
-    val started =
+    val status =
       if (Build.VERSION.SDK_INT >= 33)
-        g.writeCharacteristic(c, f.bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-          BluetoothStatusCodes.SUCCESS
+        g.writeCharacteristic(c, f.bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
       else {
         c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         c.value = f.bytes
-        g.writeCharacteristic(c)
+        if (g.writeCharacteristic(c)) BluetoothStatusCodes.SUCCESS else null
       }
-    require(started)
+    requireGattWriteSubmission(status)
     val op = epoch
     handler.postDelayed(
-      { if (epoch == op && writing && queue.peekFirst() === f) finish(false) },
+      { if (epoch == op && writing && queue.peekFirst() === f) {
+        val reason = "Bluetooth write timed out after 10 seconds."
+        finish(false, reason, cause = java.net.SocketTimeoutException(reason))
+      } },
       10000,
     )
   }
@@ -568,8 +649,8 @@ class AndroidGattTransport(
     closeAfterFlush = true
     try {
       flush()
-    } catch (_: Exception) {
-      finish(false)
+    } catch (error: Exception) {
+      finish(false, reason = (error as? java.io.IOException)?.message, cause = error)
     }
   }
 
@@ -596,7 +677,9 @@ class AndroidGattTransport(
     } else close()
   }
 
-  private fun closeClient() {
+  private fun closeClient(cause: Exception = io.github.anisharyal09.anice.infrastructure.session.SessionException(
+    io.github.anisharyal09.anice.infrastructure.session.SessionFailure.CANCELLED
+  )) {
     epoch++
     try {
       if (!closing) client?.disconnect()
@@ -612,14 +695,7 @@ class AndroidGattTransport(
     val pending = pendingSends.toList()
     pendingSends.clear()
     pending.forEach {
-      if (it.isActive)
-        it.resumeWith(
-          Result.failure(
-            io.github.anisharyal09.anice.infrastructure.session.SessionException(
-              io.github.anisharyal09.anice.infrastructure.session.SessionFailure.CANCELLED
-            )
-          )
-        )
+      if (it.isActive) it.resumeWith(Result.failure(cause))
     }
     writing = false
     closeAfterFlush = false
@@ -627,11 +703,13 @@ class AndroidGattTransport(
     incoming = GattReassembler(if (trustedSession) 2 else 1, SystemClock::elapsedRealtime)
   }
 
-  fun close() {
+  fun close(cause: Exception = io.github.anisharyal09.anice.infrastructure.session.SessionException(
+    io.github.anisharyal09.anice.infrastructure.session.SessionFailure.CANCELLED
+  )) {
     locating = false
     stopScan()
     search.clear()
-    closeClient()
+    closeClient(cause)
   }
 
   /**
@@ -657,7 +735,7 @@ class AndroidGattTransport(
   private fun failureMessage(): String =
     if (trustedSession) when (stage) {
       "connect" -> "Could not reach your Mac over Bluetooth."
-      "mtu", "services", "layoutRefresh" -> "Could not discover the Mac’s Bluetooth service."
+      "mtu", "services", "layoutRefresh", "profile" -> "Could not discover the Mac’s Bluetooth service."
       "subscribe" -> "Could not subscribe to the Mac’s Bluetooth reply channel."
       "ready" -> "The Bluetooth connection was interrupted."
       else -> "Bluetooth setup was interrupted."
@@ -678,6 +756,7 @@ class AndroidGattTransport(
     reason: String? = null,
     retryCandidate: Boolean = false,
     recovery: PairingTransportRecovery = PairingTransportRecovery.retry,
+    cause: Exception? = null,
   ) {
     val failure =
       if (success) null else PairingTransportFailure(reason ?: failureMessage(), recovery)
@@ -691,7 +770,8 @@ class AndroidGattTransport(
       return
     if (closedCallback) return
     closedCallback = true
-    close()
+    Log.i("aniCe-ble", "retire epoch=$epoch stage=$stage succeeded=$success reason=${failure?.message}")
+    if (cause != null) close(cause) else close()
     Log.i("aniCe-pairing", "transport_end succeeded=$success")
     ended(
       success,
@@ -702,3 +782,11 @@ class AndroidGattTransport(
 
 // Pairing keeps the same adapter API and v1 profile.
 typealias AndroidPairingTransport = AndroidGattTransport
+
+internal fun requireGattWriteSubmission(status: Int?) {
+  // Submission uses BluetoothStatusCodes; completion uses a separate GATT status namespace.
+  if (status != BluetoothStatusCodes.SUCCESS) {
+    val detail = if (status == null) "legacy API returned false" else "BluetoothStatusCodes $status"
+    throw java.io.IOException("Bluetooth write submission rejected ($detail).")
+  }
+}

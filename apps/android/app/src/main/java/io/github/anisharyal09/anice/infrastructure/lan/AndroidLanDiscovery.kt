@@ -13,6 +13,7 @@ import android.os.Build
 import java.net.*
 import java.util.concurrent.Executor
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 internal class NsdResolutionFailure(val code: Int) :
     Exception("Local-network discovery failed ($code). Retry.")
@@ -20,6 +21,9 @@ internal class NsdResolutionFailure(val code: Int) :
 internal data class LanEndpoint(val network: Network, val address: InetAddress, val port: Int, val profile: SessionProfile = SessionProfile.STANDARD)
 
 internal object LanAddress {
+    fun retainsLocalAddress(bound: InetAddress?, initial: Set<InetAddress>, current: Set<InetAddress>): Boolean =
+        if (bound != null) bound in current else initial.isEmpty() || current.intersect(initial).isNotEmpty()
+
     fun scoped(address: InetAddress, interfaceIndex: Int?): InetAddress {
         if (address !is Inet6Address || !address.isLinkLocalAddress) return address
         val index = requireNotNull(interfaceIndex) { "Wi-Fi interface is unavailable. Retry." }
@@ -45,119 +49,74 @@ internal class AndroidLanDiscovery(context: Context, private val profile: Sessio
     private val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
     private val executor = Executor { it.run() }
 
-    suspend fun discover(network: Network, links: () -> LinkProperties?): List<LanEndpoint> {
-        val found = linkedMapOf<String, NsdServiceInfo>()
-        val failure = CompletableDeferred<Unit>()
+    suspend fun discover(network: Network, links: () -> LinkProperties?): List<LanEndpoint> =
+        endpoints(network, links).toList()
+
+    fun endpoints(network: Network, links: () -> LinkProperties?): Flow<LanEndpoint> = channelFlow {
+        val candidates = LanDiscoveryCandidates<NsdServiceInfo>()
         val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
-        val listener =
-            object : NsdManager.DiscoveryListener {
-                override fun onDiscoveryStarted(type: String) {
-                    if (stopped.get()) stop(this)
-                }
-
-                override fun onStartDiscoveryFailed(type: String, code: Int) {
-                    failure.completeExceptionally(NsdResolutionFailure(code))
-                }
-
-                override fun onStopDiscoveryFailed(type: String, code: Int) {
-                    failure.completeExceptionally(NsdResolutionFailure(code))
-                }
-
-                override fun onDiscoveryStopped(type: String) {
-                    if (!stopped.get())
-                        failure.completeExceptionally(
-                            IllegalStateException("Local-network discovery stopped. Retry.")
-                        )
-                }
-
-                override fun onServiceFound(service: NsdServiceInfo) {
-                    synchronized(found) {
-                        if (
-                            !stopped.get() &&
-                                found.size < 8 &&
-                                service.serviceType.trimEnd('.') == type
-                        ) {
-                            if (
-                                Build.VERSION.SDK_INT < 33 ||
-                                    service.network == null ||
-                                    service.network == network
-                            )
-                                found.putIfAbsent(service.serviceName, service)
-                        }
-                    }
-                }
-
-                override fun onServiceLost(service: NsdServiceInfo) {
-                    synchronized(found) { found.remove(service.serviceName) }
-                }
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(type: String) { if (stopped.get()) stop(this) }
+            override fun onStartDiscoveryFailed(type: String, code: Int) {
+                candidates.close(NsdResolutionFailure(code))
             }
-        // Older framework NSD needs multicast reception only during this bounded foreground browse.
-        val multicast =
-            wifi.createMulticastLock("aniCe LAN discovery").apply { setReferenceCounted(false) }
+            override fun onStopDiscoveryFailed(type: String, code: Int) {
+                candidates.close(NsdResolutionFailure(code))
+            }
+            override fun onDiscoveryStopped(type: String) {
+                if (!stopped.get()) candidates.close(IllegalStateException("Local-network discovery stopped. Retry."))
+            }
+            override fun onServiceFound(service: NsdServiceInfo) {
+                if (service.serviceType.trimEnd('.') == type &&
+                    (Build.VERSION.SDK_INT < 33 || service.network == null || service.network == network))
+                    candidates.offer(service.serviceName, service)
+            }
+            override fun onServiceLost(service: NsdServiceInfo) { candidates.lost(service.serviceName) }
+        }
+        val multicast = wifi.createMulticastLock("aniCe LAN discovery").apply { setReferenceCounted(false) }
         if (Build.VERSION.SDK_INT < 34) multicast.acquire()
         try {
-            try {
-                if (Build.VERSION.SDK_INT >= 33)
-                    nsd.discoverServices(
-                        type,
-                        NsdManager.PROTOCOL_DNS_SD,
-                        network,
-                        executor,
-                        listener,
-                    )
-                else nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener)
-                withTimeoutOrNull(15000) { failure.await() }
-            } finally {
-                stopped.set(true)
-                stop(listener)
+            if (Build.VERSION.SDK_INT >= 33)
+                nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, network, executor, listener)
+            else nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener)
+            // Resolution and authentication overlap the browse; neither may restart its deadline.
+            withTimeoutOrNull(15000) {
+                candidates.endpoints(key = { "${it.address.hostAddress}:${it.port}" }) { service ->
+                    resolveEndpoints(service, network, links)
+                }.collect { send(it) }
             }
-            val services = synchronized(found) { found.values.toList() }
-            val endpoints = linkedMapOf<String, LanEndpoint>()
-            for (service in services) {
-                val resolved =
-                    try {
-                        resolve(service)
-                    } catch (error: NsdResolutionFailure) {
-                        if (error.code == NsdManager.FAILURE_ALREADY_ACTIVE) throw error
-                        continue
-                    }
-                val properties = links() ?: error("Wi-Fi network changed. Retry.")
-                if (
-                    !(resolved.attributes["v"].contentEquals(byteArrayOf(49)) ||
-                        type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(50))) ||
-                        resolved.port !in 1..65535
-                )
-                    continue
-                if (
-                    Build.VERSION.SDK_INT >= 33 &&
-                        resolved.network != null &&
-                        resolved.network != network
-                )
-                    continue
-                val addresses =
-                    if (Build.VERSION.SDK_INT >= 34) resolved.hostAddresses
-                    else listOfNotNull(resolved.host)
-                val iface = properties.interfaceName?.let { NetworkInterface.getByName(it) }
-                for (address in addresses) {
-                    val scoped =
-                        try {
-                            LanAddress.scoped(address, iface?.index)
-                        } catch (_: IllegalArgumentException) {
-                            continue
-                        } catch (_: UnknownHostException) {
-                            continue
-                        }
-                    if (!LanAddress.local(scoped, properties)) continue
-                    val key = "${scoped.hostAddress}:${resolved.port}"
-                    if (endpoints.size < 8)
-                        endpoints.putIfAbsent(key, LanEndpoint(network, scoped, resolved.port,
-                            if (type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(50))) SessionProfile.LAN_TRANSFER else profile))
-                }
-            }
-            return endpoints.values.toList()
         } finally {
-            if (multicast.isHeld) multicast.release()
+            stopped.set(true)
+            candidates.close()
+            try { stop(listener) }
+            finally { if (multicast.isHeld) multicast.release() }
         }
+    }.buffer(8)
+
+    private suspend fun resolveEndpoints(service: NsdServiceInfo, network: Network,
+        links: () -> LinkProperties?): List<LanEndpoint> {
+        val resolved = try { resolve(service) }
+        catch (error: NsdResolutionFailure) {
+            if (error.code == NsdManager.FAILURE_ALREADY_ACTIVE) throw error
+            return emptyList()
+        }
+        val properties = links() ?: error("Wi-Fi network changed. Retry.")
+        val revision2 = type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(50))
+        if (!(resolved.attributes["v"].contentEquals(byteArrayOf(49)) || revision2) || resolved.port !in 1..65535)
+            return emptyList()
+        if (Build.VERSION.SDK_INT >= 33 && resolved.network != null && resolved.network != network)
+            return emptyList()
+        val addresses = if (Build.VERSION.SDK_INT >= 34) resolved.hostAddresses else listOfNotNull(resolved.host)
+        val iface = properties.interfaceName?.let { NetworkInterface.getByName(it) }
+        val endpoints = mutableListOf<LanEndpoint>()
+        for (address in addresses) {
+            val scoped = try { LanAddress.scoped(address, iface?.index) }
+            catch (_: IllegalArgumentException) { continue }
+            catch (_: UnknownHostException) { continue }
+            if (LanAddress.local(scoped, properties) && endpoints.size < 8)
+                endpoints.add(LanEndpoint(network, scoped, resolved.port, if (revision2) SessionProfile.LAN_TRANSFER else profile))
+        }
+        return endpoints
     }
 
     private fun stop(listener: NsdManager.DiscoveryListener) {

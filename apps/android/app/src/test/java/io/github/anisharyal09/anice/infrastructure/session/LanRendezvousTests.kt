@@ -4,11 +4,43 @@ package io.github.anisharyal09.anice.infrastructure.session
 
 import io.github.anisharyal09.anice.infrastructure.connections.*
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import io.github.anisharyal09.anice.infrastructure.lan.LanAddress
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class LanRendezvousTests {
+    @Test fun requestWhileConnectedWaitsForRetirementAndIsConsumedOnlyOnce() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, true, 0)
+        assertTrue(gate.claim())
+        repeat(20) { assertFalse(gate.claim(connected = true)) }
+        assertFalse("Retirement alone cannot authorize another attempt", gate.claim())
+        gate.update("ble", true, true, true, 1)
+        repeat(20) {
+            gate.update("ble", true, true, true, 1)
+            assertFalse("A healthy connection must not be replaced", gate.claim(connected = true))
+        }
+        assertTrue("The peer's request must survive delayed local socket retirement", gate.claim())
+        assertFalse(gate.claim())
+        gate.update("ble", true, true, true, 1)
+        assertFalse("Duplicate state must not create a reconnect loop", gate.claim())
+    }
+
+    @Test fun lossOfBoundIPv4IsNotMaskedBySurvivingIPv6() {
+        val ipv4 = java.net.InetAddress.getByName("192.0.2.10")
+        val replacement = java.net.InetAddress.getByName("192.0.2.11")
+        val ipv6 = java.net.InetAddress.getByName("fe80::1")
+        val initial = setOf(ipv4, ipv6)
+        assertFalse(LanAddress.retainsLocalAddress(ipv4, initial, setOf(ipv6)))
+        assertFalse(LanAddress.retainsLocalAddress(ipv4, initial, setOf(replacement, ipv6)))
+        assertTrue(LanAddress.retainsLocalAddress(ipv4, initial, setOf(ipv4)))
+        assertTrue(LanAddress.retainsLocalAddress(ipv6, initial, setOf(ipv6)))
+        assertFalse(LanAddress.retainsLocalAddress(ipv6, initial, setOf(ipv4)))
+        assertTrue(LanAddress.retainsLocalAddress(null, initial, setOf(ipv6)))
+        assertFalse(LanAddress.retainsLocalAddress(null, initial, emptySet()))
+    }
+
     private class Channel(transport: String = "ble", instance: String = "first") : SecuredChannel {
         override val descriptor = ChannelDescriptor(instance, transport, DeviceIdentity("peer", "Mac", "macos", "key", "fingerprint"))
         val sent = mutableListOf<ByteArray>()
@@ -34,6 +66,32 @@ class LanRendezvousTests {
         gate.update("ble-2", true, true, true, 1)
         assertTrue(gate.claim()); assertFalse(gate.claim())
     }
+    @Test fun capacityDuringSuspendedRefusalWakesRendezvousWithoutAnotherEvent() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val link = LanRendezvous(scope) {}
+            val gate = CompletableDeferred<Unit>()
+            val sent = mutableListOf<Int?>()
+            var attempts = 0
+            val channel = object : SecuredChannel {
+                override val descriptor = Channel().descriptor
+                override suspend fun sendData(bytes: ByteArray) {
+                    if (++attempts == 1) { gate.await(); throw SessionBackpressure() }
+                    sent.add(LanRendezvousWire.decode(bytes))
+                }
+            }
+            link.available(channel); yield()
+            link.update(1)
+            link.capacityAvailable(channel.descriptor)
+            gate.complete(Unit)
+            repeat(4) { yield() }
+            assertEquals(listOf(1), sent)
+            assertEquals(2, attempts)
+            link.retired(channel.descriptor)
+            link.capacityAvailable(channel.descriptor); yield()
+            assertEquals(2, attempts)
+        } finally { scope.cancel() }
+    }
     @Test fun repeatedFeatureTrafficDoesNotRearmFailedConnectionAttempts() {
         val gate = LanAttemptGate()
         gate.update("ble", true, true, true, 0)
@@ -49,6 +107,33 @@ class LanRendezvousTests {
         assertTrue(gate.claim())
         gate.update("replacement", true, true, true, 0)
         assertTrue(gate.claimActivity())
+    }
+    @Test fun activityDemandResetsOnlyForANewChannelOrEligibilityInterval() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, false, 0)
+        assertTrue(gate.claimActivity())
+        gate.trigger()
+        assertTrue(gate.claim())
+        for (requests in 0L..3L) {
+            for (ready in listOf(false, true, false)) {
+                gate.update("ble", true, true, ready, requests)
+                assertFalse("Listener and explicit-request events cannot renew ordinary activity", gate.claimActivity())
+                gate.trigger()
+                assertTrue(gate.claim())
+                assertFalse(gate.claim())
+                assertFalse(gate.claimActivity())
+            }
+        }
+        gate.update("ble", false, true, false, 3)
+        assertFalse(gate.claimActivity())
+        gate.update("ble", true, true, false, 3)
+        assertTrue(gate.claimActivity()); assertFalse(gate.claimActivity())
+        gate.update("ble", true, false, false, 3)
+        assertFalse(gate.claimActivity())
+        gate.update("ble", true, true, false, 3)
+        assertTrue(gate.claimActivity()); assertFalse(gate.claimActivity())
+        gate.update("replacement", true, true, false, 3)
+        assertTrue(gate.claimActivity()); assertFalse(gate.claimActivity())
     }
     @Test fun explicitRequestDoesNotChangePeerEligibilityOrEcho() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())

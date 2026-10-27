@@ -191,10 +191,12 @@ public func vorssaintNowPlayingGet() {
        let commandID = function(handle, "MRMediaRemoteCommandInfoGetCommand", as: CommandID.self),
        let commandEnabled = function(handle, "MRMediaRemoteCommandInfoGetEnabled", as: CommandEnabled.self) {
         NativePlayback.supportedCommands(selected, queue: queue) { commands in
+            // A failed query is unknown support; an empty successful list explicitly removes commands.
+            guard let commands else { deliverCapabilities(capabilities.complete(["capabilityState":"unavailable"])); return }
             func supports(_ command: Int32) -> Bool {
-                commands?.contains(where: { commandID($0 as AnyObject)==command && commandEnabled($0 as AnyObject) })==true
+                commands.contains(where: { commandID($0 as AnyObject)==command && commandEnabled($0 as AnyObject) })
             }
-            let values: [String: Any] = ["capabilityState": commands==nil ? "unavailable":"ready",
+            let values: [String: Any] = ["capabilityState":"ready",
                 "canToggle":supports(2),"canPlay":supports(0),"canPause":supports(1),
                 "canSeek":NativePlayback.stringConstant("kMRMediaRemoteOptionPlaybackPosition") != nil && supports(24),
                 "canSkipNext":supports(4),"canSkipPrevious":supports(5)]
@@ -213,6 +215,8 @@ public func vorssaintNowPlayingGet() {
         }
     } else { group.wait() }
     _ = state.wait(timeout: .now() + 0.2)
+    // Publish promptly resolved controls with metadata; command delivery uses a separate queue.
+    if watching { _ = capabilities.wait(until:.now()+0.2) }
     lock.lock()
     var snapshot = reply
     let position = sample

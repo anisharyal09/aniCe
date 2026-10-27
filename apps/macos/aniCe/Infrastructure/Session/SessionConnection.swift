@@ -2,7 +2,59 @@
 // Owns authenticated envelope ordering and deadline-driven transport-independent session maintenance.
 import Foundation
 
-/// Owns EDHOC/envelope ordering and readiness; transport queues remain outside authentication.
+// Only admission waiters are retained here; callers keep plaintext and SecureSession owns sealing.
+actor SessionDataAdmission {
+  private struct Waiter {
+    let id: UUID
+    let bulk: Bool
+    let continuation: CheckedContinuation<Void, Error>
+  }
+  private var active = false
+  private var closed = false
+  private var waiters: [Waiter] = []
+  private var interactiveTurns = 0
+  var pendingCount: Int { waiters.count }
+
+  func run(bulk: Bool, _ action: @Sendable () async throws -> Void) async throws {
+    try Task.checkCancellation()
+    guard !closed else { throw SessionFailure.cancelled }
+    if active {
+      guard waiters.count < 8 else { throw SessionBackpressure() }
+      let id = UUID()
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+          waiters.append(Waiter(id: id, bulk: bulk, continuation: continuation))
+        }
+      } onCancel: { Task { await self.cancel(id) } }
+    } else { active = true }
+    defer { release() }
+    try Task.checkCancellation()
+    guard !closed else { throw SessionFailure.cancelled }
+    try await action()
+  }
+  private func cancel(_ id: UUID) {
+    guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+    waiters.remove(at: index).continuation.resume(throwing: CancellationError())
+  }
+  private func release() {
+    guard !waiters.isEmpty else { active = false; interactiveTurns = 0; return }
+    // Four small-record turns bound bulk starvation; classification uses size until explicit feature priority exists.
+    let bulk = waiters.firstIndex { $0.bulk }
+    let interactive = waiters.firstIndex { !$0.bulk }
+    let index = (interactiveTurns >= 4 ? bulk ?? interactive : interactive ?? bulk)!
+    let next = waiters.remove(at: index)
+    interactiveTurns = next.bulk ? 0 : min(4, interactiveTurns + 1)
+    next.continuation.resume()
+  }
+  func close() {
+    closed = true
+    let pending = waiters
+    waiters.removeAll()
+    for waiter in pending { waiter.continuation.resume(throwing: SessionFailure.cancelled) }
+  }
+}
+
+/// Owns EDHOC/envelope ordering and readiness; DATA admission precedes sealing.
 actor SessionConnection {
   private let handshake: SessionHandshakeEngine
   private let responder: Bool
@@ -20,10 +72,12 @@ actor SessionConnection {
   var isClosed: Bool { closed }
   private var processing = false
   private var sendingData = false
+  private let dataAdmission = SessionDataAdmission()
   private var sendingControl = false
   private var liveness: SessionLiveness?
   private let now: @Sendable () -> Int64
   private var renew: Bool
+  private let drain: @Sendable () async -> Void
   private let changed: @Sendable () -> Void
   private var deadline: Int64?
   var controlSupport: Bool? { liveness?.support }
@@ -39,8 +93,10 @@ actor SessionConnection {
     now: @escaping @Sendable () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1000) },
     renew: Bool = false,
     changed: @escaping @Sendable () -> Void = {},
-    profile: SessionProfile = .standard
+    profile: SessionProfile = .standard,
+    drain: @escaping @Sendable () async -> Void = {}
   ) {
+    self.drain = drain
     self.profile = profile
     self.handshake = handshake
     self.responder = responder
@@ -123,6 +179,7 @@ actor SessionConnection {
           } else { delivery = result.1 }
         case .close:
           closedByPeer = true
+          await drain()
           await close()
         }
         if !closed { try await flushControl(op) }
@@ -154,9 +211,12 @@ actor SessionConnection {
     }
     if op == generation { processing = false }
     changed()
-    // Control has already been flushed and the gate is released, so a slow or failing application
-    // handler can no longer hold up maintenance or the next record.
-    if let delivery { await data(delivery) }
+    // Application delivery releases the maintenance gate; transport callers still await it in record order.
+    if let delivery {
+      let deliveryStart = SessionTiming.start()
+      await data(delivery)
+      SessionTiming.end(self, "delivery", deliveryStart, bytes: delivery.count, profile: profile.rawValue, direction: "receive")
+    }
   }
   private func makeChannel(_ op: Int) async throws {
     // Exporting can suspend; close the newly created channel if ownership was retired meanwhile.
@@ -181,8 +241,15 @@ actor SessionConnection {
     try ensure(op)
     return peer
   }
-  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && !sendingData && liveness?.renewalReason == nil }
+  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && liveness?.renewalReason == nil }
   func sendData(_ bytes: Data) async throws {
+    let admissionStart = SessionTiming.start()
+    try await dataAdmission.run(bulk: bytes.count > SessionProfile.standard.maximumPlaintext) {
+      SessionTiming.end(self, "admission", admissionStart, bytes: bytes.count, profile: self.profile.rawValue, direction: "send")
+      try await self.sendAdmittedData(bytes)
+    }
+  }
+  private func sendAdmittedData(_ bytes: Data) async throws {
     guard !sendingData else { throw SessionBackpressure() }
     sendingData = true
     var refused = false
@@ -198,6 +265,7 @@ actor SessionConnection {
       try ensure(op)
       liveness?.activity(now())
     } catch is SessionBackpressure { refused = true; throw SessionBackpressure() } catch {
+      if error is CancellationError, !closed, let channel, await channel.stage == .secured { throw error }
       await close()
       throw error
     }
@@ -250,6 +318,7 @@ actor SessionConnection {
   }
   func close() async {
     closed = true
+    await dataAdmission.close()
     generation += 1
     processing = false
     sendingData = false

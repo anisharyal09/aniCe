@@ -2,11 +2,16 @@
 // Verifies Android transfer controller lifecycle, cumulative flow control and adversarial chunk handling.
 package io.github.anisharyal09.anice.features.transfer
 
+import io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch
+import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
+import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
+import io.github.anisharyal09.anice.infrastructure.session.SessionDataAdmission
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -46,6 +51,405 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun lanAcknowledgementsFitTheChunksActuallyReceived() {
+        assertEquals(4096L, transferAckThreshold(262016, 8, 4096))
+        assertEquals(8192L, transferAckThreshold(4096, 8, 4096))
+        assertEquals(65536L, transferAckThreshold(262016, 8, 65536))
+        assertEquals(131072L, transferAckThreshold(262016, 8, 131072))
+        assertEquals(65536L, transferAckThreshold(131072, 8, 65536))
+        assertEquals(262015L, transferAckThreshold(262016, 8, 262015))
+        assertEquals(131072L, transferAckThreshold(65536, 8, 65536))
+        assertEquals(524032L, transferAckThreshold(262016, 8, 262016))
+        assertEquals(5000L, transferAckThreshold(5000, 1, 65536))
+        assertEquals(6144L, transferAckThreshold(3072, 4, 4096))
+        assertEquals(24576L, transferAckThreshold(3072, 64, 1))
+    }
+
+    @Test fun delayedLanDoesNotDrainForRecoveryUntilProgressIsConsistentlyTimely() {
+        val window = TransferSendWindow(262016, 8, true, 0)
+        window.beginSubmission(0)
+        window.acknowledged(101, fullyConfirmed = true); window.advance()
+        for (now in 1000L..30000L step 1000) {
+            window.acknowledged(now, fullyConfirmed = false); window.advance()
+            assertEquals("A delayed path must keep its existing pipeline", 131072L, window.creditBytes)
+        }
+        for (now in listOf(30050L, 30100L, 30300L) + (30350L..31200L step 50)) {
+            window.acknowledged(now, fullyConfirmed = false); window.advance()
+            assertEquals("A slow ACK resets recovery qualification", 131072L, window.creditBytes)
+        }
+        window.acknowledged(31300, fullyConfirmed = false); window.advance()
+        assertEquals(65536L, window.creditBytes)
+        window.acknowledged(31550, fullyConfirmed = true); window.advance()
+        assertEquals("A slow drain completion must not strand the one-chunk budget", 4096L, window.creditBytes)
+        window.beginSubmission(31600)
+        window.acknowledged(31700, fullyConfirmed = true); window.advance()
+        assertEquals(2096128L, window.creditBytes)
+    }
+
+    @Test fun constrainedSourceIdleCannotQualifyRecovery() {
+        val window = TransferSendWindow(262016, 8, true, 0)
+        window.beginSubmission(0)
+        for (now in listOf(101L, 150L, 200L)) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
+        window.beginSubmission(10000, windowEmpty = true)
+        window.acknowledged(10050, fullyConfirmed = true); window.advance()
+        assertEquals("Source idle is not sustained ACK progress", 131072L, window.creditBytes)
+    }
+
+    @Test fun delayedLanAmortizesValidationWithoutExceedingPeerCredit() {
+        for (latency in listOf(101L, 600L, 1500L)) {
+            val chunkLimits = listOf(3072L, 4096L, 5000L, 65535L, 65536L, 131071L, 131072L, 131073L, 262016L)
+            assertTrue(chunkLimits.size >= 9)
+            for (maximumChunk in chunkLimits) {
+                for (maximumWindow in listOf(1L, 2L, 8L)) {
+                    val window = TransferSendWindow(maximumChunk, maximumWindow, true, 0)
+                    window.beginSubmission(0)
+                    window.acknowledged(latency, fullyConfirmed = true); window.advance()
+                    val expectedChunk = minOf(maximumChunk, 65536L)
+                    assertEquals(expectedChunk, window.chunkBytes)
+                    assertEquals(expectedChunk * (if (maximumChunk > 4096) minOf(maximumWindow, 2L) else maximumWindow), window.creditBytes)
+                    assertTrue(window.creditBytes <= maximumChunk * maximumWindow)
+                }
+            }
+        }
+    }
+
+    @Test fun lanProbeExcludesSourcePreparationButCountsTheWholeSubmission() {
+        for (latency in listOf(100L, 101L)) {
+            val window = TransferSendWindow(262016, 8, true, 0)
+            window.beginSubmission(3000)
+            window.beginSubmission(3090)
+            window.acknowledged(3000 + latency, fullyConfirmed = true)
+            window.advance()
+            assertEquals(if (latency == 100L) 262016L else 65536L, window.chunkBytes)
+        }
+        val fast = TransferSendWindow(262016, 8, true, 0)
+        fast.beginSubmission(0)
+        fast.acknowledged(50, fullyConfirmed = true); fast.advance()
+        fast.beginSubmission(5000, windowEmpty = true)
+        fast.acknowledged(5050, fullyConfirmed = true); fast.advance()
+        assertEquals("Source idle time with no outstanding bytes cannot mark LAN slow", 262016L, fast.chunkBytes)
+        fast.beginSubmission(6000, windowEmpty = false)
+        fast.acknowledged(6051, fullyConfirmed = false); fast.advance()
+        assertEquals("An outstanding-data stall must still shrink the window", 65536L, fast.chunkBytes)
+        val resumed = TransferSendWindow(262016, 8, true, 0)
+        resumed.beginSubmission(3000)
+        resumed.acknowledged(3101, fullyConfirmed = true); resumed.advance()
+        resumed.acknowledged(7999, fullyConfirmed = true); resumed.advance()
+        assertEquals("Recovery interval starts at actual probe submission", 131072L, resumed.creditBytes)
+        for (now in 8000L..8900L step 50) {
+            resumed.acknowledged(now, fullyConfirmed = true); resumed.advance()
+            assertEquals(131072L, resumed.creditBytes)
+        }
+        resumed.acknowledged(9000, fullyConfirmed = true); resumed.advance()
+        assertEquals(4096L, resumed.creditBytes)
+        resumed.beginSubmission(11000)
+        resumed.acknowledged(11050, fullyConfirmed = false); resumed.advance()
+        assertEquals("Partial confirmation must not open a large window", 4096L, resumed.creditBytes)
+        resumed.acknowledged(11101, fullyConfirmed = true); resumed.advance()
+        assertEquals("A slow retry probe must remain constrained", 131072L, resumed.creditBytes)
+    }
+
+    @Test fun sustainedConstrainedTrafficDrainsForAFreshLanProbe() = runBlocking {
+        val now = java.util.concurrent.atomic.AtomicLong(0)
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { now.get() })
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        val source = File(tempDir, "requalify.bin").apply { writeBytes(ByteArray(10 * 262016)) }
+        fun chunks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 5L }
+        suspend fun awaitChunks(count: Int) { withTimeout(3000) { while (chunks().size < count) delay(5) } }
+        try {
+            owner.sendFiles(listOf(source))
+            withTimeout(3000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            awaitChunks(1)
+            now.set(101)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
+            awaitChunks(3)
+            for ((index, time) in (listOf(200L, 300L, 400L, 5000L) + (5050L..5950L step 50)).withIndex()) {
+                now.set(time)
+                owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + (index + 1) * 65536L).encode())
+                awaitChunks(index + 4)
+            }
+            // Short ACK bursts do not qualify recovery; a full second of steady progress does.
+            now.set(6000)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 24 * 65536L).encode())
+            delay(60)
+            assertEquals("Requalification must stop replacing acknowledged chunks", 26, chunks().size)
+            now.set(6010)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 25 * 65536L).encode())
+            awaitChunks(27)
+            assertEquals(4096, chunks().last().bytes(3).size)
+            now.set(6060)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192L + 25 * 65536L).encode())
+            awaitChunks(28)
+            assertEquals(262016, chunks()[27].bytes(3).size)
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun pendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() = runBlocking {
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(2, 8192, 8).encode(262016))
+        val (batch, file) = offered(owner, channel, 65536)
+        fun acks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 6L }
+        channel.onSendData = { bytes ->
+            if (TransferMessage.decode(bytes, 262016)?.kind == 6L && acks().size == 1) release.await()
+        }
+        try {
+            owner.acceptIncomingOffer(tempDir)
+            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(8192)).encode(262016))
+            withTimeout(1000) { while (acks().isEmpty()) delay(5) }
+            owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 8192, ByteArray(8192)).encode(262016))
+            // The second chunk's timer fires while the first ACK is still being submitted.
+            delay(60)
+            assertEquals(1, acks().size)
+            release.complete(Unit)
+            withTimeout(1000) { while (acks().size < 2) delay(5) }
+            assertEquals(listOf(8192L, 16384L), acks().map { it.number(2) })
+            delay(60)
+            assertEquals("No ACK polling after credit is drained", 2, acks().size)
+        } finally { release.complete(Unit); owner.dismiss() }
+    }
+
+    @Test fun shrinkingLanWindowRetainsTheReplacementCreditWaiter() = runBlocking {
+        val now = java.util.concurrent.atomic.AtomicLong(0)
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { now.get() })
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        val source = File(tempDir, "shrinking-window.bin").apply { writeBytes(ByteArray(10 * 262016)) }
+        fun chunks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 5L }
+        try {
+            owner.sendFiles(listOf(source))
+            withTimeout(3000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            withTimeout(3000) { while (chunks().isEmpty()) delay(5) }
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
+            withTimeout(3000) { while (chunks().size < 9) delay(5) }
+            delay(60)
+            assertTrue(chunks().drop(1).all { it.bytes(3).size == 262016 })
+            now.set(2000)
+            // This wakes the old large-window waiter, which must register a new small-window wait inline.
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 262016).encode())
+            assertEquals(9, chunks().size)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 8 * 262016).encode())
+            withTimeout(1000) { while (chunks().size < 11) delay(5) }
+            assertTrue(chunks().takeLast(2).all { it.bytes(3).size == 65536 })
+            assertTrue(source.exists())
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun constrainedLanRequalifiesOnlyWithADrainedWindowAndANewCompleteProbe() {
+        val window = TransferSendWindow(262016, 8, true, 0)
+        window.acknowledged(101, fullyConfirmed = true); window.advance()
+        for (now in 3800L..4900L step 100) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
+        assertEquals(131072L, window.creditBytes)
+        window.acknowledged(5000, fullyConfirmed = false)
+        assertEquals("The current source read retains its budget", 131072L, window.creditBytes)
+        window.advance()
+        assertEquals("Drain outstanding bytes before another probe", 65536L, window.creditBytes)
+        window.acknowledged(5000, fullyConfirmed = true)
+        assertEquals(65536L, window.creditBytes)
+        window.advance()
+        assertEquals(4096L, window.creditBytes)
+        window.acknowledged(5090, fullyConfirmed = false); window.advance()
+        window.acknowledged(5150, fullyConfirmed = true); window.advance()
+        assertEquals("Partial confirmation cannot disguise a slow probe", 131072L, window.creditBytes)
+        for (now in 10000L..11000L step 50) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
+        assertEquals(4096L, window.creditBytes)
+        window.acknowledged(11050, fullyConfirmed = true); window.advance()
+        assertEquals(262016L, window.chunkBytes); assertEquals(2096128L, window.creditBytes)
+    }
+
+    @Test fun lanSendWindowRequiresTimelyProgressAndAppliesChangesBetweenRecords() {
+        for (delay in listOf(100L, 101L)) {
+            val window = TransferSendWindow(262016, 8, true, 0)
+            assertEquals(4096L, window.chunkBytes); assertEquals(4096L, window.creditBytes)
+            window.acknowledged(delay, fullyConfirmed = true)
+            assertEquals("An admitted read keeps its window", 4096L, window.creditBytes)
+            window.advance()
+            assertEquals(if (delay == 100L) 262016L else 65536L, window.chunkBytes)
+            assertEquals(if (delay == 100L) 2096128L else 131072L, window.creditBytes)
+            window.acknowledged(delay + 1001, fullyConfirmed = true)
+            window.advance()
+            assertEquals(65536L, window.chunkBytes); assertEquals(131072L, window.creditBytes)
+            window.acknowledged(delay + 1002, fullyConfirmed = true); window.advance()
+            assertEquals("Fast subsequent ACKs cannot oscillate the window", 131072L, window.creditBytes)
+        }
+        val single = TransferSendWindow(5000, 1, true, 0)
+        single.acknowledged(101, fullyConfirmed = true); single.advance()
+        assertEquals(5000L, single.creditBytes)
+        val ble = TransferSendWindow(3072, 4, false, 0)
+        ble.acknowledged(5000, fullyConfirmed = true); ble.advance()
+        assertEquals(3072L, ble.chunkBytes); assertEquals(12288L, ble.creditBytes)
+        val partial = TransferSendWindow(262016, 8, true, 0)
+        partial.acknowledged(90, fullyConfirmed = false); partial.advance()
+        assertEquals(4096L, partial.creditBytes)
+        partial.acknowledged(150, fullyConfirmed = true); partial.advance()
+        assertEquals("Partial ACK must not reset the probe's start time", 131072L, partial.creditBytes)
+    }
+    @Test fun receiverResumeExcludesLaterOldChannelWritesUntilRebindingCompletes() = runBlocking {
+        val lane = QueuedTransferStorageDispatcher()
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher, receiveDispatcher = lane)
+        val ble = MockAndroidSecuredChannel(instance = "old", transport = "ble")
+        val lan = MockAndroidSecuredChannel(instance = "new")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        val (batch, file) = offered(owner, ble, 3)
+        suspend fun pumpUntil(done: () -> Boolean) = withTimeout(2000) {
+            while (!done()) { if (lane.pending > 0) lane.runNext(); kotlinx.coroutines.yield() }
+        }
+        val accept = async { owner.acceptIncomingOffer(tempDir) }
+        pumpUntil { accept.isCompleted }; accept.await()
+        owner.available(lan)
+        owner.handle(lan.descriptor, TransferMessage.capability().encode())
+        val resume = async {
+            owner.ingest(lan.descriptor, TransferMessage.resume(batch, file, 0,
+                MessageDigest.getInstance("SHA-256").digest(ByteArray(0))).encode())
+        }
+        try {
+            withTimeout(1000) { while (lane.pending == 0) delay(1) }
+            assertEquals(DataHandling.QUEUED, owner.ingest(ble.descriptor,
+                TransferMessage.chunk(batch, file, 0, byteArrayOf(1)).encode()))
+            delay(50)
+            assertEquals("An old-channel write crossed resume verification", 1, lane.pending)
+            pumpUntil { resume.isCompleted }; assertEquals(DataHandling.QUEUED, resume.await())
+            val rebound = async { owner.drain(lan.descriptor) }
+            pumpUntil { rebound.isCompleted }; rebound.await()
+            val status = lan.sentData.mapNotNull { TransferMessage.decode(it) }.single { it.kind == 11L }
+            assertEquals(0L, status.number(2)); assertEquals(0L, status.number(3))
+            owner.ingest(lan.descriptor, TransferMessage.chunk(batch, file, 0, ByteArray(3)).encode())
+            pumpUntil { owner.state is TransferState.Completed }
+            assertArrayEquals(ByteArray(3), File(tempDir, "empty.bin").readBytes())
+        } finally {
+            resume.cancel(); owner.dismiss()
+            pumpUntil { lane.pending == 0 && tempDir.listFiles()!!.none { it.name.endsWith(".part") } }
+        }
+    }
+
+    @Test fun orderedDeliveryContinuesWhileTransferStorageWaits() = runBlocking {
+        val lane = QueuedTransferStorageDispatcher()
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher, receiveDispatcher = lane)
+        val channel = MockAndroidSecuredChannel()
+        val dispatch = FeatureDispatch()
+        val control = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var chunkActivity = 0
+        dispatch.applicationActivity = { _, bytes -> if (TransferMessage.peekKind(bytes) == 5) chunkActivity++ }
+        dispatch.register(owner)
+        dispatch.register(object : FeatureHandler {
+            override fun available(channel: SecuredChannel) {}
+            override fun retired(descriptor: ChannelDescriptor) {}
+            override fun capacityAvailable(descriptor: ChannelDescriptor) {}
+            override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+                if (!bytes.contentEquals(byteArrayOf(0))) return DataHandling.UNRECOGNIZED
+                control.complete(Unit); return DataHandling.HANDLED
+            }
+        })
+        dispatch.available(channel.descriptor) { channel.sendData(it) }
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        val (batch, file) = offered(owner, channel, 2)
+        val accept = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { owner.acceptIncomingOffer(tempDir) }
+        withTimeout(1000) {
+            while (!accept.isCompleted) {
+                if (lane.pending > 0) lane.runNext()
+                kotlinx.coroutines.yield()
+            }
+            accept.await()
+        }
+        val input = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+        val consumer = launch {
+            for (bytes in input) dispatch.handle("lan", channel.descriptor.instance, bytes)
+        }
+        try {
+            input.send(TransferMessage.chunk(batch, file, 0, byteArrayOf(0)).encode())
+            input.send(byteArrayOf(0))
+            withTimeout(1000) { while (lane.pending == 0) delay(1) }
+            var heartbeat = false
+            launch { heartbeat = true }.join()
+            assertTrue("Awaited storage does not block the presentation dispatcher", heartbeat)
+            withTimeout(1000) { control.await() }
+            assertTrue("Later controls bypass pending transfer storage", control.isCompleted)
+            val partial = tempDir.listFiles()!!.single { it.name.endsWith(".part") }
+            assertEquals(0L, partial.length())
+            assertEquals("Queue admission is not successful handling", 0, chunkActivity)
+            assertFalse(channel.sentData.any { TransferMessage.decode(it)?.kind == 6L })
+            lane.runNext()
+            withTimeout(1000) { control.await() }
+            assertEquals(1L, partial.length())
+            withTimeout(1000) { while (chunkActivity == 0) delay(1) }
+            assertEquals(1, chunkActivity)
+        } finally {
+            input.close(); consumer.cancel()
+            owner.dismiss()
+            withTimeout(1000) {
+                while (lane.pending > 0 || tempDir.listFiles()!!.any { it.name.endsWith(".part") }) {
+                    if (lane.pending > 0) lane.runNext()
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+    }
+
+    @Test fun ingressUsesLocalReceiveCreditWithAsymmetricPeerCapability() = runBlocking {
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        val dispatch = FeatureDispatch()
+        dispatch.register(owner); dispatch.available(channel.descriptor) { channel.sendData(it) }
+        try {
+            owner.handle(channel.descriptor, TransferMessage.capability(3, 1, 1).encode(262016))
+            val (batch, file) = offered(owner, channel, 131072)
+            owner.acceptIncomingOffer(tempDir)
+            val payload = TransferMessage.chunk(batch, file, 0, ByteArray(131072)).encode(262016)
+            assertEquals(DataHandling.QUEUED, dispatch.handle("lan", channel.descriptor.instance, payload))
+            withTimeout(2000) { dispatch.drain("lan", channel.descriptor.instance) }
+            assertArrayEquals(ByteArray(131072), File(tempDir, "empty.bin").readBytes())
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun cancelledOrRetiredIngressNeverAcknowledgesQueuedChunks() = runBlocking {
+        for (retire in listOf(false, true)) {
+            val lane = QueuedTransferStorageDispatcher()
+            val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher, receiveDispatcher = lane)
+            val channel = MockAndroidSecuredChannel(instance = "ingress-$retire")
+            owner.available(channel)
+            owner.handle(channel.descriptor, TransferMessage.capability().encode())
+            val (batch, file) = offered(owner, channel, 3)
+            val accept = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { owner.acceptIncomingOffer(tempDir) }
+            withTimeout(1000) {
+                while (!accept.isCompleted) { if (lane.pending > 0) lane.runNext(); kotlinx.coroutines.yield() }
+                accept.await()
+            }
+            assertEquals(DataHandling.QUEUED, owner.ingest(channel.descriptor,
+                TransferMessage.chunk(batch, file, 0, byteArrayOf(1)).encode()))
+            withTimeout(1000) { while (lane.pending == 0) delay(1) }
+            assertEquals(DataHandling.QUEUED, owner.ingest(channel.descriptor,
+                TransferMessage.chunk(batch, file, 1, byteArrayOf(2)).encode()))
+            if (retire) owner.retired(channel.descriptor) else owner.cancelTransfer()
+            val draining = async { owner.drain(channel.descriptor) }
+            withTimeout(1000) {
+                while (lane.pending > 0 || !draining.isCompleted) {
+                    if (lane.pending > 0) lane.runNext()
+                    kotlinx.coroutines.yield()
+                }
+                draining.await()
+            }
+            assertFalse(channel.sentData.any { TransferMessage.decode(it)?.kind == 6L })
+            assertFalse(owner.state is TransferState.Transferring)
+            owner.dismiss()
+            withTimeout(1000) {
+                while (lane.pending > 0 || tempDir.listFiles()!!.any { it.name.endsWith(".part") }) {
+                    if (lane.pending > 0) lane.runNext()
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+    }
+
     @Test fun lateConfirmationStaysPendingWithoutCapacitySpinOrExtendingExpiry() = runBlocking {
         val now = java.util.concurrent.atomic.AtomicLong(0)
         val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { now.get() },
@@ -168,10 +572,11 @@ class TransferControllerTests {
         owner.available(ble)
         owner.handle(ble.descriptor, TransferMessage.capability().encode())
         owner.available(lan)
-        assertSame(lan, owner.activeChannel)
-        assertFalse(owner.peerCompatible)
+        assertSame(ble, owner.activeChannel)
+        assertTrue(owner.peerCompatible)
         owner.retired(ble.descriptor)
         assertSame(lan, owner.activeChannel)
+        assertFalse(owner.peerCompatible)
         owner.handle(lan.descriptor, TransferMessage.capability().encode())
         val successor = MockAndroidSecuredChannel(instance = "successor")
         owner.available(successor)
@@ -697,8 +1102,84 @@ class TransferControllerTests {
         owner.dismiss()
     }
 
+    @Test fun delayedBatchCompletionCannotCleanUpReplacementOffer() = runBlocking {
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
+        val channel = MockAndroidSecuredChannel()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        channel.onSendData = { bytes ->
+            val message = TransferMessage.decode(bytes)
+            if (message?.kind == 8L) { entered.complete(Unit); release.await() }
+        }
+        try {
+            owner.sendFiles(listOf(File(tempDir, "empty.bin").apply { writeBytes(byteArrayOf()) }))
+            withTimeout(2000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            withTimeout(2000) { while (owner.state !is TransferState.Transferring) delay(5) }
+            val file = batch.files.single()
+            owner.handle(channel.descriptor, TransferMessage.fileResult(batch.id, file.id, 0, file.sha256).encode())
+            withTimeout(2000) { entered.await() }
+            owner.cancelTransfer(local = false)
+            offered(owner, channel, 1)
+            val replacement = owner.state
+            release.complete(Unit)
+            delay(60)
+            assertEquals(replacement, owner.state)
+            assertTrue(owner.state is TransferState.IncomingOffer)
+        } finally { release.complete(Unit); owner.dismiss() }
+    }
+
+    @Test fun cancelledSourceOpenCannotStealReplacementFileConfirmation() = runBlocking {
+        val opened = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        val closed = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var first = true
+        val owner = TransferController(
+            dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher,
+            openSource = { file ->
+                if (first) {
+                    first = false
+                    opened.complete(Unit)
+                    check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    object : java.io.ByteArrayInputStream(byteArrayOf()) {
+                        override fun close() { super.close(); closed.complete(Unit) }
+                    }
+                } else java.io.FileInputStream(file.sourceFile!!)
+            })
+        val channel = MockAndroidSecuredChannel()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        suspend fun start(name: String): TransferBatch {
+            owner.sendFiles(listOf(File(tempDir, name).apply { writeBytes(byteArrayOf()) }))
+            withTimeout(2000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            return batch
+        }
+        try {
+            start("old.bin")
+            withTimeout(2000) { opened.await() }
+            owner.cancelTransfer(local = false)
+            val next = start("new.bin")
+            withTimeout(2000) { while (owner.state !is TransferState.Transferring) delay(5) }
+            delay(30)
+            release.countDown()
+            withTimeout(2000) { closed.await() }
+            delay(30)
+            val file = next.files.single()
+            owner.handle(channel.descriptor, TransferMessage.fileResult(next.id, file.id, 0, file.sha256).encode())
+            withTimeout(2000) { while (owner.state !is TransferState.Completed) delay(5) }
+            assertEquals(next.id, (owner.state as TransferState.Completed).batchId)
+            assertTrue(File(tempDir, "old.bin").exists())
+            assertTrue(File(tempDir, "new.bin").exists())
+        } finally { release.countDown(); owner.dismiss() }
+    }
+
     @Test fun explicitSendAcquiresOwnershipBeforeHashingAndReleasesItOnCancel() = runBlocking {
-        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
         val channel = MockAndroidSecuredChannel()
         owner.available(channel)
         owner.handle(channel.descriptor, TransferMessage.capability().encode())
@@ -739,7 +1220,26 @@ class TransferControllerTests {
         owner.dismiss()
     }
 
-    @Test fun readyBluetoothStartsAnOfferWhileLanDemandIsPending() = runBlocking {
+    @Test fun incapableLanDoesNotSuppressBluetoothFallback() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
+        val lan = MockAndroidSecuredChannel(instance = "lan", transport = "lan")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        owner.available(lan)
+        owner.onDemandLanConnection = { true }
+        val source = File(tempDir, "fallback.bin").apply { writeBytes(byteArrayOf(1)) }
+        try {
+            owner.sendFiles(listOf(source))
+            assertTrue(owner.state is TransferState.Connecting)
+            owner.onLanUnavailable("LAN capability unavailable")
+            withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
+            assertTrue(owner.state is TransferState.WaitingForPeerApproval)
+            assertFalse(lan.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun readyBluetoothWaitsForRequestedLanBeforeOffering() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
         owner.available(ble)
@@ -749,18 +1249,22 @@ class TransferControllerTests {
         val source = File(tempDir, "source.bin").apply { writeBytes(ByteArray(1024)) }
         try {
             owner.sendFiles(listOf(source))
-            withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
             assertEquals(1, demands)
+            assertTrue(owner.state is TransferState.Connecting)
+            delay(60)
+            assertTrue("BLE must not take the offer while requested LAN is pending",
+                ble.sentData.none { TransferMessage.decode(it)?.kind == 2L })
+            val lan = MockAndroidSecuredChannel(instance = "lan", transport = "lan", maximumDataBytes = 262144)
+            owner.available(lan)
+            owner.handle(lan.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+            withTimeout(2000) { while (lan.sentData.none { TransferMessage.decode(it, 262016)?.kind == 2L }) delay(5) }
             assertTrue(owner.state is TransferState.WaitingForPeerApproval)
-            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
-            owner.onLanUnavailable("Local network unavailable")
-            assertEquals(batch, (owner.state as TransferState.WaitingForPeerApproval).batch)
-            owner.handle(ble.descriptor, TransferMessage.capability().encode())
-            assertEquals(1, ble.sentData.count { TransferMessage.decode(it)?.kind == 2L })
+            assertEquals("lan", owner.activeChannel?.descriptor?.transport)
+            assertTrue(ble.sentData.none { TransferMessage.decode(it)?.kind == 2L })
         } finally { owner.dismiss() }
     }
 
-    @Test fun lateBluetoothCapabilityReleasesAPendingSendWithoutWaitingForLan() = runBlocking {
+    @Test fun bluetoothCapabilityDoesNotPreemptRequestedLanRendezvous() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val ble = MockAndroidSecuredChannel(instance = "ble", transport = "ble")
         owner.available(ble)
@@ -769,8 +1273,11 @@ class TransferControllerTests {
         try {
             owner.sendFiles(listOf(source))
             assertTrue(owner.state is TransferState.Connecting)
-            assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
             owner.handle(ble.descriptor, TransferMessage.capability().encode())
+            delay(60)
+            assertTrue(owner.state is TransferState.Connecting)
+            assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+            owner.onLanUnavailable("Local network unavailable")
             withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
             assertTrue(owner.state is TransferState.WaitingForPeerApproval)
         } finally { owner.dismiss() }
@@ -902,34 +1409,72 @@ class TransferControllerTests {
         return batch to file
     }
 
-    @Test fun cancellationDoesNotCancelSubmittedAckOrDamageNextOffer() = runBlocking {
-        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+    @Test fun failedAckWaitsForExternalCapacityInsteadOfRetryingItself() = runBlocking {
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
         val channel = MockAndroidSecuredChannel()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var attempts = 0
+        var failed = true
         owner.available(channel)
         owner.handle(channel.descriptor, TransferMessage.capability().encode())
         val (batch, file) = offered(owner, channel, 100_000)
-        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
-        var cancelled = false
         channel.onSendData = { bytes ->
             if (TransferMessage.decode(bytes)?.kind == 6L) {
-                started.complete(Unit)
-                try { release.await() } catch (error: kotlinx.coroutines.CancellationException) { cancelled = true; throw error }
+                attempts++
+                release.await()
+                // Bound the broken retry loop so a regression fails instead of hanging.
+                if (failed && attempts < 8) throw java.io.IOException("Injected ACK failure")
             }
         }
-        owner.acceptIncomingOffer(tempDir)
-        repeat(8) { index -> owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, index * 3072L, ByteArray(3072)).encode()) }
-        kotlinx.coroutines.withTimeout(1000) { started.await() }
-        owner.cancelTransfer(local = false)
-        owner.handle(channel.descriptor, TransferMessage.chunk(batch, file, 8 * 3072L, ByteArray(3072)).encode())
-        assertEquals(TransferState.Cancelled, owner.state)
-        offered(owner, channel, 1L)
-        val next = owner.state
-        release.complete(Unit)
-        delay(20)
-        assertFalse("Logical cancellation must not cancel an already-submitted record", cancelled)
-        assertEquals(next, owner.state)
-        assertTrue(next is TransferState.IncomingOffer)
+        try {
+            owner.acceptIncomingOffer(tempDir)
+            withTimeout(2000) { while (owner.state !is TransferState.Transferring) delay(5) }
+            repeat(8) { index -> owner.handle(channel.descriptor,
+                TransferMessage.chunk(batch, file, index * 3072L, ByteArray(3072)).encode()) }
+            withTimeout(2000) { while (attempts == 0) delay(5) }
+            delay(30) // Let the previously scheduled ACK deadline fire while submission is held.
+            release.complete(Unit)
+            delay(60)
+            assertEquals(1, attempts)
+            failed = false
+            owner.capacityAvailable(channel.descriptor)
+            withTimeout(2000) { while (attempts < 2) delay(5) }
+            assertEquals(2, attempts)
+        } finally { release.complete(Unit); owner.dismiss() }
+    }
+
+    @Test fun cancellationRemovesUnsealedAckWithoutDamagingNextOffer() = runBlocking {
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
+        val channel = MockAndroidSecuredChannel()
+        val admission = SessionDataAdmission()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val active = launch {
+            admission.run(true) { entered.complete(Unit); release.await() }
+        }
+        var submitted = false
+        try {
+            withTimeout(1000) { entered.await() }
+            owner.available(channel)
+            owner.handle(channel.descriptor, TransferMessage.capability().encode())
+            val (batch, file) = offered(owner, channel, 100_000)
+            channel.onSendData = { bytes ->
+                if (TransferMessage.decode(bytes)?.kind == 6L) admission.run(false) { submitted = true }
+            }
+            owner.acceptIncomingOffer(tempDir)
+            repeat(8) { index -> owner.handle(channel.descriptor,
+                TransferMessage.chunk(batch, file, index * 3072L, ByteArray(3072)).encode()) }
+            withTimeout(1000) { while (admission.pendingCount != 1) delay(1) }
+            owner.cancelTransfer(local = false)
+            withTimeout(1000) { while (admission.pendingCount != 0) delay(1) }
+            assertEquals(TransferState.Cancelled, owner.state)
+            offered(owner, channel, 1L)
+            val next = owner.state
+            release.complete(Unit); withTimeout(1000) { active.join() }
+            assertFalse("Cancelled transfer ACK must not acquire a nonce later", submitted)
+            assertEquals(next, owner.state)
+            assertTrue(next is TransferState.IncomingOffer)
+        } finally { release.complete(Unit); owner.dismiss(); active.cancel() }
     }
 
     @Test fun failedFinalizationCannotSendSuccess() = runBlocking {
@@ -1019,13 +1564,54 @@ class TransferControllerTests {
     @Test fun bleFallbackStreamsAndVerifiesBatch() = verifyBatch("ble")
 
 
+    @Test fun slowLanCreditBoundsSubmittedBytesAndRejectsInvalidAcknowledgements() = runBlocking {
+        var now = 0L
+        val owner = TransferController(dispatcher = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher,
+            clock = { now })
+        val channel = MockAndroidSecuredChannel(maximumDataBytes = 262144)
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability(3, 262016, 8).encode(262016))
+        val source = File(tempDir, "credit.bin").apply { writeBytes(ByteArray(8 * 262016 + 7)) }
+        fun chunks() = channel.sentData.mapNotNull { TransferMessage.decode(it, 262016) }.filter { it.kind == 5L }
+        try {
+            owner.sendFiles(listOf(source))
+            withTimeout(3000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            val batch = (owner.state as TransferState.WaitingForPeerApproval).batch
+            owner.handle(channel.descriptor, TransferMessage.accept(batch.id).encode())
+            withTimeout(3000) { while (chunks().isEmpty()) delay(5) }
+            delay(60)
+            assertEquals("Only one small record precedes confirmed progress", 1, chunks().size)
+            assertEquals(4096, chunks().single().bytes(3).size)
+            now = 90
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 1).encode())
+            delay(30)
+            assertEquals("Partial probe confirmation cannot admit another record", 1, chunks().size)
+            now = 150
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
+            withTimeout(3000) { while (chunks().size < 3) delay(5) }
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4097).encode())
+            delay(60)
+            assertEquals("Partial ACK cannot admit a whole chunk beyond the byte budget", 3, chunks().size)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 9L * 262016 + 1).encode())
+            delay(60)
+            assertEquals("Unsubmitted bytes cannot grant credit", 3, chunks().size)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 69632).encode())
+            withTimeout(3000) { while (chunks().size < 4) delay(5) }
+            delay(60)
+            assertEquals(4, chunks().size)
+            assertEquals(listOf(4096, 65536, 65536, 65536), chunks().map { it.bytes(3).size })
+            assertEquals(listOf(0L, 4096L, 69632L, 135168L), chunks().map { it.number(2) })
+            assertTrue(source.exists())
+        } finally { owner.dismiss() }
+    }
+
     @Test fun largerLanChunksStreamAcrossCreditWindows() = verifyBatch("lan", 262016)
 
     private fun verifyBatch(transport: String, maximumChunkBytes: Int = 3072) = runBlocking {
         val maximumDataBytes = if (maximumChunkBytes > 3072) 262144 else 4000
         val version = when { maximumChunkBytes > 131072 -> 3; maximumChunkBytes > 3072 -> 2; else -> 1 }
         val capability = TransferMessage.capability(version.toLong(), maximumChunkBytes.toLong(), if (maximumChunkBytes > 3072) 8 else 64).encode(maximumChunkBytes)
-        val sender = TransferController(dispatcher = Dispatchers.Unconfined)
+        val sender = TransferController(dispatcher = Dispatchers.Unconfined, clock = { 0L })
         val receiver = TransferController(dispatcher = Dispatchers.Unconfined)
 
         val senderChannel = MockAndroidSecuredChannel(maximumDataBytes = maximumDataBytes, transport = transport, deviceName = "Phone")
@@ -1051,7 +1637,7 @@ class TransferControllerTests {
 
         sender.sendFiles(listOf(testFile))
 
-        for (i in 0 until 50) {
+        for (i in 0 until 500) {
             if (receiver.state is TransferState.IncomingOffer) break
             delay(10)
         }
@@ -1086,7 +1672,8 @@ class TransferControllerTests {
         if (maximumChunkBytes > 3072) {
             val chunks = senderChannel.sentData.mapNotNull { TransferMessage.decode(it, maximumChunkBytes) }.filter { it.kind == 5L }
             assertFalse(chunks.isEmpty())
-            assertEquals(maximumChunkBytes, chunks.first().bytes(3).size)
+            assertEquals(4096, chunks.first().bytes(3).size)
+            assertTrue("A timely probe must enable negotiated large chunks", chunks.any { it.bytes(3).size == maximumChunkBytes })
             assertTrue(chunks.all { it.bytes(3).size in 1..maximumChunkBytes })
         }
 

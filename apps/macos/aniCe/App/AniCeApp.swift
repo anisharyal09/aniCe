@@ -74,7 +74,7 @@ struct AniCeApp: App {
     let lan = MacLanSessionModel(identity: identity.service, peers: peers, preferences: .standard, store: { try await pairing.sessionStore() })
     _lan = State(initialValue: lan)
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
-    transfer.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
+    transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     let smsPreferences = SmsPreferences(storage: .standard)
     _smsPreferences = State(initialValue: smsPreferences)
     let smsNotifier = MacSmsNotifier(preferences: smsPreferences)
@@ -118,6 +118,8 @@ struct AniCeApp: App {
     }
     session.channelCapacityChanged = { features.capacityAvailable("ble") }
     lan.channelCapacityChanged = { features.capacityAvailable("lan") }
+    session.applicationDataDrained = { [weak session] in await features.drain("ble", instance: session?.channelToken) }
+    lan.applicationDataDrained = { [weak lan] in await features.drain("lan", instance: lan?.channelToken) }
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
     lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)

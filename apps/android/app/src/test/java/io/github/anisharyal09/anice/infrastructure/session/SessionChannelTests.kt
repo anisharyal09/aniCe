@@ -23,6 +23,72 @@ class SessionChannelTests {
     }
   }
 
+  @Test fun cancellationProtectsOnlyNonceOwnedWork() = runBlocking {
+    val row = vectors().getJSONArray("valid").getJSONObject(0)
+    for (phase in listOf("validation", "capacity", "submission", "postvalidation")) {
+      val entered = CompletableDeferred<Unit>()
+      val release = CompletableDeferred<Unit>()
+      var hold = false
+      var loads = 0
+      val output = java.util.Collections.synchronizedList(mutableListOf<ByteArray>())
+      suspend fun pause() { entered.complete(Unit); withContext(NonCancellable) { release.await() } }
+      val ch = channel(validate = {
+        loads++
+        if (hold && (phase == "validation" && loads == 1 || phase == "postvalidation" && loads == 2)) pause()
+      }, capacity = { if (hold && phase == "capacity") pause(); true }, submit = {
+        if (hold && phase == "submission") pause()
+        output.add(it)
+      })
+      try {
+        ch.send(RecordKind.READY)
+        ch.receive(SessionRecordCodec.seal(b(row, "key"), b(row, "iv"), b(row, "session"),
+          2, RecordKind.READY_ACK, 0uL, byteArrayOf()))
+        loads = 0; hold = true
+        val send = launch { ch.send(RecordKind.DATA, byteArrayOf(7)) }
+        withTimeout(1000) { entered.await() }
+        send.cancel()
+        val owned = phase == "submission" || phase == "postvalidation"
+        assertEquals(if (owned) 2uL else 1uL, ch.sent)
+        hold = false; release.complete(Unit)
+        withTimeout(1000) { send.join() }
+        assertTrue(send.isCancelled)
+        assertEquals(ChannelStage.SECURED, ch.stage)
+        assertEquals(if (owned) 2 else 1, output.size)
+        assertEquals(if (owned) 2uL else 1uL, ch.sent)
+        ch.send(RecordKind.DATA, byteArrayOf(9))
+        val next = if (owned) 2uL else 1uL
+        assertArrayEquals(byteArrayOf(9), SessionRecordCodec.open(b(row, "key"), b(row, "iv"),
+          b(row, "session"), 1, next, output.last()).second)
+      } finally { release.complete(Unit); ch.close() }
+    }
+  }
+
+  @Test fun recordTimingCorrelatesStagesAndRetainsFailedAuthenticationTiming() = runBlocking {
+    val lines = java.util.Collections.synchronizedList(mutableListOf<String>())
+    val previous = SessionTiming.sink
+    val ch = channel()
+    try {
+      SessionTiming.sink = { lines.add(it) }
+      ch.send(RecordKind.READY)
+      val sent = lines.toList()
+      assertEquals(2, sent.count { it.contains("event=validation ") })
+      assertTrue(sent.any { it.contains("event=seal ") })
+      assertTrue(sent.any { it.contains("event=submission ") })
+      assertTrue(sent.all { it.contains("owner=${System.identityHashCode(ch)} ") })
+      assertTrue(sent.all { it.contains("profile=1 direction=send sequence=0 generation=0 ") })
+      assertTrue(sent.all { it.contains("start_ns=") && it.contains("end_ns=") })
+      lines.clear()
+      rejects(SessionFailure.MALFORMED) { ch.receive(byteArrayOf()) }
+      assertEquals(1, lines.size)
+      assertTrue(lines.single().contains("event=open "))
+      assertTrue(lines.single().contains("profile=1 direction=receive sequence=0 generation=0 "))
+      assertEquals(0uL, ch.received)
+      assertEquals(ChannelStage.CLOSED, ch.stage)
+      SessionTiming.sink = null
+      assertEquals(0L, SessionTiming.start())
+    } finally { SessionTiming.sink = previous; ch.close() }
+  }
+
   @Test fun nativeRevocationIsCheckedBeforeDeliveryWithoutAdvancingCounter() = runBlocking {
     var revoked = false
     var loads = 0
@@ -259,6 +325,41 @@ class SessionChannelTests {
   }
 
   @Test
+  fun nativeWriteRejectionPreservesItsCauseAndCannotReplayTheSealedRecord() = runBlocking {
+    val statuses = listOf(201, null)
+    assertEquals(2, statuses.size)
+    for (status in statuses) {
+      var failure: java.io.IOException? = null
+      var submissions = 0
+      val ch = channel(submit = {
+        submissions++
+        failure?.let { throw it }
+      })
+      try {
+        ch.send(RecordKind.READY)
+        val v = vectors().getJSONArray("valid").getJSONObject(0)
+        ch.receive(SessionRecordCodec.seal(b(v, "key"), b(v, "iv"), b(v, "session"),
+          2, RecordKind.READY_ACK, 0uL, byteArrayOf()))
+        failure = assertThrows(java.io.IOException::class.java) { requireGattWriteSubmission(status) }
+        try {
+          ch.send(RecordKind.DATA, byteArrayOf(7))
+          fail("Write rejection was accepted")
+        } catch (error: java.io.IOException) {
+          // Coroutine stack recovery may copy the exception while retaining its original cause.
+          assertEquals(failure?.message, error.message)
+          assertSame(failure, generateSequence<Throwable>(error) { it.cause }.last())
+        }
+        assertEquals(ChannelStage.CLOSED, ch.stage)
+        assertEquals(2uL, ch.sent)
+        assertEquals(2, submissions)
+        rejects(SessionFailure.CANCELLED) { ch.send(RecordKind.DATA, byteArrayOf(7)) }
+        assertEquals(2uL, ch.sent)
+        assertEquals(2, submissions)
+      } finally { ch.close() }
+    }
+  }
+
+  @Test
   fun timeoutRevocationAndSuspendedSubmissionAreTerminal() = runBlocking {
     var now = 0L
     val expired = channel(now = { now })
@@ -302,6 +403,8 @@ class SessionChannelTests {
     var securedR = 0
     val dataI = mutableListOf<ByteArray>()
     val dataR = mutableListOf<ByteArray>()
+    val draining = kotlinx.coroutines.CompletableDeferred<Unit>()
+    val drained = kotlinx.coroutines.CompletableDeferred<Unit>()
     val c =
       SessionConnection(
         h.engine(v, false),
@@ -310,6 +413,7 @@ class SessionChannelTests {
         { outboundI.add(it) },
         { dataI.add(it) },
         { securedI++ },
+        drain = { draining.complete(Unit); drained.await() },
       )
     val s =
       SessionConnection(
@@ -358,7 +462,14 @@ class SessionChannelTests {
     assertArrayEquals(payload, dataR.single())
     assertArrayEquals(byteArrayOf(7), dataI.single())
     s.disconnect()
-    deliver(outboundR, c, incomingI, idR)
+    val closing = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext()).async {
+      deliver(outboundR, c, incomingI, idR)
+    }
+    kotlinx.coroutines.withTimeout(1000) { draining.await() }
+    assertFalse("Authenticated close must drain accepted feature work", closing.isCompleted)
+    assertFalse(c.isClosed)
+    drained.complete(Unit)
+    closing.await()
     assertTrue(c.isClosed)
     assertTrue(s.isClosed)
     assertTrue(c.closedByPeer)

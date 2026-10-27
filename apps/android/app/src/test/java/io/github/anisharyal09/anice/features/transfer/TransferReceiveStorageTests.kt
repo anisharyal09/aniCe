@@ -7,7 +7,9 @@ import java.io.IOException
 import java.nio.file.AccessDeniedException
 import java.security.MessageDigest
 import java.util.UUID
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import io.github.anisharyal09.anice.infrastructure.session.SessionTiming
+import kotlin.coroutines.CoroutineContext
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -17,6 +19,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+
+internal class QueuedTransferStorageDispatcher : CoroutineDispatcher() {
+    private val queued = java.util.concurrent.ConcurrentLinkedQueue<Runnable>()
+    val pending: Int get() = queued.size
+    override fun dispatch(context: CoroutineContext, block: Runnable) { queued.add(block) }
+    fun runNext() { checkNotNull(queued.poll()) { "No storage operation queued" }.run() }
+}
 
 class TransferReceiveStorageTests {
     private lateinit var tempDir: File
@@ -63,6 +72,74 @@ class TransferReceiveStorageTests {
         } catch (error: IOException) {
             error
         }
+
+    @Test fun injectedStorageLaneCannotBeBypassedAndCancelledWritesDoNotChangeBytes() = runBlocking {
+        val lane = QueuedTransferStorageDispatcher()
+        val folder = File(tempDir, "lane").apply { mkdirs() }
+        val storage = TransferReceiveStorage(folder, null, ioDispatcher = lane)
+        val events = mutableListOf<String>()
+        val previous = SessionTiming.sink
+        suspend fun <T> execute(action: suspend () -> T): T {
+            val task = async(start = CoroutineStart.UNDISPATCHED) { action() }
+            assertFalse("Storage escaped the injected lane", task.isCompleted)
+            assertEquals(1, lane.pending)
+            lane.runNext()
+            return task.await()
+        }
+        try {
+            SessionTiming.sink = { events.add(it) }
+            val partial = execute { storage.create(UUID.randomUUID().toString(), UUID.randomUUID().toString()) }.first!!
+            val cancelled = async(start = CoroutineStart.UNDISPATCHED) { storage.write(byteArrayOf(99)) }
+            assertEquals(1, lane.pending)
+            assertEquals(0L, partial.length())
+            cancelled.cancel(); lane.runNext(); cancelled.join()
+            assertTrue(cancelled.isCancelled)
+            assertEquals(0L, partial.length())
+            assertFalse(events.any { it.contains("event=storage_write ") })
+            execute { storage.write(payload) }
+            execute { storage.flush() }
+            assertTrue(execute { storage.fileIdentity() }.isNotEmpty())
+            assertArrayEquals(digest, execute { storage.prefixDigest(payload.size.toLong()) })
+            assertArrayEquals(digest, execute { storage.finish("complete.bin", digest) })
+            execute { storage.discard() }
+            execute {
+                try { storage.write(byteArrayOf(1)); fail("Closed storage accepted bytes") }
+                catch (_: IOException) {}
+            }
+            assertArrayEquals(payload, File(folder, "complete.bin").readBytes())
+            for (event in listOf("create", "write", "flush", "fileIdentity", "prefixDigest", "finish", "discard")) {
+                assertTrue("Missing storage wait: $event", events.any { it.contains("event=storage_wait_$event ") })
+                assertTrue("Missing storage duration: $event", events.any { it.contains("event=storage_$event ") })
+            }
+            assertEquals("Failed writes must retain their timing", 2, events.count { it.contains("event=storage_write ") })
+            assertTrue(events.all { it.contains("owner=${System.identityHashCode(storage)} ") })
+            assertFalse(events.any { it.contains(folder.path) })
+        } finally {
+            SessionTiming.sink = previous
+            val cleanup = launch(NonCancellable, start = CoroutineStart.UNDISPATCHED) { storage.discard() }
+            while (lane.pending > 0) lane.runNext()
+            withTimeout(1000) { cleanup.join() }
+        }
+    }
+
+    @Test fun restoringAndHashingRetainedBytesUseTheInjectedLane() = runBlocking {
+        val lane = QueuedTransferStorageDispatcher()
+        val batch = UUID.randomUUID().toString(); val file = UUID.randomUUID().toString()
+        val partial = File(tempDir, ".anice-$batch-$file-${UUID.randomUUID()}.part").apply { writeBytes(payload) }
+        val storage = TransferReceiveStorage(tempDir, null, ioDispatcher = lane)
+        val restore = async(start = CoroutineStart.UNDISPATCHED) {
+            storage.restore(batch, file, partial.path, "", 1024)
+        }
+        assertEquals(1, lane.pending)
+        assertEquals(payload.size.toLong(), partial.length())
+        lane.runNext(); restore.await()
+        assertEquals(1024L, partial.length())
+        val expected = MessageDigest.getInstance("SHA-256").digest(payload.copyOf(1024))
+        val finish = async(start = CoroutineStart.UNDISPATCHED) { storage.finish("restored.bin", expected) }
+        assertEquals(1, lane.pending); lane.runNext()
+        assertArrayEquals(expected, finish.await())
+        assertArrayEquals(payload.copyOf(1024), File(tempDir, "restored.bin").readBytes())
+    }
 
     @Test
     fun aTakenNameIsNeverOverwrittenAndTheTransferStillPublishes() = runBlocking {

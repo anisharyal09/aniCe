@@ -3,6 +3,25 @@
 import CryptoKit
 import Foundation
 
+enum SessionTiming {
+  static let enabled: Bool = {
+    #if DEBUG
+    ProcessInfo.processInfo.environment["ANICE_MEDIA_TIMING"] == "1"
+    #else
+    false
+    #endif
+  }()
+  static func start() -> TimeInterval { enabled ? ProcessInfo.processInfo.systemUptime : 0 }
+  static func end(_ owner: AnyObject, _ event: String, _ start: TimeInterval, bytes: Int = 0,
+    profile: UInt8 = 0, direction: String = "none", sequence: UInt64? = nil, generation: Int = -1) {
+    guard start != 0 else { return }
+    let end = ProcessInfo.processInfo.systemUptime
+    NSLog("record event=%@ owner=%@ profile=%d direction=%@ sequence=%@ generation=%d bytes=%d start_s=%.9f end_s=%.9f duration_ms=%.3f",
+      event, String(describing: ObjectIdentifier(owner)), profile, direction,
+      sequence.map(String.init) ?? "none", generation, bytes, start, end, (end - start) * 1000)
+  }
+}
+
 enum SessionProfile: UInt8, Sendable {
   case standard = 1, bulkProbe = 2, lanTransfer = 3
   var maximumPlaintext: Int { self == .standard ? 4000 : self == .lanTransfer ? 262144 : 4194304 }
@@ -166,8 +185,10 @@ actor SecureSession {
   func checkDeadlines() throws {
     do { try checkTime(generation) } catch { close(); throw error }
   }
-  private func check(_ op: Int) async throws {
+  private func check(_ op: Int, direction: String = "maintenance", sequence: UInt64? = nil) async throws {
     try checkTime(op)
+    let validationStart = SessionTiming.start()
+    defer { SessionTiming.end(self, "validation", validationStart, profile: profile.rawValue, direction: direction, sequence: sequence, generation: op) }
     try await validate()
     try ensure(op)
   }
@@ -200,9 +221,11 @@ actor SecureSession {
     sending = true
     let op = generation
     var reserved = false
+    var completed = false
+    let recordSequence = sent
     defer { if op == generation { sending = false } }
     do {
-      try await check(op)
+      try await check(op, direction: "send", sequence: recordSequence)
       guard plaintext.count <= profile.maximumPlaintext, kind == .data || plaintext.isEmpty else {
         throw SessionFailure.malformed
       }
@@ -219,25 +242,47 @@ actor SecureSession {
       }
       // Include the record header, tag and envelope byte before consuming a nonce.
       guard await capacity(plaintext.count + 31) else { throw SessionBackpressure() }
+      try ensure(op)
+      try Task.checkCancellation()
       let sequence = try sendSequence.reserve()
       reserved = true  // A reserved nonce remains burned even when encryption/submission fails.
       if kind == .ready { stage = .readySent }
-      let record = try SessionRecordCodec.seal(
-        key: sendKey, iv: sendIV, id: sessionID, direction: responder ? 2 : 1, kind: kind,
-        sequence: sequence, plaintext: plaintext, profile: profile)
-      try await submit(record)
-      // Native validation runs before sealing and after awaited submission; generation and deadline
-      // fencing around encryption is check(op) above and the check(op) below.
-      try await check(op)
-      activity = now()
-      if kind == .readyAck { stage = .secured }
-      if kind == .close { close() }
+      let sealStart = SessionTiming.start()
+      let record: Data
+      do {
+        defer { SessionTiming.end(self, "seal", sealStart, bytes: plaintext.count,
+          profile: profile.rawValue, direction: "send", sequence: sequence, generation: op) }
+        record = try SessionRecordCodec.seal(
+          key: sendKey, iv: sendIV, id: sessionID, direction: responder ? 2 : 1, kind: kind,
+          sequence: sequence, plaintext: plaintext, profile: profile)
+      }
+      // This owned task starts only after sealing; producer cancellation cannot interrupt submission.
+      try await Task {
+        try self.checkTime(op)
+        let submissionStart = SessionTiming.start()
+        do {
+          defer { SessionTiming.end(self, "submission", submissionStart, bytes: record.count,
+            profile: profile.rawValue, direction: "send", sequence: sequence, generation: op) }
+          try await submit(record)
+        }
+        // Native validation runs before sealing and after awaited submission; generation and deadline
+        // fencing around encryption is check(op) above and the check(op) below.
+        try await check(op, direction: "send", sequence: recordSequence)
+        activity = now()
+        if kind == .readyAck { stage = .secured }
+        if kind == .close { close() }
+      }.value
+      completed = true
+      try Task.checkCancellation()
     } catch is SessionBackpressure {
       if reserved {
         close()
         throw SessionFailure.state
       }
       throw SessionBackpressure()
+    } catch is CancellationError {
+      if reserved && !completed { close() }
+      throw CancellationError()
     } catch {
       close()
       throw error
@@ -252,14 +297,20 @@ actor SecureSession {
     let op = generation
     defer { if op == generation { receiving = false } }
     do {
-      try await check(op)
+      try await check(op, direction: "receive", sequence: received)
       guard received < 1 << 20 else {
         expiration = .recordLimit
         throw SessionFailure.expired
       }
-      let result = try SessionRecordCodec.open(
-        key: receiveKey, iv: receiveIV, id: sessionID, direction: responder ? 1 : 2,
-        expected: received, record: record, profile: profile)
+      let openStart = SessionTiming.start()
+      let result: (RecordKind, Data)
+      do {
+        defer { SessionTiming.end(self, "open", openStart, bytes: record.count,
+          profile: profile.rawValue, direction: "receive", sequence: received, generation: op) }
+        result = try SessionRecordCodec.open(
+          key: receiveKey, iv: receiveIV, id: sessionID, direction: responder ? 1 : 2,
+          expected: received, record: record, profile: profile)
+      }
       let allowed: Bool
       switch result.0 {
       case .ready: allowed = responder && stage == .waiting

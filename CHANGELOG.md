@@ -10,6 +10,16 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Added
 
+- Support matched raw TCP diagnostics with normal Wi-Fi policy or a temporary performance lock, independently of authenticated application transfers.
+
+- Log Mac LAN waiting and failed states separately while preserving existing channel retirement and timeout behavior.
+
+- Isolate authenticated transfer chunks in bounded feature-owned FIFOs while interactive delivery continues. Include active writes in byte/record accounting, fence cancelled generations, drain accepted work on normal close, and report successful receive activity only after handling. Android receiver storage shares one injected single-parallelism IO dispatcher; opt-in timings distinguish ingress admission, consumption and storage work.
+
+- Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Cancellation remains effective until nonce ownership; session-owned completion protects sealed records while transfer cleanup cancels queued producers. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
+
+- Connection diagnostics distinguish incomplete LAN frames by profile, byte counts and read age. Opt-in timings separate socket reads, Mac callback scheduling and Android writer admission, dispatch and blocking writes; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
+
 - Linux CI for shared protocol and Android host checks, with pinned actions, dependency caches and failure artifacts. Verification writes isolated run reports under `build/reports/verification/` and emits GitHub error annotations; structure and Android native-build checks support Linux hosts.
 
 - Updated implementation summaries to remove outdated blanket acceptance-pending labels.
@@ -33,18 +43,46 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ### Changed
 
+- Start Android LAN authentication as discovery candidates resolve, removing the fixed browse wait while retaining bounded discovery and selected-peer authentication.
+
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+
+- Retain the Mac Bluetooth service database across radio power-off and preserve LAN rendezvous capacity wakeups on both platforms. LAN reads stop at frame boundaries so ingress backpressure cannot consume the next frame's assembly deadline. Android distinguishes unsent media actions from submitted actions with unknown outcomes.
+
+- Transfer preparation uses capability-aware LAN/BLE selection and cancellation-safe rendezvous; Android nearby recovery retains rediscovery eligibility after failed attempts.
+
 - Raise authenticated LAN file-transfer chunks to 262,016 bytes under transfer capability 3, reducing per-byte record overhead while retaining profile-3 limits and old-peer negotiation.
 
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
 
 ### Fixed
 
+- Recover LAN after Wi-Fi address restoration and retain authenticated reconnect requests through delayed channel retirement.
+
+- Avoid repeated transfer drain/probe cycles on delayed LAN paths and return receive credit immediately for chunks smaller than the negotiated LAN maximum.
+
+- Deliver packaged Now Playing replies in pipe order and publish promptly resolved capabilities with metadata. Retain known support through discovery failures and timing only for the same recording. Position samples can recover duration; explicit support removal and invalid timing still disable seeking.
+
+- Serialize receiver resume verification with chunk writes through transport takeover. Release cancelled macOS resume waiters and fence source-close completion before accessing replacement transfer results.
+
+- Separate raw TCP diagnostic completion waiting from data-read timeout so locally accepted bytes can drain before peer confirmation.
+
+- Preserve native Bluetooth write-admission failures through Android transport teardown instead of replacing them with cancellation; include operation context in failure and stale-callback diagnostics.
+
+- Preserve Android Bluetooth retry history through brief secured intervals during approved-transfer recovery. Reset only after fifteen uninterrupted seconds of authenticated readiness.
+
+- Repair transfer credit wakeups and ACK coalescing so window shrinkage and overlapping submissions cannot strand progress. Recover large LAN chunks under continuous traffic and exclude source preparation or fully drained idle time from slow-path classification.
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
+- Defer macOS LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.
+
 - Preserve independent BLE/LAN ownership while repairing BLE recovery, transfer cancellation and restart-safe pending work. Cap Android native GATT fragments at 512 bytes and serialize control issuance across DATA, receive and maintenance. Fence Mac LAN retirement to live routes/submissions and add file-transfer notification controls.
 
 - Repair LAN transfer startup, bound automatic connection demand from BLE traffic, and calculate sender progress from receiver acknowledgements.
 
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected. Android background Now Playing additionally requests and retains LAN (including artwork) while playing or inside the paused grace.
-- File selection and a pending send no longer retire a secured BLE channel; a send with a secured channel proceeds on it, and a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
+- File selection and a pending send no longer retire a secured BLE channel. A requested LAN route gets a bounded rendezvous before a compatible Bluetooth channel carries the offer; a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
 - Feature traffic no longer resumes LAN after an explicit Disconnect.
 - Settings and pairing are decluttered: one post-pairing toggle, one local-network preference, and a collapsed Background timeout row that still defaults to Never.
 

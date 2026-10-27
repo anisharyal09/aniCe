@@ -7,14 +7,76 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NearbyRetryTests {
-  @Test fun rediscoveryIsBoundedPerFailureEpisodeAndExclusionsUseOneDeadline() {
+  @Test fun repeatedShortReadinessIntervalsKeepIncreasingRetryDelay() {
+    val policy = NearbyRetry()
+    val expected = listOf(2000L, 5000L, 15000L, 30000L, 60000L, 90000L, 90000L)
+    assertEquals(7, expected.size)
+    expected.forEachIndexed { index, delay ->
+      val started = index * 2000L
+      policy.observeReadiness(true, started)
+      policy.observeReadiness(false, started + 1000)
+      assertEquals(delay, policy.next(0.0))
+    }
+  }
+
+  @Test fun workReadinessPreservesFailureHistoryUntilFifteenContinuousSeconds() {
+    for (duration in listOf(1000L, 14000L, 14999L, 15000L)) {
+      val policy = NearbyRetry()
+      repeat(2) { policy.next(0.0) }
+      policy.reject("rejected-locator", 0)
+      policy.observeReadiness(true, 100)
+      policy.observeReadiness(true, 100 + duration / 2)
+      policy.observeReadiness(false, 100 + duration)
+      assertEquals("Incorrect reset after $duration ms", if (duration >= 15000) 2000L else 15000L, policy.next(0.0))
+      assertEquals(if (duration >= 15000) emptySet<String>() else setOf("rejected-locator"), policy.exclusions(15100))
+    }
+  }
+
+  @Test fun interruptedWorkReadinessAndOwnerCancellationCannotCompleteAnOldDeadline() {
+    val policy = NearbyRetry()
+    repeat(2) { policy.next(0.0) }
+    policy.observeReadiness(true, 0)
+    policy.observeReadiness(false, 14000)
+    policy.observeReadiness(true, 14001)
+    policy.observeReadiness(false, 15000)
+    assertEquals("Separate readiness intervals were combined", 15000L, policy.next(0.0))
+    policy.observeReadiness(true, 20000)
+    policy.retired()
+    policy.observeReadiness(false, 50000)
+    assertEquals("Cancelled ownership reset the failure history", 30000L, policy.next(0.0))
+    policy.observeReadiness(true, 60000)
+    policy.observeReadiness(false, 75000)
+    assertEquals(2000L, policy.next(0.0))
+  }
+
+  @Test fun retiringAnOwnerPreservesRediscoveryAndCandidateExclusions() {
+    val policy = NearbyRetry()
+    repeat(2) { policy.next(0.0) }
+    policy.reject("stale", 100)
+    policy.secured(200)
+    policy.retired()
+    policy.tick(20_000)
+    assertTrue(policy.claimRediscovery())
+    assertEquals(15_000L, policy.next(0.0))
+    assertEquals(40_100L, policy.exclusionDelay("stale", 20_000))
+    policy.secured(30_000)
+    policy.tick(45_000)
+    assertFalse(policy.claimRediscovery())
+    assertEquals(2_000L, policy.next(0.0))
+  }
+
+  @Test fun rediscoveryIsBoundedPerAttemptAndExclusionsUseOneDeadline() {
     val policy = NearbyRetry()
     assertFalse(policy.claimRediscovery())
     policy.next(0.0)
     assertFalse(policy.claimRediscovery())
     policy.next(0.0)
     assertTrue(policy.claimRediscovery())
-    repeat(20) { policy.next(0.0); assertFalse(policy.claimRediscovery()) }
+    repeat(20) {
+      assertFalse(policy.claimRediscovery())
+      policy.next(0.0)
+      assertTrue(policy.claimRediscovery())
+    }
     policy.reject("locator", 100)
     assertEquals(60_000L, policy.exclusionDelay("locator", 100))
     assertEquals(1L, policy.exclusionDelay("locator", 60_099))
@@ -24,6 +86,20 @@ class NearbyRetryTests {
     assertFalse(policy.claimRediscovery())
     repeat(2) { policy.next(0.0) }
     assertTrue(policy.claimRediscovery())
+  }
+  @Test fun onlyUninterruptedReadinessResetsBackoff() {
+    val policy = NearbyRetry()
+    repeat(5) { policy.next(0.0) }
+    policy.secured(100)
+    policy.tick(15_099)
+    assertEquals(90_000L, policy.next(0.0))
+    policy.retired()
+    policy.tick(50_000)
+    assertEquals(90_000L, policy.next(0.0))
+    policy.secured(60_000)
+    policy.tick(75_000)
+    assertEquals(2_000L, policy.next(0.0))
+    assertFalse(policy.claimRediscovery())
   }
   @Test fun boundedDelaysJitterAndEphemeralExclusions() {
     val policy = NearbyRetry()

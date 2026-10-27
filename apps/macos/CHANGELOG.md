@@ -6,6 +6,16 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Distinguish native LAN connection waiting and failure transitions in transport diagnostics before channel retirement.
+
+- LAN frame timeout diagnostics include pending-read age and last-read progress; opt-in timings separate socket reads from transport-actor callback delay.
+
+- Queue authenticated transfer chunks in a bounded feature-owned FIFO while other handlers continue. Count active writes against capacity, keep storage actor-owned and presentation on MainActor, fence cancelled generations, and drain accepted work on normal close. Add opt-in ingress admission/consumption and storage-operation durations, including failed storage operations.
+
+- Bound unsealed DATA admission to eight waiting callers, prioritize standard-sized requests ahead of large chunks, and grant bulk a turn after four small-record requests. Cancellation and retirement clear waiting admissions before sealing. Transfer cleanup cancels queued stream, ACK and upgrade work; nonce-owned submission and post-write validation finish under session ownership. Opt-in timing separates admission, ingress backpressure, validation, encryption and authenticated receive delivery, with monotonic stage timestamps and record direction/profile/sequence correlation.
+
+- LAN frame-assembly timeout diagnostics include profile and received/expected byte counts.
+
 - Messages provides native SMS notifications with inline Reply, paged phone conversations and history, bounded phone-side search and optional SIM selection. Per-phone notification, sound and preview controls are shared by Settings and the panel. Provisional replies use wall-clock timestamps and remain separate from history until confirmed; known provider identities and send-queue bounds prevent unrelated identical replies from merging. Local submit/receive order survives provider refreshes and carrier clock differences. Content remains in memory and clears with the last secured link.
 
 - Native Quick Paste Tray: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), small tray icon beside Send clipboard in the companion, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, stable contiguous multi-selection via Shift + Click / Shift + Arrow, individual toggle via Command + Click, Backspace/Delete to delete selected items, and Return to copy (joining multi-selections with newlines). Search and filters have separate rows, cards retain visible actions, and failed native copies remain open for retry. The full Clipboard panel offers a direct tray entry, small horizontal insets, and History search/source filters. Pausing collection preserves saved history across restart, Forget device and Reset identity, with explicit Clear/Delete controls. History capacity is now configurable (20 default, 50, 100), pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
@@ -24,15 +34,49 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
+
+- Preserve the published Bluetooth service table across powered-off states; reset states still invalidate it. LAN rendezvous retains capacity notifications arriving during a pending submission. Frame-bounded LAN reads keep ingress queue waits outside the next frame's assembly deadline.
+
+- Reserve file preparation before LAN rendezvous, wake on capability events under one deadline, and retire the wait on cancellation or dismissal. An incapable LAN channel no longer hides compatible Bluetooth.
+
+
+- Post-command playback samples use the observation queue so a slow MediaRemote read cannot block the next playback command.
+
+- Session-control classification avoids copying file payloads before feature decoding while retaining CBOR validation.
+- LAN write watchdog failures preserve their timeout cause instead of reporting session expiry or generic cancellation.
+
+- Late file-transfer completion cannot clear a replacement batch after cancellation.
+- File-transfer ACK failures wait for a new capacity or receive event instead of immediately resubmitting themselves.
+
 - Advertise a capability-2 baseline before negotiating 262,016-byte LAN file-transfer chunks with capability 3; older peers retain their supported limits.
 
 - Clipboard and file sending use compact labeled native controls. Clipboard preferences use small accent-colored checkboxes; History groups entries by date with a count/Clear all toolbar and adaptive row actions in both appearances. Clipboard help explains Android selection, Share-sheet and Quick Settings routes, connected-device requirements and manual sharing with automatic sharing off.
 
 ### Fixed
 
+- Retain authenticated LAN reconnect requests received while the old channel still appears secured, consuming them only when a fresh attempt starts.
+
+- Keep delayed LAN transfer pipelines running until recent ACK timing qualifies recovery; return credit immediately for qualification probes and chunks smaller than the negotiated LAN maximum.
+
+- Drain packaged-helper replies through one bounded MainActor FIFO and wait up to 200 ms for native command discovery before publishing metadata; playback commands retain their separate queue. Late capability replies remain recording-bound; discovery failures preserve known support, and position samples can recover duration.
+
+- Run receiver resume verification and channel rebinding in the chunk FIFO. Release resume continuations before invalidating their tokens and cancel abandoned pending request submission. Reject cancelled or replaced senders after source closure before they consume or install file-result waiters.
+
+- Re-arm ACK coalescing for newer written bytes when their timer expires during a pending submission. Clear credit continuation ownership before resumption; failed ACK submissions still wait for an external capacity event.
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+
+- Defer LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.
+
+- Recover automatic Bluetooth startup failures with supervised backoff that resets only after fifteen seconds of secured continuity; native radio and permission blocks retain state observation without retries.
+- Permit writing to the reply indication characteristic descriptor so CoreBluetooth allows Android clients to subscribe without reporting GATT status 3 (writeNotPermitted).
+- Separate LAN listener retention from bounded admission, rearm automation on local-path recovery and retire failed DATA submissions through the session owner.
+- Decode transfer payloads off the main actor while preserving ordered delivery, cancellation and channel-generation checks.
+
 - Complete BLE submissions from native callbacks and preserve admitted records across transfer upgrades. Retain interrupted offers, checkpointed streams and verified receipts for 15 minutes across restarts, reconcile native hard-link publication by file identity and hash, and bound BLE transfer credit below the ingress capacity. Reduce routine checkpoint flushes and keep pause/result/failure notices inside the app; background offers are opt-in. Keep live LAN sessions through unrelated interface changes, fence stale write retirement callbacks, and expose saved transfer notification/sound controls in Files and Settings. Route paused notification actions through the delegate with batch correlation and respect silent foreground presentation. Measure transfer rates over a five-second window and distinguish native frame/write timeouts in diagnostics.
 
-- Bound traffic-triggered LAN attempts, preserve LAN offer priority, and report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
+- Bound traffic-triggered LAN attempts, preserve LAN offer priority, and wait for a requested LAN route for a bounded interval before offering over a ready Bluetooth channel. Report receiver-confirmed progress with consistent speed sampling and stalled-rate refreshes.
 
 - SMS requests negotiate capability per channel, stage provider thread snapshots until completion, retain failed drafts and discard stale asynchronous assemblies. Notification settings and submission failures are visible; counters advance after macOS accepts a notification, and peer retirement clears notification targets.
 

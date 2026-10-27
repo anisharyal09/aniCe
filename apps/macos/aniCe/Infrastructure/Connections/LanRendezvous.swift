@@ -26,22 +26,24 @@ enum LanRendezvousWire {
   private var local: Int64 = 0
   private var sent: Int64?
   private var sending: Task<Void, Never>?
+  private var wake = false
   private var generation = 0
   func update(_ state: Int64) { local = state; flush() }
   func available(_ channel: any SecuredChannel) {
     guard channel.descriptor.transport == "ble" else { return }
-    sending?.cancel(); sending = nil; generation += 1
+    sending?.cancel(); sending = nil; wake = false; generation += 1
     self.channel = channel; remote = nil; sent = nil; requestPending = false
     changed(); flush()
   }
   func retired(_ descriptor: ChannelDescriptor) {
     guard channel?.descriptor == descriptor else { return }
     generation += 1
-    sending?.cancel(); sending = nil; channel = nil; remote = nil; sent = nil; requestPending = false
+    sending?.cancel(); sending = nil; wake = false; channel = nil; remote = nil; sent = nil; requestPending = false
     changed()
   }
   func capacityAvailable(_ descriptor: ChannelDescriptor) {
-    if channel?.descriptor == descriptor { flush() }
+    guard channel?.descriptor == descriptor else { return }
+    if sending != nil { wake = true } else { flush() }
   }
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
     guard channel?.descriptor == descriptor else { return .unrecognized }
@@ -57,7 +59,12 @@ enum LanRendezvousWire {
     let op = generation
     sending = Task { [weak self] in
       guard let self else { return }
-      defer { if op == self.generation { self.sending = nil } }
+      defer {
+        if op == self.generation {
+          self.sending = nil
+          if self.wake { self.wake = false; self.flush() }
+        }
+      }
       var requested = false
       do {
         while op == self.generation, self.channel === target, (self.requestPending || self.sent != self.local), !Task.isCancelled {
@@ -96,5 +103,5 @@ struct LanAttemptGate {
     return true
   }
   mutating func trigger() { attempted = false }
-  mutating func claim() -> Bool { if attempted { return false }; attempted = true; return true }
+  mutating func claim(connected: Bool = false) -> Bool { if connected || attempted { return false }; attempted = true; return true }
 }

@@ -118,6 +118,12 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
     }
 
     companion object {
+        private val header = byteArrayOf(0x84.toByte(), 0x6e) + "aniCe transfer".toByteArray(Charsets.UTF_8) + byteArrayOf(1)
+        // Session CBOR rejects non-minimal lengths; classification never replaces full validation.
+        internal fun peekKind(bytes: ByteArray): Int? =
+            if (bytes.size > header.size && header.indices.all { bytes[it] == header[it] })
+                (bytes[header.size].toInt() and 255).takeIf { it in 1..11 } else null
+
         fun decode(bytes: ByteArray, maximumChunkBytes: Int = 3072): TransferMessage? {
             if (bytes.size > if (maximumChunkBytes > 3072) 262144 else 4000) throw TransferWireException()
             val row = (SessionCbor.decode(bytes, if (maximumChunkBytes > 3072) 262144 else 4096) as? Cbor.Array)?.value ?: return null

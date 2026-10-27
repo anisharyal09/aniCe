@@ -107,12 +107,12 @@ enum SessionCbor {
     for v in values { try write(v, 0) }
     return out
   }
-  static func decode(_ data: Data, maximumBytes: Int = maxBytes) throws -> SessionCBOR {
-    let values = try decodeSequence(data, maximumBytes: maximumBytes)
+  static func decode(_ data: Data, maximumBytes: Int = maxBytes, materializeBytes: Bool = true) throws -> SessionCBOR {
+    let values = try decodeSequence(data, maximumBytes: maximumBytes, materializeBytes: materializeBytes)
     guard values.count == 1 else { throw SessionFailure.malformed }
     return values[0]
   }
-  static func decodeSequence(_ data: Data, maximumBytes: Int = maxBytes) throws -> [SessionCBOR] {
+  static func decodeSequence(_ data: Data, maximumBytes: Int = maxBytes, materializeBytes: Bool = true) throws -> [SessionCBOR] {
     guard (1...262144).contains(maximumBytes), data.count <= maximumBytes else { throw SessionFailure.malformed }
     // Index from the buffer's own start so a sliced input needs no re-basing copy.
     let base = data.startIndex
@@ -158,8 +158,11 @@ enum SessionCbor {
       case 1: return .integer(-1 - Int64(n))
       case 2, 3:
         guard n <= maximumBytes, n <= data.count - offset else { throw SessionFailure.malformed }
-        let bytes = data.subdata(in: (base + offset)..<(base + offset + Int(n)))
+        let start = offset
         offset += Int(n)
+        // Control classification retains structural validation without copying file payloads.
+        if major == 2 && !materializeBytes { return .bytes(Data()) }
+        let bytes = data.subdata(in: (base + start)..<(base + offset))
         if major == 2 { return .bytes(bytes) }
         guard let text = String(data: bytes, encoding: .utf8) else {
           throw SessionFailure.malformed

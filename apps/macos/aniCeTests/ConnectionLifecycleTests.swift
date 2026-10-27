@@ -19,6 +19,7 @@ import AppKit
   var resumes = 0
   var stopped = 0
   var retirement = 0
+  var advertisingEvent: PeripheralEvent = .advertising
   func begin(
     event: @escaping (PeripheralEvent) -> Void, read: @escaping (Bool, Int) -> DiscoveryRead
   ) {
@@ -27,7 +28,7 @@ import AppKit
     event(.available)
   }
   func publish() { event?(.published) }
-  func advertise() { event?(.advertising) }
+  func advertise() { event?(advertisingEvent) }
   func stop() {
     stopped += 1
     event = nil
@@ -35,7 +36,8 @@ import AppKit
   func sendPairing(_ message: Data) throws { throw PairingFailure.transport }
   func drainPairing() async {}
   func retirePairingConnection() { retirement += 1 }
-  func sessionCapacity(_ bytes: Int) -> Bool { true }
+  var hasCapacity = true
+  func sessionCapacity(_ bytes: Int) -> Bool { hasCapacity }
   var sent: [Data] = []
   var failReadyAck = false
   func sendSession(_ message: Data) async throws {
@@ -63,6 +65,62 @@ import AppKit
   func release() { continuation?.resume(); continuation = nil }
 }
 @MainActor final class SessionLifecycleTests: XCTestCase {
+  func testStartupBackoffRequiresUninterruptedAuthenticatedStability() {
+    var recovery = SessionStartupRecovery()
+    XCTAssertEqual((0..<8).map { _ in recovery.nextDelay() }, [2, 5, 15, 30, 60, 90, 90, 90])
+    recovery.secured(100)
+    recovery.tick(114.999)
+    recovery.retired()
+    recovery.tick(200)
+    XCTAssertEqual(recovery.nextDelay(), 90, "A retired stability deadline cannot reset flapping recovery")
+    recovery.secured(200)
+    recovery.tick(215)
+    XCTAssertEqual(recovery.nextDelay(), 2)
+  }
+  func testAutomaticStartupRecoveryAndNativeBlockRemainOwned() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "startup.test.")
+    let local = try await identity.publicIdentity(), key = P256.Signing.PrivateKey()
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation)]))
+    let hash = Data(repeating: 7, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: peer, localFingerprint: local.fingerprint, method: .qr,
+      pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: peer.deviceId, hash: hash, receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let radio = SessionRadioFake(), timer = SessionRecoveryWait(), peers = SessionPeerReservation()
+    radio.advertisingEvent = .failure
+    let model = MacSessionModel(identity: identity, adapter: radio, store: { trust }, peers: peers, wait: { await timer.pause($0) })
+    defer { model.cancel(); timer.release() }
+    model.selectedPeer = peer
+    model.setAutomatic(true)
+    try await waitFor { timer.delays.count == 1 }
+    XCTAssertEqual(timer.delays, [2]); XCTAssertNotEqual(model.state, "Failed")
+    let stale = radio.event
+    timer.release()
+    try await waitFor { timer.delays.count == 2 }
+    XCTAssertEqual(timer.delays, [2, 5])
+    radio.advertisingEvent = .advertising
+    timer.release()
+    try await waitFor { model.allowing }
+    try await waitFor { model.maintenanceDeadline != nil }
+    radio.event?(.off)
+    XCTAssertEqual(model.status, "Waiting for Bluetooth.")
+    XCTAssertNil(peers.peer)
+    XCTAssertEqual(timer.delays, [2, 5]); XCTAssertNotNil(radio.event)
+    radio.event?(.available)
+    try await waitFor { model.maintenanceDeadline != nil }
+    XCTAssertNotNil(peers.peer, "Radio recovery must reacquire the pinned reservation")
+    model.disconnect()
+    stale?(.failure)
+    radio.event?(.available)
+    XCTAssertFalse(model.allowing); XCTAssertFalse(model.automatic)
+    XCTAssertEqual(timer.delays, [2, 5])
+  }
   func testGattSubmissionCompletionRetirementAndStaleCallbacksAreIndependent() async throws {
     let waiters = GattSubmissionWaiters()
     let first = UUID(), second = UUID()
@@ -305,7 +363,10 @@ import AppKit
   func testProductionModelReadinessFailurePreservesIdentityAndTrust() async throws {
     try await exerciseProductionModel(failReadyAck: true)
   }
-  private func exerciseProductionModel(failReadyAck: Bool) async throws {
+  func testProductionModelRetiresFatalApplicationSendButNotBackpressure() async throws {
+    try await exerciseProductionModel(failReadyAck: false, failApplicationSend: true)
+  }
+  private func exerciseProductionModel(failReadyAck: Bool, failApplicationSend: Bool = false) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let url = directory.appendingPathComponent("trust.json")
@@ -401,6 +462,19 @@ import AppKit
       let received = try await channel.receive(response.1)
       XCTAssertEqual(received.0, .data)
       XCTAssertEqual(received.1, Data("aniCe connection check".utf8))
+      radio.hasCapacity = false
+      do { try await model.sendData(Data([1])); XCTFail("Backpressure admitted a record") }
+      catch is SessionBackpressure {}
+      XCTAssertEqual(model.state, "Secured")
+      radio.hasCapacity = true
+      if failApplicationSend {
+        radio.failReadyAck = true
+        do { try await model.sendData(Data([1])); XCTFail("Failed encrypted submission reported success") }
+        catch let error as SessionFailure { XCTAssertEqual(error, .authentication) }
+        XCTAssertNotEqual(model.state, "Secured")
+        XCTAssertNil(model.channelToken); XCTAssertNil(model.authenticatedPeer)
+        radio.failReadyAck = false
+      }
       model.cancel()
       XCTAssertNil(model.maintenanceDeadline)
       radio.started = false

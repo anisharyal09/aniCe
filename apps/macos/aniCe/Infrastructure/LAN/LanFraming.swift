@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Bounds TCP frame allocation and assembly independently of session authentication.
+// Bounds TCP frame allocation and assembly deadlines across secured readiness.
 import Foundation
 
 struct LanFraming {
@@ -9,15 +9,26 @@ struct LanFraming {
   private var body = Data()
   private var length = 0
   private var started: TimeInterval = 0
+  private var progressed: TimeInterval = 0
+  var secured = false
   private var failed = false
   init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, profile: SessionProfile = .standard) {
     self.profile = profile
     self.now = now
   }
-  var nextDeadline: TimeInterval? { !failed && !header.isEmpty ? started + 10 : nil }
+  var nextDeadline: TimeInterval? {
+    guard !failed, !header.isEmpty else { return nil }
+    // Only established encrypted records may outlive ten seconds; trickling still has an absolute bound.
+    let lifetime: TimeInterval = secured && body.first == 6 ? 60 : 10
+    return min(started + lifetime, progressed + 10)
+  }
+  // Stop socket reads at a frame boundary before the ingress queue can suspend the producer.
+  var readLimit: Int { header.count < 5 ? 5 - header.count : length - body.count }
+  var partialBytes: Int { header.count + body.count }
+  var expectedBytes: Int? { header.count == 5 ? length + 5 : nil }
   private mutating func check(_ time: TimeInterval) throws {
     guard !failed else { throw SessionFailure.cancelled }
-    if !header.isEmpty, time - started >= 10 {
+    if let deadline = nextDeadline, time >= deadline {
       failed = true
       body = Data()
       throw SessionFailure.expired
@@ -37,6 +48,7 @@ struct LanFraming {
     precondition((0...bytes.count).contains(offset))
     while offset < bytes.count {
       if header.isEmpty { started = time }
+      progressed = time
       if header.count < 5 {
         let count = min(5 - header.count, bytes.count - offset)
         let start = bytes.index(bytes.startIndex, offsetBy: offset)
