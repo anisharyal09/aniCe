@@ -1,10 +1,10 @@
 # aniCe design direction
 
-Version 0.2 — reference-led overview and simultaneous activities. Evolve it through deliberate, documented changes as the product develops.
+Version 0.3 — seamless cross-platform workspace. This guide is the implementation source of truth for product behavior and visual direction. Interactive concepts use sample data and do not specify unavailable capabilities.
 
 ## Intent
 
-aniCe should feel like a dependable personal utility: clear device relationships, useful controls, and familiar platform behavior. The interface helps someone understand the selected device, act on it, and recover when something is unavailable. It does not require them to understand the transport architecture.
+aniCe should feel like a dependable personal utility: clear device relationships, useful controls, and familiar platform behavior. The interface helps someone understand the selected device, act on it, and recover when something is unavailable. It does not require them to understand the transport architecture. The experience should feel seamless: keep the person, device, task, and outcome connected as they move between surfaces.
 
 Keep one recognizable design vocabulary across the full Mac window, its menu-bar companion, and Android. Adapt the controls and navigation to each platform. Consistency means shared concepts and roles, not identical pixels.
 
@@ -12,37 +12,228 @@ The feature panels in the concept demonstrate layout and interaction. They do no
 
 ## Visual system
 
-The palette uses warm neutral surfaces and a restrained **slate-blue** accent. Color should identify an action or state rather than decorate every module. Do not introduce an individual color theme for each feature.
+Use warm, quiet neutrals with a charcoal-green action ink. Do not use indigo, slate-blue, or blue glow as the product accent. Color communicates action and status; it does not decorate feature categories. Keep light and dark appearances balanced and intentional.
 
 | Semantic role | Light | Dark |
 | --- | --- | --- |
-| Background | ![#F4F3EF](swatches/F4F3EF.svg) `#F4F3EF` | ![#191E22](swatches/191E22.svg) `#191E22` |
-| Content surface | ![#FFFDF9](swatches/FFFDF9.svg) `#FFFDF9` | ![#242B31](swatches/242B31.svg) `#242B31` |
-| Sidebar / secondary surface | ![#EAEAE4](swatches/EAEAE4.svg) `#EAEAE4` | ![#20272D](swatches/20272D.svg) `#20272D` |
-| Primary text | ![#262F35](swatches/262F35.svg) `#262F35` | ![#EDF0F1](swatches/EDF0F1.svg) `#EDF0F1` |
-| Secondary text | ![#626E76](swatches/626E76.svg) `#626E76` | ![#ADB8BF](swatches/ADB8BF.svg) `#ADB8BF` |
-| Separator / outline | ![#DCE0DF](swatches/DCE0DF.svg) `#DCE0DF` | ![#3C4850](swatches/3C4850.svg) `#3C4850` |
-| Primary action / selection ink | ![#355B70](swatches/355B70.svg) `#355B70` | ![#A7C5D6](swatches/A7C5D6.svg) `#A7C5D6` |
-| Text on primary action | ![#FFFFFF](swatches/FFFFFF.svg) `#FFFFFF` | ![#152D3B](swatches/152D3B.svg) `#152D3B` |
-| Selected / subtle accent surface | ![#DDE8ED](swatches/DDE8ED.svg) `#DDE8ED` | ![#30434E](swatches/30434E.svg) `#30434E` |
-| Success ink | ![#466A50](swatches/466A50.svg) `#466A50` | ![#A1C6A9](swatches/A1C6A9.svg) `#A1C6A9` |
-| Warning ink | ![#825523](swatches/825523.svg) `#825523` | ![#DCB27C](swatches/DCB27C.svg) `#DCB27C` |
-| Error ink | ![#A13D38](swatches/A13D38.svg) `#A13D38` | ![#E8AAA4](swatches/E8AAA4.svg) `#E8AAA4` |
+| Background | [![#F4F3EF](swatches/F4F3EF.svg)] `#F4F3EF` | [![#1B1E1E](swatches/1B1E1E.svg)] `#1B1E1E` |
+| Content surface | [![#FFFDF9](swatches/FFFDF9.svg)] `#FFFDF9` | [![#242828](swatches/242828.svg)] `#242828` |
+| Sidebar / secondary surface | [![#EAEAE4](swatches/EAEAE4.svg)] `#EAEAE4` | [![#222626](swatches/222626.svg)] `#222626` |
+| Primary text | [![#282E2A](swatches/282E2A.svg)] `#282E2A` | [![#EBEEEB](swatches/EBEEEB.svg)] `#EBEEEB` |
+| Secondary text | [![#626B65](swatches/626B65.svg)] `#626B65` | [![#ADB5AF](swatches/ADB5AF.svg)] `#ADB5AF` |
+| Separator / outline | [![#DCDED8](swatches/DCDED8.svg)] `#DCDED8` | [![#3B4140](swatches/3B4140.svg)] `#3B4140` |
+| Primary action / selection ink | [![#47534D](swatches/47534D.svg)] `#47534D` | [![#C4CCC5](swatches/C4CCC5.svg)] `#C4CCC5` |
+| Text on primary action | [![#FFFDF9](swatches/FFFDF9.svg)] `#FFFDF9` | [![#222A25](swatches/222A25.svg)] `#222A25` |
+| Selected / subtle surface | [![#E5E8E2](swatches/E5E8E2.svg)] `#E5E8E2` | [![#303632](swatches/303632.svg)] `#303632` |
+| Control track | [![#E0E3DC](swatches/E0E3DC.svg)] `#E0E3DC` | [![#3B413E](swatches/3B413E.svg)] `#3B413E` |
+| Success ink | [![#466A50](swatches/466A50.svg)] `#466A50` | [![#A1C6A9](swatches/A1C6A9.svg)] `#A1C6A9` |
+| Warning ink | [![#825523](swatches/825523.svg)] `#825523` | [![#DCB27C](swatches/DCB27C.svg)] `#DCB27C` |
+| Error ink | [![#A13D38](swatches/A13D38.svg)] `#A13D38` | [![#E8AAA4](swatches/E8AAA4.svg)] `#E8AAA4` |
 
-Use semantic names in implementation and map them into native color roles. The success, warning, and error colors above are text/icon colors on neutral surfaces, not untested button fills. Brand accent is separate from connection success. Pair state color with text or a meaningful symbol.
+Use semantic names in implementation and map them into native color roles. Success, warning, and error colors are for legible status on neutral surfaces, not untested button fills. Action ink is not a connection indicator. Pair every state color with text or a meaningful symbol.
 
 - Follow system appearance by default. Offer System / Light / Dark in settings. Test each scheme rather than simply inverting colors.
 - Prefer system type: macOS native text styles; Android Material text roles and scalable `sp`. Native accessibility settings take precedence over fixed concept dimensions.
 - Home activity headings and device names provide labeled native actions to their feature or Devices page; essential navigation does not depend on a small chevron alone.
-- Reference text sizes: Mac body 13–14 pt, secondary 12–13 pt, section title 14–16 pt, page title 24–28 pt. Android body 13–14 sp and supporting text 12 sp, mapped to Material roles.
+- Reference text sizes: Mac body 13–14 pt, secondary 12–13 pt, section title 14–16 pt, page title 20 pt. Android app brand 17 sp, page title 20 sp, section title 14 sp, body 13–14 sp and metadata 12 sp, mapped to native roles. These are starting values; native Dynamic Type and font scaling remain authoritative.
 - Use regular and medium weights for most content. Semibold can establish a heading. Avoid oversized title hierarchies, decorative display fonts in controls, or monospace as a technical costume.
 - Use one native icon system per platform: SF Symbols on Mac and Material Symbols on Android. The browser concepts use Lucide only as a stand-in. Icons supplement essential labels.
 - Spacing scale: 4, 8, 12, 16, 24, 32. Keep related content close and separate tasks with more space. Typical panel padding is 16–20, page padding 24–32 on Mac and 16–24 on Android.
-- Reference radii: Mac small controls 6–8, content panels 10–12, floating companion 12; Android buttons use the small Material shape role (8-dp corners), with roughly 16 for grouped panels. Do not impose one universal rounded shape on everything.
+- Reference radii: gently rounded rectangles, typically 6–8 pt/dp for controls and 8–12 for content groups; floating surfaces may use 12–14. Avoid pill-shaped controls and excessive nested boxes. Do not impose one universal radius on everything.
 - Borders and tonal surfaces provide grouping. Soft shadows belong mainly to floating surfaces. No colored halos, gradient text, decorative glass, bouncing panels, or pulsing connectivity.
 - Require at least 4.5:1 contrast for ordinary text and 3:1 for large text and meaningful control graphics. Preserve visible native focus indicators and screen-reader labels; color must never be the only state signal.
 
-## Application structure
+### Type, spacing, icons, and depth
+
+- Use SF system text styles on Mac and Material roles on Android; do not ship decorative typefaces. Keep page titles restrained and hierarchy clear. Metadata is subordinate to message, track, peer, and task content.
+- Use a 4, 8, 12, 16, 24, 32 spacing rhythm. Keep related controls close; create section separation with whitespace and dividers instead of repeated panels.
+- Use SF Symbols on Mac and Material Symbols on Android. The Lucide icons in the browser preview are placeholders; map each to a familiar platform glyph. Icon-only controls need accessible names.
+- Keep workspace surfaces flat. Use borders and quiet tonal shifts to group related settings. Reserve shadow for floating windows, sheets or popovers. Avoid glowing accents, gradients, ornamental status dots and decorative motion.
+- Buttons are lightly outlined or neutral filled rectangles with modest corner rounding. Use a filled dark neutral for one clear primary action where needed; avoid filling every action.
+
+## Navigation and continuity
+
+The information architecture is shared, while its navigation is native:
+
+| Destination | Purpose |
+| --- | --- |
+| Overview / Home | Device context, current playback and transfer, recent activity, quick sends |
+| Devices | Connection, pairing, trust, identity and diagnostics |
+| Features | Launch supported feature panels and their local preferences |
+| Favourites | Shortcuts to chosen Features; never enable or bypass a feature |
+| Settings | Appearance and app-wide preferences |
+| About | Version, license, source and creator/support links |
+
+On Mac, the window titlebar is split at the sidebar boundary. Keep macOS traffic-light controls at the far left, then Back and Forward history controls on the left portion. Show the aniCe brand in the window header, not the active destination name. Keep the active section title small in the workspace. History navigation follows actual visited pages, including conversation changes; Back returns to the prior page context. The sidebar holds Overview, Devices, Features and Favourites, with Settings and About at its lower end.
+
+Android uses a native app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About is reached from the app bar. Preserve system Back and RTL-aware in-app Back. Do not duplicate section titles beneath the app bar.
+
+Opening or leaving a section never retires a transport, playback session, draft or transfer. A feature panel's Back returns to Features or Favourites. Feature settings open inline from that feature's gear; they edit the same preference and do not send the user to the global Settings page. Main Settings remains available for app-wide discovery and management.
+
+## Screen specifications
+
+### Delivery priorities
+
+| Priority | Design outcome |
+| --- | --- |
+| P0 · Task completion | Stable device context; pairing with mutual approval; file review/progress/result; bottom SMS composer with explicit SIM; retained drafts; distinct offline, permission and uncertain-send recovery |
+| P1 · Continuity | Shared state vocabulary; contextual Back; separate favourite and open actions; Mac history-aware Back/Forward; inline feature preferences; active work remains visible across navigation |
+| P2 · Finish | Optical alignment; complete keyboard paths; reduced motion; long-content wrapping; quiet status labels; native notification behavior; localization review |
+
+### Before → after rationale
+
+| Area | Before | Redesign outcome |
+| --- | --- | --- |
+| First run | Setup competes with the workspace | One pairing path, identity review, mutual approval and return to Home |
+| Home | Repeated context and competing panels | One device row, compact actions, active work first and recent activity secondary |
+| Devices | Connection details spread across sections | Peer readiness, direct connection actions and security disclosure together |
+| Features | Large cards and unclear destinations | Flat labeled rows; open and favourite are separate actions |
+| Now Playing | Controls feel scattered or off-center | Centered player detail with visible source, supported seek and clear control hierarchy |
+| Files | Send actions compete with transfer state | One compact entry that progresses through choose, review, send, progress and result |
+| Messages | Composer placement and active selection interrupt reading | Chronological history, quiet selected/received surfaces, SIM beside bottom Send |
+| Clipboard | Sharing, history and preference controls are mixed | Task-focused Share/History with consent in Settings and inline feature preferences |
+| Settings | Verbose and box-heavy | Mac preference groups; concise phone rows; consistent whole-row activation |
+| Menu bar / tray | Oversized or unresponsive quick surfaces | Compact quick actions and keyboard-oriented tray with stable selection and focus |
+| Errors and empty states | Dead ends or generic status | One truthful explanation and one relevant recovery action |
+
+### First run and connection
+
+Keep pairing separate from the everyday workspace. Give first run one clear Pair device action, then explain QR or code pairing in short steps. Show identity details before approval; require approval on both devices. Denial returns to a recoverable pairing state. Request OS permissions only in the context that needs them and explain the next system step. A successful pairing returns to Home with the connected device named.
+
+Connection state must distinguish trusted, connecting, secured, offline, permission-blocked and unsupported. Never imply an authenticated connection from discovery alone. Offer one contextual next action. Keep manual connection and automatic preference visible where the user manages devices.
+
+### Home and Overview
+
+Use a flat, organized workbench. Start with one device row: device name, readable readiness state, Auto connect where appropriate and a compact Disconnect/Connect action. Do not show a pulsing connected dot or fluffy welcome sentence. Do not put connection management details or a device list in Home.
+
+Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Do not invent battery, storage or charging values.
+
+### Devices and device details
+
+Show a compact peer group with device name, secured readiness, automatic preference and direct Bluetooth / local-network controls. Keep Security and diagnostics in a disclosure. Pair/Add device is a separate action. Saved trusted devices and This device are distinct lower sections. Names and full fingerprints are selectable in security detail; never expose fingerprint fragments in summaries. Forget requires an explicit confirmation.
+
+### Features and Favourites
+
+Present a compact launcher as clear flat rows, not a wall of equal large tiles. Each row has a neutral icon, feature name, concise current availability or state, separate favourite control and trailing chevron. Entire row opens the feature except for independent star or overflow controls. On Mac use two columns only when the detail width supports readable rows; on phones use full-width rows. Favourites use the same feature destination and permission rules as Features.
+
+### Now Playing
+
+Keep the compact Home player concise: artwork when available, title, artist/origin, supported seek and balanced transport controls. The dedicated Now Playing page centers the content block in the available workspace with a readable maximum width. Do not leave an unexplained empty right-hand region or over-expand controls. Order content as player/source, artwork and metadata, elapsed/seek/duration, transport, output volume and collapsed Playback setup. Keep the player selector visible. Missing metadata stays absent; unsupported controls explain their state. Use low-emphasis neutral feedback, especially in dark mode; received SMS bubbles and active selection must not look brightly highlighted.
+
+### File transfer
+
+Keep the overview and menu-bar send entry compact. On Mac the transfer area may visually suggest drag and drop, but the actual implementation must only promise drop support if the native picker/drop path is implemented. Always offer Choose files. Present selected files and target for review before sending. Incoming files require an explicit review and approval. Show direction, named peer, progress and a clear result or recovery action. Closing a surface does not cancel a transfer.
+
+### Messages
+
+Use the same conversation hierarchy on both platforms, adapted to native navigation. Mac uses a conversation list beside the selected thread when width permits; Android focuses on one thread and uses Back to return to the list. Show message history in chronological reading order and keep the composer at the bottom. Keep SIM choice directly left of Send. Retain drafts when switching conversations or leaving and returning. Clearly distinguish Sending, Sent, Failed and Not confirmed; do not encourage a blind retry after uncertain delivery. Keep received message surfaces neutral and active-thread highlighting subtle in both themes. Remove the carrier-charge disclaimer from this UI.
+
+SMS permissions and actual relay capability are distinct. If SMS is uncommon for a person, it remains discoverable under Features without dominating Home. Feature gear reveals message notification preferences inline; Settings retains the same per-phone controls.
+
+### Clipboard and Quick Paste Tray
+
+The Clipboard feature separates Share from History. Keep manual sharing available when automatic sharing is off. Consent and collection toggles live in app Settings and in Clipboard's own preferences, not in the task content itself. Avoid a redundant collection toggle inside the history list. Explain local persistence before opting into history; pausing collection preserves saved items. Destructive clear/delete is confirmed.
+
+Quick Paste Tray is a compact, focused floating surface with search, horizontally scrollable clips, one selected item and optional full-text preview. Pin and delete remain visible without hover. Arrow keys move selection, Space previews, Return copies, Escape exits preview/search before closing. Preserve search focus, selected identity and horizontal scroll during updates. On copy failure, keep the tray open and explain recovery; closing the tray never implies cancellation of unrelated work.
+
+### Settings and About
+
+Mac Settings uses a restrained reading column, section jump controls and lightly outlined preference groups for Appearance, Connection, Clipboard, Messages and This device. Use compact native rows, short labels and descriptions only when needed. Keep the Mac preference organization from the accepted reference. Phone Settings is concise: native separated rows, no fluffy descriptions, no oversized controls and minimal box framing. Both use the same preference names and meaning. Make the whole row label activate its associated switch or destination; independent buttons and controls remain separate targets.
+
+Feature-local preferences stay available from their own panels and update the same values as Settings. Appearance offers System, Light and Dark. Preserve source, license, version and creator information in About; use subdued support treatment and no invented version details.
+
+### Menu-bar companion and notifications
+
+The menu-bar companion is a compact action surface: aniCe heading and overflow, device context, current playback/transfer activity, quiet Send clipboard/Send files actions and a persistent Open aniCe footer. Do not show an idle transfer section or oversized send tray. Show Send files only for a ready compatible target; an active transfer replaces that action. Settings, Manage devices and Quit stay in overflow. Keep Escape/outside-click behavior native, restore focus appropriately, and never cancel work on dismissal.
+
+Notifications open the relevant existing destination and preserve the current task. Hide SMS text by default. Do not steal application focus. Use platform notification surfaces and concise, actionable text; do not announce every progress tick.
+
+### Loading, empty, offline and error states
+
+Keep layout stable with small placeholders during loading. Empty history explains how to start collection. An unpaired Home offers Pair a device. Offline states preserve drafts and local-only actions, identify the disconnected peer and offer reconnect. Permission-needed, unsupported, failed, canceled and uncertain states each name what happened and one useful next step. Preserve any draft, approved transfer progress or local history the actual product can retain. Do not show fake zero values or sample success in native UI.
+
+## User journeys
+
+1. **Connect/start:** First run → Pair device → QR or code → verify identity → approve on both devices → connected Home. Decline returns to pairing; permission requests remain contextual.
+2. **Control media:** Home or menu bar → play/pause or seek → immediate local feedback → Now Playing for source/volume. Navigation preserves playback; disconnected controls explain reconnection.
+3. **Transfer files:** Choose files → review list and named target → Send → progress → Completed. Incoming path is Offer → Review → Approve or Decline. Cancel is explicit and distinct from closing a surface.
+4. **Message:** Messages → select thread → compose → select SIM beside Send → Send → Sending → Sent. Rejection and unknown outcome remain distinct; retain draft and avoid ambiguous resend prompts.
+5. **Settings:** Open a feature's gear for local preferences, or Settings for app-wide groups → change preference → show immediate state → return to the same task. History opt-in explains local storage; automatic clipboard sharing consent remains explicit on both devices.
+
+## Component behavior library
+
+| Component | Default and loading | Success, warning, error and disabled |
+| --- | --- | --- |
+| Buttons | One primary action per decision; routine actions outlined/text; stable label while loading | Confirm near the action; error names recovery; disabled state has an adjacent reason |
+| Sliders | Native track, visible value/time and large hit area | Keep requested preview while waiting; restore or explain failure; unsupported is not zero |
+| Cards and lists | Boundaries only around coherent tasks; flat feature/settings rows; stable skeleton shape | State belongs to its row; full-row activation excludes star, menu and nested controls |
+| Sheets and dialogs | Sheets for focused detail; dialogs for approval/destructive actions; focus enters and returns | Inline errors preserve input; Escape closes dialog, not background work; destructive copy names impact |
+| Toggles and pickers | Native control, short label and optional necessary explanation | Consent is explicit; dependent choices show unavailable reason; retain saved choice where appropriate |
+| Banners | Persistent only while a condition affects current task | State plus consequence and one relevant recovery action |
+| Toasts | Brief local acknowledgement only | Never sole confirmation for a consequential send or transfer; persistent result remains in context |
+
+## Motion and feedback
+
+Direct controls respond immediately. Use roughly 120–160 ms for hover/selection and 180–220 ms for route/sheet transitions where motion clarifies change. Do not add entrance cascades, pulsing connectivity or fake delay. Respect reduced motion and keep tasks interruptible. Android may use a light haptic for meaningful selection or completion, never every tap or slider tick. Mac relies on pointer, keyboard and native focus feedback. Always make state change visible without animation.
+
+## Accessibility and validation targets
+
+- Contrast: ordinary text ≥ 4.5:1; large text and meaningful control graphics ≥ 3:1 in both appearances, including selected/disabled states.
+- Android touch targets: ≥ 48 × 48 dp. Visible phone button faces may be compact (about 32 dp) while preserving that interaction area. Mac retains visible keyboard focus and native hit areas.
+- At 200% text scaling, labels and device names wrap; stack peer sections and composer actions before truncating essential content.
+- VoiceOver/TalkBack identifies action, target, state and result. Decorative icons are silent. Announce final state, not every progress update.
+- Complete core journeys with keyboard only and logical focus. Sheets restore focus; ordinary navigation does not trap it. Test Android Back, Mac Escape and native popover dismissal.
+- Pairing: ≥ 90% unassisted completion; median ≤ 60 seconds excluding OS prompts.
+- File send: ≥ 95% task completion with ≤ 3 decisions before transfer starts; ≥ 90% understand accept/decline.
+- SIM reply: ≥ 95% choose intended SIM; zero duplicate sends caused by ambiguous feedback in validation sessions.
+- Find clipboard/message preferences: ≥ 90% success within 15 seconds. Return to prior feature in one navigation action.
+- High activity: ≥ 90% identify a pending incoming file and current playback state within 5 seconds. Navigation never hides active work or its result.
+- Feedback: immediate visible response within 100 ms; consequential results persist in task context.
+
+Targets are validation gates, not claimed study results. Review both themes, compact and expanded widths, large text, long names, empty/offline/permission/error states, keyboard/focus, and screen readers. Validate native behavior in the actual app; browser preview only validates the concept.
+
+## Platform consistency matrix
+
+| Shared concept | Android | macOS |
+| --- | --- | --- |
+| Destination names and task state | Native bottom navigation; one focused conversation; system Back | Sidebar; split conversation when width permits; titlebar Back/Forward follows history |
+| Device identity and connection | Native app bar, compact peer rows, native details surface | aniCe-branded split titlebar, sidebar and device details sheet |
+| Actions and controls | Material switches, pickers and 48-dp targets; compact visual button faces | AppKit/SwiftUI controls, keyboard/focus behavior and compact outlined actions |
+| Messages and SIM | Focused thread; keyboard Send; SIM left of Send | Conversation list and thread; Return sends, Shift-Return inserts newline; SIM left of Send |
+| Feature preferences | Inline feature settings plus shared Settings values | Inline feature settings plus shared Settings values and Mac preference section jumps |
+| Active work | Home and native notifications/lock-screen controls | Overview, menu-bar companion and notifications |
+| Quick clipboard | Focused explicit-send surface where supported | Non-activating Quick Paste Tray with keyboard navigation |
+
+## Risks and mitigations
+
+| Risk | Mitigation |
+| --- | --- |
+| Cross-surface navigation loses context | Keep named device/task target stable; Back/Forward follows actual history; retain drafts and active work |
+| Busy Home competes for attention | Incoming approvals first, active work next, recent activity secondary; omit empty panels |
+| Optimistic feedback implies delivery | Distinguish Sending, Sent, Failed and Not confirmed; preserve recovery and avoid blind retry |
+| Wrong peer or hidden consent | Name recipient at review/send; make sharing mode explicit and consent contextual |
+| Compact controls reduce usability | Keep native targets and scale behavior while reducing only decorative padding/fill |
+| Prototype suggests unsupported behavior | Check existing feature docs and native capability before implementation; label drag/drop only when supported |
+| Shared styling feels non-native | Share semantic roles and wording, implement native platform controls and navigation |
+
+## Seamless UX scorecard
+
+| Dimension | Pass criterion | Main risk and mitigation |
+| --- | --- | --- |
+| Continuity | All five core journeys complete; drafts and ongoing work survive navigation | Context loss; preserve target/device and use history-aware navigation |
+| Hierarchy | Pending action found within 5 seconds | Busy Home; prioritize approval, then active work, then recent activity |
+| Feedback | Visible response within 100 ms and consequential result persists in context | False success; distinguish Sending, Sent, Failed and Not confirmed |
+| Trust | Every send names its peer; every consent is explicit | Wrong target or hidden sharing; name recipient and show consent at point of action |
+| Native quality | Keyboard, Back, Escape and system surfaces behave as expected per platform | Web patterns forced into native UI; use native equivalents |
+| Accessibility | Contrast, touch target, scaling and screen-reader gates pass in both themes | Compact controls shrink hit areas; reduce visual chrome while preserving native bounds |
+
+These are validation targets, not claimed study results.
+
+## Interactive reference
+
+Interactive visual concepts cover Mac, Android, menu bar, Quick Paste Tray, both appearances, everyday/high-activity use, first run, loading, offline, permission and interrupted-transfer states. Their identities, messages, playback, pairing, permissions and transfers are samples; they do not contact devices or send content. Drag/drop visuals do not grant a native drag/drop implementation. The mark and browser icons are placeholders; native icon systems remain required.
+
+## Existing capability and platform constraints
 
 Overview on Mac and Home on Android remain the initial destinations. Devices, Features, Favourites, Settings and About are separate sections. Mac exposes all six in its sidebar; Android uses five bottom destinations with a separate About route in the app bar. Do not put individual devices or Add device in the sidebar. Devices retains connection, LAN, pairing and trust management through the existing owners. Opening or closing a section never retires work by itself.
 
@@ -52,7 +243,7 @@ Primary peer lists show only secured peers while any are connected, otherwise tr
 
 ## Full Mac window
 
-Use a native resizable window with a toolbar branded aniCe and a sidebar matching the reference: aniCe heading, Workspace label, Overview/Devices/Features/Favourites above, Settings/About at the bottom. Keep semantic toolbar surfaces and dividers visible. Device context, readable connection state and a compact primary connection action lead the workspace. The overview uses a single device/status row with an immediately visible Auto connect checkbox and compact connection options. It omits device lists, setup text and Manage devices. Devices owns one compact connection card per currently connected peer, falling back to trusted peers when none is connected, with Auto connect, Bluetooth and LAN actions and a Security and diagnostics route. Add device opens pairing separately; trust management stays in a disclosure and This device is a quiet identity row. Connection details opens a sheet containing transport controls, security fingerprint and collapsed Diagnostics. Manage devices opens pairing and trust management. Security credentials remain selectable in their detail context; omit fingerprint prefixes from device summaries.
+Use a native resizable window. The titlebar keeps system traffic lights, then Back and Forward history controls on the left side of its split header; aniCe branding stays in the window header. Do not replace aniCe with the active page name. Page titles sit below the header at 20 pt. The sidebar has a small WORKSPACE label, Overview/Devices/Features/Favourites above, Settings/About at the bottom. Device context, readable connection state and a compact primary connection action lead the workspace. The overview uses one device/status row with immediately visible Auto connect and compact connection actions. It omits device lists, setup text and Manage devices. Devices owns compact peer rows with Auto connect, Bluetooth and LAN actions and Security and diagnostics. Add device opens pairing separately; trust management stays in a disclosure and This device is a quiet identity row. Connection details opens a sheet containing transport controls, security fingerprint and collapsed Diagnostics. Security credentials remain selectable in their detail context; omit fingerprint prefixes from device summaries.
 
 Sending files has one stable entry in the overview. An active transfer replaces the idle action with its approval/progress/result presentation. Local Mac playback remains optional and off by default for ambient workspace/companion cards. Opening Now Playing from Features explicitly presents its dedicated controls even when ambient display is off. Full playback and the compact activity share one owner. Overview music and files use responsive native panels: two columns when at least 320 points per panel fit, otherwise a single column. Feature launchers use one column below 700 points of detail width and exactly two above it. Both columns grow with the window; content has no fixed maximum width or artificial minimum card height. Overview panels switch to two columns at 720 points of detail width and never exceed two columns.
 
@@ -66,7 +257,7 @@ The companion is for checking a device and taking a quick action. Browsing and c
 - Show compact device rows with a small native name and connection status inline, a contextual connection action when disconnected and a details route. Wrap long names rather than increasing the normal row height for short names. Connected peers appear first; when any are connected, other peers remain accessible through the full workspace.
 - Show Send files only for the actual ready, compatible transfer target and hide it during preparation or an active/result transfer. Do not attach a global transfer command to an unrelated connected peer.
 - Use the original companion hierarchy: compact aniCe heading with overflow, device header, then content separated by quiet dividers only between populated sections. Do not place filled activity cards inside the companion surface. Playback and transfer remain discoverable together without paging, page counters or swipe gestures. Incoming offers remain immediately discoverable.
-- Music has a Now playing heading and On this Mac origin. Keep artwork when available, title/artist, supported seek with elapsed/duration and balanced native transport buttons visible. Play/pause is a circular accent control. Full playback keeps the Player selector visible with Auto and advertised sources. The companion also shows it when multiple players exist; More playback controls reveals compact player volume; it does not hide ordinary seek controls. Missing artwork stays absent.
+- Music has a Now playing heading and On this Mac origin. Keep artwork when available, title/artist, supported seek with elapsed/duration and balanced native transport buttons visible. Use restrained, softly rounded rectangular controls in the shared neutral action style. Full playback keeps the Player selector visible with Auto and advertised sources. The companion also shows it when multiple players exist; More playback controls reveals compact player volume; it does not hide ordinary seek controls. Missing artwork stays absent.
 - Find Device remains in its feature panel. Clipboard opens its native text-sharing panel; battery and charging remain absent until their data and behavior exist. No disabled future-feature placeholders or permanent Quick actions heading.
 - Send clipboard and Send files are quiet labeled controls below the current activity, wrapping vertically when needed. Send files names its ready target. The footer is a quiet Open aniCe route with a trailing arrow; Settings, Manage devices and Quit live in the header overflow. Modal pickers retain the companion and restore focus. Dismissal never means cancellation.
 - Bound content to the screen with scrolling and a persistent footer. Native Escape/outside-click dismissal, keyboard access and VoiceOver must be verified. Sharing owners with the main window prevents a separate capability or transport model.
@@ -96,7 +287,7 @@ The Quick Paste Tray accepts keyboard focus across applications without activati
 
 ## Android
 
-Use a native top app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About opens as a separate page from the app bar. Home contains device summaries, file sending and relevant playback; Devices uses native separated peer rows with status, automatic preference, LAN action and a security/diagnostics disclosure; it avoids nested or decorative card boundaries. This device remains a quiet navigation row; This device and Add device are full-width rows at the end of the Devices scroll content. Features and Favourites use one full-width card per row on phones. Phone Home shows one compact device/status row with 8-dp additional vertical space above and below; automatic connection preferences stay directly accessible in Devices rather than Home. Its aniCe app-bar brand stays visible. Device lists, management, LAN actions and the This device identity route belong in Devices. Omit a redundant Connections heading below the Devices app bar.
+Use a native top app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About opens as a separate page from the app bar. Home contains device summaries, file sending and relevant playback; Devices uses native separated peer rows with status, automatic preference, LAN action and a security/diagnostics disclosure; it avoids nested or decorative card boundaries. This device remains a quiet navigation row; This device and Add device are full-width rows at the end of the Devices scroll content. Features and Favourites use concise full-width flat rows on phones, not large tiles. Phone Home shows one compact device/status row with 8-dp additional vertical space above and below; automatic connection preferences stay directly accessible in Devices rather than Home. Its aniCe app-bar brand stays visible. Device lists, management, LAN actions and the This device identity route belong in Devices. Omit a redundant Connections heading below the Devices app bar.
 
 Use native pickers, sheets, dialogs and scalable Material type. Home player volume uses one slim label/slider/value row while retaining its 48-dp interaction target and source-bound release behavior. Phone feature headings and device names use title-small roles, track titles use body-medium and supporting artist/origin text uses body-small; accessibility scaling remains native. Details stack at compact widths; do not force feature panels into equal-size tiles. Wider screens may use native navigation rails. Device names wrap; unknown facts stay absent. Full fingerprints live in selectable Connection details content. Automatic Bluetooth setup is directly accessible outside Connection details, preserving the existing permission/association flow. Incoming Find Device ringing and Stop remain native alert/notification behavior, independent of the Features launcher.
 
@@ -126,7 +317,7 @@ Settings presents **Automatic clipboard sharing** as a toggle. It is off by defa
 
 Keep the choice scoped to the paired device and synchronized across its app surfaces. Reflect the current mode in the clipboard panel and quick action; turning automatic sharing off immediately returns the interface to manual sharing. Do not label a requested mode as active if a required permission or platform capability is unavailable. Show the reason and available manual route.
 
-Native implementation must establish clipboard access, direction, loop prevention, and private-content handling before enabling automatic sharing. Native Clipboard v1 uses direct native delivery, manual Send and one per-credential automatic preference controlling sending and automatic receiving. Inspection within Share starts with metadata and explicit Reveal. The Clipboard panel retains native Share and History views. Send clipboard and Send files use quiet native outlined/bordered controls with a small symbol and visible action label; they are one-shot actions, separate from the automatic-sharing toggle. Android preserves 48-dp touch targets, 8-dp corners and neutral semantic ink. Mac uses small native bordered buttons, including direct clipboard/file actions in the companion. Share keeps device context, automatic consent, Send clipboard and meaningful status visible; More options holds inspection, Reveal and manual paste, with detailed guidance under How sharing works. History is a separate device-local opt-in with compact two-line text rows, From Mac/From phone labels, timestamps, Copy/Send/Delete and confirmed Clear all. Clipboard preferences use compact native checkboxes matching the local-network automatic preference, with the shared selection accent in both appearances. Keep clipboard history is shared between Settings and History, defaults off, and explains local persistence before enabling. Turning it off pauses collection while preserving saved items across restart, Forget device, and Reset identity. Explicit Clear/Delete remove items; count limits still bound retention. Both platforms offer 20/50/100-item capacities and 4-point/dp horizontal breathing room within the Clipboard panel. History groups entries by local calendar date, newest first, with a saved-count/Clear all toolbar, wrapping origin/time metadata and quiet labeled row actions. History remains accessible without a peer. Android provides a compact Send to Mac panel for selected text and Share-sheet text or URLs; it does not open the full workspace. The browser sample never accesses the clipboard.
+Native implementation must establish clipboard access, direction, loop prevention, and private-content handling before enabling automatic sharing. Native Clipboard v1 uses direct native delivery, manual Send and one per-credential automatic preference controlling sending and automatic receiving. Inspection within Share starts with metadata and explicit Reveal. The Clipboard panel retains native Share and History views. Send clipboard and Send files use quiet native outlined/bordered controls with a small symbol and visible action label; they are one-shot actions, separate from the automatic-sharing toggle. Android preserves 48-dp touch targets, 8-dp corners and neutral semantic ink. Mac uses small native bordered buttons, including direct clipboard/file actions in the companion. Share keeps device context, automatic consent, Send clipboard and meaningful status visible; More options holds inspection, Reveal and manual paste, with detailed guidance under How sharing works. History is a separate device-local opt-in with compact two-line text rows, From Mac/From phone labels, timestamps, Copy/Send/Delete and confirmed Clear all. Clipboard preferences use compact native checkboxes matching the local-network automatic preference, with the shared neutral action ink in both appearances. Keep clipboard history is shared between Settings and History, defaults off, and explains local persistence before enabling. Turning it off pauses collection while preserving saved items across restart, Forget device, and Reset identity. Explicit Clear/Delete remove items; count limits still bound retention. Both platforms offer 20/50/100-item capacities and 4-point/dp horizontal breathing room within the Clipboard panel. History groups entries by local calendar date, newest first, with a saved-count/Clear all toolbar, wrapping origin/time metadata and quiet labeled row actions. History remains accessible without a peer. Android provides a compact Send to Mac panel for selected text and Share-sheet text or URLs; it does not open the full workspace. The browser sample never accesses the clipboard.
 
 Android 10+ restricts clipboard reading to the app that currently has input focus or the default input method editor (IME) ([clipboard privacy restrictions](https://developer.android.com/about/versions/10/privacy/changes#clipboard-data)). For aniCe's ordinary app, automatic reading must be limited to periods when it has focus; do not implement continuous background clipboard monitoring or assume a foreground service grants access. The Send to Mac Quick Settings tile opens a focused explicit-send panel. It reads once after actual focus, displays metadata and requires Send, preserving sensitive-marker confirmation. That focus grants manual read access without enabling automatic sharing or history observation. The tile is not a clipboard-access exemption; its system-bound service never reads the clipboard or starts connections. Do not introduce an IME or sandbox bypass merely to enable clipboard sharing.
 
@@ -186,7 +377,7 @@ The ignored local self prototyped images (designed by anisharyal09) under `for-m
 
 Each device has one readiness-based summary and a compact primary Bluetooth action. Only secured transports appear in Connected; pending/failed secondary channels retain separate feedback. Device-level Disconnect closes both owners; transport-specific actions close only their channel. LAN retains manual controls alongside the opt-in automatic policy. Mac Connect opens bounded admission and waits for the phone.
 
-Ordinary buttons, navigation titles and close symbols use neutral primary/secondary ink. Automatic checkmarks alone retain the shared accent (light #355B70, dark #A7C5D6); state colours remain separate. Android uses native outlined/text controls with 8-dp corners, 10×4-dp standard content padding and 14×2-dp connection-action padding. Connection action visuals have a 32-dp minimum height; native Material interaction bounds remain 48 dp and scalable text may increase visual height. Android automatic preference is observable application state presented outside Connection details as a compact native checkbox in one accessible 48-dp row. The close symbol is 18 dp inside its native 48-dp icon-button target.
+Ordinary buttons, navigation titles and close symbols use neutral primary/secondary ink. Automatic checkmarks use the shared neutral action ink; state colours remain separate. Android uses native outlined/text controls with modest corners and reduced visual padding. Connection action faces can be about 32 dp high; native Material interaction bounds remain 48 dp and scalable text may increase visual height. Android automatic preference is observable application state presented outside Connection details as a compact native checkbox in one accessible 48-dp row. The close symbol is 18 dp inside its native 48-dp icon-button target.
 
 Android Devices presents Bluetooth and Local network as direct compact rows beneath the device name, readiness and automatic preference. Security and diagnostics expands inline from a full-width disclosure with a chevron and accessible expansion state. Device-level Disconnect remains in the expanded details. System Back, its labelled close icon or Connection details action collapses presentation without retiring work. Diagnostics is a full-width disclosure with accessibility state; it owns the association-settings route, connection checks/counters, Debug automatic-service events, discovery compatibility and LAN lifetime information. Debug service events are a separate collapsed disclosure, reset whenever Diagnostics opens. Association settings uses the native RTL-aware Back icon and contains no duplicate diagnostics. Opening Bluetooth discovery preserves both transports. Scan suspends/retires Bluetooth only; automatic ownership resumes after discovery cleanup. LAN remains active and device-level Disconnect still closes both transports. Trusted-device management shows full names and separate confirmed Forget actions; clicking a device name expands its selectable full fingerprint. Phone trusted-device rows include a Security fingerprint subtitle and a mirrored chevron indicating expansion. Disclosure labels activate their entire row on both platforms. Android Settings uses the title aniCe Settings. Device summaries omit fingerprints; security details retain the full credential. LAN progress reports finding the Mac while bounded discovery and authentication overlap.
 
