@@ -10,8 +10,8 @@ enum AppDestination: String, CaseIterable, Identifiable {
   var id: Self { self }
   var symbol: String { switch self { case .home: "house"; case .devices: "laptopcomputer.and.iphone"; case .features: "square.grid.2x2"; case .favourites: "star"; case .about: "info.circle"; case .settings: "gearshape" } }
 }
-enum DeviceRoute { case overview, pairing }
-enum SettingsRoute { case overview, identity, about }
+enum DeviceRoute: Equatable { case overview, pairing }
+enum SettingsRoute: Equatable { case overview, identity, about }
 // Stable identifiers belong to local presentation preferences, never peer capabilities.
 enum AppFeature: String, CaseIterable, Identifiable {
   case playback, files, findDevice, clipboard, messages
@@ -57,29 +57,106 @@ enum WindowAppearance: String, CaseIterable {
 }
 
 @Observable @MainActor final class ConnectionNavigation {
-  var destination: AppDestination = .home
-  var deviceRoute: DeviceRoute = .overview
-  var settingsRoute: SettingsRoute = .overview
-  var focusedPeer: String?
+  private struct Route: Equatable {
+    var destination: AppDestination = .home
+    var deviceRoute: DeviceRoute = .overview
+    var settingsRoute: SettingsRoute = .overview
+    var focusedPeer: String?
+    var featurePanel: AppFeature?
+    var featureOrigin: AppDestination = .features
+  }
+
+  private var route = Route()
+  private var previous: [Route] = []
+  private var next: [Route] = []
+  var canGoBack: Bool { !previous.isEmpty }
+  var canGoForward: Bool { !next.isEmpty }
+  var destination: AppDestination {
+    get { route.destination }
+    set { navigate { $0.destination = newValue } }
+  }
+  var deviceRoute: DeviceRoute {
+    get { route.deviceRoute }
+    set { navigate { $0.deviceRoute = newValue } }
+  }
+  var settingsRoute: SettingsRoute {
+    get { route.settingsRoute }
+    set { navigate { $0.settingsRoute = newValue } }
+  }
+  var focusedPeer: String? {
+    get { route.focusedPeer }
+    set { navigate { $0.focusedPeer = newValue } }
+  }
+  var featurePanel: AppFeature? {
+    get { route.featurePanel }
+    set { navigate { $0.featurePanel = newValue } }
+  }
+  var featureOrigin: AppDestination { route.featureOrigin }
   var details = false
   var diagnostics = false
   var findDetails = false
-  var featurePanel: AppFeature?
-  var featureOrigin: AppDestination = .features
   var automaticAfterPairing = true
   var automaticLanAfterPairing = true
 
+  private func navigate(_ update: (inout Route) -> Void) {
+    var target = route
+    update(&target)
+    guard target != route else { return }
+    previous.append(route)
+    next.removeAll()
+    route = target
+  }
+
+  func goBack() {
+    guard let target = previous.popLast() else { return }
+    next.append(route)
+    restore(target)
+  }
+
+  func goForward() {
+    guard let target = next.popLast() else { return }
+    previous.append(route)
+    restore(target)
+  }
+
+  private func restore(_ target: Route) {
+    route = target
+    details = false
+    findDetails = target.featurePanel == .findDevice
+  }
+
+  func select(_ destination: AppDestination) {
+    navigate {
+      $0.destination = destination
+      if destination == .features || destination == .favourites { $0.featurePanel = nil }
+      if destination == .devices { $0.deviceRoute = .overview }
+    }
+    details = false
+    findDetails = false
+  }
+
+  func showSettings(_ settingsRoute: SettingsRoute) {
+    navigate {
+      $0.destination = .settings
+      $0.settingsRoute = settingsRoute
+    }
+  }
+
   func openFeature(_ feature: AppFeature) {
-    featureOrigin = destination == .favourites ? .favourites : .features
-    featurePanel = feature
+    navigate {
+      $0.featureOrigin = $0.destination == .favourites ? .favourites : .features
+      $0.featurePanel = feature
+      $0.destination = .features
+    }
     findDetails = feature == .findDevice
-    show(.features)
   }
 
   func closeFeature() {
-    featurePanel = nil
+    navigate {
+      $0.featurePanel = nil
+      $0.destination = $0.featureOrigin
+    }
     findDetails = false
-    show(featureOrigin)
   }
 
   func open(_ destination: AppDestination, peer: String? = nil, route: DeviceRoute = .overview, present: () -> Void) {
@@ -88,11 +165,13 @@ enum WindowAppearance: String, CaseIterable {
   }
 
   func show(_ destination: AppDestination, peer: String? = nil, route: DeviceRoute = .overview) {
-    self.destination = destination
-    if destination == .devices {
-      deviceRoute = route
-      details = false
-      if let peer { focusedPeer = peer }
+    navigate {
+      $0.destination = destination
+      if destination == .devices {
+        $0.deviceRoute = route
+        if let peer { $0.focusedPeer = peer }
+      }
     }
+    if destination == .devices { details = false }
   }
 }

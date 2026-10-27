@@ -35,10 +35,8 @@ struct MainWindowView: View {
   var body: some View {
     NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
-        Text("aniCe").font(.system(size: 22, weight: .semibold))
-          .foregroundStyle(AniCePalette.primaryText(colorScheme)).padding(.top, 24).padding(.bottom, 24).padding(.horizontal, 14)
         Text("Workspace").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          .padding(.horizontal, 14).padding(.bottom, 12)
+          .padding(.horizontal, 14).padding(.top, 20).padding(.bottom, 12)
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
         Spacer(minLength: 24)
         sidebarItem(.settings)
@@ -46,6 +44,16 @@ struct MainWindowView: View {
       }.padding(.horizontal, 14).padding(.bottom, 24)
         .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
         .background(AniCePalette.secondarySurface(colorScheme))
+        .toolbar {
+          ToolbarItemGroup(placement: .navigation) {
+            Button(action: navigation.goBack) { Image(systemName: "chevron.backward") }
+              .disabled(!navigation.canGoBack).help("Back")
+              .accessibilityLabel("Back").keyboardShortcut("[", modifiers: .command)
+            Button(action: navigation.goForward) { Image(systemName: "chevron.forward") }
+              .disabled(!navigation.canGoForward).help("Forward")
+              .accessibilityLabel("Forward").keyboardShortcut("]", modifiers: .command)
+          }
+        }
     } detail: {
       Group {
         switch navigation.destination {
@@ -100,8 +108,7 @@ struct MainWindowView: View {
   private func sidebarItem(_ destination: AppDestination) -> some View {
     let selected = navigation.destination == destination
     return Button {
-      if destination == .features || destination == .favourites { navigation.featurePanel = nil; navigation.findDetails = false }
-      navigation.show(destination)
+      navigation.select(destination)
     } label: {
       HStack(spacing: 12) {
         Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)

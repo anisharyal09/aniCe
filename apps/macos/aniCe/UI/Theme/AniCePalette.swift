@@ -3,31 +3,34 @@ import SwiftUI
 
 enum AniCePalette {
   static func background(_ scheme: ColorScheme) -> Color {
-    color(light: 0xF4F3EF, dark: 0x191E22, scheme: scheme)
+    color(light: 0xF4F3EF, dark: 0x1B1E1E, scheme: scheme)
   }
   static func surface(_ scheme: ColorScheme) -> Color {
-    color(light: 0xFFFDF9, dark: 0x242B31, scheme: scheme)
+    color(light: 0xFFFDF9, dark: 0x242828, scheme: scheme)
   }
   static func accent(_ scheme: ColorScheme) -> Color {
-    color(light: 0x355B70, dark: 0xA7C5D6, scheme: scheme)
+    color(light: 0x47534D, dark: 0xC4CCC5, scheme: scheme)
   }
   static func onAccent(_ scheme: ColorScheme) -> Color {
-    color(light: 0xFFFFFF, dark: 0x152D3B, scheme: scheme)
+    color(light: 0xFFFDF9, dark: 0x222A25, scheme: scheme)
   }
   static func primaryText(_ scheme: ColorScheme) -> Color {
-    color(light: 0x262F35, dark: 0xEDF0F1, scheme: scheme)
+    color(light: 0x282E2A, dark: 0xEBEEEB, scheme: scheme)
   }
   static func secondaryText(_ scheme: ColorScheme) -> Color {
-    color(light: 0x626E76, dark: 0xADB8BF, scheme: scheme)
+    color(light: 0x626B65, dark: 0xADB5AF, scheme: scheme)
   }
   static func secondarySurface(_ scheme: ColorScheme) -> Color {
-    color(light: 0xEAEAE4, dark: 0x20272D, scheme: scheme)
+    color(light: 0xEAEAE4, dark: 0x222626, scheme: scheme)
   }
   static func separator(_ scheme: ColorScheme) -> Color {
-    color(light: 0xDCE0DF, dark: 0x3C4850, scheme: scheme)
+    color(light: 0xDCDED8, dark: 0x3B4140, scheme: scheme)
   }
   static func subtleAccent(_ scheme: ColorScheme) -> Color {
-    color(light: 0xDDE8ED, dark: 0x30434E, scheme: scheme)
+    color(light: 0xE5E8E2, dark: 0x303632, scheme: scheme)
+  }
+  static func track(_ scheme: ColorScheme) -> Color {
+    color(light: 0xE0E3DC, dark: 0x3B413E, scheme: scheme)
   }
   static func success(_ scheme: ColorScheme) -> Color {
     color(light: 0x466A50, dark: 0xA1C6A9, scheme: scheme)

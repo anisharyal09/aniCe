@@ -112,7 +112,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             onClick = sendFiles,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -459,7 +459,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -489,7 +489,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -519,7 +519,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))

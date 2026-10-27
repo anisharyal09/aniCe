@@ -89,6 +89,52 @@ extension SessionTests {
     XCTAssertEqual(navigation.settingsRoute, .about)
   }
 
+  @MainActor func testHistoryRestoresNestedRoutesAndPeerAndBranchesAfterBack() {
+    let navigation = ConnectionNavigation()
+    navigation.goBack()
+    navigation.goForward()
+    XCTAssertFalse(navigation.canGoBack)
+    navigation.show(.devices, peer: "phone-a", route: .pairing)
+    navigation.showSettings(.identity)
+    navigation.openFeature(.messages)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .settings)
+    XCTAssertEqual(navigation.settingsRoute, .identity)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .devices)
+    XCTAssertEqual(navigation.deviceRoute, .pairing)
+    XCTAssertEqual(navigation.focusedPeer, "phone-a")
+    navigation.goForward()
+    XCTAssertEqual(navigation.destination, .settings)
+    navigation.goForward()
+    XCTAssertEqual(navigation.featurePanel, .messages)
+    navigation.goBack()
+    navigation.show(.about)
+    XCTAssertFalse(navigation.canGoForward)
+    navigation.goForward()
+    XCTAssertEqual(navigation.destination, .about)
+  }
+
+  @MainActor func testHistoryIgnoresPreferenceChangesAndRepeatedNavigation() {
+    let navigation = ConnectionNavigation()
+    navigation.show(.home)
+    navigation.automaticAfterPairing = false
+    navigation.automaticLanAfterPairing = false
+    XCTAssertFalse(navigation.canGoBack)
+    navigation.select(.favourites)
+    navigation.openFeature(.files)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .favourites)
+    XCTAssertNil(navigation.featurePanel)
+    navigation.goForward()
+    XCTAssertEqual(navigation.featurePanel, .files)
+    navigation.select(.features)
+    XCTAssertNil(navigation.featurePanel)
+    navigation.goBack()
+    XCTAssertEqual(navigation.featurePanel, .files)
+    XCTAssertFalse(navigation.automaticAfterPairing)
+  }
+
   func testPrimaryPeerListShowsOnlyReadyDevicesAndFallsBackWhenDisconnected() {
     let peers = [("a", "Secured", "Failed"), ("b", "Connecting", "Disconnected"), ("c", "Disconnected", "Secured")]
     let selected = ConnectionPresentation.primaryPeers(peers) { row in

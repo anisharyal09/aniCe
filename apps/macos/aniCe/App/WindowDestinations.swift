@@ -77,8 +77,7 @@ ScrollView {
         }
         Divider()
         Button {
-          navigation.settingsRoute = .identity
-          navigation.show(.settings)
+          navigation.showSettings(.identity)
         } label: {
           HStack(spacing: 10) {
             Label("This device", systemImage: "desktopcomputer")

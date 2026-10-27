@@ -26,6 +26,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
 import io.github.anisharyal09.anice.features.session.DeviceSessionCard
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
+import java.util.concurrent.atomic.AtomicInteger
+import android.graphics.Rect
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -90,6 +92,8 @@ class HomeVisualReviewTest {
                 ) as MainActivity
             try {
                 val drawn = CountDownLatch(1)
+                val disconnects = AtomicInteger()
+                val details = AtomicInteger()
                 runner.runOnMainSync {
                     activity.setContent {
                         val configuration =
@@ -137,8 +141,8 @@ class HomeVisualReviewTest {
                                                             case.status,
                                                             true,
                                                             {},
-                                                            {},
-                                                            {},
+                                                            { disconnects.incrementAndGet() },
+                                                            { details.incrementAndGet() },
                                                         )
                                                     }
                                                 },
@@ -167,13 +171,37 @@ class HomeVisualReviewTest {
                     assertTrue(findText(root, "Connected") != null || findText(root, "Secured") != null)
                     val tools = findText(root, "Connection details") ?: findText(root, "More")
                     assertNotNull("Missing accessible More action", tools)
-
+                    val action = clickableAncestor(findText(root, "Disconnect"))
+                    assertNotNull("Missing independent Disconnect action", action)
+                    val bounds = Rect()
+                    action!!.getBoundsInScreen(bounds)
+                    assertTrue("Disconnect target must remain at least 48 dp",
+                        bounds.height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                    assertTrue(action.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                    runner.waitForIdleSync()
+                    assertEquals(1, disconnects.get())
+                    assertEquals(0, details.get())
+                    val device = clickableAncestor(findText(runner.uiAutomation.rootInActiveWindow, case.name))
+                    assertNotNull("Device name row must be actionable", device)
+                    assertTrue(device!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                    runner.waitForIdleSync()
+                    assertEquals(1, details.get())
+                    assertEquals(1, disconnects.get())
                 }
             } finally {
                 runner.runOnMainSync { activity.finish() }
                 runner.waitForIdleSync()
             }
         }
+    }
+
+    private fun clickableAncestor(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var current = node
+        repeat(8) {
+            if (current?.isClickable == true) return current
+            current = current?.parent
+        }
+        return null
     }
 
     private fun findText(

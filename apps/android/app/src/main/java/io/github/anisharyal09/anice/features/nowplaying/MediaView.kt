@@ -98,7 +98,7 @@ import kotlinx.coroutines.delay
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.Center) {
                     IconButton(onClick={owner.command(2)},enabled=owner.canAcceptPlayback && media.actions and 2L!=0L) { Icon(painterResource(R.drawable.ic_media_previous),contentDescription="Previous") }
-                    FilledIconButton(onClick={owner.command(1)},enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
+                    FilledIconButton(onClick={owner.command(1)},shape=MaterialTheme.shapes.small,modifier=Modifier.size(36.dp),enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
                         colors=IconButtonDefaults.filledIconButtonColors(containerColor=MaterialTheme.colorScheme.selectionAccent,contentColor=MaterialTheme.colorScheme.onPrimary)) { Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play") }
                     IconButton(onClick={owner.command(3)},enabled=owner.canAcceptPlayback && media.actions and 4L!=0L) { Icon(painterResource(R.drawable.ic_media_next),contentDescription="Next") }
                 }

@@ -116,9 +116,9 @@ struct MediaView: View {
   private func control(_ symbol: String,_ label: String,_ action: Int64,_ mask: Int64) -> some View {
     Button { model.command(source:media.source,revision:media.revision,action:action) } label: {
       Image(systemName:symbol)
-        .frame(width: action == 1 ? 40 : 32, height: 40)
+        .frame(width: action == 1 ? 40 : 32, height: 32)
         .foregroundStyle(action == 1 ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
-        .background { if action == 1 { Circle().fill(AniCePalette.accent(scheme)) } }
+        .background { if action == 1 { RoundedRectangle(cornerRadius: 8).fill(AniCePalette.accent(scheme)) } }
     }.buttonStyle(.plain)
       .disabled(model.busy || media.actions & mask == 0).accessibilityLabel(label)
   }

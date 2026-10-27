@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Changed
+
+- Apply the seamless neutral light/dark palette and compact rounded controls. Retain native 48-dp interaction bounds while reducing connection, file-send and playback button faces.
+
 ## [v0.3.0]
 
 ### Added

@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+### Changed
+
+- Apply the seamless neutral light/dark palette and compact rounded controls. Add native Back/Forward navigation that restores device, pairing, settings and feature context, with standard keyboard shortcuts.
+
 ## [v0.3.0]
 
 ### Added

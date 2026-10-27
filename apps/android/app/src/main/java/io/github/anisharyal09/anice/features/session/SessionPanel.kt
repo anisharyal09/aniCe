@@ -284,7 +284,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             if (showConnectionAction) OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
                 onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
                 enabled = action == "Disconnect" || action == "Cancel" || canConnect,
-                modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
+                modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
         }
         if (status.isNotBlank()) Text(status,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
