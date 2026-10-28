@@ -68,10 +68,11 @@ struct TransferView: View {
     VStack(alignment: .leading, spacing: compact ? 8 : 12) {
       if !compact {
         HStack {
-          if let open {
-            Button(action: open) { HStack { Text("Files"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.contentShape(Rectangle()) }.font(.headline).buttonStyle(.plain).accessibilityLabel("Open file transfer")
-          } else { Text("Files").font(.headline) }
           Spacer()
+          if let open {
+            Button(action: open) { Image(systemName: "chevron.forward") }
+              .buttonStyle(.plain).accessibilityLabel("Open file transfer")
+          }
           Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
             .labelStyle(.iconOnly).buttonStyle(.borderless)
             .help("File transfer notification settings")
@@ -148,21 +149,42 @@ struct TransferView: View {
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
 
-      if !model.peerConnected {
-        Text("Connect your phone to send files.")
-          .font(.caption)
+      HStack(spacing: 14) {
+        Image(systemName: "arrow.up.to.line")
+          .font(.title3)
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .frame(width: 24)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Send files").font(.callout.weight(.medium))
+          Text(transferTargetDescription)
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .lineLimit(2)
+        }
+        Spacer(minLength: 12)
+        Button {
+          promptAndSendFiles()
+        } label: {
+          Text("Choose files")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
       }
-
-      Button {
-        promptAndSendFiles()
-      } label: {
-        Label("Send files…", systemImage: "arrow.up.circle")
+      .padding(16)
+      .overlay {
+        RoundedRectangle(cornerRadius: 9)
+          .stroke(AniCePalette.separator(colorScheme), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+          .accessibilityHidden(true)
       }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-      .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
     }
+  }
+
+  private var transferTargetDescription: String {
+    guard model.peerConnected else { return "Connect your phone to send files." }
+    guard model.peerCompatible else { return "File transfer is unavailable on this device." }
+    return "To \(model.activeChannel?.descriptor.peer.deviceName ?? "your phone")"
   }
 
   @ViewBuilder

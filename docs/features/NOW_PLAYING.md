@@ -4,6 +4,8 @@
 
 Android Home shows playback from the connected trusted Mac, including Auto/player selection and supported play/pause, previous/next and seek controls. Features → Now Playing opens the dedicated full player with artwork and the originating Mac. Device summaries stay above playback.
 
+The full player adapts to available width: phones stack centered artwork, metadata, timeline and transport; wider layouts place artwork beside the controls. The phone play/pause face is compact within its 48-dp touch target. Mac keeps player selection above the track and balances artwork with timeline and transport, falling back to a vertical layout when the content area is narrow.
+
 Mac Features → Now Playing → Playback setup shows the active subscription and explicit permission actions. Full Now Playing exposes Auto/manual player selection directly. Its options retain refresh and existing permission/verification actions. Settings → Show Now Playing on this Mac optionally adds playback to Mac Overview and the companion; it is off by default and does not affect phone controls.
 
 Auto follows playing sources before paused ones, retains the current source among equals, then prefers system current and stable PID order. Manual selection lasts until the player exits or observation stops. Temporary metadata gaps disable controls without changing the selection. Available actions depend on the selected player; metadata alone does not establish control support.

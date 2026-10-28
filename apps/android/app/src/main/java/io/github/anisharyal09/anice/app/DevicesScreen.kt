@@ -66,7 +66,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                                 OutlinedButton(onClick = sendFiles::chooseFiles,
                                     enabled = transfer.peerConnected && transfer.peerCompatible && !transfer.preparing && transfer.state is TransferState.Idle,
                                     shape = MaterialTheme.shapes.small,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.heightIn(min = 48.dp)) {
                                     Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(6.dp))

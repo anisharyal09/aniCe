@@ -36,18 +36,29 @@ struct MediaView: View {
 
   private var standardContent: some View {
     VStack(alignment: .leading, spacing: compact ? 8 : 12) {
-      HStack {
-        if let open {
-          Button(action: open) { HStack { Label("Now playing", systemImage: "music.note"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.font(.headline).contentShape(Rectangle()) }
-            .buttonStyle(.plain).accessibilityLabel("Open Now Playing")
-        } else { Label("Now playing", systemImage: "music.note").font(.headline) }
-        Spacer()
-        Text("On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        if compact {
+      if compact {
+        HStack {
+          if let open {
+            Button(action: open) { HStack { Label("Now playing", systemImage: "music.note"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.font(.headline).contentShape(Rectangle()) }
+              .buttonStyle(.plain).accessibilityLabel("Open Now Playing")
+          } else { Label("Now playing", systemImage: "music.note").font(.headline) }
+          Spacer()
+          Text("On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
           Button { expanded.toggle() } label: { Image(systemName: "ellipsis") }
             .buttonStyle(.plain).accessibilityLabel("More playback controls")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-        } else {
+        }
+      } else {
+        HStack(spacing: 8) {
+          Spacer()
+          Text("Player").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+          Picker("Player",selection:Binding(get:{ model.selection },set:{ id in model.command(source:id,revision:model.catalogue,action:id.isEmpty ? 6:5) })) {
+            Text("Auto").tag("")
+            ForEach(model.sources) { Text($0.name).tag($0.id) }
+          }
+          .labelsHidden()
+          .frame(maxWidth: 180)
+          .disabled(model.busy)
           Menu {
             Button("Refresh controls", action: model.refreshCapabilities).disabled(model.busy)
             if model.volumeCandidate && model.playerVolume == nil {
@@ -59,38 +70,41 @@ struct MediaView: View {
             .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Playback options")
         }
       }
-      if !compact || expanded || model.sources.count > 1 {
+      if compact && (expanded || model.sources.count > 1) {
         Picker("Player",selection:Binding(get:{ model.selection },set:{ id in model.command(source:id,revision:model.catalogue,action:id.isEmpty ? 6:5) })) {
           Text("Auto").tag("")
           ForEach(model.sources) { Text($0.name).tag($0.id) }
         }.disabled(model.busy)
       }
       if !media.source.isEmpty {
-        HStack(alignment:.top,spacing:12) {
-          ZStack {
-            RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme))
-            if let bytes=model.artwork, let image=NSImage(data:bytes) {
-              Image(nsImage:image).resizable().scaledToFit()
-            } else { Image(systemName: "music.note").foregroundStyle(AniCePalette.secondaryText(scheme)) }
-          }.frame(width: compact ? 50 : 164, height: compact ? 50 : 164)
-            .clipShape(RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
-          VStack(alignment:.leading,spacing:2) {
-            if !media.title.isEmpty { Text(media.title).font(.body.weight(.medium)).fixedSize(horizontal:false,vertical:true) }
-            if !media.artist.isEmpty { Text(media.artist).font(.subheadline).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal:false,vertical:true) }
-            Text(media.player).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        if compact {
+          HStack(alignment:.top,spacing:12) {
+            artwork(size: 50)
+            VStack(alignment:.leading,spacing:2) {
+              trackMetadata(centered: false, compact: true)
+              Text(media.player).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
           }
+          progress
+          transport(centered: true)
+        } else {
+          ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 28) {
+              artwork(size: 164)
+              playbackDetails(centered: false).frame(minWidth: 300, maxWidth: 340)
+            }
+            VStack(alignment: .leading, spacing: 18) {
+              artwork(size: 128)
+              playbackDetails(centered: false)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .center)
+          if model.displayedVolume != nil {
+            Divider().padding(.vertical, 4)
+            PlayerVolumeView(model: model)
+          }
+          if media.actions & 16 != 0 { Button("Allow playback control…") { model.requestPermission() } }
         }
-        progress
-        HStack(spacing: compact ? 12 : 16) {
-          control("backward.end.fill","Previous",2,2)
-          control(media.state == 1 ? "pause.fill":"play.fill",media.state == 1 ? "Pause":"Play",1,1)
-          control("forward.end.fill","Next",3,4)
-          if !compact {
-            Spacer(minLength: 16)
-            PlayerVolumeView(model: model).frame(maxWidth: 140)
-          }
-        }.frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
-        if media.actions & 16 != 0 { Button("Allow playback control…") { model.requestPermission() } }
       } else if !compact {
         Text(model.selection.isEmpty ? "Play media on this Mac to see it here.":"Waiting for playback information from the selected player.").foregroundStyle(AniCePalette.secondaryText(scheme))
       }
@@ -111,6 +125,45 @@ struct MediaView: View {
         if !value { cancelled = target != nil; target = nil; scrub = nil }
       }
       .onChange(of:media.revision) { _,_ in if target != nil { cancelled=true }; target=nil; scrub=nil }
+  }
+
+  private func artwork(size: CGFloat) -> some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme))
+      if let bytes = model.artwork, let image = NSImage(data: bytes) {
+        Image(nsImage: image).resizable().scaledToFit()
+      } else {
+        Image(systemName: "music.note").font(size < 100 ? .title2 : .largeTitle).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+    }
+    .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder private func trackMetadata(centered: Bool, compact: Bool = false) -> some View {
+    if !media.title.isEmpty { Text(media.title).font(compact ? .body.weight(.medium) : .system(size: 22, weight: .medium)).fixedSize(horizontal: false, vertical: true).multilineTextAlignment(centered ? .center : .leading) }
+    if !media.artist.isEmpty { Text(media.artist).font(compact ? .subheadline : .callout).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal: false, vertical: true).multilineTextAlignment(centered ? .center : .leading) }
+  }
+
+  private func playbackDetails(centered: Bool) -> some View {
+    VStack(alignment: centered ? .center : .leading, spacing: 4) {
+      trackMetadata(centered: centered)
+      progress
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+      transport(centered: centered)
+    }
+    .frame(maxWidth: 340, alignment: centered ? .center : .leading)
+  }
+
+  private func transport(centered: Bool) -> some View {
+    HStack(spacing: 12) {
+      control("backward.end.fill", "Previous", 2, 2)
+      control(media.state == 1 ? "pause.fill" : "play.fill", media.state == 1 ? "Pause" : "Play", 1, 1)
+      control("forward.end.fill", "Next", 3, 4)
+    }
+    .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
   }
   private var overviewContent: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -171,13 +224,13 @@ struct MediaView: View {
           if media.duration > 0 { Text(Self.time(Double(media.duration) / 1000)) }
         }.font(.caption.monospacedDigit()).foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
-        VStack(spacing: 2) {
-          if media.actions & 8 != 0 && media.duration > 0 { seekSlider(elapsed: elapsed) }
-          if media.position >= 0 {
-            HStack { Text(Self.time(scrub ?? elapsed)); Spacer(); if media.duration > 0 { Text(Self.time(Double(media.duration) / 1000)) } }
-              .font(.caption.monospacedDigit()).foregroundStyle(AniCePalette.secondaryText(scheme))
-          }
+        HStack(spacing: 10) {
+          if media.position >= 0 { Text(Self.time(scrub ?? elapsed)) }
+          if media.actions & 8 != 0 && media.duration > 0 { seekSlider(elapsed: elapsed).controlSize(.small) }
+          else { Spacer(minLength: 0) }
+          if media.duration > 0 { Text(Self.time(Double(media.duration) / 1000)) }
         }
+        .font(.caption.monospacedDigit()).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
   }

@@ -246,7 +246,7 @@ private fun TransportDetails(name: String, state: ConnectionState, status: Strin
         Text(stateLabel(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 10.dp))
         val active = state == ConnectionState.CONNECTING || state == ConnectionState.SECURED
-        OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp), onClick = if (active) onDisconnect else onConnect,
+        OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp), onClick = if (active) onDisconnect else onConnect,
             enabled = active || canConnect, modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                 .semantics { contentDescription = "${when (state) {
                     ConnectionState.CONNECTING -> "Cancel"
@@ -297,7 +297,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             }
             OutlinedButton(onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
                 enabled = action == "Disconnect" || action == "Cancel" || canConnect,
-                shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                 modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
         }
         return

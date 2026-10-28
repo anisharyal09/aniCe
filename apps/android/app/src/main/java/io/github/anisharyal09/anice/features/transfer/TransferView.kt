@@ -197,14 +197,12 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                 .padding(if (overview) 0.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (overview) 8.dp else 10.dp)
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(Modifier.fillMaxWidth().then(if (open != null) Modifier.clickable(onClickLabel = "Open file transfer", onClick = open).heightIn(min = 48.dp) else Modifier),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (overview) "File transfer" else "Files", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (overview) {
+                Row(
+                    Modifier.fillMaxWidth().then(if (open != null) Modifier.clickable(onClickLabel = "Open file transfer", onClick = open).heightIn(min = 48.dp) else Modifier),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("File transfer", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
@@ -241,11 +239,14 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    } else if (!controller.peerCompatible) {
+                        Text(
+                            "File transfer is unavailable on this device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    if (overview) {
                         OutlinedButton(
                             enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
                             onClick = sendFiles::chooseFiles,
@@ -256,6 +257,27 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Send files…")
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("Send files", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    if (controller.peerConnected) "To ${controller.activeChannel?.descriptor?.peer?.deviceName ?: "your Mac"}"
+                                    else "Connect your Mac to send files.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
+                                onClick = sendFiles::chooseFiles,
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text("Choose files")
+                            }
                         }
 
                     }
@@ -282,6 +304,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
                         shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
@@ -309,6 +332,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
                         shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
@@ -364,6 +388,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                                         android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION))
                             },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Accept")
@@ -371,6 +396,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = { controller.rejectIncomingOffer(reason = 0L) },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Decline")
@@ -455,6 +481,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
                         shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
@@ -531,6 +558,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                             Button(
                                 onClick = { controller.resumeOverBluetooth() },
                                 shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.heightIn(min = 48.dp)
                             ) {
                                 Text("Continue over Bluetooth")
@@ -539,6 +567,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = { controller.cancelTransfer(local = true) },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Cancel transfer")
@@ -578,6 +607,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Done")
@@ -607,6 +637,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Dismiss")
@@ -637,6 +668,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Dismiss")
@@ -667,6 +699,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Dismiss")

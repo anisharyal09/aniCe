@@ -111,7 +111,9 @@ fun ClipboardSendButton(owner: ClipboardController, modifier: Modifier = Modifie
     }
     val available = owner.selected?.let(owner::supports) == true
     OutlinedButton(onClick = { owner.send(); sensitiveSample = owner.preview?.takeIf { it.sensitive }; confirming = sensitiveSample != null }, enabled = available && !owner.busy,
-        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = modifier.defaultMinSize(minHeight = 32.dp)) {
+        shape = MaterialTheme.shapes.small,
+        contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 10.dp, vertical = if (compact) 2.dp else 4.dp),
+        modifier = modifier.defaultMinSize(minHeight = 32.dp)) {
         Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(if (compact) 16.dp else 18.dp))
         Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
         Text("Send clipboard")
