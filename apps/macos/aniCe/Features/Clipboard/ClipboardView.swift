@@ -121,8 +121,12 @@ struct ClipboardView: View {
       HStack(spacing: 12) {
         Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }
           .pickerStyle(.segmented).labelsHidden()
-        Button("Open tray", systemImage: "rectangle.stack") { PasteTrayController.shared.show() }
-          .buttonStyle(AniCeButtonStyle()).controlSize(.small).help("Open clipboard tray (⌥⌘V)")
+        Button { PasteTrayController.shared.show() } label: {
+          Label { Text("Open tray") } icon: {
+            Image(systemName: "rectangle.stack").foregroundStyle(AniCePalette.secondaryText(scheme))
+          }
+        }
+          .buttonStyle(AniCeButtonStyle(quiet: true)).help("Open clipboard tray (⌥⌘V)")
         Button { preferencesOpen.toggle() } label: { Image(systemName: "gearshape") }
           .buttonStyle(.plain).controlSize(.small)
           .help("Clipboard preferences").accessibilityLabel("Clipboard preferences")
@@ -176,15 +180,22 @@ struct ClipboardView: View {
   private func clearContent() { pasted = ""; reveal = false; model.clearPreview() }
 }
 
-// Both entry points confirm the exact captured item, never a later pasteboard read.
+// Manual sends confirm the captured item, never a later pasteboard read.
 struct ClipboardSendButton: View {
   let model: MacClipboardModel
+  var quiet = false
+  @Environment(\.colorScheme) private var colorScheme
   @State private var sensitiveSample: ClipboardSample?
   var body: some View {
     Button {
       model.send(); sensitiveSample = model.preview?.sensitive == true ? model.preview : nil
-    } label: { Label("Send clipboard", systemImage: "doc.on.clipboard") }
-      .buttonStyle(AniCeButtonStyle()).controlSize(.small)
+    } label: {
+      Label { Text("Send clipboard") } icon: {
+        Image(systemName: "doc.on.clipboard")
+          .foregroundStyle(quiet ? AniCePalette.secondaryText(colorScheme) : AniCePalette.primaryText(colorScheme))
+      }
+    }
+      .buttonStyle(AniCeButtonStyle(quiet: quiet)).controlSize(.small)
       .disabled(model.busy || model.selected.map(model.supports) != true)
       .alert("Send sensitive text?", isPresented: Binding(get: { sensitiveSample != nil }, set: { if !$0 { sensitiveSample = nil } }), presenting: sensitiveSample) { captured in
         Button("Send") { model.sendConfirmed(captured); sensitiveSample = nil }

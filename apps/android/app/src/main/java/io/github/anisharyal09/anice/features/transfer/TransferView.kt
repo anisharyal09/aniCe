@@ -36,13 +36,14 @@ private data class TransferReviewPeer(val deviceId: String, val fingerprint: Str
 class TransferSendReview internal constructor(private val controller: TransferController) {
     private var files by mutableStateOf<List<TransferReviewFile>>(emptyList())
         private set
-    private var resolving by mutableStateOf(false)
+    internal var resolving by mutableStateOf(false)
         private set
     private var visible by mutableStateOf(false)
         private set
     private var reviewedPeer by mutableStateOf<TransferReviewPeer?>(null)
         private set
     private var launchPicker: () -> Unit = {}
+    private var selectionRevision = 0L
 
     private fun currentPeer(): TransferReviewPeer? = controller.activeChannel?.descriptor?.peer?.let {
         TransferReviewPeer(it.deviceId, it.fingerprint, it.deviceName)
@@ -51,6 +52,7 @@ class TransferSendReview internal constructor(private val controller: TransferCo
     internal fun installPicker(action: () -> Unit) { launchPicker = action }
 
     fun chooseFiles() {
+        selectionRevision++
         reviewedPeer = currentPeer()
         files = emptyList()
         visible = false
@@ -61,14 +63,17 @@ class TransferSendReview internal constructor(private val controller: TransferCo
         launchPicker()
     }
 
-    internal fun selectionReturned(uris: List<Uri>) {
+    internal fun selectionReturned(hasSelection: Boolean): Long? {
         controller.endPicker()
-        if (uris.isEmpty()) { dismiss(); return }
+        if (!hasSelection) { dismiss(); return null }
+        selectionRevision++
         visible = true
         resolving = true
+        return selectionRevision
     }
 
-    internal fun resolved(selection: List<TransferReviewFile>) {
+    internal fun resolved(selection: List<TransferReviewFile>, revision: Long) {
+        if (revision != selectionRevision || !visible) return
         files = selection
         resolving = false
     }
@@ -85,6 +90,7 @@ class TransferSendReview internal constructor(private val controller: TransferCo
     }
 
     fun dismiss() {
+        selectionRevision++
         files = emptyList()
         resolving = false
         visible = false
@@ -148,10 +154,10 @@ fun rememberSendFilesAction(controller: TransferController): TransferSendReview 
     val scope = rememberCoroutineScope()
     val review = remember(controller) { TransferSendReview(controller) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        review.selectionReturned(uris)
-        if (uris.isNotEmpty()) scope.launch {
+        val revision = review.selectionReturned(uris.isNotEmpty())
+        if (revision != null) scope.launch {
             val files = withContext(Dispatchers.IO) { uris.map { reviewFile(resolver, it) } }
-            review.resolved(files)
+            review.resolved(files, revision)
         }
     }
     review.installPicker { launcher.launch(arrayOf("*/*")) }
@@ -161,13 +167,17 @@ fun rememberSendFilesAction(controller: TransferController): TransferSendReview 
 private fun reviewFile(resolver: ContentResolver, uri: Uri): TransferReviewFile {
     var name = uri.lastPathSegment ?: "File"
     var size: Long? = null
-    resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (nameIndex >= 0) name = cursor.getString(nameIndex)?.takeIf(String::isNotEmpty) ?: name
-            if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex).takeIf { it >= 0 }
+    try {
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIndex >= 0) name = cursor.getString(nameIndex)?.takeIf(String::isNotEmpty) ?: name
+                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex).takeIf { it >= 0 }
+            }
         }
+    } catch (_: RuntimeException) {
+        // Metadata is optional; transfer preparation still validates file access before sending.
     }
     return TransferReviewFile(uri, name, size)
 }

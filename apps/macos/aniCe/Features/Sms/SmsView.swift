@@ -87,7 +87,7 @@ struct SmsView: View {
       VStack(alignment: .leading, spacing: 10) {
         // The phone picker exists only when more than one phone can serve this panel.
         if selectable.count > 1 {
-          Picker("Phone", selection: $peerKey) {
+          Picker("Phone", selection: Binding(get: { peerKey }, set: selectPhone)) {
             ForEach(selectable) { record in
               Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
             }
@@ -124,8 +124,12 @@ struct SmsView: View {
           } else {
             conversation(peer).frame(maxWidth: .infinity, maxHeight: .infinity)
           }
-          // The subscription list is requested only when the selected phone can serve Messages.
-          Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) { model.requestSims(peer) }
+          Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
+            model.requestSims(peer)
+            if model.supports(peer), !address.isEmpty, model.messages(peer, address: address).isEmpty {
+              model.requestMessages(peer, address: address)
+            }
+          }
         } else {
           Text("Pair a phone to relay messages.").foregroundStyle(AniCePalette.secondaryText(scheme))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -153,22 +157,29 @@ struct SmsView: View {
     // Opening a conversation is an invitation to type; the draft is one Return away.
     .onChange(of: address) { _, next in
       composerFocused = !next.isEmpty
+      if let peer { model.selectConversation(peer, address: next) }
       if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
       else { draft = "" }
-    }
-    .onChange(of: draft) { _, value in
-      if let peer, !address.isEmpty { model.saveDraft(value, peer: peer, address: address) }
     }
   }
 
   private func select() {
     let options = selectable
-    let next = options.first { model.connected($0.peer) } ?? options.first
+    let preferred = peerKey.isEmpty ? model.selectedPhoneKey : peerKey
+    let next = options.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == preferred }
+      ?? options.first { model.connected($0.peer) } ?? options.first
     let key = next.map { $0.peer.deviceId + ":" + $0.peer.fingerprint } ?? ""
+    selectPhone(key)
+  }
+
+  private func selectPhone(_ key: String) {
     guard key != peerKey else { return }
+    if let peer, !address.isEmpty { model.saveDraft(draft, peer: peer, address: address) }
     peerKey = key
-    address = ""
-    draft = ""
+    address = peer.map(model.selectedConversation) ?? ""
+    draft = peer.map { model.draft($0, address: address) } ?? ""
+    if let peer { model.selectConversation(peer, address: address) }
+    submittedDraft = nil
     query = ""
     expanded.removeAll()
   }
@@ -386,7 +397,10 @@ struct SmsView: View {
     let over = bytes > Int(SmsMessage.maxBodyBytes)
     let ready = model.supports(peer) && !currentDraft.isEmpty && !over && !model.sending(peer)
     VStack(alignment: .leading, spacing: 6) {
-      TextField("SMS message", text: $draft, axis: .vertical)
+      TextField("SMS message", text: Binding(get: { draft }, set: { value in
+        draft = value
+        model.saveDraft(value, peer: peer, address: address)
+      }), axis: .vertical)
         .lineLimit(2...5).textFieldStyle(.plain).focused($composerFocused)
         .onSubmit { submit(peer) }
         .onKeyPress(.return, phases: .down) { press in

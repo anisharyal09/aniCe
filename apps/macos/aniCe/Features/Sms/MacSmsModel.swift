@@ -283,6 +283,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private var links: [String: Link] = [:]
   private var peers: [String: PeerState] = [:]
   private var drafts: [String: String] = [:]
+  private var selectedConversations: [String: String] = [:]
+  private(set) var selectedPhoneKey = ""
   private var timer: Task<Void, Never>?
   var onLanRequired: () -> Void = {}
 
@@ -308,9 +310,18 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if value.isEmpty { drafts.removeValue(forKey: key) }
     else { drafts[key] = value }
   }
+  func selectedConversation(_ peer: DeviceIdentity) -> String { selectedConversations[key(peer)] ?? "" }
+  func selectConversation(_ peer: DeviceIdentity, address: String) {
+    selectedPhoneKey = key(peer)
+    if address.isEmpty { selectedConversations.removeValue(forKey: selectedPhoneKey) }
+    else { selectedConversations[selectedPhoneKey] = address }
+  }
   func retainDrafts(for identities: [DeviceIdentity]) {
-    let prefixes = identities.map { key($0) + "|" }
+    let credentials = Set(identities.map(key))
+    let prefixes = credentials.map { $0 + "|" }
     drafts = drafts.filter { draftKey, _ in prefixes.contains { draftKey.hasPrefix($0) } }
+    selectedConversations = selectedConversations.filter { credentials.contains($0.key) }
+    if !credentials.contains(selectedPhoneKey) { selectedPhoneKey = "" }
   }
   private func live(_ descriptor: ChannelDescriptor) -> Bool { links[descriptor.transport]?.channel.descriptor == descriptor }
   private func links(for key: String) -> [Link] {
@@ -789,6 +800,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
 
   func invalidate() {
     drafts.removeAll()
+    selectedConversations.removeAll()
+    selectedPhoneKey = ""
     timer?.cancel(); timer = nil
     for descriptor in links.values.map(\.channel.descriptor) { retired(descriptor) }
     peers.removeAll()

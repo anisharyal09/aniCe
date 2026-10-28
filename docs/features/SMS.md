@@ -2,7 +2,9 @@
 <!-- Describes SMS relay permissions, native presentation, delivery and provider access. -->
 # Messages (SMS relay)
 
-Messages relays incoming Android SMS to Mac notifications and lets the Mac browse conversations, search and reply over an existing secured LAN or Bluetooth connection. Android remains the source of truth. The Mac keeps content in memory and clears it when the phone's last channel retires, trust is removed or the app quits. Neither application logs message bodies, addresses or search queries.
+Messages relays incoming Android SMS to Mac notifications and lets the Mac browse conversations, search and reply over an existing secured LAN or Bluetooth connection. Android remains the source of truth. The Mac keeps received message content in memory and clears it when the phone's last channel retires, trust is removed or the app quits. Neither application logs message bodies, addresses or search queries.
+
+Mac reply drafts and the selected phone/conversation remain in memory across panel navigation and temporary disconnection. Each phone's conversation and drafts are scoped to its full device credential. Switching phones restores only that phone's context. Trust removal, identity reset and Quit clear this presentation state; received messages must be loaded again after reconnection.
 
 Open **Features → Messages** on either platform. Viewing messages never marks them read, and unread counts come from unread incoming SMS provider rows. No contacts permission or lookup is used.
 

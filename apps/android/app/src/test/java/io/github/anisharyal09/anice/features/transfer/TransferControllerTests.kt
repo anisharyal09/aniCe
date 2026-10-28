@@ -51,6 +51,21 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun staleFileMetadataCannotFinishANewerOrDismissedReview() {
+        val review = TransferSendReview(TransferController(dispatcher = Dispatchers.Unconfined))
+        val first = review.selectionReturned(true)!!
+        review.dismiss()
+        val second = review.selectionReturned(true)!!
+        review.resolved(emptyList(), first)
+        assertTrue(review.resolving)
+        review.resolved(emptyList(), second)
+        assertFalse(review.resolving)
+        val dismissed = review.selectionReturned(true)!!
+        review.dismiss()
+        review.resolved(emptyList(), dismissed)
+        assertFalse(review.resolving)
+    }
+
     @Test fun lanAcknowledgementsFitTheChunksActuallyReceived() {
         assertEquals(4096L, transferAckThreshold(262016, 8, 4096))
         assertEquals(8192L, transferAckThreshold(4096, 8, 4096))

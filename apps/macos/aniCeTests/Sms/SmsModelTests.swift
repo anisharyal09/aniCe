@@ -27,19 +27,28 @@ final class SmsModelTests: XCTestCase {
     MacSmsModel(notifier: spy, now: { clock.time }, wallNow: { clock.time }, wait: { _ in throw CancellationError() })
   }
 
-  @MainActor func testDraftsAreConversationAndCredentialScopedAndClearOnIdentityReset() {
+  @MainActor func testDraftsAndSelectionAreCredentialScopedAndClearOnIdentityReset() {
     let model = make(SmsNotifierSpy(), SmsClock())
     let firstPeer = MockSecuredChannel(transport: "lan").descriptor.peer
     let secondPeer = MockSecuredChannel(transport: "lan").descriptor.peer
     model.saveDraft("Keep this reply", peer: firstPeer, address: "+15551234567")
     model.saveDraft("Another conversation", peer: firstPeer, address: "+15557654321")
     model.saveDraft("Other device", peer: secondPeer, address: "+15551234567")
+    model.selectConversation(firstPeer, address: "+15551234567")
+    model.selectConversation(secondPeer, address: "+15557654321")
+    XCTAssertEqual(model.selectedConversation(firstPeer), "+15551234567")
+    XCTAssertEqual(model.selectedConversation(secondPeer), "+15557654321")
+    XCTAssertEqual(model.selectedPhoneKey, secondPeer.deviceId + ":" + secondPeer.fingerprint)
     XCTAssertEqual(model.draft(firstPeer, address: "+15551234567"), "Keep this reply")
     XCTAssertEqual(model.draft(firstPeer, address: "+15557654321"), "Another conversation")
     model.retainDrafts(for: [firstPeer])
+    XCTAssertEqual(model.selectedPhoneKey, "")
+    XCTAssertEqual(model.selectedConversation(secondPeer), "")
+    XCTAssertEqual(model.selectedConversation(firstPeer), "+15551234567")
     XCTAssertEqual(model.draft(secondPeer, address: "+15551234567"), "")
     XCTAssertEqual(model.draft(firstPeer, address: "+15551234567"), "Keep this reply")
     model.invalidate()
+    XCTAssertEqual(model.selectedConversation(firstPeer), "")
     XCTAssertEqual(model.draft(firstPeer, address: "+15551234567"), "")
   }
 

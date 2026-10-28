@@ -60,7 +60,7 @@ final class PasteTrayController: NSObject, NSWindowDelegate {
 
     CompanionHost.currentHost?.close()
     let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
-    let width = max(280, min(CGFloat(690), (screen?.visibleFrame.width ?? 738) - 48))
+    let width = max(280, min(CGFloat(760), (screen?.visibleFrame.width ?? 808) - 48))
     let collapsedHeight: CGFloat = width <= 650 ? 318 : 292
     if panel == nil {
       // Non-activating panel style mask prevents OS application deactivation while floating over other windows.
