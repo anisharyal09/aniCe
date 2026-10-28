@@ -42,17 +42,15 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     var how by remember { mutableStateOf(false) }
     var reveal by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
-    var confirming by remember { mutableStateOf(false) }
-    var sensitiveSample by remember { mutableStateOf<ClipboardSample?>(null) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { pasted = ""; sensitiveSample = null; confirming = false; reveal = false; owner.clearPreview() }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { pasted = ""; reveal = false; owner.clearPreview() }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(owner.selected?.deviceId, owner.selected?.fingerprint, owner.selected?.let(owner::supports)) { pasted = ""; reveal = false; sensitiveSample = null; confirming = false }
+    LaunchedEffect(owner.selected?.deviceId, owner.selected?.fingerprint, owner.selected?.let(owner::supports)) { pasted = ""; reveal = false }
     DisposableEffect(owner.selected?.deviceId) { onDispose { owner.clearPreview() } }
     LaunchedEffect(owner.preview?.token, owner.preview?.text) { reveal = false }
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -67,12 +65,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
             val available = peer?.let(owner::supports) == true
             if (peer != null && !available) Text(if (owner.connected(peer)) "Clipboard unavailable on this device" else "Connect first")
             if (owner.status != "Ready to share text" && (available || owner.busy)) Text(owner.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { owner.send(); sensitiveSample = owner.preview?.takeIf { it.sensitive }; confirming = sensitiveSample != null }, enabled = available && !owner.busy,
-                shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
-                Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Send clipboard")
-            }
+            ClipboardSendButton(owner)
             if (owner.busy) TextButton(onClick = owner::cancel) { Text("Cancel send") }
             TextButton(onClick = { more = !more; if (!more) { pasted = ""; reveal = false; owner.clearPreview() } }) { Text(if (more) "More options ▴" else "More options ▾") }
             if (more) {
@@ -89,6 +82,33 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
             TextButton(onClick = { how = !how }) { Text(if (how) "How sharing works ▴" else "How sharing works ▾") }
             if (how) Text("Manual sharing works with automatic sharing off. For text or links in another app, use Share → Send to Mac (aniCe icon). Text-selection menus also work where supported. For copied text, use the Send to Mac Quick Settings tile and tap Send in its small panel. Add the tile from More options. Connect your Mac first.\n\nFor automatic sharing, enable it on both devices, copy text, then open aniCe. Android reads copied text only while aniCe has focus. Received text replaces your clipboard, including in the background. Home shows the latest successful clipboard activity for five minutes with a short preview and local Copy for eligible text. Optional history stays on this device, organized by date with the latest items first.", style = MaterialTheme.typography.bodySmall)
         }
+    }
+}
+
+// Home and Share use the same explicit send and exact sensitive-item confirmation.
+@Composable
+fun ClipboardSendButton(owner: ClipboardController) {
+    var confirming by remember { mutableStateOf(false) }
+    var sensitiveSample by remember { mutableStateOf<ClipboardSample?>(null) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, owner.selected?.deviceId, owner.selected?.fingerprint, owner.selected?.let(owner::supports)) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                confirming = false; sensitiveSample = null; owner.clearPreview()
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            confirming = false; sensitiveSample = null; owner.clearPreview()
+        }
+    }
+    val available = owner.selected?.let(owner::supports) == true
+    OutlinedButton(onClick = { owner.send(); sensitiveSample = owner.preview?.takeIf { it.sensitive }; confirming = sensitiveSample != null }, enabled = available && !owner.busy,
+        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
+        Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Send clipboard")
     }
     if (confirming) AlertDialog(onDismissRequest = { confirming = false; sensitiveSample = null; owner.clearPreview() }, title = { Text("Send sensitive text?") },
         text = { Text("This clipboard is marked sensitive. Send it to ${owner.selected?.deviceName ?: "the selected device"}?") },

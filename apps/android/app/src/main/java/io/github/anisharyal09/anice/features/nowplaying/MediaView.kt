@@ -24,7 +24,7 @@ import io.github.anisharyal09.anice.R
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun MediaView(owner: MediaController, compact: Boolean=false, showPlayerSelector: Boolean=true, compactVolume: Boolean=false, open: (() -> Unit)? = null) {
+@Composable fun MediaView(owner: MediaController, compact: Boolean=false, showPlayerSelector: Boolean=true, compactVolume: Boolean=false, overview: Boolean = false, open: (() -> Unit)? = null) {
     val media=owner.displayedPlayback
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var volumeDrag by remember { mutableStateOf<Float?>(null) }
@@ -47,8 +47,10 @@ import kotlinx.coroutines.delay
         now=SystemClock.elapsedRealtime();owner.trace("render",now)
         while(owner.foregroundVisible && media?.state==1L) { delay(250); now=SystemClock.elapsedRealtime() }
     }
-    Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth().padding(if(compact) 12.dp else 16.dp),verticalArrangement=Arrangement.spacedBy(if(compact) 6.dp else 8.dp)) {
+    Surface(shape=if (overview) androidx.compose.ui.graphics.RectangleShape else MaterialTheme.shapes.medium,
+        color=if (overview) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.fillMaxWidth().padding(if (overview) 0.dp else if(compact) 12.dp else 16.dp),
+            verticalArrangement=Arrangement.spacedBy(if(compact || overview) 6.dp else 8.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement=Arrangement.SpaceBetween,
@@ -56,11 +58,12 @@ import kotlinx.coroutines.delay
             ) {
                 Row(Modifier.weight(1f).then(if (open != null) Modifier.clickable(onClickLabel = "Open Now Playing", onClick = open).heightIn(min = 48.dp) else Modifier),
                     verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                    Text("Now playing",style=MaterialTheme.typography.titleSmall, modifier=Modifier.weight(1f, fill=false))
+                    Text(if (overview) "Now Playing" else "Now playing",style=MaterialTheme.typography.titleSmall, modifier=Modifier.weight(1f, fill=false))
                     if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription=null, modifier=Modifier.size(16.dp))
                 }
-                Text("On ${owner.origin.ifBlank { "your Mac" }}",style=MaterialTheme.typography.bodySmall, modifier=Modifier.weight(1f),textAlign=androidx.compose.ui.text.style.TextAlign.End)
-                if (!showPlayerSelector) IconButton(onClick={ options = !options }, modifier=Modifier.semantics { contentDescription="More playback controls" }) { Text("⋯",style=MaterialTheme.typography.titleLarge) }
+                Text(if (overview) owner.origin.ifBlank { "Your Mac" } else "On ${owner.origin.ifBlank { "your Mac" }}",
+                    style=MaterialTheme.typography.bodySmall, modifier=Modifier.weight(1f),textAlign=androidx.compose.ui.text.style.TextAlign.End)
+                if (!showPlayerSelector && !overview) IconButton(onClick={ options = !options }, modifier=Modifier.semantics { contentDescription="More playback controls" }) { Text("⋯",style=MaterialTheme.typography.titleLarge) }
             }
             if(media!=null && (showPlayerSelector || options)) Box {
                 TextButton(onClick={picker=true},enabled=!owner.busy) { Text(if(media.selection.isEmpty()) "Player: Auto" else "Player: ${media.sources.firstOrNull { it.first==media.selection }?.second ?: media.player}") }
@@ -71,7 +74,7 @@ import kotlinx.coroutines.delay
             }
             if(media!=null && media.source.isNotEmpty()) {
                 Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(if(compact) 50.dp else 72.dp)
+                    Box(Modifier.size(if (overview) 74.dp else if(compact) 50.dp else 72.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small), contentAlignment=Alignment.Center) {
                         val artwork = owner.artwork
                         if (artwork != null) Image(artwork.asImageBitmap(), contentDescription=null, modifier=Modifier.fillMaxSize())
@@ -80,11 +83,25 @@ import kotlinx.coroutines.delay
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                         if(media.title.isNotEmpty()) Text(media.title,style=MaterialTheme.typography.bodyMedium)
                         if(media.artist.isNotEmpty()) Text(media.artist,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(media.player,style=MaterialTheme.typography.bodySmall)
+                        if (!overview) Text(media.player,style=MaterialTheme.typography.bodySmall)
                     }
                 }
                 if(showPlayerSelector || options) Text(owner.displayedOutputVolume?.let { "Phone volume buttons · Mac output $it%" } ?: "Mac output volume unavailable for this audio output.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                if(media.actions and 8L!=0L && media.duration>0) Slider(
+                if (overview && media.actions and 8L!=0L && media.duration>0) Row(
+                    Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text(mediaTime(media.elapsed(now)),style=MaterialTheme.typography.bodySmall,fontFamily=FontFamily.Monospace)
+                    Slider(
+                        value=media.elapsed(now).coerceIn(0f,media.duration/1000f),
+                        onValueChange={ owner.dragSeek((it*1000).toLong()) },
+                        onValueChangeFinished=owner::releaseSeek,
+                        valueRange=0f..(media.duration/1000f),enabled=owner.canSeek,interactionSource=interactions,
+                        thumb={ Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape)) },
+                        track={ slider -> SliderDefaults.Track(slider,modifier=Modifier.height(3.dp),thumbTrackGapSize=2.dp) },
+                        modifier=Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription="Playback position" })
+                    Text(mediaTime(media.duration/1000f),style=MaterialTheme.typography.bodySmall,fontFamily=FontFamily.Monospace)
+                }
+                if(!overview && media.actions and 8L!=0L && media.duration>0) Slider(
                     value=media.elapsed(now).coerceIn(0f,media.duration/1000f),
                     onValueChange={ owner.dragSeek((it*1000).toLong()) },
                     onValueChangeFinished=owner::releaseSeek,
@@ -92,13 +109,18 @@ import kotlinx.coroutines.delay
                     thumb={ Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape)) },
                     track={ slider -> SliderDefaults.Track(slider,modifier=Modifier.height(3.dp),thumbTrackGapSize=2.dp) },
                     modifier=Modifier.heightIn(min=48.dp).semantics { contentDescription="Playback position" })
-                if(media.message.number(7)>=0) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                if(!overview && media.message.number(7)>=0) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                     Text(mediaTime(media.elapsed(now)),style=MaterialTheme.typography.bodySmall,fontFamily=FontFamily.Monospace)
                     if(media.duration>0) Text(mediaTime(media.duration/1000f),style=MaterialTheme.typography.bodySmall,fontFamily=FontFamily.Monospace)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.Center) {
                     IconButton(onClick={owner.command(2)},enabled=owner.canAcceptPlayback && media.actions and 2L!=0L) { Icon(painterResource(R.drawable.ic_media_previous),contentDescription="Previous") }
-                    FilledIconButton(onClick={owner.command(1)},shape=MaterialTheme.shapes.small,modifier=Modifier.size(36.dp),enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
+                    if (overview) IconButton(onClick={owner.command(1)},enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
+                        modifier = Modifier.size(48.dp)) {
+                        Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.selectionAccent, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
+                            Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play", tint=MaterialTheme.colorScheme.onPrimary)
+                        }
+                    } else FilledIconButton(onClick={owner.command(1)},shape=MaterialTheme.shapes.small,modifier=Modifier.size(36.dp),enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
                         colors=IconButtonDefaults.filledIconButtonColors(containerColor=MaterialTheme.colorScheme.selectionAccent,contentColor=MaterialTheme.colorScheme.onPrimary)) { Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play") }
                     IconButton(onClick={owner.command(3)},enabled=owner.canAcceptPlayback && media.actions and 4L!=0L) { Icon(painterResource(R.drawable.ic_media_next),contentDescription="Next") }
                 }
@@ -122,6 +144,10 @@ import kotlinx.coroutines.delay
                 if(media.actions and 16L!=0L) Text("Allow playback control on your Mac.",style=MaterialTheme.typography.bodySmall)
             } else if(!compact) Text(if(!owner.connected) "Connect to your trusted Mac to use Now Playing." else if(!owner.supported) "Update aniCe on your Mac to use Now Playing." else if(owner.awaitingSnapshot) "Waiting for playback information from ${owner.origin}." else "Play media on ${owner.origin} to see it here.",color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(owner.feedback.isNotEmpty()) Text(owner.feedback,style=MaterialTheme.typography.bodySmall)
+            if (overview) {
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
         }
     }
 }

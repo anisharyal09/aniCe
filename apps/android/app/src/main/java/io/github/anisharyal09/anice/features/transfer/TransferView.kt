@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.painterResource
 import io.github.anisharyal09.anice.R
 import androidx.compose.ui.Modifier
@@ -35,7 +37,7 @@ fun rememberSendFilesAction(controller: TransferController): () -> Unit {
 }
 
 @Composable
-fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
+fun TransferView(controller: TransferController, open: (() -> Unit)? = null, overview: Boolean = false) {
     val context = LocalContext.current
     val sendFiles = rememberSendFilesAction(controller)
 
@@ -49,14 +51,15 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
     }
 
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        modifier = Modifier.fillMaxWidth(),
+        shape = if (overview) RectangleShape else MaterialTheme.shapes.medium,
+        color = if (overview) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(if (overview) 0.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (overview) 8.dp else 10.dp)
         ) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -65,7 +68,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
             ) {
                 Row(Modifier.fillMaxWidth().then(if (open != null) Modifier.clickable(onClickLabel = "Open file transfer", onClick = open).heightIn(min = 48.dp) else Modifier),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Files", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Text(if (overview) "File transfer" else "Files", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
@@ -535,6 +538,10 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                     }
                 }
             }
+        }
+        if (overview) {
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider()
         }
     }
 }

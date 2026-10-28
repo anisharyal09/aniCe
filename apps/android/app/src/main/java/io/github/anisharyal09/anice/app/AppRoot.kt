@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
@@ -90,16 +91,9 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(title = { Text(if (navigation.destination == AppDestination.Devices && navigation.route != DeviceRoute.Overview)
-                if (navigation.route == DeviceRoute.Pairing) "Manage devices" else "Nearby discovery"
-                else if (navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.Identity) "This device"
-                else if (navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.About) "About aniCe"
-                else if (navigation.destination == AppDestination.About) "About aniCe"
-                else if (navigation.destination == AppDestination.Home) "aniCe"
-                else if (navigation.destination == AppDestination.Settings) "aniCe Settings"
-                else navigation.featurePanel?.takeIf { navigation.destination == AppDestination.Features }?.label ?: navigation.destination.label,
-                style = MaterialTheme.typography.titleSmall) }, navigationIcon = {
-                if ((navigation.destination == AppDestination.Devices && navigation.route != DeviceRoute.Overview) ||
+            TopAppBar(title = { Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp)) }, navigationIcon = {
+                if ((navigation.destination == AppDestination.Devices &&
+                        navigation.route != DeviceRoute.Overview && navigation.route != DeviceRoute.Pairing) ||
                     (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
                     (navigation.destination == AppDestination.Features && navigation.featurePanel != null)) {
                     IconButton(onClick = { back() }) {
@@ -107,11 +101,14 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     }
                 }
             }, actions = {
-                if (navigation.destination == AppDestination.Home || navigation.destination == AppDestination.Settings && navigation.settingsRoute == SettingsRoute.Overview) {
-                    TextButton(onClick = { navigation.select(AppDestination.About, pairing.peers.isEmpty()) }) { Text("About", style = MaterialTheme.typography.labelMedium) }
+                if (navigation.destination != AppDestination.About) {
+                    IconButton(onClick = { navigation.select(AppDestination.About, pairing.peers.isEmpty()) }) {
+                        Icon(painterResource(R.drawable.ic_about), contentDescription = "About aniCe",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
                 }
             }, expandedHeight = maxOf(48.dp, (24 * LocalDensity.current.fontScale + 16).dp),
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background))
         }, bottomBar = {
             NavigationBar {
                 AppDestination.primary.forEach { page ->
@@ -124,17 +121,45 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         }, snackbarHost = { SnackbarHost(snackbars) }
     ) { innerPadding ->
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
-        Box(content) {
-            pageState.SaveableStateProvider(navigation.destination.name) {
-                when (navigation.destination) {
-                    AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
-                        DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it })
-                    }
-                    AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
-                    AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)
-                    AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
+        Column(content) {
+            if (pairing.busy && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
+                PendingRequestRow(if (pairing.phase == "approval") "Review pairing" else "Pairing in progress", pairing.status, navigation::pair)
+            }
+            val incoming = session.transfer.state as? io.github.anisharyal09.anice.features.transfer.TransferState.IncomingOffer
+            if (incoming != null && navigation.destination != AppDestination.Home &&
+                !(navigation.destination == AppDestination.Features && navigation.featurePanel == AppFeature.Files)) {
+                PendingRequestRow("Incoming files", "${incoming.batch.files.size} files from ${incoming.batch.peerName}") {
+                    navigation.openFeature(AppFeature.Files)
                 }
             }
+            Box(Modifier.weight(1f)) {
+                pageState.SaveableStateProvider(navigation.destination.name) {
+                    when (navigation.destination) {
+                        AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
+                            DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, localName = identity.state.snapshot?.identity?.deviceName)
+                        }
+                        AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
+                        AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)
+                        AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun PendingRequestRow(title: String, detail: String, onReview: () -> Unit) {
+    Surface(onClick = onReview, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        shape = androidx.compose.ui.graphics.RectangleShape, color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurface) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("Review", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

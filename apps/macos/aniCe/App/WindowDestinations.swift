@@ -5,58 +5,122 @@ import AppKit
 
 extension MainWindowView {
   @ViewBuilder var homeContent: some View {
-GeometryReader { geometry in
-ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-              if pairing.active {
-                Text(pairing.status)
-                Button("Review pairing") { navigation.show(.devices, route: .pairing) }
-              }
-              if pairing.hasTrustedAndroid {
-                MacSessionView(peers: pairing.peers, model: session, lan: lan,
-                  details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
-                  focusedPeer: navigation.focusedPeer, discovery: discovery,
-                  canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-                  onManageDevices: { navigation.show(.devices) })
-              } else {
-                Text("No devices paired yet").font(.headline)
-                Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
-              }
-              ClipboardActivityView(model: clipboard, open: { navigation.openFeature(.clipboard) })
-              if playback.showOnMac && playback.compactVisible {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 720 && (pairing.hasTrustedAndroid || transfer.state != .idle) ? 2 : 1), alignment: .leading, spacing: 20) {
-                  MediaView(model: playback, visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
-                  if pairing.hasTrustedAndroid || transfer.state != .idle { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
-                }
-              } else if pairing.hasTrustedAndroid || transfer.state != .idle {
-                TransferView(model: transfer, open: { navigation.openFeature(.files) })
-              }
-
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(32)
-              .frame(maxWidth: .infinity, alignment: .leading)
+    GeometryReader { geometry in
+      let activityWidth = geometry.size.width - 56
+      ScrollView {
+        VStack(alignment: .leading, spacing: 24) {
+          Text("Overview").font(.system(size: 20, weight: .medium))
+          if pairing.hasTrustedAndroid {
+            MacSessionView(peers: pairing.peers, model: session, lan: lan,
+              details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
+              focusedPeer: navigation.focusedPeer, discovery: discovery,
+              canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
+              onManageDevices: { navigation.show(.devices) })
+          } else {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Pair your Android phone").font(.title3.weight(.semibold))
+              Text("Open aniCe on your phone, then scan a QR code or enter a six-digit code.")
+                .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
+            }
           }
+          if transfer.pendingOffer != nil {
+            TransferView(model: transfer, open: { navigation.openFeature(.files) })
+          }
+          if pairing.hasTrustedAndroid {
+            HStack(spacing: 8) {
+              Button { promptAndSendTransferFiles(model: transfer) } label: {
+                Label("Send files…", systemImage: "arrow.up.doc")
+              }.buttonStyle(AniCeButtonStyle()).controlSize(.small)
+                .disabled(!transfer.peerConnected || !transfer.peerCompatible || transfer.preparing || transfer.state != .idle)
+              ClipboardSendButton(model: clipboard)
+            }
+            if clipboard.status != "Ready to share text" && clipboard.status != "Confirm sending sensitive text" {
+              Text(clipboard.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
+          }
+          let isResult: Bool = switch transfer.state {
+          case .completed, .rejected, .failed, .cancelled: true
+          default: false
+          }
+          homeActivities(isResult: isResult, availableWidth: activityWidth)
+          if clipboard.recent != nil {
+            Text("Recent").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            ClipboardActivityView(model: clipboard, compact: true, open: { navigation.openFeature(.clipboard) })
+          }
+        }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+      }
     }
   }
+
+  @ViewBuilder private func homeActivities(isResult: Bool, availableWidth: CGFloat) -> some View {
+    VStack(alignment: .leading, spacing: 24) {
+      if availableWidth >= 720 {
+        let showPlayback = playback.showOnMac && playback.compactVisible
+        let showFileTransfer = transfer.pendingOffer == nil
+        HStack(alignment: .top, spacing: 16) {
+          if showPlayback {
+            MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
+              visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          if showPlayback && showFileTransfer {
+            Rectangle()
+              .fill(AniCePalette.separator(colorScheme))
+              .frame(width: 1)
+              .frame(maxHeight: .infinity)
+          }
+          if showFileTransfer {
+            homeFileTransferActivity(isResult: isResult)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        if playback.showOnMac && playback.compactVisible {
+          MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
+            visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
+        }
+        if transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
+      }
+      if isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
+    }
+  }
+
+  @ViewBuilder private func homeFileTransferActivity(isResult: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Button { navigation.openFeature(.files) } label: {
+        HStack(spacing: 8) { Text("File transfer"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }
+          .font(.system(size: 14, weight: .medium)).contentShape(Rectangle())
+      }.buttonStyle(.plain)
+      if transfer.state == .idle && !transfer.preparing {
+        HStack(spacing: 16) {
+          Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Send files").font(.system(size: 14, weight: .medium))
+            Text(transfer.activeChannel.map { "Send to " + $0.descriptor.peer.deviceName } ?? "Connect your phone to send files")
+              .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          Spacer(minLength: 12)
+          Button("Choose files") { promptAndSendTransferFiles(model: transfer) }
+            .buttonStyle(AniCeButtonStyle()).disabled(!transfer.peerConnected || !transfer.peerCompatible)
+        }.padding(24).frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+          .overlay { RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(colorScheme), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+      } else if !isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
+    }
+  }
+
   @ViewBuilder var devicesContent: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        if navigation.deviceRoute == .pairing || !pairing.hasTrustedAndroid {
-          if pairing.hasTrustedAndroid {
-            Button { navigation.show(.devices) } label: { Label("Devices", systemImage: "chevron.backward") }
+      VStack(alignment: .leading, spacing: 24) {
+        HStack(alignment: .top) {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Devices").font(.system(size: 20, weight: .medium))
+            Text("Connection and trust.").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
-          Toggle("Connect automatically after pairing", isOn: Binding(
-            get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
-            set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
-            .tint(AniCePalette.accent(colorScheme)).disabled(pairing.phase == "paired")
-          Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network.")
-            .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          MacPairingView(model: pairing)
-        } else {
-          HStack {
-            Text("Devices").font(.title2.weight(.semibold))
-            Spacer()
-            Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(.bordered)
-          }
+          Spacer()
+          Button { navigation.show(.devices, route: .pairing) } label: { Label("Add device", systemImage: "plus") }
+            .buttonStyle(AniCeButtonStyle())
+        }
           let phones = pairing.peers.filter { $0.peer.platform == "android" }
           let primary = ConnectionPresentation.primaryPeers(phones) { record in
             let bluetooth = session.authenticatedPeer ?? session.selectedPeer
@@ -74,19 +138,43 @@ ScrollView {
           DisclosureGroup("Trust and saved devices") {
             MacPairingView(model: pairing, showPairingControls: false)
           }.font(.callout)
-        }
+
         Divider()
-        Button {
-          navigation.showSettings(.identity)
-        } label: {
-          HStack(spacing: 10) {
-            Label("This device", systemImage: "desktopcomputer")
-            Spacer()
+        Button { navigation.showSettings(.identity) } label: {
+          HStack(spacing: 12) {
+            Image(systemName: "laptopcomputer").font(.title3).accessibilityHidden(true)
+            Text("This device")
             Text(identity.local?.identity.deviceName ?? "This Mac").foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            Image(systemName: "chevron.right").accessibilityHidden(true)
-          }.padding(.vertical, 10).contentShape(Rectangle())
+            Spacer()
+            Image(systemName: "chevron.forward").accessibilityHidden(true)
+          }.padding(.vertical, 16).contentShape(Rectangle())
         }.buttonStyle(.plain)
-      }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        Divider()
+      }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .sheet(isPresented: Binding(get: { navigation.deviceRoute == .pairing }, set: { if !$0 { navigation.show(.devices) } })) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          HStack {
+            Text("Pair a device").font(.system(size: 20, weight: .medium))
+            Spacer()
+            Button { navigation.show(.devices) } label: { Image(systemName: "xmark") }
+              .buttonStyle(.plain).accessibilityLabel("Close pairing")
+          }
+          Toggle("Connect automatically after pairing", isOn: Binding(
+            get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
+            set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
+            .toggleStyle(.checkbox).disabled(pairing.phase == "paired")
+          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false)
+          HStack {
+            Spacer()
+            Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
+              .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+          }
+        }.padding(24)
+      }.frame(minWidth: 400, idealWidth: 460, maxHeight: 680)
+        .preferredColorScheme(colorScheme).background(AniCePalette.surface(colorScheme))
+        .foregroundStyle(AniCePalette.primaryText(colorScheme))
     }
   }
   var aboutContent: some View {

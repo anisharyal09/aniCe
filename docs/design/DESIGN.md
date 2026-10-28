@@ -10,6 +10,10 @@ Keep one recognizable design vocabulary across the full Mac window, its menu-bar
 
 The feature panels in the concept demonstrate layout and interaction. They do not define an approved capability inventory, confirm OS support, or authorize implementation. Add functionality only when its product behavior and platform feasibility are established.
 
+## Reference fidelity
+
+The approved reference composition is the visual target, rather than a loose mood board. Preserve its hierarchy, proportions, typography, outlined rectangular actions, sidebar branding, grouped connection rows, flat horizontal Home player, outlined file-selection target and Mac pairing/detail sheets. Match both platform compositions before progressing to another area. Native interaction behavior, real capability gates and accessibility may require specific adaptations; retain the composition around those adaptations. The native file target says Choose files without promising unsupported drag-and-drop, and pairing advances through real mutual approval rather than the simulator’s Continue action.
+
 ## Visual system
 
 Use warm, quiet neutrals with a charcoal-green action ink. Do not use indigo, slate-blue, or blue glow as the product accent. Color communicates action and status; it does not decorate feature categories. Keep light and dark appearances balanced and intentional.
@@ -34,7 +38,7 @@ Use semantic names in implementation and map them into native color roles. Succe
 
 - Follow system appearance by default. Offer System / Light / Dark in settings. Test each scheme rather than simply inverting colors.
 - Prefer system type: macOS native text styles; Android Material text roles and scalable `sp`. Native accessibility settings take precedence over fixed concept dimensions.
-- Home activity headings and device names provide labeled native actions to their feature or Devices page; essential navigation does not depend on a small chevron alone.
+- Home activity headings provide labeled native feature actions; device names open connection details; essential navigation does not depend on a small chevron alone.
 - Reference text sizes: Mac body 13–14 pt, secondary 12–13 pt, section title 14–16 pt, page title 20 pt. Android app brand 17 sp, page title 20 sp, section title 14 sp, body 13–14 sp and metadata 12 sp, mapped to native roles. These are starting values; native Dynamic Type and font scaling remain authoritative.
 - Use regular and medium weights for most content. Semibold can establish a heading. Avoid oversized title hierarchies, decorative display fonts in controls, or monospace as a technical costume.
 - Use one native icon system per platform: SF Symbols on Mac and Material Symbols on Android. The browser concepts use Lucide only as a stand-in. Icons supplement essential labels.
@@ -66,7 +70,7 @@ The information architecture is shared, while its navigation is native:
 
 On Mac, the window titlebar is split at the sidebar boundary. Keep macOS traffic-light controls at the far left, then Back and Forward history controls on the left portion. Show the aniCe brand in the window header, not the active destination name. Keep the active section title small in the workspace. History navigation follows actual visited pages, including conversation changes; Back returns to the prior page context. The sidebar holds Overview, Devices, Features and Favourites, with Settings and About at its lower end.
 
-Android uses a native app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About is reached from the app bar. Preserve system Back and RTL-aware in-app Back. Do not duplicate section titles beneath the app bar.
+Android uses a native app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About is reached from the app bar. Preserve system Back and RTL-aware in-app Back. Keep aniCe in the app bar and use restrained destination headings in the body, as in the approved reference.
 
 Opening or leaving a section never retires a transport, playback session, draft or transfer. A feature panel's Back returns to Features or Favourites. Feature settings open inline from that feature's gear; they edit the same preference and do not send the user to the global Settings page. Main Settings remains available for app-wide discovery and management.
 

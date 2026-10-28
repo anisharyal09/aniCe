@@ -53,3 +53,23 @@ enum AniCePalette {
     )
   }
 }
+
+
+// Uses the reference's outlined control face while retaining native Button actions and focus.
+struct AniCeButtonStyle: ButtonStyle {
+  var prominent = false
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.isEnabled) private var enabled
+  @Environment(\.isFocused) private var focused
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(size: 13, weight: .medium))
+      .foregroundStyle(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
+      .padding(.horizontal, 12).padding(.vertical, 7)
+      .frame(minHeight: 32)
+      .background(configuration.isPressed ? AniCePalette.subtleAccent(scheme) : prominent ? AniCePalette.accent(scheme) : AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 7))
+      .overlay { RoundedRectangle(cornerRadius: 7).stroke(focused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme), lineWidth: focused ? 2 : 1) }
+      .contentShape(RoundedRectangle(cornerRadius: 7))
+      .opacity(enabled ? 1 : 0.45)
+  }
+}

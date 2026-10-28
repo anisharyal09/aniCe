@@ -35,8 +35,11 @@ struct MainWindowView: View {
   var body: some View {
     NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
+        Text("aniCe").font(.system(size: 21, weight: .semibold))
+          .foregroundStyle(AniCePalette.primaryText(colorScheme))
+          .padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 24)
         Text("Workspace").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          .padding(.horizontal, 14).padding(.top, 20).padding(.bottom, 12)
+          .padding(.horizontal, 14).padding(.bottom, 12)
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
         Spacer(minLength: 24)
         sidebarItem(.settings)
@@ -46,24 +49,35 @@ struct MainWindowView: View {
         .background(AniCePalette.secondarySurface(colorScheme))
         .toolbar {
           ToolbarItemGroup(placement: .navigation) {
-            Button(action: navigation.goBack) { Image(systemName: "chevron.backward") }
+            Button(action: navigation.goBack) { Image(systemName: "arrow.left") }
               .disabled(!navigation.canGoBack).help("Back")
               .accessibilityLabel("Back").keyboardShortcut("[", modifiers: .command)
-            Button(action: navigation.goForward) { Image(systemName: "chevron.forward") }
+            Button(action: navigation.goForward) { Image(systemName: "arrow.right") }
               .disabled(!navigation.canGoForward).help("Forward")
               .accessibilityLabel("Forward").keyboardShortcut("]", modifiers: .command)
           }
         }
     } detail: {
-      Group {
-        switch navigation.destination {
-        case .home: homeContent
-        case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
-        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
-        case .about: aboutContent
-        case .settings: settingsContent
-
+      VStack(spacing: 0) {
+        if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
+          PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
+            detail: pairing.status) { navigation.show(.devices, route: .pairing) }
+        }
+        if let offer = transfer.pendingOffer,
+          navigation.destination != .home && !(navigation.destination == .features && navigation.featurePanel == .files) {
+          PendingRequestRow(title: "Incoming files", detail: "\(offer.files.count) files from \(offer.peerName)") {
+            navigation.openFeature(.files)
+          }
+        }
+        Group {
+          switch navigation.destination {
+          case .home: homeContent
+          case .devices: devicesContent
+          case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
+          case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
+          case .about: aboutContent
+          case .settings: settingsContent
+          }
         }
       }.navigationTitle("aniCe")
         .toolbarBackground(AniCePalette.surface(colorScheme), for: .windowToolbar)
@@ -114,7 +128,7 @@ struct MainWindowView: View {
         Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
         Text(destination.rawValue).font(.body)
         Spacer(minLength: 0)
-      }.foregroundStyle(selected ? AniCePalette.accent(colorScheme) : AniCePalette.primaryText(colorScheme))
+      }.foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
         .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
         .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
     }.buttonStyle(.plain).accessibilityAddTraits(selected ? [.isSelected] : [])
@@ -137,5 +151,35 @@ struct ClickableDisclosureStyle: DisclosureGroupStyle {
         .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
       if configuration.isExpanded { configuration.content }
     }
+  }
+}
+
+
+// Keeps pending decisions visible while the person visits another section.
+struct PendingRequestRow: View {
+  let title: String
+  let detail: String
+  let review: () -> Void
+  @Environment(\.colorScheme) private var scheme
+  var body: some View {
+    Button(action: review) {
+      HStack(spacing: 12) {
+        Image(systemName: "info.circle").accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).font(.callout.weight(.medium))
+          Text(detail).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 8)
+        Text("Review").font(.callout).foregroundStyle(AniCePalette.accent(scheme))
+          .padding(.horizontal, 10).padding(.vertical, 5)
+          .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(scheme)) }
+      }.padding(.horizontal, 24).padding(.vertical, 12).contentShape(Rectangle())
+    }.buttonStyle(.plain)
+      .foregroundStyle(AniCePalette.primaryText(scheme))
+      .background(AniCePalette.secondarySurface(scheme))
+      .overlay(alignment: .bottom) { Divider() }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(title + ". " + detail + ". Review")
   }
 }

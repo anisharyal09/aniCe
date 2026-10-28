@@ -25,7 +25,7 @@ struct ClipboardSettingsView: View {
         Spacer()
         if model.isPaused {
           Button("Resume") { model.resume() }
-            .buttonStyle(.bordered).controlSize(.small)
+            .buttonStyle(AniCeButtonStyle()).controlSize(.small)
         }
         Menu(model.isPaused ? "Change" : "Pause…") {
           ForEach(ClipboardPauseDuration.allCases) { duration in
@@ -95,7 +95,7 @@ struct ClipboardView: View {
         Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }
           .pickerStyle(.segmented).labelsHidden()
         Button("Open tray", systemImage: "rectangle.stack") { PasteTrayController.shared.show() }
-          .buttonStyle(.bordered).controlSize(.small).help("Open clipboard tray (⌥⌘V)")
+          .buttonStyle(AniCeButtonStyle()).controlSize(.small).help("Open clipboard tray (⌥⌘V)")
       }
       if historyTab { ClipboardHistoryView(model: model); ClipboardAccessGuidance(model: model) }
       else {
@@ -146,7 +146,7 @@ struct ClipboardSendButton: View {
     Button {
       model.send(); sensitiveSample = model.preview?.sensitive == true ? model.preview : nil
     } label: { Label("Send clipboard", systemImage: "doc.on.clipboard") }
-      .buttonStyle(.bordered).controlSize(.small)
+      .buttonStyle(AniCeButtonStyle()).controlSize(.small)
       .disabled(model.busy || model.selected.map(model.supports) != true)
       .alert("Send sensitive text?", isPresented: Binding(get: { sensitiveSample != nil }, set: { if !$0 { sensitiveSample = nil } }), presenting: sensitiveSample) { captured in
         Button("Send") { model.sendConfirmed(captured); sensitiveSample = nil }
@@ -166,6 +166,32 @@ struct ClipboardActivityView: View {
   @State private var copyStatus: String?
   var body: some View {
     if let item = model.recent {
+      if compact {
+        HStack(alignment: .center, spacing: 14) {
+          Image(systemName: "doc.on.clipboard").font(.title3).accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+              Text("Clipboard").font(.callout.weight(.medium))
+              Text(item.timestamp, format: .dateTime.hour().minute())
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+              Spacer(minLength: 8)
+              Text(item.received ? "From phone" : "From Mac")
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
+            if let preview = item.textPreview { Text(preview).font(.callout).lineLimit(2) }
+            else { Text("Preview hidden for marked clipboard items").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
+          }
+          Spacer(minLength: 8)
+          if item.sample != nil {
+            Button { copyStatus = model.copyActivity(item.id) ? "Copied" : "Could not copy" } label: {
+              Label(copyStatus ?? "Copy", systemImage: "doc.on.doc")
+            }.buttonStyle(.plain).accessibilityLabel(copyStatus ?? "Copy clipboard item")
+          }
+          Button { model.dismissActivity(item.id) } label: { Text("Dismiss") }
+            .buttonStyle(.plain).foregroundStyle(AniCePalette.secondaryText(scheme))
+        }.padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+          .onChange(of: item.id) { _, _ in copyStatus = nil }
+      } else {
       VStack(alignment: .leading, spacing: 8) {
         HStack {
           Button(action: open) { HStack { Text("Clipboard"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) } }
@@ -189,6 +215,7 @@ struct ClipboardActivityView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(compact ? Color.clear : AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
       .onChange(of: item.id) { _, _ in copyStatus = nil }
+      }
     }
   }
   private func origin(_ item: ClipboardActivity) -> Text { Text(item.received ? "From phone" : "From Mac") }

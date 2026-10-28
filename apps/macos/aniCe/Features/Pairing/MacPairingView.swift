@@ -4,6 +4,7 @@ import SwiftUI
 
 struct MacPairingView: View {
   @Bindable var model: MacPairingModel
+  var embedded = false
   var showTrustedDevices = true
   var showPairingControls = true
   @State private var resettingTrust = false
@@ -42,6 +43,7 @@ struct MacPairingView: View {
 
   private var pairingPanel: some View {
     VStack(alignment: .leading, spacing: 16) {
+      if !embedded {
       HStack {
         Text(model.active ? "Pairing invitation" : "Pair a device")
           .font(.headline)
@@ -53,6 +55,8 @@ struct MacPairingView: View {
         }
       }
 
+      }
+
       Text(model.status)
         .font(.subheadline)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -60,27 +64,22 @@ struct MacPairingView: View {
       if model.active {
         activeInvitationContent
       } else {
-        HStack(spacing: 12) {
-          Button {
-            model.start(.qr)
-          } label: {
-            Label("Show QR code", systemImage: "qrcode")
-          }
-          .buttonStyle(.borderedProminent)
-
-          Button {
-            model.start(.pin)
-          } label: {
-            Label("Show six-digit code", systemImage: "number")
-          }
-          .buttonStyle(.bordered)
-        }
-        .padding(.top, 4)
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: 12) { pairingActions }
+          VStack(alignment: .leading, spacing: 8) { pairingActions }
+        }.padding(.top, 4)
       }
     }
-    .padding(20)
+    .padding(embedded ? 0 : 20)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
+    .background(embedded ? Color.clear : AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
+  }
+
+  @ViewBuilder private var pairingActions: some View {
+    Button { model.start(.qr) } label: { Label("Show QR code", systemImage: "qrcode") }
+      .buttonStyle(AniCeButtonStyle(prominent: true))
+    Button { model.start(.pin) } label: { Label("Show six-digit code", systemImage: "number") }
+      .buttonStyle(AniCeButtonStyle())
   }
 
   @ViewBuilder
@@ -90,7 +89,6 @@ struct MacPairingView: View {
         ZStack {
           RoundedRectangle(cornerRadius: 12)
             .fill(Color.white)
-            .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
           Image(nsImage: image)
             .interpolation(.none)
             .resizable()
@@ -159,9 +157,9 @@ struct MacPairingView: View {
         if model.phase == "approval" {
           HStack(spacing: 12) {
             Button("Pair with this device", action: model.approve)
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(AniCeButtonStyle(prominent: true))
             Button("Decline", action: model.decline)
-              .buttonStyle(.bordered)
+              .buttonStyle(AniCeButtonStyle())
           }
           .padding(.top, 4)
         }
@@ -180,7 +178,7 @@ struct MacPairingView: View {
 
     if model.phase != "approval" && model.phase != "cancelling" {
       Button("Cancel invitation") { model.cancel() }
-        .buttonStyle(.bordered)
+        .buttonStyle(AniCeButtonStyle())
         .controlSize(.small)
     }
   }
@@ -227,7 +225,7 @@ struct MacPairingView: View {
               Button("Forget…") {
                 forgetID = record.id
               }
-              .buttonStyle(.bordered)
+              .buttonStyle(AniCeButtonStyle())
               .controlSize(.small)
             }
             .padding(12)

@@ -35,7 +35,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     var phase by mutableStateOf("idle")
         private set
 
-    var status by mutableStateOf("Choose how to pair your Mac.")
+    var status by mutableStateOf("Scan the QR code on your Mac, or enter its six-digit code.")
         private set
 
     var rows by mutableStateOf(listOf<Long>())

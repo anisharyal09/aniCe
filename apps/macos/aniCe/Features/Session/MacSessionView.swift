@@ -48,6 +48,7 @@ struct MacSessionView: View {
   var discovery: MacDiscoveryModel?
   var canDiscover = true
   var automaticEnabled = true
+  @State private var securityExpanded = false
   var onManageDevices: () -> Void
   var onOpenDevice: (String) -> Void = { _ in }
   var onChoosePhone: () -> Void = {}
@@ -83,7 +84,7 @@ struct MacSessionView: View {
       if compact { compactOverview } else if companion {
         if details {
           VStack(alignment: .leading, spacing: 16) {
-            Button("Back") { details = false }.buttonStyle(.bordered)
+            Button("Back") { details = false }.buttonStyle(AniCeButtonStyle())
             detailContent
           }
         } else { overview }
@@ -94,9 +95,13 @@ struct MacSessionView: View {
             ScrollView {
               VStack(alignment: .leading, spacing: 16) {
                 detailContent
-                Button("Done") { details = false }.keyboardShortcut(.cancelAction)
+                HStack {
+                  Spacer()
+                  if presentation.connected { Button("Disconnect") { model.disconnect(); lan.disconnect() }.buttonStyle(AniCeButtonStyle()) }
+                  Button("Done") { details = false }.buttonStyle(AniCeButtonStyle(prominent: true)).keyboardShortcut(.cancelAction)
+                }
               }.padding(24)
-            }.frame(minWidth: 340, idealWidth: 420, maxHeight: 560)
+            }.frame(minWidth: 400, idealWidth: 460, maxHeight: 700)
               .preferredColorScheme(scheme)
               .foregroundStyle(AniCePalette.primaryText(scheme))
               .background(AniCePalette.surface(scheme))
@@ -155,7 +160,7 @@ struct MacSessionView: View {
                 case .disconnect, .stop: model.disconnect(); lan.disconnect()
                 case .allow, .retry: model.selectedPeer = peer; model.allow()
                 }
-              }.buttonStyle(.bordered).controlSize(.small)
+              }.buttonStyle(AniCeButtonStyle()).controlSize(.small)
                 .disabled(occupied && !ownsBluetooth && !ownsLan)
             }
 
@@ -166,11 +171,11 @@ struct MacSessionView: View {
       }
       if lan.allowing && lan.authenticatedPeer == nil {
         Text("Local network · " + lan.state).font(.caption)
-        Button("Stop allowing local network", action: lan.disconnect).buttonStyle(.bordered)
+        Button("Stop allowing local network", action: lan.disconnect).buttonStyle(AniCeButtonStyle())
       }
       if model.allowing && model.selectedPeer == nil && model.authenticatedPeer == nil && androidPeers.count > 1 {
         Text(presentation.summary + " · Any trusted phone").font(.caption)
-        Button("Cancel") { model.disconnect(); lan.disconnect() }.buttonStyle(.bordered)
+        Button("Cancel") { model.disconnect(); lan.disconnect() }.buttonStyle(AniCeButtonStyle())
       }
     }
   }
@@ -184,94 +189,158 @@ struct MacSessionView: View {
   }
 
   private var workspaceSummary: some View {
-    HStack(spacing: 16) {
-      Button(action: onManageDevices) {
-      VStack(alignment: .leading, spacing: 4) {
-        Text(device?.deviceName ?? "Your phone").font(.title2.weight(.semibold)).lineLimit(2)
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 16) {
+        workspaceName
+        Spacer(minLength: 8)
+        workspaceActions
+      }
+      VStack(alignment: .leading, spacing: 12) {
+        workspaceName
+        HStack(spacing: 12) { workspaceActions }
+      }
+    }.padding(.bottom, 16).overlay(alignment: .bottom) { Divider() }
+  }
+
+  private var workspaceName: some View {
+    Button { diagnostics = false; details = true } label: {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
+          Image(systemName: "iphone").foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
+          Text(device?.deviceName ?? "Your phone").font(.system(size: 15, weight: .medium))
+          Image(systemName: "chevron.forward").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
+        }
+        .fixedSize(horizontal: false, vertical: true)
         Text(presentation.connected ? "Connected" : presentation.summary).font(.callout)
-          .foregroundStyle(presentation.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-      }.buttonStyle(.plain).accessibilityLabel("Open Devices")
-      Spacer(minLength: 8)
-      automaticControl
-      if !presentation.connected {
+    }.buttonStyle(.plain).accessibilityLabel("Connection details for " + (device?.deviceName ?? "your phone"))
+      .accessibilityValue(presentation.summary)
+  }
+
+  @ViewBuilder private var workspaceActions: some View {
+    automaticControl
+    Button(presentation.action.rawValue) {
+      switch presentation.action {
+      case .disconnect, .stop: model.disconnect(); lan.disconnect()
+      case .allow, .retry: model.selectedPeer = device; model.allow()
+      }
+    }.buttonStyle(AniCeButtonStyle()).controlSize(.small).disabled(!peerAvailable)
+    Menu {
+      if lan.allowing {
+        Button(lan.state == "Secured" ? "Disconnect LAN" : "Stop allowing LAN", action: lan.disconnect).disabled(!ownsLan)
+      } else {
+        Button("Allow LAN") { lan.allow(selected: device, bluetoothAllowing: model.allowing) }.disabled(!peerAvailable)
+      }
+      Button("Connection details") { diagnostics = false; details = true }
+      Button("Devices", action: onManageDevices)
+    } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+      .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Connection options")
+  }
+
+  private var overview: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      HStack(spacing: 16) {
+        Image(systemName: "iphone").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
+        Button { diagnostics = false; details = true } label: {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(device?.deviceName ?? "Any trusted phone").font(.system(size: 15, weight: .medium))
+            Text(presentation.connected ? "Connected" : presentation.summary).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+          }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
         Button(presentation.action.rawValue) {
           switch presentation.action {
           case .disconnect, .stop: model.disconnect(); lan.disconnect()
           case .allow, .retry: model.selectedPeer = device; model.allow()
           }
-        }.buttonStyle(.bordered).disabled(!peerAvailable)
+        }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
       }
-      Menu {
-        if presentation.connected {
-          Button("Disconnect device") { model.disconnect(); lan.disconnect() }
-        }
-        if lan.allowing {
-          Button(lan.state == "Secured" ? "Disconnect LAN" : "Stop allowing LAN", action: lan.disconnect).disabled(!ownsLan)
-        } else {
-          Button("Allow LAN") { lan.allow(selected: device, bluetoothAllowing: model.allowing) }.disabled(!peerAvailable)
-        }
-        Button("Connection details") { diagnostics = false; details = true }
-        Button("Devices", action: onManageDevices)
-      } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
-        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Connection options")
-    }.padding(.bottom, 16)
-      .overlay(alignment: .bottom) { Divider() }
-  }
-
-  private var overview: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      HStack(alignment: .firstTextBaseline) {
-        Button { diagnostics = false; details = true } label: {
-          Label(device?.deviceName ?? "Any trusted phone", systemImage: "iphone").font(.headline).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
-        Spacer()
-        Text(presentation.connected ? "Connected" : presentation.summary).font(.callout)
-          .foregroundStyle(presentation.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
-      }
-      automaticControl
-      Divider()
-      HStack {
-        Label("Bluetooth", systemImage: "antenna.radiowaves.left.and.right").font(.callout)
-        Text(ownsBluetooth ? (model.state == "Secured" ? "Connected" : model.allowing ? "Waiting for phone" : model.state) : "In use by another phone")
-          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        Spacer()
-        if model.allowing || (ownsBluetooth && model.state == "Secured") {
-          Button(model.state == "Secured" ? "Disconnect" : "Cancel", action: model.disconnect).disabled(!ownsBluetooth)
-        } else {
-          Button("Connect") { model.selectedPeer = device; model.allow() }.disabled(!peerAvailable)
-        }
-      }
-      HStack {
-        Label("Local network", systemImage: "wifi").font(.callout)
-        Text(ownsLan ? (lan.state == "Secured" ? "Connected" : lan.allowing ? "Waiting for phone" : lan.state) : "In use by another phone")
-          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        Spacer()
-        if lan.allowing || (ownsLan && lan.state == "Secured") {
-          Button(lan.state == "Secured" ? "Disconnect" : "Cancel", action: lan.disconnect).disabled(!ownsLan)
-        } else {
-          Button("Connect") { lan.allow(selected: device, bluetoothAllowing: model.allowing) }.disabled(!peerAvailable)
-        }
-      }
+      VStack(alignment: .leading, spacing: 0) {
+        HStack(spacing: 16) {
+          Button {
+            model.selectedPeer = device; model.setAutomatic(!model.automatic)
+          } label: {
+            VStack(alignment: .leading, spacing: 7) {
+              Text("Auto connect")
+              Text("Reconnect when this device is available.").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+          }.buttonStyle(.plain).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+          Toggle("Auto connect", isOn: Binding(get: { ownsBluetooth && model.automatic }, set: { model.selectedPeer = device; model.setAutomatic($0) }))
+            .labelsHidden().toggleStyle(.checkbox).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+        }.padding(.vertical, 16)
+        Divider()
+        transportRow("Bluetooth", symbol: "antenna.radiowaves.left.and.right", state: ownsBluetooth ? model.state : "In use by another phone",
+          active: ownsBluetooth && (model.allowing || model.state == "Secured"), enabled: peerAvailable,
+          connect: { model.selectedPeer = device; model.allow() }, disconnect: model.disconnect)
+        Divider()
+        transportRow("Local network", symbol: "wifi", state: ownsLan ? lan.state : "In use by another phone",
+          active: ownsLan && (lan.allowing || lan.state == "Secured"), enabled: peerAvailable,
+          connect: { lan.allow(selected: device, bluetoothAllowing: model.allowing) }, disconnect: lan.disconnect)
+        Divider()
+        DisclosureGroup(isExpanded: $securityExpanded) {
+          if let device {
+            Text("Security fingerprint").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+            Text(device.fingerprint).font(.caption.monospaced()).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+          }
+          diagnosticContent
+        } label: { Text("Security and diagnostics") }.padding(.vertical, 14)
+      }.padding(.horizontal, 16)
+        .overlay(alignment: .top) { Divider() }
       if ownsBluetooth && model.state == "Failed" { Text(model.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
       if ownsLan && lan.state == "Failed" { Text(lan.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
-      Button("Security and diagnostics") { diagnostics = false; details = true }
-        .buttonStyle(.plain).foregroundStyle(AniCePalette.accent(scheme))
-    }.buttonStyle(.bordered).controlSize(.small)
-      .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-      .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
-      .overlay { RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(scheme), lineWidth: 0.5) }
+    }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+      .foregroundStyle(AniCePalette.primaryText(scheme))
+      .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 9))
+      .overlay { RoundedRectangle(cornerRadius: 9).stroke(AniCePalette.separator(scheme), lineWidth: 1) }
+  }
+
+  private func transportRow(_ name: String, symbol: String, state: String, active: Bool, enabled: Bool,
+    connect: @escaping () -> Void, disconnect: @escaping () -> Void) -> some View {
+    HStack(spacing: 12) {
+      Label(name, systemImage: symbol)
+      Spacer(minLength: 8)
+      Text(state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+      Button(active ? (state == "Secured" ? "Disconnect" : "Cancel") : "Connect", action: active ? disconnect : connect)
+        .buttonStyle(AniCeButtonStyle()).disabled(!active && !enabled)
+    }.padding(.vertical, 14)
   }
 
   private var detailContent: some View {
+    VStack(alignment: .leading, spacing: 22) {
+      HStack(alignment: .top) {
+        Text(device?.deviceName ?? "Connection details").font(.system(size: 20, weight: .medium))
+        Spacer()
+        Button { details = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Close connection details")
+      }
+      HStack(spacing: 12) {
+        Text(presentation.connected ? "Connected" : presentation.summary)
+        if device != nil { Text("Trusted device") }
+      }.font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+      VStack(spacing: 14) {
+        HStack { Text("Bluetooth"); Spacer(); Text(ownsBluetooth ? model.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
+        HStack { Text("Local network"); Spacer(); Text(ownsLan ? lan.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
+      }.font(.callout)
+      automaticControl
+      if let device {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("Security fingerprint").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+          Text(device.fingerprint).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(AniCePalette.background(scheme), in: RoundedRectangle(cornerRadius: 8))
+        }
+      }
+      Divider()
+      DisclosureGroup("Diagnostics") { diagnosticContent }
+    }
+  }
+
+  private var diagnosticContent: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Connection details").font(.headline)
-      Text(device?.deviceName ?? "Any trusted phone").fixedSize(horizontal: false, vertical: true)
       if companion {
         if androidPeers.count > 1 {
-          Button("Choose allowed phone…", action: onChoosePhone).buttonStyle(.bordered)
+          Button("Choose allowed phone…", action: onChoosePhone).buttonStyle(AniCeButtonStyle())
         }
-        Button("Manage devices", action: onManageDevices).buttonStyle(.bordered)
+        Button("Manage devices", action: onManageDevices).buttonStyle(AniCeButtonStyle())
       } else if androidPeers.count > 1 || model.selectedPeer != nil {
         Picker("Allow", selection: Binding(
           get: { model.selectedPeer?.deviceId ?? "" },
@@ -307,7 +376,7 @@ struct MacSessionView: View {
         Button { diagnostics.toggle() } label: {
           HStack {
             Image(systemName: diagnostics ? "chevron.down" : "chevron.right")
-            Text("Diagnostics")
+            Text("Connection checks and discovery")
             Spacer()
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }
@@ -331,6 +400,6 @@ struct MacSessionView: View {
         Button("Disconnect all") { model.disconnect(); lan.disconnect() }
       }
     }
-    .buttonStyle(.bordered)
+    .buttonStyle(AniCeButtonStyle())
   }
 }
