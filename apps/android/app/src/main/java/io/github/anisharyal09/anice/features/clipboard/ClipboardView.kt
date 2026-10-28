@@ -18,7 +18,13 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 @Composable
-fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, showHistory: Boolean = true, grouped: Boolean = false) {
+fun ClipboardSettings(
+    owner: ClipboardController,
+    peers: List<PeerTrustRecord>,
+    showHistory: Boolean = true,
+    grouped: Boolean = false,
+    showPreferences: Boolean = true
+) {
     val keys = peers.map { it.peer.deviceId + ":" + it.peer.fingerprint }
     LaunchedEffect(keys) { owner.prune(peers.map { it.peer }); if (owner.selected == null) owner.select(peers.firstOrNull()?.peer) }
     Column(verticalArrangement = Arrangement.spacedBy(if (grouped) 0.dp else 8.dp)) {
@@ -29,14 +35,20 @@ fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, 
                     onClick = { owner.select(record.peer) }, label = { Text(record.peer.deviceName) }) }
             }
         } else if (!grouped) peers.firstOrNull()?.let { Text(it.peer.deviceName, style = MaterialTheme.typography.titleSmall) }
-        if (grouped && peers.isNotEmpty()) HorizontalDivider()
-        AutomaticConnectionToggle(checked = owner.automatic, enabled = owner.selected != null,
-            onCheckedChange = owner::setAutomaticEnabled,
-            label = if (grouped) "Automatic sharing" else "Automatic clipboard sharing",
-            description = if (grouped && peers.isNotEmpty()) "Enable on both devices. Manual sends stay available." else null)
-        if (showHistory) {
-            if (grouped) HorizontalDivider()
-            HistoryPreference(owner.history, compact = grouped)
+        if (!showPreferences && owner.selected != null) {
+            Text(if (owner.automatic) "Automatic sharing on" else "Manual sharing",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (showPreferences) {
+            if (grouped && peers.isNotEmpty()) HorizontalDivider()
+            AutomaticConnectionToggle(checked = owner.automatic, enabled = owner.selected != null,
+                onCheckedChange = owner::setAutomaticEnabled,
+                label = if (grouped) "Automatic sharing" else "Automatic clipboard sharing",
+                description = if (grouped && peers.isNotEmpty()) "Enable on both devices. Manual sends stay available." else null)
+            if (showHistory) {
+                if (grouped) HorizontalDivider()
+                HistoryPreference(owner.history, compact = grouped)
+            }
         }
     }
 }
@@ -44,6 +56,7 @@ fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, 
 @Composable
 fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     var historyTab by remember { mutableStateOf(false) }
+    var preferencesOpen by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var how by remember { mutableStateOf(false) }
     var reveal by remember { mutableStateOf(false) }
@@ -60,13 +73,26 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     DisposableEffect(owner.selected?.deviceId) { onDispose { owner.clearPreview() } }
     LaunchedEffect(owner.preview?.token, owner.preview?.text) { reveal = false }
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SecondaryTabRow(selectedTabIndex = if (historyTab) 1 else 0) {
-            Tab(selected = !historyTab, onClick = { historyTab = false }, text = { Text("Share") })
-            Tab(selected = historyTab, onClick = { historyTab = true; pasted = ""; reveal = false; owner.clearPreview() }, text = { Text("History") })
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            SecondaryTabRow(selectedTabIndex = if (historyTab) 1 else 0, modifier = Modifier.weight(1f)) {
+                Tab(selected = !historyTab, onClick = { historyTab = false }, text = { Text("Share") })
+                Tab(selected = historyTab, onClick = { historyTab = true; pasted = ""; reveal = false; owner.clearPreview() }, text = { Text("History") })
+            }
+            IconButton(onClick = { preferencesOpen = !preferencesOpen }, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.ic_settings), contentDescription = "Clipboard preferences",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+        }
+        if (preferencesOpen) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Clipboard settings", style = MaterialTheme.typography.titleSmall)
+                ClipboardSettings(owner, peers, showHistory = true, grouped = true)
+            }
+            HorizontalDivider()
         }
         if (historyTab) ClipboardHistoryView(owner)
         else {
-            ClipboardSettings(owner, peers, showHistory = false)
+            ClipboardSettings(owner, peers, showHistory = false, showPreferences = false)
             val peer = owner.selected
             val available = peer?.let(owner::supports) == true
             if (peer != null && !available) Text(if (owner.connected(peer)) "Clipboard unavailable on this device" else "Connect first")
@@ -154,9 +180,11 @@ private fun HistoryPreference(history: ClipboardHistory, compact: Boolean = fals
 internal fun ClipboardHistoryView(owner: ClipboardController) {
     val history = owner.history
     var clear by remember { mutableStateOf(false) }
-    HistoryPreference(history)
     Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Text("${history.entries.size} of ${history.capacity} · Saved on this device", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("${history.entries.size} of ${history.capacity} · Saved on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (history.enabled) "History on" else "History paused", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (history.entries.isNotEmpty()) TextButton(onClick = { clear = true }) { Text("Clear all") }
     }
     if (owner.status != "Ready to share text") Text(owner.status, style = MaterialTheme.typography.bodySmall)

@@ -47,6 +47,7 @@ struct FindDeviceView: View {
         }
       }
       ForEach(ConnectionPresentation.primaryPeers(peers, connected: { model.connected($0.peer) })) { record in
+        let feedbackForPeer = model.feedbackPeer == record.peer && model.feedbackKey != "find_idle"
         VStack(alignment: .leading, spacing: 4) {
           HStack {
             Text(record.peer.deviceName).fixedSize(horizontal: false, vertical: true)
@@ -55,7 +56,10 @@ struct FindDeviceView: View {
               .disabled(!model.canFind(record.peer)).buttonStyle(.bordered).fixedSize()
               .accessibilityLabel(String(format: MacFindDeviceNotifier.text("find_peer_action"), record.peer.deviceName))
           }
-          if !model.supports(record.peer) {
+          if feedbackForPeer {
+            Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
+              .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          } else if !model.supports(record.peer) {
             Text(MacFindDeviceNotifier.text(model.connected(record.peer) ? "find_not_advertised" : "find_connect_first"))
               .font(.caption).foregroundStyle(.secondary)
           } else if model.connected(record.peer) {
@@ -65,11 +69,13 @@ struct FindDeviceView: View {
         .padding(.vertical, 8)
         Divider()
       }
-      if let peer = model.feedbackPeer, model.feedbackKey != "find_idle" {
+      if let peer = model.feedbackPeer, model.feedbackKey != "find_idle", !peers.contains(where: { $0.peer == peer }) {
         Text(peer.deviceName).font(.caption)
+        Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
+          .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       let showIdle = model.feedbackKey == "find_idle" && !peers.contains { model.connected($0.peer) }
-      if showIdle || (model.feedbackKey != "find_idle" && !model.feedbackKey.isEmpty) {
+      if showIdle || (model.feedbackKey != "find_idle" && model.feedbackPeer == nil && !model.feedbackKey.isEmpty) {
         Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }

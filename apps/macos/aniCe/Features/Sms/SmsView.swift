@@ -101,10 +101,11 @@ struct SmsView: View {
             Text(model.connected(peer) ? "Waiting for your phone" : "Connect aniCe on your phone first")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
           }
-          if geometry.size.width >= 720 {
+          if geometry.size.width >= 620 {
+            let listWidth = min(250, max(180, geometry.size.width * 0.28))
             HStack(spacing: 0) {
               ScrollView { threads(peer).padding(12) }
-                .frame(width: min(250, max(210, geometry.size.width * 0.27)))
+                .frame(width: listWidth)
               AniCePalette.separator(scheme).frame(width: 1)
               if address.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
