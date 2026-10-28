@@ -14,6 +14,31 @@ import java.util.UUID
 import kotlin.coroutines.ContinuationInterceptor
 
 class SmsControllerTests {
+    @Test fun draftsStayWithTheirConversationAndIdentityResetClearsMemory() {
+        val controller = SmsController(
+            store = object : SmsStore {
+                override suspend fun threads(limit: Int, beforeMillis: Long, beforeThreadId: String) = SmsThreadPage(emptyList(), 0)
+                override suspend fun history(threadId: String, beforeMillis: Long, beforeMessageId: String, limit: Int) = SmsHistoryPage(emptyList(), 0, "", false, 0)
+                override suspend fun search(query: String, beforeMillis: Long, beforeMessageId: String, limit: Int) = SmsHistoryPage(emptyList(), 0, "", false, 0)
+            },
+            sender = object : SmsSender {
+                override suspend fun send(address: String, body: String, subscriptionId: Int, timeoutMillis: Long) = SmsSendOutcome(0, "", 0)
+            },
+            dispatcher = Dispatchers.Unconfined,
+            permissions = { true }
+        )
+        controller.saveDraft("local|42", "Keep this reply")
+        controller.saveDraft("mac-id:fingerprint|42", "Peer-scoped draft")
+        controller.retainDrafts(setOf("mac-id:fingerprint"))
+        assertEquals("Keep this reply", controller.draft("local|42"))
+        assertEquals("Peer-scoped draft", controller.draft("mac-id:fingerprint|42"))
+        controller.retainDrafts(emptySet())
+        assertEquals("Keep this reply", controller.draft("local|42"))
+        assertEquals("", controller.draft("mac-id:fingerprint|42"))
+        controller.invalidate()
+        assertEquals("", controller.draft("local|42"))
+    }
+
     private class FakeStore : SmsStore {
         var threadsResult: SmsThreadPage? = SmsThreadPage(emptyList(), 0)
         var historyResult: SmsHistoryPage? = SmsHistoryPage(emptyList(), 0, "", false, 0)

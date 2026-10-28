@@ -72,7 +72,7 @@ struct MediaView: View {
             if let bytes=model.artwork, let image=NSImage(data:bytes) {
               Image(nsImage:image).resizable().scaledToFit()
             } else { Image(systemName: "music.note").foregroundStyle(AniCePalette.secondaryText(scheme)) }
-          }.frame(width:compact ? 50:72,height:compact ? 50:72)
+          }.frame(width: compact ? 50 : 164, height: compact ? 50 : 164)
             .clipShape(RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
           VStack(alignment:.leading,spacing:2) {
             if !media.title.isEmpty { Text(media.title).font(.body.weight(.medium)).fixedSize(horizontal:false,vertical:true) }
@@ -101,9 +101,12 @@ struct MediaView: View {
         Text(model.feedback).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
         if media.source.isEmpty { Button("Retry observation") { model.retryObservation() } }
       }
-    }.tint(AniCePalette.accent(scheme)).padding(compact ? 0 : 20).frame(maxWidth:.infinity, alignment:.topLeading)
-      .background(compact ? Color.clear : AniCePalette.surface(scheme),in:RoundedRectangle(cornerRadius:12))
-      .overlay { if !compact { RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(scheme), lineWidth: 0.5) } }
+    }
+      .tint(AniCePalette.accent(scheme))
+      .padding(compact ? 0 : 20)
+      .frame(maxWidth: compact ? .infinity : 620, alignment: .topLeading)
+      .frame(maxWidth: .infinity, alignment: compact ? .leading : .top)
+      .background(Color.clear)
       .onChange(of:detailed) { _, value in
         if !value { cancelled = target != nil; target = nil; scrub = nil }
       }

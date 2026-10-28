@@ -19,6 +19,7 @@ struct TransferNotificationControls: View {
 // Hoisted file picker helper shared between TransferView and CompanionView.
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
+  guard let reviewedPeer = model.activeChannel?.descriptor.peer else { return }
   _ = model.onLanRequired()
   CompanionHost.currentHost?.isPickingFile = true
   defer {
@@ -31,8 +32,26 @@ struct TransferNotificationControls: View {
   panel.canChooseDirectories = false
   panel.prompt = "Send"
   if panel.runModal() == .OK && !panel.urls.isEmpty {
+    let urls = panel.urls
+    let names = urls.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
+    let additional = urls.count > 8 ? "\n… and \(urls.count - 8) more" : ""
+    let review = NSAlert()
+    review.messageText = "Send \(urls.count) file\(urls.count == 1 ? "" : "s") to \(reviewedPeer.deviceName)?"
+    review.informativeText = names + additional
+    review.addButton(withTitle: "Send files")
+    review.addButton(withTitle: "Cancel")
+    guard review.runModal() == .alertFirstButtonReturn else { return }
+    guard let currentPeer = model.activeChannel?.descriptor.peer,
+      currentPeer.deviceId == reviewedPeer.deviceId, currentPeer.fingerprint == reviewedPeer.fingerprint else {
+      let changed = NSAlert()
+      changed.messageText = "Connection changed"
+      changed.informativeText = "No files were sent. Choose the files again to review them for the current device."
+      changed.addButton(withTitle: "OK")
+      changed.runModal()
+      return
+    }
     Task {
-      await model.sendFiles(urls: panel.urls)
+      await model.sendFiles(urls: urls, reviewedPeer: reviewedPeer)
     }
   }
 }
@@ -96,14 +115,9 @@ struct TransferView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(compact ? 0 : 20)
+    .padding(compact ? 0 : 8)
     .frame(maxWidth: .infinity, alignment: .topLeading)
-    .background(compact ? Color.clear : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 12))
-    .overlay(
-      Group {
-        if !compact { RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5) }
-      }
-    )
+    .background(Color.clear)
   }
 
   @ViewBuilder

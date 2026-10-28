@@ -104,11 +104,12 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                 onAutomaticLanChanged(enabled)
             },
             label = "Connect automatically after pairing")
-        Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network.", style = MaterialTheme.typography.bodySmall)
         if (!automaticAvailable) Text("Automatic Bluetooth is unavailable in this build.", style = MaterialTheme.typography.bodySmall)
-        Text(model.status,
-            style = if (model.phase == "idle") MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!enterCode || model.phase != "idle") {
+            Text(model.status,
+                style = if (model.phase == "idle") MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (camera) {
             PairingCamera(
                 onCode = { text ->

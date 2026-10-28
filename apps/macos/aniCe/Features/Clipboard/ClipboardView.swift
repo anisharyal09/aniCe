@@ -7,35 +7,48 @@ struct ClipboardSettingsView: View {
   let model: MacClipboardModel
   let peers: [PeerTrustRecord]
   var showHistory = true
+  var compactSettings = false
   @Environment(\.colorScheme) private var scheme
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: compactSettings ? 0 : 8) {
       if peers.isEmpty { Text("Pair a device to share your clipboard.").foregroundStyle(.secondary) }
       else if peers.count > 1 {
         Picker("Device", selection: Binding(get: { model.selected.map { $0.deviceId + ":" + $0.fingerprint } ?? "" }, set: { value in
           model.select(peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == value }?.peer)
         })) { ForEach(peers) { record in Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint) } }
-      } else if let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
-      Toggle("Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
+      } else if !compactSettings, let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
+      Toggle(compactSettings ? "Automatic sharing" : "Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
         .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
-      HStack(spacing: 8) {
-        Text(model.isPaused ? (model.pauseStatusText ?? "Clipboard paused") : "Clipboard observation active")
-          .font(.caption)
-          .foregroundStyle(model.isPaused ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
-        Spacer()
-        if model.isPaused {
-          Button("Resume") { model.resume() }
-            .buttonStyle(AniCeButtonStyle()).controlSize(.small)
+      if compactSettings {
+        if model.selected != nil {
+          Text("Enable on both devices. Manual sends stay available.").font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.leading, 20).padding(.top, 4)
         }
-        Menu(model.isPaused ? "Change" : "Pause…") {
-          ForEach(ClipboardPauseDuration.allCases) { duration in
-            Button(duration.rawValue) { model.pause(for: duration) }
+      } else {
+        HStack(spacing: 8) {
+          Text(model.isPaused ? (model.pauseStatusText ?? "Clipboard paused") : "Clipboard observation active")
+            .font(.caption)
+            .foregroundStyle(model.isPaused ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+          Spacer()
+          if model.isPaused {
+            Button("Resume") { model.resume() }
+              .buttonStyle(AniCeButtonStyle()).controlSize(.small)
           }
+          Menu(model.isPaused ? "Change" : "Pause…") {
+            ForEach(ClipboardPauseDuration.allCases) { duration in
+              Button(duration.rawValue) { model.pause(for: duration) }
+            }
+          }
+          .menuStyle(.borderedButton)
+          .controlSize(.small)
         }
-        .menuStyle(.borderedButton)
-        .controlSize(.small)
       }
-      if showHistory { HistoryPreference(history: model.history) }
+      if showHistory {
+        if compactSettings {
+          Rectangle().fill(AniCePalette.separator(scheme)).frame(height: 0.5).padding(.vertical, 8)
+        }
+        HistoryPreference(history: model.history, compact: compactSettings)
+      }
       ClipboardAccessGuidance(model: model)
     }
     .onAppear { model.prune(peers.map(\.peer)); if model.selected == nil { model.select(peers.first?.peer) }; model.refreshAccess() }
@@ -55,6 +68,7 @@ private struct ClipboardAccessGuidance: View {
 }
 private struct HistoryPreference: View {
   let history: ClipboardHistory
+  var compact = false
   @Environment(\.colorScheme) private var scheme
   @State private var confirming = false
   var body: some View {
@@ -64,9 +78,13 @@ private struct HistoryPreference: View {
         .alert("Keep clipboard history?", isPresented: $confirming) {
           Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
         } message: { Text("Save the latest text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Delete items or use Clear to remove them.") }
+      if compact {
+        Text("Saved on this Mac. Pausing keeps saved clips.").font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.leading, 20)
+      }
 
       // History capacity: limits FIFO unpinned persistence to 20, 50, or 100 items.
-      if history.enabled || !history.entries.isEmpty {
+      if !compact && (history.enabled || !history.entries.isEmpty) {
         HStack(spacing: 8) {
           Picker("History capacity", selection: Binding(get: { history.capacity }, set: { history.setCapacity($0) })) {
             Text("20 items").tag(20)
@@ -78,7 +96,7 @@ private struct HistoryPreference: View {
         }
       }
     }
-    if !history.enabled && !history.entries.isEmpty { Text("Collection paused · Saved items are kept").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
+    if !compact && !history.enabled && !history.entries.isEmpty { Text("Collection paused · Saved items are kept").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
     if let error = history.error { Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
   }
 }

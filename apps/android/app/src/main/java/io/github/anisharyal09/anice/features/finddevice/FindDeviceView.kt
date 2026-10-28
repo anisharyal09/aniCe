@@ -99,6 +99,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                         Text(stringResource(R.string.find_title))
                     }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
         owner.feedbackPeer?.let { if (owner.feedbackKey != "find_idle") Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }

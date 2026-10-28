@@ -62,6 +62,8 @@ struct FindDeviceView: View {
             Text(MacFindDeviceNotifier.text("find_connected")).font(.caption).foregroundStyle(.secondary)
           }
         }
+        .padding(.vertical, 8)
+        Divider()
       }
       if let peer = model.feedbackPeer, model.feedbackKey != "find_idle" {
         Text(peer.deviceName).font(.caption)

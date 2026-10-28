@@ -116,6 +116,7 @@ class SmsController(
     var selectedThreadId by mutableStateOf<String?>(null); private set
     var conversation by mutableStateOf<List<SmsDisplayMessage>>(emptyList()); private set
     var conversationMore by mutableStateOf(false); private set
+    private val drafts = linkedMapOf<String, String>()
     var loading by mutableStateOf(false); private set
     var status by mutableStateOf(""); private set
     var skippedRows by mutableStateOf(0); private set
@@ -779,7 +780,17 @@ class SmsController(
         }
     }
 
-    fun send(address: String, text: String, subscriptionId: Int = 0): SmsComposeOperation {
+    fun draft(key: String): String = drafts[key].orEmpty()
+
+    fun saveDraft(key: String, value: String) {
+        if (value.isEmpty()) drafts.remove(key) else drafts[key] = value
+    }
+
+    fun retainDrafts(peerCredentials: Set<String>) {
+        drafts.keys.removeAll { key -> !key.startsWith("local|") && peerCredentials.none { key.startsWith("$it|") } }
+    }
+
+    fun send(address: String, text: String, subscriptionId: Int = 0, draftKey: String? = null): SmsComposeOperation {
         val operation = SmsComposeOperation()
         val clean = smsSanitizeText(text)
         val bytes = clean?.toByteArray(Charsets.UTF_8)
@@ -798,6 +809,7 @@ class SmsController(
                     val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
                     displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, stamp, 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME, echoSeq, echoSortMillis)
                     upsertSentThread(address, clean, stamp)
+                    if (draftKey != null && drafts[draftKey] == clean) drafts.remove(draftKey)
                     refreshConversation(); status = "Message sent"
                     if (outcome.messageId.isEmpty()) recheckPendingEcho()
                 }
@@ -909,7 +921,7 @@ class SmsController(
         pendingLive.forEach { it.job?.cancel() }; pendingLive.clear()
         incomingReplies.values.forEach { it.job?.cancel() }
         incomingReplies.clear(); completedReplies.clear(); marks.clear(); displayExtras.clear(); loadedRows = emptyList()
-        relayedLive = 0; waitingLive = 0; failedLive = 0
+        relayedLive = 0; waitingLive = 0; failedLive = 0; drafts.clear()
         threadsJob?.cancel(); conversationJob?.cancel(); conversationGeneration++; threadGeneration++
         threadCursor = 0L to ""; threadsMore = false
         threads = null; selectedThreadId = null; conversation = emptyList(); conversationMore = false; loading = false

@@ -4,7 +4,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'feat/**', 'fix/**', 'micro-feat/**']
+    branches: [main, 'feat/**', 'fix/**', 'micro-feat/**', 'seamless-redesign']
   pull_request:
     branches: [main]
   workflow_dispatch:

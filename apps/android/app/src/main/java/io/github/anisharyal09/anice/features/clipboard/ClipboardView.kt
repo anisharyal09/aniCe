@@ -18,20 +18,26 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 @Composable
-fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, showHistory: Boolean = true) {
+fun ClipboardSettings(owner: ClipboardController, peers: List<PeerTrustRecord>, showHistory: Boolean = true, grouped: Boolean = false) {
     val keys = peers.map { it.peer.deviceId + ":" + it.peer.fingerprint }
     LaunchedEffect(keys) { owner.prune(peers.map { it.peer }); if (owner.selected == null) owner.select(peers.firstOrNull()?.peer) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (grouped) 0.dp else 8.dp)) {
         if (peers.isEmpty()) Text("Pair a device to share your clipboard.")
         if (peers.size > 1) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 peers.forEach { record -> FilterChip(selected = owner.selected?.deviceId == record.peer.deviceId && owner.selected?.fingerprint == record.peer.fingerprint,
                     onClick = { owner.select(record.peer) }, label = { Text(record.peer.deviceName) }) }
             }
-        } else peers.firstOrNull()?.let { Text(it.peer.deviceName, style = MaterialTheme.typography.titleSmall) }
+        } else if (!grouped) peers.firstOrNull()?.let { Text(it.peer.deviceName, style = MaterialTheme.typography.titleSmall) }
+        if (grouped && peers.isNotEmpty()) HorizontalDivider()
         AutomaticConnectionToggle(checked = owner.automatic, enabled = owner.selected != null,
-            onCheckedChange = owner::setAutomaticEnabled, label = "Automatic clipboard sharing")
-        if (showHistory) HistoryPreference(owner.history)
+            onCheckedChange = owner::setAutomaticEnabled,
+            label = if (grouped) "Automatic sharing" else "Automatic clipboard sharing",
+            description = if (grouped && peers.isNotEmpty()) "Enable on both devices. Manual sends stay available." else null)
+        if (showHistory) {
+            if (grouped) HorizontalDivider()
+            HistoryPreference(owner.history, compact = grouped)
+        }
     }
 }
 
@@ -87,7 +93,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
 
 // Home and Share use the same explicit send and exact sensitive-item confirmation.
 @Composable
-fun ClipboardSendButton(owner: ClipboardController) {
+fun ClipboardSendButton(owner: ClipboardController, modifier: Modifier = Modifier, compact: Boolean = false) {
     var confirming by remember { mutableStateOf(false) }
     var sensitiveSample by remember { mutableStateOf<ClipboardSample?>(null) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -105,9 +111,9 @@ fun ClipboardSendButton(owner: ClipboardController) {
     }
     val available = owner.selected?.let(owner::supports) == true
     OutlinedButton(onClick = { owner.send(); sensitiveSample = owner.preview?.takeIf { it.sensitive }; confirming = sensitiveSample != null }, enabled = available && !owner.busy,
-        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
-        Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
+        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), modifier = modifier.defaultMinSize(minHeight = 32.dp)) {
+        Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(if (compact) 16.dp else 18.dp))
+        Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
         Text("Send clipboard")
     }
     if (confirming) AlertDialog(onDismissRequest = { confirming = false; sensitiveSample = null; owner.clearPreview() }, title = { Text("Send sensitive text?") },
@@ -117,20 +123,24 @@ fun ClipboardSendButton(owner: ClipboardController) {
 }
 
 @Composable
-private fun HistoryPreference(history: ClipboardHistory) {
+private fun HistoryPreference(history: ClipboardHistory, compact: Boolean = false) {
     var confirm by remember { mutableStateOf(false) }
     AutomaticConnectionToggle(checked = history.enabled, enabled = true,
-        onCheckedChange = { if (it) confirm = true else history.setKeepingHistory(false) }, label = "Keep clipboard history")
-    var capacityMenu by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { capacityMenu = true }) { Text("History capacity: ${history.capacity} items") }
-        DropdownMenu(expanded = capacityMenu, onDismissRequest = { capacityMenu = false }) {
-            listOf(20, 50, 100).forEach { value ->
-                DropdownMenuItem(text = { Text("$value items") }, onClick = { capacityMenu = false; history.updateCapacity(value) })
+        onCheckedChange = { if (it) confirm = true else history.setKeepingHistory(false) },
+        label = "Keep clipboard history",
+        description = if (compact) "Saved on this phone. Pausing keeps saved clips." else null)
+    if (!compact) {
+        var capacityMenu by remember { mutableStateOf(false) }
+        Box {
+            TextButton(onClick = { capacityMenu = true }) { Text("History capacity: ${history.capacity} items") }
+            DropdownMenu(expanded = capacityMenu, onDismissRequest = { capacityMenu = false }) {
+                listOf(20, 50, 100).forEach { value ->
+                    DropdownMenuItem(text = { Text("$value items") }, onClick = { capacityMenu = false; history.updateCapacity(value) })
+                }
             }
         }
     }
-    if (!history.enabled && history.entries.isNotEmpty()) Text("Collection paused · Saved items are kept", style = MaterialTheme.typography.bodySmall)
+    if (!compact && !history.enabled && history.entries.isNotEmpty()) Text("Collection paused · Saved items are kept", style = MaterialTheme.typography.bodySmall)
     history.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("Keep clipboard history?") },
         text = { Text("Save eligible text on this device across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Use Delete or Clear to remove them.") },

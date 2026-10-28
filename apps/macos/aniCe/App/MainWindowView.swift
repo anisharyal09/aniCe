@@ -47,6 +47,8 @@ struct MainWindowView: View {
       }.padding(.horizontal, 14).padding(.bottom, 24)
         .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
         .background(AniCePalette.secondarySurface(colorScheme))
+        .overlay(alignment: .trailing) { AniCePalette.separator(colorScheme).frame(width: 0.5) }
+        .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
         .toolbar {
           ToolbarItemGroup(placement: .navigation) {
             Button(action: navigation.goBack) { Image(systemName: "arrow.left") }
@@ -80,10 +82,10 @@ struct MainWindowView: View {
           }
         }
       }.navigationTitle("aniCe")
-        .toolbarBackground(AniCePalette.surface(colorScheme), for: .windowToolbar)
+        .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .background(AniCePalette.background(colorScheme))
-        .overlay(alignment: .top) { Divider() }
+        .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
     }
     .disclosureGroupStyle(ClickableDisclosureStyle())
     .preferredColorScheme(colorScheme)

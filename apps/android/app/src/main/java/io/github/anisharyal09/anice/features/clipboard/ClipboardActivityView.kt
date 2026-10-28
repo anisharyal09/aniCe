@@ -70,7 +70,7 @@ fun ClipboardActivityView(owner: ClipboardController, open: () -> Unit, compact:
                 item.textPreview?.let { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium) }
                     ?: Text("Preview hidden for marked clipboard items", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = if (compact) Arrangement.spacedBy(8.dp) else Arrangement.SpaceBetween,
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = if (compact) Arrangement.End else Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
                 if (item.canCopy) TextButton(onClick = {
                     val copied = owner.copyActivity(item.id)

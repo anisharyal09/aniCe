@@ -241,6 +241,20 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(batch, next.id)
   }
 
+  func testReviewedRecipientChangeStopsBeforeReadingOrSendingFiles() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel()
+    owner.available(channel)
+    let reviewedPeer = MockSecuredChannel().descriptor.peer
+    let missingFile = tempDir.appendingPathComponent("must-not-be-read.bin")
+
+    await owner.sendFiles(urls: [missingFile], reviewedPeer: reviewedPeer)
+
+    guard case .failed(let reason) = owner.state else { return XCTFail("A changed recipient must stop the send") }
+    XCTAssertTrue(reason.contains("device changed"))
+    XCTAssertTrue(channel.sentData.isEmpty)
+    XCTAssertFalse(owner.preparing)
+  }
+
   func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel(maximumDataBytes: 262144)
     let firstAck = expectation(description: "First ACK submission held")

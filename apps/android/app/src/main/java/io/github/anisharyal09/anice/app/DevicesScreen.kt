@@ -63,16 +63,16 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                     quickActions = {
                         if (pairing.peers.isNotEmpty()) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = sendFiles,
+                                OutlinedButton(onClick = sendFiles::chooseFiles,
                                     enabled = transfer.peerConnected && transfer.peerCompatible && !transfer.preparing && transfer.state is TransferState.Idle,
                                     shape = MaterialTheme.shapes.small,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
-                                    Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Send files…")
+                                    modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Send files")
                                 }
-                                ClipboardSendButton(session.clipboard)
+                                ClipboardSendButton(session.clipboard, Modifier.heightIn(min = 48.dp), compact = true)
                             }
                             if (session.clipboard.status != "Ready to share text" && session.clipboard.status != "Confirm sending sensitive text") {
                                 Text(session.clipboard.status, style = MaterialTheme.typography.bodySmall,
@@ -150,6 +150,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                             onDiscoveryCheck = { navigation.destination = AppDestination.Devices; navigation.route = DeviceRoute.Discovery },
                             focusedPeer = navigation.focusedPeer, onFocusConsumed = { navigation.focusedPeer = null })
                     })
+                sendFiles.ReviewDialog()
             } else DevicesOverviewContent(pairing, session, navigation, localName)
         }
     }

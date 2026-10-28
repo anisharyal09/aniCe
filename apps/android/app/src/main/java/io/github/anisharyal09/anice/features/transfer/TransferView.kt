@@ -3,6 +3,9 @@
 package io.github.anisharyal09.anice.features.transfer
 
 import android.text.format.Formatter
+import android.content.ContentResolver
+import android.provider.OpenableColumns
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -21,19 +24,152 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-@Composable
-fun rememberSendFilesAction(controller: TransferController): () -> Unit {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) controller.sendUris(uris)
-        controller.endPicker()
+internal data class TransferReviewFile(val uri: Uri, val name: String, val size: Long?)
+private data class TransferReviewPeer(val deviceId: String, val fingerprint: String, val name: String)
+
+@Stable
+class TransferSendReview internal constructor(private val controller: TransferController) {
+    private var files by mutableStateOf<List<TransferReviewFile>>(emptyList())
+        private set
+    private var resolving by mutableStateOf(false)
+        private set
+    private var visible by mutableStateOf(false)
+        private set
+    private var reviewedPeer by mutableStateOf<TransferReviewPeer?>(null)
+        private set
+    private var launchPicker: () -> Unit = {}
+
+    private fun currentPeer(): TransferReviewPeer? = controller.activeChannel?.descriptor?.peer?.let {
+        TransferReviewPeer(it.deviceId, it.fingerprint, it.deviceName)
     }
-    return {
-        // File selection requests LAN without retiring the secured BLE channel or waiting for LAN readiness.
+
+    internal fun installPicker(action: () -> Unit) { launchPicker = action }
+
+    fun chooseFiles() {
+        reviewedPeer = currentPeer()
+        files = emptyList()
+        visible = false
+        resolving = false
+        // Ask for a faster route before opening the picker; the captured peer remains the review target.
         controller.onDemandLanConnection?.invoke()
         controller.beginPicker()
-        launcher.launch(arrayOf("*/*"))
+        launchPicker()
     }
+
+    internal fun selectionReturned(uris: List<Uri>) {
+        controller.endPicker()
+        if (uris.isEmpty()) { dismiss(); return }
+        visible = true
+        resolving = true
+    }
+
+    internal fun resolved(selection: List<TransferReviewFile>) {
+        files = selection
+        resolving = false
+    }
+
+    private fun retargetToCurrentPeer() { reviewedPeer = currentPeer() }
+
+    private fun sendReviewedFiles() {
+        val target = reviewedPeer ?: return
+        val current = currentPeer() ?: return
+        if (target.deviceId != current.deviceId || target.fingerprint != current.fingerprint) return
+        if (files.isEmpty() || files.size > 128) return
+        controller.sendUris(files.map { it.uri }, target.deviceId, target.fingerprint)
+        dismiss()
+    }
+
+    fun dismiss() {
+        files = emptyList()
+        resolving = false
+        visible = false
+        reviewedPeer = null
+    }
+
+    @Composable
+    fun ReviewDialog() {
+        if (!visible) return
+        val activePeer = currentPeer()
+        val target = reviewedPeer
+        val matches = target != null && activePeer?.deviceId == target.deviceId && activePeer.fingerprint == target.fingerprint
+        val identityReady = controller.peerConnected && controller.peerCompatible && activePeer != null
+        val totalSize = files.mapNotNull { it.size }.takeIf { it.size == files.size }?.sum()
+        AlertDialog(
+            onDismissRequest = ::dismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = true),
+            title = { Text("Review files") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(target?.let { "To ${it.name}" } ?: "No connected device was selected.")
+                    if (files.isNotEmpty()) {
+                        Text(
+                            "${files.size} file${if (files.size == 1) "" else "s"}" +
+                                (totalSize?.let { " · ${Formatter.formatFileSize(LocalContext.current, it)}" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        files.take(5).forEach { file ->
+                            Text(file.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (files.size > 5) Text("+ ${files.size - 5} more", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (files.size > 128) Text("Choose no more than 128 files.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    if (!identityReady) Text("Reconnect to the reviewed device before sending.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else if (!matches) Text("The connection changed. Review the current device before sending.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                when {
+                    resolving || files.isEmpty() || files.size > 128 -> Button(onClick = {}, enabled = false) { Text("Preparing…") }
+                    !identityReady -> Button(onClick = {}, enabled = false) { Text("Reconnect") }
+                    !matches -> Button(onClick = ::retargetToCurrentPeer) { Text("Review current device") }
+                    else -> Button(onClick = ::sendReviewedFiles) { Text("Send files") }
+                }
+            },
+            dismissButton = { TextButton(onClick = ::dismiss) { Text("Cancel") } }
+        )
+    }
+}
+
+@Composable
+fun rememberSendFilesAction(controller: TransferController): TransferSendReview {
+    val context = LocalContext.current
+    val resolver = context.contentResolver
+    val scope = rememberCoroutineScope()
+    val review = remember(controller) { TransferSendReview(controller) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        review.selectionReturned(uris)
+        if (uris.isNotEmpty()) scope.launch {
+            val files = withContext(Dispatchers.IO) { uris.map { reviewFile(resolver, it) } }
+            review.resolved(files)
+        }
+    }
+    review.installPicker { launcher.launch(arrayOf("*/*")) }
+    return review
+}
+
+private fun reviewFile(resolver: ContentResolver, uri: Uri): TransferReviewFile {
+    var name = uri.lastPathSegment ?: "File"
+    var size: Long? = null
+    resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (nameIndex >= 0) name = cursor.getString(nameIndex)?.takeIf(String::isNotEmpty) ?: name
+            if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex).takeIf { it >= 0 }
+        }
+    }
+    return TransferReviewFile(uri, name, size)
 }
 
 @Composable
@@ -52,8 +188,8 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = if (overview) RectangleShape else MaterialTheme.shapes.medium,
-        color = if (overview) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
+        shape = RectangleShape,
+        color = Color.Transparent
     ) {
         Column(
             Modifier
@@ -111,11 +247,11 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
-                            enabled = !controller.preparing,
-                            onClick = sendFiles,
+                            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
+                            onClick = sendFiles::chooseFiles,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
+                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -427,7 +563,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                             OutlinedButton(
                                 onClick = {
                                     controller.dismiss()
-                                    sendFiles()
+                                    sendFiles.chooseFiles()
                                 },
                                 enabled = controller.peerConnected,
                                 shape = MaterialTheme.shapes.small,
@@ -457,12 +593,12 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = {
                                 controller.dismiss()
-                                sendFiles()
+                                sendFiles.chooseFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
+                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -487,12 +623,12 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = {
                                 controller.dismiss()
-                                sendFiles()
+                                sendFiles.chooseFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
+                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -517,12 +653,12 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         OutlinedButton(
                             onClick = {
                                 controller.dismiss()
-                                sendFiles()
+                                sendFiles.chooseFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)
+                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -543,5 +679,6 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
             Spacer(Modifier.height(14.dp))
             HorizontalDivider()
         }
+        sendFiles.ReviewDialog()
     }
 }

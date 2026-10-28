@@ -292,7 +292,8 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
                     Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
-                Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
+                Text(if (state == ConnectionState.SECURED) "Connected" else summary,
+                    style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
             OutlinedButton(onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
                 enabled = action == "Disconnect" || action == "Cancel" || canConnect,

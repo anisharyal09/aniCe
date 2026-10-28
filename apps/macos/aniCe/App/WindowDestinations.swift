@@ -179,93 +179,175 @@ extension MainWindowView {
   }
   var aboutContent: some View {
     ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-              Text("aniCe").font(.title2.weight(.semibold))
-              if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-                let channel = Bundle.main.object(forInfoDictionaryKey: "AniCeReleaseChannel") as? String ?? ""
-                Text("Version v" + version + (channel.isEmpty ? "" : "-" + channel)).font(.callout)
-              }
-              Text("Connect your Mac and Android.").font(.callout)
-              HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("Made by")
-                Link("@anisharyal09", destination: URL(string: "https://anisharyal09.com.np/")!)
-              }
-              Link("Source code", destination: URL(string: "https://github.com/anisharyal09/aniCe")!)
-              Link("License · GPL-3.0-or-later", destination: URL(string: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")!)
-              Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
-                Image(systemName: "heart")
-                  .foregroundStyle(AniCePalette.secondaryText(colorScheme).opacity(0.8))
-                  .frame(width: 32, height: 32)
-                  .frame(maxWidth: .infinity)
-              }.buttonStyle(.plain).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                .accessibilityLabel("Support aniCe").help("Support aniCe")
-              Spacer()
-            }.padding(24).frame(maxWidth: 680, alignment: .leading)
-              .frame(maxWidth: .infinity, alignment: .leading)
-
-    }
-  }
-  @ViewBuilder var settingsContent: some View {
-if navigation.settingsRoute == .identity {
-            IdentityView(model: identity, embedded: true, onBack: { navigation.settingsRoute = .overview })
-          } else if navigation.settingsRoute == .about {
-            aboutContent
-          } else {
-            ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-              HStack {
-                Text("Window appearance")
-                Spacer()
-                Picker("Window appearance", selection: Binding(get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
-                  ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
-                }.labelsHidden().pickerStyle(.menu).frame(width: 130)
-              }.padding(.horizontal, 24).padding(.top, 20)
-              Text("The menu-bar companion follows macOS appearance.")
-                .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal, 24)
-              Divider().padding(.vertical, 12)
-              ClipboardSettingsView(model: clipboard, peers: pairing.peers).padding(.horizontal, 24)
-              Divider().padding(.vertical, 12)
-              SmsSettingsView(preferences: smsPreferences, peers: pairing.peers).padding(.horizontal, 24)
-              Divider().padding(.vertical, 12)
-              VStack(alignment: .leading, spacing: 8) {
-                Text("File transfer").font(.headline)
-                TransferNotificationControls(preferences: transfer.notificationPreferences)
-                Text("Applies to all phones. The same switches are available from the gear in Files.")
-                  .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              }.padding(.horizontal, 24)
-              Divider().padding(.vertical, 12)
-              Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                .padding(.horizontal, 24)
-              Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network. Enable this on both devices.")
-                .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal, 24)
-              Divider().padding(.vertical, 12)
-              Toggle("Show Now Playing on this Mac",isOn:Binding(get:{playback.showOnMac},set:{playback.setShowOnMac($0)}))
-                .padding(.horizontal,24)
-              Text("Show local playback in the workspace and menu-bar companion.")
-                .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.horizontal,24)
-              Divider().padding(.vertical,12)
-              Button { navigation.settingsRoute = .identity } label: {
-                HStack(spacing: 12) {
-                  Image(systemName: "desktopcomputer").accessibilityHidden(true)
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text("This device")
-                    if let local = identity.local {
-                      Text(local.identity.deviceName).font(.callout)
-                        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                  }
-                  Spacer()
-                  Image(systemName: "chevron.right").accessibilityHidden(true)
-                }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                  .contentShape(Rectangle())
-              }.buttonStyle(.plain)
-                .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 24)
-              Spacer()
-            }.frame(maxWidth: 680, alignment: .leading)
-              .frame(maxWidth: .infinity, alignment: .leading)
+      VStack(alignment: .leading, spacing: 16) {
+        Text("About").font(.system(size: 20, weight: .medium))
+        Text("Connect your Mac and Android.").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        VStack(spacing: 0) {
+          HStack(spacing: 12) {
+            Image(systemName: "link").font(.system(size: 17)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              .frame(width: 20).accessibilityHidden(true)
+            Text("aniCe").font(.system(size: 20, weight: .medium))
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+              Text("macOS + Android").font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              if let version = aboutVersion { Text(version).font(.system(size: 11)).foregroundStyle(AniCePalette.secondaryText(colorScheme)) }
             }
           }
+          .padding(.vertical, 16)
+          .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+          aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
+          aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
+          aboutLink("Made by", detail: "anisharyal09", destination: "https://anisharyal09.com.np/")
+          Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+            Image(systemName: "heart")
+              .font(.system(size: 16))
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              .frame(width: 40, height: 40)
+              .contentShape(RoundedRectangle(cornerRadius: 7))
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.plain).accessibilityLabel("Support aniCe").help("Support aniCe")
+          .padding(.top, 14)
+        }
+        .frame(maxWidth: 660, alignment: .leading)
+      }
+      .padding(24).frame(maxWidth: 660, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  private var aboutVersion: String? {
+    guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else { return nil }
+    let channel = Bundle.main.object(forInfoDictionaryKey: "AniCeReleaseChannel") as? String ?? ""
+    return "Version v" + version + (channel.isEmpty ? "" : "-" + channel)
+  }
+
+  @ViewBuilder private func aboutLink(_ title: String, detail: String, destination: String) -> some View {
+    if let url = URL(string: destination) {
+      Link(destination: url) {
+        HStack(spacing: 16) {
+          Text(title).font(.system(size: 13)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+          Spacer()
+          HStack(spacing: 8) {
+            Text(detail).font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              .accessibilityHidden(true)
+          }
+        }
+        .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+      .accessibilityLabel("\(title), \(detail)")
+    }
+  }
+
+  @ViewBuilder var settingsContent: some View {
+    if navigation.settingsRoute == .identity {
+      IdentityView(model: identity, embedded: true, onBack: { navigation.settingsRoute = .overview })
+    } else if navigation.settingsRoute == .about {
+      aboutContent
+    } else {
+      ScrollViewReader { proxy in
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+              let jumps = [
+                ("appearance", "Appearance"), ("connection", "Connection"), ("clipboard", "Clipboard"),
+                ("messages", "Messages"), ("this-device", "This device")
+              ]
+              ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id, proxy: proxy) }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), alignment: .leading)], alignment: .leading, spacing: 6) {
+                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id, proxy: proxy) }
+                }
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.bottom, 16)
+              .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+              .padding(.bottom, 18)
+
+              preferenceSection("Appearance", id: "appearance") {
+                HStack {
+                  Text("Window appearance")
+                  Spacer()
+                  Picker("Window appearance", selection: Binding(
+                    get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
+                      ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
+                  }
+                  .labelsHidden().pickerStyle(.menu).frame(width: 130)
+                }.frame(minHeight: 48)
+              }
+              preferenceSection("Connection", id: "connection") {
+                VStack(alignment: .leading, spacing: 5) {
+                  Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
+                    .toggleStyle(.checkbox).controlSize(.small)
+                  Text("Enable on both devices to use Wi-Fi.").font(.caption)
+                    .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
+                }.frame(minHeight: 48, alignment: .leading)
+              }
+              preferenceSection("Clipboard", id: "clipboard") {
+                ClipboardSettingsView(model: clipboard, peers: pairing.peers, compactSettings: true)
+                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+              }
+              preferenceSection("Messages", id: "messages") {
+                SmsSettingsView(preferences: smsPreferences, peers: pairing.peers, showTitle: false)
+                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+              }
+              preferenceSection("File transfer", id: "file-transfer") {
+                TransferNotificationControls(preferences: transfer.notificationPreferences)
+                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+              }
+              preferenceSection("Now Playing", id: "now-playing") {
+                Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
+                  .toggleStyle(.checkbox).controlSize(.small).frame(minHeight: 48)
+              }
+              preferenceSection("This device", id: "this-device") {
+                Button { navigation.settingsRoute = .identity } label: {
+                  HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                      Text(identity.local?.identity.deviceName ?? "This Mac")
+                      Text("Identity and security").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
+                      .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
+                  }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("This device, identity and security")
+              }
+            }
+            .padding(24)
+            .frame(maxWidth: 680, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder private func preferenceSection<Content: View>(
+    _ title: String,
+    id: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    let group = VStack(alignment: .leading, spacing: 0, content: content)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 14)
+      .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+      .overlay { RoundedRectangle(cornerRadius: 10).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5) }
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      group
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.bottom, 18)
+    .id(id)
+  }
+
+  private func settingsJump(_ label: String, id: String, proxy: ScrollViewProxy) -> some View {
+    Button(label) { withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .top) } }
+      .buttonStyle(.bordered).controlSize(.small)
   }
 }

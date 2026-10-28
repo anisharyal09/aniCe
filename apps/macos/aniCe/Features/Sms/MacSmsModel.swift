@@ -282,6 +282,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private let wait: (TimeInterval) async throws -> Void
   private var links: [String: Link] = [:]
   private var peers: [String: PeerState] = [:]
+  private var drafts: [String: String] = [:]
   private var timer: Task<Void, Never>?
   var onLanRequired: () -> Void = {}
 
@@ -296,6 +297,21 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
 
   private func key(_ peer: DeviceIdentity) -> String { peer.deviceId + ":" + peer.fingerprint }
+  private func draftKey(_ peer: DeviceIdentity, _ address: String) -> String {
+    key(peer) + "|" + smsNormalizedAddress(address)
+  }
+  func draft(_ peer: DeviceIdentity, address: String) -> String {
+    drafts[draftKey(peer, address)] ?? ""
+  }
+  func saveDraft(_ value: String, peer: DeviceIdentity, address: String) {
+    let key = draftKey(peer, address)
+    if value.isEmpty { drafts.removeValue(forKey: key) }
+    else { drafts[key] = value }
+  }
+  func retainDrafts(for identities: [DeviceIdentity]) {
+    let prefixes = identities.map { key($0) + "|" }
+    drafts = drafts.filter { draftKey, _ in prefixes.contains { draftKey.hasPrefix($0) } }
+  }
   private func live(_ descriptor: ChannelDescriptor) -> Bool { links[descriptor.transport]?.channel.descriptor == descriptor }
   private func links(for key: String) -> [Link] {
     ["lan", "ble"].compactMap { links[$0] }.filter { self.key($0.channel.descriptor.peer) == key }
@@ -346,9 +362,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if let link = capableLink(k) {
       parts.append(link.channel.descriptor.transport == "ble" ? "Bluetooth" : "Local network")
     }
-    parts.append("\(state.liveReceived) live received")
-    parts.append("\(state.liveNotified) Submitted to macOS")
-    parts.append("\(state.liveSuppressed) already seen")
+    if state.liveReceived + state.liveNotified + state.liveSuppressed > 0 {
+      parts.append("\(state.liveReceived) live received")
+      parts.append("\(state.liveNotified) Submitted to macOS")
+      parts.append("\(state.liveSuppressed) already seen")
+    }
     return parts.joined(separator: " · ")
   }
   func busy(_ peer: DeviceIdentity) -> Bool {
@@ -770,6 +788,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
 
   func invalidate() {
+    drafts.removeAll()
     timer?.cancel(); timer = nil
     for descriptor in links.values.map(\.channel.descriptor) { retired(descriptor) }
     peers.removeAll()
@@ -1184,6 +1203,8 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
         noteArrival(conversation, messageId)
       }
       upsertCard(state, address: send.address, snippet: send.text, dateMillis: stamp, unread: 0)
+      let savedDraftKey = draftKey(send.descriptor.peer, send.address)
+      if drafts[savedDraftKey] == send.text { drafts.removeValue(forKey: savedDraftKey) }
       state.status = "Sent"
     } else {
       dropPending(state, send)

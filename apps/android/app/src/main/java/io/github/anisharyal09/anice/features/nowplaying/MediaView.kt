@@ -47,8 +47,8 @@ import kotlinx.coroutines.delay
         now=SystemClock.elapsedRealtime();owner.trace("render",now)
         while(owner.foregroundVisible && media?.state==1L) { delay(250); now=SystemClock.elapsedRealtime() }
     }
-    Surface(shape=if (overview) androidx.compose.ui.graphics.RectangleShape else MaterialTheme.shapes.medium,
-        color=if (overview) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(shape=if (overview || !compact) androidx.compose.ui.graphics.RectangleShape else MaterialTheme.shapes.medium,
+        color=if (overview || !compact) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().padding(if (overview) 0.dp else if(compact) 12.dp else 16.dp),
             verticalArrangement=Arrangement.spacedBy(if(compact || overview) 6.dp else 8.dp)) {
             Row(
@@ -74,7 +74,7 @@ import kotlinx.coroutines.delay
             }
             if(media!=null && media.source.isNotEmpty()) {
                 Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(if (overview) 74.dp else if(compact) 50.dp else 72.dp)
+                    Box(Modifier.size(if (overview) 74.dp else if(compact) 50.dp else 164.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small), contentAlignment=Alignment.Center) {
                         val artwork = owner.artwork
                         if (artwork != null) Image(artwork.asImageBitmap(), contentDescription=null, modifier=Modifier.fillMaxSize())
@@ -120,8 +120,11 @@ import kotlinx.coroutines.delay
                         Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.selectionAccent, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
                             Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play", tint=MaterialTheme.colorScheme.onPrimary)
                         }
-                    } else FilledIconButton(onClick={owner.command(1)},shape=MaterialTheme.shapes.small,modifier=Modifier.size(36.dp),enabled=owner.canAcceptPlayback && media.actions and 1L!=0L,
-                        colors=IconButtonDefaults.filledIconButtonColors(containerColor=MaterialTheme.colorScheme.selectionAccent,contentColor=MaterialTheme.colorScheme.onPrimary)) { Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play") }
+                    } else IconButton(onClick={owner.command(1)},modifier=Modifier.size(48.dp),enabled=owner.canAcceptPlayback && media.actions and 1L!=0L) {
+                        Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.selectionAccent, MaterialTheme.shapes.small), contentAlignment=Alignment.Center) {
+                            Icon(painterResource(if(media.state==1L) R.drawable.ic_media_pause else R.drawable.ic_media_play),contentDescription=if(media.state==1L) "Pause" else "Play", tint=MaterialTheme.colorScheme.onPrimary)
+                        }
+                    }
                     IconButton(onClick={owner.command(3)},enabled=owner.canAcceptPlayback && media.actions and 4L!=0L) { Icon(painterResource(R.drawable.ic_media_next),contentDescription="Next") }
                 }
                 if(!compact) owner.displayedVolume?.let { level ->

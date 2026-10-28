@@ -68,11 +68,22 @@ enum PasteTrayFilter: String, CaseIterable, Identifiable {
   }
 }
 
+enum PasteTraySelection {
+  static func reconcile(_ selectedIDs: Set<String>, pivotID: String?, entryIDs: [String]) -> (ids: Set<String>, pivot: String?) {
+    let available = Set(entryIDs)
+    var ids = selectedIDs.intersection(available)
+    if ids.isEmpty, let first = entryIDs.first { ids.insert(first) }
+    let pivot = pivotID.flatMap { ids.contains($0) ? $0 : nil } ?? entryIDs.first(where: ids.contains)
+    return (ids, pivot)
+  }
+}
+
 struct PasteTrayView: View {
   let model: MacClipboardModel
   var width: CGFloat = 760
   let onDismiss: () -> Void
-  let onSelect: (ClipboardHistoryEntry) -> Void
+  let onSelect: (ClipboardHistoryEntry) -> Bool
+  var onCopied: () -> Void = {}
   var previewHeight: CGFloat = 460
   var onHeightChange: (CGFloat) -> Void = { _ in }
   @Environment(\.colorScheme) private var scheme
@@ -93,7 +104,7 @@ struct PasteTrayView: View {
   }
   /// Primary selected entry; returns the pivot, earliest selected item, or the first filtered entry.
   private var selected: ClipboardHistoryEntry? {
-    if let pivotID, let entry = entries.first(where: { $0.id == pivotID }) {
+    if let pivotID, selectedIDs.contains(pivotID), let entry = entries.first(where: { $0.id == pivotID }) {
       return entry
     }
     return entries.first { selectedIDs.contains($0.id) } ?? entries.first
@@ -102,68 +113,28 @@ struct PasteTrayView: View {
   private var selectedIndex: Int {
     entries.firstIndex { $0.id == selected?.id } ?? 0
   }
+  private var columns: [GridItem] {
+    Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+  }
+  private var isNarrow: Bool { width <= 650 }
+  private var cardHeight: CGFloat { isNarrow ? 145 : 149 }
+  private var contentHeight: CGFloat { isNarrow ? 154 : 156 }
+  private var collapsedHeight: CGFloat { isNarrow ? 318 : 292 }
 
   var body: some View {
     VStack(spacing: 8) {
-      searchRow
-      HStack(spacing: 6) {
-        Picker("History filter", selection: $filter) {
-          ForEach(PasteTrayFilter.allCases) { Text($0.rawValue).tag($0) }
-        }
-        .pickerStyle(.segmented).labelsHidden().frame(width: 260)
-        Spacer()
-        // Tray header status badge: displays current pause duration/mode or history disabled indicator.
-        if model.isPaused {
-          Text(model.pauseStatusText ?? "Clipboard paused")
-            .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        } else if !model.history.enabled {
-          Text("Collection paused")
-            .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        }
-        // Quick-action menu: toggles pause state and allows choosing timed pause intervals.
-        Menu {
-          if model.isPaused {
-            Button("Resume clipboard", systemImage: "play.fill") { model.resume() }
-            Divider()
-          }
-          Section("Pause clipboard") {
-            ForEach(ClipboardPauseDuration.allCases) { duration in
-              Button(duration.rawValue) { model.pause(for: duration) }
-            }
-          }
-        } label: {
-          Image(systemName: "ellipsis")
-            .font(.caption)
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help(model.isPaused ? "Resume or change clipboard pause" : "Pause clipboard options")
-      }
+      header
+      filterRow
       if previewing, let selected {
         PasteTrayExpandedPreview(entry: selected).frame(maxHeight: .infinity)
       } else {
-        content.frame(height: 156)
+        content.frame(height: contentHeight)
       }
-      HStack(spacing: 8) {
-        if selectedIDs.count > 1 {
-          Text("\(selectedIDs.count) of \(entries.count) selected")
-        } else {
-          Text(entries.isEmpty ? "0 items" : "\(selectedIndex + 1) of \(entries.count)")
-        }
-        Spacer()
-        Text(model.status == "Could not copy text" ? "Could not copy text. Try again." : "← → Select · Space Preview · ↵ Copy · ⌫ Delete")
-        Button(previewing ? "Collapse" : "Preview", systemImage: previewing ? "rectangle.compress.vertical" : "arrow.up.left.and.arrow.down.right") {
-          togglePreview()
-        }.disabled(selected == nil).help("Preview full text (Space)")
-        Button(selectedIDs.count > 1 ? "Copy all" : "Copy", systemImage: "doc.on.doc") { copySelection() }
-          .disabled(selectedIDs.isEmpty && selected == nil)
-          .help(selectedIDs.count > 1 ? "Copy selected items joined by newlines (Return)" : "Copy selected item and close (Return)")
-      }
-      .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      footer
     }
-    .buttonStyle(.bordered).controlSize(.small)
-    .padding(16).frame(width: width, height: previewing ? previewHeight : 292)
+    .controlSize(.small)
+    .padding(.horizontal, 16).padding(.vertical, width <= 540 ? 13 : 15)
+    .frame(width: width, height: previewing ? previewHeight : collapsedHeight)
     .foregroundStyle(AniCePalette.primaryText(scheme))
     .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 14))
     .overlay(RoundedRectangle(cornerRadius: 14).stroke(AniCePalette.separator(scheme)))
@@ -204,12 +175,12 @@ struct PasteTrayView: View {
     .onKeyPress(.upArrow) {
       guard !previewing else { return .ignored }
       let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
-      move(-1, extend: isShift); return .handled
+      move(width <= 540 ? -1 : -3, extend: isShift); return .handled
     }
     .onKeyPress(.downArrow) {
       guard !previewing else { return .ignored }
       let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
-      move(1, extend: isShift); return .handled
+      move(width <= 540 ? 1 : 3, extend: isShift); return .handled
     }
     .onKeyPress(.leftArrow) {
       guard focus != .search else { return .ignored }
@@ -235,31 +206,11 @@ struct PasteTrayView: View {
       query += press.characters; previewing = false; focus = .search
       return .handled
     }
-    .onChange(of: previewing) { _, expanded in onHeightChange(expanded ? previewHeight : 292) }
-    .onChange(of: query) { _, _ in
-      if let first = entries.first?.id {
-        selectedIDs = [first]
-        pivotID = first
-      } else {
-        selectedIDs = []
-        pivotID = nil
-      }
-    }
-    .onChange(of: filter) { _, _ in
-      if let first = entries.first?.id {
-        selectedIDs = [first]
-        pivotID = first
-      } else {
-        selectedIDs = []
-        pivotID = nil
-      }
-    }
+    .onChange(of: previewing) { _, expanded in onHeightChange(expanded ? previewHeight : collapsedHeight) }
     .onChange(of: entries.map(\.id)) { _, ids in
-      selectedIDs = selectedIDs.filter { ids.contains($0) }
-      if selectedIDs.isEmpty, let first = ids.first {
-        selectedIDs = [first]
-        pivotID = first
-      }
+      let selection = PasteTraySelection.reconcile(selectedIDs, pivotID: pivotID, entryIDs: ids)
+      selectedIDs = selection.ids
+      pivotID = selection.pivot
       if ids.isEmpty { previewing = false }
     }
     .alert("Keep clipboard history?", isPresented: $confirmingHistory) {
@@ -270,23 +221,100 @@ struct PasteTrayView: View {
     }
   }
 
-  private var searchRow: some View {
-    HStack(spacing: 12) {
-      HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass").foregroundStyle(AniCePalette.secondaryText(scheme))
-        TextField("Search clipboard history", text: $query)
-          .textFieldStyle(.plain).focused($focus, equals: .search)
-          .accessibilityLabel("Search clipboard history")
-          .onSubmit { copySelection() }
-        if !query.isEmpty {
-          Button { query = ""; focus = .search } label: { Image(systemName: "xmark.circle.fill") }
-            .buttonStyle(.plain).accessibilityLabel("Clear search")
+  private var header: some View {
+    Group {
+      if isNarrow {
+        VStack(spacing: 8) {
+          HStack {
+            title
+            Spacer()
+            closeButton
+          }
+          searchField.frame(maxWidth: .infinity)
+        }
+      } else {
+        HStack(spacing: 12) {
+          title
+          Spacer(minLength: 4)
+          searchField.frame(width: 214)
+          closeButton
         }
       }
-      .padding(8).background(AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8))
-      Button(action: onDismiss) { Image(systemName: "xmark").frame(width: 24, height: 24) }
-        .buttonStyle(.plain).accessibilityLabel("Close clipboard tray").help("Close (Esc)")
     }
+  }
+
+  private var title: some View {
+    HStack(spacing: 7) {
+      Image(systemName: "clipboard").font(.system(size: 14)).foregroundStyle(AniCePalette.secondaryText(scheme))
+      Text("Clipboard").font(.system(size: 13, weight: .medium))
+      if !isNarrow {
+        Text("⌥⌘V").font(.system(size: 10)).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+    }.fixedSize()
+  }
+
+  private var searchField: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(AniCePalette.secondaryText(scheme))
+      TextField("Find a clip…", text: $query)
+        .textFieldStyle(.plain).focused($focus, equals: .search)
+        .accessibilityLabel("Search clipboard history")
+        .onSubmit { copySelection() }
+      if !query.isEmpty {
+        Button { query = ""; focus = .search } label: { Image(systemName: "xmark.circle.fill") }
+          .buttonStyle(.plain).accessibilityLabel("Clear search")
+      }
+    }
+    .padding(.horizontal, 9).frame(height: 30)
+    .background(AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 7))
+  }
+
+  private var closeButton: some View {
+    Button(action: onDismiss) { Image(systemName: "xmark").frame(width: 25, height: 25) }
+      .buttonStyle(.plain).accessibilityLabel("Close clipboard tray").help("Close (Esc)")
+  }
+
+  private var filterRow: some View {
+    HStack(alignment: .bottom, spacing: 17) {
+      ForEach(PasteTrayFilter.allCases) { option in
+        Button {
+          filter = option
+        } label: {
+          VStack(spacing: 5) {
+            Text(option.rawValue)
+              .font(.system(size: 11, weight: filter == option ? .medium : .regular))
+              .foregroundStyle(filter == option ? AniCePalette.primaryText(scheme) : AniCePalette.secondaryText(scheme))
+            Rectangle().fill(filter == option ? AniCePalette.accent(scheme) : .clear).frame(height: 2)
+          }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(filter == option ? .isSelected : [])
+      }
+      Spacer(minLength: 0)
+      Text("\(entries.count) \(entries.count == 1 ? "clip" : "clips")")
+        .font(.system(size: 10)).foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.bottom, 7)
+    }
+    .overlay(alignment: .bottom) { Rectangle().fill(AniCePalette.separator(scheme)).frame(height: 1) }
+  }
+
+  private var footer: some View {
+    HStack(spacing: 10) {
+      if isNarrow {
+        Text(selectedIDs.count > 1 ? "\(selectedIDs.count) selected" : "← → · Space · ↵ · ⌫")
+      } else {
+        Text(selectedIDs.count > 1 ? "\(selectedIDs.count) selected" : "← → Select · Space Preview · ↵ Copy · ⌫ Delete")
+      }
+      Spacer(minLength: 0)
+      if model.status == "Could not copy text" {
+        Text("Could not copy text. Try again.").font(.system(size: 10)).foregroundStyle(AniCePalette.error(scheme))
+          .accessibilityAddTraits(.updatesFrequently)
+      }
+      Button(selectedIDs.count > 1 ? "Copy all" : "Copy", systemImage: "doc.on.doc") { copySelection() }
+        .buttonStyle(.bordered).controlSize(.small)
+        .disabled(selectedIDs.isEmpty && selected == nil)
+        .help(selectedIDs.count > 1 ? "Copy selected items joined by newlines (Return)" : "Copy selected item and close (Return)")
+    }
+    .font(.system(size: 10)).foregroundStyle(AniCePalette.secondaryText(scheme))
   }
 
   @ViewBuilder private var content: some View {
@@ -307,35 +335,56 @@ struct PasteTrayView: View {
       }.foregroundStyle(AniCePalette.secondaryText(scheme)).frame(maxWidth: .infinity, maxHeight: .infinity)
     } else {
       ScrollViewReader { proxy in
-        ScrollView(.horizontal) {
-          LazyHStack(spacing: 10) {
-            ForEach(entries) { entry in
-              PasteTrayCard(
-                entry: entry,
-                isSelected: selectedIDs.contains(entry.id),
-                onClick: { handleCardClick(entry) },
-                onTogglePin: { model.togglePin(entry) },
-                onDelete: {
-                  if selectedIDs.contains(entry.id) && selectedIDs.count > 1 {
-                    deleteSelection()
-                  } else {
-                    selectedIDs = [entry.id]
-                    deleteSelection()
-                  }
-                }
-              )
-              .id(entry.id)
+        if isNarrow {
+          ScrollView(.horizontal) {
+            LazyHStack(spacing: 10) {
+              ForEach(entries, content: trayCard)
             }
-          }.padding(2)
-        }
-        .scrollIndicators(.hidden)
-        .onChange(of: pivotID ?? selected?.id) { _, id in
-          if let id {
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+            .padding(2)
+          }
+          .scrollIndicators(.hidden)
+          .scrollClipDisabled()
+          .onChange(of: pivotID ?? selected?.id) { _, id in
+            if let id {
+              withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+            }
+          }
+        } else {
+          ScrollView(.vertical) {
+            LazyVGrid(columns: columns, spacing: 10) {
+              ForEach(entries, content: trayCard)
+            }.padding(2)
+          }
+          .scrollIndicators(.hidden)
+          .onChange(of: pivotID ?? selected?.id) { _, id in
+            if let id {
+              withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+            }
           }
         }
       }
     }
+  }
+
+  private func trayCard(_ entry: ClipboardHistoryEntry) -> some View {
+    PasteTrayCard(
+      entry: entry,
+      isSelected: selectedIDs.contains(entry.id),
+      compact: isNarrow,
+      height: cardHeight,
+      onClick: { handleCardClick(entry) },
+      onTogglePin: { model.togglePin(entry) },
+      onDelete: {
+        if selectedIDs.contains(entry.id) && selectedIDs.count > 1 {
+          deleteSelection()
+        } else {
+          selectedIDs = [entry.id]
+          deleteSelection()
+        }
+      }
+    )
+    .frame(width: isNarrow ? 196 : nil)
+    .id(entry.id)
   }
 
   /// Deletes all currently selected history items from local storage and advances selection.
@@ -364,10 +413,14 @@ struct PasteTrayView: View {
     let selectedEntries = entries.filter { selectedIDs.contains($0.id) }
     if selectedEntries.count > 1 {
       let combined = selectedEntries.map(\.text).joined(separator: "\n")
-      if model.copyText(combined) { onDismiss() }
+      if model.copyText(combined) { onDismiss(); onCopied() }
     } else if let target = selectedEntries.first ?? selected {
-      onSelect(target)
+      copy(target)
     }
+  }
+
+  private func copy(_ entry: ClipboardHistoryEntry) {
+    if onSelect(entry) { onDismiss(); onCopied() }
   }
 
   /// Handles card mouse clicks supporting:
@@ -381,7 +434,7 @@ struct PasteTrayView: View {
     let clickCount = NSApp.currentEvent?.clickCount ?? 1
 
     if clickCount >= 2 {
-      onSelect(entry)
+      copy(entry)
       return
     }
 
@@ -461,7 +514,9 @@ struct PasteTrayExpandedPreview: View {
 private struct PasteTrayCard: View {
   let entry: ClipboardHistoryEntry
   let isSelected: Bool
-  /// Action called on card body click (supports single click select, shift-click range, command-click, and double-click copy).
+  let compact: Bool
+  let height: CGFloat
+  /// Card selection supports click, range selection, multi-selection and double-click copy.
   let onClick: () -> Void
   let onTogglePin: () -> Void
   let onDelete: () -> Void
@@ -482,14 +537,14 @@ private struct PasteTrayCard: View {
       Spacer(minLength: 0)
       footer
     }
-    .padding(12)
-    .frame(width: 168, height: 152)
+    .padding(compact ? 8 : 12)
+    .frame(maxWidth: .infinity).frame(height: height)
     .background(
       isSelected ? AniCePalette.subtleAccent(scheme) : AniCePalette.secondarySurface(scheme)
     )
-    .clipShape(RoundedRectangle(cornerRadius: 10))
+    .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay(
-      RoundedRectangle(cornerRadius: 10)
+      RoundedRectangle(cornerRadius: 8)
         .stroke(
           isSelected ? AniCePalette.accent(scheme) : (hovered ? AniCePalette.secondaryText(scheme).opacity(0.3) : AniCePalette.separator(scheme)),
           lineWidth: isSelected ? 1.5 : 1.0
@@ -504,9 +559,9 @@ private struct PasteTrayCard: View {
   private var header: some View {
     HStack(spacing: 4) {
       HStack(spacing: 3) {
-        Image(systemName: entry.origin == "phone" ? "iphone" : "laptopcomputer")
+        Image(systemName: entry.isUrl ? "link" : "doc.text")
           .font(.system(size: 9))
-        Text(entry.origin == "phone" ? "Phone" : "Mac")
+        Text(entry.isUrl ? "Link" : "Text")
           .font(.system(size: 10, weight: .medium))
       }
       .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -575,9 +630,8 @@ private struct PasteTrayCard: View {
 
   private var footer: some View {
     HStack {
-      Text(entry.timestamp, format: .dateTime.hour().minute())
-        .font(.system(size: 9))
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
+      Text("\(entry.origin == "phone" ? "Phone" : "Mac") · \(entry.timestamp.formatted(.dateTime.hour().minute()))")
+        .font(.system(size: 9)).foregroundStyle(AniCePalette.secondaryText(scheme)).lineLimit(1)
 
       Spacer()
 
@@ -586,7 +640,7 @@ private struct PasteTrayCard: View {
           Image(systemName: entry.pinned ? "pin.slash" : "pin")
             .font(.system(size: 11))
             .foregroundStyle(AniCePalette.secondaryText(scheme))
-            .frame(width: 24, height: 24)
+            .frame(width: 23, height: 23)
         }
         .buttonStyle(.plain)
         .help(entry.pinned ? "Unpin" : "Pin snippet")
@@ -598,7 +652,7 @@ private struct PasteTrayCard: View {
           Image(systemName: "trash")
             .font(.system(size: 11))
             .foregroundStyle(AniCePalette.secondaryText(scheme))
-            .frame(width: 24, height: 24)
+            .frame(width: 23, height: 23)
         }
         .buttonStyle(.plain)
         .help("Delete from history").accessibilityLabel("Delete item")
