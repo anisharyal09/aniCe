@@ -35,10 +35,26 @@ internal class SelectionSendState(private val owner: ClipboardController) : View
     private var initialized = false
     var sampled by mutableStateOf(false); private set
     var clipboardMode by mutableStateOf(false); private set
+    var sharedLink by mutableStateOf<String?>(null); private set
+    var openingLink by mutableStateOf(false); private set
+    val canOpenLink: Boolean get() = owner.sharePeer?.let(owner::supportsOpenLink) == true
     var sample by mutableStateOf<ClipboardSample?>(null); private set
     var confirming by mutableStateOf(false); private set
     var operation by mutableStateOf<ClipboardSendOperation?>(null); private set
-    fun start(text: String?) { if (!initialized) { initialized = true; operation = owner.sendSelection(text) } }
+    fun start(text: String?) {
+        if (!initialized) {
+            initialized = true
+            if (clipboardLink(text) != null) sharedLink = text else operation = owner.sendSelection(text)
+        }
+    }
+    fun chooseOpenLink() {
+        val link = sharedLink ?: return
+        sharedLink = null; openingLink = true; operation = owner.openLink(link)
+    }
+    fun chooseClipboardSend() {
+        val text = sharedLink ?: return
+        sharedLink = null; operation = owner.sendSelection(text)
+    }
     fun openClipboard() { if (!initialized) { initialized = true; clipboardMode = true } }
     fun abandon() {
         if (initialized) return
@@ -60,7 +76,7 @@ internal class SelectionSendState(private val owner: ClipboardController) : View
         val captured = sample ?: return
         operation = owner.sendCaptured(captured); sample = null
     }
-    fun cancel() { confirming = false; sample = null; operation?.let(owner::cancelSelection) }
+    fun cancel() { confirming = false; sample = null; sharedLink = null; operation?.let(owner::cancelSelection) }
     override fun onCleared() { cancel() }
 }
 class SendToMacActivity : ComponentActivity() {
@@ -98,18 +114,26 @@ class SendToMacActivity : ComponentActivity() {
             LaunchedEffect(operation) {
                 result = operation?.result()
                 if (result == ClipboardSendResult.APPLIED) {
-                    Toast.makeText(this@SendToMacActivity, "Sent to Mac", Toast.LENGTH_SHORT).show(); finish()
+                    Toast.makeText(this@SendToMacActivity, if (state.openingLink) "Opened in Mac" else "Sent to Mac", Toast.LENGTH_SHORT).show(); finish()
                 }
             }
             Surface { Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Send to Mac", style = MaterialTheme.typography.titleLarge)
-                if (state.clipboardMode && operation == null) {
+                Text(if (state.openingLink) "Open Link in Mac" else "Send to Mac", style = MaterialTheme.typography.titleLarge)
+                if (state.sharedLink != null && operation == null) {
+                    Text("Open this link in your Mac’s default browser, or send it to the Mac clipboard.")
+                    Text(app.clipboard.sharePeer?.deviceName?.let { "To $it" } ?: "Connect your Mac first")
+                    Button(onClick = state::chooseOpenLink, enabled = state.canOpenLink, shape = MaterialTheme.shapes.small) {
+                        Text("Open in Mac")
+                    }
+                    OutlinedButton(onClick = state::chooseClipboardSend, shape = MaterialTheme.shapes.small) { Text("Send as clipboard") }
+                    if (!state.canOpenLink) Text("Connect to a Mac with Open Link support to enable this option.")
+                } else if (state.clipboardMode && operation == null) {
                     val captured = state.sample
                     if (!state.sampled) Text("Waiting for clipboard access…")
                     else if (captured == null) Text("Copy plain text, then open this tile again.")
                     else {
                         Text("${captured.text.toByteArray(Charsets.UTF_8).size} bytes · ${if (captured.sensitive) "Sensitive text" else "Plain text"}")
-                        Text(app.clipboard.selected?.deviceName?.let { "To $it" } ?: "Connect your Mac first")
+                        Text(app.clipboard.sharePeer?.deviceName?.let { "To $it" } ?: "Connect your Mac first")
                         OutlinedButton(onClick = state::send, shape = MaterialTheme.shapes.small) {
                             Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -117,16 +141,16 @@ class SendToMacActivity : ComponentActivity() {
                         }
                     }
                 } else when (result) {
-                    null -> { Text("Sending to ${app.clipboard.selected?.deviceName ?: "Mac"}…"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                    ClipboardSendResult.APPLIED -> Text("Sent to Mac")
+                    null -> { Text(if (state.openingLink) "Opening on ${app.clipboard.sharePeer?.deviceName ?: "Mac"}…" else "Sending to ${app.clipboard.sharePeer?.deviceName ?: "Mac"}…"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    ClipboardSendResult.APPLIED -> Text(if (state.openingLink) "Opened in Mac" else "Sent to Mac")
                     ClipboardSendResult.UNAVAILABLE -> Text("Connect your Mac in aniCe, then try again.")
-                    ClipboardSendResult.BUSY -> Text("Another clipboard send is in progress")
+                    ClipboardSendResult.BUSY -> Text("Another send is in progress")
                     ClipboardSendResult.INVALID -> Text("Choose plain text up to 64 KiB")
-                    ClipboardSendResult.CANCELLED -> Text("Send cancelled. Text already delivered cannot be recalled.")
-                    ClipboardSendResult.REJECTED -> Text("The Mac could not apply this clipboard item")
-                    ClipboardSendResult.UNCONFIRMED -> Text("Delivery unconfirmed")
+                    ClipboardSendResult.CANCELLED -> Text(if (state.openingLink) "Open request cancelled." else "Send cancelled. Text already delivered cannot be recalled.")
+                    ClipboardSendResult.REJECTED -> Text(if (state.openingLink) "The Mac could not open this link." else "The Mac could not apply this clipboard item")
+                    ClipboardSendResult.UNCONFIRMED -> Text(if (state.openingLink) "Open request unconfirmed" else "Delivery unconfirmed")
                 }
-                if (result == ClipboardSendResult.UNAVAILABLE || state.clipboardMode && operation == null) {
+                if (result == ClipboardSendResult.UNAVAILABLE || state.clipboardMode && operation == null || state.sharedLink != null && !state.canOpenLink) {
                     TextButton(onClick = { state.cancel(); startActivity(Intent(this@SendToMacActivity, MainActivity::class.java)); finish() }) { Text("Open aniCe") }
                 }
                 TextButton(onClick = { state.cancel(); finish() }) { Text(if (operation != null && result == null) "Cancel" else "Close") }

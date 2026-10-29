@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
 - Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
 - Review selected files and their recipient before sending; reject sends when the reviewed device changes.
 - Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.

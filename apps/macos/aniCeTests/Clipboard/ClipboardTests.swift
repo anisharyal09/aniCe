@@ -63,7 +63,12 @@ import SwiftUI
     set { clock.advance(newValue - clock.time) }
   }
   let native = ClipboardNativeFake()
-  lazy var owner = MacClipboardModel(native: native, now: { [clock] in clock.time }, wait: { [clock] in try await clock.wait($0) })
+  var openedURLs: [URL] = []
+  var openResult = true
+  lazy var owner = MacClipboardModel(native: native, now: { [clock] in clock.time }, wait: { [clock] in try await clock.wait($0) }, openURL: { [weak self] url in
+    self?.openedURLs.append(url)
+    return self?.openResult ?? false
+  })
   let epoch = UUID().uuidString.lowercased()
   func ready(_ c: ClipboardChannel) async throws {
     owner.available(c)
@@ -71,9 +76,9 @@ import SwiftUI
     _ = await owner.handle(try ClipboardMessage(kind: 2, fields: [.integer(1), .bool(true)]).encode(), on: c.descriptor)
     for _ in 0..<10 { await Task.yield() }
   }
-  @discardableResult func receive(_ c: ClipboardChannel, text: String = "hello", revision: Int64 = 1, id: String = UUID().uuidString.lowercased(), auto: Bool = false) async throws -> ClipboardMessage {
+  @discardableResult func receive(_ c: ClipboardChannel, text: String = "hello", revision: Int64 = 1, id: String = UUID().uuidString.lowercased(), mode: Int64 = 0, sensitive: Bool = false) async throws -> ClipboardMessage {
     let data = Data(text.utf8)
-    let begin = ClipboardMessage(kind: 3, fields: [.text(epoch), .integer(revision), .text(id), .integer(auto ? 1 : 0), .bool(false), .integer(Int64(data.count)), .integer(Int64((data.count + 3071) / 3072)), .bytes(Data(SHA256.hash(data: data)))])
+    let begin = ClipboardMessage(kind: 3, fields: [.text(epoch), .integer(revision), .text(id), .integer(mode), .bool(sensitive), .integer(Int64(data.count)), .integer(Int64((data.count + 3071) / 3072)), .bytes(Data(SHA256.hash(data: data)))])
     _ = await owner.handle(try begin.encode(), on: c.descriptor)
     for index in 0..<Int(begin.number(6)) {
       let start = index * 3072
@@ -94,10 +99,66 @@ final class ClipboardTests: XCTestCase {
     let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "clipboard-vectors", withExtension: "json"))
     let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
     let good = try XCTUnwrap(root["valid"] as? [[String: Any]]), bad = try XCTUnwrap(root["invalid"] as? [[String: Any]])
-    XCTAssertGreaterThanOrEqual(good.count, 18); XCTAssertGreaterThanOrEqual(bad.count, 34)
+    XCTAssertGreaterThanOrEqual(good.count, 20); XCTAssertGreaterThanOrEqual(bad.count, 35)
     for row in good { let data = try SessionFixtures().b(row, "bytes"); XCTAssertEqual(try XCTUnwrap(ClipboardMessage.decode(data)).encode(), data) }
     for row in bad { XCTAssertThrowsError(try ClipboardMessage.decode(SessionFixtures().b(row, "bytes")), row["name"] as? String ?? "") }
     XCTAssertNil(try ClipboardMessage.decode(SessionCbor.encode(.array([.text("other")]))))
+  }
+
+  func testClipboardLinkAcceptsOnlyOneHTTPURL() {
+    XCTAssertEqual(ClipboardLink.url(" https://example.com/path?q=1 ")?.absoluteString, "https://example.com/path?q=1")
+    XCTAssertEqual(ClipboardLink.url("HTTP://example.com")?.scheme?.lowercased(), "http")
+    for text in ["notes https://example.com", "https://example.com path", "https:example.com", "file:///etc/passwd", "javascript:alert(1)"] {
+      XCTAssertNil(ClipboardLink.url(text), text)
+    }
+  }
+
+  @MainActor func testOpenLinkUsesDefaultBrowserWithoutChangingClipboardAndDeduplicates() async throws {
+    let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
+    h.owner.history.setEnabled(true); try await until { h.owner.history.enabled && c.sent.contains { $0.kind == 8 } }
+    let wrongDirection = await h.owner.handle(try ClipboardMessage(kind: 8, fields: []).encode(), on: c.descriptor)
+    XCTAssertEqual(wrongDirection, .discarded)
+    let begin = try await h.receive(c, text: "https://example.com/article", mode: 2)
+    XCTAssertEqual(h.openedURLs.map(\.absoluteString), ["https://example.com/article"])
+    XCTAssertEqual(h.native.writes, 0); XCTAssertNil(h.owner.recent); XCTAssertEqual(h.owner.status, "Opened link")
+    let ble = ClipboardChannel("ble"); try await h.ready(ble)
+    _ = await h.owner.handle(try begin.encode(), on: ble.descriptor)
+    _ = await h.owner.handle(try ClipboardMessage.id(5, begin.text(2)).encode(), on: ble.descriptor)
+    XCTAssertEqual(h.openedURLs.count, 1)
+
+    let invalid = try await h.receive(c, text: "file:///etc/passwd", revision: 2, mode: 2)
+    try await until { c.sent.contains { $0.kind == 6 && $0.text(0) == invalid.text(2) } }
+    XCTAssertEqual(h.openedURLs.count, 1)
+    XCTAssertEqual(c.sent.last { $0.kind == 6 && $0.text(0) == invalid.text(2) }?.number(1), 6)
+    let sensitive = try await h.receive(c, text: "https://example.com/secret", revision: 3, mode: 2, sensitive: true)
+    try await until { c.sent.contains { $0.kind == 6 && $0.text(0) == sensitive.text(2) } }
+    XCTAssertEqual(c.sent.last { $0.kind == 6 && $0.text(0) == sensitive.text(2) }?.number(1), 6)
+    XCTAssertEqual(h.openedURLs.count, 1)
+    h.openResult = false
+    let failed = try await h.receive(c, text: "https://example.com/failure", revision: 4, mode: 2)
+    try await until { c.sent.contains { $0.kind == 6 && $0.text(0) == failed.text(2) } }
+    XCTAssertEqual(c.sent.last { $0.kind == 6 && $0.text(0) == failed.text(2) }?.number(1), 5)
+    XCTAssertEqual(h.owner.status, "Could not open link")
+    XCTAssertEqual(h.native.sample?.text, "local"); XCTAssertEqual(h.native.writes, 0)
+    XCTAssertTrue(h.owner.history.entries.isEmpty); XCTAssertNil(h.owner.recent)
+    h.owner.invalidate()
+  }
+
+  @MainActor func testDamagedOrCancelledLinkRequestsNeverOpen() async throws {
+    for cancelled in [false, true] {
+      let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
+      let id = UUID().uuidString.lowercased(), data = Data("https://example.com/a".utf8)
+      let begin = ClipboardMessage(kind: 3, fields: [.text(h.epoch), .integer(1), .text(id), .integer(2), .bool(false), .integer(Int64(data.count)), .integer(1), .bytes(Data(SHA256.hash(data: data)))])
+      _ = await h.owner.handle(try begin.encode(), on: c.descriptor)
+      if cancelled { _ = await h.owner.handle(try ClipboardMessage.id(7, id).encode(), on: c.descriptor) }
+      let fragment = ClipboardMessage(kind: 4, fields: [.text(id), .integer(0), .bytes(Data("https://example.com/b".utf8))])
+      _ = await h.owner.handle(try fragment.encode(), on: c.descriptor)
+      _ = await h.owner.handle(try ClipboardMessage.id(5, id).encode(), on: c.descriptor)
+      try await until { c.sent.contains { $0.kind == 6 } }
+      XCTAssertEqual(c.sent.last { $0.kind == 6 }?.number(1), cancelled ? 7 : 6)
+      XCTAssertTrue(h.openedURLs.isEmpty); XCTAssertEqual(h.native.writes, 0)
+      h.owner.invalidate()
+    }
   }
   private func savedCollectionEnabled(_ url: URL) -> Bool? {
     guard let data = try? Data(contentsOf: url), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -118,7 +179,7 @@ final class ClipboardTests: XCTestCase {
   }
   @MainActor func testAutomaticDisabledRejectsAutomaticButAcceptsManual() async throws {
     let h = ClipboardHarness(), c = ClipboardChannel(); try await h.ready(c)
-    try await h.receive(c, auto: true); XCTAssertEqual(h.native.writes, 0)
+    try await h.receive(c, mode: 1); XCTAssertEqual(h.native.writes, 0)
     try await h.receive(c, revision: 2); XCTAssertEqual(h.native.writes, 1); h.owner.invalidate()
   }
   @MainActor func testConflictBaselineSurvivesRetry() async throws {

@@ -8,6 +8,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+### Added
+
+- Open Android-shared HTTP(S) links in the Mac's default browser.
+
 ### Changed
 
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.

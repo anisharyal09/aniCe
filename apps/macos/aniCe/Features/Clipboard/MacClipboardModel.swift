@@ -102,6 +102,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     func wake() { resultTimer?.cancel(); resultTimer = nil; let c = resultWait; resultWait = nil; c?.resume() }
   }
   private let native: any NativeClipboard
+  private let openURL: @MainActor (URL) -> Bool
   let preferences: ClipboardPreferences
   let history: ClipboardHistory
   private var historyToken: String?
@@ -182,9 +183,9 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     updateObservation()
   }
 
-  init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+  init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }, openURL: @escaping @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
     self.history = history
-    self.native = native; self.preferences = preferences; self.now = now; self.wait = wait
+    self.native = native; self.preferences = preferences; self.now = now; self.wait = wait; self.openURL = openURL
     history.onChanged = { [weak self] in self?.updateObservation() }
   }
   func installLifecycle() {
@@ -301,6 +302,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     if let old = links[d.transport] { retired(old.channel.descriptor) }
     let link = Link(channel); links[d.transport] = link
     enqueue(link, ClipboardMessage(kind: 1, fields: [.text(epoch), .integer(65536), .integer(3072)])); settings(link)
+    enqueue(link, ClipboardMessage(kind: 8, fields: []))
     if selected == nil { select(d.peer) }
   }
   private func settings(_ link: Link) {
@@ -403,6 +405,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
       for peer in peers { peer.settingsRevision = m.number(0); peer.remoteAutomatic = m.flag(1) }
       return .handled
     }
+    if m.kind == 8 { return .discarded }
     if m.kind == 6 {
       guard let item = outgoing, key(item.peer) == k, item.begin.text(2) == m.text(0), item.attempted.contains(d) else { return .discarded }
       item.result = m.number(1); item.wake(); return .handled
@@ -420,7 +423,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
       }
       let code: Int64? = m.text(0) != h.epoch || m.number(1) <= h.floor ? 3 : m.number(3) == 1 && !preferences.enabled(d.peer) ? 1 : h.incoming != nil || h.terminal.count >= 32 ? 2 : nil
       if let code { enqueue(link, .result(id, code)); return .handled }
-      h.floor = m.number(1); h.incoming = Incoming(m, baseline: native.token(), deadline: now() + 30); schedule(); return .handled
+      h.floor = m.number(1); h.incoming = Incoming(m, baseline: m.number(3) == 2 ? nil : native.token(), deadline: now() + 30); schedule(); return .handled
     }
     guard let incoming = h.incoming, incoming.begin.text(2) == id else { return .discarded }
     if m.kind == 7 { finishIncoming(k, incoming, 7, link); return .handled }
@@ -442,17 +445,22 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
       guard Data(SHA256.hash(data: data)) == digest, let text = String(data: data, encoding: .utf8), !text.contains("\0") else { return nil }; return text
     }.value
     guard histories[k]?.incoming === incoming, now() < incoming.deadline else { expire(); incoming.committing = false; return .discarded }
-    let current = native.token()
+    let current = incoming.begin.number(3) == 2 ? nil : native.token()
     let code: Int64
     if text == nil { code = 6 }
     else if incoming.begin.number(3) == 1 && !preferences.enabled(d.peer) { code = 1 }
+    else if incoming.begin.number(3) == 2 {
+      if incoming.begin.flag(4) { code = 6 }
+      else if let url = ClipboardLink.url(text!) { code = openURL(url) ? 0 : 5 }
+      else { code = 6 }
+    }
     else if let baseline = incoming.baseline, let current, current != baseline { code = 4 }
     else {
       applying = true
       code = native.write(text!, sensitive: incoming.begin.flag(4)) ? 0 : 5
       applying = false
     }
-    if code == 0, let text {
+    if code == 0, let text, incoming.begin.number(3) != 2 {
       let sample = ClipboardSample(text: text, sensitive: incoming.begin.flag(4))
       history.record(sample, origin: "phone", credential: k)
       recordActivity(sample, received: true, peer: d.peer)
@@ -464,8 +472,10 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     guard let h = histories[k], h.incoming === incoming else { return }
     h.incoming = nil; h.terminal[incoming.begin.text(2)] = Terminal(begin: incoming.begin, code: code, expiry: now() + 60)
     if let link { enqueue(link, .result(incoming.begin.text(2), code)) }
-    if code == 0 { pending = nil }
-    status = code == 0 ? "Clipboard received" : "Incoming clipboard not applied"; preview = nil; schedule()
+    let openingLink = incoming.begin.number(3) == 2
+    if code == 0 && !openingLink { pending = nil }
+    status = openingLink ? (code == 0 ? "Opened link" : "Could not open link") : (code == 0 ? "Clipboard received" : "Incoming clipboard not applied")
+    preview = nil; schedule()
   }
   func cancel() {
     sampling += 1; preparingAutomatic = false; pending = nil; preview = nil

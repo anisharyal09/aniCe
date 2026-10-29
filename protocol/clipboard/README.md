@@ -2,19 +2,22 @@
 <!-- Defines text clipboard delivery inside authenticated application DATA. -->
 # Clipboard v1
 
-Each DATA plaintext is deterministic RFC 8949 CBOR `["aniCe clipboard", 1, kind, fields]`, at most 4,000 bytes. Reject non-minimal encoding, invalid UTF-8, extra fields, unknown kinds and out-of-range integers. UUIDs are canonical lowercase text. No URI dereferencing or rich text.
+Each DATA plaintext is deterministic RFC 8949 CBOR `["aniCe clipboard", 1, kind, fields]`, at most 4,000 bytes. Reject non-minimal encoding, invalid UTF-8, extra fields, unknown kinds and out-of-range integers. UUIDs are canonical lowercase text. Clipboard modes carry literal text without URI resolution or rich text.
 
 | Kind | Fields |
 | --- | --- |
 | 1 capability | `[senderEpoch: uuid, maxItemBytes: 65536, maxFragmentBytes: 3072]` |
 | 2 settings | `[revision: 1..2^32-1, automaticReceive: bool]` |
-| 3 begin | `[epoch: uuid, revision: 1..2^32-1, itemId: uuid, mode: 0..1, sensitive: bool, totalBytes: 1..65536, fragmentCount: 1..22, sha256: bstr .size 32]` |
+| 3 begin | `[epoch: uuid, revision: 1..2^32-1, itemId: uuid, mode: 0..2, sensitive: bool, totalBytes: 1..65536, fragmentCount: 1..22, sha256: bstr .size 32]` |
 | 4 fragment | `[itemId: uuid, index: 0..21, bytes: bstr .size (1..3072)]` |
 | 5 commit | `[itemId: uuid]` |
 | 6 result | `[itemId: uuid, result: 0..7]` |
 | 7 cancel | `[itemId: uuid]` |
+| 8 open-link capability | `[]` (sent by Mac to advertise mode 2 support) |
 
-Results: 0 applied, 1 disabled, 2 busy, 3 stale, 4 conflict, 5 write failed, 6 invalid, 7 cancelled. Mode 0 is manual; mode 1 automatic. Capabilities precede item data on each channel generation. Settings follow capability, update on preference changes, and higher revisions supersede lower revisions across both channels. Equal settings revisions must agree. An epoch is shared across a sender's simultaneous transports; overlapping channels must advertise the same epoch. After all channels retire, a new epoch may be admitted. Manual receiving needs no automatic preference; automatic receiving requires the local preference. Sending automatically also requires the destination's advertised permission.
+Results: 0 applied/open accepted, 1 disabled, 2 busy, 3 stale, 4 conflict, 5 write/open failed, 6 invalid, 7 cancelled. Mode 0 is manual clipboard delivery; mode 1 is automatic clipboard delivery. Capability precedes item data on each channel generation. Settings follow capability, update on preference changes, and higher revisions supersede lower revisions across both channels. Equal settings revisions must agree. An epoch is shared across a sender's simultaneous transports; overlapping channels must advertise the same epoch. After all channels retire, a new epoch may be admitted. Manual receiving needs no automatic preference; automatic receiving requires the local preference. Sending automatically also requires the destination's advertised permission.
+
+Mode 2 is an explicit Android-to-Mac open-link request, submitted only on channel generations that advertised kind 8 after ordinary capability. It requires `sensitive: false` and exactly one HTTP(S) URL with a host, trimming outer whitespace and rejecting embedded whitespace. After digest and UTF-8 validation, Mac passes the URL to its default browser without reading or writing the clipboard or creating clipboard history/activity. Result 0 means macOS accepted the open request, not that the page loaded. Older peers discard kind 8 and retain ordinary clipboard delivery; Android disables Open in Mac without the capability.
 
 ## Assembly and ordering
 
@@ -22,9 +25,9 @@ One incoming assembly per pinned credential, one outgoing item and one latest pe
 
 Each peer shares assembly, revision floors and results across transports. An accepted higher begin revision advances the floor; older/reused revisions cannot apply. A receiver retains at most 32 terminal results for 60 seconds and never evicts an unexpired entry to admit another item. Duplicate begin/commit returns the cached result without another write. Duplicate fragments for a terminal item are ignored. First-begin conflict baselines and deadlines survive retries. Cache exhaustion returns busy without accepting the item.
 
-The sender starts a 30-second monotonic deadline before its first submission attempt. The receiver starts its own fixed 30-second deadline at first begin. Capacity refusal waits for transport events, never polling. Once commit submission returns, wait two seconds for a result. On channel failure or missing result retry the same logical item once on the other already-secured capable transport, under the original deadline. Fresh records use each channel's own keys/counters. A result must match the peer, item and an attempted live channel generation. Do not reconnect for retry. With no alternative, report delivery unconfirmed. Complete session loss abandons outgoing items, incomplete input and pending automatic copies; no replay after reconnection. At-most-once applies to the live receiver process, not durable recovery.
+The sender starts a 30-second monotonic deadline before its first submission attempt. The receiver starts its own fixed 30-second deadline at first begin. Capacity refusal waits for transport events, never polling. Once commit submission returns, wait two seconds for a result. On channel failure or missing result retry the same logical item once on the other already-secured capable transport, under the original deadline. Fresh records use each channel's own keys/counters. A result must match the peer, item and an attempted live channel generation. Do not reconnect for retry. With no alternative, report delivery unconfirmed. Complete session loss abandons outgoing items, incomplete input and pending automatic copies; no replay after reconnection. Mode 2 shares the terminal cache and revision floor, preventing duplicate browser opens during this retry window. At-most-once applies to the live receiver process, not durable recovery.
 
-Cancel is best effort: stop future submissions and discard incomplete assembly on receipt. It cannot undo a completed native write. Disabling automatic mode cancels pending automatic work and rejects automatic input at commit as well as begin. Selecting another peer cancels outgoing work without removing preferences.
+Cancel is best effort: stop future submissions and discard incomplete assembly on receipt. It cannot undo a completed native write or browser open. Disabling automatic mode cancels pending automatic work and rejects automatic input at commit as well as begin. Selecting another peer cancels outgoing work without removing preferences.
 
 ## Native clipboard and privacy
 

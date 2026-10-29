@@ -35,6 +35,8 @@ def generate():
     begin = [epoch, 1, item, 0, False, 5, 1, hashlib.sha256(b'hello').digest()]
     good = [row('capability', message(1, [epoch, 65536, 3072])), row('manual-settings', message(2, [1, False])),
             row('automatic-settings', message(2, [2**32-1, True])), row('begin', message(3, begin)),
+            row('begin-open-link', message(3, [epoch, 2, item, 2, False, 19, 1, hashlib.sha256(b'https://example.com').digest()])),
+            row('open-link-capability', message(8, [])),
             row('fragment', message(4, [item, 0, b'hello'])), row('commit', message(5, [item])), row('cancel', message(7, [item]))]
     good += [row('result-'+str(code), message(6, [item, code])) for code in range(8)]
     good += [row('max-fragment', message(4, [item, 21, b'x'*3072])),
@@ -45,15 +47,15 @@ def generate():
            message(3, begin[:-1]), message(4, [item, -1, b'x']), message(4, [item, 22, b'x']),
            message(4, [item, 0, b'']), message(4, [item, 0, b'x'*3073]), message(4, [item, 0, 'x']),
            message(5, ['bad']), message(5, [item, 1]), message(6, [item, 8]), message(6, [item, -1]),
-           message(7, []), message(8, []), ['aniCe clipboard', 2, 1, [epoch, 65536, 3072]]]
-    for index, value in [(0, 'bad'), (1, 0), (1, 2**32), (2, item.upper()), (3, 2), (4, 0), (5, 0), (5, 65537), (6, 2), (7, b'x'*31)]:
+           message(7, []), message(8, [True]), message(9, []), ['aniCe clipboard', 2, 1, [epoch, 65536, 3072]]]
+    for index, value in [(0, 'bad'), (1, 0), (1, 2**32), (2, item.upper()), (3, 3), (4, 0), (5, 0), (5, 65537), (6, 2), (7, b'x'*31)]:
         changed = begin.copy(); changed[index] = value; bad.append(message(3, changed))
     invalid = [row('invalid-'+str(i), value) for i, value in enumerate(bad)]
     data = encode(message(5, [item]))
     invalid += [{'name': 'truncated', 'bytesHex': data[:-1].hex()}, {'name': 'trailing', 'bytesHex': (data+b'\0').hex()},
                 {'name': 'nonminimal-version', 'bytesHex': data.hex().replace('640105', '64180105', 1)},
                 {'name': 'invalid-utf8', 'bytesHex': (data[:-1]+b'\xff').hex()}]
-    assert len(good) >= 18 and len(invalid) >= 34
+    assert len(good) >= 20 and len(invalid) >= 35
     return {'valid': good, 'invalid': invalid}
 
 

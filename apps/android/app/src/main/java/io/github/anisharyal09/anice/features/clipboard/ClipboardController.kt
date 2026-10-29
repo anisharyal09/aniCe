@@ -40,6 +40,7 @@ class ClipboardController(
         var epoch: String? by mutableStateOf(null)
         var announced by mutableStateOf(false)
         var remoteAutomatic = false
+        var remoteOpenLink by mutableStateOf(false)
         var settingsRevision = 0L
         val queue = ArrayDeque<ClipboardMessage>()
         var sending = false
@@ -91,8 +92,10 @@ class ClipboardController(
     var status by mutableStateOf("Ready to share text"); private set
     var preview by mutableStateOf<ClipboardSample?>(null); private set
     var onLanRequired: () -> Unit = {}
+    internal val sharePeer: DeviceIdentity? get() = links.values.firstOrNull()?.channel?.descriptor?.peer
     fun connected(peer: DeviceIdentity) = links.values.any { key(it.channel.descriptor.peer) == key(peer) }
     fun supports(peer: DeviceIdentity) = candidates(peer).isNotEmpty()
+    fun supportsOpenLink(peer: DeviceIdentity) = candidates(peer).any { it.remoteOpenLink }
     fun enabled(peer: DeviceIdentity) = preferences.enabled(peer)
     private fun key(peer: DeviceIdentity) = preferences.key(peer)
     private fun live(d: ChannelDescriptor) = links[d.transport]?.channel?.descriptor == d
@@ -148,7 +151,7 @@ class ClipboardController(
         pending = null
         if (preparingAutomatic) { sampling++; busy = false; preparingAutomatic = false }
         if (sample.sensitive || sample.excluded) return
-        submit(sample, true)
+        submit(sample, 1L)
     }
     private fun captureLocal(sample: ClipboardSample) {
         if (!history.enabled) return
@@ -161,30 +164,32 @@ class ClipboardController(
         try { if (!native.write(entry.text, false)) status = "Could not copy text" else status = "Copied" }
         finally { applying = false }
     }
-    fun sendHistory(entry: ClipboardHistoryEntry) { submit(ClipboardSample(entry.text), false) }
+    fun sendHistory(entry: ClipboardHistoryEntry) { submit(ClipboardSample(entry.text), 0L) }
     fun captureManual(): ClipboardSample? {
         if (focusedWindows.isEmpty() && manualWindows.isEmpty()) return null
         return native.read()?.takeIf { validHistoryText(it.text) }
     }
     fun sendSelection(text: String?): ClipboardSendOperation = startExplicitSend(text?.let { ClipboardSample(it) })
+    fun openLink(text: String?): ClipboardSendOperation = startExplicitSend(clipboardLink(text)?.let { ClipboardSample(it) }, 2L)
     internal fun sendCaptured(sample: ClipboardSample): ClipboardSendOperation = startExplicitSend(sample)
-    private fun startExplicitSend(sample: ClipboardSample?): ClipboardSendOperation {
+    private fun startExplicitSend(sample: ClipboardSample?, mode: Long = 0L): ClipboardSendOperation {
         val operation = ClipboardSendOperation()
         fun reject(result: ClipboardSendResult): ClipboardSendOperation { operation.completion.complete(result); return operation }
         if (sample == null || !validHistoryText(sample.text)) return reject(ClipboardSendResult.INVALID)
-        history.record(sample, "phone")
+        if (mode == 0L) history.record(sample, "phone")
         if (busy || selectionOperation != null) return reject(ClipboardSendResult.BUSY)
-        val peer = links.values.firstOrNull()?.channel?.descriptor?.peer ?: return reject(ClipboardSendResult.UNAVAILABLE)
+        val peer = sharePeer ?: return reject(ClipboardSendResult.UNAVAILABLE)
+        if (mode == 2L && !supportsOpenLink(peer)) return reject(ClipboardSendResult.UNAVAILABLE)
         select(peer)
         selectionOperation = operation; selectionDeadline = now() + 30000; busy = true
         selectionJob = scope.launch {
             try {
-                snapshotFlow { supports(peer) || !connected(peer) }.first { it }
+                snapshotFlow { (if (mode == 2L) supportsOpenLink(peer) else supports(peer)) || !connected(peer) }.first { it }
                 if (operation.completion.isCompleted) return@launch
                 if (!connected(peer)) operation.completion.complete(ClipboardSendResult.UNAVAILABLE)
                 else {
                     busy = false
-                    submit(sample, false)
+                    submit(sample, mode)
                     if (!busy) operation.completion.complete(ClipboardSendResult.INVALID)
                 }
                 operation.completion.await()
@@ -198,7 +203,7 @@ class ClipboardController(
         if (selectionOperation === operation) cancel()
     }
     private fun completeSelection(result: ClipboardSendResult) { selectionOperation?.completion?.complete(result) }
-    fun sendConfirmed(sample: ClipboardSample) { submit(sample, false) }
+    fun sendConfirmed(sample: ClipboardSample) { submit(sample, 0L) }
     fun clearPreview() { preview = null }
     fun inspect() { preview = native.read(); preview?.let(::captureLocal); if (preview == null) status = "Focus aniCe and copy plain text, or paste text below" }
     fun send(pasted: String? = null) {
@@ -207,11 +212,16 @@ class ClipboardController(
         captureLocal(sample)
         preview = sample
         if (sample.sensitive) { status = "Confirm sending sensitive text"; return }
-        submit(sample, false)
+        submit(sample, 0L)
     }
-    private fun submit(sample: ClipboardSample, auto: Boolean) {
+    private fun submit(sample: ClipboardSample, mode: Long) {
+        val auto = mode == 1L
         val peer = selected ?: return
-        if (candidates(peer).none { !auto || it.remoteAutomatic }) { status = "Connect first, or enable automatic sharing on both devices"; return }
+        if (candidates(peer).none { when (mode) { 0L -> true; 1L -> it.remoteAutomatic; 2L -> it.remoteOpenLink; else -> false } }) {
+            status = if (mode == 2L) "Connect to a Mac that supports Open Link" else "Connect first, or enable automatic sharing on both devices"
+            if (mode == 2L) completeSelection(ClipboardSendResult.UNAVAILABLE)
+            return
+        }
         if (busy) { if (auto) pending = sample; return }
         if (auto && (!focused || selectionOperation != null)) return
         if (sample.text.isEmpty() || sample.text.indexOf('\u0000') >= 0 || sample.text.length > 65536) { status = "Choose plain text up to 64 KiB"; return }
@@ -227,7 +237,7 @@ class ClipboardController(
             if (generation != sampling || selected?.let(::key) != key(peer) || auto && !automatic) return@launch
             preparingAutomatic = false
             if (pair == null || pair.first.size !in 1..65536 || revision >= 4294967295L) { busy = false; status = "Choose plain text up to 64 KiB"; completeSelection(ClipboardSendResult.INVALID); return@launch }
-            val begin = ClipboardMessage.of(3, Cbor.Text(epoch), Cbor.Integer(++revision), Cbor.Text(UUID.randomUUID().toString()), Cbor.Integer(if (auto) 1 else 0), Cbor.Bool(sample.sensitive), Cbor.Integer(pair.first.size.toLong()), Cbor.Integer((pair.first.size + 3071L) / 3072), Cbor.Bytes(pair.second))
+            val begin = ClipboardMessage.of(3, Cbor.Text(epoch), Cbor.Integer(++revision), Cbor.Text(UUID.randomUUID().toString()), Cbor.Integer(mode), Cbor.Bool(sample.sensitive), Cbor.Integer(pair.first.size.toLong()), Cbor.Integer((pair.first.size + 3071L) / 3072), Cbor.Bytes(pair.second))
             val item = Outgoing(peer, begin, pair.first, minOf(now() + 30000, selectionDeadline ?: Long.MAX_VALUE), sample)
             outgoing = item; status = "Sending to ${peer.deviceName}"; onLanRequired()
             item.job = scope.launch { deliver(item) }; schedule()
@@ -283,7 +293,7 @@ class ClipboardController(
         try {
             repeat(2) {
                 if (outgoing !== item || now() >= item.deadline) return@repeat
-                val link = candidates(item.peer).firstOrNull { l -> item.attempted.none { it.transport == l.channel.descriptor.transport } && (item.begin.number(3) == 0L || l.remoteAutomatic) } ?: return@repeat
+                val link = candidates(item.peer).firstOrNull { l -> item.attempted.none { it.transport == l.channel.descriptor.transport } && when (item.begin.number(3)) { 0L -> true; 1L -> l.remoteAutomatic; 2L -> l.remoteOpenLink; else -> false } } ?: return@repeat
                 item.channelLost = CompletableDeferred()
                 item.attempted.add(link.channel.descriptor)
                 try {
@@ -307,12 +317,13 @@ class ClipboardController(
         } finally {
             if (outgoing === item) {
                 val code = if (item.result.isCompleted) item.result.await() else null
-                status = when (code) { 0L -> "Clipboard delivered"; 1L -> "Automatic receiving is off on the other device"; 2L -> "Other device is busy"; 3L -> "Newer clipboard item already received"; 4L -> "Newer local copy kept"; 5L -> "Could not write the other clipboard"; 6L -> "Clipboard item rejected"; 7L -> "Clipboard send cancelled"; else -> "Delivery unconfirmed" }
-                if (code == 0L) recordActivity(item.sample, received = false, peer = item.peer)
+                val openingLink = item.begin.number(3) == 2L
+                status = if (openingLink) when (code) { 0L -> "Link opened on Mac"; 5L -> "Mac could not open this link"; 6L -> "Mac rejected this link"; else -> "Could not open link on Mac" } else when (code) { 0L -> "Clipboard delivered"; 1L -> "Automatic receiving is off on the other device"; 2L -> "Other device is busy"; 3L -> "Newer clipboard item already received"; 4L -> "Newer local copy kept"; 5L -> "Could not write the other clipboard"; 6L -> "Clipboard item rejected"; 7L -> "Clipboard send cancelled"; else -> "Delivery unconfirmed" }
+                if (code == 0L && !openingLink) recordActivity(item.sample, received = false, peer = item.peer)
                 completeSelection(if (code == 0L) ClipboardSendResult.APPLIED else if (code == null) ClipboardSendResult.UNCONFIRMED else ClipboardSendResult.REJECTED)
                 outgoing = null; busy = false; preview = null
                 val next = pending; pending = null
-                if (next != null && automatic && focused) submit(next, true)
+                if (next != null && automatic && focused) submit(next, 1L)
                 schedule()
             }
         }
@@ -344,6 +355,7 @@ class ClipboardController(
             updateObservation()
             return DataHandling.HANDLED
         }
+        if (m.kind == 8L) { link.remoteOpenLink = true; return DataHandling.HANDLED }
         if (m.kind == 6L) {
             val o = outgoing ?: return DataHandling.DISCARDED
             if (key(o.peer) != k || o.begin.text(2) != m.text(0) || descriptor !in o.attempted) return DataHandling.DISCARDED
@@ -360,7 +372,7 @@ class ClipboardController(
                 if (!h.incoming!!.begin.encode().contentEquals(m.encode())) { enqueue(link, ClipboardMessage.result(id, 6)); return DataHandling.DISCARDED }
                 return DataHandling.HANDLED
             }
-            val code = when { m.text(0) != h.epoch || m.number(1) <= h.floor -> 3L; m.number(3) == 1L && !preferences.enabled(descriptor.peer) -> 1L; h.incoming != null || h.terminal.size >= 32 -> 2L; else -> null }
+            val code = when { m.text(0) != h.epoch || m.number(1) <= h.floor -> 3L; m.number(3) == 2L -> 6L; m.number(3) == 1L && !preferences.enabled(descriptor.peer) -> 1L; h.incoming != null || h.terminal.size >= 32 -> 2L; else -> null }
             if (code != null) { enqueue(link, ClipboardMessage.result(id, code)); return DataHandling.HANDLED }
             h.floor = m.number(1); h.incoming = Incoming(m, native.token(), now() + 30000); schedule(); return DataHandling.HANDLED
         }

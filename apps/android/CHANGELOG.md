@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.
 - Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.

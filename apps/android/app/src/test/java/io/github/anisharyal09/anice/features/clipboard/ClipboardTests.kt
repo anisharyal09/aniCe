@@ -59,14 +59,15 @@ class ClipboardTests {
         val native = Native()
         val owner = ClipboardController(native, dispatcher = dispatcher, now = { time }, wait = clock::wait)
         val epoch = UUID.randomUUID().toString()
-        suspend fun ready(c: Channel) {
+        suspend fun ready(c: Channel, openLink: Boolean = false) {
             owner.available(c)
             owner.handle(c.descriptor, ClipboardMessage.of(1, Cbor.Text(epoch), Cbor.Integer(65536), Cbor.Integer(3072)).encode())
             owner.handle(c.descriptor, ClipboardMessage.of(2, Cbor.Integer(1), Cbor.Bool(true)).encode())
+            if (openLink) owner.handle(c.descriptor, ClipboardMessage.of(8).encode())
         }
-        suspend fun receive(c: Channel, text: String = "hello", revision: Long = 1, id: String = UUID.randomUUID().toString(), auto: Boolean = false): ClipboardMessage {
+        suspend fun receive(c: Channel, text: String = "hello", revision: Long = 1, id: String = UUID.randomUUID().toString(), mode: Long = 0L): ClipboardMessage {
             val data = text.toByteArray(Charsets.UTF_8)
-            val begin = ClipboardMessage.of(3, Cbor.Text(epoch), Cbor.Integer(revision), Cbor.Text(id), Cbor.Integer(if (auto) 1 else 0), Cbor.Bool(false), Cbor.Integer(data.size.toLong()), Cbor.Integer((data.size + 3071L) / 3072), Cbor.Bytes(MessageDigest.getInstance("SHA-256").digest(data)))
+            val begin = ClipboardMessage.of(3, Cbor.Text(epoch), Cbor.Integer(revision), Cbor.Text(id), Cbor.Integer(mode), Cbor.Bool(false), Cbor.Integer(data.size.toLong()), Cbor.Integer((data.size + 3071L) / 3072), Cbor.Bytes(MessageDigest.getInstance("SHA-256").digest(data)))
             owner.handle(c.descriptor, begin.encode())
             data.asList().chunked(3072).forEachIndexed { index, bytes -> owner.handle(c.descriptor, ClipboardMessage.of(4, Cbor.Text(id), Cbor.Integer(index.toLong()), Cbor.Bytes(bytes.toByteArray())).encode()) }
             owner.handle(c.descriptor, ClipboardMessage.id(5, id).encode())
@@ -77,7 +78,7 @@ class ClipboardTests {
     @Test fun independentFixturesAndCanonicalBounds() {
         val root = JSONObject(javaClass.classLoader!!.getResource("clipboard/clipboard-vectors.json")!!.readText())
         val good = root.getJSONArray("valid"); val bad = root.getJSONArray("invalid")
-        assertTrue(good.length() >= 18); assertTrue(bad.length() >= 34)
+        assertTrue(good.length() >= 20); assertTrue(bad.length() >= 35)
         fun hex(s: String) = s.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         for (i in 0 until good.length()) { val bytes = hex(good.getJSONObject(i).getString("bytesHex")); assertArrayEquals(bytes, ClipboardMessage.decode(bytes)!!.encode()) }
         for (i in 0 until bad.length()) {
@@ -97,7 +98,7 @@ class ClipboardTests {
     }
     @Test fun automaticDisabledRejectsAndManualBackgroundReceiptStillWorks() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
-        h.receive(c, auto = true); assertEquals(0, h.native.writes)
+        h.receive(c, mode = 1L); assertEquals(0, h.native.writes)
         h.native.focused = false; h.receive(c, revision = 2); assertEquals(1, h.native.writes)
         h.owner.invalidate()
     }
@@ -402,6 +403,70 @@ class ClipboardTests {
         h.owner.handle(c.descriptor, ClipboardMessage.result(begin.text(2), 0).encode())
         assertEquals(ClipboardSendResult.APPLIED, first.result())
         until { !h.owner.busy }; h.owner.invalidate()
+    }
+
+    @Test fun sharedLinksOfferExplicitOpenAndKeepOpenRequestsOutOfClipboardHistory() = runBlocking {
+        assertEquals("https://example.com/path?q=1", clipboardLink(" https://example.com/path?q=1 "))
+        assertEquals("http://example.com", clipboardLink("http://example.com"))
+        for (text in listOf("notes https://example.com", "https://example.com path", "https:example.com", "file:///etc/passwd", "javascript:alert(1)")) assertNull(clipboardLink(text))
+
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c, openLink = true)
+        h.owner.history.setKeepingHistory(true); until { h.owner.history.enabled && h.owner.supportsOpenLink(c.descriptor.peer) }
+        h.owner.select(DeviceIdentity("offline", "Other Mac", "macos", "other-key", "other-fingerprint"))
+        val state = SelectionSendState(h.owner); state.start("https://example.com/article")
+        assertEquals("https://example.com/article", state.sharedLink); assertTrue(state.canOpenLink); assertNull(state.operation)
+        assertFalse(c.sent.any { it.kind == 3L })
+        state.chooseOpenLink(); val operation = state.operation!!
+        until { c.sent.any { it.kind == 5L } }
+        val begin = c.sent.first { it.kind == 3L }; assertEquals(2L, begin.number(3))
+        h.owner.handle(c.descriptor, ClipboardMessage.result(begin.text(2), 0).encode())
+        assertEquals(ClipboardSendResult.APPLIED, operation.result())
+        assertTrue(h.owner.history.entries.isEmpty()); assertNull(h.owner.recent); assertEquals(0, h.native.reads)
+        assertEquals(c.descriptor.peer, h.owner.selected)
+        h.owner.retired(c.descriptor)
+        val replacement = Channel(); h.ready(replacement)
+        until { h.owner.supports(replacement.descriptor.peer) }
+        assertFalse(h.owner.supportsOpenLink(replacement.descriptor.peer))
+        h.owner.invalidate()
+    }
+
+    @Test fun olderMacKeepsLiteralClipboardChoiceAndNeverReceivesOpenMode() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        until { h.owner.supports(c.descriptor.peer) }
+        val text = " https://example.com/article "
+        val state = SelectionSendState(h.owner); state.start(text)
+        assertFalse(state.canOpenLink); assertNull(state.operation)
+        assertEquals(ClipboardSendResult.INVALID, h.owner.openLink("file:///etc/passwd").result())
+        assertEquals(ClipboardSendResult.UNAVAILABLE, h.owner.openLink(text).result())
+        assertFalse(c.sent.any { it.kind == 3L })
+        state.chooseClipboardSend()
+        until { c.sent.any { it.kind == 5L } }
+        val begin = c.sent.first { it.kind == 3L }; assertEquals(0L, begin.number(3))
+        assertEquals(text, c.sent.single { it.kind == 4L }.bytes(2).toString(Charsets.UTF_8))
+        h.owner.handle(c.descriptor, ClipboardMessage.result(begin.text(2), 0).encode())
+        assertEquals(ClipboardSendResult.APPLIED, state.operation!!.result())
+        h.owner.invalidate()
+    }
+
+    @Test fun openLinkSkipsTransportsWithoutTheCapability() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel("lan"); val ble = Channel("ble")
+        h.ready(lan); h.ready(ble, openLink = true)
+        until { h.owner.supportsOpenLink(ble.descriptor.peer) }
+        val operation = h.owner.openLink("https://example.com")
+        until { ble.sent.any { it.kind == 5L } }
+        assertFalse(lan.sent.any { it.kind == 3L })
+        val begin = ble.sent.first { it.kind == 3L }; assertEquals(2L, begin.number(3))
+        h.owner.handle(ble.descriptor, ClipboardMessage.result(begin.text(2), 0).encode())
+        assertEquals(ClipboardSendResult.APPLIED, operation.result())
+        h.owner.invalidate()
+    }
+
+    @Test fun androidRejectsMacOnlyOpenLinkModeWithoutWritingClipboard() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel(); h.ready(c)
+        h.receive(c, text = "https://example.com", mode = 2L)
+        until { c.sent.any { it.kind == 6L && it.number(1) == 6L } }
+        assertEquals(0, h.native.writes); h.owner.invalidate()
     }
     @Test fun selectionWaitingForNegotiationCancelsWithoutLaterSubmission() = runBlocking {
         val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher); val c = Channel()
