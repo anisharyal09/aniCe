@@ -1,12 +1,17 @@
 # Repository changelog
 
-Repository-wide structure, documentation, and development conventions belong here. Android, macOS, and protocol changes maintain dedicated component changelogs under unified project releases:
+Shared product changes, repository structure, documentation and development conventions are summarized here. Android, macOS and protocol implementation details have dedicated component changelogs under unified project releases:
 
 - [Android](apps/android/CHANGELOG.md)
 - [macOS](apps/macos/CHANGELOG.md)
 - [Protocol](protocol/CHANGELOG.md)
 
 ## [Unreleased]
+
+### Changed
+
+- Redesign Android and macOS around shared neutral light/dark colors, compact native controls, consistent device context and feature navigation. Refine Home, pairing, Devices, Settings, About, playback, file transfer, Messages, Clipboard and the Mac companion/tray; see the component changelogs for platform behavior.
+- Consolidate the shared UI/UX specification, semantic palette samples, accessibility requirements and platform adaptations in the [design guide](docs/design/DESIGN.md).
 
 ## [v0.3.0]
 

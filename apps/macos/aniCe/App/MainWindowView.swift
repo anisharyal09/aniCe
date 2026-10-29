@@ -26,6 +26,8 @@ struct MainWindowView: View {
   @State var hoveredSettingsSection: String?
   @State var hoveredAboutLink: String?
   @State var focusedSettingsSection: String?
+  @State var settingsFocusToken = UUID()
+  @State var settingsScroller = SettingsScrollCoordinator()
   @State var showingLocalIdentity = false
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)

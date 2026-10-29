@@ -24,7 +24,7 @@ struct ClipboardSettingsView: View {
       }
       if showPreferences {
         Toggle(compactSettings ? "Automatic sharing" : "Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
-          .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
+          .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
         if compactSettings {
           if model.selected != nil {
             Text("Enable on both devices. Manual sends stay available.").font(.caption)
@@ -81,7 +81,7 @@ private struct HistoryPreference: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
-        .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small).tint(AniCePalette.accent(scheme))
+        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).tint(AniCePalette.accent(scheme))
         .alert("Keep clipboard history?", isPresented: $confirming) {
           Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
         } message: { Text("Save the latest text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Delete items or use Clear to remove them.") }
@@ -119,8 +119,16 @@ struct ClipboardView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
-        Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }
-          .pickerStyle(.segmented).labelsHidden()
+        HStack(spacing: 8) {
+          clipboardTab("Share", selected: !historyTab) { historyTab = false }
+          clipboardTab("History", selected: historyTab) { historyTab = true }
+        }
+
+        .accessibilityElement(children: .contain).accessibilityLabel("Clipboard view")
+        .onMoveCommand { direction in
+          if direction == .left { historyTab = false }
+          if direction == .right { historyTab = true }
+        }
         Button { PasteTrayController.shared.show() } label: {
           Label { Text("Open tray") } icon: {
             Image(systemName: "rectangle.stack").foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -176,6 +184,18 @@ struct ClipboardView: View {
     .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in clearContent() }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshAccess() }
     .onDisappear { clearContent() }
+  }
+  private func clipboardTab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(title).font(.system(size: 13, weight: .medium))
+        .foregroundStyle(selected ? AniCePalette.onAccent(scheme) : AniCePalette.secondaryText(scheme))
+        .frame(minWidth: 64, minHeight: 30)
+        .padding(.horizontal, 8)
+        .background(selected ? AniCePalette.accent(scheme) : AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 5))
+        .contentShape(RoundedRectangle(cornerRadius: 5))
+    }
+    .buttonStyle(.plain).aniCeControlFeedback(cornerRadius: 5)
+    .accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : [])
   }
   private func clearContent() { pasted = ""; reveal = false; model.clearPreview() }
 }

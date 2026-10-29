@@ -20,6 +20,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -103,15 +107,23 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     summary = summary.text, action = summary.action,
                     detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact, showDetailsAction = false, showConnectionAction = true)
                 if (!compact) {
+                val groupOutline = MaterialTheme.colorScheme.outlineVariant
                 Column(Modifier.fillMaxWidth()
+                    .drawWithContent {
+                        drawContent()
+                        if (flatDeviceLayout) {
+                            val radius = 9.dp.toPx()
+                            clipRect(bottom = radius) { drawRoundRect(groupOutline, cornerRadius = CornerRadius(radius), style = Stroke(1.5.dp.toPx())) }
+                            clipRect(top = size.height - radius) { drawRoundRect(groupOutline, cornerRadius = CornerRadius(radius), style = Stroke(1.5.dp.toPx())) }
+                        }
+                    }
                     .then(if (flatDeviceLayout) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small))
-                    .padding(horizontal = if (flatDeviceLayout) 0.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    .padding(horizontal = if (flatDeviceLayout) 0.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (flatDeviceLayout) 2.dp else 4.dp)) {
                 if (!compact && nearby.available) {
-                    if (flatDeviceLayout) HorizontalDivider()
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint
                     AutomaticConnectionToggle(checked = enabled, enabled = canUsePeer && !automaticChanging,
-                        label = "Auto connect", description = "Reconnect when this device is available.",
+                        label = "Auto connect", description = "Reconnect when this device is available.", compact = flatDeviceLayout,
                         onCheckedChange = { checked ->
                             automaticNotice = null
                             if (!checked) {
@@ -226,7 +238,6 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         }
                     }
                 }
-                if (flatDeviceLayout) HorizontalDivider()
                 }
                 }
                 }
@@ -239,7 +250,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
 @Composable
 private fun TransportDetails(name: String, state: ConnectionState, status: String, canConnect: Boolean,
     onConnect: () -> Unit, onDisconnect: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Icon(painterResource(if (name == "Bluetooth") R.drawable.ic_bluetooth else R.drawable.ic_wifi), contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 10.dp).size(20.dp))
         Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)

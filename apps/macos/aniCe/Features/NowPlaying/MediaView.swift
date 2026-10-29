@@ -23,7 +23,9 @@ struct MediaView: View {
   @State private var scrub: Double?
   @State private var cancelled = false
   @State private var target: MediaPlayback?
+  @State private var hoveredControl: Int64?
   @Environment(\.colorScheme) private var scheme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private var media: MediaPlayback { model.playback }
   var body: some View {
     Group {
@@ -40,7 +42,7 @@ struct MediaView: View {
         HStack {
           if let open {
             Button(action: open) { HStack { Label("Now playing", systemImage: "music.note"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.font(.headline).contentShape(Rectangle()) }
-              .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Now Playing")
+              .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 3)).accessibilityLabel("Open Now Playing")
           } else { Label("Now playing", systemImage: "music.note").font(.headline) }
           Spacer()
           Text("On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -174,7 +176,7 @@ struct MediaView: View {
             Text("Now Playing").font(.system(size: 14, weight: .medium))
             Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true)
           }.contentShape(Rectangle())
-        }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Now Playing")
+        }.buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 3)).accessibilityLabel("Open Now Playing")
         Spacer()
         Text(origin ?? "This Mac").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
         Button { expanded.toggle() } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
@@ -251,8 +253,21 @@ struct MediaView: View {
         .frame(width: action == 1 ? 40 : 32, height: 32)
         .foregroundStyle(action == 1 && !overview ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
         .background { if action == 1 { RoundedRectangle(cornerRadius: 7).fill(overview ? AniCePalette.subtleAccent(scheme) : AniCePalette.accent(scheme)) } }
+        .contentShape(RoundedRectangle(cornerRadius: 7))
     }.buttonStyle(AniCeHoverButtonStyle(prominent: action == 1 && !overview))
       .disabled(model.busy || media.actions & mask == 0).accessibilityLabel(label)
+      .overlay {
+        if hoveredControl == action && !model.busy && media.actions & mask != 0 {
+          RoundedRectangle(cornerRadius: 7).inset(by: 0.5)
+            .stroke((action == 1 && !overview ? AniCePalette.onAccent(scheme) : AniCePalette.accent(scheme)).opacity(0.24), lineWidth: 1)
+            .allowsHitTesting(false)
+        }
+      }
+      .onHover { isHovered in
+        if isHovered && !model.busy && media.actions & mask != 0 { hoveredControl = action }
+        else if hoveredControl == action { hoveredControl = nil }
+      }
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hoveredControl)
   }
   static func time(_ seconds: Double) -> String { let value=Int(max(0,seconds)); return String(format:"%d:%02d",value/60,value%60) }
 }

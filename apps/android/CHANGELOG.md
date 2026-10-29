@@ -4,21 +4,21 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Added
+
+- At 150% text size or above, scroll the bottom destination bar horizontally to keep full destination names readable.
+
 ### Changed
 
-- Keep Android destination names readable at large text sizes with a horizontally scrollable, fully labeled bottom navigation; reveal the selected destination after Back or a deep link.
+- Apply the seamless redesign across Home, pairing, Devices, Features, Settings and About while preserving native touch targets and text scaling.
+- Use compact connection controls, contextual feature preferences and consistent return navigation; keep incoming approvals visible during active work.
+- Align playback, file transfer, Messages and Clipboard with the shared cross-platform hierarchy and feedback patterns.
 
-- Return feature panels to Home when opened there. Keep conversation drafts, SIM choice and pending SMS sends across navigation; prevent duplicate submission and preserve newer drafts when a send completes.
+### Fixed
 
-- Reflow About product and link rows on narrow screens and at large text sizes; label the creator as Developer.
-
-- Open This device from Devices and Settings in a shared identity sheet; tighten device rows and retain readable identity actions at large text sizes.
-
-- Ignore late file-review metadata after dismissal or a new selection, and keep file review usable when a provider cannot return metadata.
-
-- Match the reference's phone Home and Devices hierarchy with flat activity and connection rows, leading disclosure markers, aligned Recent clipboard content and no empty Recent heading. Keep incoming approvals visible during active work and across sections. Open QR/code pairing directly from Add device and keep saved-device management in Devices.
-
-- Apply the seamless neutral light/dark palette and compact rounded controls. Retain native 48-dp interaction bounds while reducing connection, file-send and playback button faces.
+- Preserve SMS drafts, SIM selection and pending sends; prevent duplicate submission and retain newer drafts after completion.
+- Ignore stale file-review metadata after dismissal or replacement and retain review when metadata is unavailable.
+- Reveal the selected destination after Back/deep links at large text sizes and omit empty Recent headings.
 
 ## [v0.3.0]
 

@@ -91,7 +91,7 @@ extension MainWindowView {
       Button { navigation.openFeature(.files) } label: {
         HStack(spacing: 8) { Text("File transfer"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }
           .font(.system(size: 14, weight: .medium)).contentShape(Rectangle())
-      }.buttonStyle(AniCeHoverButtonStyle())
+      }.buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 3))
       if transfer.state == .idle && !transfer.preparing {
         HStack(spacing: 16) {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -111,7 +111,7 @@ extension MainWindowView {
 
   @ViewBuilder var devicesContent: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top) {
           VStack(alignment: .leading, spacing: 8) {
             Text("Devices").font(.system(size: 20, weight: .medium))
@@ -137,7 +137,7 @@ extension MainWindowView {
           }
           DisclosureGroup("Trust and saved devices") {
             MacPairingView(model: pairing, showPairingControls: false)
-          }.font(.callout)
+          }.font(.callout).frame(minHeight: 36, alignment: .leading)
 
         Divider()
         Button { showingLocalIdentity = true } label: {
@@ -147,7 +147,7 @@ extension MainWindowView {
             Text(identity.local?.identity.deviceName ?? "This Mac").foregroundStyle(AniCePalette.secondaryText(colorScheme))
             Spacer()
             Image(systemName: "chevron.forward").accessibilityHidden(true)
-          }.padding(.vertical, 8).contentShape(Rectangle())
+          }.frame(minHeight: 36).contentShape(Rectangle())
         }.buttonStyle(AniCeHoverButtonStyle())
         Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
@@ -164,7 +164,7 @@ extension MainWindowView {
           Toggle("Connect automatically after pairing", isOn: Binding(
             get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
             set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
-            .toggleStyle(.checkbox).aniCeControlFeedback().disabled(pairing.phase == "paired")
+            .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(pairing.phase == "paired")
           MacPairingView(model: pairing, embedded: true, showTrustedDevices: false)
           HStack {
             Spacer()
@@ -180,20 +180,20 @@ extension MainWindowView {
   var aboutContent: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        Text("About").font(.system(size: 20, weight: .medium))
+        Text("About").font(.system(size: 18, weight: .medium))
         Text("Connect your Mac and Android.").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
               aboutMark
-              Text("aniCe").font(.system(size: 20, weight: .medium))
+              Text("aniCe").font(.system(size: 18, weight: .medium))
               Spacer(minLength: 8)
               aboutProductDetails(alignment: .trailing)
             }
             VStack(alignment: .leading, spacing: 6) {
               HStack(spacing: 12) {
                 aboutMark
-                Text("aniCe").font(.system(size: 20, weight: .medium))
+                Text("aniCe").font(.system(size: 18, weight: .medium))
               }
               aboutProductDetails(alignment: .leading).padding(.leading, 32)
             }
@@ -202,34 +202,58 @@ extension MainWindowView {
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
           aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
           aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
-          aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09")
-          HStack(spacing: 6) {
-            Link(destination: URL(string: "https://x.com/anisharyal09")!) {
-              Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
-                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+              aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09", showSeparator: false)
+              aboutProfileLinks
             }
-            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("X profile").help("X profile")
-            Link(destination: URL(string: "https://www.linkedin.com/in/anisharyal09/")!) {
-              Text("in").font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
+            VStack(spacing: 0) {
+              aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09", showSeparator: false)
+              aboutProfileLinks.frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("LinkedIn profile").help("LinkedIn profile")
+          }
+          .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+          HStack {
+            Spacer()
             Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
-              Image(systemName: "heart").font(.system(size: 16))
+              Image(systemName: "heart").font(.system(size: 14))
                 .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                 .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
             }
             .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Support aniCe").help("Support aniCe")
+            Spacer()
           }
-          .padding(.top, 14)
+          .padding(.top, 4)
         }
         .frame(maxWidth: 660, alignment: .leading)
       }
-      .padding(24).frame(maxWidth: 660, alignment: .leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(maxWidth: 660, alignment: .leading).padding(24)
+      .frame(maxWidth: .infinity, alignment: .center)
     }
+  }
+
+  private var aboutProfileLinks: some View {
+    HStack(spacing: 2) {
+      Link(destination: URL(string: "https://x.com/anisharyal09")!) {
+        ZStack {
+          Path { path in
+            path.move(to: CGPoint(x: 3, y: 2)); path.addLines([CGPoint(x: 7.2, y: 2), CGPoint(x: 21, y: 22), CGPoint(x: 16.8, y: 22)]); path.closeSubpath()
+            path.move(to: CGPoint(x: 5.4, y: 3.4)); path.addLines([CGPoint(x: 6.4, y: 3.4), CGPoint(x: 18.6, y: 20.6), CGPoint(x: 17.6, y: 20.6)]); path.closeSubpath()
+          }.fill(style: FillStyle(eoFill: true))
+          Path { path in
+            path.move(to: CGPoint(x: 19.2, y: 2)); path.addLines([CGPoint(x: 21.6, y: 2), CGPoint(x: 4.8, y: 22), CGPoint(x: 2.4, y: 22)]); path.closeSubpath()
+          }.fill()
+        }
+        .frame(width: 24, height: 24).scaleEffect(0.67)
+        .frame(width: 36, height: 36).contentShape(RoundedRectangle(cornerRadius: 7))
+      }
+      .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("X profile").help("X profile")
+      Link(destination: URL(string: "https://www.linkedin.com/in/anisharyal09/")!) {
+        Text("in").font(.system(size: 14, weight: .bold))
+          .frame(width: 36, height: 36).contentShape(RoundedRectangle(cornerRadius: 7))
+      }
+      .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("LinkedIn profile").help("LinkedIn profile")
+    }.foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize()
   }
 
   private var aboutVersion: String? {
@@ -250,15 +274,15 @@ extension MainWindowView {
     }
   }
 
-  @ViewBuilder private func aboutLink(_ title: String, detail: String, destination: String) -> some View {
+  @ViewBuilder private func aboutLink(_ title: String, detail: String, destination: String, showSeparator: Bool = true) -> some View {
     if let url = URL(string: destination) {
       let hovered = hoveredAboutLink == title
       Link(destination: url) {
         HStack(spacing: 16) {
-          Text(title).font(.system(size: 13)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+          Text(title).font(.system(size: 12)).foregroundStyle(AniCePalette.primaryText(colorScheme))
           Spacer()
           HStack(spacing: 8) {
-            Text(detail).font(.system(size: 12)).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+            Text(detail).font(.system(size: 11)).fixedSize(horizontal: true, vertical: false).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
             Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
               .accessibilityHidden(true)
           }
@@ -269,7 +293,7 @@ extension MainWindowView {
       .buttonStyle(AniCeHoverButtonStyle())
       .onHover { isHovered in hoveredAboutLink = isHovered ? title : (hoveredAboutLink == title ? nil : hoveredAboutLink) }
       .animation(.easeOut(duration: 0.14), value: hovered)
-      .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+      .overlay(alignment: .bottom) { if showSeparator { AniCePalette.separator(colorScheme).frame(height: 0.5) } }
       .accessibilityLabel("\(title), \(detail)")
     }
   }
@@ -278,23 +302,23 @@ extension MainWindowView {
     if navigation.settingsRoute == .about {
       aboutContent
     } else {
-      ScrollViewReader { proxy in
+      Group {
         GeometryReader { geometry in
           let expanded = geometry.size.width >= 880
-          let columns = Array(repeating: GridItem(.flexible(), spacing: 24, alignment: .top), count: expanded ? 2 : 1)
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
                 ("appearance", "Appearance"), ("connection", "Connection"), ("clipboard", "Clipboard"),
-                ("messages", "Messages"), ("this-device", "This device")
+                ("messages", "Messages"), ("file-transfer", "File transfer"),
+                ("now-playing", "Now Playing"), ("this-device", "This device")
               ]
               ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) {
-                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id, proxy: proxy) }
+                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
                 }
                 .fixedSize(horizontal: true, vertical: false)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), alignment: .leading)], alignment: .leading, spacing: 6) {
-                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id, proxy: proxy) }
+                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
                 }
               }
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,7 +326,7 @@ extension MainWindowView {
               .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
               .padding(.bottom, 18)
 
-              LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
+              SettingsSectionLayout(columns: expanded ? 2 : 1) {
                 preferenceSection("Appearance", id: "appearance") {
                   HStack {
                     Text("Window appearance")
@@ -317,7 +341,7 @@ extension MainWindowView {
                 preferenceSection("Connection", id: "connection") {
                   VStack(alignment: .leading, spacing: 5) {
                     Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                      .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small)
+                      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small)
                     Text("Enable on both devices to use Wi-Fi.").font(.caption)
                       .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
                   }.frame(minHeight: 48, alignment: .leading)
@@ -336,7 +360,7 @@ extension MainWindowView {
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-                    .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small).frame(minHeight: 48)
+                    .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).frame(minHeight: 48)
                 }
                 preferenceSection("This device", id: "this-device") {
                   Button { showingLocalIdentity = true } label: {
@@ -359,7 +383,7 @@ extension MainWindowView {
           }
         }
       }
-      .task(id: focusedSettingsSection) {
+      .task(id: settingsFocusToken) {
         guard focusedSettingsSection != nil else { return }
         try? await Task.sleep(for: .milliseconds(700))
         guard !Task.isCancelled else { return }
@@ -387,16 +411,21 @@ extension MainWindowView {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.bottom, 18)
+    .background(SettingsScrollAnchor(id: id, coordinator: settingsScroller))
     .id(id)
   }
 
-  private func settingsJump(_ label: String, id: String, proxy: ScrollViewProxy) -> some View {
+  private func settingsJump(_ label: String, id: String) -> some View {
     let selected = activeSettingsSection == id
     let hovered = hoveredSettingsSection == id
     return Button {
       activeSettingsSection = id
-      focusedSettingsSection = id
-      withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .top) }
+      focusedSettingsSection = nil
+      settingsScroller.scroll(to: id, animated: !reduceMotion) {
+        guard activeSettingsSection == id else { return }
+        focusedSettingsSection = id
+        settingsFocusToken = UUID()
+      }
     } label: {
       Text(label)
         .font(.system(size: 12, weight: selected ? .medium : .regular))
@@ -412,4 +441,84 @@ extension MainWindowView {
     .accessibilityAddTraits(selected ? .isSelected : [])
     .accessibilityHint("Scroll to \(label) settings")
   }
+}
+
+
+private struct SettingsSectionLayout: Layout {
+  let columns: Int
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let width = proposal.width ?? 680
+    let cellWidth = max(0, (width - CGFloat(columns - 1) * 24) / CGFloat(columns))
+    var height: CGFloat = 0
+    for start in stride(from: 0, to: subviews.count, by: columns) {
+      height += (start..<min(start + columns, subviews.count)).map {
+        subviews[$0].sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
+      }.max() ?? 0
+    }
+    return CGSize(width: width, height: height)
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let width = max(0, (bounds.width - CGFloat(columns - 1) * 24) / CGFloat(columns))
+    var y = bounds.minY
+    for start in stride(from: 0, to: subviews.count, by: columns) {
+      var height: CGFloat = 0
+      for index in start..<min(start + columns, subviews.count) {
+        let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        subviews[index].place(at: CGPoint(x: bounds.minX + CGFloat(index - start) * (width + 24), y: y), anchor: .topLeading,
+          proposal: ProposedViewSize(width: width, height: size.height))
+        height = max(height, size.height)
+      }
+      y += height
+    }
+  }
+}
+
+
+@MainActor final class SettingsScrollCoordinator {
+  var anchors: [String: NSView] = [:]
+
+  func scroll(to id: String, animated: Bool, completion: @escaping () -> Void) {
+    guard let anchor = anchors[id], let scroll = anchor.enclosingScrollView,
+          let document = scroll.documentView else { return }
+    document.layoutSubtreeIfNeeded()
+    var target = anchor.convert(anchor.bounds, to: document)
+    let clip = scroll.contentView
+    let visible = scroll.documentVisibleRect
+    if target.height > visible.height - 24 {
+      let height = max(0, visible.height - 24)
+      if !document.isFlipped { target.origin.y = target.maxY - height }
+      target.size.height = height
+    }
+    var desired = clip.bounds.origin.y
+    if target.minY < visible.minY { desired -= visible.minY - target.minY + 12 }
+    else if target.maxY > visible.maxY { desired += target.maxY - visible.maxY + 12 }
+    else { completion(); return }
+    let lower = document.bounds.minY
+    let upper = max(lower, document.bounds.maxY - clip.bounds.height)
+    let origin = NSPoint(x: clip.bounds.origin.x, y: min(upper, max(lower, desired)))
+    if animated {
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0.18
+        clip.animator().setBoundsOrigin(origin)
+      } completionHandler: {
+        scroll.reflectScrolledClipView(clip)
+        completion()
+      }
+    } else {
+      clip.scroll(to: origin)
+      scroll.reflectScrolledClipView(clip)
+      completion()
+    }
+  }
+}
+
+private struct SettingsScrollAnchor: NSViewRepresentable {
+  let id: String
+  let coordinator: SettingsScrollCoordinator
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView()
+    coordinator.anchors[id] = view
+    return view
+  }
+  func updateNSView(_ view: NSView, context: Context) { coordinator.anchors[id] = view }
 }

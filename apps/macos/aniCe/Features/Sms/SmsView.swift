@@ -12,14 +12,14 @@ struct SmsNotificationControls: View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
         set: { preferences.setNotifications(peer, $0) }))
-        .aniCeControlFeedback()
+        .aniCeControlFeedback(feedbackPadding: 3)
       Toggle("Play sound", isOn: Binding(get: { preferences.sound(peer) },
         set: { preferences.setSound(peer, $0) }))
-        .aniCeControlFeedback()
+        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
       Toggle("Show message text in notifications", isOn: Binding(get: { preferences.preview(peer) },
         set: { preferences.set(peer, $0) }))
-        .aniCeControlFeedback()
+        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
@@ -105,7 +105,7 @@ struct SmsView: View {
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
           }
           if geometry.size.width >= 620 {
-            let listWidth = min(250, max(180, geometry.size.width * 0.28))
+            let listWidth = min(280, max(220, geometry.size.width * 0.28))
             HStack(spacing: 0) {
               ScrollView { threads(peer).padding(12) }
                 .frame(width: listWidth)
@@ -117,7 +117,7 @@ struct SmsView: View {
                     .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
               } else {
-                conversation(peer).padding(12)
+                conversation(peer, showBack: false).padding(12)
               }
             }
             .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -207,12 +207,7 @@ struct SmsView: View {
           .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
           .disabled(!model.supports(peer) || model.busy(peer))
       }
-      if model.status(peer) != "Ready" {
-        Text(model.status(peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-      }
-      if !model.diagnostics(peer).isEmpty {
-        Text(model.diagnostics(peer)).font(.caption2).foregroundStyle(AniCePalette.secondaryText(scheme))
-      }
+      if address.isEmpty { statusFeedback(peer) }
       let cards = model.threads(peer)
       if cards.isEmpty {
         Text("No conversations yet").foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -225,7 +220,7 @@ struct SmsView: View {
           } label: {
             HStack(spacing: 12) {
               VStack(alignment: .leading, spacing: 4) {
-                Text(card.address).font(.body)
+                Text(card.address).font(.body).lineLimit(1).truncationMode(.middle)
                 if !card.snippet.isEmpty {
                   Text(card.snippet).font(.caption).lineLimit(1)
                     .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -234,7 +229,7 @@ struct SmsView: View {
               Spacer(minLength: 8)
               VStack(alignment: .trailing, spacing: 4) {
                 if card.dateMillis > 0 {
-                  Text(date(card.dateMillis), format: .dateTime.month().day().hour().minute())
+                  Text(date(card.dateMillis), format: .dateTime.month().day())
                     .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
                 }
                 if card.unreadCount > 0 {
@@ -314,28 +309,24 @@ struct SmsView: View {
     }
   }
 
-  @ViewBuilder private func conversation(_ peer: DeviceIdentity) -> some View {
+  @ViewBuilder private func conversation(_ peer: DeviceIdentity, showBack: Bool = true) -> some View {
     let card = model.threads(peer).first { $0.key == address }
     let rows = Array(model.messages(peer, address: address).reversed())
     let mixed = model.mixedSubscriptions(peer, address: address)
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
-        Button { address = ""; draft = "" } label: { Label("Conversations", systemImage: "chevron.backward") }
-          .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme))
+        if showBack {
+          Button { address = ""; draft = "" } label: { Image(systemName: "chevron.backward") }
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Conversations")
+        }
         Text(card?.address ?? address).font(.headline).lineLimit(1).truncationMode(.middle)
         Spacer(minLength: 4)
         Button("Refresh") { model.refreshMessages(peer, address: address) }
           .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small).disabled(!model.supports(peer))
-        gear(peer)
+        if showBack { gear(peer) }
       }
-      if controlsOpen { notificationPanel(peer) }
-      if model.status(peer) != "Ready", model.status(peer) != "Sent" {
-        Text(model.status(peer)).font(.caption)
-          .foregroundStyle(model.status(peer).hasPrefix("Not confirmed") ? AniCePalette.warning(scheme) : AniCePalette.secondaryText(scheme))
-      }
-      if !model.diagnostics(peer).isEmpty {
-        Text(model.diagnostics(peer)).font(.caption2).foregroundStyle(AniCePalette.secondaryText(scheme))
-      }
+      if showBack && controlsOpen { notificationPanel(peer) }
+      statusFeedback(peer)
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 12) {
@@ -385,8 +376,8 @@ struct SmsView: View {
   }
 
   @ViewBuilder private func metadata(_ row: SmsMessageRow, peer: DeviceIdentity, mixed: Bool) -> some View {
-    Text(row.pending ? "Sending" : row.direction == 1 ? "Sent" : "Received")
-    Text(date(row.dateMillis), format: .dateTime.month().day().hour().minute())
+    if row.pending { Text("Sending") }
+    Text(date(row.dateMillis), format: .dateTime.hour().minute())
     // SIM labels appear only in a conversation that really mixes origins; an unknown incoming row stays silent.
     if mixed && (row.direction == 1 || row.subscriptionId != 0) {
       Text(model.simName(peer, subscriptionId: row.subscriptionId))
@@ -412,8 +403,10 @@ struct SmsView: View {
           return .handled
         }
       HStack(spacing: 8) {
-        Text("\(bytes) / \(SmsMessage.maxBodyBytes) B").font(.caption2)
-          .foregroundStyle(over ? AniCePalette.error(scheme) : AniCePalette.secondaryText(scheme))
+        if bytes > Int(SmsMessage.maxBodyBytes) * 3 / 4 {
+          Text("\(bytes) / \(SmsMessage.maxBodyBytes) B").font(.caption2)
+            .foregroundStyle(over ? AniCePalette.error(scheme) : AniCePalette.secondaryText(scheme))
+        }
         Spacer(minLength: 4)
         simPicker(peer)
         Button { submit(peer) } label: {
@@ -470,13 +463,25 @@ struct SmsView: View {
     VStack(alignment: .leading, spacing: 8) {
       Text(peer.deviceName).font(.subheadline.weight(.medium))
       SmsNotificationControls(preferences: preferences, peer: peer)
-      Text("Sound and message text follow the Notifications switch. The same controls sit in Settings.")
-        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      DisclosureGroup("Connection details") {
+        Text(model.status(peer)).font(.caption)
+        if !model.diagnostics(peer).isEmpty { Text(model.diagnostics(peer)).font(.caption).textSelection(.enabled) }
+      }
+
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AniCePalette.secondarySurface(scheme)))
     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AniCePalette.separator(scheme)))
+  }
+
+  @ViewBuilder private func statusFeedback(_ peer: DeviceIdentity) -> some View {
+    let status = model.status(peer)
+    let routine = ["Ready", "Sent", "Message received", "Older messages available", "All messages loaded", "No conversations on your phone"]
+    let countSummary = status.first?.isNumber == true && status.hasSuffix(" conversations")
+    if !status.isEmpty && !routine.contains(status) && !countSummary {
+      Text(status).font(.caption).foregroundStyle(status.hasPrefix("Not confirmed") ? AniCePalette.warning(scheme) : AniCePalette.secondaryText(scheme))
+    }
   }
 
   private func date(_ millis: Int64) -> Date { Date(timeIntervalSince1970: Double(millis) / 1000) }

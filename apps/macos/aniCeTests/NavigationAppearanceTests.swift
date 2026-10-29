@@ -256,3 +256,50 @@ extension SessionTests {
   }
 
 }
+
+
+@MainActor final class SettingsScrollTests: XCTestCase {
+  func testTargetsClampAndRepeatWithoutLosingCompletion() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
+    scroll.documentView = document
+    let first = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 80))
+    let last = NSView(frame: NSRect(x: 0, y: 1100, width: 450, height: 80))
+    document.addSubview(first); document.addSubview(last)
+    let coordinator = SettingsScrollCoordinator()
+    coordinator.anchors = ["first": first, "last": last]
+    var completions = 0
+    coordinator.scroll(to: "last", animated: false) { completions += 1 }
+    XCTAssertEqual(scroll.contentView.bounds.maxY, last.frame.maxY + 12, accuracy: 1)
+    let bottomOffset = scroll.contentView.bounds.origin.y
+    coordinator.scroll(to: "last", animated: false) { completions += 1 }
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, bottomOffset, accuracy: 1)
+    XCTAssertEqual(completions, 2)
+    coordinator.scroll(to: "first", animated: false) { completions += 1 }
+    XCTAssertEqual(scroll.contentView.bounds.minY, 0, accuracy: 1)
+    XCTAssertEqual(completions, 3)
+    coordinator.scroll(to: "missing", animated: false) { XCTFail("Missing targets must not report a completed jump") }
+    XCTAssertEqual(scroll.contentView.bounds.minY, 0, accuracy: 1)
+  }
+
+  func testVisibleSectionsDoNotMoveAndPartiallyHiddenHeadingsAreRevealed() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
+    scroll.documentView = document
+    let section = NSView(frame: NSRect(x: 0, y: 80, width: 450, height: 60))
+    document.addSubview(section)
+    let coordinator = SettingsScrollCoordinator()
+    coordinator.anchors["appearance"] = section
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 40))
+    coordinator.scroll(to: "appearance", animated: false) {}
+    XCTAssertEqual(scroll.contentView.bounds.minY, 40, accuracy: 1)
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+    coordinator.scroll(to: "appearance", animated: false) {}
+    XCTAssertEqual(scroll.contentView.bounds.minY, 68, accuracy: 1)
+    XCTAssertTrue(scroll.documentVisibleRect.contains(section.frame))
+  }
+}
+
+private final class FlippedSettingsDocument: NSView {
+  override var isFlipped: Bool { true }
+}

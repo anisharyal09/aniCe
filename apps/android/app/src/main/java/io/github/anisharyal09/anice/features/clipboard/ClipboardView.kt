@@ -2,13 +2,20 @@
 // Presents credential-scoped clipboard sharing and optional device-local text history.
 package io.github.anisharyal09.anice.features.clipboard
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
@@ -73,10 +80,15 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     DisposableEffect(owner.selected?.deviceId) { onDispose { owner.clearPreview() } }
     LaunchedEffect(owner.preview?.token, owner.preview?.text) { reveal = false }
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            SecondaryTabRow(selectedTabIndex = if (historyTab) 1 else 0, modifier = Modifier.weight(1f)) {
-                Tab(selected = !historyTab, onClick = { historyTab = false }, text = { Text("Share") })
-                Tab(selected = historyTab, onClick = { historyTab = true; pasted = ""; reveal = false; owner.clearPreview() }, text = { Text("History") })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.weight(1f).selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ClipboardTab("Share", selected = !historyTab, modifier = Modifier.weight(1f)) { historyTab = false }
+                ClipboardTab("History", selected = historyTab, modifier = Modifier.weight(1f)) {
+                    historyTab = true; pasted = ""; reveal = false; owner.clearPreview()
+                }
             }
             IconButton(onClick = { preferencesOpen = !preferencesOpen }, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Clipboard preferences",
@@ -114,6 +126,20 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
             TextButton(onClick = { how = !how }) { Text(if (how) "How sharing works ▴" else "How sharing works ▾") }
             if (how) Text("Manual sharing works with automatic sharing off. For text or links in another app, use Share → Send to Mac (aniCe icon). Text-selection menus also work where supported. For copied text, use the Send to Mac Quick Settings tile and tap Send in its small panel. Add the tile from More options. Connect your Mac first.\n\nFor automatic sharing, enable it on both devices, copy text, then open aniCe. Android reads copied text only while aniCe has focus. Received text replaces your clipboard, including in the background. Home shows the latest successful clipboard activity for five minutes with a short preview and local Copy for eligible text. Optional history stays on this device, organized by date with the latest items first.", style = MaterialTheme.typography.bodySmall)
         }
+    }
+}
+
+@Composable
+private fun ClipboardTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier.heightIn(min = 48.dp).clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer)
+            .selectable(selected = selected, onClick = onClick, role = Role.Tab),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

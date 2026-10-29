@@ -9,9 +9,9 @@ struct TransferNotificationControls: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Background offer notifications", isOn: Binding(get: { preferences.enabled }, set: { preferences.enabled = $0 }))
-        .aniCeControlFeedback()
+        .aniCeControlFeedback(feedbackPadding: 3)
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
-        .aniCeControlFeedback()
+        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))

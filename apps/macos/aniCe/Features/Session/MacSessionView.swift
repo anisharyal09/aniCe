@@ -184,7 +184,7 @@ struct MacSessionView: View {
     Toggle("Auto connect", isOn: Binding(
       get: { ownsBluetooth && model.automatic },
       set: { model.selectedPeer = device; model.setAutomatic($0) }))
-      .toggleStyle(.checkbox).aniCeControlFeedback().tint(AniCePalette.accent(scheme))
+      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).tint(AniCePalette.accent(scheme))
       .disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
   }
 
@@ -262,14 +262,14 @@ struct MacSessionView: View {
           Button {
             model.selectedPeer = device; model.setAutomatic(!model.automatic)
           } label: {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 4) {
               Text("Auto connect")
               Text("Reconnect when this device is available.").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
           }.buttonStyle(AniCeHoverButtonStyle()).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
           Toggle("Auto connect", isOn: Binding(get: { ownsBluetooth && model.automatic }, set: { model.selectedPeer = device; model.setAutomatic($0) }))
-            .labelsHidden().toggleStyle(.checkbox).aniCeControlFeedback().disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
-        }.padding(.vertical, 16)
+            .labelsHidden().toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+        }.padding(.vertical, 8)
         Divider()
         transportRow("Bluetooth", symbol: "antenna.radiowaves.left.and.right", state: ownsBluetooth ? model.state : "In use by another phone",
           active: ownsBluetooth && (model.allowing || model.state == "Secured"), enabled: peerAvailable,
@@ -286,12 +286,22 @@ struct MacSessionView: View {
           }
           diagnosticContent
         } label: { Text("Security and diagnostics") }.padding(.vertical, 14)
-      }.overlay(alignment: .top) { Divider() }
-      if ownsBluetooth && model.state == "Failed" { Text(model.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)).padding(.vertical, 8) }
-      if ownsLan && lan.state == "Failed" { Text(lan.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)).padding(.vertical, 8) }
+        if ownsBluetooth && model.state == "Failed" { Text(model.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)).padding(.vertical, 8) }
+        if ownsLan && lan.state == "Failed" { Text(lan.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)).padding(.vertical, 8) }
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: 9).stroke(AniCePalette.separator(scheme), lineWidth: 1.25)
+          .mask {
+            VStack(spacing: 0) {
+              Rectangle().frame(height: 10)
+              Spacer(minLength: 0)
+              Rectangle().frame(height: 10)
+            }
+          }
+          .padding(.horizontal, -8).allowsHitTesting(false)
+      }
     }.frame(maxWidth: .infinity, alignment: .leading)
       .foregroundStyle(AniCePalette.primaryText(scheme))
-      .overlay(alignment: .bottom) { Divider() }
   }
 
   private func transportRow(_ name: String, symbol: String, state: String, active: Bool, enabled: Bool,
@@ -313,7 +323,7 @@ struct MacSessionView: View {
           action
         }
       }
-    }.padding(.vertical, 14)
+    }.padding(.vertical, 10)
   }
 
   private var detailContent: some View {

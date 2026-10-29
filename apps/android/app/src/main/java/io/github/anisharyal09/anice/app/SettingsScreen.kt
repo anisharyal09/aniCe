@@ -212,42 +212,75 @@ private fun AboutScreen(context: Context) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             AboutDetailRow("Source code", "GitHub", "https://github.com/anisharyal09/aniCe", uriHandler::openUri)
             AboutDetailRow("License", "GPL-3.0-or-later", "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", uriHandler::openUri)
-            AboutDetailRow("Developer", "anisharyal09", "https://anisharyal09.com.np/", uriHandler::openUri)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.4f) {
+                    Column {
+                        AboutDetailRow("Developer", "@anisharyal09", "https://github.com/anisharyal09", uriHandler::openUri, showDivider = false)
+                        AboutProfileLinks(Modifier.align(Alignment.End), uriHandler::openUri)
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AboutDetailRow("Developer", "@anisharyal09", "https://github.com/anisharyal09", uriHandler::openUri,
+                            modifier = Modifier.weight(1f), showDivider = false)
+                        AboutProfileLinks(openUri = uriHandler::openUri)
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             IconButton(
                 onClick = { uriHandler.openUri("https://anisharyal09.com.np/support?from=anice") },
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 14.dp).size(48.dp)
             ) {
                 Icon(painterResource(R.drawable.ic_heart), contentDescription = "Support aniCe",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
             }
         }
     }
 }
 
 @Composable
-private fun AboutDetailRow(label: String, detail: String, url: String, openUri: (String) -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val compact = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.6f
-        val rowModifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            .clickable(role = Role.Button, onClickLabel = "$label, $detail") { openUri(url) }
-        if (compact) {
-            Column(rowModifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(label, style = MaterialTheme.typography.bodyMedium)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(detail, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun AboutDetailRow(label: String, detail: String, url: String, openUri: (String) -> Unit,
+    modifier: Modifier = Modifier, showDivider: Boolean = true) {
+    Column(modifier) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val compact = maxWidth < 240.dp || LocalDensity.current.fontScale >= 1.6f
+            val rowModifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                .clickable(role = Role.Button, onClickLabel = "$label, $detail") { openUri(url) }
+            if (compact) {
+                Column(rowModifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(label, style = MaterialTheme.typography.bodyMedium)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(detail, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
+                            modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
                         modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        } else {
-            Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
-                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
-                    modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        }
+        if (showDivider) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+
+@Composable
+private fun AboutProfileLinks(modifier: Modifier = Modifier, openUri: (String) -> Unit) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { openUri("https://x.com/anisharyal09") }, modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(R.drawable.ic_brand_x), contentDescription = "X profile",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp).offset(x = 4.dp))
+        }
+        IconButton(onClick = { openUri("https://www.linkedin.com/in/anisharyal09/") },
+            modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(R.drawable.ic_brand_linkedin), contentDescription = "LinkedIn profile",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp).offset(x = (-4).dp))
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }

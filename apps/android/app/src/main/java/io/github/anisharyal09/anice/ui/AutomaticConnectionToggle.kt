@@ -13,11 +13,11 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun AutomaticConnectionToggle(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit, label: String = "Connect automatically", description: String? = null) {
+fun AutomaticConnectionToggle(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit, label: String = "Connect automatically", description: String? = null, compact: Boolean = false) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
         .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
         .semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(vertical = if (description == null) 0.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.weight(1f).padding(vertical = if (description == null) 0.dp else if (compact) 6.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             if (description != null) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

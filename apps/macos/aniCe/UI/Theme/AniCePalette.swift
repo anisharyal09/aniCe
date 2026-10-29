@@ -94,8 +94,9 @@ private struct AniCeButtonFace<Label: View>: View {
 
 struct AniCeHoverButtonStyle: ButtonStyle {
   var prominent = false
+  var feedbackPadding: CGFloat = 0
   func makeBody(configuration: Configuration) -> some View {
-    AniCeHoverButtonFace(label: configuration.label, pressed: configuration.isPressed, prominent: prominent)
+    AniCeHoverButtonFace(label: configuration.label, pressed: configuration.isPressed, prominent: prominent, feedbackPadding: feedbackPadding)
   }
 }
 
@@ -103,17 +104,18 @@ private struct AniCeHoverButtonFace<Label: View>: View {
   let label: Label
   let pressed: Bool
   let prominent: Bool
+  let feedbackPadding: CGFloat
   @Environment(\.isEnabled) private var enabled
 
   var body: some View {
-    label.aniCeControlFeedback(pressed: pressed, prominent: prominent)
+    label.aniCeControlFeedback(pressed: pressed, prominent: prominent, feedbackPadding: feedbackPadding)
       .opacity(enabled ? 1 : 0.45)
   }
 }
 
 extension View {
-  func aniCeControlFeedback(pressed: Bool = false, prominent: Bool = false, cornerRadius: CGFloat = 6) -> some View {
-    modifier(AniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: cornerRadius))
+  func aniCeControlFeedback(pressed: Bool = false, prominent: Bool = false, cornerRadius: CGFloat = 6, feedbackPadding: CGFloat = 0) -> some View {
+    modifier(AniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: cornerRadius, feedbackPadding: feedbackPadding))
   }
 }
 
@@ -121,6 +123,7 @@ private struct AniCeControlFeedback: ViewModifier {
   let pressed: Bool
   let prominent: Bool
   let cornerRadius: CGFloat
+  let feedbackPadding: CGFloat
   @Environment(\.colorScheme) private var scheme
   @Environment(\.isEnabled) private var enabled
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -128,11 +131,12 @@ private struct AniCeControlFeedback: ViewModifier {
 
   func body(content: Content) -> some View {
     content
+      .contentShape(Rectangle().inset(by: -feedbackPadding))
       .overlay {
         RoundedRectangle(cornerRadius: cornerRadius)
           .fill((prominent ? AniCePalette.onAccent(scheme) : AniCePalette.accent(scheme))
             .opacity(enabled ? (pressed ? 0.12 : (hovered ? 0.055 : 0)) : 0))
-          .allowsHitTesting(false)
+          .padding(-feedbackPadding).allowsHitTesting(false)
       }
       .onHover { hovered = $0 }
       .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)

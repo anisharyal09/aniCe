@@ -4,25 +4,19 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+### Added
+
+- Native Back/Forward history with keyboard shortcuts and restoration of device, conversation and feature context.
+
 ### Changed
 
-- Open This device from Devices and Settings in a local identity sheet; flatten connection rows, tighten Devices spacing and balance Settings text sizes.
+- Apply the seamless redesign across Overview, pairing, Devices, Features, Settings and About, with shared light/dark colors, responsive layouts and native interaction feedback.
+- Reorganize playback, file transfer, Messages and Clipboard around active work, contextual preferences and consistent task navigation.
+- Refine the menu-bar companion and Quick Paste Tray for compact actions, persistent device context and keyboard use.
 
-- Simplify companion menus, open Devices from Manage devices, and align clipboard, file-send and tray actions with quiet styling. Expand Quick Paste Tray to 760 points. Messages restores each phone's own conversation and draft across phone switches and panel navigation.
+### Fixed
 
-- Reorganize Home around device context, compact file/clipboard actions, incoming approvals and simultaneous current activity, with Now Playing and File transfer side by side once workspace content reaches 720 points. Keep pairing and incoming file requests visible when visiting other sections. Expose Disconnect directly in the Home header and make Security and diagnostics a full-row action.
-
-- Apply the seamless neutral light/dark palette and compact rounded controls. Add native Back/Forward navigation that restores device, pairing, settings and feature context, with standard keyboard shortcuts.
-
-- Keep Settings groups and section dividers aligned at narrow and wide window sizes, reflow section shortcuts, and clarify the dark sidebar/header boundaries with neutral separators. Remove redundant Messages preference guidance.
-
-- Expand Mac Settings into two columns on wide windows, keep one column when narrow and highlight the selected section jump.
-
-- Return feature panels opened from Overview to Overview, retaining their original return destination when another feature opens.
-
-- Reflow About on compact windows, link Developer to GitHub.(+)
-
-- Add subtle hover and pressed feedback to Mac actions, menu triggers and native checkboxes, and briefly highlight Settings jump destinations.
+- Restore each phone's conversation and draft when switching devices or returning to Messages.
 
 ## [v0.3.0]
 
