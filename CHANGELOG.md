@@ -8,6 +8,10 @@ Repository-wide structure, documentation, and development conventions belong her
 
 ## [Unreleased]
 
+### Added
+
+- Open Android-shared HTTP(S) links in the Mac's default browser.
+
 ## [v0.3.0]
 
 Application release v0.3.0, build 3.

@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Added
+
+- Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
+
 ## [v0.3.0]
 
 ### Added

@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.features.clipboard
 
 import io.github.anisharyal09.anice.infrastructure.session.*
+import java.net.URI
 import java.util.UUID
 
 class ClipboardWireException : Exception()
@@ -22,12 +23,13 @@ data class ClipboardMessage(val kind: Long, val fields: List<Cbor>) {
                 2L -> { requireWire(fields.size == 2); revision(0); flag(1) }
                 3L -> {
                     requireWire(fields.size == 8); uuid(0); revision(1); uuid(2)
-                    requireWire(number(3) in 0..1); flag(4)
+                    requireWire(number(3) in 0..2); flag(4)
                     requireWire(number(5) in 1..65536 && number(6) == (number(5) + 3071) / 3072 && bytes(7).size == 32)
                 }
                 4L -> { requireWire(fields.size == 3); uuid(0); requireWire(number(1) in 0..21 && bytes(2).size in 1..3072) }
                 5L, 7L -> { requireWire(fields.size == 1); uuid(0) }
                 6L -> { requireWire(fields.size == 2); uuid(0); requireWire(number(1) in 0..7) }
+                8L -> requireWire(fields.isEmpty())
                 else -> throw ClipboardWireException()
             }
         } catch (_: ClassCastException) { throw ClipboardWireException() }
@@ -49,4 +51,10 @@ data class ClipboardMessage(val kind: Long, val fields: List<Cbor>) {
         fun id(kind: Long, id: String) = of(kind, Cbor.Text(id))
         fun result(id: String, code: Long) = of(6, Cbor.Text(id), Cbor.Integer(code))
     }
+}
+
+internal fun clipboardLink(value: String?): String? {
+    val text = value?.trim()?.takeIf { it.isNotEmpty() && it.none(Char::isWhitespace) } ?: return null
+    val uri = runCatching { URI(text) }.getOrNull() ?: return null
+    return text.takeIf { (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank() }
 }
