@@ -1514,6 +1514,7 @@ enum TransferEvent: Equatable {
       failTransfer(reason: "No secured local-network or Bluetooth connection")
       return
     }
+    // Rendezvous can replace the active channel while this operation is suspended.
     if let reviewedPeer, (initialChannel.descriptor.peer.deviceId != reviewedPeer.deviceId ||
       initialChannel.descriptor.peer.fingerprint != reviewedPeer.fingerprint) {
       failTransfer(reason: "The connected device changed. Review the selected files before sending.")

@@ -186,7 +186,7 @@ struct MacPairingView: View {
   // MARK: - Trusted Devices Panel
 
   private var trustedDevicesPanel: some View {
-    VStack(alignment: .leading, spacing: 14) {
+    VStack(alignment: .leading, spacing: 8) {
       HStack {
         Text("Trusted devices")
           .font(.headline)
@@ -228,9 +228,7 @@ struct MacPairingView: View {
               .buttonStyle(AniCeButtonStyle())
               .controlSize(.small)
             }
-            .padding(12)
-            .background(
-              AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.vertical, 6)
           }
         }
       }
@@ -243,8 +241,8 @@ struct MacPairingView: View {
         .controlSize(.small)
       }
     }
-    .padding(20)
+    // The enclosing Devices disclosure supplies the group; peers remain flat rows.
+    .padding(.vertical, 4)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
   }
 }

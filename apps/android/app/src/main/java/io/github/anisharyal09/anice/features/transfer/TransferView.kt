@@ -73,6 +73,7 @@ class TransferSendReview internal constructor(private val controller: TransferCo
     }
 
     internal fun resolved(selection: List<TransferReviewFile>, revision: Long) {
+        // Ignore metadata returned for a dismissed or replaced picker selection.
         if (revision != selectionRevision || !visible) return
         files = selection
         resolving = false

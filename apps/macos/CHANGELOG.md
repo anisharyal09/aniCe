@@ -6,17 +6,19 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Native Back/Forward history with keyboard shortcuts and restoration of device, conversation and feature context.
+- Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
+- Review selected files and their recipient before sending; reject sends when the reviewed device changes.
+- Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.
+- Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
 
 ### Changed
 
-- Apply the seamless redesign across Overview, pairing, Devices, Features, Settings and About, with shared light/dark colors, responsive layouts and native interaction feedback.
-- Reorganize playback, file transfer, Messages and Clipboard around active work, contextual preferences and consistent task navigation.
-- Refine the menu-bar companion and Quick Paste Tray for compact actions, persistent device context and keyboard use.
-
-### Fixed
-
-- Restore each phone's conversation and draft when switching devices or returning to Messages.
+- Apply neutral light/dark colors, a split window header, compact controls and consistent hover, pressed and focus feedback.
+- Reorganize Overview with device status, send actions, responsive playback/transfer columns and recent activity.
+- Rework Devices and pairing with compact transport rows, security and trust disclosures and native approval sheets.
+- Replace feature launcher tiles with compact rows; group Settings with section shortcuts and center About content at wide sizes.
+- Reorganize playback, file transfer, Messages and Clipboard, including split conversations, a bottom SMS composer and separate Share/History tabs.
+- Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
 
 ## [v0.3.0]
 

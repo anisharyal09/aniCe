@@ -180,12 +180,12 @@ private fun DevicesOverviewContent(
     var showingIdentity by rememberSaveable { mutableStateOf(false) }
     val localName = identity.state.snapshot?.identity?.deviceName
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
             Text("Devices", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
             Text("Connection and trust.", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
             if (pairing.peers.isEmpty()) Text("No devices paired yet", style = MaterialTheme.typography.bodySmall)
             SessionPanel(
                 session,
@@ -195,6 +195,7 @@ private fun DevicesOverviewContent(
                 focusedPeer = navigation.focusedPeer,
                 onFocusConsumed = { navigation.focusedPeer = null },
             )
+            Spacer(Modifier.height(8.dp))
             TrustedDevicesSection(pairing)
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)

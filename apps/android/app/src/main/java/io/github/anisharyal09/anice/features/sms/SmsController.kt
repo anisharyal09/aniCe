@@ -829,6 +829,7 @@ class SmsController(
                     val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
                     displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, stamp, 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME, echoSeq, echoSortMillis)
                     upsertSentThread(address, clean, stamp)
+                    // Completing an older send must not erase text typed while it was pending.
                     if (draftKey != null && drafts[draftKey] == text) drafts.remove(draftKey)
                     refreshConversation(); status = "Message sent"
                     if (outcome.messageId.isEmpty()) recheckPendingEcho()

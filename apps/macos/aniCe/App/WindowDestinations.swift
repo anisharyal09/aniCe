@@ -137,7 +137,7 @@ extension MainWindowView {
           }
           DisclosureGroup("Trust and saved devices") {
             MacPairingView(model: pairing, showPairingControls: false)
-          }.font(.callout).frame(minHeight: 36, alignment: .leading)
+          }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
 
         Divider()
         Button { showingLocalIdentity = true } label: {
@@ -484,6 +484,7 @@ private struct SettingsSectionLayout: Layout {
     var target = anchor.convert(anchor.bounds, to: document)
     let clip = scroll.contentView
     let visible = scroll.documentVisibleRect
+    // Oversized groups reveal their heading rather than trying to fit the entire group.
     if target.height > visible.height - 24 {
       let height = max(0, visible.height - 24)
       if !document.isFlipped { target.origin.y = target.maxY - height }

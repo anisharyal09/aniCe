@@ -10,8 +10,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
-- Redesign Android and macOS around shared neutral light/dark colors, compact native controls, consistent device context and feature navigation. Refine Home, pairing, Devices, Settings, About, playback, file transfer, Messages, Clipboard and the Mac companion/tray; see the component changelogs for platform behavior.
-- Consolidate the shared UI/UX specification, semantic palette samples, accessibility requirements and platform adaptations in the [design guide](docs/design/DESIGN.md).
+- Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.
+- Expand the [design guide](docs/design/DESIGN.md) with screen layouts, interaction states, accessibility requirements and semantic palette samples.
+- Run branch push CI for `seamless-redesign`.
 
 ## [v0.3.0]
 

@@ -136,6 +136,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                             AppDestination.primary.forEach { page ->
                                 val selected = navigation.destination == page
                                 val destinationView = remember { BringIntoViewRequester() }
+                                // Back and deep links can select a destination outside the visible strip.
                                 LaunchedEffect(selected, navigationScroll.viewportSize) {
                                     if (selected && navigationScroll.viewportSize > 0) {
                                         destinationView.bringIntoView()

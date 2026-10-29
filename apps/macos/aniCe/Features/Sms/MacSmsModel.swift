@@ -282,6 +282,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private let wait: (TimeInterval) async throws -> Void
   private var links: [String: Link] = [:]
   private var peers: [String: PeerState] = [:]
+  // Drafts outlive transport links but remain memory-only and scoped to full peer credentials.
   private var drafts: [String: String] = [:]
   private var selectedConversations: [String: String] = [:]
   private(set) var selectedPhoneKey = ""

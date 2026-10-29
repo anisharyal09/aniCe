@@ -136,6 +136,7 @@ private struct AniCeControlFeedback: ViewModifier {
         RoundedRectangle(cornerRadius: cornerRadius)
           .fill((prominent ? AniCePalette.onAccent(scheme) : AniCePalette.accent(scheme))
             .opacity(enabled ? (pressed ? 0.12 : (hovered ? 0.055 : 0)) : 0))
+          // Feedback may extend around bare labels without intercepting their native control.
           .padding(-feedbackPadding).allowsHitTesting(false)
       }
       .onHover { hovered = $0 }

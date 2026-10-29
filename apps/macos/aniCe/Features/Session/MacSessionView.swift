@@ -256,8 +256,8 @@ struct MacSessionView: View {
           case .allow, .retry: model.selectedPeer = device; model.allow()
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
-      }.padding(.vertical, 14)
-      VStack(alignment: .leading, spacing: 0) {
+      }.padding(.vertical, 14).padding(.bottom, 4)
+      VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 16) {
           Button {
             model.selectedPeer = device; model.setAutomatic(!model.automatic)

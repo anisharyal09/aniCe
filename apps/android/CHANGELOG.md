@@ -6,19 +6,18 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- At 150% text size or above, scroll the bottom destination bar horizontally to keep full destination names readable.
+- Review selected files and their recipient before sending; require renewed review when the connected device changes.
+- Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
+- Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
+- Keep full bottom-navigation labels accessible through horizontal scrolling at text sizes of 150% or above.
 
 ### Changed
 
-- Apply the seamless redesign across Home, pairing, Devices, Features, Settings and About while preserving native touch targets and text scaling.
-- Use compact connection controls, contextual feature preferences and consistent return navigation; keep incoming approvals visible during active work.
-- Align playback, file transfer, Messages and Clipboard with the shared cross-platform hierarchy and feedback patterns.
-
-### Fixed
-
-- Preserve SMS drafts, SIM selection and pending sends; prevent duplicate submission and retain newer drafts after completion.
-- Ignore stale file-review metadata after dismissal or replacement and retain review when metadata is unavailable.
-- Reveal the selected destination after Back/deep links at large text sizes and omit empty Recent headings.
+- Replace the app palette and control styling with neutral light/dark colors, compact button faces and native accessible touch targets.
+- Reorganize Home around device status, send actions, playback, transfers and available recent activity.
+- Rework Devices and pairing with direct transport controls, inline security and trust disclosures, QR scanning and code entry.
+- Use compact feature rows, grouped Settings and a responsive About layout.
+- Reorganize playback, file transfer, Messages and Clipboard with contextual controls, chronological message threads, a bottom SMS composer and separate Share/History tabs.
 
 ## [v0.3.0]
 

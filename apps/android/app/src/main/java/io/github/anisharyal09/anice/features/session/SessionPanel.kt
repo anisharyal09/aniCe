@@ -100,7 +100,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     if (!canUsePeer) add("Disconnect your current Mac to connect to this one.")
                     if (!active && !waiting && isEmpty()) add("Tap Connect on both devices.")
                 }.joinToString("\n")
-                Column(Modifier.fillMaxWidth().padding(vertical = if (compact || flatDeviceLayout) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else if (flatDeviceLayout) 0.dp else 8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(vertical = if (compact || flatDeviceLayout) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else if (flatDeviceLayout) 4.dp else 8.dp)) {
                 DeviceSessionCard(record.peer.deviceName, summary.state,
                     if (compact) "" else feedback, canUsePeer, { connect(record) }, model::disconnect,
                     onConnectionDetails = { if (compact) onOpenDevice(record.peer.deviceId) else { diagnostics = false; showEvents = false; details = if (details == record.peer.deviceId + ":" + record.peer.fingerprint) null else record.peer.deviceId + ":" + record.peer.fingerprint } },
@@ -113,12 +113,20 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         drawContent()
                         if (flatDeviceLayout) {
                             val radius = 9.dp.toPx()
-                            clipRect(bottom = radius) { drawRoundRect(groupOutline, cornerRadius = CornerRadius(radius), style = Stroke(1.5.dp.toPx())) }
-                            clipRect(top = size.height - radius) { drawRoundRect(groupOutline, cornerRadius = CornerRadius(radius), style = Stroke(1.5.dp.toPx())) }
+                            // Extend only the curved ends beyond the shared label gutter, as on Mac.
+                            val edge = 8.dp.toPx()
+                            val origin = androidx.compose.ui.geometry.Offset(-edge, 0f)
+                            val bounds = androidx.compose.ui.geometry.Size(size.width + edge * 2, size.height)
+                            clipRect(left = -edge, right = size.width + edge, bottom = radius) {
+                                drawRoundRect(groupOutline, topLeft = origin, size = bounds, cornerRadius = CornerRadius(radius), style = Stroke(1.5.dp.toPx()))
+                            }
+                            clipRect(left = -edge, right = size.width + edge, top = size.height - radius) {
+                                drawRoundRect(groupOutline, topLeft = origin, size = bounds, cornerRadius = CornerRadius(radius), style = Stroke(1.5.dp.toPx()))
+                            }
                         }
                     }
                     .then(if (flatDeviceLayout) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small))
-                    .padding(horizontal = if (flatDeviceLayout) 0.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (flatDeviceLayout) 2.dp else 4.dp)) {
+                    .padding(horizontal = if (flatDeviceLayout) 0.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!compact && nearby.available) {
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint
@@ -252,12 +260,14 @@ private fun TransportDetails(name: String, state: ConnectionState, status: Strin
     onConnect: () -> Unit, onDisconnect: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Icon(painterResource(if (name == "Bluetooth") R.drawable.ic_bluetooth else R.drawable.ic_wifi), contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 10.dp).size(20.dp))
+            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp).size(24.dp))
         Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Text(stateLabel(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 10.dp))
         val active = state == ConnectionState.CONNECTING || state == ConnectionState.SECURED
-        OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp), onClick = if (active) onDisconnect else onConnect,
+        OutlinedButton(shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp), onClick = if (active) onDisconnect else onConnect,
             enabled = active || canConnect, modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                 .semantics { contentDescription = "${when (state) {
                     ConnectionState.CONNECTING -> "Cancel"
@@ -313,17 +323,18 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
         }
         return
     }
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(painterResource(R.drawable.ic_laptop), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
             Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
-                onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
+                onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 Text(if (state == ConnectionState.SECURED) "Connected" else summary,
                     style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
-            if (showConnectionAction) OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+            if (showConnectionAction) OutlinedButton(shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
                 onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
                 enabled = action == "Disconnect" || action == "Cancel" || canConnect,
                 modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }

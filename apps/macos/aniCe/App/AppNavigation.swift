@@ -102,6 +102,7 @@ enum WindowAppearance: String, CaseIterable {
     var target = route
     update(&target)
     guard target != route else { return }
+    // A new destination after Back starts a new branch of presentation history.
     previous.append(route)
     next.removeAll()
     route = target

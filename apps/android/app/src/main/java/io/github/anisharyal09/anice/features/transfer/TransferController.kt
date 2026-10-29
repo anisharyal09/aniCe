@@ -1703,6 +1703,7 @@ class TransferController(
                         preparing = false; preparation = null
                         // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
                         if (channels["lan"] != null && capabilities["lan"] != null) selectPreferredChannel()
+                        // File preparation may finish after the selected connection has changed.
                         if (reviewedPeer != null && (activeChannel?.descriptor?.peer?.deviceId != reviewedPeer.first ||
                                 activeChannel?.descriptor?.peer?.fingerprint != reviewedPeer.second)) {
                             failTransfer("The connected device changed. Review the selected files before sending.")
