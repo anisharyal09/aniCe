@@ -40,12 +40,12 @@ struct MediaView: View {
         HStack {
           if let open {
             Button(action: open) { HStack { Label("Now playing", systemImage: "music.note"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }.font(.headline).contentShape(Rectangle()) }
-              .buttonStyle(.plain).accessibilityLabel("Open Now Playing")
+              .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Now Playing")
           } else { Label("Now playing", systemImage: "music.note").font(.headline) }
           Spacer()
           Text("On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-          Button { expanded.toggle() } label: { Image(systemName: "ellipsis") }
-            .buttonStyle(.plain).accessibilityLabel("More playback controls")
+          Button { expanded.toggle() } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("More playback controls")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         }
       } else {
@@ -66,8 +66,9 @@ struct MediaView: View {
               Button("Verify player volume", action: model.verifyPlayerVolume).disabled(model.busy)
             }
             if !model.feedback.isEmpty { Button("Retry observation", action: model.retryObservation) }
-          } label: { Image(systemName: "ellipsis") }
-            .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Playback options")
+          } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+            .menuStyle(.borderlessButton).aniCeControlFeedback()
+            .fixedSize().accessibilityLabel("Playback options")
         }
       }
       if compact && (expanded || model.sources.count > 1) {
@@ -173,11 +174,11 @@ struct MediaView: View {
             Text("Now Playing").font(.system(size: 14, weight: .medium))
             Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true)
           }.contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("Open Now Playing")
+        }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Now Playing")
         Spacer()
         Text(origin ?? "This Mac").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-        Button { expanded.toggle() } label: { Image(systemName: "ellipsis") }
-          .buttonStyle(.plain).accessibilityLabel("More playback controls")
+        Button { expanded.toggle() } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+          .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("More playback controls")
           .accessibilityValue(expanded ? "Expanded" : "Collapsed")
       }
       HStack(alignment: .top, spacing: 16) {
@@ -250,7 +251,7 @@ struct MediaView: View {
         .frame(width: action == 1 ? 40 : 32, height: 32)
         .foregroundStyle(action == 1 && !overview ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
         .background { if action == 1 { RoundedRectangle(cornerRadius: 7).fill(overview ? AniCePalette.subtleAccent(scheme) : AniCePalette.accent(scheme)) } }
-    }.buttonStyle(.plain)
+    }.buttonStyle(AniCeHoverButtonStyle(prominent: action == 1 && !overview))
       .disabled(model.busy || media.actions & mask == 0).accessibilityLabel(label)
   }
   static func time(_ seconds: Double) -> String { let value=Int(max(0,seconds)); return String(format:"%d:%02d",value/60,value%60) }

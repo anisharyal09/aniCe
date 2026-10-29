@@ -59,22 +59,82 @@ enum AniCePalette {
 struct AniCeButtonStyle: ButtonStyle {
   var prominent = false
   var quiet = false
+  func makeBody(configuration: Configuration) -> some View {
+    AniCeButtonFace(label: configuration.label, pressed: configuration.isPressed,
+      prominent: prominent, quiet: quiet)
+  }
+}
+
+private struct AniCeButtonFace<Label: View>: View {
+  let label: Label
+  let pressed: Bool
+  let prominent: Bool
+  let quiet: Bool
   @Environment(\.colorScheme) private var scheme
   @Environment(\.isEnabled) private var enabled
   @Environment(\.isFocused) private var focused
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
+
+  var body: some View {
+    label
       .font(.system(size: 13, weight: .medium))
       .foregroundStyle(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
       .padding(.horizontal, quiet ? 0 : 12).padding(.vertical, 7)
       .frame(minHeight: quiet ? 30 : 32)
-      .background(configuration.isPressed ? AniCePalette.subtleAccent(scheme) : prominent ? AniCePalette.accent(scheme) : quiet ? .clear : AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 7))
+      .background(prominent ? AniCePalette.accent(scheme) : (quiet ? .clear : AniCePalette.surface(scheme)), in: RoundedRectangle(cornerRadius: 7))
       .overlay {
         if !quiet || focused {
           RoundedRectangle(cornerRadius: 7).stroke(focused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme), lineWidth: focused ? 2 : 1)
         }
       }
       .contentShape(RoundedRectangle(cornerRadius: 7))
+      .aniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: 7)
       .opacity(enabled ? 1 : 0.45)
+  }
+}
+
+struct AniCeHoverButtonStyle: ButtonStyle {
+  var prominent = false
+  func makeBody(configuration: Configuration) -> some View {
+    AniCeHoverButtonFace(label: configuration.label, pressed: configuration.isPressed, prominent: prominent)
+  }
+}
+
+private struct AniCeHoverButtonFace<Label: View>: View {
+  let label: Label
+  let pressed: Bool
+  let prominent: Bool
+  @Environment(\.isEnabled) private var enabled
+
+  var body: some View {
+    label.aniCeControlFeedback(pressed: pressed, prominent: prominent)
+      .opacity(enabled ? 1 : 0.45)
+  }
+}
+
+extension View {
+  func aniCeControlFeedback(pressed: Bool = false, prominent: Bool = false, cornerRadius: CGFloat = 6) -> some View {
+    modifier(AniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: cornerRadius))
+  }
+}
+
+private struct AniCeControlFeedback: ViewModifier {
+  let pressed: Bool
+  let prominent: Bool
+  let cornerRadius: CGFloat
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.isEnabled) private var enabled
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var hovered = false
+
+  func body(content: Content) -> some View {
+    content
+      .overlay {
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .fill((prominent ? AniCePalette.onAccent(scheme) : AniCePalette.accent(scheme))
+            .opacity(enabled ? (pressed ? 0.12 : (hovered ? 0.055 : 0)) : 0))
+          .allowsHitTesting(false)
+      }
+      .onHover { hovered = $0 }
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
   }
 }

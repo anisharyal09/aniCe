@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -180,21 +181,38 @@ private fun AboutScreen(context: Context) {
             Text("About", style = MaterialTheme.typography.titleMedium)
             Text("Connect your Mac and Android.", Modifier.padding(top = 6.dp, bottom = 16.dp),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(painterResource(R.drawable.ic_link), contentDescription = null,
-                    modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(12.dp))
-                Text("aniCe", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (version.isNotEmpty()) Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val compact = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.4f
+                if (compact) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(painterResource(R.drawable.ic_link), contentDescription = null,
+                                modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("aniCe", style = MaterialTheme.typography.titleMedium)
+                        }
+                        Column(Modifier.padding(start = 32.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (version.isNotEmpty()) Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_link), contentDescription = null,
+                            modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(12.dp))
+                        Text("aniCe", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (version.isNotEmpty()) Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             AboutDetailRow("Source code", "GitHub", "https://github.com/anisharyal09/aniCe", uriHandler::openUri)
             AboutDetailRow("License", "GPL-3.0-or-later", "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", uriHandler::openUri)
-            AboutDetailRow("Made by", "anisharyal09", "https://anisharyal09.com.np/", uriHandler::openUri)
+            AboutDetailRow("Developer", "anisharyal09", "https://anisharyal09.com.np/", uriHandler::openUri)
             IconButton(
                 onClick = { uriHandler.openUri("https://anisharyal09.com.np/support?from=anice") },
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 14.dp).size(48.dp)
@@ -208,15 +226,28 @@ private fun AboutScreen(context: Context) {
 
 @Composable
 private fun AboutDetailRow(label: String, detail: String, url: String, openUri: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            .clickable(role = Role.Button, onClickLabel = "$label, $detail") { openUri(url) },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
-            modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.6f
+        val rowModifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            .clickable(role = Role.Button, onClickLabel = "$label, $detail") { openUri(url) }
+        if (compact) {
+            Column(rowModifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(detail, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
+                        modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
+                Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
+                    modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }

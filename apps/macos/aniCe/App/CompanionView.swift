@@ -28,8 +28,9 @@ struct CompanionView: View {
           Button("Manage devices") { navigation.open(.devices, present: openMain) }
           Button("Settings") { navigation.open(.settings, present: openMain) }
           Button("Quit aniCe") { NSApp.terminate(nil) }
-        } label: { Image(systemName: "ellipsis") }
-          .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("More options")
+        } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+          .menuStyle(.borderlessButton).aniCeControlFeedback()
+          .menuIndicator(.hidden).fixedSize().accessibilityLabel("More options")
       }
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
@@ -158,7 +159,7 @@ struct CompanionView: View {
           Spacer()
           Image(systemName: "arrow.up.right").accessibilityHidden(true)
         }.contentShape(Rectangle())
-      }.buttonStyle(.plain).foregroundStyle(AniCePalette.accent(colorScheme))
+      }.buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
     }
   }
 }

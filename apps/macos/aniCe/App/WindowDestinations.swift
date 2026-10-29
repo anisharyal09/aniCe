@@ -91,7 +91,7 @@ extension MainWindowView {
       Button { navigation.openFeature(.files) } label: {
         HStack(spacing: 8) { Text("File transfer"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }
           .font(.system(size: 14, weight: .medium)).contentShape(Rectangle())
-      }.buttonStyle(.plain)
+      }.buttonStyle(AniCeHoverButtonStyle())
       if transfer.state == .idle && !transfer.preparing {
         HStack(spacing: 16) {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -148,7 +148,7 @@ extension MainWindowView {
             Spacer()
             Image(systemName: "chevron.forward").accessibilityHidden(true)
           }.padding(.vertical, 8).contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        }.buttonStyle(AniCeHoverButtonStyle())
         Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -159,12 +159,12 @@ extension MainWindowView {
             Text("Pair a device").font(.system(size: 20, weight: .medium))
             Spacer()
             Button { navigation.show(.devices) } label: { Image(systemName: "xmark") }
-              .buttonStyle(.plain).accessibilityLabel("Close pairing")
+              .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Close pairing")
           }
           Toggle("Connect automatically after pairing", isOn: Binding(
             get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
             set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
-            .toggleStyle(.checkbox).disabled(pairing.phase == "paired")
+            .toggleStyle(.checkbox).aniCeControlFeedback().disabled(pairing.phase == "paired")
           MacPairingView(model: pairing, embedded: true, showTrustedDevices: false)
           HStack {
             Spacer()
@@ -183,30 +183,46 @@ extension MainWindowView {
         Text("About").font(.system(size: 20, weight: .medium))
         Text("Connect your Mac and Android.").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {
-          HStack(spacing: 12) {
-            Image(systemName: "link").font(.system(size: 17)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              .frame(width: 20).accessibilityHidden(true)
-            Text("aniCe").font(.system(size: 20, weight: .medium))
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-              Text("macOS + Android").font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              if let version = aboutVersion { Text(version).font(.system(size: 11)).foregroundStyle(AniCePalette.secondaryText(colorScheme)) }
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+              aboutMark
+              Text("aniCe").font(.system(size: 20, weight: .medium))
+              Spacer(minLength: 8)
+              aboutProductDetails(alignment: .trailing)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+              HStack(spacing: 12) {
+                aboutMark
+                Text("aniCe").font(.system(size: 20, weight: .medium))
+              }
+              aboutProductDetails(alignment: .leading).padding(.leading, 32)
             }
           }
           .padding(.vertical, 16)
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
           aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
           aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
-          aboutLink("Made by", detail: "anisharyal09", destination: "https://anisharyal09.com.np/")
-          Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
-            Image(systemName: "heart")
-              .font(.system(size: 16))
-              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              .frame(width: 40, height: 40)
-              .contentShape(RoundedRectangle(cornerRadius: 7))
-              .frame(maxWidth: .infinity)
+          aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09")
+          HStack(spacing: 6) {
+            Link(destination: URL(string: "https://x.com/anisharyal09")!) {
+              Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("X profile").help("X profile")
+            Link(destination: URL(string: "https://www.linkedin.com/in/anisharyal09/")!) {
+              Text("in").font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("LinkedIn profile").help("LinkedIn profile")
+            Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+              Image(systemName: "heart").font(.system(size: 16))
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Support aniCe").help("Support aniCe")
           }
-          .buttonStyle(.plain).accessibilityLabel("Support aniCe").help("Support aniCe")
           .padding(.top, 14)
         }
         .frame(maxWidth: 660, alignment: .leading)
@@ -222,22 +238,37 @@ extension MainWindowView {
     return "Version v" + version + (channel.isEmpty ? "" : "-" + channel)
   }
 
+  private var aboutMark: some View {
+    Image(systemName: "link").font(.system(size: 17)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      .frame(width: 20).accessibilityHidden(true)
+  }
+
+  private func aboutProductDetails(alignment: HorizontalAlignment) -> some View {
+    VStack(alignment: alignment, spacing: 2) {
+      Text("macOS + Android").font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false)
+      if let version = aboutVersion { Text(version).font(.system(size: 11)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false) }
+    }
+  }
+
   @ViewBuilder private func aboutLink(_ title: String, detail: String, destination: String) -> some View {
     if let url = URL(string: destination) {
+      let hovered = hoveredAboutLink == title
       Link(destination: url) {
         HStack(spacing: 16) {
           Text(title).font(.system(size: 13)).foregroundStyle(AniCePalette.primaryText(colorScheme))
           Spacer()
           HStack(spacing: 8) {
-            Text(detail).font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            Text(detail).font(.system(size: 12)).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+            Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
               .accessibilityHidden(true)
           }
         }
         .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(AniCeHoverButtonStyle())
+      .onHover { isHovered in hoveredAboutLink = isHovered ? title : (hoveredAboutLink == title ? nil : hoveredAboutLink) }
+      .animation(.easeOut(duration: 0.14), value: hovered)
       .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
       .accessibilityLabel("\(title), \(detail)")
     }
@@ -286,7 +317,7 @@ extension MainWindowView {
                 preferenceSection("Connection", id: "connection") {
                   VStack(alignment: .leading, spacing: 5) {
                     Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                      .toggleStyle(.checkbox).controlSize(.small)
+                      .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small)
                     Text("Enable on both devices to use Wi-Fi.").font(.caption)
                       .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
                   }.frame(minHeight: 48, alignment: .leading)
@@ -305,7 +336,7 @@ extension MainWindowView {
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-                    .toggleStyle(.checkbox).controlSize(.small).frame(minHeight: 48)
+                    .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small).frame(minHeight: 48)
                 }
                 preferenceSection("This device", id: "this-device") {
                   Button { showingLocalIdentity = true } label: {
@@ -318,7 +349,7 @@ extension MainWindowView {
                       Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
                     }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-                  }.buttonStyle(.plain).accessibilityLabel("This device, identity and security")
+                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
                 }
               }
             }
@@ -328,6 +359,12 @@ extension MainWindowView {
           }
         }
       }
+      .task(id: focusedSettingsSection) {
+        guard focusedSettingsSection != nil else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        guard !Task.isCancelled else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { focusedSettingsSection = nil }
+      }
     }
   }
 
@@ -336,12 +373,14 @@ extension MainWindowView {
     id: String,
     @ViewBuilder content: () -> Content
   ) -> some View {
+    let focused = focusedSettingsSection == id
     let group = VStack(alignment: .leading, spacing: 0, content: content)
       .font(.system(size: 13))
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 14)
-      .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
-      .overlay { RoundedRectangle(cornerRadius: 10).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5) }
+      .background(focused ? AniCePalette.subtleAccent(colorScheme) : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+      .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
     VStack(alignment: .leading, spacing: 8) {
       Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       group
@@ -353,19 +392,23 @@ extension MainWindowView {
 
   private func settingsJump(_ label: String, id: String, proxy: ScrollViewProxy) -> some View {
     let selected = activeSettingsSection == id
+    let hovered = hoveredSettingsSection == id
     return Button {
       activeSettingsSection = id
-      withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .top) }
+      focusedSettingsSection = id
+      withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .top) }
     } label: {
       Text(label)
         .font(.system(size: 12, weight: selected ? .medium : .regular))
-        .foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+        .foregroundStyle(selected || hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
         .padding(.horizontal, 9).padding(.vertical, 5)
         .background(selected ? AniCePalette.subtleAccent(colorScheme) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? AniCePalette.separator(colorScheme) : .clear, lineWidth: 0.75) }
         .contentShape(RoundedRectangle(cornerRadius: 6))
     }
-    .buttonStyle(.plain)
+    .buttonStyle(AniCeHoverButtonStyle())
+    .onHover { isHovered in hoveredSettingsSection = isHovered ? id : (hoveredSettingsSection == id ? nil : hoveredSettingsSection) }
+    .animation(.easeOut(duration: 0.14), value: hovered)
     .accessibilityAddTraits(selected ? .isSelected : [])
     .accessibilityHint("Scroll to \(label) settings")
   }

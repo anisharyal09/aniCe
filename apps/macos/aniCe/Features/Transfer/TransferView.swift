@@ -9,7 +9,9 @@ struct TransferNotificationControls: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Background offer notifications", isOn: Binding(get: { preferences.enabled }, set: { preferences.enabled = $0 }))
+        .aniCeControlFeedback()
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
+        .aniCeControlFeedback()
         .disabled(!preferences.enabled)
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
@@ -71,10 +73,11 @@ struct TransferView: View {
           Spacer()
           if let open {
             Button(action: open) { Image(systemName: "chevron.forward") }
-              .buttonStyle(.plain).accessibilityLabel("Open file transfer")
+              .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open file transfer")
           }
           Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
-            .labelStyle(.iconOnly).buttonStyle(.borderless)
+            .labelStyle(.iconOnly).frame(width: 24, height: 24)
+            .buttonStyle(.borderless).aniCeControlFeedback()
             .help("File transfer notification settings")
         }
         if controlsOpen {
@@ -90,7 +93,7 @@ struct TransferView: View {
           Text("Preparing files…").font(.caption)
           Spacer()
           Button("Cancel") { model.cancelTransfer() }
-            .buttonStyle(.bordered)
+            .buttonStyle(.bordered).aniCeControlFeedback()
             .controlSize(.small)
         }
       }
@@ -133,7 +136,7 @@ struct TransferView: View {
         } label: {
           Label("Send…", systemImage: "arrow.up.circle")
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
         .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
       }
@@ -168,7 +171,7 @@ struct TransferView: View {
         } label: {
           Text("Choose files")
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
         .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
       }
@@ -201,7 +204,7 @@ struct TransferView: View {
       Button("Cancel", role: .cancel) {
         model.cancelTransfer(local: true)
       }
-      .buttonStyle(.bordered)
+      .buttonStyle(.bordered).aniCeControlFeedback()
       .controlSize(.small)
     }
   }
@@ -256,7 +259,7 @@ struct TransferView: View {
             selectedFolder = url
           }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
       }
 
@@ -264,13 +267,13 @@ struct TransferView: View {
         Button("Accept") {
           Task { await model.acceptIncomingOffer(destination: selectedFolder) }
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
         .controlSize(.small)
 
         Button("Decline", role: .cancel) {
           Task { await model.rejectIncomingOffer(reason: 0) }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
       }
     }
@@ -323,7 +326,7 @@ struct TransferView: View {
       Button("Cancel", role: .cancel) {
         model.cancelTransfer(local: true)
       }
-      .buttonStyle(.bordered)
+      .buttonStyle(.bordered).aniCeControlFeedback()
       .controlSize(.small)
     }
   }
@@ -377,13 +380,13 @@ struct TransferView: View {
           Button("Continue over Bluetooth") {
             model.resumeOverBluetooth()
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
           .controlSize(.small)
         }
         Button("Cancel", role: .cancel) {
           model.cancelTransfer(local: true)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
       }
     }
@@ -412,14 +415,14 @@ struct TransferView: View {
           Button("Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting(model.publishedURLs)
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
           .controlSize(.small)
         } else if !model.receiving {
           Button {
             model.dismiss()
             promptAndSendFiles()
           } label: { Label("Send more…", systemImage: "arrow.up.circle") }
-          .buttonStyle(.bordered)
+          .buttonStyle(.bordered).aniCeControlFeedback()
           .controlSize(.small)
           .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
         }
@@ -427,7 +430,7 @@ struct TransferView: View {
         Button("Done") {
           model.dismiss()
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
       }
     }
@@ -449,14 +452,14 @@ struct TransferView: View {
           Button("Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting(model.publishedURLs)
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
           .controlSize(.small)
         } else if isError {
           Button("Try again") {
             model.dismiss()
             promptAndSendFiles()
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
           .controlSize(.small)
           .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
         }
@@ -464,7 +467,7 @@ struct TransferView: View {
         Button("Dismiss") {
           model.dismiss()
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.bordered).aniCeControlFeedback()
         .controlSize(.small)
       }
     }

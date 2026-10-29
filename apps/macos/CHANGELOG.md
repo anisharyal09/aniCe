@@ -20,6 +20,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Return feature panels opened from Overview to Overview, retaining their original return destination when another feature opens.
 
+- Reflow About on compact windows, link Developer to GitHub.(+)
+
+- Add subtle hover and pressed feedback to Mac actions, menu triggers and native checkboxes, and briefly highlight Settings jump destinations.
+
 ## [v0.3.0]
 
 ### Added

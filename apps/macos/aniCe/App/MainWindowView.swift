@@ -19,9 +19,13 @@ struct MainWindowView: View {
   let sms: MacSmsModel
   let smsPreferences: SmsPreferences
   @Bindable var navigation: ConnectionNavigation
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
   @State var activeSettingsSection = "appearance"
+  @State var hoveredSettingsSection: String?
+  @State var hoveredAboutLink: String?
+  @State var focusedSettingsSection: String?
   @State var showingLocalIdentity = false
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
@@ -138,7 +142,7 @@ struct MainWindowView: View {
       }.foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
         .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
         .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-    }.buttonStyle(.plain).accessibilityAddTraits(selected ? [.isSelected] : [])
+    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityAddTraits(selected ? [.isSelected] : [])
       .padding(.bottom, 4)
   }
 
@@ -149,9 +153,11 @@ struct ClickableDisclosureStyle: DisclosureGroupStyle {
     VStack(alignment: .leading, spacing: 10) {
       Button { configuration.isExpanded.toggle() } label: {
         HStack {
-          Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.forward")
-            .font(.caption).accessibilityHidden(true)
-          configuration.label
+          HStack {
+            Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.forward")
+              .font(.caption).accessibilityHidden(true)
+            configuration.label
+          }.aniCeControlFeedback()
           Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain)
@@ -182,7 +188,7 @@ struct PendingRequestRow: View {
           .padding(.horizontal, 10).padding(.vertical, 5)
           .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(scheme)) }
       }.padding(.horizontal, 24).padding(.vertical, 12).contentShape(Rectangle())
-    }.buttonStyle(.plain)
+    }.buttonStyle(AniCeHoverButtonStyle())
       .foregroundStyle(AniCePalette.primaryText(scheme))
       .background(AniCePalette.secondarySurface(scheme))
       .overlay(alignment: .bottom) { Divider() }

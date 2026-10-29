@@ -66,7 +66,7 @@ The information architecture is shared, while its navigation is native:
 | Features | Launch supported feature panels and their local preferences |
 | Favourites | Shortcuts to chosen Features; never enable or bypass a feature |
 | Settings | Appearance and app-wide preferences |
-| About | Version, license, source and creator/support links |
+| About | Version, license, source, developer, social and support links; compact rows reflow when space or text size is tight |
 
 On Mac, the window titlebar is split at the sidebar boundary. Keep macOS traffic-light controls at the far left, then Back and Forward history controls on the left portion. Show the aniCe brand in the window header, not the active destination name. Keep the active section title small in the workspace. History navigation follows actual visited pages, including conversation changes; Back returns to the prior page context. The sidebar holds Overview, Devices, Features and Favourites, with Settings and About at its lower end.
 
@@ -142,7 +142,7 @@ Quick Paste Tray is a compact, focused floating surface with search, horizontall
 
 ### Settings and About
 
-Mac Settings keeps a restrained single column at compact widths, then uses two columns when the detail area reaches 880 points so wide windows use their available space. Center the expanded layout with a 1120-point maximum. Section jump controls scroll to their preference groups and visibly mark the selected group. Keep lightly outlined groups for Appearance, Connection, Clipboard, Messages, File transfer, Now Playing and This device. Use compact native rows, short labels and descriptions only when needed. Phone Settings remains concise: native separated rows, no fluffy descriptions, no oversized controls and minimal box framing. Both use the same preference names and meaning. Make the whole row label activate its associated switch or destination; independent buttons and controls remain separate targets.
+Mac Settings keeps a restrained single column at compact widths, then uses two columns when the detail area reaches 880 points so wide windows use their available space. Center the expanded layout with a 1120-point maximum. Section jump controls scroll to their preference groups and visibly mark the selected group; hover raises label contrast, and activating a jump briefly highlights its preference group. Keep lightly outlined groups for Appearance, Connection, Clipboard, Messages, File transfer, Now Playing and This device. Use compact native rows, short labels and descriptions only when needed. Phone Settings remains concise: native separated rows, no fluffy descriptions, no oversized controls and minimal box framing. Both use the same preference names and meaning. Make the whole row label activate its associated switch or destination; independent buttons and controls remain separate targets.
 
 Feature-local preferences stay available from their own panels and update the same values as Settings. Appearance offers System, Light and Dark. Preserve source, license, version and creator information in About; use subdued support treatment and no invented version details.
 
@@ -178,7 +178,7 @@ Keep layout stable with small placeholders during loading. Empty history explain
 
 ## Motion and feedback
 
-Direct controls respond immediately. Use roughly 120–160 ms for hover/selection and 180–220 ms for route/sheet transitions where motion clarifies change. Do not add entrance cascades, pulsing connectivity or fake delay. Respect reduced motion and keep tasks interruptible. Android may use a light haptic for meaningful selection or completion, never every tap or slider tick. Mac relies on pointer, keyboard and native focus feedback. Always make state change visible without animation.
+Direct controls respond immediately. Use roughly 120–160 ms for hover/selection and 180–220 ms for route/sheet transitions where motion clarifies change. Mac actions, menu triggers and native checkboxes use a faint hover tint; pressed buttons receive a stronger tint above their existing fill. Disclosure feedback stays around the arrow and label. Native menu items keep macOS highlighting. Settings section jumps raise label contrast and briefly focus the selected group. Do not add entrance cascades, pulsing connectivity or fake delay. Respect reduced motion and keep tasks interruptible. Android may use a light haptic for meaningful selection or completion, never every tap or slider tick. Mac relies on pointer, keyboard and native focus feedback. Always make state change visible without animation.
 
 ## Accessibility and validation targets
 

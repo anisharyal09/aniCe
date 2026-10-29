@@ -12,11 +12,14 @@ struct SmsNotificationControls: View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
         set: { preferences.setNotifications(peer, $0) }))
+        .aniCeControlFeedback()
       Toggle("Play sound", isOn: Binding(get: { preferences.sound(peer) },
         set: { preferences.setSound(peer, $0) }))
+        .aniCeControlFeedback()
         .disabled(!preferences.notifications(peer))
       Toggle("Show message text in notifications", isOn: Binding(get: { preferences.preview(peer) },
         set: { preferences.set(peer, $0) }))
+        .aniCeControlFeedback()
         .disabled(!preferences.notifications(peer))
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
@@ -201,7 +204,7 @@ struct SmsView: View {
         Text("Conversations").font(.subheadline.weight(.medium))
         Spacer()
         Button("Refresh") { model.requestThreads(peer) }
-          .buttonStyle(.bordered).controlSize(.small)
+          .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
           .disabled(!model.supports(peer) || model.busy(peer))
       }
       if model.status(peer) != "Ready" {
@@ -241,7 +244,7 @@ struct SmsView: View {
               Image(systemName: "chevron.right").font(.caption)
                 .foregroundStyle(AniCePalette.accent(scheme)).accessibilityHidden(true)
             }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-          }.buttonStyle(.plain)
+          }.buttonStyle(AniCeHoverButtonStyle())
           // Reaching the last card asks for the next page, so the list keeps filling without a manual step.
           .onAppear { if index == cards.count - 1 { model.requestMoreThreads(peer) } }
           Divider()
@@ -256,7 +259,7 @@ struct SmsView: View {
             }
           } else {
             Button("Load older conversations") { model.requestMoreThreads(peer) }
-              .buttonStyle(.bordered).controlSize(.small)
+              .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
           }
         }
       }
@@ -272,7 +275,7 @@ struct SmsView: View {
   @ViewBuilder private func results(_ peer: DeviceIdentity) -> some View {
     Button { query = ""; model.clearSearch(peer); expanded.removeAll() } label: {
       Label("Conversations", systemImage: "chevron.backward")
-    }.buttonStyle(.plain).foregroundStyle(AniCePalette.accent(scheme))
+    }.buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme))
     Text("Results").font(.headline)
     if !model.searchStatus(peer).isEmpty {
       Text(model.searchStatus(peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -292,12 +295,12 @@ struct SmsView: View {
             VStack(alignment: .leading, spacing: 2) { resultMetadata(row) }
           }.font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
-      }.buttonStyle(.plain)
+      }.buttonStyle(AniCeHoverButtonStyle())
       Divider()
     }
     if model.moreResults(peer) {
       Button("Show more results") { model.searchMore(peer) }
-        .buttonStyle(.bordered).controlSize(.small).disabled(model.searching(peer))
+        .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small).disabled(model.searching(peer))
     } else if model.refineSearch(peer) {
       Text("Refine the search").font(.caption).foregroundStyle(AniCePalette.warning(scheme))
     }
@@ -318,11 +321,11 @@ struct SmsView: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
         Button { address = ""; draft = "" } label: { Label("Conversations", systemImage: "chevron.backward") }
-          .buttonStyle(.plain).foregroundStyle(AniCePalette.accent(scheme))
+          .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme))
         Text(card?.address ?? address).font(.headline).lineLimit(1).truncationMode(.middle)
         Spacer(minLength: 4)
         Button("Refresh") { model.refreshMessages(peer, address: address) }
-          .buttonStyle(.bordered).controlSize(.small).disabled(!model.supports(peer))
+          .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small).disabled(!model.supports(peer))
         gear(peer)
       }
       if controlsOpen { notificationPanel(peer) }
@@ -338,7 +341,7 @@ struct SmsView: View {
           LazyVStack(alignment: .leading, spacing: 12) {
             if model.more(peer, address: address) {
               Button("Show older messages") { model.requestMessages(peer, address: address) }
-                .buttonStyle(.plain).foregroundStyle(AniCePalette.accent(scheme)).disabled(model.busy(peer))
+                .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme)).disabled(model.busy(peer))
             }
             if rows.isEmpty {
               Text("No messages on this phone").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -418,7 +421,7 @@ struct SmsView: View {
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Sending…") }
           } else { Label("Send", systemImage: "paperplane") }
         }
-          .buttonStyle(.bordered).controlSize(.small).disabled(!ready)
+          .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small).disabled(!ready)
           .keyboardShortcut(.return, modifiers: .command)
       }
     }
@@ -456,7 +459,8 @@ struct SmsView: View {
   /** Toggles the notification controls that sit directly under this row; they never leave the window. */
   @ViewBuilder private func gear(_ peer: DeviceIdentity) -> some View {
     Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
-      .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
+      .labelStyle(.iconOnly).frame(width: 24, height: 24)
+      .buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
       .help("Notification settings for \(peer.deviceName)")
       .accessibilityLabel("Notification settings for \(peer.deviceName)")
       .accessibilityValue(controlsOpen ? "Showing" : "Hidden")

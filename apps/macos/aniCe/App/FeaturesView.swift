@@ -20,7 +20,7 @@ struct FeaturesView: View {
     if !favouritesOnly, navigation.featurePanel == .messages {
       VStack(alignment: .leading, spacing: 16) {
         Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
-          .buttonStyle(.plain).foregroundStyle(AniCePalette.accent(colorScheme))
+          .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
         Text(AppFeature.messages.title).font(.title2.weight(.semibold))
         SmsView(model: sms, peers: peers, preferences: smsPreferences)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -32,7 +32,7 @@ struct FeaturesView: View {
       VStack(alignment: .leading, spacing: 16) {
         if !favouritesOnly, let panel = navigation.featurePanel {
           Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
-            .buttonStyle(.plain).foregroundStyle(AniCePalette.accent(colorScheme))
+            .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
           Text(panel.title).font(.title2.weight(.semibold))
           switch panel {
           case .playback:
@@ -88,18 +88,18 @@ struct FeaturesView: View {
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(AniCeHoverButtonStyle())
       Button { favouriteFeatures = feature.toggled(in: favouriteFeatures) } label: {
         Image(systemName: selected ? "star.fill" : "star")
           .font(.system(size: 14)).frame(width: 28, height: 32)
       }
-      .buttonStyle(.plain).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       .accessibilityLabel((selected ? "Remove " : "Add ") + feature.title + (selected ? " from favourites" : " to favourites"))
       Button { navigation.openFeature(feature) } label: {
         Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
           .foregroundStyle(AniCePalette.secondaryText(colorScheme)).frame(width: 22, height: 40)
       }
-      .buttonStyle(.plain).accessibilityLabel("Open \(feature.title)")
+      .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open \(feature.title)")
     }
     .padding(.vertical, 16)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,7 +148,7 @@ struct PlaybackSetupView: View {
     VStack(alignment: .leading, spacing: 10) {
       Toggle("Show on Overview and menu bar", isOn: Binding(
         get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-        .toggleStyle(.checkbox).controlSize(.small)
+        .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small)
       HStack {
         Label(
           playback.phoneSubscribed ? "Active on your phone" : "Open aniCe on your phone",
@@ -158,7 +158,7 @@ struct PlaybackSetupView: View {
         .foregroundStyle(playback.phoneSubscribed ? AniCePalette.accent(colorScheme) : AniCePalette.secondaryText(colorScheme))
         Spacer()
         Button("Refresh controls") { playback.refreshCapabilities() }
-          .buttonStyle(.bordered)
+          .buttonStyle(.bordered).aniCeControlFeedback()
           .controlSize(.small)
           .disabled(playback.busy)
       }
@@ -170,10 +170,10 @@ struct PlaybackSetupView: View {
       if playback.volumeCandidate && playback.playerVolume == nil {
         HStack(spacing: 8) {
           Button("Allow player volume…") { playback.requestPermission() }
-            .buttonStyle(.bordered)
+            .buttonStyle(.bordered).aniCeControlFeedback()
             .controlSize(.small)
           Button("Verify player volume") { playback.verifyPlayerVolume() }
-            .buttonStyle(.bordered)
+            .buttonStyle(.bordered).aniCeControlFeedback()
             .controlSize(.small)
             .disabled(playback.busy)
         }

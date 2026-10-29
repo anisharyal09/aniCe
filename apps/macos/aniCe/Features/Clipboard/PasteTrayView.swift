@@ -262,7 +262,7 @@ struct PasteTrayView: View {
         .onSubmit { copySelection() }
       if !query.isEmpty {
         Button { query = ""; focus = .search } label: { Image(systemName: "xmark.circle.fill") }
-          .buttonStyle(.plain).accessibilityLabel("Clear search")
+          .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Clear search")
       }
     }
     .padding(.horizontal, 9).frame(height: 30)
@@ -271,7 +271,7 @@ struct PasteTrayView: View {
 
   private var closeButton: some View {
     Button(action: onDismiss) { Image(systemName: "xmark").frame(width: 25, height: 25) }
-      .buttonStyle(.plain).accessibilityLabel("Close clipboard tray").help("Close (Esc)")
+      .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Close clipboard tray").help("Close (Esc)")
   }
 
   private var filterRow: some View {
@@ -287,7 +287,7 @@ struct PasteTrayView: View {
             Rectangle().fill(filter == option ? AniCePalette.accent(scheme) : .clear).frame(height: 2)
           }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AniCeHoverButtonStyle())
         .accessibilityAddTraits(filter == option ? .isSelected : [])
       }
       Spacer(minLength: 0)
@@ -310,7 +310,7 @@ struct PasteTrayView: View {
           .accessibilityAddTraits(.updatesFrequently)
       }
       Button(selectedIDs.count > 1 ? "Copy all" : "Copy", systemImage: "doc.on.doc") { copySelection() }
-        .buttonStyle(.bordered).controlSize(.small)
+        .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
         .disabled(selectedIDs.isEmpty && selected == nil)
         .help(selectedIDs.count > 1 ? "Copy selected items joined by newlines (Return)" : "Copy selected item and close (Return)")
     }
@@ -531,7 +531,7 @@ private struct PasteTrayCard: View {
         bodyPreview.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(AniCeHoverButtonStyle())
       .accessibilityLabel("Select " + String(entry.text.prefix(120)))
       .accessibilityAddTraits(isSelected ? [.isSelected] : [])
       Spacer(minLength: 0)
@@ -642,7 +642,7 @@ private struct PasteTrayCard: View {
             .foregroundStyle(AniCePalette.secondaryText(scheme))
             .frame(width: 23, height: 23)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AniCeHoverButtonStyle())
         .help(entry.pinned ? "Unpin" : "Pin snippet")
         .accessibilityLabel(entry.pinned ? "Unpin item" : "Pin item")
       }
@@ -654,7 +654,7 @@ private struct PasteTrayCard: View {
             .foregroundStyle(AniCePalette.secondaryText(scheme))
             .frame(width: 23, height: 23)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AniCeHoverButtonStyle())
         .help("Delete from history").accessibilityLabel("Delete item")
       }
     }

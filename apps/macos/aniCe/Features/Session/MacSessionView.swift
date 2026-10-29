@@ -151,7 +151,7 @@ struct MacSessionView: View {
                   .foregroundStyle(state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
                   .fixedSize(horizontal: false, vertical: true)
               }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("Device details for " + peer.deviceName)
+            }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + peer.deviceName)
               .accessibilityValue(state.summary)
 
             if !state.connected {
@@ -165,7 +165,7 @@ struct MacSessionView: View {
             }
 
             Button { onOpenDevice(peer.deviceId) } label: { Image(systemName: "chevron.right") }
-              .buttonStyle(.borderless).accessibilityLabel("Device details for " + peer.deviceName)
+              .buttonStyle(.borderless).aniCeControlFeedback().accessibilityLabel("Device details for " + peer.deviceName)
           }
         }
       }
@@ -184,7 +184,7 @@ struct MacSessionView: View {
     Toggle("Auto connect", isOn: Binding(
       get: { ownsBluetooth && model.automatic },
       set: { model.selectedPeer = device; model.setAutomatic($0) }))
-      .toggleStyle(.checkbox).tint(AniCePalette.accent(scheme))
+      .toggleStyle(.checkbox).aniCeControlFeedback().tint(AniCePalette.accent(scheme))
       .disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
   }
 
@@ -214,7 +214,7 @@ struct MacSessionView: View {
         Text(presentation.connected ? "Connected" : presentation.summary).font(.callout)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-    }.buttonStyle(.plain).accessibilityLabel("Connection details for " + (device?.deviceName ?? "your phone"))
+    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Connection details for " + (device?.deviceName ?? "your phone"))
       .accessibilityValue(presentation.summary)
   }
 
@@ -235,7 +235,8 @@ struct MacSessionView: View {
       Button("Connection details") { diagnostics = false; details = true }
       Button("Devices", action: onManageDevices)
     } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
-      .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Connection options")
+      .menuStyle(.borderlessButton).aniCeControlFeedback()
+      .fixedSize().accessibilityLabel("Connection options")
   }
 
   private var overview: some View {
@@ -248,7 +249,7 @@ struct MacSessionView: View {
               .fixedSize(horizontal: false, vertical: true)
             Text(presentation.connected ? "Connected" : presentation.summary).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
+        }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
         Button(presentation.action.rawValue) {
           switch presentation.action {
           case .disconnect, .stop: model.disconnect(); lan.disconnect()
@@ -265,9 +266,9 @@ struct MacSessionView: View {
               Text("Auto connect")
               Text("Reconnect when this device is available.").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-          }.buttonStyle(.plain).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+          }.buttonStyle(AniCeHoverButtonStyle()).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
           Toggle("Auto connect", isOn: Binding(get: { ownsBluetooth && model.automatic }, set: { model.selectedPeer = device; model.setAutomatic($0) }))
-            .labelsHidden().toggleStyle(.checkbox).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+            .labelsHidden().toggleStyle(.checkbox).aniCeControlFeedback().disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
         }.padding(.vertical, 16)
         Divider()
         transportRow("Bluetooth", symbol: "antenna.radiowaves.left.and.right", state: ownsBluetooth ? model.state : "In use by another phone",
@@ -320,7 +321,7 @@ struct MacSessionView: View {
       HStack(alignment: .top) {
         Text(device?.deviceName ?? "Connection details").font(.system(size: 20, weight: .medium))
         Spacer()
-        Button { details = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Close connection details")
+        Button { details = false } label: { Image(systemName: "xmark") }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Close connection details")
       }
       HStack(spacing: 12) {
         Text(presentation.connected ? "Connected" : presentation.summary)
@@ -390,7 +391,7 @@ struct MacSessionView: View {
             Spacer()
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AniCeHoverButtonStyle())
         .accessibilityValue(diagnostics ? "Expanded" : "Collapsed")
         if diagnostics {
           VStack(alignment: .leading, spacing: 12) {

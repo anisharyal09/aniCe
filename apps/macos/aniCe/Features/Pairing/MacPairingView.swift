@@ -196,7 +196,7 @@ struct MacPairingView: View {
         } label: {
           Image(systemName: "arrow.clockwise")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.borderless).aniCeControlFeedback()
         .font(.caption)
         .accessibilityLabel("Refresh trusted devices")
       }

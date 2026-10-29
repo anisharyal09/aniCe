@@ -35,15 +35,15 @@ struct FindDeviceView: View {
               .fixedSize(horizontal: false, vertical: true)
             Button(MacFindDeviceNotifier.text("find_settings")) {
               if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
-            }.buttonStyle(.link).font(.caption)
+            }.buttonStyle(.link).aniCeControlFeedback().font(.caption)
           }
         } else {
-          Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }.buttonStyle(.bordered)
+          Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }.buttonStyle(.bordered).aniCeControlFeedback()
           Text(MacFindDeviceNotifier.text(permissionKey)).font(.caption).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
           Button(MacFindDeviceNotifier.text("find_settings")) {
             if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
-          }.buttonStyle(.bordered)
+          }.buttonStyle(.bordered).aniCeControlFeedback()
         }
       }
       ForEach(ConnectionPresentation.primaryPeers(peers, connected: { model.connected($0.peer) })) { record in
@@ -53,7 +53,7 @@ struct FindDeviceView: View {
             Text(record.peer.deviceName).fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button(MacFindDeviceNotifier.text("find_title")) { model.find(record.peer) }
-              .disabled(!model.canFind(record.peer)).buttonStyle(.bordered).fixedSize()
+              .disabled(!model.canFind(record.peer)).buttonStyle(.bordered).aniCeControlFeedback().fixedSize()
               .accessibilityLabel(String(format: MacFindDeviceNotifier.text("find_peer_action"), record.peer.deviceName))
           }
           if feedbackForPeer {

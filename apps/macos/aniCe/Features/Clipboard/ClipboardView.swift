@@ -24,7 +24,7 @@ struct ClipboardSettingsView: View {
       }
       if showPreferences {
         Toggle(compactSettings ? "Automatic sharing" : "Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
-          .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
+          .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
         if compactSettings {
           if model.selected != nil {
             Text("Enable on both devices. Manual sends stay available.").font(.caption)
@@ -45,7 +45,7 @@ struct ClipboardSettingsView: View {
                 Button(duration.rawValue) { model.pause(for: duration) }
               }
             }
-            .menuStyle(.borderedButton)
+            .menuStyle(.borderedButton).aniCeControlFeedback()
             .controlSize(.small)
           }
         }
@@ -81,7 +81,7 @@ private struct HistoryPreference: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
-        .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+        .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small).tint(AniCePalette.accent(scheme))
         .alert("Keep clipboard history?", isPresented: $confirming) {
           Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
         } message: { Text("Save the latest text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Delete items or use Clear to remove them.") }
@@ -127,8 +127,8 @@ struct ClipboardView: View {
           }
         }
           .buttonStyle(AniCeButtonStyle(quiet: true)).help("Open clipboard tray (⌥⌘V)")
-        Button { preferencesOpen.toggle() } label: { Image(systemName: "gearshape") }
-          .buttonStyle(.plain).controlSize(.small)
+        Button { preferencesOpen.toggle() } label: { Image(systemName: "gearshape").frame(width: 24, height: 24) }
+          .buttonStyle(AniCeHoverButtonStyle()).controlSize(.small)
           .help("Clipboard preferences").accessibilityLabel("Clipboard preferences")
       }
       if preferencesOpen {
@@ -234,20 +234,20 @@ struct ClipboardActivityView: View {
           if item.sample != nil {
             Button { copyStatus = model.copyActivity(item.id) ? "Copied" : "Could not copy" } label: {
               Label(copyStatus ?? "Copy", systemImage: "doc.on.doc")
-            }.buttonStyle(.plain).accessibilityLabel(copyStatus ?? "Copy clipboard item")
+            }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel(copyStatus ?? "Copy clipboard item")
           }
           Button { model.dismissActivity(item.id) } label: { Text("Dismiss") }
-            .buttonStyle(.plain).foregroundStyle(AniCePalette.secondaryText(scheme))
+            .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.secondaryText(scheme))
         }.padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
           .onChange(of: item.id) { _, _ in copyStatus = nil }
       } else {
       VStack(alignment: .leading, spacing: 8) {
         HStack {
           Button(action: open) { HStack { Text("Clipboard"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) } }
-            .buttonStyle(.plain).font(.headline).accessibilityLabel("Open Clipboard")
+            .buttonStyle(AniCeHoverButtonStyle()).font(.headline).accessibilityLabel("Open Clipboard")
           Spacer()
           Button { model.dismissActivity(item.id) } label: { Image(systemName: "xmark") }
-            .buttonStyle(.plain).accessibilityLabel("Dismiss clipboard activity")
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Dismiss clipboard activity")
         }
         ViewThatFits(in: .horizontal) {
           HStack { origin(item); Text(item.timestamp, format: .dateTime.hour().minute()); direction(item) }
@@ -257,7 +257,7 @@ struct ClipboardActivityView: View {
         else { Text("Preview hidden for marked clipboard items").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
         if item.sample != nil {
           Button { copyStatus = model.copyActivity(item.id) ? "Copied" : "Could not copy" } label: { Label(copyStatus ?? "Copy", systemImage: "doc.on.doc") }
-            .buttonStyle(.borderless).controlSize(.small)
+            .buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
         }
       }
       .padding(compact ? 0 : 16)
@@ -283,7 +283,7 @@ struct ClipboardHistoryView: View {
         Spacer()
         Text(model.history.enabled ? "History on" : "History paused")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        if !model.history.entries.isEmpty { Button("Clear...") { clearing = true }.buttonStyle(.borderless).controlSize(.small) }
+        if !model.history.entries.isEmpty { Button("Clear...") { clearing = true }.buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small) }
       }
       if model.status != "Ready to share text" { Text(model.status).font(.caption).foregroundStyle(.secondary) }
       if model.busy { Button("Cancel send") { model.cancel() } }
@@ -306,7 +306,7 @@ struct ClipboardHistoryView: View {
               ViewThatFits(in: .horizontal) {
                 HStack { metadata(entry); Spacer(); actions(entry) }
                 VStack(alignment: .leading, spacing: 4) { metadata(entry); HStack { actions(entry) } }
-              }.buttonStyle(.borderless).controlSize(.small)
+              }.buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
             }
             .padding(.vertical, 8)
             Divider()
