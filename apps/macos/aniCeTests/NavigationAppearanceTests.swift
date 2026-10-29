@@ -71,12 +71,14 @@ extension SessionTests {
     let navigation = ConnectionNavigation()
     navigation.focusedPeer = "phone-a"
     navigation.diagnostics = true
-    for origin in [AppDestination.features, .favourites] {
+    for origin in [AppDestination.home, .features, .favourites] {
       for feature in AppFeature.allCases {
         navigation.show(origin)
         navigation.openFeature(feature)
         XCTAssertEqual(navigation.destination, .features)
         XCTAssertEqual(navigation.featurePanel, feature)
+        navigation.openFeature(feature)
+        XCTAssertEqual(navigation.featureOrigin, origin)
         XCTAssertEqual(navigation.focusedPeer, "phone-a")
         XCTAssertTrue(navigation.diagnostics)
         navigation.closeFeature()

@@ -144,7 +144,9 @@ enum WindowAppearance: String, CaseIterable {
 
   func openFeature(_ feature: AppFeature) {
     navigate {
-      $0.featureOrigin = $0.destination == .favourites ? .favourites : .features
+      if $0.destination != .features || $0.featurePanel == nil {
+        $0.featureOrigin = $0.destination == .home || $0.destination == .favourites ? $0.destination : .features
+      }
       $0.featurePanel = feature
       $0.destination = .features
     }

@@ -5,6 +5,13 @@ package io.github.anisharyal09.anice.app
 import android.content.Intent
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
@@ -19,8 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
@@ -50,6 +59,10 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             })
     }
     val context = LocalContext.current
+    val fontScale = LocalDensity.current.fontScale
+    val largeText = fontScale >= 1.5f
+    val navigationScroll = rememberScrollState()
+    val navigationScrollScope = rememberCoroutineScope()
     val uiPreferences = remember { context.getSharedPreferences("ui_preferences", android.content.Context.MODE_PRIVATE) }
     val navigation = rememberSaveable(saver = AppNavigation.saver) {
         AppNavigation().also { it.favouriteFeatures = uiPreferences.getString("favourite_features", "").orEmpty() }
@@ -110,12 +123,65 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             }, expandedHeight = maxOf(48.dp, (24 * LocalDensity.current.fontScale + 16).dp),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background))
         }, bottomBar = {
-            NavigationBar {
-                AppDestination.primary.forEach { page ->
-                    NavigationBarItem(selected = navigation.destination == page,
-                        onClick = { navigation.select(page, pairing.peers.isEmpty()) },
-                        icon = { Icon(painterResource(when(page) { AppDestination.Home -> R.drawable.ic_home; AppDestination.Devices -> R.drawable.ic_devices; AppDestination.Features -> R.drawable.ic_features; AppDestination.Favourites -> R.drawable.ic_star; AppDestination.About -> R.drawable.ic_settings; AppDestination.Settings -> R.drawable.ic_settings }), contentDescription = null) },
-                        label = { Text(page.label, style = MaterialTheme.typography.labelSmall, maxLines = 1) })
+            NavigationBar(modifier = Modifier.heightIn(
+                min = if (largeText) maxOf(80.dp, (48f + 20f * fontScale).dp) else 80.dp
+            )) {
+                if (largeText) {
+                    Box(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth().padding(end = 48.dp)
+                            .horizontalScroll(navigationScroll).selectableGroup()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            AppDestination.primary.forEach { page ->
+                                val selected = navigation.destination == page
+                                val destinationView = remember { BringIntoViewRequester() }
+                                LaunchedEffect(selected, navigationScroll.viewportSize) {
+                                    if (selected && navigationScroll.viewportSize > 0) {
+                                        destinationView.bringIntoView()
+                                    }
+                                }
+                                val itemColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                Row(Modifier.bringIntoViewRequester(destinationView).clip(MaterialTheme.shapes.large)
+                                    .background(if (selected) MaterialTheme.colorScheme.secondaryContainer
+                                        else androidx.compose.ui.graphics.Color.Transparent)
+                                    .selectable(selected = selected,
+                                        onClick = { navigation.select(page, pairing.peers.isEmpty()) },
+                                        role = Role.Tab)
+                                    .heightIn(min = 48.dp)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(painterResource(page.icon),
+                                        contentDescription = null, modifier = Modifier.size(20.dp), tint = itemColor)
+                                    Text(page.label, style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1, softWrap = false, color = itemColor)
+                                }
+                            }
+                        }
+                        if (navigationScroll.canScrollForward || navigationScroll.canScrollBackward) {
+                            val movingForward = navigationScroll.canScrollForward
+                            IconButton(onClick = {
+                                navigationScrollScope.launch {
+                                    navigationScroll.animateScrollTo(if (movingForward) navigationScroll.maxValue else 0)
+                                }
+                            }, modifier = Modifier.align(Alignment.CenterEnd)
+                                .clip(MaterialTheme.shapes.large)
+                                .background(MaterialTheme.colorScheme.surface)) {
+                                Icon(painterResource(if (movingForward) R.drawable.ic_chevron_forward else R.drawable.ic_back),
+                                    contentDescription = if (movingForward) "More destinations" else "Previous destinations",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                } else {
+                    AppDestination.primary.forEach { page ->
+                        NavigationBarItem(selected = navigation.destination == page,
+                            onClick = { navigation.select(page, pairing.peers.isEmpty()) },
+                            icon = { Icon(painterResource(page.icon), contentDescription = null) },
+                            label = { Text(page.label, style = MaterialTheme.typography.labelSmall, maxLines = 1) })
+                    }
                 }
             }
         }, snackbarHost = { SnackbarHost(snackbars) }
@@ -147,6 +213,16 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         }
     }
 }
+
+private val AppDestination.icon: Int
+    get() = when (this) {
+        AppDestination.Home -> R.drawable.ic_home
+        AppDestination.Devices -> R.drawable.ic_devices
+        AppDestination.Features -> R.drawable.ic_features
+        AppDestination.Favourites -> R.drawable.ic_star
+        AppDestination.Settings -> R.drawable.ic_settings
+        AppDestination.About -> R.drawable.ic_about
+    }
 
 @Composable
 internal fun PendingRequestRow(title: String, detail: String, onReview: () -> Unit) {

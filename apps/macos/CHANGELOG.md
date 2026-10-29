@@ -16,6 +16,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Keep Settings groups and section dividers aligned at narrow and wide window sizes, reflow section shortcuts, and clarify the dark sidebar/header boundaries with neutral separators. Remove redundant Messages preference guidance.
 
+- Expand Mac Settings into two columns on wide windows, keep one column when narrow and highlight the selected section jump.
+
+- Return feature panels opened from Overview to Overview, retaining their original return destination when another feature opens.
+
 ## [v0.3.0]
 
 ### Added

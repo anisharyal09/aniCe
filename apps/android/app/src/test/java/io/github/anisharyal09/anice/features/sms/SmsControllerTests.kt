@@ -14,6 +14,63 @@ import java.util.UUID
 import kotlin.coroutines.ContinuationInterceptor
 
 class SmsControllerTests {
+    @Test fun localComposeSurvivesViewReturnWithoutDuplicateSendOrLosingNewDraft() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val key = "local|42"
+        val confirmation = CompletableDeferred<Unit>()
+        h.sender.pause = confirmation
+        h.owner.saveDraft(key, "First reply")
+        val operation = h.owner.send("+1555", h.owner.draft(key), draftKey = key)
+        until { h.sender.bodies.size == 1 }
+        assertTrue(h.owner.sendingDraft(key))
+        assertSame(operation, h.owner.send("+1555", h.owner.draft(key), draftKey = key))
+        h.owner.saveDraft(key, "Next reply")
+        confirmation.complete(Unit)
+        assertEquals(0L, operation.result().result)
+        assertFalse(h.owner.sendingDraft(key))
+        assertEquals(listOf("First reply"), h.sender.bodies)
+        assertEquals("Next reply", h.owner.draft(key))
+
+        h.sender.outcome = SmsSendOutcome(5, "", 0)
+        assertEquals(5L, h.owner.send("+1555", h.owner.draft(key), draftKey = key).result().result)
+        assertFalse(h.owner.sendingDraft(key))
+        assertEquals("Next reply", h.owner.draft(key))
+        h.sender.outcome = SmsSendOutcome(0, "sms:78", 55)
+        h.owner.saveDraft(key, "A\u0000B")
+        assertEquals(0L, h.owner.send("+1555", h.owner.draft(key), draftKey = key).result().result)
+        assertEquals("A\uFFFDB", h.sender.bodies.last())
+        assertEquals("", h.owner.draft(key))
+        h.owner.invalidate()
+    }
+
+    @Test fun resetFencesOldComposeCompletionWithoutClearingReplacementOperation() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val key = "local|42"
+        val oldConfirmation = CompletableDeferred<Unit>()
+        h.sender.pause = oldConfirmation
+        h.owner.saveDraft(key, "Old reply")
+        val old = h.owner.send("+1555", h.owner.draft(key), draftKey = key)
+        until { h.sender.bodies.size == 1 }
+        h.owner.invalidate()
+        assertFalse(h.owner.sendingDraft(key))
+        val newConfirmation = CompletableDeferred<Unit>()
+        h.sender.pause = newConfirmation
+        h.owner.saveDraft(key, "New reply")
+        val replacement = h.owner.send("+1555", h.owner.draft(key), draftKey = key)
+        until { h.sender.bodies.size == 2 }
+        oldConfirmation.complete(Unit)
+        old.result()
+        assertTrue(h.owner.sendingDraft(key))
+        assertEquals("New reply", h.owner.draft(key))
+        assertNull(h.owner.threads)
+        assertTrue(h.owner.conversation.isEmpty())
+        newConfirmation.complete(Unit)
+        replacement.result()
+        assertFalse(h.owner.sendingDraft(key))
+        assertEquals("", h.owner.draft(key))
+        h.owner.invalidate()
+    }
+
     @Test fun draftsStayWithTheirConversationAndIdentityResetClearsMemory() {
         val controller = SmsController(
             store = object : SmsStore {
@@ -28,15 +85,21 @@ class SmsControllerTests {
             permissions = { true }
         )
         controller.saveDraft("local|42", "Keep this reply")
+        controller.chooseDraftSubscription("local|42", 2)
+        controller.chooseDraftSubscription("local|43", 3)
         controller.saveDraft("mac-id:fingerprint|42", "Peer-scoped draft")
         controller.retainDrafts(setOf("mac-id:fingerprint"))
         assertEquals("Keep this reply", controller.draft("local|42"))
+        assertEquals(2, controller.draftSubscription("local|42"))
+        assertEquals(3, controller.draftSubscription("local|43"))
         assertEquals("Peer-scoped draft", controller.draft("mac-id:fingerprint|42"))
         controller.retainDrafts(emptySet())
         assertEquals("Keep this reply", controller.draft("local|42"))
         assertEquals("", controller.draft("mac-id:fingerprint|42"))
         controller.invalidate()
         assertEquals("", controller.draft("local|42"))
+        assertEquals(0, controller.draftSubscription("local|42"))
+        assertEquals(0, controller.draftSubscription("local|43"))
     }
 
     private class FakeStore : SmsStore {

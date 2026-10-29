@@ -122,7 +122,7 @@ class HomeVisualReviewTest {
                                                 expandedHeight = maxOf(48.dp, (24 * LocalDensity.current.fontScale + 16).dp),
                                                 actions = {
                                                     IconButton(onClick = {}) {
-                                                        Icon(painterResource(R.drawable.ic_about), contentDescription = "About aniCe")
+                                                        Icon(painterResource(R.drawable.ic_about), contentDescription = "About aniCe", modifier = Modifier.size(18.dp))
                                                     }
                                                 },
                                                 colors =
@@ -140,6 +140,7 @@ class HomeVisualReviewTest {
                                             HomeScreen(
                                                 hasTrustedDevices = case.state != null,
                                                 onPair = {},
+                                                showRecentHeading = case.highActivity,
                                                 modifier = Modifier.widthIn(max = case.width.dp),
                                                 attention = {
                                                     if (case.highActivity) PendingRequestRow("Incoming files", "3 files from Fixture Mac") { reviews.incrementAndGet() }
@@ -187,6 +188,7 @@ class HomeVisualReviewTest {
                 assertNotNull("Missing native accessibility tree: ${case.id}", root)
                 val expected = if (case.state == null) "No devices paired yet" else case.name
                 assertTrue("Missing device context: ${case.id}", findText(root, expected) != null)
+                assertEquals("Recent heading must match available activity", case.highActivity, findText(root, "Recent") != null)
                 capture(activity, case.id)
                 if (case.highActivity) {
                     val request = clickableAncestor(findText(root, "Incoming files"))
@@ -208,7 +210,7 @@ class HomeVisualReviewTest {
 
                 if (case.state == ConnectionState.SECURED) {
                     assertTrue(findText(root, "Connected") != null || findText(root, "Secured") != null)
-                    val tools = if (case.compact) findText(root, "Open devices for")
+                    val tools = if (case.compact) clickableAncestor(findText(root, case.name))
                         else findText(root, "Connection details") ?: findText(root, "More")
                     assertNotNull("Missing accessible More action", tools)
                     val action = clickableAncestor(findText(root, "Disconnect"))

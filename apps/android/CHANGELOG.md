@@ -6,6 +6,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Keep Android destination names readable at large text sizes with a horizontally scrollable, fully labeled bottom navigation; reveal the selected destination after Back or a deep link.
+
+- Return feature panels to Home when opened there. Keep conversation drafts, SIM choice and pending SMS sends across navigation; prevent duplicate submission and preserve newer drafts when a send completes.
+
 - Open This device from Devices and Settings in a shared identity sheet; tighten device rows and retain readable identity actions at large text sizes.
 
 - Ignore late file-review metadata after dismissal or a new selection, and keep file review usable when a provider cannot return metadata.

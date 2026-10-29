@@ -40,7 +40,12 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     var settingsRoute by mutableStateOf(settingsRoute)
     var favouriteFeatures by mutableStateOf("")
     fun openFeature(feature: AppFeature) {
-        featureOrigin = if (destination == AppDestination.Favourites) AppDestination.Favourites else AppDestination.Features
+        if (destination != AppDestination.Features || featurePanel == null) {
+            featureOrigin = when (destination) {
+                AppDestination.Home, AppDestination.Favourites -> destination
+                else -> AppDestination.Features
+            }
+        }
         featurePanel = feature
         findDetails = feature == AppFeature.FindDevice
         destination = AppDestination.Features

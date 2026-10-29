@@ -248,7 +248,10 @@ extension MainWindowView {
       aboutContent
     } else {
       ScrollViewReader { proxy in
-        ScrollView {
+        GeometryReader { geometry in
+          let expanded = geometry.size.width >= 880
+          let columns = Array(repeating: GridItem(.flexible(), spacing: 24, alignment: .top), count: expanded ? 2 : 1)
+          ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
                 ("appearance", "Appearance"), ("connection", "Connection"), ("clipboard", "Clipboard"),
@@ -268,58 +271,61 @@ extension MainWindowView {
               .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
               .padding(.bottom, 18)
 
-              preferenceSection("Appearance", id: "appearance") {
-                HStack {
-                  Text("Window appearance")
-                  Spacer()
-                  Picker("Window appearance", selection: Binding(
-                    get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
-                      ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
-                  }
-                  .labelsHidden().pickerStyle(.menu).frame(width: 130)
-                }.frame(minHeight: 48)
-              }
-              preferenceSection("Connection", id: "connection") {
-                VStack(alignment: .leading, spacing: 5) {
-                  Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                    .toggleStyle(.checkbox).controlSize(.small)
-                  Text("Enable on both devices to use Wi-Fi.").font(.caption)
-                    .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
-                }.frame(minHeight: 48, alignment: .leading)
-              }
-              preferenceSection("Clipboard", id: "clipboard") {
-                ClipboardSettingsView(model: clipboard, peers: pairing.peers, compactSettings: true)
-                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-              }
-              preferenceSection("Messages", id: "messages") {
-                SmsSettingsView(preferences: smsPreferences, peers: pairing.peers, showTitle: false)
-                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-              }
-              preferenceSection("File transfer", id: "file-transfer") {
-                TransferNotificationControls(preferences: transfer.notificationPreferences)
-                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-              }
-              preferenceSection("Now Playing", id: "now-playing") {
-                Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-                  .toggleStyle(.checkbox).controlSize(.small).frame(minHeight: 48)
-              }
-              preferenceSection("This device", id: "this-device") {
-                Button { showingLocalIdentity = true } label: {
-                  HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                      Text(identity.local?.identity.deviceName ?? "This Mac")
-                      Text("Identity and security").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                    }
+              LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
+                preferenceSection("Appearance", id: "appearance") {
+                  HStack {
+                    Text("Window appearance")
                     Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
-                      .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
-                  }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("This device, identity and security")
+                    Picker("Window appearance", selection: Binding(
+                      get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
+                        ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
+                    }
+                    .labelsHidden().pickerStyle(.menu).frame(width: 130)
+                  }.frame(minHeight: 48)
+                }
+                preferenceSection("Connection", id: "connection") {
+                  VStack(alignment: .leading, spacing: 5) {
+                    Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
+                      .toggleStyle(.checkbox).controlSize(.small)
+                    Text("Enable on both devices to use Wi-Fi.").font(.caption)
+                      .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
+                  }.frame(minHeight: 48, alignment: .leading)
+                }
+                preferenceSection("Clipboard", id: "clipboard") {
+                  ClipboardSettingsView(model: clipboard, peers: pairing.peers, compactSettings: true)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                }
+                preferenceSection("Messages", id: "messages") {
+                  SmsSettingsView(preferences: smsPreferences, peers: pairing.peers, showTitle: false)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                }
+                preferenceSection("File transfer", id: "file-transfer") {
+                  TransferNotificationControls(preferences: transfer.notificationPreferences)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                }
+                preferenceSection("Now Playing", id: "now-playing") {
+                  Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
+                    .toggleStyle(.checkbox).controlSize(.small).frame(minHeight: 48)
+                }
+                preferenceSection("This device", id: "this-device") {
+                  Button { showingLocalIdentity = true } label: {
+                    HStack(spacing: 10) {
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text(identity.local?.identity.deviceName ?? "This Mac")
+                        Text("Identity and security").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      }
+                      Spacer()
+                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
+                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                  }.buttonStyle(.plain).accessibilityLabel("This device, identity and security")
+                }
               }
             }
             .padding(24)
-            .frame(maxWidth: 680, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: expanded ? 1120 : 680, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .top)
+          }
         }
       }
     }
@@ -346,7 +352,21 @@ extension MainWindowView {
   }
 
   private func settingsJump(_ label: String, id: String, proxy: ScrollViewProxy) -> some View {
-    Button(label) { withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .top) } }
-      .buttonStyle(.bordered).controlSize(.small)
+    let selected = activeSettingsSection == id
+    return Button {
+      activeSettingsSection = id
+      withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .top) }
+    } label: {
+      Text(label)
+        .font(.system(size: 12, weight: selected ? .medium : .regular))
+        .foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(selected ? AniCePalette.subtleAccent(colorScheme) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? AniCePalette.separator(colorScheme) : .clear, lineWidth: 0.75) }
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+    .accessibilityHint("Scroll to \(label) settings")
   }
 }

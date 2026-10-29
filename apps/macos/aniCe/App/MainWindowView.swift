@@ -21,6 +21,7 @@ struct MainWindowView: View {
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
+  @State var activeSettingsSection = "appearance"
   @State var showingLocalIdentity = false
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)

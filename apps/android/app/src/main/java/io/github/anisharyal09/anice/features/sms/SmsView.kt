@@ -33,12 +33,10 @@ import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 import io.github.anisharyal09.anice.ui.theme.selectionAccent
 import io.github.anisharyal09.anice.ui.theme.warning
-import kotlinx.coroutines.launch
 
 @Composable
 fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -146,21 +144,13 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
             val record = owner.threads?.firstOrNull { it.threadId == threadId }
             val address = record?.address ?: threadId.removePrefix("addr:")
             val draftKey = "local|$threadId"
-            var draft by remember(owner, draftKey) { mutableStateOf(owner.draft(draftKey)) }
-            var sending by remember(draftKey) { mutableStateOf(false) }
+            val draft = owner.draft(draftKey)
+            val sending = owner.sendingDraft(draftKey)
             val bytes = draft.toByteArray(Charsets.UTF_8).size
-            var simChoice by remember(draftKey) { mutableIntStateOf(0) }
+            val simChoice = owner.draftSubscription(draftKey)
             fun submitDraft() {
                 if (sending || draft.isBlank() || bytes > SmsWireMessage.MAX_BODY_BYTES || !state.send) return
-                sending = true
-                val operation = owner.send(address, draft, simChoice, draftKey)
-                scope.launch {
-                    if (operation.result().result == 0L) {
-                        draft = ""
-                        owner.saveDraft(draftKey, "")
-                    }
-                    sending = false
-                }
+                owner.send(address, draft, simChoice, draftKey)
             }
 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -177,7 +167,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
             val simListing = remember(draftKey) { mutableStateOf<SmsSubscriptionListing?>(null) }
             var simMenu by remember(draftKey) { mutableStateOf(false) }
             var simAnswered by remember(draftKey) { mutableStateOf(false) }
-            LaunchedEffect(draftKey) { if (multiSim) simListing.value = owner.listSubscriptions() }
+            LaunchedEffect(draftKey) { if (multiSim || simChoice != 0) simListing.value = owner.listSubscriptions() }
             val simEntries = simListing.value?.entries.orEmpty()
             val simChoiceLabel = simEntries.firstOrNull { it.subscriptionId == simChoice }?.let { simLabel(it, simEntries) }
             val phoneState = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -218,7 +208,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                 }
             }
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedTextField(value = draft, onValueChange = { draft = it; owner.saveDraft(draftKey, it) },
+                OutlinedTextField(value = draft, onValueChange = { owner.saveDraft(draftKey, it) },
                     label = { Text("SMS message") }, modifier = Modifier.fillMaxWidth(), enabled = !sending,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { submitDraft() }), maxLines = 4)
@@ -226,19 +216,23 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                     Text("$bytes / ${SmsWireMessage.MAX_BODY_BYTES} bytes", style = MaterialTheme.typography.bodySmall,
                         color = if (bytes > SmsWireMessage.MAX_BODY_BYTES) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f))
-                    if (multiSim && state.send && (simEntries.size >= 2 || (simListing.value?.result == 1L && !simAnswered))) {
+                    if (state.send && (simEntries.size >= 2 || simChoice != 0 ||
+                            (multiSim && simListing.value?.result == 1L && !simAnswered))) {
                         Box {
                             TextButton(onClick = {
-                                if (simEntries.size >= 2) simMenu = true else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
+                                if (simEntries.size >= 2 || simChoice != 0) simMenu = true
+                                else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
                             }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.heightIn(min = 48.dp)) {
-                                Text(if (simEntries.size >= 2) "SIM: " + (simChoiceLabel ?: "Default") else "Choose SIM…",
+                                Text(if (simEntries.size >= 2 || simChoice != 0) "SIM: " +
+                                    (if (simChoice == 0) "Default" else simChoiceLabel ?:
+                                        if (simListing.value == null) "Checking…" else "Unavailable") else "Choose SIM…",
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             DropdownMenu(expanded = simMenu, onDismissRequest = { simMenu = false }) {
-                                DropdownMenuItem(text = { Text("Phone default") }, onClick = { simChoice = 0; simMenu = false })
+                                DropdownMenuItem(text = { Text("Phone default") }, onClick = { owner.chooseDraftSubscription(draftKey, 0); simMenu = false })
                                 simEntries.forEach { entry ->
                                     DropdownMenuItem(text = { Text(if (entry.isDefault) simLabel(entry, simEntries) + " (default)" else simLabel(entry, simEntries)) },
-                                        onClick = { simChoice = entry.subscriptionId; simMenu = false })
+                                        onClick = { owner.chooseDraftSubscription(draftKey, entry.subscriptionId); simMenu = false })
                                 }
                             }
                         }
