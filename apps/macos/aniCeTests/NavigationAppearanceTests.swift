@@ -71,12 +71,14 @@ extension SessionTests {
     let navigation = ConnectionNavigation()
     navigation.focusedPeer = "phone-a"
     navigation.diagnostics = true
-    for origin in [AppDestination.features, .favourites] {
+    for origin in [AppDestination.home, .features, .favourites] {
       for feature in AppFeature.allCases {
         navigation.show(origin)
         navigation.openFeature(feature)
         XCTAssertEqual(navigation.destination, .features)
         XCTAssertEqual(navigation.featurePanel, feature)
+        navigation.openFeature(feature)
+        XCTAssertEqual(navigation.featureOrigin, origin)
         XCTAssertEqual(navigation.focusedPeer, "phone-a")
         XCTAssertTrue(navigation.diagnostics)
         navigation.closeFeature()
@@ -87,6 +89,52 @@ extension SessionTests {
     navigation.settingsRoute = .about
     navigation.show(.settings)
     XCTAssertEqual(navigation.settingsRoute, .about)
+  }
+
+  @MainActor func testHistoryRestoresNestedRoutesAndPeerAndBranchesAfterBack() {
+    let navigation = ConnectionNavigation()
+    navigation.goBack()
+    navigation.goForward()
+    XCTAssertFalse(navigation.canGoBack)
+    navigation.show(.devices, peer: "phone-a", route: .pairing)
+    navigation.showSettings(.identity)
+    navigation.openFeature(.messages)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .settings)
+    XCTAssertEqual(navigation.settingsRoute, .identity)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .devices)
+    XCTAssertEqual(navigation.deviceRoute, .pairing)
+    XCTAssertEqual(navigation.focusedPeer, "phone-a")
+    navigation.goForward()
+    XCTAssertEqual(navigation.destination, .settings)
+    navigation.goForward()
+    XCTAssertEqual(navigation.featurePanel, .messages)
+    navigation.goBack()
+    navigation.show(.about)
+    XCTAssertFalse(navigation.canGoForward)
+    navigation.goForward()
+    XCTAssertEqual(navigation.destination, .about)
+  }
+
+  @MainActor func testHistoryIgnoresPreferenceChangesAndRepeatedNavigation() {
+    let navigation = ConnectionNavigation()
+    navigation.show(.home)
+    navigation.automaticAfterPairing = false
+    navigation.automaticLanAfterPairing = false
+    XCTAssertFalse(navigation.canGoBack)
+    navigation.select(.favourites)
+    navigation.openFeature(.files)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .favourites)
+    XCTAssertNil(navigation.featurePanel)
+    navigation.goForward()
+    XCTAssertEqual(navigation.featurePanel, .files)
+    navigation.select(.features)
+    XCTAssertNil(navigation.featurePanel)
+    navigation.goBack()
+    XCTAssertEqual(navigation.featurePanel, .files)
+    XCTAssertFalse(navigation.automaticAfterPairing)
   }
 
   func testPrimaryPeerListShowsOnlyReadyDevicesAndFallsBackWhenDisconnected() {
@@ -155,20 +203,13 @@ extension SessionTests {
     let target = NSObject()
     let items = CompanionHost.makeMenu(target: target).items
     XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Devices", "Manage devices", "Pause clipboard", "Quit aniCe"])
-    XCTAssertEqual(items.filter(\.isSeparatorItem).count, 2)
+      ["Open aniCe", "Manage devices", "Quit aniCe"])
+    XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
     for item in items where !item.isSeparatorItem {
       XCTAssertTrue(item.target === target)
       XCTAssertNotNil(item.action)
     }
-    XCTAssertEqual(Set(items.compactMap(\.action)).count, 5)
-    XCTAssertEqual(items.first(where: { $0.title == "Pause clipboard" })?.submenu?.items.map(\.title),
-      ClipboardPauseDuration.allCases.map(\.rawValue))
-    let pausedModel = MacClipboardModel(native: ClipboardNativeFake())
-    pausedModel.pause(for: .minutes11)
-    let pausedItems = CompanionHost.makeMenu(target: target, clipboard: pausedModel).items
-    XCTAssertEqual(pausedItems.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Devices", "Manage devices", "Resume clipboard (Paused (11m))", "Quit aniCe"])
+    XCTAssertEqual(Set(items.compactMap(\.action)).count, 3)
   }
 
   func testConnectionSummaryRequiresReadinessAcrossBothTransports() {
@@ -214,4 +255,51 @@ extension SessionTests {
       "Connected · Bluetooth")
   }
 
+}
+
+
+@MainActor final class SettingsScrollTests: XCTestCase {
+  func testTargetsClampAndRepeatWithoutLosingCompletion() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
+    scroll.documentView = document
+    let first = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 80))
+    let last = NSView(frame: NSRect(x: 0, y: 1100, width: 450, height: 80))
+    document.addSubview(first); document.addSubview(last)
+    let coordinator = SettingsScrollCoordinator()
+    coordinator.anchors = ["first": first, "last": last]
+    var completions = 0
+    coordinator.scroll(to: "last", animated: false) { completions += 1 }
+    XCTAssertEqual(scroll.contentView.bounds.maxY, last.frame.maxY + 12, accuracy: 1)
+    let bottomOffset = scroll.contentView.bounds.origin.y
+    coordinator.scroll(to: "last", animated: false) { completions += 1 }
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, bottomOffset, accuracy: 1)
+    XCTAssertEqual(completions, 2)
+    coordinator.scroll(to: "first", animated: false) { completions += 1 }
+    XCTAssertEqual(scroll.contentView.bounds.minY, 0, accuracy: 1)
+    XCTAssertEqual(completions, 3)
+    coordinator.scroll(to: "missing", animated: false) { XCTFail("Missing targets must not report a completed jump") }
+    XCTAssertEqual(scroll.contentView.bounds.minY, 0, accuracy: 1)
+  }
+
+  func testVisibleSectionsDoNotMoveAndPartiallyHiddenHeadingsAreRevealed() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
+    scroll.documentView = document
+    let section = NSView(frame: NSRect(x: 0, y: 80, width: 450, height: 60))
+    document.addSubview(section)
+    let coordinator = SettingsScrollCoordinator()
+    coordinator.anchors["appearance"] = section
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 40))
+    coordinator.scroll(to: "appearance", animated: false) {}
+    XCTAssertEqual(scroll.contentView.bounds.minY, 40, accuracy: 1)
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+    coordinator.scroll(to: "appearance", animated: false) {}
+    XCTAssertEqual(scroll.contentView.bounds.minY, 68, accuracy: 1)
+    XCTAssertTrue(scroll.documentVisibleRect.contains(section.frame))
+  }
+}
+
+private final class FlippedSettingsDocument: NSView {
+  override var isFlipped: Bool { true }
 }

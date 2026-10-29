@@ -16,7 +16,7 @@ struct MacDiscoveryView: View {
                 if model.session.active {
                     Button("Stop", action: model.stop)
                 } else if model.session.recovery != .unsupported {
-                    Button("Make this Mac discoverable", action: model.start).buttonStyle(.borderedProminent)
+                    Button("Make this Mac discoverable", action: model.start).buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
                         .foregroundStyle(AniCePalette.onAccent(colorScheme))
                     if model.session.state == .bluetoothOff || model.session.state == .permissionNeeded {
                         Button("Open System Settings", action: model.openSettings)

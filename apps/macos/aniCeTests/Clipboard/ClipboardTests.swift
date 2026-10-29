@@ -651,6 +651,24 @@ final class ClipboardTests: XCTestCase {
     XCTAssertTrue(PasteTrayFilter.all.entries(in: [], query: "").isEmpty)
   }
 
+  func testTraySearchAndFilterKeepTheSelectedItemsThatStillMatch() {
+    let retained = PasteTraySelection.reconcile(["a", "b"], pivotID: "b", entryIDs: ["b", "c"])
+    XCTAssertEqual(retained.ids, ["b"])
+    XCTAssertEqual(retained.pivot, "b")
+
+    let movedPivot = PasteTraySelection.reconcile(["a", "b"], pivotID: "a", entryIDs: ["b", "c"])
+    XCTAssertEqual(movedPivot.ids, ["b"])
+    XCTAssertEqual(movedPivot.pivot, "b")
+
+    let noMatches = PasteTraySelection.reconcile(["a"], pivotID: "a", entryIDs: [])
+    XCTAssertTrue(noMatches.ids.isEmpty)
+    XCTAssertNil(noMatches.pivot)
+
+    let newResults = PasteTraySelection.reconcile([], pivotID: nil, entryIDs: ["c", "b"])
+    XCTAssertEqual(newResults.ids, ["c"])
+    XCTAssertEqual(newResults.pivot, "c")
+  }
+
   @MainActor func testHistoryCopyFailurePreservesClipboardAndDoesNotSend() async throws {
     let h = ClipboardHarness(), channel = ClipboardChannel(); try await h.ready(channel)
     let entry = ClipboardHistoryEntry(id: "copy", text: "Saved item", origin: "mac", timestamp: Date(), credential: nil)
@@ -678,19 +696,28 @@ final class ClipboardTests: XCTestCase {
     let model = MacClipboardModel(native: ClipboardNativeFake(), history: history)
     for collecting in [true, false] {
       history.setEnabled(collecting); try await until { history.enabled == collecting }
-    for scheme in [ColorScheme.light, .dark] {
-      for width: CGFloat in [560, 760] {
-        let content = PasteTrayView(model: model, width: width, onDismiss: {}, onSelect: { _ in })
-          .environment(\.colorScheme, scheme)
-        let host = NSHostingView(rootView: content)
-        host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
-        XCTAssertEqual(host.bounds.width, width); XCTAssertEqual(host.bounds.height, 292)
-        let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: image)
-        try XCTUnwrap(image.representation(using: .png, properties: [:]))
-          .write(to: folder.appendingPathComponent("tray-\(Int(width))-\(scheme)-\(collecting).png"))
+      for scheme in [ColorScheme.light, .dark] {
+        for width: CGFloat in [360, 560, 760] {
+          let content = PasteTrayView(model: model, width: width, onDismiss: {}, onSelect: { _ in false })
+            .environment(\.colorScheme, scheme)
+          let host = NSHostingView(rootView: content)
+          host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.bounds.width, width); XCTAssertEqual(host.bounds.height, width <= 650 ? 318 : 292)
+          let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: image)
+          try XCTUnwrap(image.representation(using: .png, properties: [:]))
+            .write(to: folder.appendingPathComponent("tray-\(Int(width))-\(scheme)-\(collecting).png"))
+        }
       }
     }
+    for scheme: ColorScheme in [.light, .dark] {
+      let host = NSHostingView(rootView: PasteTrayCopyToast().environment(\.colorScheme, scheme))
+      host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
+      XCTAssertEqual(host.bounds.width, 260); XCTAssertEqual(host.bounds.height, 42)
+      let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+      host.cacheDisplay(in: host.bounds, to: image)
+      try XCTUnwrap(image.representation(using: .png, properties: [:]))
+        .write(to: folder.appendingPathComponent("tray-copy-toast-\(scheme).png"))
     }
     model.invalidate()
   }

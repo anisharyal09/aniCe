@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Draws a monochrome geometric profile mark for the developer's LinkedIn link. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FF000000"
+        android:pathData="M3,3 H6 V6 H3 Z M3,8 H6 V21 H3 Z M9,8 H12 V10 C13,8 15,8 16,8 C20,8 21,11 21,14 V21 H18 V14 C18,12 17,11 15,11 C13,11 12,12 12,14 V21 H9 Z" />
+</vector>

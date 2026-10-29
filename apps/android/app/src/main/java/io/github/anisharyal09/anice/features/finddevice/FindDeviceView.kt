@@ -27,6 +27,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
     val native = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).findDeviceNotification
     var permitted by remember { mutableStateOf(native.permitted()) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permitted = native.permitted() }
+    val feedbackText = findDeviceFeedbackText(owner)
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -80,7 +81,9 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                 ) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(record.peer.deviceName, style = MaterialTheme.typography.titleSmall)
-                        val status = if (!owner.supports(record.peer)) {
+                        val status = if (owner.feedbackPeer == record.peer && owner.feedbackKey != "find_idle") {
+                            feedbackText
+                        } else if (!owner.supports(record.peer)) {
                             if (owner.connected(record.peer)) stringResource(R.string.find_not_advertised)
                             else stringResource(R.string.find_connect_first)
                         } else if (owner.connected(record.peer)) {
@@ -99,17 +102,22 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                         Text(stringResource(R.string.find_title))
                     }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
-        owner.feedbackPeer?.let { if (owner.feedbackKey != "find_idle") Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }
+        val feedbackPeerMissing = owner.feedbackPeer?.let { peer -> peers.none { it.peer == peer } } == true
+        if (feedbackPeerMissing && owner.feedbackKey != "find_idle") {
+            owner.feedbackPeer?.let { Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }
+        }
         val showIdle = owner.feedbackKey == "find_idle" && peers.isEmpty()
-        if (showIdle || (owner.feedbackKey != "find_idle" && owner.feedbackKey.isNotEmpty())) {
+        if (showIdle || (owner.feedbackKey != "find_idle" && (owner.feedbackPeer == null || feedbackPeerMissing) && owner.feedbackKey.isNotEmpty())) {
             FindDeviceFeedback(owner)
         }
     }
 }
 
-@Composable fun FindDeviceFeedback(owner: FindDeviceController) {
+@Composable
+private fun findDeviceFeedbackText(owner: FindDeviceController): String {
     val resource = when (owner.feedbackKey) {
         "find_waiting" -> R.string.find_waiting
         "find_submitted" -> R.string.find_submitted
@@ -121,5 +129,9 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
         "find_disconnected" -> R.string.find_disconnected
         else -> R.string.find_idle
     }
-    Text(stringResource(resource), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    return stringResource(resource)
+}
+
+@Composable fun FindDeviceFeedback(owner: FindDeviceController) {
+    Text(findDeviceFeedbackText(owner), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

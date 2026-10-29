@@ -18,8 +18,8 @@
 "find_settings" = "Notification settings";
 "find_explanation" = "Send a notification to a connected trusted device. Sound follows system settings.";
 "find_unsupported" = "Find Device is unavailable. Connect a device with Find Device support.";
-"find_local_allowed" = "Notifications are allowed on this device. Presentation and sound follow system settings.";
-"find_local_blocked" = "Notifications are not allowed on this device. Enable them in notification settings to receive Find Device alerts.";
+"find_local_allowed" = "Notifications allowed on this Mac.";
+"find_local_blocked" = "Notifications are off. Allow them to receive Find Device alerts.";
 "find_local_unknown" = "Checking notification settings…";
 "find_local_error" = "Notification permission could not be requested. Check notification settings.";
 "find_pair_first" = "Pair a device in Devices to use Find Device.";

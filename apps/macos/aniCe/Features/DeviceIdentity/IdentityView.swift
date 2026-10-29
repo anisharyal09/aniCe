@@ -20,7 +20,7 @@ struct IdentityView: View {
             HStack {
                 if let onBack {
                     Button(action: onBack) { Image(systemName: "chevron.left") }
-                        .buttonStyle(.plain).accessibilityLabel("Back to Settings")
+                        .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Back to Settings")
                 }
                 Text("This device").font(.title2).fontWeight(.medium)
                 Spacer()
@@ -45,7 +45,7 @@ struct IdentityView: View {
                         Button("Edit name…") {
                             deviceName = local.identity.deviceName
                             editingName = true
-                        }.buttonStyle(.bordered)
+                        }.buttonStyle(.bordered).aniCeControlFeedback()
                         Text("Your local identity stays the same until you reset it.")
                             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                         VStack(alignment: .leading, spacing: 16) {
@@ -89,7 +89,7 @@ struct IdentityView: View {
                                 Text("Advanced")
                                 Spacer()
                             }.contentShape(Rectangle())
-                        }.buttonStyle(.plain).accessibilityValue(advanced ? "Expanded" : "Collapsed")
+                        }.buttonStyle(AniCeHoverButtonStyle()).accessibilityValue(advanced ? "Expanded" : "Collapsed")
                         if advanced {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Resetting creates a new identity. Existing pairings become invalid; you will need to pair your devices again.")

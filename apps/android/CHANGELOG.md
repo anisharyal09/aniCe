@@ -7,6 +7,18 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 ### Added
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
+- Review selected files and their recipient before sending; require renewed review when the connected device changes.
+- Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
+- Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
+- Keep full bottom-navigation labels accessible through horizontal scrolling at text sizes of 150% or above.
+
+### Changed
+
+- Replace the app palette and control styling with neutral light/dark colors, compact button faces and native accessible touch targets.
+- Reorganize Home around device status, send actions, playback, transfers and available recent activity.
+- Rework Devices and pairing with direct transport controls, inline security and trust disclosures, QR scanning and code entry.
+- Use compact feature rows, grouped Settings and a responsive About layout.
+- Reorganize playback, file transfer, Messages and Clipboard with contextual controls, chronological message threads, a bottom SMS composer and separate Share/History tabs.
 
 ## [v0.3.0]
 

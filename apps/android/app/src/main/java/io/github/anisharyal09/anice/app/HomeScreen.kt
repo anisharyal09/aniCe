@@ -22,6 +22,10 @@ fun HomeScreen(
   compact: Boolean = false,
   showManagement: Boolean = false,
   attention: @Composable () -> Unit = {},
+  quickActions: @Composable () -> Unit = {},
+  activities: @Composable () -> Unit = {},
+  recentActivity: @Composable () -> Unit = {},
+  showRecentHeading: Boolean = true,
 ) {
   Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
@@ -30,6 +34,9 @@ fun HomeScreen(
         .padding(horizontal = 16.dp, vertical = if (compact) 24.dp else 12.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+      Text("Home", style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.semantics { heading() })
+      attention()
       if (hasTrustedDevices && showManagement) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
           TextButton(onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage devices") }
@@ -46,16 +53,20 @@ fun HomeScreen(
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
           Text("No devices paired yet", style = MaterialTheme.typography.titleSmall)
           Text(
-            "Scan its QR code or enter the six-digit code.",
+            "Scan your Mac’s QR code or enter its six-digit code.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) {
+          OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
             Text("Pair a device")
           }
         }
       }
-      attention()
+      quickActions()
+      activities()
+      if (showRecentHeading) Text("Recent", style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { heading() })
+      recentActivity()
     }
   }
 }

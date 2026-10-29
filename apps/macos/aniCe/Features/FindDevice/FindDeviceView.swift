@@ -35,39 +35,47 @@ struct FindDeviceView: View {
               .fixedSize(horizontal: false, vertical: true)
             Button(MacFindDeviceNotifier.text("find_settings")) {
               if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
-            }.buttonStyle(.link).font(.caption)
+            }.buttonStyle(.link).aniCeControlFeedback().font(.caption)
           }
         } else {
-          Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }.buttonStyle(.bordered)
+          Button(MacFindDeviceNotifier.text("find_permission")) { Task { permissionKey = await notifier.requestPermission() } }.buttonStyle(.bordered).aniCeControlFeedback()
           Text(MacFindDeviceNotifier.text(permissionKey)).font(.caption).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
           Button(MacFindDeviceNotifier.text("find_settings")) {
             if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
-          }.buttonStyle(.bordered)
+          }.buttonStyle(.bordered).aniCeControlFeedback()
         }
       }
       ForEach(ConnectionPresentation.primaryPeers(peers, connected: { model.connected($0.peer) })) { record in
+        let feedbackForPeer = model.feedbackPeer == record.peer && model.feedbackKey != "find_idle"
         VStack(alignment: .leading, spacing: 4) {
           HStack {
             Text(record.peer.deviceName).fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button(MacFindDeviceNotifier.text("find_title")) { model.find(record.peer) }
-              .disabled(!model.canFind(record.peer)).buttonStyle(.bordered).fixedSize()
+              .disabled(!model.canFind(record.peer)).buttonStyle(.bordered).aniCeControlFeedback().fixedSize()
               .accessibilityLabel(String(format: MacFindDeviceNotifier.text("find_peer_action"), record.peer.deviceName))
           }
-          if !model.supports(record.peer) {
+          if feedbackForPeer {
+            Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
+              .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          } else if !model.supports(record.peer) {
             Text(MacFindDeviceNotifier.text(model.connected(record.peer) ? "find_not_advertised" : "find_connect_first"))
               .font(.caption).foregroundStyle(.secondary)
           } else if model.connected(record.peer) {
             Text(MacFindDeviceNotifier.text("find_connected")).font(.caption).foregroundStyle(.secondary)
           }
         }
+        .padding(.vertical, 8)
+        Divider()
       }
-      if let peer = model.feedbackPeer, model.feedbackKey != "find_idle" {
+      if let peer = model.feedbackPeer, model.feedbackKey != "find_idle", !peers.contains(where: { $0.peer == peer }) {
         Text(peer.deviceName).font(.caption)
+        Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
+          .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       let showIdle = model.feedbackKey == "find_idle" && !peers.contains { model.connected($0.peer) }
-      if showIdle || (model.feedbackKey != "find_idle" && !model.feedbackKey.isEmpty) {
+      if showIdle || (model.feedbackKey != "find_idle" && model.feedbackPeer == nil && !model.feedbackKey.isEmpty) {
         Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }

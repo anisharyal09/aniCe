@@ -1,6 +1,6 @@
 # Repository changelog
 
-Repository-wide structure, documentation, and development conventions belong here. Android, macOS, and protocol changes maintain dedicated component changelogs under unified project releases:
+Shared product changes, repository structure, documentation and development conventions are summarized here. Android, macOS and protocol implementation details have dedicated component changelogs under unified project releases:
 
 - [Android](apps/android/CHANGELOG.md)
 - [macOS](apps/macos/CHANGELOG.md)
@@ -11,6 +11,12 @@ Repository-wide structure, documentation, and development conventions belong her
 ### Added
 
 - Open Android-shared HTTP(S) links in the Mac's default browser.
+
+### Changed
+
+- Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.
+- Expand the [design guide](docs/design/DESIGN.md) with screen layouts, interaction states, accessibility requirements and semantic palette samples.
+- Run branch push CI for `seamless-redesign`.
 
 ## [v0.3.0]
 

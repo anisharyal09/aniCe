@@ -1,32 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents appearance and identity settings while preserving existing preference keys and navigation.
+// Presents grouped preferences and product links while preserving existing values and navigation.
 package io.github.anisharyal09.anice.app
 
 import android.content.Context
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withLink
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.anisharyal09.anice.R
-import io.github.anisharyal09.anice.features.deviceidentity.*
-import io.github.anisharyal09.anice.ui.theme.*
+import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
+import io.github.anisharyal09.anice.ui.theme.Appearance
+import io.github.anisharyal09.anice.ui.theme.appearancePreference
+import io.github.anisharyal09.anice.ui.theme.saveAppearance
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     identity: DeviceIdentityViewModel,
@@ -35,160 +34,253 @@ fun SettingsScreen(
     context: Context,
     peers: List<io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord> = emptyList()
 ) {
-
-    if (navigation.destination != AppDestination.About && navigation.settingsRoute == SettingsRoute.Identity) {
-        DeviceIdentityScreen(identity.state, snackbars, identity::retry, identity::reset, onRename = identity::rename)
-    } else if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                "aniCe",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-            )
-            val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
-            version?.let { Text("Version v$it", style = MaterialTheme.typography.bodyMedium) }
-            Text("Connect your Mac and Android.", style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Made by", style = MaterialTheme.typography.bodyMedium)
-                Text(buildAnnotatedString {
-                    withLink(
-                        LinkAnnotation.Url(
-                            "https://anisharyal09.com.np/", TextLinkStyles(
-                                style = SpanStyle(
-                                    color = MaterialTheme.colorScheme.selectionAccent,
-                                    textDecoration = TextDecoration.Underline
-                                )
-                            )
-                        )
-                    ) {
-                        append("@anisharyal09")
-                    }
-                }, style = MaterialTheme.typography.bodyMedium)
-            }
-            Text(buildAnnotatedString {
-                withLink(
-                    LinkAnnotation.Url(
-                        "https://github.com/anisharyal09/aniCe", TextLinkStyles(
-                            style = SpanStyle(
-                                color = MaterialTheme.colorScheme.selectionAccent,
-                                textDecoration = TextDecoration.Underline
-                            )
-                        )
-                    )
-                ) {
-                    append("Source code")
-                }
-            }, style = MaterialTheme.typography.bodyMedium)
-            Text(buildAnnotatedString {
-                withLink(
-                    LinkAnnotation.Url(
-                        "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", TextLinkStyles(
-                            style = SpanStyle(
-                                color = MaterialTheme.colorScheme.selectionAccent,
-                                textDecoration = TextDecoration.Underline
-                            )
-                        )
-                    )
-                ) {
-                    append("License · GPL-3.0-or-later")
-                }
-            }, style = MaterialTheme.typography.bodyMedium)
-            val uriHandler = LocalUriHandler.current
-            val supportLabel = stringResource(R.string.about_support)
-            IconButton(
-                onClick = { uriHandler.openUri("https://anisharyal09.com.np/support?from=anice") },
-                modifier = Modifier.align(Alignment.CenterHorizontally).size(48.dp)
-            ) {
-                Icon(
-                    painterResource(R.drawable.ic_heart), contentDescription = supportLabel,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    } else Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text("Appearance", style = MaterialTheme.typography.titleSmall)
-        val appearance = appearancePreference()
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Appearance.entries.forEach { mode ->
-                FilterChip(
-                    selected = appearance == mode,
-                    onClick = { saveAppearance(context, mode) }, label = { Text(mode.name) })
-            }
-        }
-        HorizontalDivider()
-        val clipboardApp = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
-        io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(clipboardApp.clipboard, peers)
-        // The Messages card is only a permission prompt; once all three grants are in, Settings has no Messages section.
-        if (!clipboardApp.sms.granted) {
-            HorizontalDivider()
-            Text("Messages", style = MaterialTheme.typography.titleSmall)
-            io.github.anisharyal09.anice.features.sms.SmsSettings(clipboardApp.sms)
-        }
-        HorizontalDivider()
-        Text("Local network (LAN)", style = MaterialTheme.typography.titleSmall)
-        val lan = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).lanSessionController
-        io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
-            checked = lan.automatic, enabled = true, onCheckedChange = lan::setAutomaticEnabled,
-            label = "Use local network automatically")
-        Text("Uses Bluetooth, and Wi-Fi when both devices are on the same network. Enable this on both devices.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    var showingIdentity by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
+    if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
+        AboutScreen(context)
+    } else {
+        val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
+        val lan = app.lanSessionController
         val lanPrefs = remember { context.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE) }
         var timeoutMinutes by remember { mutableIntStateOf(lanPrefs.getInt("lan_background_timeout_minutes", 0)) }
         var timeoutExpanded by remember { mutableStateOf(false) }
+        var appearanceExpanded by remember { mutableStateOf(false) }
         val timeoutOptions = listOf(1 to "1 min", 3 to "3 min", 5 to "5 min", 10 to "10 min", 0 to "Never")
-        Row(
-            Modifier.fillMaxWidth()
-                .clickable(role = androidx.compose.ui.semantics.Role.Button) { timeoutExpanded = !timeoutExpanded }
-                .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Background timeout · ${timeoutOptions.first { it.first == timeoutMinutes }.second}",
-                Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Icon(
-                painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
-                modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = if (timeoutExpanded) 90f else 0f)
-            )
-        }
-        if (timeoutExpanded) {
-            Text("Disconnect after the phone has been inactive in the background.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                timeoutOptions.forEach { (minutes, label) ->
-                    FilterChip(
-                        selected = timeoutMinutes == minutes,
-                        onClick = {
-                            timeoutMinutes = minutes
-                            lanPrefs.edit().putInt("lan_background_timeout_minutes", minutes).apply()
-                        },
-                        label = { Text(label) }
+        val appearance = appearancePreference()
+
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier.widthIn(max = 680.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Text("Settings", style = MaterialTheme.typography.titleMedium)
+
+                PreferenceSection("Appearance") {
+                    Box {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                                .clickable(role = Role.Button, onClickLabel = "Choose appearance") { appearanceExpanded = true },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Appearance", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Text(appearance.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                                modifier = Modifier.padding(start = 8.dp).size(16.dp).graphicsLayer(rotationZ = 90f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DropdownMenu(expanded = appearanceExpanded, onDismissRequest = { appearanceExpanded = false }) {
+                            Appearance.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.name) },
+                                    trailingIcon = if (appearance == mode) ({ Text("✓") }) else null,
+                                    onClick = { appearanceExpanded = false; saveAppearance(context, mode) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                PreferenceSection("Connection") {
+                    AutomaticConnectionToggle(
+                        checked = lan.automatic,
+                        enabled = true,
+                        onCheckedChange = lan::setAutomaticEnabled,
+                        label = "Use local network automatically",
+                        description = "Enable on both devices to use Wi-Fi."
                     )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Box {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                                .clickable(role = Role.Button, onClickLabel = "Choose background timeout") { timeoutExpanded = true },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Background timeout", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Text(timeoutOptions.first { it.first == timeoutMinutes }.second,
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                                modifier = Modifier.padding(start = 8.dp).size(16.dp).graphicsLayer(rotationZ = 90f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DropdownMenu(expanded = timeoutExpanded, onDismissRequest = { timeoutExpanded = false }) {
+                            timeoutOptions.forEach { (minutes, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    trailingIcon = if (timeoutMinutes == minutes) ({ Text("✓") }) else null,
+                                    onClick = {
+                                        timeoutExpanded = false
+                                        timeoutMinutes = minutes
+                                        lanPrefs.edit().putInt("lan_background_timeout_minutes", minutes).apply()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                PreferenceSection("Clipboard") {
+                    io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
+                }
+
+                if (!app.sms.granted) {
+                    PreferenceSection("Messages") {
+                        io.github.anisharyal09.anice.features.sms.SmsSettings(app.sms)
+                    }
+                }
+
+                PreferenceSection("This device") {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                            .clickable(role = Role.Button, onClickLabel = "Open identity and security") {
+                                showingIdentity = true
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(identity.state.snapshot?.identity?.deviceName ?: "This device", style = MaterialTheme.typography.bodyMedium)
+                            Text("Identity and security", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                            modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
-        HorizontalDivider()
-        Row(
-            Modifier.fillMaxWidth()
-                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Open this device") {
-                    navigation.settingsRoute = SettingsRoute.Identity
-                }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically
+    }
+}
+
+@Composable
+private fun PreferenceSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(title, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("This device", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    identity.state.snapshot?.identity?.deviceName ?: "Device identity",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(
-                painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), content = content)
         }
     }
+}
 
+@Composable
+private fun AboutScreen(context: Context) {
+    val uriHandler = LocalUriHandler.current
+    val version = remember {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName?.let { "Version v$it" }.orEmpty()
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = 660.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 20.dp)
+        ) {
+            Text("About", style = MaterialTheme.typography.titleMedium)
+            Text("Connect your Mac and Android.", Modifier.padding(top = 6.dp, bottom = 16.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val compact = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.4f
+                if (compact) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(painterResource(R.drawable.ic_link), contentDescription = null,
+                                modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("aniCe", style = MaterialTheme.typography.titleMedium)
+                        }
+                        Column(Modifier.padding(start = 32.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (version.isNotEmpty()) Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_link), contentDescription = null,
+                            modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(12.dp))
+                        Text("aniCe", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (version.isNotEmpty()) Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            AboutDetailRow("Source code", "GitHub", "https://github.com/anisharyal09/aniCe", uriHandler::openUri)
+            AboutDetailRow("License", "GPL-3.0-or-later", "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", uriHandler::openUri)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.4f) {
+                    Column {
+                        AboutDetailRow("Developer", "@anisharyal09", "https://github.com/anisharyal09", uriHandler::openUri, showDivider = false)
+                        AboutProfileLinks(Modifier.align(Alignment.End), uriHandler::openUri)
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AboutDetailRow("Developer", "@anisharyal09", "https://github.com/anisharyal09", uriHandler::openUri,
+                            modifier = Modifier.weight(1f), showDivider = false)
+                        AboutProfileLinks(openUri = uriHandler::openUri)
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            IconButton(
+                onClick = { uriHandler.openUri("https://anisharyal09.com.np/support?from=anice") },
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 14.dp).size(48.dp)
+            ) {
+                Icon(painterResource(R.drawable.ic_heart), contentDescription = "Support aniCe",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutDetailRow(label: String, detail: String, url: String, openUri: (String) -> Unit,
+    modifier: Modifier = Modifier, showDivider: Boolean = true) {
+    Column(modifier) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val compact = maxWidth < 240.dp || LocalDensity.current.fontScale >= 1.6f
+            val rowModifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                .clickable(role = Role.Button, onClickLabel = "$label, $detail") { openUri(url) }
+            if (compact) {
+                Column(rowModifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(label, style = MaterialTheme.typography.bodyMedium)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(detail, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
+                            modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
+                        modifier = Modifier.padding(start = 8.dp).size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        if (showDivider) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+
+@Composable
+private fun AboutProfileLinks(modifier: Modifier = Modifier, openUri: (String) -> Unit) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { openUri("https://x.com/anisharyal09") }, modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(R.drawable.ic_brand_x), contentDescription = "X profile",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp).offset(x = 4.dp))
+        }
+        IconButton(onClick = { openUri("https://www.linkedin.com/in/anisharyal09/") },
+            modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(R.drawable.ic_brand_linkedin), contentDescription = "LinkedIn profile",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp).offset(x = (-4).dp))
+        }
+    }
 }

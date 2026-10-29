@@ -90,7 +90,7 @@ class ClipboardSurfaceTests {
                     CompositionLocalProvider(LocalConfiguration provides configuration) {
                         AniCeTheme { Surface(Modifier.fillMaxSize()) {
                             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                ClipboardSettings(owner, emptyList(), showHistory = false)
+                                ClipboardSettings(owner, emptyList(), showHistory = true)
                                 HorizontalDivider()
                                 ClipboardHistoryView(owner)
                             }

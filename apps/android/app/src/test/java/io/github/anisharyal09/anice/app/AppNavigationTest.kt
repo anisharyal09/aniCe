@@ -143,12 +143,14 @@ class AppNavigationTest {
 
     @Test fun featurePanelsReturnToTheirOwnSectionAndSurviveRestoration() {
         val scope = androidx.compose.runtime.saveable.SaverScope { true }
-        for (origin in listOf(AppDestination.Features, AppDestination.Favourites)) {
+        for (origin in listOf(AppDestination.Home, AppDestination.Features, AppDestination.Favourites)) {
             for (feature in AppFeature.entries) {
                 val state = AppNavigation(origin, DeviceRoute.Discovery, "mac-a")
                 state.openFeature(feature)
                 assertEquals(AppDestination.Features, state.destination)
                 assertEquals(feature, state.featurePanel)
+                state.openFeature(feature)
+                assertEquals(origin, state.featureOrigin)
                 val saved = with(AppNavigation.saver) { scope.save(state) }!!
                 val restored = AppNavigation.saver.restore(saved)!!
                 assertEquals(feature, restored.featurePanel)

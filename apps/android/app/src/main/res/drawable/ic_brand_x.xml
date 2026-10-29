@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Draws a monochrome geometric X mark for the developer profile link. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FF000000" android:fillType="evenOdd"
+        android:pathData="M3,2 L7.2,2 L21,22 L16.8,22 Z M5.4,3.4 L6.4,3.4 L18.6,20.6 L17.6,20.6 Z" />
+    <path android:fillColor="#FF000000" android:pathData="M19.2,2 L21.6,2 L4.8,22 L2.4,22 Z" />
+</vector>

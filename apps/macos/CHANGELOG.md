@@ -7,6 +7,19 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Added
 
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
+- Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
+- Review selected files and their recipient before sending; reject sends when the reviewed device changes.
+- Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.
+- Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
+
+### Changed
+
+- Apply neutral light/dark colors, a split window header, compact controls and consistent hover, pressed and focus feedback.
+- Reorganize Overview with device status, send actions, responsive playback/transfer columns and recent activity.
+- Rework Devices and pairing with compact transport rows, security and trust disclosures and native approval sheets.
+- Replace feature launcher tiles with compact rows; group Settings with section shortcuts and center About content at wide sizes.
+- Reorganize playback, file transfer, Messages and Clipboard, including split conversations, a bottom SMS composer and separate Share/History tabs.
+- Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
 
 ## [v0.3.0]
 

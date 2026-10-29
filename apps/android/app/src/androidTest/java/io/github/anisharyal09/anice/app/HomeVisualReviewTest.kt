@@ -19,13 +19,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.session.DeviceSessionCard
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
+import java.util.concurrent.atomic.AtomicInteger
+import android.graphics.Rect
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -50,6 +54,7 @@ class HomeVisualReviewTest {
             listOf(
                 Review("secured-dark", true, ConnectionState.SECURED, ""),
                 Review("secured-light", false, ConnectionState.SECURED, ""),
+                Review("compact-home", false, ConnectionState.SECURED, "", compact = true),
                 Review(
                     "disconnected",
                     false,
@@ -65,6 +70,7 @@ class HomeVisualReviewTest {
                     "Bluetooth access is needed. Allow it in app settings, then retry.",
                 ),
                 Review("empty", false, null, ""),
+                Review("high-activity", true, ConnectionState.SECURED, "", highActivity = true, compact = true),
                 Review(
                     "large-text-long-name",
                     true,
@@ -81,7 +87,7 @@ class HomeVisualReviewTest {
                     width = 640,
                 ),
             )
-        assertTrue(cases.size >= 9)
+        assertTrue(cases.size >= 11)
         for (case in cases) {
             val activity =
                 runner.startActivitySync(
@@ -90,6 +96,9 @@ class HomeVisualReviewTest {
                 ) as MainActivity
             try {
                 val drawn = CountDownLatch(1)
+                val disconnects = AtomicInteger()
+                val details = AtomicInteger()
+                val reviews = AtomicInteger()
                 runner.runOnMainSync {
                     activity.setContent {
                         val configuration =
@@ -109,14 +118,17 @@ class HomeVisualReviewTest {
                                     Scaffold(
                                         topBar = {
                                             TopAppBar(
-                                                title = { Text("aniCe") },
+                                                title = { Text("aniCe", style = MaterialTheme.typography.titleSmall) },
+                                                expandedHeight = maxOf(48.dp, (24 * LocalDensity.current.fontScale + 16).dp),
                                                 actions = {
-                                                    TextButton(onClick = {}) { Text("This device") }
+                                                    IconButton(onClick = {}) {
+                                                        Icon(painterResource(R.drawable.ic_about), contentDescription = "About aniCe", modifier = Modifier.size(18.dp))
+                                                    }
                                                 },
                                                 colors =
                                                     TopAppBarDefaults.topAppBarColors(
                                                         containerColor =
-                                                            MaterialTheme.colorScheme.surface
+                                                            MaterialTheme.colorScheme.background
                                                     ),
                                             )
                                         }
@@ -128,7 +140,20 @@ class HomeVisualReviewTest {
                                             HomeScreen(
                                                 hasTrustedDevices = case.state != null,
                                                 onPair = {},
+                                                showRecentHeading = case.highActivity,
                                                 modifier = Modifier.widthIn(max = case.width.dp),
+                                                attention = {
+                                                    if (case.highActivity) PendingRequestRow("Incoming files", "3 files from Fixture Mac") { reviews.incrementAndGet() }
+                                                },
+                                                activities = {
+                                                    if (case.highActivity) {
+                                                        Text("Now playing", style = MaterialTheme.typography.titleSmall)
+                                                        Text("Sending files · 42%", style = MaterialTheme.typography.bodyMedium)
+                                                    }
+                                                },
+                                                recentActivity = {
+                                                    if (case.highActivity) Text("Recent clipboard activity", style = MaterialTheme.typography.bodySmall)
+                                                },
                                                 sessions = {
                                                     case.state?.let {
                                                         DeviceSessionCard(
@@ -137,8 +162,9 @@ class HomeVisualReviewTest {
                                                             case.status,
                                                             true,
                                                             {},
-                                                            {},
-                                                            {},
+                                                            { disconnects.incrementAndGet() },
+                                                            { details.incrementAndGet() },
+                                                            compact = case.compact,
                                                         )
                                                     }
                                                 },
@@ -162,18 +188,62 @@ class HomeVisualReviewTest {
                 assertNotNull("Missing native accessibility tree: ${case.id}", root)
                 val expected = if (case.state == null) "No devices paired yet" else case.name
                 assertTrue("Missing device context: ${case.id}", findText(root, expected) != null)
+                assertEquals("Recent heading must match available activity", case.highActivity, findText(root, "Recent") != null)
                 capture(activity, case.id)
+                if (case.highActivity) {
+                    val request = clickableAncestor(findText(root, "Incoming files"))
+                    assertNotNull("Pending request row must be actionable", request)
+                    assertTrue(request!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                    runner.waitForIdleSync()
+                    assertEquals("A request row must open exactly once", 1, reviews.get())
+                    assertEquals(0, disconnects.get())
+                    assertEquals(0, details.get())
+                    val requestBounds = Rect()
+                    val currentBounds = Rect()
+                    val recentBounds = Rect()
+                    request.getBoundsInScreen(requestBounds)
+                    findText(root, "Now playing")!!.getBoundsInScreen(currentBounds)
+                    findText(root, "Recent clipboard activity")!!.getBoundsInScreen(recentBounds)
+                    assertTrue("Incoming decisions must precede current work", requestBounds.bottom <= currentBounds.top)
+                    assertTrue("Recent activity must follow current work", currentBounds.bottom <= recentBounds.top)
+                }
+
                 if (case.state == ConnectionState.SECURED) {
                     assertTrue(findText(root, "Connected") != null || findText(root, "Secured") != null)
-                    val tools = findText(root, "Connection details") ?: findText(root, "More")
+                    val tools = if (case.compact) clickableAncestor(findText(root, case.name))
+                        else findText(root, "Connection details") ?: findText(root, "More")
                     assertNotNull("Missing accessible More action", tools)
-
+                    val action = clickableAncestor(findText(root, "Disconnect"))
+                    assertNotNull("Missing independent Disconnect action", action)
+                    val bounds = Rect()
+                    action!!.getBoundsInScreen(bounds)
+                    assertTrue("Disconnect target must remain at least 48 dp",
+                        bounds.height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                    assertTrue(action.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                    runner.waitForIdleSync()
+                    assertEquals(1, disconnects.get())
+                    assertEquals(0, details.get())
+                    val device = clickableAncestor(findText(runner.uiAutomation.rootInActiveWindow, case.name))
+                    assertNotNull("Device name row must be actionable", device)
+                    assertTrue(device!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                    runner.waitForIdleSync()
+                    assertEquals(1, details.get())
+                    assertEquals(1, disconnects.get())
                 }
             } finally {
                 runner.runOnMainSync { activity.finish() }
                 runner.waitForIdleSync()
             }
         }
+    }
+
+    private fun clickableAncestor(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var current = node
+        repeat(8) {
+            if (current?.isClickable == true) return current
+            current = current?.parent
+        }
+        return null
     }
 
     private fun findText(
@@ -226,6 +296,8 @@ class HomeVisualReviewTest {
         val state: ConnectionState?,
         val status: String,
         val fontScale: Float = 1f,
+        val highActivity: Boolean = false,
+        val compact: Boolean = false,
         val name: String = "Anish’s MacBook Air",
         val width: Int = 360,
     )

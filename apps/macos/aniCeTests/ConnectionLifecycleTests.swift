@@ -274,14 +274,24 @@ import AppKit
     let folder = URL(fileURLWithPath: "/private/tmp/aniCe-reference-renders", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     var renders = 0
+    let trustedRecords = pairing.peers
     for appearance in ["Light", "Dark"] {
       preferences.set(appearance, forKey: "window.appearance")
       preferences.set("playback,files", forKey: "ui.favouriteFeatures")
       for width in [720.0, 1240.0] {
-        let routes: [(AppDestination, AppFeature?)] = AppDestination.primary.map { ($0, nil) } + AppFeature.allCases.map { (.features, $0) }
-        for (destination, feature) in routes {
+        let routes: [(AppDestination, AppFeature?, String?)] =
+          AppDestination.primary.map { ($0, nil, nil) } + AppFeature.allCases.map { (.features, $0, nil) } + [
+            (.home, nil, "first-run"), (.devices, nil, "pairing"), (.devices, nil, "pairing-code"),
+            (.devices, nil, "pairing-approval"), (.settings, nil, "pending-pairing")]
+        for (destination, feature, scenario) in routes {
+          pairing.peers = scenario == "first-run" ? [] : trustedRecords
+          pairing.active = ["pairing-code", "pairing-approval", "pending-pairing"].contains(scenario ?? "")
+          pairing.phase = scenario == "pairing-code" ? "invitation" : pairing.active ? "approval" : "idle"
+          pairing.status = pairing.active ? "Approve this pairing on both devices." : "Choose how to pair your Android device."
+          pairing.pin = scenario == "pairing-code" ? "123456" : nil
+          pairing.peer = pairing.phase == "approval" ? peer : nil
           let navigation = ConnectionNavigation()
-          navigation.show(destination)
+          navigation.show(destination, route: scenario?.hasPrefix("pairing") == true ? .pairing : .overview)
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
             discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
@@ -303,13 +313,13 @@ import AppKit
           host.cacheDisplay(in: host.bounds, to: bitmap)
           let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
           XCTAssertGreaterThan(bytes.count, 1000)
-          try bytes.write(to: folder.appendingPathComponent("window-\(feature?.rawValue ?? destination.rawValue.lowercased())-\(Int(width))-\(appearance.lowercased()).png"))
+          try bytes.write(to: folder.appendingPathComponent("window-\(scenario ?? feature?.rawValue ?? destination.rawValue.lowercased())-\(Int(width))-\(appearance.lowercased()).png"))
           renders += 1
           XCTAssertFalse(navigation.details, "Changing sections must not open a modal")
         }
       }
     }
-    XCTAssertEqual(renders, 44)
+    XCTAssertEqual(renders, 64)
     XCTAssertFalse(radio.started)
     XCTAssertTrue(radio.sent.isEmpty)
     XCTAssertFalse(lan.allowing)

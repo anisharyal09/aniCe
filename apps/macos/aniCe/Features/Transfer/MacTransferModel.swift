@@ -1485,13 +1485,20 @@ enum TransferEvent: Equatable {
     }
   }
 
-  func sendFiles(urls: [URL]) async {
+  func sendFiles(urls: [URL], reviewedPeer: DeviceIdentity? = nil) async {
     guard !isBusy, !Task.isCancelled, preparation == nil, transferTask == nil else { return }
     guard (1...128).contains(urls.count) else {
       state = .failed(reason: "Transfer batch must contain 1 to 128 files")
       return
     }
     selectPreferredChannel()
+    if let reviewedPeer {
+      guard let current = activeChannel?.descriptor.peer,
+        current.deviceId == reviewedPeer.deviceId, current.fingerprint == reviewedPeer.fingerprint else {
+        failTransfer(reason: "The connected device changed. Review the selected files before sending.")
+        return
+      }
+    }
     let operation = epoch
     // Reserve the job and its peer before rendezvous or identity reads can suspend.
     preparing = true
@@ -1505,6 +1512,12 @@ enum TransferEvent: Equatable {
     selectPreferredChannel(preparingRoute: true)
     guard let initialChannel = activeChannel, peerConnected else {
       failTransfer(reason: "No secured local-network or Bluetooth connection")
+      return
+    }
+    // Rendezvous can replace the active channel while this operation is suspended.
+    if let reviewedPeer, (initialChannel.descriptor.peer.deviceId != reviewedPeer.deviceId ||
+      initialChannel.descriptor.peer.fingerprint != reviewedPeer.fingerprint) {
+      failTransfer(reason: "The connected device changed. Review the selected files before sending.")
       return
     }
     guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }

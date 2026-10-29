@@ -1590,13 +1590,19 @@ class TransferController(
         prepareFile(file.name, file.length(), sourceFile = file) { FileInputStream(file) }
     }
 
-    fun sendUris(uris: List<Uri>) {
+    fun sendUris(uris: List<Uri>, reviewedPeerDeviceId: String? = null, reviewedPeerFingerprint: String? = null) {
         val resolver = context?.contentResolver ?: run {
             updateState(TransferState.Failed("No context available to resolve files"))
             return
         }
+        if ((reviewedPeerDeviceId == null) != (reviewedPeerFingerprint == null)) {
+            updateState(TransferState.Failed("The reviewed device identity is incomplete. Review the files again."))
+            return
+        }
+        val reviewedPeer = if (reviewedPeerDeviceId != null && reviewedPeerFingerprint != null)
+            reviewedPeerDeviceId to reviewedPeerFingerprint else null
         val operation = epoch
-        prepareSources(uris) { uri ->
+        prepareSources(uris, reviewedPeer = reviewedPeer) { uri ->
             var ownsGrant = false
             if (resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) {
                 try {
@@ -1630,7 +1636,12 @@ class TransferController(
         }
     }
 
-    private fun <T> prepareSources(sources: List<T>, awaitLan: Boolean = true, prepare: suspend (T) -> TransferFile) {
+    private fun <T> prepareSources(
+        sources: List<T>,
+        awaitLan: Boolean = true,
+        reviewedPeer: Pair<String, String>? = null,
+        prepare: suspend (T) -> TransferFile
+    ) {
         if (isBusy) return
         if (state !is TransferState.Connecting) selectPreferredChannel()
         if (sources.isEmpty() || sources.size > 128) {
@@ -1638,6 +1649,11 @@ class TransferController(
             return
         }
         val channel = activeChannel
+        if (reviewedPeer != null && (channel?.descriptor?.peer?.deviceId != reviewedPeer.first ||
+                channel?.descriptor?.peer?.fingerprint != reviewedPeer.second)) {
+            updateState(TransferState.Failed("The connected device changed. Review the selected files before sending."))
+            return
+        }
         val requestedLan = awaitLan && channel?.descriptor?.transport != "lan" && onDemandLanConnection?.invoke() == true
         // A requested LAN route gets a bounded rendezvous before a ready BLE fallback is used.
         if (requestedLan || channel == null || !peerConnected || !peerCompatible) {
@@ -1646,7 +1662,7 @@ class TransferController(
                 return
             }
             awaitingLan = requestedLan
-            pendingSend = { prepareSources(sources, awaitLan = false, prepare = prepare) }
+            pendingSend = { prepareSources(sources, awaitLan = false, reviewedPeer = reviewedPeer, prepare = prepare) }
             updateState(TransferState.Connecting("your Mac"))
             onLeaseChanged?.invoke(true)
             connectTimeoutJob?.cancel()
@@ -1687,6 +1703,12 @@ class TransferController(
                         preparing = false; preparation = null
                         // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
                         if (channels["lan"] != null && capabilities["lan"] != null) selectPreferredChannel()
+                        // File preparation may finish after the selected connection has changed.
+                        if (reviewedPeer != null && (activeChannel?.descriptor?.peer?.deviceId != reviewedPeer.first ||
+                                activeChannel?.descriptor?.peer?.fingerprint != reviewedPeer.second)) {
+                            failTransfer("The connected device changed. Review the selected files before sending.")
+                            return@withContext
+                        }
                         startOfferBatch(files, totalBytes, activeChannel?.takeIf {
                             it.descriptor.peer.deviceId == channel.descriptor.peer.deviceId &&
                                 it.descriptor.peer.fingerprint == channel.descriptor.peer.fingerprint

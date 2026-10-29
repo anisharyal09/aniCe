@@ -7,35 +7,55 @@ struct ClipboardSettingsView: View {
   let model: MacClipboardModel
   let peers: [PeerTrustRecord]
   var showHistory = true
+  var compactSettings = false
+  var showPreferences = true
   @Environment(\.colorScheme) private var scheme
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: compactSettings ? 0 : 8) {
       if peers.isEmpty { Text("Pair a device to share your clipboard.").foregroundStyle(.secondary) }
       else if peers.count > 1 {
         Picker("Device", selection: Binding(get: { model.selected.map { $0.deviceId + ":" + $0.fingerprint } ?? "" }, set: { value in
           model.select(peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == value }?.peer)
         })) { ForEach(peers) { record in Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint) } }
-      } else if let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
-      Toggle("Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
-        .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
-      HStack(spacing: 8) {
-        Text(model.isPaused ? (model.pauseStatusText ?? "Clipboard paused") : "Clipboard observation active")
-          .font(.caption)
-          .foregroundStyle(model.isPaused ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
-        Spacer()
-        if model.isPaused {
-          Button("Resume") { model.resume() }
-            .buttonStyle(.bordered).controlSize(.small)
-        }
-        Menu(model.isPaused ? "Change" : "Pause…") {
-          ForEach(ClipboardPauseDuration.allCases) { duration in
-            Button(duration.rawValue) { model.pause(for: duration) }
+      } else if !compactSettings, let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
+      if !showPreferences, model.selected != nil {
+        Text(model.automatic ? "Automatic sharing on" : "Manual sharing")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+      if showPreferences {
+        Toggle(compactSettings ? "Automatic sharing" : "Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
+          .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
+        if compactSettings {
+          if model.selected != nil {
+            Text("Enable on both devices. Manual sends stay available.").font(.caption)
+              .foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.leading, 20).padding(.top, 4)
+            }
+        } else {
+          HStack(spacing: 8) {
+            Text(model.isPaused ? (model.pauseStatusText ?? "Clipboard paused") : "Clipboard observation active")
+              .font(.caption)
+              .foregroundStyle(model.isPaused ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+            Spacer()
+            if model.isPaused {
+              Button("Resume") { model.resume() }
+                .buttonStyle(AniCeButtonStyle()).controlSize(.small)
+            }
+            Menu(model.isPaused ? "Change" : "Pause…") {
+              ForEach(ClipboardPauseDuration.allCases) { duration in
+                Button(duration.rawValue) { model.pause(for: duration) }
+              }
+            }
+            .menuStyle(.borderedButton).aniCeControlFeedback()
+            .controlSize(.small)
           }
         }
-        .menuStyle(.borderedButton)
-        .controlSize(.small)
+        if showHistory {
+          if compactSettings {
+            Rectangle().fill(AniCePalette.separator(scheme)).frame(height: 0.5).padding(.vertical, 8)
+          }
+          HistoryPreference(history: model.history, compact: compactSettings)
+        }
       }
-      if showHistory { HistoryPreference(history: model.history) }
       ClipboardAccessGuidance(model: model)
     }
     .onAppear { model.prune(peers.map(\.peer)); if model.selected == nil { model.select(peers.first?.peer) }; model.refreshAccess() }
@@ -55,18 +75,23 @@ private struct ClipboardAccessGuidance: View {
 }
 private struct HistoryPreference: View {
   let history: ClipboardHistory
+  var compact = false
   @Environment(\.colorScheme) private var scheme
   @State private var confirming = false
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
-        .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).tint(AniCePalette.accent(scheme))
         .alert("Keep clipboard history?", isPresented: $confirming) {
           Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
         } message: { Text("Save the latest text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Delete items or use Clear to remove them.") }
+      if compact {
+        Text("Saved on this Mac. Pausing keeps saved clips.").font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.leading, 20)
+      }
 
       // History capacity: limits FIFO unpinned persistence to 20, 50, or 100 items.
-      if history.enabled || !history.entries.isEmpty {
+      if !compact && (history.enabled || !history.entries.isEmpty) {
         HStack(spacing: 8) {
           Picker("History capacity", selection: Binding(get: { history.capacity }, set: { history.setCapacity($0) })) {
             Text("20 items").tag(20)
@@ -78,28 +103,53 @@ private struct HistoryPreference: View {
         }
       }
     }
-    if !history.enabled && !history.entries.isEmpty { Text("Collection paused · Saved items are kept").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
+    if !compact && !history.enabled && !history.entries.isEmpty { Text("Collection paused · Saved items are kept").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
     if let error = history.error { Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
   }
 }
 struct ClipboardView: View {
   let model: MacClipboardModel
   let peers: [PeerTrustRecord]
+  @Environment(\.colorScheme) private var scheme
   @State private var historyTab = false
+  @State private var preferencesOpen = false
   @State private var more = false
   @State private var reveal = false
   @State private var pasted = ""
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
-        Picker("Clipboard view", selection: $historyTab) { Text("Share").tag(false); Text("History").tag(true) }
-          .pickerStyle(.segmented).labelsHidden()
-        Button("Open tray", systemImage: "rectangle.stack") { PasteTrayController.shared.show() }
-          .buttonStyle(.bordered).controlSize(.small).help("Open clipboard tray (⌥⌘V)")
+        HStack(spacing: 8) {
+          clipboardTab("Share", selected: !historyTab) { historyTab = false }
+          clipboardTab("History", selected: historyTab) { historyTab = true }
+        }
+
+        .accessibilityElement(children: .contain).accessibilityLabel("Clipboard view")
+        .onMoveCommand { direction in
+          if direction == .left { historyTab = false }
+          if direction == .right { historyTab = true }
+        }
+        Button { PasteTrayController.shared.show() } label: {
+          Label { Text("Open tray") } icon: {
+            Image(systemName: "rectangle.stack").foregroundStyle(AniCePalette.secondaryText(scheme))
+          }
+        }
+          .buttonStyle(AniCeButtonStyle(quiet: true)).help("Open clipboard tray (⌥⌘V)")
+        Button { preferencesOpen.toggle() } label: { Image(systemName: "gearshape").frame(width: 24, height: 24) }
+          .buttonStyle(AniCeHoverButtonStyle()).controlSize(.small)
+          .help("Clipboard preferences").accessibilityLabel("Clipboard preferences")
+      }
+      if preferencesOpen {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Clipboard settings").font(.subheadline.weight(.medium))
+          ClipboardSettingsView(model: model, peers: peers, showHistory: true, compactSettings: false)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .top) { AniCePalette.separator(scheme).frame(height: 0.5) }
       }
       if historyTab { ClipboardHistoryView(model: model); ClipboardAccessGuidance(model: model) }
       else {
-        ClipboardSettingsView(model: model, peers: peers, showHistory: false)
+        ClipboardSettingsView(model: model, peers: peers, showHistory: false, showPreferences: false)
         let available = model.selected.map(model.supports) == true
         if let peer = model.selected, !available { Text(model.connected(peer) ? "Clipboard unavailable on this device" : "Connect first").font(.callout) }
         if model.status != "Ready to share text" && (available || model.busy) { Text(model.status).font(.caption).foregroundStyle(.secondary) }
@@ -135,18 +185,37 @@ struct ClipboardView: View {
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshAccess() }
     .onDisappear { clearContent() }
   }
+  private func clipboardTab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(title).font(.system(size: 13, weight: .medium))
+        .foregroundStyle(selected ? AniCePalette.onAccent(scheme) : AniCePalette.secondaryText(scheme))
+        .frame(minWidth: 64, minHeight: 30)
+        .padding(.horizontal, 8)
+        .background(selected ? AniCePalette.accent(scheme) : AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 5))
+        .contentShape(RoundedRectangle(cornerRadius: 5))
+    }
+    .buttonStyle(.plain).aniCeControlFeedback(cornerRadius: 5)
+    .accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : [])
+  }
   private func clearContent() { pasted = ""; reveal = false; model.clearPreview() }
 }
 
-// Both entry points confirm the exact captured item, never a later pasteboard read.
+// Manual sends confirm the captured item, never a later pasteboard read.
 struct ClipboardSendButton: View {
   let model: MacClipboardModel
+  var quiet = false
+  @Environment(\.colorScheme) private var colorScheme
   @State private var sensitiveSample: ClipboardSample?
   var body: some View {
     Button {
       model.send(); sensitiveSample = model.preview?.sensitive == true ? model.preview : nil
-    } label: { Label("Send clipboard", systemImage: "doc.on.clipboard") }
-      .buttonStyle(.bordered).controlSize(.small)
+    } label: {
+      Label { Text("Send clipboard") } icon: {
+        Image(systemName: "doc.on.clipboard")
+          .foregroundStyle(quiet ? AniCePalette.secondaryText(colorScheme) : AniCePalette.primaryText(colorScheme))
+      }
+    }
+      .buttonStyle(AniCeButtonStyle(quiet: quiet)).controlSize(.small)
       .disabled(model.busy || model.selected.map(model.supports) != true)
       .alert("Send sensitive text?", isPresented: Binding(get: { sensitiveSample != nil }, set: { if !$0 { sensitiveSample = nil } }), presenting: sensitiveSample) { captured in
         Button("Send") { model.sendConfirmed(captured); sensitiveSample = nil }
@@ -166,13 +235,39 @@ struct ClipboardActivityView: View {
   @State private var copyStatus: String?
   var body: some View {
     if let item = model.recent {
+      if compact {
+        HStack(alignment: .center, spacing: 14) {
+          Image(systemName: "doc.on.clipboard").font(.title3).accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+              Text("Clipboard").font(.callout.weight(.medium))
+              Text(item.timestamp, format: .dateTime.hour().minute())
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+              Spacer(minLength: 8)
+              Text(item.received ? "From phone" : "From Mac")
+                .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
+            if let preview = item.textPreview { Text(preview).font(.callout).lineLimit(2) }
+            else { Text("Preview hidden for marked clipboard items").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
+          }
+          Spacer(minLength: 8)
+          if item.sample != nil {
+            Button { copyStatus = model.copyActivity(item.id) ? "Copied" : "Could not copy" } label: {
+              Label(copyStatus ?? "Copy", systemImage: "doc.on.doc")
+            }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel(copyStatus ?? "Copy clipboard item")
+          }
+          Button { model.dismissActivity(item.id) } label: { Text("Dismiss") }
+            .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.secondaryText(scheme))
+        }.padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+          .onChange(of: item.id) { _, _ in copyStatus = nil }
+      } else {
       VStack(alignment: .leading, spacing: 8) {
         HStack {
           Button(action: open) { HStack { Text("Clipboard"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) } }
-            .buttonStyle(.plain).font(.headline).accessibilityLabel("Open Clipboard")
+            .buttonStyle(AniCeHoverButtonStyle()).font(.headline).accessibilityLabel("Open Clipboard")
           Spacer()
           Button { model.dismissActivity(item.id) } label: { Image(systemName: "xmark") }
-            .buttonStyle(.plain).accessibilityLabel("Dismiss clipboard activity")
+            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Dismiss clipboard activity")
         }
         ViewThatFits(in: .horizontal) {
           HStack { origin(item); Text(item.timestamp, format: .dateTime.hour().minute()); direction(item) }
@@ -182,13 +277,14 @@ struct ClipboardActivityView: View {
         else { Text("Preview hidden for marked clipboard items").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
         if item.sample != nil {
           Button { copyStatus = model.copyActivity(item.id) ? "Copied" : "Could not copy" } label: { Label(copyStatus ?? "Copy", systemImage: "doc.on.doc") }
-            .buttonStyle(.borderless).controlSize(.small)
+            .buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
         }
       }
       .padding(compact ? 0 : 16)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(compact ? Color.clear : AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
       .onChange(of: item.id) { _, _ in copyStatus = nil }
+      }
     }
   }
   private func origin(_ item: ClipboardActivity) -> Text { Text(item.received ? "From phone" : "From Mac") }
@@ -202,11 +298,12 @@ struct ClipboardHistoryView: View {
   @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      HistoryPreference(history: model.history)
       HStack {
         Text("\(model.history.entries.count) saved · On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         Spacer()
-        if !model.history.entries.isEmpty { Button("Clear...") { clearing = true }.buttonStyle(.borderless).controlSize(.small) }
+        Text(model.history.enabled ? "History on" : "History paused")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        if !model.history.entries.isEmpty { Button("Clear...") { clearing = true }.buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small) }
       }
       if model.status != "Ready to share text" { Text(model.status).font(.caption).foregroundStyle(.secondary) }
       if model.busy { Button("Cancel send") { model.cancel() } }
@@ -229,7 +326,7 @@ struct ClipboardHistoryView: View {
               ViewThatFits(in: .horizontal) {
                 HStack { metadata(entry); Spacer(); actions(entry) }
                 VStack(alignment: .leading, spacing: 4) { metadata(entry); HStack { actions(entry) } }
-              }.buttonStyle(.borderless).controlSize(.small)
+              }.buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
             }
             .padding(.vertical, 8)
             Divider()

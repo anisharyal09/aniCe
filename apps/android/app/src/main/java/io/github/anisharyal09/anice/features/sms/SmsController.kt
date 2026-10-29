@@ -116,6 +116,10 @@ class SmsController(
     var selectedThreadId by mutableStateOf<String?>(null); private set
     var conversation by mutableStateOf<List<SmsDisplayMessage>>(emptyList()); private set
     var conversationMore by mutableStateOf(false); private set
+    private val drafts = mutableStateMapOf<String, String>()
+    private val draftSubscriptions = mutableStateMapOf<String, Int>()
+    private val composeOperations = mutableStateMapOf<String, SmsComposeOperation>()
+    private var composeGeneration = 0L
     var loading by mutableStateOf(false); private set
     var status by mutableStateOf(""); private set
     var skippedRows by mutableStateOf(0); private set
@@ -779,7 +783,27 @@ class SmsController(
         }
     }
 
-    fun send(address: String, text: String, subscriptionId: Int = 0): SmsComposeOperation {
+    fun draft(key: String): String = drafts[key].orEmpty()
+
+    fun sendingDraft(key: String): Boolean = key in composeOperations
+
+    fun draftSubscription(key: String): Int = draftSubscriptions[key] ?: 0
+
+    fun chooseDraftSubscription(key: String, subscriptionId: Int) {
+        if (subscriptionId == 0) draftSubscriptions.remove(key) else draftSubscriptions[key] = subscriptionId
+    }
+
+    fun saveDraft(key: String, value: String) {
+        if (value.isEmpty()) drafts.remove(key) else drafts[key] = value
+    }
+
+    fun retainDrafts(peerCredentials: Set<String>) {
+        drafts.keys.removeAll { key -> !key.startsWith("local|") && peerCredentials.none { key.startsWith("$it|") } }
+        draftSubscriptions.keys.removeAll { key -> !key.startsWith("local|") && peerCredentials.none { key.startsWith("$it|") } }
+    }
+
+    fun send(address: String, text: String, subscriptionId: Int = 0, draftKey: String? = null): SmsComposeOperation {
+        if (draftKey != null) composeOperations[draftKey]?.let { return it }
         val operation = SmsComposeOperation()
         val clean = smsSanitizeText(text)
         val bytes = clean?.toByteArray(Charsets.UTF_8)
@@ -790,14 +814,23 @@ class SmsController(
         // Capture order before the radio call: a reply received during confirmation must stay above this send.
         val echoSeq = nextArrival()
         val echoSortMillis = nextSortMillis()
+        val generation = composeGeneration
+        if (draftKey != null) composeOperations[draftKey] = operation
         scope.launch {
             val outcome = try { sender.send(address, clean, subscriptionId) } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
+            // A radio result after identity reset must not restore retired conversation state.
+            if (generation != composeGeneration) {
+                operation.completion.complete(outcome)
+                return@launch
+            }
             when (outcome.result) {
                 0L -> {
                     val raw = outcome.dateMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
                     val stamp = if (outcome.messageId.isEmpty()) raw / 1000 * 1000 else raw
                     displayExtras += Extra(SmsDisplayMessage(outcome.messageId.ifEmpty { "echo:" + UUID.randomUUID() }, address, stamp, 1, false, clean, outcome.messageId.isEmpty(), subscriptionId), now() + EXTRAS_LIFETIME, echoSeq, echoSortMillis)
                     upsertSentThread(address, clean, stamp)
+                    // Completing an older send must not erase text typed while it was pending.
+                    if (draftKey != null && drafts[draftKey] == text) drafts.remove(draftKey)
                     refreshConversation(); status = "Message sent"
                     if (outcome.messageId.isEmpty()) recheckPendingEcho()
                 }
@@ -806,6 +839,7 @@ class SmsController(
                 5L -> status = "Not confirmed; it may have been sent"
                 else -> status = "Message rejected"
             }
+            if (draftKey != null) composeOperations.remove(draftKey)
             operation.completion.complete(outcome)
             schedule()
         }
@@ -902,6 +936,8 @@ class SmsController(
     }
 
     fun invalidate() {
+        composeGeneration++
+        composeOperations.clear()
         timer?.cancel(); timer = null
         servingThreads.values.forEach { it.job?.cancel() }; servingThreads.clear()
         servingHistory.values.forEach { it.job?.cancel() }; servingHistory.clear()
@@ -909,7 +945,7 @@ class SmsController(
         pendingLive.forEach { it.job?.cancel() }; pendingLive.clear()
         incomingReplies.values.forEach { it.job?.cancel() }
         incomingReplies.clear(); completedReplies.clear(); marks.clear(); displayExtras.clear(); loadedRows = emptyList()
-        relayedLive = 0; waitingLive = 0; failedLive = 0
+        relayedLive = 0; waitingLive = 0; failedLive = 0; drafts.clear(); draftSubscriptions.clear()
         threadsJob?.cancel(); conversationJob?.cancel(); conversationGeneration++; threadGeneration++
         threadCursor = 0L to ""; threadsMore = false
         threads = null; selectedThreadId = null; conversation = emptyList(); conversationMore = false; loading = false

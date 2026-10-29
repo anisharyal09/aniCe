@@ -3,6 +3,9 @@
 package io.github.anisharyal09.anice.features.transfer
 
 import android.text.format.Formatter
+import android.content.ContentResolver
+import android.provider.OpenableColumns
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -11,6 +14,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.painterResource
 import io.github.anisharyal09.anice.R
 import androidx.compose.ui.Modifier
@@ -19,23 +24,167 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-@Composable
-fun rememberSendFilesAction(controller: TransferController): () -> Unit {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) controller.sendUris(uris)
-        controller.endPicker()
+internal data class TransferReviewFile(val uri: Uri, val name: String, val size: Long?)
+private data class TransferReviewPeer(val deviceId: String, val fingerprint: String, val name: String)
+
+@Stable
+class TransferSendReview internal constructor(private val controller: TransferController) {
+    private var files by mutableStateOf<List<TransferReviewFile>>(emptyList())
+        private set
+    internal var resolving by mutableStateOf(false)
+        private set
+    private var visible by mutableStateOf(false)
+        private set
+    private var reviewedPeer by mutableStateOf<TransferReviewPeer?>(null)
+        private set
+    private var launchPicker: () -> Unit = {}
+    private var selectionRevision = 0L
+
+    private fun currentPeer(): TransferReviewPeer? = controller.activeChannel?.descriptor?.peer?.let {
+        TransferReviewPeer(it.deviceId, it.fingerprint, it.deviceName)
     }
-    return {
-        // File selection requests LAN without retiring the secured BLE channel or waiting for LAN readiness.
+
+    internal fun installPicker(action: () -> Unit) { launchPicker = action }
+
+    fun chooseFiles() {
+        selectionRevision++
+        reviewedPeer = currentPeer()
+        files = emptyList()
+        visible = false
+        resolving = false
+        // Ask for a faster route before opening the picker; the captured peer remains the review target.
         controller.onDemandLanConnection?.invoke()
         controller.beginPicker()
-        launcher.launch(arrayOf("*/*"))
+        launchPicker()
+    }
+
+    internal fun selectionReturned(hasSelection: Boolean): Long? {
+        controller.endPicker()
+        if (!hasSelection) { dismiss(); return null }
+        selectionRevision++
+        visible = true
+        resolving = true
+        return selectionRevision
+    }
+
+    internal fun resolved(selection: List<TransferReviewFile>, revision: Long) {
+        // Ignore metadata returned for a dismissed or replaced picker selection.
+        if (revision != selectionRevision || !visible) return
+        files = selection
+        resolving = false
+    }
+
+    private fun retargetToCurrentPeer() { reviewedPeer = currentPeer() }
+
+    private fun sendReviewedFiles() {
+        val target = reviewedPeer ?: return
+        val current = currentPeer() ?: return
+        if (target.deviceId != current.deviceId || target.fingerprint != current.fingerprint) return
+        if (files.isEmpty() || files.size > 128) return
+        controller.sendUris(files.map { it.uri }, target.deviceId, target.fingerprint)
+        dismiss()
+    }
+
+    fun dismiss() {
+        selectionRevision++
+        files = emptyList()
+        resolving = false
+        visible = false
+        reviewedPeer = null
+    }
+
+    @Composable
+    fun ReviewDialog() {
+        if (!visible) return
+        val activePeer = currentPeer()
+        val target = reviewedPeer
+        val matches = target != null && activePeer?.deviceId == target.deviceId && activePeer.fingerprint == target.fingerprint
+        val identityReady = controller.peerConnected && controller.peerCompatible && activePeer != null
+        val totalSize = files.mapNotNull { it.size }.takeIf { it.size == files.size }?.sum()
+        AlertDialog(
+            onDismissRequest = ::dismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = true),
+            title = { Text("Review files") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(target?.let { "To ${it.name}" } ?: "No connected device was selected.")
+                    if (files.isNotEmpty()) {
+                        Text(
+                            "${files.size} file${if (files.size == 1) "" else "s"}" +
+                                (totalSize?.let { " · ${Formatter.formatFileSize(LocalContext.current, it)}" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        files.take(5).forEach { file ->
+                            Text(file.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (files.size > 5) Text("+ ${files.size - 5} more", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (files.size > 128) Text("Choose no more than 128 files.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    if (!identityReady) Text("Reconnect to the reviewed device before sending.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else if (!matches) Text("The connection changed. Review the current device before sending.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                when {
+                    resolving || files.isEmpty() || files.size > 128 -> Button(onClick = {}, enabled = false) { Text("Preparing…") }
+                    !identityReady -> Button(onClick = {}, enabled = false) { Text("Reconnect") }
+                    !matches -> Button(onClick = ::retargetToCurrentPeer) { Text("Review current device") }
+                    else -> Button(onClick = ::sendReviewedFiles) { Text("Send files") }
+                }
+            },
+            dismissButton = { TextButton(onClick = ::dismiss) { Text("Cancel") } }
+        )
     }
 }
 
 @Composable
-fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
+fun rememberSendFilesAction(controller: TransferController): TransferSendReview {
+    val context = LocalContext.current
+    val resolver = context.contentResolver
+    val scope = rememberCoroutineScope()
+    val review = remember(controller) { TransferSendReview(controller) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val revision = review.selectionReturned(uris.isNotEmpty())
+        if (revision != null) scope.launch {
+            val files = withContext(Dispatchers.IO) { uris.map { reviewFile(resolver, it) } }
+            review.resolved(files, revision)
+        }
+    }
+    review.installPicker { launcher.launch(arrayOf("*/*")) }
+    return review
+}
+
+private fun reviewFile(resolver: ContentResolver, uri: Uri): TransferReviewFile {
+    var name = uri.lastPathSegment ?: "File"
+    var size: Long? = null
+    try {
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIndex >= 0) name = cursor.getString(nameIndex)?.takeIf(String::isNotEmpty) ?: name
+                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex).takeIf { it >= 0 }
+            }
+        }
+    } catch (_: RuntimeException) {
+        // Metadata is optional; transfer preparation still validates file access before sending.
+    }
+    return TransferReviewFile(uri, name, size)
+}
+
+@Composable
+fun TransferView(controller: TransferController, open: (() -> Unit)? = null, overview: Boolean = false) {
     val context = LocalContext.current
     val sendFiles = rememberSendFilesAction(controller)
 
@@ -49,23 +198,22 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
     }
 
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        modifier = Modifier.fillMaxWidth(),
+        shape = RectangleShape,
+        color = Color.Transparent
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(if (overview) 0.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (overview) 8.dp else 10.dp)
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(Modifier.fillMaxWidth().then(if (open != null) Modifier.clickable(onClickLabel = "Open file transfer", onClick = open).heightIn(min = 48.dp) else Modifier),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Files", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (overview) {
+                Row(
+                    Modifier.fillMaxWidth().then(if (open != null) Modifier.clickable(onClickLabel = "Open file transfer", onClick = open).heightIn(min = 48.dp) else Modifier),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("File transfer", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
@@ -102,14 +250,17 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    } else if (!controller.peerCompatible) {
+                        Text(
+                            "File transfer is unavailable on this device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    if (overview) {
                         OutlinedButton(
-                            enabled = !controller.preparing,
-                            onClick = sendFiles,
+                            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
+                            onClick = sendFiles::chooseFiles,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
@@ -117,6 +268,27 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Send files…")
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("Send files", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    if (controller.peerConnected) "To ${controller.activeChannel?.descriptor?.peer?.deviceName ?: "your Mac"}"
+                                    else "Connect your Mac to send files.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
+                                onClick = sendFiles::chooseFiles,
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text("Choose files")
+                            }
                         }
 
                     }
@@ -143,6 +315,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
                         shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
@@ -170,6 +343,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
                         shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
@@ -225,6 +399,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                                         android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION))
                             },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Accept")
@@ -232,6 +407,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = { controller.rejectIncomingOffer(reason = 0L) },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Decline")
@@ -316,6 +492,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                     OutlinedButton(
                         onClick = { controller.cancelTransfer(local = true) },
                         shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
@@ -392,6 +569,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             Button(
                                 onClick = { controller.resumeOverBluetooth() },
                                 shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.heightIn(min = 48.dp)
                             ) {
                                 Text("Continue over Bluetooth")
@@ -400,6 +578,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = { controller.cancelTransfer(local = true) },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Cancel transfer")
@@ -424,7 +603,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                             OutlinedButton(
                                 onClick = {
                                     controller.dismiss()
-                                    sendFiles()
+                                    sendFiles.chooseFiles()
                                 },
                                 enabled = controller.peerConnected,
                                 shape = MaterialTheme.shapes.small,
@@ -439,6 +618,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Done")
@@ -454,7 +634,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = {
                                 controller.dismiss()
-                                sendFiles()
+                                sendFiles.chooseFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
@@ -468,6 +648,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Dismiss")
@@ -484,7 +665,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = {
                                 controller.dismiss()
-                                sendFiles()
+                                sendFiles.chooseFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
@@ -498,6 +679,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Dismiss")
@@ -514,7 +696,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = {
                                 controller.dismiss()
-                                sendFiles()
+                                sendFiles.chooseFiles()
                             },
                             enabled = controller.peerConnected,
                             shape = MaterialTheme.shapes.small,
@@ -528,6 +710,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                         OutlinedButton(
                             onClick = { controller.dismiss() },
                             shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Dismiss")
@@ -536,5 +719,10 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null) {
                 }
             }
         }
+        if (overview) {
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider()
+        }
+        sendFiles.ReviewDialog()
     }
 }

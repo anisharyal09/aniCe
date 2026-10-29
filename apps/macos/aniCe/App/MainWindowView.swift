@@ -19,8 +19,16 @@ struct MainWindowView: View {
   let sms: MacSmsModel
   let smsPreferences: SmsPreferences
   @Bindable var navigation: ConnectionNavigation
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
+  @State var activeSettingsSection = "appearance"
+  @State var hoveredSettingsSection: String?
+  @State var hoveredAboutLink: String?
+  @State var focusedSettingsSection: String?
+  @State var settingsFocusToken = UUID()
+  @State var settingsScroller = SettingsScrollCoordinator()
+  @State var showingLocalIdentity = false
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
   }
@@ -35,8 +43,9 @@ struct MainWindowView: View {
   var body: some View {
     NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
-        Text("aniCe").font(.system(size: 22, weight: .semibold))
-          .foregroundStyle(AniCePalette.primaryText(colorScheme)).padding(.top, 24).padding(.bottom, 24).padding(.horizontal, 14)
+        Text("aniCe").font(.system(size: 21, weight: .semibold))
+          .foregroundStyle(AniCePalette.primaryText(colorScheme))
+          .padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 24)
         Text("Workspace").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           .padding(.horizontal, 14).padding(.bottom, 12)
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
@@ -46,22 +55,48 @@ struct MainWindowView: View {
       }.padding(.horizontal, 14).padding(.bottom, 24)
         .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
         .background(AniCePalette.secondarySurface(colorScheme))
+        .overlay(alignment: .trailing) { AniCePalette.separator(colorScheme).frame(width: 0.5) }
+        .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+        .toolbar {
+          ToolbarItemGroup(placement: .navigation) {
+            Button(action: navigation.goBack) { Image(systemName: "arrow.left") }
+              .disabled(!navigation.canGoBack).help("Back")
+              .accessibilityLabel("Back").keyboardShortcut("[", modifiers: .command)
+            Button(action: navigation.goForward) { Image(systemName: "arrow.right") }
+              .disabled(!navigation.canGoForward).help("Forward")
+              .accessibilityLabel("Forward").keyboardShortcut("]", modifiers: .command)
+          }
+        }
     } detail: {
-      Group {
-        switch navigation.destination {
-        case .home: homeContent
-        case .devices: devicesContent
-        case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
-        case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
-        case .about: aboutContent
-        case .settings: settingsContent
-
+      VStack(spacing: 0) {
+        if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
+          PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
+            detail: pairing.status) { navigation.show(.devices, route: .pairing) }
+        }
+        if let offer = transfer.pendingOffer,
+          navigation.destination != .home && !(navigation.destination == .features && navigation.featurePanel == .files) {
+          PendingRequestRow(title: "Incoming files", detail: "\(offer.files.count) files from \(offer.peerName)") {
+            navigation.openFeature(.files)
+          }
+        }
+        Group {
+          switch navigation.destination {
+          case .home: homeContent
+          case .devices: devicesContent
+          case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
+          case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
+          case .about: aboutContent
+          case .settings: settingsContent
+          }
         }
       }.navigationTitle("aniCe")
-        .toolbarBackground(AniCePalette.surface(colorScheme), for: .windowToolbar)
+        .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .background(AniCePalette.background(colorScheme))
-        .overlay(alignment: .top) { Divider() }
+        .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+    }
+    .sheet(isPresented: $showingLocalIdentity) {
+      IdentityView(model: identity).preferredColorScheme(colorScheme)
     }
     .disclosureGroupStyle(ClickableDisclosureStyle())
     .preferredColorScheme(colorScheme)
@@ -100,17 +135,16 @@ struct MainWindowView: View {
   private func sidebarItem(_ destination: AppDestination) -> some View {
     let selected = navigation.destination == destination
     return Button {
-      if destination == .features || destination == .favourites { navigation.featurePanel = nil; navigation.findDetails = false }
-      navigation.show(destination)
+      navigation.select(destination)
     } label: {
       HStack(spacing: 12) {
         Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
         Text(destination.rawValue).font(.body)
         Spacer(minLength: 0)
-      }.foregroundStyle(selected ? AniCePalette.accent(colorScheme) : AniCePalette.primaryText(colorScheme))
+      }.foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
         .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
         .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-    }.buttonStyle(.plain).accessibilityAddTraits(selected ? [.isSelected] : [])
+    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityAddTraits(selected ? [.isSelected] : [])
       .padding(.bottom, 4)
   }
 
@@ -121,14 +155,46 @@ struct ClickableDisclosureStyle: DisclosureGroupStyle {
     VStack(alignment: .leading, spacing: 10) {
       Button { configuration.isExpanded.toggle() } label: {
         HStack {
-          Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.forward")
-            .font(.caption).accessibilityHidden(true)
-          configuration.label
+          HStack {
+            Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.forward")
+              .font(.caption).accessibilityHidden(true)
+            configuration.label
+          }.aniCeControlFeedback()
           Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain)
         .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
       if configuration.isExpanded { configuration.content }
     }
+  }
+}
+
+
+// Keeps pending decisions visible while the person visits another section.
+struct PendingRequestRow: View {
+  let title: String
+  let detail: String
+  let review: () -> Void
+  @Environment(\.colorScheme) private var scheme
+  var body: some View {
+    Button(action: review) {
+      HStack(spacing: 12) {
+        Image(systemName: "info.circle").accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).font(.callout.weight(.medium))
+          Text(detail).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 8)
+        Text("Review").font(.callout).foregroundStyle(AniCePalette.accent(scheme))
+          .padding(.horizontal, 10).padding(.vertical, 5)
+          .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(scheme)) }
+      }.padding(.horizontal, 24).padding(.vertical, 12).contentShape(Rectangle())
+    }.buttonStyle(AniCeHoverButtonStyle())
+      .foregroundStyle(AniCePalette.primaryText(scheme))
+      .background(AniCePalette.secondarySurface(scheme))
+      .overlay(alignment: .bottom) { Divider() }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(title + ". " + detail + ". Review")
   }
 }

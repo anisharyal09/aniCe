@@ -76,8 +76,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         companion = CompanionHost(content: content, onOpen: { [weak self] in
             self?.openMainFromCompanion()
         }, onManage: { [weak self] in
-            navigation.open(.devices, route: .pairing) { self?.openMainFromCompanion() }
-        }, onDevices: { [weak self] in
             navigation.diagnostics = false
             navigation.open(.devices) { self?.openMainFromCompanion() }
         })

@@ -18,10 +18,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -70,6 +70,7 @@ fun DeviceIdentityScreen(
     val deviceIdLabel = stringResource(R.string.device_id)
     val fingerprintLabel = stringResource(R.string.fingerprint)
     val copiedLabel = stringResource(R.string.copied)
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     if (editingName) AlertDialog(
         onDismissRequest = { editingName = false },
         title = { Text("Device name") },
@@ -103,31 +104,36 @@ fun DeviceIdentityScreen(
     )
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
-            .verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.isWorking) LinearProgressIndicator(Modifier.fillMaxWidth())
             state.snapshot?.let { current ->
+                val editName: @Composable () -> Unit = {
+                    TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), enabled = !state.isWorking,
+                        onClick = { name = current.identity.deviceName; editingName = true },
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit name") }
+                }
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.ic_phone), contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium)
-                            Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(painterResource(R.drawable.ic_phone), contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium)
+                                Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (!largeText) editName()
                         }
-                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), enabled = !state.isWorking,
-                            onClick = { name = current.identity.deviceName; editingName = true },
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit name") }
+                        if (largeText) editName()
                     }
                 }
                 if (state.renameFailure) Text("Could not save the name. Try again.", color = MaterialTheme.colorScheme.error)
-                Text(stringResource(R.string.identity_description), style = MaterialTheme.typography.bodyMedium,
+                Text(stringResource(R.string.identity_description), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         IdentityField(deviceIdLabel, current.identity.deviceId) {
                             copyText(context, deviceIdLabel, current.identity.deviceId)
                             if (Build.VERSION.SDK_INT < 33) scope.launch { snackbars.showSnackbar(copiedLabel) }
@@ -160,13 +166,13 @@ fun DeviceIdentityScreen(
                 }))
                 OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onRetry, enabled = !state.isWorking) { Text(stringResource(R.string.retry)) }
             }
+            // Keep destructive recovery separate from the everyday rename and copy actions.
             if (state.canReset) {
                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     .semantics { stateDescription = if (advanced) "Expanded" else "Collapsed" }) {
                     Text(if (advanced) "Hide advanced" else "Advanced")
                 }
                 if (advanced) {
-                    Spacer(Modifier.height(8.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -185,14 +191,16 @@ fun DeviceIdentityScreen(
 @Composable
 private fun IdentityField(label: String, value: String, copy: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = copy, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.copy_field, label))
             }
         }
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+        // Grouping is visual only; copy actions retain the original full identity value.
+        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
     }
 }
 
