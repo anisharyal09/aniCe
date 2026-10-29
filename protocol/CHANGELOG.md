@@ -4,6 +4,10 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+### Added
+
+- Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
+
 ## [v0.3.0]
 
 ### Fixed

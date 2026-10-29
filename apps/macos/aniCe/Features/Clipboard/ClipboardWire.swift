@@ -26,7 +26,7 @@ struct ClipboardMessage: Equatable, Sendable {
     case 2:
       try check(fields.count == 2); try revision(0); try b(1)
     case 3:
-      try check(fields.count == 8); try uuid(0); try revision(1); try uuid(2); try check((0...1).contains(n(3))); try b(4)
+      try check(fields.count == 8); try uuid(0); try revision(1); try uuid(2); try check((0...2).contains(n(3))); try b(4)
       let size = try n(5); try check((1...65536).contains(size) && n(6) == (size + 3071) / 3072)
       guard case .bytes(let digest) = fields[7], digest.count == 32 else { throw ClipboardWireError.malformed }
     case 4:
@@ -34,6 +34,7 @@ struct ClipboardMessage: Equatable, Sendable {
       guard case .bytes(let data) = fields[2], (1...3072).contains(data.count) else { throw ClipboardWireError.malformed }
     case 5, 7: try check(fields.count == 1); try uuid(0)
     case 6: try check(fields.count == 2); try uuid(0); try check((0...7).contains(n(1)))
+    case 8: try check(fields.isEmpty)
     default: throw ClipboardWireError.malformed
     }
   }
@@ -48,4 +49,15 @@ struct ClipboardMessage: Equatable, Sendable {
   }
   static func id(_ kind: Int64, _ id: String) -> Self { Self(kind: kind, fields: [.text(id)]) }
   static func result(_ id: String, _ code: Int64) -> Self { Self(kind: 6, fields: [.text(id), .integer(code)]) }
+}
+
+enum ClipboardLink {
+  static func url(_ value: String) -> URL? {
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, text.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+      let components = URLComponents(string: text),
+      let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+      let host = components.host, !host.isEmpty else { return nil }
+    return components.url
+  }
 }

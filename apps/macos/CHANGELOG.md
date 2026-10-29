@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+### Added
+
+- Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
+
 ## [v0.3.0]
 
 ### Added
