@@ -111,7 +111,7 @@ extension MainWindowView {
 
   @ViewBuilder var devicesContent: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 24) {
+      VStack(alignment: .leading, spacing: 12) {
         HStack(alignment: .top) {
           VStack(alignment: .leading, spacing: 8) {
             Text("Devices").font(.system(size: 20, weight: .medium))
@@ -140,14 +140,14 @@ extension MainWindowView {
           }.font(.callout)
 
         Divider()
-        Button { navigation.showSettings(.identity) } label: {
+        Button { showingLocalIdentity = true } label: {
           HStack(spacing: 12) {
             Image(systemName: "laptopcomputer").font(.title3).accessibilityHidden(true)
             Text("This device")
             Text(identity.local?.identity.deviceName ?? "This Mac").foregroundStyle(AniCePalette.secondaryText(colorScheme))
             Spacer()
             Image(systemName: "chevron.forward").accessibilityHidden(true)
-          }.padding(.vertical, 16).contentShape(Rectangle())
+          }.padding(.vertical, 8).contentShape(Rectangle())
         }.buttonStyle(.plain)
         Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
@@ -244,9 +244,7 @@ extension MainWindowView {
   }
 
   @ViewBuilder var settingsContent: some View {
-    if navigation.settingsRoute == .identity {
-      IdentityView(model: identity, embedded: true, onBack: { navigation.settingsRoute = .overview })
-    } else if navigation.settingsRoute == .about {
+    if navigation.settingsRoute == .about {
       aboutContent
     } else {
       ScrollViewReader { proxy in
@@ -306,7 +304,7 @@ extension MainWindowView {
                   .toggleStyle(.checkbox).controlSize(.small).frame(minHeight: 48)
               }
               preferenceSection("This device", id: "this-device") {
-                Button { navigation.settingsRoute = .identity } label: {
+                Button { showingLocalIdentity = true } label: {
                   HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                       Text(identity.local?.identity.deviceName ?? "This Mac")
@@ -333,6 +331,7 @@ extension MainWindowView {
     @ViewBuilder content: () -> Content
   ) -> some View {
     let group = VStack(alignment: .leading, spacing: 0, content: content)
+      .font(.system(size: 13))
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 14)
       .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))

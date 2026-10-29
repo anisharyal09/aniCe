@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Open This device from Devices and Settings in a local identity sheet; flatten connection rows, tighten Devices spacing and balance Settings text sizes.
+
 - Simplify companion menus, open Devices from Manage devices, and align clipboard, file-send and tray actions with quiet styling. Expand Quick Paste Tray to 760 points. Messages restores each phone's own conversation and draft across phone switches and panel navigation.
 
 - Reorganize Home around device context, compact file/clipboard actions, incoming approvals and simultaneous current activity, with Now Playing and File transfer side by side once workspace content reaches 720 points. Keep pairing and incoming file requests visible when visiting other sections. Expose Disconnect directly in the Home header and make Security and diagnostics a full-row action.

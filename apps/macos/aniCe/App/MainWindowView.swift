@@ -21,6 +21,7 @@ struct MainWindowView: View {
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
+  @State var showingLocalIdentity = false
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
   }
@@ -86,6 +87,9 @@ struct MainWindowView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .background(AniCePalette.background(colorScheme))
         .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+    }
+    .sheet(isPresented: $showingLocalIdentity) {
+      IdentityView(model: identity).preferredColorScheme(colorScheme)
     }
     .disclosureGroupStyle(ClickableDisclosureStyle())
     .preferredColorScheme(colorScheme)

@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -70,6 +72,7 @@ fun DeviceIdentityScreen(
     val deviceIdLabel = stringResource(R.string.device_id)
     val fingerprintLabel = stringResource(R.string.fingerprint)
     val copiedLabel = stringResource(R.string.copied)
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     if (editingName) AlertDialog(
         onDismissRequest = { editingName = false },
         title = { Text("Device name") },
@@ -106,20 +109,25 @@ fun DeviceIdentityScreen(
             .verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (state.isWorking) LinearProgressIndicator(Modifier.fillMaxWidth())
             state.snapshot?.let { current ->
+                val editName: @Composable () -> Unit = {
+                    TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), enabled = !state.isWorking,
+                        onClick = { name = current.identity.deviceName; editingName = true },
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit name") }
+                }
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.ic_phone), contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium)
-                            Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.padding(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(painterResource(R.drawable.ic_phone), contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium)
+                                Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (!largeText) editName()
                         }
-                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), enabled = !state.isWorking,
-                            onClick = { name = current.identity.deviceName; editingName = true },
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit name") }
+                        if (largeText) editName()
                     }
                 }
                 if (state.renameFailure) Text("Could not save the name. Try again.", color = MaterialTheme.colorScheme.error)
@@ -185,8 +193,9 @@ fun DeviceIdentityScreen(
 @Composable
 private fun IdentityField(label: String, value: String, copy: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = copy, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.copy_field, label))

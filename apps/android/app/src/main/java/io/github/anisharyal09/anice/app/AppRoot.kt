@@ -136,7 +136,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 pageState.SaveableStateProvider(navigation.destination.name) {
                     when (navigation.destination) {
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
-                            DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, localName = identity.state.snapshot?.identity?.deviceName)
+                            DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity)
                         }
                         AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
                         AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)

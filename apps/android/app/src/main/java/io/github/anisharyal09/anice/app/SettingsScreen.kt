@@ -33,11 +33,9 @@ fun SettingsScreen(
     context: Context,
     peers: List<io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord> = emptyList()
 ) {
-    if (navigation.destination != AppDestination.About && navigation.settingsRoute == SettingsRoute.Identity) {
-        io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen(
-            identity.state, snackbars, identity::retry, identity::reset, onRename = identity::rename
-        )
-    } else if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
+    var showingIdentity by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
+    if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
         AboutScreen(context)
     } else {
         val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
@@ -134,7 +132,7 @@ fun SettingsScreen(
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp)
                             .clickable(role = Role.Button, onClickLabel = "Open identity and security") {
-                                navigation.settingsRoute = SettingsRoute.Identity
+                                showingIdentity = true
                             }
                             .padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically

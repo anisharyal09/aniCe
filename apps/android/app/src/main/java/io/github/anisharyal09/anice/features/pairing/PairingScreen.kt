@@ -312,7 +312,6 @@ fun TrustedDevicesSection(model: PairingViewModel) {
     var credentialPeer by rememberSaveable { mutableStateOf<String?>(null) }
     var forget by remember { mutableStateOf<String?>(null) }
     Column {
-        Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .clickable(role = androidx.compose.ui.semantics.Role.Button,
                 onClickLabel = if (trustedExpanded) "Hide trust and saved devices" else "Show trust and saved devices",

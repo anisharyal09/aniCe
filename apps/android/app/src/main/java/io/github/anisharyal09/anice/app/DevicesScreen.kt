@@ -7,6 +7,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import io.github.anisharyal09.anice.features.transfer.TransferState
 import io.github.anisharyal09.anice.features.transfer.TransferView
 import io.github.anisharyal09.anice.features.transfer.rememberSendFilesAction
@@ -15,20 +20,28 @@ import androidx.compose.ui.res.painterResource
 import io.github.anisharyal09.anice.R
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.features.discovery.*
 import io.github.anisharyal09.anice.features.pairing.*
 import io.github.anisharyal09.anice.features.session.*
+import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
+import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
 import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewModel, session: SessionViewModel, navigation: AppNavigation, nearbyOwner: CompanionProbe, automaticAfterPairing: Boolean, onAutomatic: (Boolean)->Unit, automaticLanAfterPairing: Boolean, onAutomaticLan: (Boolean)->Unit, localName: String? = null) {
+internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewModel, session: SessionViewModel, navigation: AppNavigation, nearbyOwner: CompanionProbe, automaticAfterPairing: Boolean, onAutomatic: (Boolean)->Unit, automaticLanAfterPairing: Boolean, onAutomaticLan: (Boolean)->Unit, identity: DeviceIdentityViewModel) {
     when (navigation.route) {
         DeviceRoute.Pairing -> {
-            DevicesOverviewContent(pairing, session, navigation, localName)
+            DevicesOverviewContent(pairing, session, navigation, identity)
             ModalBottomSheet(
                 onDismissRequest = navigation::back,
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -151,18 +164,21 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                             focusedPeer = navigation.focusedPeer, onFocusConsumed = { navigation.focusedPeer = null })
                     })
                 sendFiles.ReviewDialog()
-            } else DevicesOverviewContent(pairing, session, navigation, localName)
+            } else DevicesOverviewContent(pairing, session, navigation, identity)
         }
     }
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun DevicesOverviewContent(
     pairing: PairingViewModel,
     session: SessionViewModel,
     navigation: AppNavigation,
-    localName: String?,
+    identity: DeviceIdentityViewModel,
 ) {
+    var showingIdentity by rememberSaveable { mutableStateOf(false) }
+    val localName = identity.state.snapshot?.identity?.deviceName
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp)) {
             Text("Devices", style = MaterialTheme.typography.titleLarge)
@@ -180,30 +196,26 @@ private fun DevicesOverviewContent(
                 onFocusConsumed = { navigation.focusedPeer = null },
             )
             TrustedDevicesSection(pairing)
-            Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                    .clickable(role = Role.Button, onClickLabel = "Open this device details", onClick = {
-                        navigation.settingsRoute = SettingsRoute.Identity
-                        navigation.destination = AppDestination.Settings
-                    }).padding(vertical = 14.dp),
+                    .clickable(role = Role.Button, onClickLabel = "Open this device details", onClick = { showingIdentity = true })
+                    .padding(vertical = 10.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 Icon(painterResource(R.drawable.ic_phone), contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Row(Modifier.weight(1f), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("This device", style = MaterialTheme.typography.bodyMedium)
-                    if (localName != null) Text(" · $localName", maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(buildAnnotatedString {
+                    append("This device")
+                    if (localName != null) withStyle(SpanStyle(color = secondary)) { append(" · $localName") }
+                }, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
             }
             HorizontalDivider()
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     .clickable(role = Role.Button, onClickLabel = "Add device", onClick = navigation::pair)
-                    .padding(vertical = 14.dp),
+                    .padding(vertical = 10.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 Text("+", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(20.dp))
@@ -212,6 +224,31 @@ private fun DevicesOverviewContent(
                 Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
             }
             HorizontalDivider()
+        }
+    }
+    if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun LocalIdentitySheet(identity: DeviceIdentityViewModel, onDismiss: () -> Unit) {
+    // Sheet feedback must remain above the modal rather than behind it in the app scaffold.
+    val sheetSnackbars = remember { SnackbarHostState() }
+    val windowHeight = LocalWindowInfo.current.containerSize.height
+    val maxBodyHeight = with(LocalDensity.current) { windowHeight.toDp() * 0.7f }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("This phone", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Done") }
+        }
+        Box(Modifier.fillMaxWidth().heightIn(max = maxBodyHeight)) {
+            DeviceIdentityScreen(identity.state, sheetSnackbars, identity::retry, identity::reset,
+                onRename = identity::rename)
+            SnackbarHost(sheetSnackbars, Modifier.align(Alignment.BottomCenter))
         }
     }
 }

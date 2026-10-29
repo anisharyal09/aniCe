@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Open This device from Devices and Settings in a shared identity sheet; tighten device rows and retain readable identity actions at large text sizes.
+
 - Ignore late file-review metadata after dismissal or a new selection, and keep file review usable when a provider cannot return metadata.
 
 - Match the reference's phone Home and Devices hierarchy with flat activity and connection rows, leading disclosure markers, aligned Recent clipboard content and no empty Recent heading. Keep incoming approvals visible during active work and across sections. Open QR/code pairing directly from Add device and keep saved-device management in Devices.

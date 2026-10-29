@@ -239,12 +239,13 @@ struct MacSessionView: View {
   }
 
   private var overview: some View {
-    VStack(alignment: .leading, spacing: 20) {
+    VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 16) {
         Image(systemName: "iphone").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
         Button { diagnostics = false; details = true } label: {
           VStack(alignment: .leading, spacing: 6) {
-            Text(device?.deviceName ?? "Any trusted phone").font(.system(size: 15, weight: .medium))
+            Text(device?.deviceName ?? "Any trusted phone").font(.system(size: 14, weight: .medium))
+              .fixedSize(horizontal: false, vertical: true)
             Text(presentation.connected ? "Connected" : presentation.summary).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
@@ -254,7 +255,7 @@ struct MacSessionView: View {
           case .allow, .retry: model.selectedPeer = device; model.allow()
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
-      }
+      }.padding(.vertical, 14)
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 16) {
           Button {
@@ -284,24 +285,33 @@ struct MacSessionView: View {
           }
           diagnosticContent
         } label: { Text("Security and diagnostics") }.padding(.vertical, 14)
-      }.padding(.horizontal, 16)
-        .overlay(alignment: .top) { Divider() }
-      if ownsBluetooth && model.state == "Failed" { Text(model.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
-      if ownsLan && lan.state == "Failed" { Text(lan.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
-    }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+      }.overlay(alignment: .top) { Divider() }
+      if ownsBluetooth && model.state == "Failed" { Text(model.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)).padding(.vertical, 8) }
+      if ownsLan && lan.state == "Failed" { Text(lan.status).font(.caption).foregroundStyle(AniCePalette.error(scheme)).padding(.vertical, 8) }
+    }.frame(maxWidth: .infinity, alignment: .leading)
       .foregroundStyle(AniCePalette.primaryText(scheme))
-      .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 9))
-      .overlay { RoundedRectangle(cornerRadius: 9).stroke(AniCePalette.separator(scheme), lineWidth: 1) }
+      .overlay(alignment: .bottom) { Divider() }
   }
 
   private func transportRow(_ name: String, symbol: String, state: String, active: Bool, enabled: Bool,
     connect: @escaping () -> Void, disconnect: @escaping () -> Void) -> some View {
-    HStack(spacing: 12) {
-      Label(name, systemImage: symbol)
-      Spacer(minLength: 8)
-      Text(state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-      Button(active ? (state == "Secured" ? "Disconnect" : "Cancel") : "Connect", action: active ? disconnect : connect)
-        .buttonStyle(AniCeButtonStyle()).disabled(!active && !enabled)
+    let action = Button(active ? (state == "Secured" ? "Disconnect" : "Cancel") : "Connect", action: active ? disconnect : connect)
+      .buttonStyle(AniCeButtonStyle()).disabled(!active && !enabled)
+    return ViewThatFits(in: .horizontal) {
+      HStack(spacing: 12) {
+        Label(name, systemImage: symbol).fixedSize(horizontal: true, vertical: false)
+        Spacer(minLength: 8)
+        Text(state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal: true, vertical: false)
+        action.fixedSize()
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        Label(name, systemImage: symbol)
+        HStack {
+          Text(state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+          Spacer(minLength: 8)
+          action
+        }
+      }
     }.padding(.vertical, 14)
   }
 
