@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies Android signatures and produces an isolated Mac Keychain signature bundle.
 import CryptoKit
 import Foundation
 import Security

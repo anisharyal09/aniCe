@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Decodes pairing QR invitations from lifecycle-bound CameraX frames.
 package io.github.anisharyal09.anice.features.pairing
 
 import android.util.Size
@@ -78,6 +79,7 @@ fun PairingCamera(onCode: (String) -> Unit, onUnavailable: () -> Unit) {
                                 !accepted.get() && !disposed.get() && now - lastFrame >= 200_000_000
                             ) {
                                 lastFrame = now
+                                // Camera row padding and pixel stride are not part of the packed QR luminance input.
                                 val plane = image.planes[0]
                                 val buffer = plane.buffer.duplicate()
                                 val w = image.width

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Encodes pairing invitations, transcripts, framing and directional encrypted messages.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import java.security.MessageDigest
@@ -160,6 +161,7 @@ class PairingChannel(
                 PairingCodec.integer(f[0]) == received &&
                 received < Long.MAX_VALUE
         )
+        // Failed authentication must not advance the expected receive sequence.
         val out = crypt(Cipher.DECRYPT_MODE, f[1], f[0], if (server) 1 else 2)
         received++
         return out

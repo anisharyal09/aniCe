@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Encodes the unauthenticated BLE compatibility payload and discovery states.
 import Foundation
 
 enum DiscoveryState: String { case idle, permissionNeeded, bluetoothOff, discovering, found, connecting, ready, failed }

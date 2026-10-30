@@ -89,6 +89,7 @@ data class SmsWireMessage(val kind: Long, val fields: List<Cbor>) {
             if (row.size != 4 || (row[1] as? Cbor.Integer)?.value != 3L) throw SmsWireException()
             val m = SmsWireMessage((row[2] as? Cbor.Integer)?.value ?: throw SmsWireException(), (row[3] as? Cbor.Array)?.value ?: throw SmsWireException())
             m.validate()
+            // Re-encoding rejects noncanonical representations before request IDs reach deduplication.
             if (!m.encode().contentEquals(data)) throw SmsWireException()
             return m
         }

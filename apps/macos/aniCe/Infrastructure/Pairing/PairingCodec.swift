@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Encodes pairing invitations, transcripts, framing and directional encrypted messages.
 import CryptoKit
 import Foundation
 import Security
 
-/// Typed errors encountered during the pairing handshake or transport.
 enum PairingFailure: Error {
   case malformed, authentication, expired, transport, storage, cancelled
 }
 
-/// Pairing authentication method.
 enum PairingMethod: UInt8, Codable {
   case qr = 1
   case pin = 2
@@ -23,7 +22,6 @@ struct PairingQR {
   var secret: Data
   let fingerprint: Data
 
-  /// Canonical URI text representation.
   var text: String {
     "anice:pair:1:"
       + (Data([1]) + rendezvous + secret + fingerprint).base64EncodedString().replacingOccurrences(
@@ -51,7 +49,6 @@ struct PairingQR {
   }
 }
 
-/// Wire serialization, framing, and cryptographic helper routines.
 enum PairingCodec {
   static let writeUUID = "414E4953-4843-654A-494C-534149303903"
   static let indicateUUID = "414E4953-4843-654A-494C-534149303904"
@@ -61,7 +58,6 @@ enum PairingCodec {
     Data((0..<bytes).reversed().map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) })
   }
 
-  /// Decodes big-endian bytes into an unsigned integer.
   static func integer(_ data: Data) -> UInt64 { data.reduce(0) { ($0 << 8) | UInt64($1) } }
 
   /// Packs multiple byte buffers with uint32 big-endian length prefixes: `fields(x1, x2, ...)`.
@@ -100,7 +96,6 @@ enum PairingCodec {
     return values
   }
 
-  /// Generates cryptographically secure random bytes via `SecRandomCopyBytes`.
   static func random(_ count: Int) throws -> Data {
     var bytes = [UInt8](repeating: 0, count: count)
     guard SecRandomCopyBytes(kSecRandomDefault, count, &bytes) == errSecSuccess else {
@@ -117,7 +112,6 @@ enum PairingCodec {
     }
   }
 
-  /// Computes SHA-256 digest of input bytes.
   static func hash(_ bytes: Data) -> Data { Data(SHA256.hash(data: bytes)) }
 
   /// Derives labeled symmetric sub-key via HKDF-SHA256: `derive(K, label, H)`.
@@ -199,7 +193,6 @@ final class PairingChannel {
     self.server = server
   }
 
-  /// Generates the initial channel confirmation HMAC tag.
   func confirm() -> Data {
     PairingCodec.mac(PairingCodec.derive(key, "channel-confirm", hash), transcript)
   }
@@ -239,7 +232,7 @@ final class PairingChannel {
     return result
   }
 
-  /// Securely zeroes and purges encryption key material from memory.
+  /// Clears the retained key buffer; derived keys and framework copies have separate lifetimes.
   func destroy() {
     key.resetBytes(in: 0..<key.count)
     key.removeAll()

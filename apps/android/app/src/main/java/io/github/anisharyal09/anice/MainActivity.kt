@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
             val nearby = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this)
             if (busy || pairing.busy) nearby.suspend() else nearby.resumeAfterOperation()
         }
+        // Explicit compatibility scanning retires Bluetooth ownership while leaving LAN work alive.
         discovery.beforeStart = {
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this).suspend()
             session.cancelBluetooth()
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode,event)
     }
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        // Consume release for a key handled remotely even if output capability disappeared after key-down.
         if(remoteVolumeKeys.remove(keyCode)) return true
         return super.onKeyUp(keyCode,event)
     }

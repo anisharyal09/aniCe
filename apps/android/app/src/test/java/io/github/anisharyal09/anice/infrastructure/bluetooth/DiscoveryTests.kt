@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks compatibility payloads and bounded central discovery with fake adapters.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 import org.json.JSONObject

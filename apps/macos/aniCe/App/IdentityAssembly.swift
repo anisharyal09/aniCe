@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Assembles the application identity model in the selected Keychain namespace.
 import Foundation
 
-/// Builds the application-scoped identity model without changing storage namespaces.
 @MainActor
 enum IdentityAssembly {
     static func makeModel() -> IdentityViewModel {

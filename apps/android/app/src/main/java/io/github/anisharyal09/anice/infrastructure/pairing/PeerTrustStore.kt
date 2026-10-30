@@ -92,6 +92,7 @@ class PeerTrustStore(private val persistence: TrustPersistence) {
                 val root = JSONObject(String(data, Charsets.UTF_8))
                 require(root.getInt("version") == 1)
                 val rows = root.getJSONArray("records")
+                // Re-pairing may retain 128 active peers plus one pending replacement until receipt activation.
                 require(rows.length() <= 129)
                 repeat(rows.length()) { i ->
                     val r = rows.getJSONObject(i)
@@ -111,6 +112,7 @@ class PeerTrustStore(private val persistence: TrustPersistence) {
                             receipt,
                             r.getBoolean("active"),
                         )
+                    // Pending records never authorize sessions and are discarded when the journal is reopened.
                     if (row.active) {
                         require(
                             receipt != null &&

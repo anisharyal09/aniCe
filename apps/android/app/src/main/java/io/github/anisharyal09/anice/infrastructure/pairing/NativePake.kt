@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Marshals temporary PIN-pairing arguments through the Rust JNI bridge.
 package io.github.anisharyal09.anice.infrastructure.pairing
 object NativePake {
     private val available =

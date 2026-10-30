@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns bounded discovery presentation and stops discovery on sleep or termination.
 import AppKit
 import Observation
 

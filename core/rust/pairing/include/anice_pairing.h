@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Exposes bounded pairing operations over caller-owned C ABI buffers.
 #ifndef ANICE_PAIRING_H
 #define ANICE_PAIRING_H
 #include <stddef.h>

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Defines semantic appearance colors and shared Mac control feedback.
 import SwiftUI
 
 enum AniCePalette {

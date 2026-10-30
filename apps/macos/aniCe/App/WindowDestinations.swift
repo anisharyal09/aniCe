@@ -383,6 +383,7 @@ extension MainWindowView {
           }
         }
       }
+      // Repeated jumps restart the highlight lifetime; replacing the task cancels the previous fade.
       .task(id: settingsFocusToken) {
         guard focusedSettingsSection != nil else { return }
         try? await Task.sleep(for: .milliseconds(700))
@@ -422,6 +423,7 @@ extension MainWindowView {
       activeSettingsSection = id
       focusedSettingsSection = nil
       settingsScroller.scroll(to: id, animated: !reduceMotion) {
+        // An older scroll completion must not highlight a section superseded by another shortcut.
         guard activeSettingsSection == id else { return }
         focusedSettingsSection = id
         settingsFocusToken = UUID()
@@ -444,6 +446,7 @@ extension MainWindowView {
 }
 
 
+// Eager layout creates offscreen section anchors so shortcuts can reach groups outside the viewport.
 private struct SettingsSectionLayout: Layout {
   let columns: Int
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

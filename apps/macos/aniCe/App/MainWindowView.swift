@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents identity, pairing and shared Bluetooth/LAN connection details in the main window.
+// Hosts workspace navigation and presentation leases for application-owned native features.
 import AppKit
 import SwiftUI
 import Observation
@@ -109,6 +109,7 @@ struct MainWindowView: View {
       }
     }
     .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
+    // Pairing signs the identity snapshot captured by its invitation; renaming requires a fresh invitation.
     .onChange(of: identity.local?.identity.deviceName) { old, new in
       if old != nil, old != new, pairing.active {
         pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.")

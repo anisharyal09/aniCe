@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns Mac pairing authentication, mutual approval and signed trust-receipt exchange.
 import CryptoKit
 import Foundation
 
-/// Actor-isolated state machine for macOS pairing invitations and mutual authentication.
-///
-/// Handles the cryptographic handshake, identity proof exchange, and reciprocal signed
-/// receipts for both QR code (ECDH) and 6-digit PIN (OPAQUE PAKE) pairing methods.
 actor PairingEngine {
   let method: PairingMethod
   let rendezvous: Data
@@ -39,7 +36,6 @@ actor PairingEngine {
   private var receiptReceived = false
   private let localBytes: Data
 
-  /// Initializes pairing parameters, generating an ephemeral QR secret or in-memory OPAQUE registration.
   init(
     method: PairingMethod, identity: IdentityService, store: PeerTrustStore,
     send: @escaping @Sendable (Data) async -> Void,
@@ -72,20 +68,16 @@ actor PairingEngine {
     }
   }
 
-  /// Encodes outer Message 2 (`invitation`) containing the pairing method, rendezvous ID, and server nonce.
   func invitation() -> Data {
     PairingCodec.message(2, [Data([method.rawValue]), rendezvous, serverNonce])
   }
 
-  /// Dispatches incoming GATT payloads through handshake and encrypted message stages.
   func receive(_ data: Data) async throws {
-    // Message 1: Invitation query probe -> reply with invitation
     if data == PairingCodec.message(1) {
       await send(invitation())
       return
     }
 
-    // Stage 0: Process ClientHello (Message 3)
     if stage == 0 {
       let f = try PairingCodec.unpack(data, type: 3, count: 4)
       guard attempts < 5, f[0] == Data([method.rawValue]), f[1] == rendezvous, f[2].count == 32
@@ -151,7 +143,6 @@ actor PairingEngine {
       let plain = try channel.open(data)
       switch plain.first {
       case 10:
-        // Message 10: Peer identity received -> reply with Mac ECDSA identity proof
         guard peer == nil else { throw PairingFailure.malformed }
         let f = try PairingCodec.unpack(plain, type: 10, count: 1)
         guard f[0].count <= 2048 else { throw PairingFailure.malformed }
@@ -170,7 +161,6 @@ actor PairingEngine {
         await send(try channel.seal(PairingCodec.message(11, [signature.signature])))
 
       case 11:
-        // Message 11: Peer proof received -> verify peer signature, prompt user for approval
         guard let peer, let peerBytes, !proofVerified else { throw PairingFailure.authentication }
         let f = try PairingCodec.unpack(plain, type: 11, count: 1)
         guard
@@ -181,14 +171,12 @@ actor PairingEngine {
         await event("approval", peer)
 
       case 12:
-        // Message 12: Peer approval received
         _ = try PairingCodec.unpack(plain, type: 12, count: 0)
         guard proofVerified, !peerApproved else { throw PairingFailure.authentication }
         peerApproved = true
         try await prepare()
 
       case 13:
-        // Message 13: Peer storage receipt received -> activate trust record
         let f = try PairingCodec.unpack(plain, type: 13, count: 1)
         guard prepared, let peer, let peerBytes, !receiptReceived else {
           throw PairingFailure.authentication
@@ -199,7 +187,6 @@ actor PairingEngine {
         await complete()
 
       case 14:
-        // Message 14: Pairing cancellation
         _ = try PairingCodec.unpack(plain, type: 14, count: 0)
         throw PairingFailure.cancelled
 
@@ -209,7 +196,6 @@ actor PairingEngine {
     }
   }
 
-  /// Records explicit local user approval and sends approval confirmation to peer.
   func approve() async throws {
     guard proofVerified, !localApproved, let channel else { throw PairingFailure.authentication }
     localApproved = true
@@ -230,6 +216,7 @@ actor PairingEngine {
       PeerTrustRecord(
         peer: peer, localFingerprint: local.fingerprint, method: method, pairedAt: Date(),
         transcriptHash: hash, active: false))
+    // Signing can suspend the actor; cancellation or identity replacement invalidates its result.
     let signature = try await identity.sign(message: PairingCodec.receipt(hash, 2))
     guard op == generation, signature.identity == local else { throw PairingFailure.cancelled }
     await send(try channel.seal(PairingCodec.message(13, [signature.signature])))
@@ -237,12 +224,10 @@ actor PairingEngine {
     await complete()
   }
 
-  /// Finalizes pairing once storage receipts are mutually confirmed.
   private func complete() async {
     if receiptSent && receiptReceived { await event("paired", peer) }
   }
 
-  /// Encodes OPAQUE protocol context string binding method, rendezvous, and nonces.
   private func context() -> Data {
     PairingCodec.fields([
       Data("aniCe pin bootstrap v1".utf8), Data([method.rawValue]), rendezvous, clientNonce,
@@ -250,7 +235,6 @@ actor PairingEngine {
     ])
   }
 
-  /// Encodes canonical protocol transcript binding public exchange values.
   private func transcript() -> Data {
     PairingCodec.fields([
       Data("aniCe pairing v1".utf8), Data([method.rawValue]), rendezvous, clientNonce, serverNonce,
@@ -286,7 +270,7 @@ actor PairingEngine {
     await send(try channel.seal(PairingCodec.message(14)))
   }
 
-  /// Closes the pairing engine, wiping all secrets and releasing PAKE handles.
+  /// Clears retained secret buffers, drops key references and releases the PAKE handle.
   func close() {
     let secretSize = qr?.secret.count ?? 0
     qr?.secret.resetBytes(in: 0..<secretSize)

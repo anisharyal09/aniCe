@@ -75,6 +75,7 @@ enum LanRendezvousWire {
           requested = false
           if op == self.generation, self.channel === target, value != 4 { self.sent = value }
         }
+      // Backpressure refuses admission before sealing, so the request can be retained for a capacity wakeup.
       } catch is SessionBackpressure {
         if op == self.generation { self.requestPending = self.requestPending || requested }
       } catch { /* Transport failures retire the channel without replaying sealed requests. */ }

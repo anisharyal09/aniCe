@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Checks EDHOC oracle derivations, fixture regeneration and signature/AEAD rejection.
 import json
 from pathlib import Path
 import unittest

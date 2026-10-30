@@ -300,6 +300,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   }
 
   private func key(_ peer: DeviceIdentity) -> String { peer.deviceId + ":" + peer.fingerprint }
+  // Include the key fingerprint so re-pairing an ID with a new credential cannot recover its old drafts.
   private func draftKey(_ peer: DeviceIdentity, _ address: String) -> String {
     key(peer) + "|" + smsNormalizedAddress(address)
   }
@@ -1218,6 +1219,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       upsertCard(state, address: send.address, snippet: send.text, dateMillis: stamp, unread: 0)
       let savedDraftKey = draftKey(send.descriptor.peer, send.address)
+      // A successful older send may clear only its own text, not a draft edited during radio confirmation.
       if drafts[savedDraftKey] == send.text { drafts.removeValue(forKey: savedDraftKey) }
       state.status = "Sent"
     } else {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Exchanges isolated Android Keystore identity signatures with the host harness.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 import android.content.Context

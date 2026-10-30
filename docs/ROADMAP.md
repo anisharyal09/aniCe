@@ -6,8 +6,8 @@
 | **Pairing & mutual trust** | Ephemeral QR & OPAQUE PIN authentication, mutual approval, atomic trust journal | Implemented |
 | **Independent Bluetooth Low Energy (BLE)** | Compatibility discovery, EDHOC session handshake, AES-GCM records, GATT framing | Implemented |
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
-| **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads, ~90% CPU reduction* | Implemented |
-| **Local File Transfer** | Basic approved batch streaming and UI; storage/lifecycle repairs implemented | Implemented; bidirectional app transfers verified; durable recovery/renewal pending |
+| **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads | Implemented |
+| **Local File Transfer** | Approved batch streaming, bounded checkpoints and restart recovery | Implemented; coordinated LAN renewal deferred |
 | **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard and Android→Mac SMS relay implemented. | In progress |
 
 Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current release: v0.3.0, build 3. New work is tracked under Unreleased.
@@ -27,32 +27,29 @@ Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks a
 - **Liveness & Renewal:** Encrypted HELLO/ACK negotiation, Android-initiated PING/PONG after 60 seconds of inactivity, and fresh EDHOC session renewal at 55 minutes or the `2^20 - 1024` record threshold.
 
 ### 3. Independent Local Network (LAN) Transport
-- **Discovery & Framing:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and 5-byte TCP stream framing with bounded session envelopes (2–4,096 bytes). Native Wi-Fi socket binding, serialized legacy NSD resolution, and scoped IPv6 addressing. See [LAN Connections](LAN_CONNECTIONS.md), [LAN Contract](../protocol/lan/README.md), and [ADR 0006](decisions/0006-independent-lan-sessions.md).
+- **Discovery & Framing:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and 5-byte TCP framing with standard 4,096-byte envelopes and separately negotiated larger LAN records. Native Wi-Fi socket binding, serialized legacy NSD resolution, and scoped IPv6 addressing. See [LAN Connections](LAN_CONNECTIONS.md), [LAN Contract](../protocol/lan/README.md), and [ADR 0006](decisions/0006-independent-lan-sessions.md).
 - **Automatic LAN:** Opt-in Settings/pairing controls on both platforms coordinate bounded Mac admission over secured BLE, Android foreground discovery on connection events, ordinary BLE feature activity or feature demand, without a separate LAN retry loop. See [rendezvous](../protocol/lan/AUTOMATIC.md).
 - **Concurrent Coexistence:** Independent fresh sessions and key material over BLE and LAN to the same pinned peer, coordinated under a shared peer reservation lock.
 
-### 4. Connected-Idle Performance Optimization
-- **Stage 1 (Initial 200 ms Polling):** Originally, maintenance ran a fixed 200 ms polling loop. Every 200 ms, Android signed an ECDSA self-check challenge against `AndroidKeyStore` and re-read `identity-v1.json` and `trusted_peers.json` from flash storage. This produced severe CPU overhead (~16% CPU in early locked-screen Doze tests) and thread spinning on both platforms.
-- **Stage 2 (1-Second Polling & Read Signing Removal):** Removed redundant private-key signing on ordinary identity reads (reserving signatures only for creation, reset, and requested authentication). Slowed secured-session maintenance loops from 200 ms to 1 second (keeping 200 ms only for initial handshake/readiness). This established the initial workload baseline: median CPU of ~3.166% on Android and ~0.385% on macOS.
-- **Stage 3 (Event-Driven Architecture):** Completely eliminated periodic polling (`delay(1000)` / `Timer(1.0)`). Replaced with cancellable waits for the earliest absolute monotonic deadline (`min(admission, handshake, readiness, liveness PING/PONG, idle, lifetime, renewal, reassembly)`). Quiet deadline waits perform zero KeyStore, Keychain, or disk reads. Full native identity, hardware protection, and in-memory trust validation are preserved on all authenticated operations. Explicit identity reset or peer revocation immediately retires both BLE and LAN transport owners through service invalidation callbacks.
-- **Measured Result:** Validated in 17-minute physical connected-idle tests, dropping single-core CPU medians from 3.166% down to 0.322% on Android and 0.385% down to 0.030% on macOS (~90% reduction).
+### 4. Connected-Idle Performance
+
+Maintenance waits for absolute monotonic deadlines and transport events. Idle waits perform no KeyStore, Keychain or disk reads; authenticated operations retain native identity and trust validation. Reset and revocation retire both transports. Measurements and remaining performance work are recorded in [Performance](PERFORMANCE.md).
 
 ### 5. Application Continuity
 - **Now Playing:** Remote Mac playback, source selection, seek previews, native Android notifications (`MediaSession` / `Notification.MediaStyle`), and player/output volume controls are implemented. Mac Home/companion display is optional. See [Now Playing](features/NOW_PLAYING.md), [ADR 0007](decisions/0007-macos-unsandboxed-playback-prototype.md), and [ADR 0009](decisions/features/now-playing/0009-remote-playback-presentation.md).
 
-- **Local File Transfer:** Bidirectional sequential batch streaming (1..128 files) over authenticated LAN DATA records with cumulative credit flow control (64-chunk window / 3,072-byte chunks), recipient offer approval, exclusive partial staging with checked SHA-256 verification and finalization, on-demand connection, and presentation across Features and Home live-activity. See [Local File Transfer](features/FILE_TRANSFER.md) and [Transfer Contract](../protocol/transfer/README.md).
+- **Local File Transfer:** Bidirectional sequential batch streaming (1..128 files) over authenticated LAN/BLE DATA records with negotiated cumulative credit (four 3,072-byte chunks on BLE; up to eight 262,016-byte chunks on capable LAN), recipient offer approval, exclusive partial staging with checked SHA-256 verification and finalization, on-demand connection, and presentation across Features and Home live-activity. See [Local File Transfer](features/FILE_TRANSFER.md) and [Transfer Contract](../protocol/transfer/README.md).
 
-- **Find Device:** Native peer alerts, Android alarm playback with Stop and sixty-second expiry, Mac notifications and explicit notification setup. Samsung native ringing/Stop/timeout checks pass. See [Find Device](features/FIND_DEVICE.md).
+- **Find Device:** Native peer alerts, Android alarm playback with Stop and sixty-second expiry, Mac notifications and explicit notification setup. See [Find Device](features/FIND_DEVICE.md).
 
 - **Messages (SMS relay):** Incoming SMS becomes a Mac notification with an inline reply, and the Mac reads the phone's conversations and history on demand over the secured session without storing content. See [Messages](features/SMS.md) and the [SMS Contract](../protocol/sms/README.md).
 
 - **Native UI:** Dedicated feature panels, Favourites and About, compact phone Home, direct transport controls in Devices, accessible disclosure labels and responsive Mac activity panels.
 
-- **Continuous Hardening & Resilience:** Iterative end-to-end testing, protocol interchange fuzzing, reconnection recovery edge cases, and ongoing device interoperability fixes.
 
 ## Messages (SMS relay)
 
-[Messages](features/SMS.md) relays incoming SMS to Mac notifications and lets the Mac read provider conversations and history, search them and reply. Relay needs Android SMS permissions (RECEIVE_SMS live, READ_SMS history, SEND_SMS replies), an active secured session and the Mac app running; nothing is stored on the Mac or replayed after process death. Conversations, history and the thread list load incrementally, each message names the SIM it arrived on, replies can pick an active subscription and paint as a provisional row until the phone confirms them, and per-phone notification and sound switches live in Settings → Messages and behind the Messages panel's gear. RCS, MMS send, group MMS content, attachments, contacts resolution and mark-as-read are excluded.
+[Messages](features/SMS.md) relays incoming SMS to Mac notifications and lets the Mac read provider conversations and history, search them and reply. Relay needs Android SMS permissions (RECEIVE_SMS live, READ_SMS history, SEND_SMS replies), an active secured session and the Mac app running; nothing is stored on the Mac or replayed after process death. Conversations, history and the thread list load incrementally, mixed-SIM conversations label each message’s subscription, replies can pick an active subscription and paint as a provisional row until the phone confirms them, and per-phone notification and sound switches live in Settings → Messages and behind the Messages panel's gear. RCS, MMS send, group MMS content, attachments, contacts resolution and mark-as-read are excluded.
 
 ## Text Clipboard
 

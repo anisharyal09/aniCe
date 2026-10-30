@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks connection notices distinguish expiry, trust changes and recovery states.
 package io.github.anisharyal09.anice.features.session
 
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState

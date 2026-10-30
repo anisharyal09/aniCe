@@ -187,6 +187,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             }
         }, snackbarHost = { SnackbarHost(snackbars) }
     ) { innerPadding ->
+        // Consume Scaffold insets here so nested sheets and feature content do not apply the same padding twice.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
         Column(content) {
             if (pairing.busy && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
@@ -200,6 +201,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 }
             }
             Box(Modifier.weight(1f)) {
+                // Destination keys retain scroll and local presentation state while another section is shown.
                 pageState.SaveableStateProvider(navigation.destination.name) {
                     when (navigation.destination) {
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {

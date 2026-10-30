@@ -180,6 +180,7 @@ struct IdentityView: View {
                 Spacer()
                 Button {
                     NSPasteboard.general.clearContents()
+                    // Copy the canonical value; fingerprint grouping belongs only to its display.
                     if NSPasteboard.general.setString(value, forType: .string) { copyFeedback = "\(label) copied." }
                     else { copyFeedback = "Could not copy \(label.lowercased()). Try again." }
                 }

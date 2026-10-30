@@ -18,7 +18,7 @@ import UserNotifications
   }
 }
 
-// Narrow seam over UNUserNotificationCenter so pause/resume delivery and cleanup are testable.
+// Separates offer delivery and legacy-notice cleanup from the native notification center.
 protocol TransferNotificationCenter: AnyObject {
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void)
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?)
@@ -28,7 +28,7 @@ protocol TransferNotificationCenter: AnyObject {
 
 extension UNUserNotificationCenter: TransferNotificationCenter {}
 
-// Pure notification payload builder decoupled from UNUserNotificationCenter for deterministic unit testing.
+// Builds transfer notification payloads; current delivery posts only background offers.
 struct TransferNotificationContent: Equatable {
   let identifier: String
   let categoryIdentifier: String
@@ -89,7 +89,7 @@ struct TransferNotificationContent: Equatable {
     )
   }
 
-  // Shown when an action is clicked on a banner whose offer was already cancelled or expired.
+  // Legacy payload; current stale offer actions return without posting a new notice.
   static func staleOfferNotice() -> TransferNotificationContent {
     return TransferNotificationContent(
       identifier: "transfer-stale-\(UUID().uuidString.prefix(8))",
@@ -146,7 +146,7 @@ struct TransferNotificationContent: Equatable {
     }
   }
 
-  // Registers modal actions: Accept saves unattended to ~/Downloads; Choose folder foregrounds aniCe for destination selection; Decline rejects; Show in Finder reveals published files.
+  // Keep legacy result/pause categories registered while new delivery posts background offers only.
   static func notificationCategories() -> Set<UNNotificationCategory> {
     let acceptAction = UNNotificationAction(
       identifier: Action.accept,
@@ -231,7 +231,7 @@ struct TransferNotificationContent: Equatable {
     }
   }
 
-  // Requests notification authorization lazily on first transfer event.
+  // Request authorization only when an enabled background offer reaches the posting path.
   // Permission denial must never gate transfer execution, falling back to companion activity and main window.
   private func requestAuthIfNeeded() {
     guard !hasRequestedAuth else { return }
@@ -261,7 +261,7 @@ struct TransferNotificationContent: Equatable {
     }
   }
 
-  // Fences action execution against stale offers: verifies pendingOffer != nil before dispatching.
+  // Banner identifiers bind destructive actions to their original pending or paused batch.
   func handleAction(_ actionIdentifier: String, identifier: String? = nil) {
     if let identifier {
       center.removeDeliveredNotifications(withIdentifiers: [identifier])

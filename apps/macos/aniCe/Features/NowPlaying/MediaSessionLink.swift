@@ -94,8 +94,10 @@ import Observation
       if volume { enqueueVolume(PlayerVolumeMessage(kind:4,fields:[.text(sub),.integer(id),.integer(result)],scope:volumeScope),kind) }
       else { enqueue(MediaMessage(kind:7,fields:[.text(sub),.integer(id),.integer(result)]),kind) }
     }
+    // Playback and both volume extensions share one command-ID namespace for this subscription.
     if inFlight.contains(id) { return }
     if let result=results[id] { respond(resultKinds[id]==commandKind ? result:1);return }
+    // Evicting a cached result must not allow an older command to execute again.
     guard id>highWater else { respond(1);return }
     highWater=id;inFlight.insert(id)
     let finish: @MainActor (Int64)->Void = { [weak self] result in
@@ -180,6 +182,7 @@ import Observation
         guard self.links[kind] === link else { return }
         if message.kind == 7 { self.timing("result_submitted", kind, message.string(0), message.number(1)) }
         if priority==0 { if link.controls.first==message { link.controls.removeFirst() } }
+        // A newer snapshot may replace this one while send suspends; clear only the value actually submitted.
         else if priority==1 { if link.snapshot==message { link.snapshot=nil } }
         else if message.fields[3] == .bytes(link.hash), message.string(2)==link.artworkRevision { link.offset += (try? message.fields[6].bytes().count) ?? 0 }
       }

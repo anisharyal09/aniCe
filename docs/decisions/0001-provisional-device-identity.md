@@ -1,7 +1,7 @@
 # 1. Provisional Device Identity Architecture
 
 Date: 2026-10-06  
-Status: **Provisional** (revisable upon pairing and secure session protocol design)
+Status: **Provisional**; algorithm or backend changes require an explicit migration decision.
 
 ## Context
 
@@ -11,7 +11,7 @@ The repository initially left identity algorithms and transport choices open. Lo
 
 ## Decision
 
-We establish a provisional local device identity foundation adhering to the following choices:
+Device identity uses the following contracts:
 
 1. **Algorithm Suite:**
    - Elliptic Curve **P-256** (secp256r1 / NIST P-256) for identity signing keys.
@@ -41,11 +41,11 @@ We establish a provisional local device identity foundation adhering to the foll
 - **Auditability & Safety:** Serialized lifecycle operations and an atomic active-record switch preserve the committed identity through interruption. Retired-key cleanup is retryable; interrupted cleanup may temporarily leave an older key stored.
 
 ### Trade-offs & Future Revisions
-- **Provisional Status:** If pairing protocols (Phase 4) or secure session handshakes (Phase 5) demonstrate that Edwards curves (e.g. Ed25519) provide superior performance or smaller message sizes, this decision may be revised with an explicit migration path.
+- **Algorithm changes:** Replacing P-256 requires a versioned identity and trust migration; existing credentials cannot be reinterpreted under another algorithm.
 - **Display vs Trust:** Device names (e.g., "Pixel 9", "MacBook Pro") are display metadata only and do not establish cryptographic trust.
 - **Identity lifetime:** Identity persists until explicit reset or storage removal. Mac Keychain items can outlive app deletion. Backend changes and future algorithm changes require an explicit migration/reset decision; storage errors never trigger fallback or replacement.
 - **Legacy Keychain policy:** The legacy Mac generator requires the non-extractable setting at the top level. The backend inspects policy attributes without key data, exports only the public point, and preserves/rejects older exportable keys until explicit confirmed reset. This does not make development keys hardware isolated.
-- **Deferred security:** A public record alone does not establish trust. Mutual authentication, signed transcripts, ephemeral session keys, encryption, replay resistance, revocation, BLE discovery, and QR onboarding are later phases.
+- **Trust boundary:** A public record alone does not establish trust. [Pairing](0003-provisional-pairing-and-trust.md) establishes mutual approval; [sessions](0005-edhoc-secure-sessions.md) authenticate pinned credentials and protect application records.
 
 ## Development signing and access
 

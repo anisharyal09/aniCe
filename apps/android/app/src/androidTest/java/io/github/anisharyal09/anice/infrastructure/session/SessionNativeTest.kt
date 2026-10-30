@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks native session crypto and isolated Android-to-Mac protected-key interchange.
 package io.github.anisharyal09.anice.infrastructure.session
 
 import android.os.SystemClock

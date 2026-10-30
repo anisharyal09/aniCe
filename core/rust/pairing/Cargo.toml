@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Pins the OPAQUE pairing bridge dependencies and native library outputs.
 [package]
 name = "anice-pairing"
 version = "0.1.0"

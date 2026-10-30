@@ -1,6 +1,6 @@
 # Experimental bulk benchmark profile
 
-This profile is selectable only by the isolated native LAN benchmark configuration. Production apps continue to use LAN/session v1. Production capability negotiation and File Transfer integration are not implemented.
+This profile is selectable only by the isolated native LAN benchmark configuration. It is separate from the production [LAN transfer profile](TRANSFER_PROFILE.md), which negotiates 256-KiB DATA records. This experimental 4-MiB profile has no production feature integration.
 
 Discovery uses the isolated `_anicebulk._tcp` service with TXT `v=1`; standard discovery ignores it. Fresh TCP and EDHOC authenticate the pinned disposable peer. Both endpoints explicitly select `bulk-probe`; incoming bytes cannot select or downgrade the local profile. EDHOC messages and CBOR limits remain unchanged.
 

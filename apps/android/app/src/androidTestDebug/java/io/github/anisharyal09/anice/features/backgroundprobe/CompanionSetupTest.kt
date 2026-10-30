@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Exercises companion setup through the debug application probe.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe

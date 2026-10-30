@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents pairing guidance when no device has been paired.
 import SwiftUI
 
 struct EmptyStateView: View {

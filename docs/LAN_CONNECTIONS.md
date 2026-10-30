@@ -6,7 +6,7 @@ Already-paired Android and Mac devices can establish an independent encrypted TC
 
 Open Connection details on both devices. On Mac, select the trusted phone when several exist, then choose Allow local-network connections. The companion's Choose allowed phone action opens the main-window details for target selection. On Android, choose Connect local network for that trusted Mac. Availability expires after 120 seconds unless a candidate is admitted. Connection checks and received counters are separate for Bluetooth and local network inside collapsed Diagnostics.
 
-The device summary reads Connected when either channel has completed encrypted readiness and names only ready transports. Pending/failed secondary-channel feedback remains separate. The primary Connect action starts Bluetooth; when automatic LAN is enabled on both devices, secured Bluetooth coordinates LAN separately. Mac companion and Android details expand inline; the Mac window uses a native details sheet.
+The device summary reads Connected when either channel has completed encrypted readiness; transport rows identify each ready channel. Pending/failed secondary-channel feedback remains separate. The primary Connect action starts Bluetooth; when automatic LAN is enabled on both devices, secured Bluetooth coordinates LAN separately. The Mac companion routes device management to Devices. Android diagnostics expand inline; Mac connection details use a native sheet.
 
 Disconnect Bluetooth and Disconnect local network affect their respective channel. Disconnect all closes both. Manual LAN does not reconnect automatically after network loss or expiry. Android idle LAN follows its configured background timeout after its last presentation stops or the screen locks; bounded picker and approved transfer-service ownership preserve the channel. Mac retains the channel through its companion until explicit disconnection, sleep or Quit. Trust removal and identity reset retire both channels.
 
@@ -22,7 +22,7 @@ Android legacy resolution is serialized. After a native resolution timeout, anot
 
 Android targets SDK 36 and does not request ACCESS_LOCAL_NETWORK. The Mac packaged app declares Bonjour access and local-network purpose and includes client/server sandbox entitlements. Development Keychain signing policy remains unchanged.
 
-Wi-Fi changes retire the Android owner, socket, network watcher and peer reservation. After TCP connect, Android tracks the socket's actual local address; surviving addresses of another family cannot conceal its loss. Connection completion rechecks that the bound address remains assigned. Reconnecting requires a new Mac Allow window. If discovery finds no service, confirm that Allow is open and both devices have directly connected routes; changing Wi-Fi does not imply that the new network can reach the old endpoint.
+Wi-Fi changes retire the Android owner, socket, network watcher and peer reservation. After TCP connect, Android tracks the socket's actual local address; surviving addresses of another family cannot conceal its loss. Connection completion rechecks that the bound address remains assigned. Manual reconnection requires a new Mac Allow window; enabled automatic coordination can open bounded admission for the secured BLE peer. If discovery finds no service, confirm that Allow is open and both devices have directly connected routes; changing Wi-Fi does not imply that the new network can reach the old endpoint.
 
 If the Mac still shows Secured after abrupt phone network loss, choose Disconnect local network before reopening Allow. Android reports foreground exit, screen lock and Wi-Fi changes separately from discovery failure.
 
@@ -38,7 +38,7 @@ Returning to aniCe Home, opening automatic connection setup settings or closing 
 
 Opening Bluetooth discovery preserves both transports; starting Scan suspends/cancels only Bluetooth and leaves LAN active. Configuration recreation preserves the owner. A retained service cannot preserve an unusable Wi-Fi socket or bypass same-peer reservations. BLE companion ownership remains independent of the user-approved transfer lease.
 
-Transfer profiles negotiate larger LAN records independently of BLE. Feature-owned checkpoints retain prepared jobs across process death for 15 minutes; resumed connections authenticate afresh and verify retained prefixes. A retained service cannot preserve an unusable old Wi-Fi socket or bypass same-peer reservations. BLE companion ownership remains independent. Manual IP entry and coordinated renewal remain deferred.
+Transfer profiles negotiate larger LAN records independently of BLE. Feature-owned checkpoints retain prepared jobs across process death for 15 minutes; resumed connections authenticate afresh and verify retained prefixes. Manual IP entry and coordinated renewal remain deferred.
 
 Mac path updates retain a connection while the path is satisfied, uses Wi-Fi/Ethernet and retains an original local interface; unrelated interface inventory changes do not retire TCP. Write deadlines and cancellation callbacks retire only their outstanding submission, never a completed one. Native socket failures and actual local path loss still retire the channel.
 

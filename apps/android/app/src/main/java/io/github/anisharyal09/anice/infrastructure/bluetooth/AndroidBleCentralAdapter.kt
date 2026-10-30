@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Adapts Android BLE callbacks to scan-local compatibility discovery events.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 import android.annotation.SuppressLint

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks rendezvous search deadlines and candidate bounds across resumed scans.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import io.github.anisharyal09.anice.infrastructure.bluetooth.PairingSearchWindow

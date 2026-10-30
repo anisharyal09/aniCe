@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Coordinates pairing transport, worker-confined authentication and main-thread presentation.
 package io.github.anisharyal09.anice.features.pairing
 
 import android.Manifest
@@ -26,6 +27,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private val app = application as AniCeApplication
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+    // Retired worker results must not update a replacement invitation or send on its transport.
     @Volatile private var generation = 0L
     private var engine: PairingEngine? = null
     private var store: PeerTrustStore? = null

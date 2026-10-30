@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Bounds central compatibility discovery and rejects callbacks from retired operations.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 sealed interface CentralEvent {

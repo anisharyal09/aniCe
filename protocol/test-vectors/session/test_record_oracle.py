@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Checks record fixtures against independent AES-GCM encryption and authenticated mutations.
 import json
 import unittest
 from pathlib import Path

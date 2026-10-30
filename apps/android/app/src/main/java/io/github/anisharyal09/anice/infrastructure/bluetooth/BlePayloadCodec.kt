@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Encodes unauthenticated BLE compatibility payloads and discovery presentation state.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 object BlePayloadCodec {

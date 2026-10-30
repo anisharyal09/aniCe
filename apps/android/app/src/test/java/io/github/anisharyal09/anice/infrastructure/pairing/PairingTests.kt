@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks pairing fixtures, directional encryption, replay rejection and framing bounds.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityCrypto

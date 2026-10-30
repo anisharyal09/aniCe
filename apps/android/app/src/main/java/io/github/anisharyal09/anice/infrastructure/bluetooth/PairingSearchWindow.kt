@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Bounds one QR rendezvous search across candidate connections and resumed scans.
 package io.github.anisharyal09.anice.infrastructure.bluetooth
 
 /** A QR rendezvous search owns one deadline across candidate connections and resumed scans. */

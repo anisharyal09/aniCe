@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Implements EDHOC derivation, credential encoding and native signature conversions.
 import CryptoKit
 import Foundation
 
@@ -123,6 +124,7 @@ enum SessionSignature {
       var scalar = data.subdata(in: (i * 32)..<(i * 32 + 32))
       try validate(scalar)
       while scalar.count > 1, scalar.first == 0 { scalar.removeFirst() }
+      // DER INTEGER is signed; prefix a zero when a positive scalar would otherwise set the sign bit.
       if let first = scalar.first, first >= 128 { scalar = Data([0]) + scalar }
       body.append(Data([2, UInt8(scalar.count)]) + scalar)
     }

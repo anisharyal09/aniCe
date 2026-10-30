@@ -71,6 +71,7 @@ class FindDeviceRingService : Service() {
                 } catch (_: IllegalStateException) { finish(ring, FindResult.FAILED) }
             }
             native.setOnErrorListener { _, _, _ -> if (lease === ring) finish(ring, FindResult.FAILED); true }
+            // Preparation consumes the original lease; starting audio does not extend its ringing deadline.
             expiry = Runnable { if (lease === ring) finish(ring, FindResult.STALE) }.also {
                 handler.postDelayed(it, maxOf(1, ring.deadline - SystemClock.elapsedRealtime()))
             }

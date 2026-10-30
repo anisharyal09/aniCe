@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents nearby discovery status and native start, stop and permission actions.
 import SwiftUI
 
 struct MacDiscoveryView: View {

@@ -2387,6 +2387,7 @@ class TransferController(
         return DataHandling.HANDLED
     }
 
+    // Finish publication coherently despite coroutine cancellation; epoch checks still fence a retired job.
     private suspend fun finalizeReceiverFile(batch: TransferBatch) = withContext(NonCancellable) {
         finalizeReceiverFileOwned(batch)
     }

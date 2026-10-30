@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Presents identity load, rename and reset results with storage-specific recovery actions.
 import Foundation
 import Observation
 

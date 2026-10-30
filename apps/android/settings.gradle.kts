@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Defines Android dependency repositories and the application module.
 pluginManagement {
     repositories {
         google()

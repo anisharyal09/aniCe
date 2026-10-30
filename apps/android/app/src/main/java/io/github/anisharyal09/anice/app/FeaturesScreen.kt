@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Routes feature launchers to shared device controls or Find Device.
+// Presents feature destinations and favourites using application-owned feature state.
 package io.github.anisharyal09.anice.app
 
 import androidx.compose.foundation.*
@@ -105,6 +105,7 @@ internal fun FeatureEntry(feature: AppFeature, favourite: Boolean, status: Strin
                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
+            // The star owns its click independently of the enclosing row’s open action.
             IconButton(onClick = onFavourite, modifier = Modifier.semantics {
                 contentDescription = (if (favourite) "Remove " else "Add ") + feature.label + (if (favourite) " from favourites" else " to favourites")
             }) {

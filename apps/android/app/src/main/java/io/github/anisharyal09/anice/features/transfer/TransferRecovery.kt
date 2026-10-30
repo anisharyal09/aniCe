@@ -36,6 +36,7 @@ internal class TransferRecoveryStore(private val file: File, private val replace
         if (!folder.isDirectory && !folder.mkdirs()) throw IOException("Cannot create recovery folder")
         val temporary = File.createTempFile("checkpoint-", ".tmp", folder)
         try {
+            // Flush checkpoint contents before replacing the last committed recovery snapshot.
             FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
             replace(temporary, file)
         } finally { if (temporary.exists() && !temporary.delete()) throw IOException("Cannot remove recovery temporary") }

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Limits lint suppressions to the configured SDK and pinned dependency advisories. -->
 <lint>
-    <!-- API 36 is explicitly required by Phase 1A. Updating to API 37 is out of scope. -->
+    <!-- Keep the configured SDK target; unrelated target upgrades require compatibility review. -->
     <issue id="OldTargetApi">
         <ignore path="build.gradle.kts" />
     </issue>

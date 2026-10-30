@@ -2,9 +2,7 @@
 
 A native, local-first continuity bridge, starting with Android and macOS. Connects your phone and Mac directly over Bluetooth Low Energy and local-network TCP, using authenticated, encrypted sessions — no cloud accounts, external relays or telemetry.
 
-The goal is to bring the continuity of native single-vendor ecosystems (like Apple or Samsung) to Android and Mac setups, with room for other platforms. Built on standard cryptographic primitives, documented protocols and local transports.
-
-The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. Authenticated connections, native feature workflows and UI have been exercised on physical Mac and Android hardware. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.
+The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.
 
 ## Current release
 

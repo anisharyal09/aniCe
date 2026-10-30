@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks public identity and signature validation against shared fixtures.
 package io.github.anisharyal09.anice.infrastructure.identity
 
 import org.json.JSONObject

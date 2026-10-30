@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Bounds GATT message reassembly, queue reservations and session admission.
 import Foundation
 
 /// One contiguous logical message per direction; offsets and IDs reject interleaving/replay.

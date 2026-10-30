@@ -6,9 +6,8 @@ The gate deliberately distinguishes "the command exited zero" from "the tests
 executed".  It fails on zero-test reports, failures, errors, crashes,
 unreported tests, undocumented skips, fixture drift and missing toolchains.
 
-This gate runs locally and under CI.  It does not
-replace physical radio, Keychain/Secure Enclave, minimum-OS or manual UI
-acceptance; those boundaries are named in docs/A&V/TEST_AUDIT.md.
+The gate runs locally and in CI; physical radio, protected-storage,
+minimum-OS and native interaction behavior require separate runtime checks.
 """
 
 import argparse

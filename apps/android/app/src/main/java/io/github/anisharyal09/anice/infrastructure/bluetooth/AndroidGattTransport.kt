@@ -717,7 +717,7 @@ class AndroidGattTransport(
    *
    * Android caches service attribute tables by Bluetooth MAC address without querying the
    * peripheral over the air if a cached entry exists. When a peripheral changes its GATT layout or
-   * when Phase 3 discovery preceded pairing, Android returns a stale cache in a few milliseconds.
+   * when compatibility discovery preceded pairing, Android returns a stale cache in a few milliseconds.
    * Invoking the hidden `refresh` method forces Android to perform fresh over-the-air discovery.
    */
   private fun refreshGatt(g: BluetoothGatt): Boolean {

@@ -38,6 +38,7 @@ import kotlinx.coroutines.delay
     LaunchedEffect(media?.message?.string(0),media?.source,media?.revision) {
         if(volumeTarget!=null) { volumeCancelled=true;volumeDrag=null }
     }
+    // A drag belongs to its captured output revision; a replacement must not receive its release.
     LaunchedEffect(owner.outputVolume?.subscription, owner.outputVolume?.device, owner.outputVolume?.revision) {
         val target = outputTarget
         val current = owner.outputVolume

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Owns bounded peripheral publication, nonce rotation and stale-callback rejection.
 import Foundation
 import Observation
 import Security

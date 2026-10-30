@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Checks shared discovery fixtures and peripheral lifecycle through fake adapters.
 import Foundation
 import XCTest
 @testable import aniCe

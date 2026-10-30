@@ -104,6 +104,7 @@ private final class OutputAudioObservation: @unchecked Sendable {
     guard active else { return 5 };guard (0...100).contains(value) else { return 1 }
     guard !target.isEmpty,target==self.target,revision==self.revision else { return 1 }
     guard let sample=reader() else { refresh();return 5 }
+    // A default-device change invalidates the command rather than redirecting volume to another output.
     guard sample.identity==identity else { refresh();return 1 }
     let result=writer(sample,Float32(value)/100);refresh()
     return result==0 && level != value ? 7:result

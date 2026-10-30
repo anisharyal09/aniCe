@@ -78,6 +78,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     }
     LaunchedEffect(owner.selected?.deviceId, owner.selected?.fingerprint, owner.selected?.let(owner::supports)) { pasted = ""; reveal = false }
     DisposableEffect(owner.selected?.deviceId) { onDispose { owner.clearPreview() } }
+    // Reveal consent applies to the current sample only; replacement text must start concealed.
     LaunchedEffect(owner.preview?.token, owner.preview?.text) { reveal = false }
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -172,6 +173,7 @@ fun ClipboardSendButton(owner: ClipboardController, modifier: Modifier = Modifie
     }
     if (confirming) AlertDialog(onDismissRequest = { confirming = false; sensitiveSample = null; owner.clearPreview() }, title = { Text("Send sensitive text?") },
         text = { Text("This clipboard is marked sensitive. Send it to ${owner.selected?.deviceName ?: "the selected device"}?") },
+        // Confirm the captured sensitive item rather than rereading a possibly replaced system clipboard.
         confirmButton = { TextButton(onClick = { confirming = false; sensitiveSample?.let(owner::sendConfirmed); sensitiveSample = null }) { Text("Send") } },
         dismissButton = { TextButton(onClick = { confirming = false; sensitiveSample = null; owner.clearPreview() }) { Text("Cancel") } })
 }

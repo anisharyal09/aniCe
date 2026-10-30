@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Authenticates Mac pairing invitations and exchanges mutual approval and trust receipts.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
 import io.github.anisharyal09.anice.infrastructure.identity.*
@@ -204,6 +205,7 @@ class PairingEngine(
         prepared = true
         event("saving", peer)
         val hash = trustHash()
+        // Persist pending trust before signing its receipt; only a verified peer receipt activates it.
         store.prepare(
             PeerTrustRecord(peer!!, local.fingerprint, method, System.currentTimeMillis(), hash)
         )
