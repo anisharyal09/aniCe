@@ -16,7 +16,7 @@ struct MediaSource: Equatable, Identifiable {
   let playing: Bool
 }
 struct MediaPlayback: Equatable {
-  var source = "", revision = "", title = "", artist = "", player = ""
+  var source = "", revision = "", title = "", artist = "", player = "", recording = ""
   var state: Int64 = 0, position: Int64 = -1, duration: Int64 = -1, rate: Int64 = 0, actions: Int64 = 0
   var sampledAt = ProcessInfo.processInfo.systemUptime
   var artworkHash = Data()
@@ -56,7 +56,6 @@ private final class PlaybackEvent: @unchecked Sendable {
   private(set) var artwork: Data?
   private var cachedThumbnail: Data?
   private var cachedThumbnailHash = Data()
-  private var pendingArtworkBase64: String?
   private var artworkTask: Task<Void,Never>?
   private var artworkToken = UUID()
   private(set) var artworkImage: NSImage?
@@ -184,7 +183,7 @@ private final class PlaybackEvent: @unchecked Sendable {
     bridge.launch()
   }
   private func stop() {
-    idleStop?.cancel();idleStop=nil;artworkTask?.cancel();artworkTask=nil;artworkToken=UUID();pendingArtworkBase64=nil;artworkImage=nil;cachedThumbnailHash=Data();clearSeekPreview()
+    idleStop?.cancel();idleStop=nil;artworkTask?.cancel();artworkTask=nil;artworkToken=UUID();artworkImage=nil;cachedThumbnailHash=Data();clearSeekPreview()
     lastNativeObservation=0
     outputVolume.stop();bridge.stop(); retry?.cancel(); retry=nil
     pauseTask?.cancel();pauseTask=nil;presence=MediaPresence();compactVisible=false
@@ -275,6 +274,7 @@ private final class PlaybackEvent: @unchecked Sendable {
       // Partial metadata may omit timing; retain it only within the native recording and process identity.
       let continuing=nativeContext==context && playback.source==source.id
       let position=continuing && playback.position>=0 ? Int64(playback.elapsed(at:next.sampledAt)*1000) : -1
+      next.recording=context.revision.uuidString
       next.source=source.id; next.title=bounded(row["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? "",512)
       next.artist=bounded(row["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? "",256); next.player=source.name
       next.state=(row["isPlaying"] as? Bool).map { $0 ? 1:2 } ?? (continuing ? playback.state:0)
@@ -291,9 +291,9 @@ private final class PlaybackEvent: @unchecked Sendable {
       if playback.source != next.source, let url=NSRunningApplication(processIdentifier:source.pid)?.bundleURL { automation=PlaybackAutomationCapabilities.load(bundleURL:url) }
       next.actions=resolvedActions(state:next.state,duration:next.duration)
       next.revision = nativeContext==context && playback.source==next.source && playback.actions==next.actions ? playback.revision:UUID().uuidString
+      if nativeContext != context { prepareArtwork(nil,context:context) }
       if row["artworkUnchanged"] as? Bool==true {
         if let cachedThumbnail { artwork=cachedThumbnail;next.artworkHash=cachedThumbnailHash }
-        else if nativeContext != context { prepareArtwork(pendingArtworkBase64,context:context) }
       } else if let base64=row["artworkBase64"] as? String {
         prepareArtwork(base64,context:context)
       } else if nativeContext==context, playback.source==next.source {
@@ -323,7 +323,6 @@ private final class PlaybackEvent: @unchecked Sendable {
     artworkTask?.cancel();artworkToken=UUID()
     let token=artworkToken
     let sameRecording=nativeContext==context
-    pendingArtworkBase64=base64
     if !sameRecording { cachedThumbnail=nil;cachedThumbnailHash=Data();artwork=nil;artworkImage=nil }
     guard let base64, base64.utf8.count<=16*1024*1024 else { return }
     artworkTask=Task { [weak self] in
@@ -335,7 +334,6 @@ private final class PlaybackEvent: @unchecked Sendable {
       }
       let prepared=await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
       guard !Task.isCancelled, let self, self.artworkToken==token, self.nativeContext==context else { return }
-      self.pendingArtworkBase64=nil
       guard let (bytes,hash)=prepared else { return }
       if self.cachedThumbnail != nil, self.cachedThumbnailHash==hash {
         self.playback.artworkHash=hash;self.publish();return

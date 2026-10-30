@@ -405,15 +405,23 @@ class SessionChannelTests {
     val dataR = mutableListOf<ByteArray>()
     val draining = kotlinx.coroutines.CompletableDeferred<Unit>()
     val drained = kotlinx.coroutines.CompletableDeferred<Unit>()
-    val c =
-      SessionConnection(
+    lateinit var c: SessionConnection
+    c = SessionConnection(
         h.engine(v, false),
         false,
         { true },
         { outboundI.add(it) },
         { dataI.add(it) },
         { securedI++ },
-        drain = { draining.complete(Unit); drained.await() },
+        drain = {
+          withTimeout(1000) { rejects(SessionFailure.CANCELLED) { c.sendData(byteArrayOf(42)) } }
+          assertFalse(c.applicationAvailable)
+          assertNull(c.nextDeadline())
+          c.tick()
+          assertFalse(c.isClosed)
+          assertTrue("Closing must not seal another reply", outboundI.isEmpty())
+          draining.complete(Unit); drained.await()
+        },
       )
     val s =
       SessionConnection(

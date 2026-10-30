@@ -35,6 +35,8 @@ Capability fields 2 and 3 (`maxThreadsPerPage` and `maxMessagesPerPage`) are the
 
 Results: 0 accepted, 1 disabled (required Android permission missing: READ_SMS for thread/history/search requests, SEND_SMS for a reply, READ_PHONE_STATE for a SIM listing), 2 busy, 3 stale, 4 unsupported, 5 failed, 6 invalid. For a reply, 0 means every multipart `sentIntent` reported `RESULT_OK` — radio acceptance, not recipient delivery. Non-zero results never advance a cursor; only `result = 0` makes `historyDone`/`threadDone`/`searchDone` cursors meaningful.
 
+If the originating channel retires after telephony submission may have begun while another channel to the same credential remains, the phone retains result 5 for that request ID within the existing completed-request bounds. Repeated begin/commit messages return that uncertain result without another telephony call. Final-channel retirement clears the peer’s in-memory reply state.
+
 ## Ordering and cursors
 
 Conversation presentation may retain local submit/receive observation order for live messages and their provider copies, independently of carrier clock differences. Display timestamps and protocol cursor ordering remain unchanged.

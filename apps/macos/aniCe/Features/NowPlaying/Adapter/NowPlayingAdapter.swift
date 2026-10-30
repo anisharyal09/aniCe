@@ -21,6 +21,7 @@ let maximumArtworkBytes = 12 * 1_024 * 1_024
 // Only the watch process enables this cache. Its reads run serially.
 private var watching = false
 private var previousArtwork: Data?
+private var previousArtworkRevision: UUID?
 /// Watch only: where the last reply put its recording, by the sample it read.
 private var lastPosition: (revision: UUID, sample: Double, timestamp: Date?, elapsed: Double, rate: Double, at: Date)?
 
@@ -105,6 +106,7 @@ public func vorssaintNowPlayingGet() {
     let lock = NSLock()
     var reply: [String: Any] = [:]
     var sample: (elapsed: Double, timestamp: Date?)?
+    var artworkInput: Data?
     func set(_ key: String, _ value: Any?) {
         guard let value else { return }
         lock.lock()
@@ -130,13 +132,9 @@ public func vorssaintNowPlayingGet() {
         }
         set("kMRMediaRemoteNowPlayingInfoPlaybackRate",
             (info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? NSNumber)?.doubleValue)
-        let artwork = info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data
-        if watching, artwork != nil, artwork == previousArtwork {
-            set("artworkUnchanged", true)
-        } else if let artwork, !artwork.isEmpty, artwork.count <= maximumArtworkBytes {
-            set("artworkBase64", artwork.base64EncodedString())
+        if let artwork = info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data, !artwork.isEmpty, artwork.count <= maximumArtworkBytes {
+            lock.lock(); artworkInput = artwork; lock.unlock()
         }
-        if watching { previousArtwork = artwork }
         group.leave()
     }
     // The followed player's own state, which the system's Now Playing shows.
@@ -222,6 +220,7 @@ public func vorssaintNowPlayingGet() {
     var snapshot = reply
     snapshot["observationStartedAt"] = observationStartedAt
     let position = sample
+    let currentArtwork = artworkInput
     lock.unlock()
     var revision: UUID?
     if watching, let context = NativePlayback.publish(selected, info: snapshot) {
@@ -230,6 +229,12 @@ public func vorssaintNowPlayingGet() {
         snapshot["canSendCommandsDirectly"] = NativePlayback.target.map {
             $0.allowsDirectCommands && ($0.itemIdentifier != nil || $0.requiresCurrentPlayer)
         } == true
+    }
+    if watching, previousArtworkRevision != revision { previousArtwork=nil;previousArtworkRevision=revision }
+    if let currentArtwork {
+        if watching, currentArtwork==previousArtwork { snapshot["artworkUnchanged"]=true }
+        else { snapshot["artworkBase64"]=currentArtwork.base64EncodedString() }
+        if watching { previousArtwork=currentArtwork }
     }
     if let position { settlePosition(&snapshot, sample: position, revision: revision) } else { lastPosition = nil }
     snapshot["capabilityState"] = "discovering"

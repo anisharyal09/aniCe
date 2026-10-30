@@ -16,7 +16,7 @@ With several Macs on the network, Android tries anonymous endpoints in discovery
 
 ## Platform boundaries
 
-Discovery uses `_anice._tcp` with anonymous random service-instance names and protocol version only. The app does not advertise device identity, exchange LAN endpoints over BLE or provide synchronization features. Network multicast isolation, firewall policy or local-network permission denial can prevent discovery even when both devices use the same router. Connection details expose failure and Retry.
+Discovery uses `_anice._tcp` with anonymous random service-instance names and protocol version only. The app does not advertise device identity, exchange LAN endpoints over BLE or grant trust to discovered endpoints. Network multicast isolation, firewall policy or local-network permission denial can prevent discovery even when both devices use the same router. Connection details expose failure and Retry.
 
 Android legacy resolution is serialized. After a native resolution timeout, another attempt remains blocked until its original callback arrives. API 34+ uses service-update subscriptions with bounded lifetime. TCP sockets bind to the selected Wi-Fi network before connect; IPv6 link-local addresses retain a matching interface scope.
 
@@ -24,7 +24,7 @@ Android targets SDK 36 and does not request ACCESS_LOCAL_NETWORK. The Mac packag
 
 Wi-Fi changes retire the Android owner, socket, network watcher and peer reservation. After TCP connect, Android tracks the socket's actual local address; surviving addresses of another family cannot conceal its loss. Connection completion rechecks that the bound address remains assigned. Manual reconnection requires a new Mac Allow window; enabled automatic coordination can open bounded admission for the secured BLE peer. If discovery finds no service, confirm that Allow is open and both devices have directly connected routes; changing Wi-Fi does not imply that the new network can reach the old endpoint.
 
-If the Mac still shows Secured after abrupt phone network loss, choose Disconnect local network before reopening Allow. Android reports foreground exit, screen lock and Wi-Fi changes separately from discovery failure.
+If the Mac still shows Secured after abrupt phone network loss, choose Disconnect local network before reopening Allow. Android applies its configured background timeout after foreground exit or screen lock when no picker, approved-transfer or companion media lease remains; Wi-Fi loss retires the affected channel.
 
 Mac TCP requests keepalive probes after ten idle seconds, at five-second intervals, with three unanswered probes; retransmission timeout is twenty seconds. These OS probes detect an unreachable socket and do not extend authenticated session activity. Detection still depends on native TCP scheduling; abrupt peer network loss can leave controls visible briefly before failure is reported. [Network.framework options](https://developer.apple.com/documentation/network/nwprotocoltcp/options).
 

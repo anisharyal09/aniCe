@@ -1749,35 +1749,21 @@ enum TransferEvent: Equatable {
         }
 
         let chunkSize = min(Int(senderChunkBytes), Int(file.size - fileBytesSent))
-        let chunkData: Data
-        do { chunkData = try await source.read(chunkSize) }
+        let encoded: Data
+        do {
+          encoded = try await source.readChunk(chunkSize, batch: batch.idString, file: file.idString,
+            offset: fileBytesSent, maximumChunk: chunkLimit(activeChannel?.descriptor))
+        }
         catch { await source.close(); if operation == epoch { failTransfer(reason: "Source read failed") }; return }
         guard operation == epoch, !Task.isCancelled else { await source.close(); return }
-        guard chunkData.count == chunkSize else {
-          await source.close()
-          failTransfer(reason: "I/O error reading \(file.name)")
-          return
-        }
-
-        let chunkMsg = TransferMessage.chunk(
-          batch: batch.idString,
-          file: file.idString,
-          offset: fileBytesSent,
-          data: chunkData
-        )
-        guard let encoded = try? chunkMsg.encode(maximumChunkBytes: chunkLimit(activeChannel?.descriptor)) else {
-          await source.close()
-          failTransfer(reason: "Failed encoding chunk")
-          return
-        }
 
         do {
           sendWindow?.beginSubmission(ProcessInfo.processInfo.systemUptime, windowEmpty: sentBytes == acknowledgedBytes)
-          sentBytes += Int64(chunkData.count)
+          sentBytes += Int64(chunkSize)
           try await sendWithBackpressure(encoded)
           guard operation == epoch else { await source.close(); return }
-          fileBytesSent += Int64(chunkData.count)
-          totalTransferred += Int64(chunkData.count)
+          fileBytesSent += Int64(chunkSize)
+          totalTransferred += Int64(chunkSize)
 
           let now = ProcessInfo.processInfo.systemUptime
           if now - lastUiUpdate >= 0.1 || fileBytesSent == file.size {
@@ -2812,14 +2798,20 @@ private actor TransferSendStorage {
       return Data(digest.finalize())
     }.value
   }
-  func read(_ count: Int) throws -> Data {
+  func readChunk(_ count: Int, batch: String, file: String, offset: Int64, maximumChunk: Int) throws -> Data {
     assert(!Thread.isMainThread)
-    var bytes = Data()
+    try Task.checkCancellation()
+    // FileHandle normally fills the request. Keep that buffer instead of copying it into a second Data.
+    var bytes = try handle.read(upToCount: count) ?? Data()
     while bytes.count < count {
       guard let next = try handle.read(upToCount: count - bytes.count), !next.isEmpty else { break }
       bytes.append(next)
     }
-    return bytes
+    guard bytes.count == count else { throw CocoaError(.fileReadCorruptFile) }
+    let encoded = try TransferMessage.chunk(batch: batch, file: file, offset: offset, data: bytes)
+      .encode(maximumChunkBytes: maximumChunk)
+    try Task.checkCancellation()
+    return encoded
   }
   func close() {
     assert(!Thread.isMainThread)

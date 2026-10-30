@@ -6,7 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
-- Reuse verified playback artwork by authenticated peer and hash across channel changes and control revisions without clearing the visible cover; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
+- Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
+
+- Keep artwork only for the current recording, avoid clearing it for control-only revisions, and bound media-notification retirement during a connected transport handoff; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
 - Keep a same-recording cover through temporary metadata gaps and tolerate an already-retired session during manual LAN disconnect.
 
 ### Added

@@ -110,7 +110,7 @@ class SessionConnection(
     get() = closed
 
   suspend fun nextDeadline(includeMaintenance: Boolean = true): Long? {
-    if (closed) return null
+    if (closed || closedByPeer) return null
     val available = operation.tryLock()
     val policy = available && includeMaintenance
     try {
@@ -141,6 +141,7 @@ class SessionConnection(
   // are both single sequential loops.
   suspend fun receive(envelope: ByteArray) {
     var delivery: ByteArray? = null
+    var peerDrain = false
     operation.withLock {
       try {
         requireOpen()
@@ -173,11 +174,10 @@ class SessionConnection(
             }
             RecordKind.CLOSE -> {
               closedByPeer = true
-              drain()
-              close()
+              peerDrain = true
             }
           }
-          if (!closed) flushControl()
+          if (!closed && !closedByPeer) flushControl()
         } else {
           if (channel != null || kind != expected) throw SessionException(SessionFailure.STATE)
           when (kind) {
@@ -205,6 +205,11 @@ class SessionConnection(
         close()
         throw e
       } finally { changed() }
+    }
+    // Accepted feature work may send a final reply. Let it reach the closing-state rejection
+    // without waiting on the lock held by the drain that is awaiting that same work.
+    if (peerDrain) {
+      try { drain() } finally { close() }
     }
     // Application delivery releases the maintenance lock; transport callers still await it in record order.
     delivery?.let {
@@ -237,7 +242,7 @@ class SessionConnection(
 
   private val dataAdmission = SessionDataAdmission()
 
-  val applicationAvailable get() = !closed && channel != null && deadline == 0L && liveness?.renewalReason == null
+  val applicationAvailable get() = !closed && !closedByPeer && channel != null && deadline == 0L && liveness?.renewalReason == null
   suspend fun sendData(bytes: ByteArray) {
     val admissionStart = SessionTiming.start()
     dataAdmission.run(bytes.size > SessionProfile.STANDARD.maximumPlaintext) {
@@ -263,10 +268,10 @@ class SessionConnection(
       refused = true
       throw e
     } catch (e: CancellationException) {
-      if (channel?.stage != ChannelStage.SECURED) close()
+      if (!closedByPeer && channel?.stage != ChannelStage.SECURED) close()
       throw e
     } catch (e: Exception) {
-      close()
+      if (!closedByPeer) close()
       throw e
     } finally { if (!refused) changed() }
   }
@@ -275,6 +280,7 @@ class SessionConnection(
     private set
 
   internal fun checkDeadlines() {
+    if (closedByPeer && !closed) return
     // Authentication may suspend in a signer; retirement and hard deadlines cannot wait for it.
     try {
       requireOpen()
@@ -285,6 +291,7 @@ class SessionConnection(
   }
 
   suspend fun tick() {
+    if (closedByPeer && !closed) return
     checkDeadlines()
     if (!operation.tryLock()) return
     try {
@@ -343,7 +350,7 @@ class SessionConnection(
   }
 
   private fun requireOpen() {
-    if (closed) throw SessionException(SessionFailure.CANCELLED)
+    if (closed || closedByPeer) throw SessionException(SessionFailure.CANCELLED)
   }
 }
 

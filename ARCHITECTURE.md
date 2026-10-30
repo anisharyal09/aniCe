@@ -47,7 +47,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Decisions: [ADR 0006 (Independent LAN Sessions)](docs/decisions/0006-independent-lan-sessions.md)
   - Vectors: [`lan-vectors.json`](protocol/test-vectors/lan/lan-vectors.json)
 - **Concurrent Coexistence:** Simultaneous BLE and LAN sessions to the same pinned peer with independent session keys, nonces, and counters under a shared reservation lock.
-- **Ownership:** Android idle LAN follows its configured background timeout after final activity stop or screen lock; bounded pickers and user-approved transfer-service leases retain active work. Network loss still retires the channel. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Opt-in authenticated BLE rendezvous coordinates bounded LAN admission on BLE connection events, live BLE feature activity and feature demand while Android is foreground and interactive.
+- **Ownership:** Android idle LAN follows its configured background timeout after final activity stop or screen lock; bounded pickers, user-approved transfer-service leases and companion remote-playback demand retain active work. Network loss still retires the channel. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Opt-in authenticated BLE rendezvous coordinates bounded LAN admission on BLE connection events, live BLE feature activity and feature demand while Android is foreground and interactive or holds an eligible picker, transfer or companion media lease.
 
 ---
 

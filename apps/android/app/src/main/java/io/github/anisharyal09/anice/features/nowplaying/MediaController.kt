@@ -65,7 +65,7 @@ class MediaController(
 ) : FeatureHandler {
     override fun available(channel: SecuredChannel) {
         val d = channel.descriptor
-        attach(d.transport, d.instance, d.peer.deviceName, d.peer.deviceId + ":" + d.peer.fingerprint, channel::sendData)
+        attach(d.transport, d.instance, d.peer.deviceName, channel::sendData)
     }
 
     override fun retired(descriptor: ChannelDescriptor) {
@@ -79,7 +79,7 @@ class MediaController(
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray) =
         handleData(descriptor.transport, descriptor.instance, bytes)
 
-    private class Link(val token: String, val origin: String, val peer: String, val send: suspend (ByteArray) -> Unit) {
+    private class Link(val token: String, val origin: String, val send: suspend (ByteArray) -> Unit) {
         var capable = false
         var volumeCapable = false
         var outputCapable = false
@@ -348,9 +348,6 @@ class MediaController(
         presentationChanged()
     }
 
-    private var cachedArtwork: Bitmap? = null
-    private var cachedArtworkHash = byteArrayOf()
-    private var cachedArtworkPeer = ""
     var artwork by mutableStateOf<Bitmap?>(null)
         private set
     var origin by mutableStateOf("")
@@ -360,10 +357,10 @@ class MediaController(
     var busy by mutableStateOf(false)
         private set
 
-    fun attach(kind: String, token: String, origin: String, peer: String = origin, send: suspend (ByteArray) -> Unit) {
+    fun attach(kind: String, token: String, origin: String, send: suspend (ByteArray) -> Unit) {
         if (links[kind]?.token == token) return
         closed(kind)
-        links[kind] = Link(token, origin, peer, send)
+        links[kind] = Link(token, origin, send)
         choose()
     }
 
@@ -376,9 +373,6 @@ class MediaController(
     fun invalidate() {
         scope.launch {
             retire()
-            cachedArtwork = null
-            cachedArtworkHash = byteArrayOf()
-            cachedArtworkPeer = ""
             links.clear()
             connected = false
             supported = false
@@ -521,17 +515,14 @@ class MediaController(
             5L -> if (acknowledged) {
                 val next = RemotePlayback(message, clock())
                 val old = playback
-                val cachedArtworkMatches = next.hash.isNotEmpty() && cachedArtwork != null &&
-                    cachedArtworkPeer == link.peer && cachedArtworkHash.contentEquals(next.hash)
-                val artworkTargetChanged = old?.source != next.source || old.revision != next.revision || !old.hash.contentEquals(next.hash)
-                if (artworkTargetChanged) {
-                    if (cachedArtworkMatches) {
-                        artTimeout?.cancel()
-                        artTimeout = null
-                        assembly.reset()
-                    } else clearArtwork()
+                val recordingChanged = old?.source != next.source || old.title != next.title || old.artist != next.artist ||
+                    (old.revision != next.revision && old.actions == next.actions)
+                if (recordingChanged || old == null || !old.hash.contentEquals(next.hash)) clearArtwork()
+                else if (old.revision != next.revision) {
+                    artTimeout?.cancel()
+                    artTimeout = null
+                    assembly.reset()
                 }
-                if (cachedArtworkMatches) artwork = cachedArtwork
                 if (old?.source != next.source || old.revision != next.revision) {
                     clearVolume()
                     if (intents.isNotEmpty()) feedback = "Playback changed. Queued actions cleared."
@@ -900,7 +891,7 @@ class MediaController(
                 snapshot.hash
             )
         ) return
-        if (cachedArtworkPeer == links[active]?.peer && cachedArtworkHash.contentEquals(hash) && cachedArtwork != null) return
+        if (artwork != null) return
         val buffer = assembly.accept(
             hash,
             message.number(4).toInt(),
@@ -934,9 +925,6 @@ class MediaController(
                         hash
                     )
                 ) {
-                    cachedArtworkPeer = links[active]?.peer.orEmpty()
-                    cachedArtworkHash = hash.copyOf()
-                    cachedArtwork = bitmap
                     artwork = bitmap
                     presentationChanged()
                 }

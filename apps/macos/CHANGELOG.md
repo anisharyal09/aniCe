@@ -6,7 +6,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Prepare playback thumbnails off the UI thread, keep the last cover through temporary metadata gaps for the same recording, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
+- Prepare transfer chunks in the source-storage actor without a second full-read buffer, and defer native Find Device startup so shared DATA delivery can continue.
+
+- Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
 
 ### Added
 

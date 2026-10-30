@@ -143,10 +143,9 @@ internal class RecordCipher(key: ByteArray, iv: ByteArray, id: ByteArray, direct
       // GCM concatenates successive AAD updates; two updates avoid materializing header + id.
       cipher.updateAAD(header)
       cipher.updateAAD(aad)
-      val ciphertext = cipher.doFinal(plaintext, 0, plaintext.size)
       val record = ByteArray(plaintext.size + 30)
       System.arraycopy(header, 0, record, 0, 14)
-      System.arraycopy(ciphertext, 0, record, 14, ciphertext.size)
+      cipher.doFinal(plaintext, 0, plaintext.size, record, 14)
       return record
     } catch (_: java.security.GeneralSecurityException) {
       throw SessionException(SessionFailure.AUTHENTICATION)

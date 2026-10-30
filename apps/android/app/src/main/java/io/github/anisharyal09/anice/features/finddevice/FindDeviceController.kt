@@ -115,15 +115,24 @@ class FindDeviceController(
         alerts[key] = Alert(descriptor, identifier, now() + 60000)
         incomingAlert = IncomingFindAlert(identifier, descriptor.peer.deviceName); schedule()
         link.history.processing = message.sequence
-        val result = try { notifier.post(identifier, descriptor.peer.deviceName) } finally { link.history.processing = null }
-        expire()
-        if (!live(descriptor) || alerts[key]?.identifier != identifier) {
-            notifier.clear(identifier); return DataHandling.DISCARDED
+        scope.launch {
+            if (!live(descriptor) || alerts[key]?.identifier != identifier) {
+                link.history.processing = null; return@launch
+            }
+            val result = try { notifier.post(identifier, descriptor.peer.deviceName) }
+                catch (e: CancellationException) { notifier.clear(identifier); throw e }
+                catch (_: Exception) { FindResult.FAILED }
+                finally { link.history.processing = null }
+            expire()
+            if (!live(descriptor) || alerts[key]?.identifier != identifier) {
+                notifier.clear(identifier); return@launch
+            }
+            if (result != FindResult.SUBMITTED) dismiss(identifier)
+            val response = reply(message, result)
+            remember(response, link); enqueue(response, link)
+            link.channel.received(bytes)
         }
-        if (result != FindResult.SUBMITTED) dismiss(identifier)
-        val response = reply(message, result)
-        remember(response, link); enqueue(response, link)
-        return DataHandling.HANDLED
+        return DataHandling.QUEUED
     }
     fun availableFor(peer: DeviceIdentity): Boolean = selected(peer) != null
     private fun reply(m: FindDeviceMessage, result: FindResult) = FindDeviceMessage(3, m.id, m.sequence, result.ordinal.toLong())

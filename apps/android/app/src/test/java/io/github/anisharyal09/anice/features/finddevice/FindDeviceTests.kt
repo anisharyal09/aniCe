@@ -34,6 +34,19 @@ class FindDeviceTests {
         suspend fun ready(channel: Channel) { owner.available(channel); assertEquals(DataHandling.HANDLED, owner.handle(channel.descriptor, FindDeviceMessage(1).encode())) }
     }
     private fun request(sequence: Long = 1) = FindDeviceMessage(2, UUID.randomUUID().toString(), sequence)
+    @Test fun nativeStartupReturnsQueuedAndDoesNotHoldSharedDelivery() = runBlocking {
+        val h = Harness(); val c = Channel(); h.ready(c)
+        h.notifier.gate = CompletableDeferred()
+        val result = withTimeout(1000) { h.owner.handle(c.descriptor, request().encode()) }
+        assertEquals(DataHandling.QUEUED, result)
+        assertEquals(DataHandling.HANDLED, h.owner.handle(c.descriptor, FindDeviceMessage(1).encode()))
+        assertEquals(1, h.notifier.posts.size)
+        h.owner.retired(c.descriptor)
+        val sent = c.sent.size
+        h.notifier.gate!!.complete(FindResult.SUBMITTED)
+        assertEquals(sent, c.sent.size)
+        assertTrue(h.notifier.cleared.contains(h.notifier.posts.single()))
+    }
     @Test fun independentFixturesRejectMalformedBounds() {
         val root = JSONObject(javaClass.classLoader!!.getResource("find-device/find-device-vectors.json")!!.readText())
         val good = root.getJSONArray("valid"); val bad = root.getJSONArray("invalid")

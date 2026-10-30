@@ -27,6 +27,8 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
     private var lastPlaybackState: List<Any?>?=null
     private val actions=mutableListOf<PendingIntent>()
     private val mainHandler=Handler(Looper.getMainLooper())
+    private var retirementScheduled=false
+    private val retireRunnable=Runnable { retirementScheduled=false;clear() }
     private var updateScheduled=false
     private val updateRunnable=Runnable {
         updateScheduled=false
@@ -39,6 +41,8 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         })
     }
     private fun clear() {
+        mainHandler.removeCallbacks(retireRunnable)
+        retirementScheduled=false
         mainHandler.removeCallbacks(updateRunnable)
         updateScheduled=false
         actions.forEach { it.cancel() };actions.clear()
@@ -55,7 +59,13 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
     @android.annotation.SuppressLint("NotificationPermission")
     private fun performUpdate() {
         val target=owner.playback
-        if(!owner.compactVisible || target==null || target.source.isEmpty() || target.state !in 1L..2L) { clear();return }
+        if(!owner.compactVisible || target==null || target.source.isEmpty() || target.state !in 1L..2L) {
+            if(owner.connected && owner.awaitingSnapshot && session!=null) {
+                if(!retirementScheduled) { retirementScheduled=true;mainHandler.postDelayed(retireRunnable,6000) }
+            } else clear()
+            return
+        }
+        mainHandler.removeCallbacks(retireRunnable);retirementScheduled=false
         val current=session ?: MediaSession(app,"aniCe Mac playback").also { newSession ->
             session=newSession
             newSession.setCallback(object : MediaSession.Callback() {
