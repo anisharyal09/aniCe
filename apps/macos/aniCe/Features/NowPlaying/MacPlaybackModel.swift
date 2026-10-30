@@ -294,8 +294,13 @@ private final class PlaybackEvent: @unchecked Sendable {
       if row["artworkUnchanged"] as? Bool==true {
         if let cachedThumbnail { artwork=cachedThumbnail;next.artworkHash=cachedThumbnailHash }
         else if nativeContext != context { prepareArtwork(pendingArtworkBase64,context:context) }
+      } else if let base64=row["artworkBase64"] as? String {
+        prepareArtwork(base64,context:context)
+      } else if nativeContext==context, playback.source==next.source {
+        // MediaRemote can omit artwork for a transient metadata sample; keep the last cover for this recording.
+        next.artworkHash=playback.artworkHash
       } else {
-        prepareArtwork(row["artworkBase64"] as? String,context:context)
+        prepareArtwork(nil,context:context)
       }
     } else { prepareArtwork(nil,context:nil); permissionTarget=nil; automation=nil }
     if next.source != playback.source {
@@ -317,7 +322,9 @@ private final class PlaybackEvent: @unchecked Sendable {
   private func prepareArtwork(_ base64: String?, context: PlaybackContext?) {
     artworkTask?.cancel();artworkToken=UUID()
     let token=artworkToken
-    pendingArtworkBase64=base64;cachedThumbnail=nil;cachedThumbnailHash=Data();artwork=nil;artworkImage=nil
+    let sameRecording=nativeContext==context
+    pendingArtworkBase64=base64
+    if !sameRecording { cachedThumbnail=nil;cachedThumbnailHash=Data();artwork=nil;artworkImage=nil }
     guard let base64, base64.utf8.count<=16*1024*1024 else { return }
     artworkTask=Task { [weak self] in
       guard !Task.isCancelled else { return }
@@ -330,6 +337,9 @@ private final class PlaybackEvent: @unchecked Sendable {
       guard !Task.isCancelled, let self, self.artworkToken==token, self.nativeContext==context else { return }
       self.pendingArtworkBase64=nil
       guard let (bytes,hash)=prepared else { return }
+      if self.cachedThumbnail != nil, self.cachedThumbnailHash==hash {
+        self.playback.artworkHash=hash;self.publish();return
+      }
       self.cachedThumbnail=bytes;self.cachedThumbnailHash=hash;self.artwork=bytes
       self.artworkImage=NSImage(data:bytes);self.playback.artworkHash=hash;self.publish()
     }

@@ -6,7 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Prepare playback thumbnails off the UI thread, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
+- Prepare playback thumbnails off the UI thread, keep the last cover through temporary metadata gaps for the same recording, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
 
 ### Added
 

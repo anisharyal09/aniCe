@@ -521,8 +521,17 @@ class MediaController(
             5L -> if (acknowledged) {
                 val next = RemotePlayback(message, clock())
                 val old = playback
-                if (old?.source != next.source || old.revision != next.revision || !old.hash.contentEquals(next.hash)) clearArtwork()
-                if (next.hash.isNotEmpty() && cachedArtworkPeer == link.peer && cachedArtworkHash.contentEquals(next.hash)) artwork = cachedArtwork
+                val cachedArtworkMatches = next.hash.isNotEmpty() && cachedArtwork != null &&
+                    cachedArtworkPeer == link.peer && cachedArtworkHash.contentEquals(next.hash)
+                val artworkTargetChanged = old?.source != next.source || old.revision != next.revision || !old.hash.contentEquals(next.hash)
+                if (artworkTargetChanged) {
+                    if (cachedArtworkMatches) {
+                        artTimeout?.cancel()
+                        artTimeout = null
+                        assembly.reset()
+                    } else clearArtwork()
+                }
+                if (cachedArtworkMatches) artwork = cachedArtwork
                 if (old?.source != next.source || old.revision != next.revision) {
                     clearVolume()
                     if (intents.isNotEmpty()) feedback = "Playback changed. Queued actions cleared."

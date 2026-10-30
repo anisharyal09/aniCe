@@ -10,7 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
-- Improve playback responsiveness and artwork continuity across Android and macOS.
+- Improve Now Playing responsiveness and artwork continuity across Android and macOS; make manual LAN teardown tolerate an already-retired session.
 
 ### Added
 
