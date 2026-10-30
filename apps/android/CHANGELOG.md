@@ -6,7 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
-- Reuse verified playback artwork by authenticated peer and hash across channel changes, preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
+- Reuse verified playback artwork by authenticated peer and hash across channel changes and control revisions without clearing the visible cover; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
+- Keep a same-recording cover through temporary metadata gaps and tolerate an already-retired session during manual LAN disconnect.
 
 ### Added
 
