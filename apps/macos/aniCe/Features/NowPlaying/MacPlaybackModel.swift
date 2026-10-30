@@ -55,6 +55,15 @@ private final class PlaybackEvent: @unchecked Sendable {
   private(set) var catalogue = UUID().uuidString
   private(set) var artwork: Data?
   private var cachedThumbnail: Data?
+  private var cachedThumbnailHash = Data()
+  private var pendingArtworkBase64: String?
+  private var artworkTask: Task<Void,Never>?
+  private var artworkToken = UUID()
+  private(set) var artworkImage: NSImage?
+  private var idleStop: Task<Void,Never>?
+  private var seekPreview: MediaPlayback?
+  private var seekDeadline: Task<Void,Never>?
+  var displayedPlayback: MediaPlayback { seekPreview ?? playback }
   private struct VolumeTarget: Hashable { let pid: Int32;let bundle: String;let launched: Date?;let property: UInt32 }
   private var verifiedVolumes = Set<VolumeTarget>()
   private var volumeState=PlayerVolumeState()
@@ -94,6 +103,7 @@ private final class PlaybackEvent: @unchecked Sendable {
   var phoneSubscribed: Bool { sessionLink.subscription != nil }
   private var operationID: UUID?
   private var nativeContext: PlaybackContext?
+  private var lastNativeObservation: TimeInterval = 0
   private var pendingSample: PlaybackContext?
   private var permissionTarget: MediaSource?
   private var automation: PlaybackAutomationCapabilities?
@@ -141,13 +151,21 @@ private final class PlaybackEvent: @unchecked Sendable {
     if surface=="main" { mainVisible=visible }
     if surface=="companion" { companionVisible=visible }
     if visible { leases.insert(surface) } else { leases.remove(surface) }
-    if leases.isEmpty && !phoneSubscribed { stop() } else { outputVolume.start();if !bridge.running && retry == nil { launch() } }
+    idleStop?.cancel();idleStop=nil
+    if leases.isEmpty && !phoneSubscribed {
+      outputVolume.stop()
+      idleStop=Task { [weak self] in
+        do { try await Task.sleep(for:.seconds(30)) } catch { return }
+        guard let self, self.leases.isEmpty, !self.phoneSubscribed else { return }
+        self.stop()
+      }
+    } else { outputVolume.start();if !bridge.running && retry == nil { launch() } }
   }
   func retryObservation() { retries=0; retry?.cancel(); retry=nil; if !leases.isEmpty || phoneSubscribed { launch() } }
   func channel(_ kind: String, token: String?, send: @escaping @MainActor (Data) async throws -> Void) { sessionLink.channel(kind,token:token,send:send) }
   func capacity(_ kind: String) { sessionLink.capacity(kind) }
   func receive(_ data: Data, channel kind: String) -> Bool { sessionLink.handle(data,channel:kind) != .unrecognized }
-  private func publish() { refreshCompactPresence(); sessionLink.publish() }
+  private func publish() { reconcileSeekPreview();refreshCompactPresence(); sessionLink.publish() }
   private func refreshCompactPresence() {
     let old=presence.deadline, now=ProcessInfo.processInfo.systemUptime
     compactVisible=presence.update(genuine:!playback.source.isEmpty,state:playback.state,now:now)
@@ -166,6 +184,8 @@ private final class PlaybackEvent: @unchecked Sendable {
     bridge.launch()
   }
   private func stop() {
+    idleStop?.cancel();idleStop=nil;artworkTask?.cancel();artworkTask=nil;artworkToken=UUID();pendingArtworkBase64=nil;artworkImage=nil;cachedThumbnailHash=Data();clearSeekPreview()
+    lastNativeObservation=0
     outputVolume.stop();bridge.stop(); retry?.cancel(); retry=nil
     pauseTask?.cancel();pauseTask=nil;presence=MediaPresence();compactVisible=false
     volumePreview.clear();volumePreviewDeadline?.cancel();nativeCapabilities=[:];controlStatus="No current playback.";volumeStatus="Select a player to check volume support."
@@ -198,6 +218,11 @@ private final class PlaybackEvent: @unchecked Sendable {
     if let id=row["validationRequest"] as? String {
       guard id==validation else { return }; validation=nil
       if row["validationOK"] as? Bool==true { let action=afterValidation; afterValidation=nil; action?() } else { finish(1) }; return
+    }
+    if row["sampleOnly"] as? Bool==true, PlaybackContext(reply:row) != nativeContext { return }
+    if row["capabilitiesOnly"] as? Bool != true, let started=row["observationStartedAt"] as? Double, started.isFinite {
+      if PlaybackContext(reply:row)==nativeContext && started<lastNativeObservation { return }
+      lastNativeObservation=started
     }
     func sample(_ key: String, scale: Double, max: Double, missing: Int64) -> Int64 {
       guard let number=row[key] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return missing }
@@ -266,11 +291,13 @@ private final class PlaybackEvent: @unchecked Sendable {
       if playback.source != next.source, let url=NSRunningApplication(processIdentifier:source.pid)?.bundleURL { automation=PlaybackAutomationCapabilities.load(bundleURL:url) }
       next.actions=resolvedActions(state:next.state,duration:next.duration)
       next.revision = nativeContext==context && playback.source==next.source && playback.actions==next.actions ? playback.revision:UUID().uuidString
-      if row["artworkUnchanged"] as? Bool==true, let cachedThumbnail { artwork=cachedThumbnail; next.artworkHash=Data(SHA256.hash(data:cachedThumbnail)) }
-      else if let base64=row["artworkBase64"] as? String, base64.utf8.count<=16*1024*1024, let data=Data(base64Encoded:base64), let thumbnail=Self.thumbnail(data) {
-        artwork=thumbnail; cachedThumbnail=thumbnail; next.artworkHash=Data(SHA256.hash(data:thumbnail))
-      } else { artwork=nil; if row["artworkUnchanged"] as? Bool != true { cachedThumbnail=nil } }
-    } else { artwork=nil; permissionTarget=nil; automation=nil }
+      if row["artworkUnchanged"] as? Bool==true {
+        if let cachedThumbnail { artwork=cachedThumbnail;next.artworkHash=cachedThumbnailHash }
+        else if nativeContext != context { prepareArtwork(pendingArtworkBase64,context:context) }
+      } else {
+        prepareArtwork(row["artworkBase64"] as? String,context:context)
+      }
+    } else { prepareArtwork(nil,context:nil); permissionTarget=nil; automation=nil }
     if next.source != playback.source {
       volumePreview.clear();volumePreviewDeadline?.cancel();volumeState=PlayerVolumeState();volumeProperty=nil;volumeCandidate=false
       if let source, source.launched != nil, ["com.apple.Music","com.spotify.client"].contains(source.bundle),
@@ -287,6 +314,31 @@ private final class PlaybackEvent: @unchecked Sendable {
     if next.source.isEmpty { controlStatus="No current playback." }
     refreshVolumeStatus();publish();samplePlayerVolume()
   }
+  private func prepareArtwork(_ base64: String?, context: PlaybackContext?) {
+    artworkTask?.cancel();artworkToken=UUID()
+    let token=artworkToken
+    pendingArtworkBase64=base64;cachedThumbnail=nil;cachedThumbnailHash=Data();artwork=nil;artworkImage=nil
+    guard let base64, base64.utf8.count<=16*1024*1024 else { return }
+    artworkTask=Task { [weak self] in
+      guard !Task.isCancelled else { return }
+      let worker=Task.detached(priority:.utility) {
+        guard !Task.isCancelled, let data=Data(base64Encoded:base64), !Task.isCancelled,
+          let thumbnail=Self.thumbnail(data), !Task.isCancelled else { return Optional<(Data,Data)>.none }
+        return (thumbnail,Data(SHA256.hash(data:thumbnail)))
+      }
+      let prepared=await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+      guard !Task.isCancelled, let self, self.artworkToken==token, self.nativeContext==context else { return }
+      self.pendingArtworkBase64=nil
+      guard let (bytes,hash)=prepared else { return }
+      self.cachedThumbnail=bytes;self.cachedThumbnailHash=hash;self.artwork=bytes
+      self.artworkImage=NSImage(data:bytes);self.playback.artworkHash=hash;self.publish()
+    }
+  }
+  private func clearSeekPreview() { seekPreview=nil;seekDeadline?.cancel();seekDeadline=nil }
+  private func reconcileSeekPreview() {
+    guard let preview=seekPreview else { return }
+    if preview.source != playback.source || preview.revision != playback.revision || abs(preview.elapsed(at:ProcessInfo.processInfo.systemUptime)-playback.elapsed(at:ProcessInfo.processInfo.systemUptime))<=1 { clearSeekPreview() }
+  }
   private func resolvedActions(state: Int64, duration: Int64) -> Int64 {
     routes=PlaybackRoutes(native:nativeCapabilities,scripting:automation,state:state,duration:duration)
     var actions=routes.actions
@@ -299,7 +351,7 @@ private final class PlaybackEvent: @unchecked Sendable {
     outputVolume.refresh();samplePlayerVolume()
     if !write(PlaybackRequest(command:.refresh)) { feedback="Player refresh unavailable. Retry observation." }
   }
-  static func thumbnail(_ data: Data) -> Data? {
+  nonisolated static func thumbnail(_ data: Data) -> Data? {
     guard data.count<=12*1024*1024, let source=CGImageSourceCreateWithData(data as CFData,nil),
       let image=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceThumbnailMaxPixelSize:256,kCGImageSourceCreateThumbnailWithTransform:true] as CFDictionary) else { return nil }
     let bitmap=NSBitmapImageRep(cgImage:image)
@@ -362,6 +414,14 @@ private final class PlaybackEvent: @unchecked Sendable {
     } else {
       operationID=UUID(); busy=true; pending=completion; pendingSample=context
       guard write(PlaybackRequest(command:command,context:context)) else { finish(5); return }
+    }
+    if action==4 {
+      var preview=playback;preview.position=value;preview.sampledAt=ProcessInfo.processInfo.systemUptime
+      seekPreview=preview;seekDeadline?.cancel()
+      seekDeadline=Task { [weak self] in
+        do { try await Task.sleep(for:.seconds(6)) } catch { return }
+        self?.clearSeekPreview();self?.feedback="Seek was not confirmed. Showing the player’s latest position."
+      }
     }
     startDeadline()
   }
@@ -447,6 +507,7 @@ private final class PlaybackEvent: @unchecked Sendable {
   }
   func finish(_ result: Int64) {
     trace("result \(result)")
+    if result != 0 { clearSeekPreview() }
     volumeWork?.cancel();volumeWork=nil
     let refresh=pendingSample; pendingSample=nil
     let completion=pending; pending=nil; operationID=nil; busy=false; validation=nil; afterValidation=nil; commandDeadline?.cancel(); commandDeadline=nil

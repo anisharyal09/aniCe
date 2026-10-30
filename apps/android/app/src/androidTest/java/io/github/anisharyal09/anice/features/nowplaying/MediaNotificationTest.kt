@@ -102,4 +102,57 @@ class MediaNotificationTest {
         } finally { instrumentation.runOnMainSync { owner.invalidate() } }
     }
 
+    @Test fun cachedArtworkSurvivesFreshSubscriptionsButNeverAnUnknownTrackOrPeer() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val owner = MediaController(Dispatchers.Main.immediate)
+        val outgoing = mutableListOf<MediaMessage>()
+        val bitmap = android.graphics.Bitmap.createBitmap(8,8,android.graphics.Bitmap.Config.ARGB_8888)
+        val stream = java.io.ByteArrayOutputStream()
+        assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))
+        val bytes = stream.toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        lateinit var snapshot: MediaMessage
+        fun subscribe(kind: String, token: String, peer: String) {
+            owner.attach(kind,token,"Mac",peer) { MediaMessage.decode(it)?.let(outgoing::add) }
+            owner.receive(kind,token,MediaMessage(1,listOf(Cbor.Integer(1),Cbor.Bool(kind=="lan"))).encode())
+            val sub = outgoing.last { it.kind==2L }.string(0)
+            owner.receive(kind,token,MediaMessage(3,listOf(Cbor.Text(sub))).encode())
+            snapshot = snapshot.copy(fields=snapshot.fields.toMutableList().also { it[0]=Cbor.Text(sub) })
+            owner.receive(kind,token,snapshot.encode())
+        }
+        try {
+            instrumentation.runOnMainSync {
+                val rows=JSONObject(instrumentation.context.assets.open("media/media-vectors.json").bufferedReader().use { it.readText() }).getJSONArray("valid")
+                val row=(0 until rows.length()).map { rows.getJSONObject(it) }.first { it.getString("name")=="snapshot" }
+                snapshot=MediaMessage.decode(row.getString("bytesHex").chunked(2).map { it.toInt(16).toByte() }.toByteArray())!!
+                snapshot=snapshot.copy(fields=snapshot.fields.toMutableList().also { it[14]=Cbor.Bytes(hash) })
+                owner.foreground(this)
+                subscribe("lan","l1","peer-a")
+                owner.receive("lan","l1",MediaMessage(8,listOf(snapshot.fields[0],snapshot.fields[1],snapshot.fields[2],Cbor.Bytes(hash),Cbor.Integer(bytes.size.toLong()),Cbor.Integer(0),Cbor.Bytes(bytes))).encode())
+            }
+            val deadline=android.os.SystemClock.elapsedRealtime()+3000
+            var loaded: android.graphics.Bitmap? = null
+            while(loaded==null && android.os.SystemClock.elapsedRealtime()<deadline) {
+                instrumentation.runOnMainSync { loaded=owner.artwork }
+                if(loaded==null) Thread.sleep(10)
+            }
+            assertNotNull("Artwork did not decode",loaded)
+            instrumentation.runOnMainSync {
+                owner.closed("lan")
+                subscribe("ble","b1","peer-a")
+                assertSame(loaded,owner.artwork)
+                snapshot=snapshot.copy(fields=snapshot.fields.toMutableList().also { it[2]=Cbor.Text(java.util.UUID.randomUUID().toString()) })
+                owner.receive("ble","b1",snapshot.encode())
+                assertSame("Control revision must not re-decode a cached hash",loaded,owner.artwork)
+                snapshot=snapshot.copy(fields=snapshot.fields.toMutableList().also { it[14]=Cbor.Bytes(byteArrayOf()) })
+                owner.receive("ble","b1",snapshot.encode())
+                assertNull("Unknown artwork must remove the previous cover",owner.artwork)
+                owner.closed("ble")
+                snapshot=snapshot.copy(fields=snapshot.fields.toMutableList().also { it[14]=Cbor.Bytes(hash) })
+                subscribe("ble","b2","peer-b")
+                assertNull("Another credential must not reuse cached artwork",owner.artwork)
+            }
+        } finally { instrumentation.runOnMainSync { owner.invalidate() } }
+    }
+
 }

@@ -91,6 +91,7 @@ public func vorssaintNowPlayingGet() {
         emit(["error": "MRMediaRemoteGetNowPlayingInfo unavailable"])
         return
     }
+    let observationStartedAt = ProcessInfo.processInfo.systemUptime
     let capabilityGeneration = NativePlayback.beginCapabilities()
     let selected = watching ? NativePlayback.select() : nil
     if watching, selected == nil {
@@ -219,6 +220,7 @@ public func vorssaintNowPlayingGet() {
     if watching { _ = capabilities.wait(until:.now()+0.2) }
     lock.lock()
     var snapshot = reply
+    snapshot["observationStartedAt"] = observationStartedAt
     let position = sample
     lock.unlock()
     var revision: UUID?

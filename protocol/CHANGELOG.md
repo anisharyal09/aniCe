@@ -4,6 +4,10 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+### Fixed
+
+- Carry the existing snapshot artwork hash over BLE as well as LAN; allow one credential-bound decoded thumbnail cache while keeping image chunks LAN-only.
+
 ### Added
 
 - Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.

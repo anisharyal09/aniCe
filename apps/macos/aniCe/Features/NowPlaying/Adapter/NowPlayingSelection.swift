@@ -285,6 +285,7 @@ enum NativePlayback {
 
     /// A command-triggered sample reads only the captured recording, without scanning other players.
     static func sample(for requested: PlaybackContext) -> [String: Any]? {
+        let observationStartedAt = ProcessInfo.processInfo.systemUptime
         lock.lock()
         let target = context == requested ? selected : nil
         let expected = identity
@@ -311,7 +312,7 @@ enum NativePlayback {
         }
         lock.unlock()
         guard current, target.isRunning else { return nil }
-        var reply: [String: Any] = ["sampleOnly": true, "pid": requested.pid, "playbackRevision": requested.revision.uuidString]
+        var reply: [String: Any] = ["sampleOnly": true, "observationStartedAt": observationStartedAt, "pid": requested.pid, "playbackRevision": requested.revision.uuidString]
         if let state { reply["isPlaying"] = state }
         // Timing can become available after the initial metadata publication.
         reply["kMRMediaRemoteNowPlayingInfoDuration"] = fresh["kMRMediaRemoteNowPlayingInfoDuration"]

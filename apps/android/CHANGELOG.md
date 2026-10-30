@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Fixed
+
+- Reuse verified playback artwork by authenticated peer and hash across channel changes, preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
+
 ### Added
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.

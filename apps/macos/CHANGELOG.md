@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+### Fixed
+
+- Prepare playback thumbnails off the UI thread, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
+
 ### Added
 
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.

@@ -86,7 +86,7 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         if(target.actions and 8L!=0L && target.duration>0) supported=supported or PlaybackState.ACTION_SEEK_TO
         val presentation=owner.displayedPlayback ?: target
         val nextPlaybackState=listOf(supported,if(target.state==1L) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-            presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f)
+            presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f,presentation.sampledAt)
         if(lastPlaybackState!=nextPlaybackState) {
             lastPlaybackState=nextPlaybackState
             current.setPlaybackState(PlaybackState.Builder().setActions(supported)

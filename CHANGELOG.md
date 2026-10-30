@@ -8,6 +8,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+### Fixed
+
+- Improve playback responsiveness and artwork continuity across Android and macOS.
+
 ### Added
 
 - Open Android-shared HTTP(S) links in the Mac's default browser.
