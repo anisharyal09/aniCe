@@ -38,7 +38,7 @@ Each transport owns its own EDHOC ephemerals, connection IDs, exporters, directi
 
 LAN requires fresh EDHOC and mandatory message 4, then encrypted ready/readyAck before application access. HELLO/ACK and PING/PONG use existing controls. Hard limits remain 4,000 plaintext bytes, one-hour lifetime, 120-second idle, ten-second readiness and `2^20` records per direction. Manual LAN has no automatic renewal/reconnection; the opt-in rendezvous policy waits for a new connection event or feature demand after retirement. Application features use the shared secured DATA dispatcher.
 
-Android LAN work requires a started presentation; final background, screen lock and network loss retire it independently of BLE companion ownership. Mac window and companion share one LAN owner; sleep and Quit retire it. Transport Disconnect affects that transport; Disconnect all, trust removal and identity reset retire both. LAN operations do not acquire the exclusive BLE radio.
+Android initiates manual LAN work from a started presentation. Background and screen lock apply the configured idle timeout, defaulting to Never (0 minutes); bounded picker, approved-transfer and companion remote-playback leases retain active work. Automatic admission follows [rendezvous eligibility](AUTOMATIC.md). Network loss retires the affected LAN channel independently of BLE companion ownership. Mac window and companion share one LAN owner; sleep and Quit retire it. Transport Disconnect affects that transport; Disconnect all, trust removal and identity reset retire both. LAN operations do not acquire the exclusive BLE radio.
 
 ## Verification
 

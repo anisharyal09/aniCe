@@ -10,7 +10,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
-- Improve Now Playing responsiveness and artwork continuity across Android and macOS; make manual LAN teardown tolerate an already-retired session.
+- Remove transfer-chunk preparation from presentation threads, keep Find Device startup from blocking shared DATA delivery, and correct interrupted SMS and session-close handling.
+
+- Keep artwork scoped to the current recording, reduce routine playback feedback flashing and bound notification retirement during transport handoffs; make manual LAN teardown tolerate an already-retired session.
 
 ### Added
 

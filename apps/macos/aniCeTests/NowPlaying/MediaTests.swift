@@ -26,6 +26,10 @@ final class MediaTests: XCTestCase {
     row.removeValue(forKey:"artworkBase64");row["artworkUnchanged"]=true
     model.read(try JSONSerialization.data(withJSONObject:row))
     XCTAssertEqual(model.artwork,retained)
+    row.removeValue(forKey:"artworkUnchanged")
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.artwork,retained,"A temporary metadata gap retains the current recording’s image")
+    row["artworkUnchanged"]=true
     let source=model.playback.source, revision=model.playback.revision
     model.command(source:source,revision:revision,action:4,value:60000)
     XCTAssertEqual(model.displayedPlayback.position,60000)
@@ -48,10 +52,13 @@ final class MediaTests: XCTestCase {
     XCTAssertEqual(model.playback.revision,revision)
     row["playbackRevision"]=UUID().uuidString
     model.read(try JSONSerialization.data(withJSONObject:row))
-    XCTAssertEqual(model.artwork,retained,"The helper explicitly confirmed identical image bytes for the new recording")
+    XCTAssertNil(model.artwork,"A new recording cannot inherit the previous recording’s image")
     row.removeValue(forKey:"artworkUnchanged")
     model.read(try JSONSerialization.data(withJSONObject:row))
-    XCTAssertNil(model.artwork,"Absent artwork must remove the previous cover")
+    XCTAssertNil(model.artwork,"Missing artwork on a new recording stays empty")
+    row["playbackRevision"]=UUID().uuidString
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertNil(model.artwork,"A new recording releases the previous cover")
     model.read(Data("{\"error\":\"test cleanup\"}".utf8))
   }
   func testPipeRetainsReplyOrderAcrossBatchedAndSplitCallbacks() {
@@ -603,6 +610,10 @@ final class OutputVolumeTests: XCTestCase {
     _=model.receive(try PlayerVolumeMessage(kind:1,fields:[.integer(1)]).encode(),channel:"ble")
     _=model.receive(try PlayerVolumeMessage(kind:3,fields:command.fields).encode(),channel:"ble");XCTAssertEqual(writes,1)
     try await Task.sleep(for:.milliseconds(50));XCTAssertEqual(replies.filter { $0.kind==4 && $0.scope == .output }.map { $0.number(2) },[0,0]);XCTAssertEqual(replies.filter { $0.kind==4 && $0.scope == .player }.last?.number(2),1)
+    let sentVolumes=replies.filter { $0.kind==2 }.count
+    _=model.receive(try PlayerVolumeMessage(kind:1,fields:[.integer(1)],scope:.output).encode(),channel:"ble")
+    try await Task.sleep(for:.milliseconds(50))
+    XCTAssertEqual(replies.filter { $0.kind==2 }.count,sentVolumes,"Unchanged volume snapshots must not be resent on publication")
     let before=snapshots;scalar=0.6;output.refresh();try await Task.sleep(for:.milliseconds(50));XCTAssertEqual(snapshots,before,"Output event resent playback metadata")
     model.channel("ble",token:nil) { _ in XCTFail("Retired") };_=model.receive(try command.encode(),channel:"ble");XCTAssertEqual(writes,1);XCTAssertNil(output.level)
   }

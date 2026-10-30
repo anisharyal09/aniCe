@@ -32,6 +32,20 @@ final class FindDeviceTests: XCTestCase {
     for row in invalid { XCTAssertThrowsError(try FindDeviceMessage.decode(SessionFixtures().b(row, "bytes")), row["name"] as? String ?? "") }
     XCTAssertNil(try FindDeviceMessage.decode(SessionCbor.encode(.array([.text("other")]))))
   }
+  @MainActor private func eventually(_ predicate: () -> Bool) async {
+    for _ in 0..<1000 {
+      if predicate() { return }
+      await Task.yield()
+    }
+    XCTFail("Deferred alert completion did not settle")
+  }
+  @MainActor private func waitForPost(_ notifier: FindNotifierFake, count: Int) async {
+    for _ in 0..<1000 {
+      if notifier.posts.count >= count { await Task.yield(); return }
+      await Task.yield()
+    }
+    XCTFail("Native alert was not submitted")
+  }
   @MainActor private func ready(_ owner: MacFindDeviceModel, _ channel: MockSecuredChannel) async throws {
     owner.available(channel)
     let result = await owner.handle(try FindDeviceMessage(kind: 1).encode(), on: channel.descriptor)
@@ -88,12 +102,14 @@ final class FindDeviceTests: XCTestCase {
     try await ready(owner, channel)
     let first = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 1)
     _ = await owner.handle(try first.encode(), on: channel.descriptor)
+    await waitForPost(notifier, count: 1)
     let id = try XCTUnwrap(notifier.posts.first)
     owner.dismiss(identifier: id)
     _ = await owner.handle(try first.encode(), on: channel.descriptor)
     XCTAssertEqual(notifier.posts.count, 1)
     for i in 2...36 {
       _ = await owner.handle(try FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: Int64(i)).encode(), on: channel.descriptor)
+      await waitForPost(notifier, count: i)
       if let last = notifier.posts.last { owner.dismiss(identifier: last) }
       await Task.yield()
     }
@@ -101,6 +117,7 @@ final class FindDeviceTests: XCTestCase {
     _ = await owner.handle(try first.encode(), on: channel.descriptor)
     XCTAssertEqual(notifier.posts.count, count)
     _ = await owner.handle(try FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 37).encode(), on: channel.descriptor)
+    await waitForPost(notifier, count: count + 1)
     let last = try XCTUnwrap(notifier.posts.last)
     time = 59; owner.expire(); XCTAssertFalse(notifier.cleared.contains(last))
     time = 60; owner.expire(); XCTAssertTrue(notifier.cleared.contains(last))
@@ -113,7 +130,9 @@ final class FindDeviceTests: XCTestCase {
     notifier.result = .blocked
     let request = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 1)
     _ = await owner.handle(try request.encode(), on: channel.descriptor)
-    await Task.yield()
+    await eventually {
+      channel.sentData.contains { (try? FindDeviceMessage.decode($0))?.result == FindResult.blocked.rawValue }
+    }
     XCTAssertEqual(try channel.sentData.compactMap { try FindDeviceMessage.decode($0) }.last?.result, FindResult.blocked.rawValue)
     notifier.suspend = true
     let bytes = try FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 2).encode()
@@ -121,10 +140,15 @@ final class FindDeviceTests: XCTestCase {
     while notifier.gate == nil { await Task.yield() }
     _ = await owner.handle(bytes, on: channel.descriptor)
     XCTAssertEqual(notifier.posts.count, 2)
+    let queued = await task.value
+    XCTAssertEqual(queued, .queued)
+    let capability = await owner.handle(try FindDeviceMessage(kind: 1).encode(), on: channel.descriptor)
+    XCTAssertEqual(capability, .handled)
     owner.retired(channel.descriptor)
     notifier.gate?.resume(returning: .submitted)
     let result = await task.value
-    XCTAssertEqual(result, .discarded)
+    XCTAssertEqual(result, .queued)
+    await eventually { notifier.cleared.filter { $0 == notifier.posts.last! }.count >= 2 }
     XCTAssertTrue(notifier.cleared.contains(notifier.posts.last!))
   }
   @MainActor func testLANSelectionCorrelatedResultsTimeoutAndNoFallbackReplay() async throws {
@@ -163,10 +187,12 @@ final class FindDeviceTests: XCTestCase {
     try await ready(owner, channel)
     let first = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 1)
     _ = await owner.handle(try first.encode(), on: channel.descriptor)
+    await waitForPost(notifier, count: 1)
     let old = try XCTUnwrap(notifier.posts.last)
     time = 15
     let second = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 2)
     _ = await owner.handle(try second.encode(), on: channel.descriptor)
+    await waitForPost(notifier, count: 2)
     let replacement = try XCTUnwrap(notifier.posts.last)
     XCTAssertNotEqual(old, replacement)
     XCTAssertEqual(notifier.posts.count, 2)
@@ -236,15 +262,18 @@ final class FindDeviceTests: XCTestCase {
     let bytes = try request.encode()
     let task = Task { await owner.handle(bytes, on: channel.descriptor) }
     while notifier.gate == nil { await Task.yield() }
+    await waitForPost(notifier, count: 1)
     let old = try XCTUnwrap(notifier.posts.last)
     owner.dismiss(identifier: old)
     notifier.gate?.resume(returning: .submitted)
     let outcome = await task.value
-    XCTAssertEqual(outcome, .discarded)
+    XCTAssertEqual(outcome, .queued)
+    await eventually { notifier.cleared.filter { $0 == old }.count >= 2 }
     notifier.suspend = false
     _ = await owner.handle(bytes, on: channel.descriptor)
     XCTAssertEqual(notifier.posts.count, 1)
     _ = await owner.handle(try FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 2).encode(), on: channel.descriptor)
+    await waitForPost(notifier, count: 2)
     let replacement = try XCTUnwrap(notifier.posts.last)
     owner.dismiss(identifier: old)
     XCTAssertFalse(notifier.cleared.contains(replacement))
@@ -275,12 +304,14 @@ final class FindDeviceTests: XCTestCase {
     try await ready(owner, lan); try await ready(owner, ble)
     let first = FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: 1)
     _ = await owner.handle(try first.encode(), on: lan.descriptor)
-    owner.dismiss(identifier: notifier.posts.last!)
+    await waitForPost(notifier, count: 1)
+    owner.dismiss(identifier: try XCTUnwrap(notifier.posts.last))
     _ = await owner.handle(try first.encode(), on: ble.descriptor)
     XCTAssertEqual(notifier.posts.count, 1)
     for i in 2...36 {
       _ = await owner.handle(try FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: Int64(i)).encode(), on: lan.descriptor)
-      owner.dismiss(identifier: notifier.posts.last!)
+      await waitForPost(notifier, count: i)
+      owner.dismiss(identifier: try XCTUnwrap(notifier.posts.last))
       await Task.yield()
     }
     owner.retired(lan.descriptor)
@@ -297,6 +328,7 @@ final class FindDeviceTests: XCTestCase {
     channel.onSendData = { _ in throw SessionBackpressure() }
     for i in 1...12 {
       _ = await owner.handle(try FindDeviceMessage(kind: 2, id: UUID().uuidString.lowercased(), sequence: Int64(i)).encode(), on: channel.descriptor)
+      if i <= 8 { await waitForPost(notifier, count: i) }
       if let id = notifier.posts.last { owner.dismiss(identifier: id) }
       await Task.yield()
     }

@@ -347,7 +347,10 @@ class MediaTests {
         owner.companionOwnershipChanged(true);owner.background(this,false)
         assertNotNull(owner.playback);assertTrue(owner.compactVisible);assertEquals(0,lan.count { it.kind==4L })
         val paused=playing.copy(fields=playing.fields.toMutableList().also { it[6]=Cbor.Integer(2);it[9]=Cbor.Integer(0) })
-        owner.receive("lan","l",paused.encode());assertTrue(owner.compactVisible);timer.advance(90000)
+        val beforePause=demand.size
+        owner.receive("lan","l",paused.encode());assertTrue(owner.compactVisible)
+        assertEquals("Pausing must not toggle the connection demand lease",beforePause,demand.size)
+        timer.advance(90000)
         assertFalse(owner.compactVisible);assertNotNull(owner.playback);assertEquals(beforePlay+2,demand.size);assertFalse(demand.last())
         owner.companionOwnershipChanged(false);assertNull(owner.playback);assertEquals(1,lan.count { it.kind==4L });owner.invalidate()
     }

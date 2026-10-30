@@ -6,7 +6,9 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Fixed
 
-- Carry the existing snapshot artwork hash over BLE as well as LAN; allow one credential-bound decoded thumbnail cache while keeping image chunks LAN-only.
+- Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.
+
+- Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
 
 ### Added
 

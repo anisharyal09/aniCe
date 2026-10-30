@@ -1945,7 +1945,8 @@ class TransferController(
                     if (!coroutineContext.isActive || operation != epoch || activeChannel == null) return
 
                     val chunkSize = (file.size - fileBytesSent).coerceAtMost(senderChunkBytes).toInt()
-                    val readBytes = try { withContext(Dispatchers.IO) {
+                    val limit = chunkLimit(activeChannel?.descriptor)
+                    val encoded = try { withContext(Dispatchers.IO) {
                         var filled = 0
                         while (filled < chunkSize) {
                             val count = fis.read(buffer, filled, chunkSize - filled)
@@ -1953,28 +1954,15 @@ class TransferController(
                             if (count == 0) throw java.io.IOException("Source stream made no progress")
                             filled += count
                         }
-                        filled
+                        if (filled != chunkSize) throw java.io.IOException("Source ended before its manifest length")
+                        TransferMessage.chunkFrom(batch.id, file.id, fileBytesSent, buffer, chunkSize).encode(limit)
                     } } catch (error: Exception) {
                         if (error is CancellationException) throw error
                         if (operation == epoch) failTransfer("Source read failed: ${error.message}")
                         return
                     }
                     if (operation != epoch) return
-                    if (readBytes != chunkSize) {
-                        failTransfer("I/O error reading ${file.name}")
-                        return
-                    }
-
-                    val chunkMsg = TransferMessage.chunkFrom(
-                        batch = batch.id,
-                        file = file.id,
-                        offset = fileBytesSent,
-                        source = buffer,
-                        length = chunkSize
-                    )
-
                     try {
-                        val encoded = chunkMsg.encode(chunkLimit(activeChannel?.descriptor))
                         sendWindow?.beginSubmission(clock(), windowEmpty = sentBytes == acknowledgedBytes)
                         sentBytes += chunkSize
                         sendWithBackpressure(encoded)

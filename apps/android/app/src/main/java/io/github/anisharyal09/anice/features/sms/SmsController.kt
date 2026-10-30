@@ -78,6 +78,7 @@ class SmsController(
     private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long, val seq: Long, val sortMillis: Long) {
         val fragments = mutableListOf<ByteArray>()
         var committing = false
+        var submitted = false
         var job: Job? = null
     }
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -172,6 +173,8 @@ class SmsController(
             completedReplies.remove(k)
         }
         incomingReplies[k]?.takeIf { it.descriptor == descriptor }?.let {
+            // Cancellation cannot recall telephony submission; surviving links must not submit it again.
+            if (it.submitted) rememberReply(k, it.requestId, SmsSendOutcome(5, "", 0))
             incomingReplies.remove(k); it.job?.cancel()
         }
         schedule()
@@ -444,6 +447,7 @@ class SmsController(
             }
             // Retiring, expiry or a newer request may drop this one while validation runs: never send for a dead request.
             if (incomingReplies[k] !== current || !live(current.descriptor) || now() >= current.deadline) return@launch
+            current.submitted = true
             val outcome = try { sender.send(current.address, text, current.subscriptionId, maxOf(1, current.deadline - now())) } catch (e: CancellationException) { throw e } catch (_: Exception) { SmsSendOutcome(5, "", 0) }
             // Only clear the slot when it still holds this request; a newer reply keeps its own tracking.
             if (incomingReplies[k] !== current) return@launch
@@ -473,12 +477,16 @@ class SmsController(
     }
 
     private fun replyResult(link: Link, requestId: String, result: Long, messageId: String, dateMillis: Long) {
-        val completed = completedReplies.getOrPut(key(link.channel.descriptor.peer)) { ArrayDeque() }
+        rememberReply(key(link.channel.descriptor.peer), requestId, SmsSendOutcome(result, messageId, dateMillis))
+        enqueue(link, SmsWireMessage.of(14, text(requestId), number(result), text(messageId), number(dateMillis)))
+    }
+
+    private fun rememberReply(peerKey: String, requestId: String, outcome: SmsSendOutcome) {
+        val completed = completedReplies.getOrPut(peerKey) { ArrayDeque() }
         if (completed.none { it.requestId == requestId }) {
             if (completed.size >= 32) completed.removeFirst()
-            completed.addLast(Completed(requestId, SmsSendOutcome(result, messageId, dateMillis), now() + MARK_LIFETIME))
+            completed.addLast(Completed(requestId, outcome, now() + MARK_LIFETIME))
         }
-        enqueue(link, SmsWireMessage.of(14, text(requestId), number(result), text(messageId), number(dateMillis)))
     }
 
     /** Hands decoded messages to the relay; [complete] fires with the first delivery attempt or after 8 seconds. */

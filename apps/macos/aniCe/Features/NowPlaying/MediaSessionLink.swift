@@ -12,9 +12,10 @@ import Observation
   var volumeCompatible = false
   var outputCompatible = false
   var outputSnapshot: PlayerVolumeMessage?
+  var lastVolumeSnapshot: PlayerVolumeMessage?, lastOutputSnapshot: PlayerVolumeMessage?
   var snapshot: MediaMessage?
   var artwork = Data(), hash = Data()
-  var artworkRevision = ""
+  var artworkRevision = "", artworkRecording = ""
   var offset = 0
   var sending = false
   var wake = false
@@ -119,7 +120,7 @@ import Observation
     pump(kind)
   }
   private func retireSubscription() {
-    if let kind=subscribed { links[kind]?.snapshot=nil;links[kind]?.volumeSnapshot=nil;links[kind]?.outputSnapshot=nil;links[kind]?.volumeControls.removeAll { $0.kind != 1 }; links[kind]?.artwork=Data(); links[kind]?.hash=Data(); links[kind]?.controls.removeAll { $0.kind != 1 } }
+    if let kind=subscribed { links[kind]?.lastVolumeSnapshot=nil;links[kind]?.lastOutputSnapshot=nil;links[kind]?.snapshot=nil;links[kind]?.volumeSnapshot=nil;links[kind]?.outputSnapshot=nil;links[kind]?.volumeControls.removeAll { $0.kind != 1 }; links[kind]?.artwork=Data(); links[kind]?.hash=Data(); links[kind]?.controls.removeAll { $0.kind != 1 } }
     model.finish(5); inFlight.removeAll()
     subscription=nil; subscribed=nil; highWater=0; results=[:]; resultOrder=[];resultKinds=[:]; model.presented("remote",false)
   }
@@ -137,11 +138,13 @@ import Observation
     guard let kind=subscribed, let sub=subscription, let link=links[kind] else { return }
     link.snapshot=snapshot(sub)
     if link.volumeCompatible {
-      link.volumeSnapshot=PlayerVolumeMessage(kind:2,fields:[.text(sub),.text(playback.source),.text(playback.revision),.bool(model.playerVolume != nil),.integer(model.playerVolume ?? -1)])
+      let next=PlayerVolumeMessage(kind:2,fields:[.text(sub),.text(playback.source),.text(playback.revision),.bool(model.playerVolume != nil),.integer(model.playerVolume ?? -1)])
+      if next != link.lastVolumeSnapshot { link.lastVolumeSnapshot=next;link.volumeSnapshot=next }
     }
     publishOutput()
     if kind=="lan", link.hash != playback.artworkHash || link.artworkRevision != playback.revision {
-      let completeUnchanged = link.hash==playback.artworkHash && link.offset==link.artwork.count
+      let completeUnchanged = link.artworkRecording==playback.recording && link.hash==playback.artworkHash && link.offset==link.artwork.count
+      link.artworkRecording=playback.recording
       link.artworkRevision=playback.revision; link.hash=playback.artworkHash; link.artwork=artwork ?? Data()
       if !completeUnchanged { link.offset=0 }
     }
@@ -150,7 +153,8 @@ import Observation
   func publishOutput() {
     guard let kind=subscribed,let sub=subscription,let link=links[kind],link.outputCompatible else { return }
     let output=model.outputVolume, supported = !playback.source.isEmpty && output.level != nil
-    link.outputSnapshot=PlayerVolumeMessage(kind:2,fields:[.text(sub),.text(supported ? output.target:""),.text(supported ? output.revision:""),.bool(supported),.integer(supported ? output.level!:-1)],scope:.output)
+    let next=PlayerVolumeMessage(kind:2,fields:[.text(sub),.text(supported ? output.target:""),.text(supported ? output.revision:""),.bool(supported),.integer(supported ? output.level!:-1)],scope:.output)
+    if next != link.lastOutputSnapshot { link.lastOutputSnapshot=next;link.outputSnapshot=next }
     pump(kind)
   }
   private func pump(_ kind: String) {
