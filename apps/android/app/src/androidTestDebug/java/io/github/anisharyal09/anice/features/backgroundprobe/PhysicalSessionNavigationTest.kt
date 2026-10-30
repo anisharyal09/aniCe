@@ -74,6 +74,7 @@ class PhysicalSessionNavigationTest {
         }) delay(100)
       }
       repeat(200) { index ->
+        val before = withContext(Dispatchers.Main) { requireNotNull(media.playback) }
         val response = CompletableDeferred<Pair<Long, Int>>()
         val started = withContext(Dispatchers.Main) {
           assertEquals("Transport changed during measurement", transport, active.get(media))
@@ -87,6 +88,15 @@ class PhysicalSessionNavigationTest {
         val settled = withTimeoutOrNull(12_000) { response.await() }
         val row = org.json.JSONObject().put("index", index).put("result", settled?.second ?: -1)
           .put("elapsedMs", (settled?.first ?: android.os.SystemClock.elapsedRealtime()) - started)
+        if (settled?.second == 0) {
+          withTimeout(6000) {
+            while (withContext(Dispatchers.Main) {
+              val current = media.playback
+              current == null || current.source != before.source || current.state == before.state
+            }) delay(10)
+          }
+          row.put("confirmedStateMs", android.os.SystemClock.elapsedRealtime() - started)
+        }
         rows.put(row)
         android.util.Log.i("aniCe-media-benchmark", "transport=$transport sample=$row")
         // An uncertain command is never replayed, including by the benchmark.
@@ -104,6 +114,13 @@ class PhysicalSessionNavigationTest {
       }
     }
     assertEquals(200, rows.length())
+    val samples = (0 until rows.length()).map { rows.getJSONObject(it).getLong("confirmedStateMs") }.sorted()
+    val p95 = samples[(samples.size * 95 + 99) / 100 - 1]
+    android.util.Log.i("aniCe-media-benchmark", "transport=$transport confirmedStateP95Ms=$p95")
+    InstrumentationRegistry.getArguments().getString("physicalMediaP95Ms")?.toLong()?.let { limit ->
+      require(limit > 0)
+      assertTrue("Confirmed state p95 $p95 ms exceeds $limit ms", p95 <= limit)
+    }
   }
 
   @Test fun authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery() = runBlocking {

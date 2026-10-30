@@ -10,6 +10,50 @@ import Observation
 @testable import aniCe
 
 final class MediaTests: XCTestCase {
+  @MainActor func testArtworkCompletionAndSeekPreviewStayBoundToRecording() async throws {
+    let model=MacPlaybackModel(requestSink:{ _ in true })
+    let pid=ProcessInfo.processInfo.processIdentifier, recording=UUID().uuidString
+    var row: [String:Any] = ["pid":pid,"playbackRevision":recording,
+      "sources":[["pid":pid,"bundleIdentifier":Bundle.main.bundleIdentifier!,"isMusicApp":false,"isPlaying":false,"hasTrack":true]],
+      "kMRMediaRemoteNowPlayingInfoTitle":"Track","kMRMediaRemoteNowPlayingInfoDuration":100,
+      "kMRMediaRemoteNowPlayingInfoElapsedTime":10,"isPlaying":false,"canSendCommandsDirectly":true,"canToggle":true,"canSeek":true]
+    let bitmap=try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:16,pixelsHigh:16,bitsPerSample:8,samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0))
+    row["artworkBase64"]=try XCTUnwrap(bitmap.representation(using:.png,properties:[:])).base64EncodedString()
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    for _ in 0..<100 where model.artwork == nil { try await Task.sleep(for:.milliseconds(10)) }
+    XCTAssertNotNil(model.artwork);XCTAssertNotNil(model.artworkImage)
+    let retained=model.artwork
+    row.removeValue(forKey:"artworkBase64");row["artworkUnchanged"]=true
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.artwork,retained)
+    let source=model.playback.source, revision=model.playback.revision
+    model.command(source:source,revision:revision,action:4,value:60000)
+    XCTAssertEqual(model.displayedPlayback.position,60000)
+    model.finish(0)
+    XCTAssertEqual(model.displayedPlayback.position,60000)
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.displayedPlayback.position,60000)
+    row["kMRMediaRemoteNowPlayingInfoElapsedTime"]=60
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.displayedPlayback,model.playback)
+    row["observationStartedAt"]=3.0
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    row["observationStartedAt"]=2.0;row["kMRMediaRemoteNowPlayingInfoElapsedTime"]=10
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.playback.position,60000,"An older scan cannot replace a newer confirmation")
+    row["observationStartedAt"]=4.0;row["kMRMediaRemoteNowPlayingInfoElapsedTime"]=60
+    model.presented("main",true);model.presented("main",false)
+    XCTAssertEqual(model.playback.source,source)
+    model.presented("main",true)
+    XCTAssertEqual(model.playback.revision,revision)
+    row["playbackRevision"]=UUID().uuidString
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertEqual(model.artwork,retained,"The helper explicitly confirmed identical image bytes for the new recording")
+    row.removeValue(forKey:"artworkUnchanged")
+    model.read(try JSONSerialization.data(withJSONObject:row))
+    XCTAssertNil(model.artwork,"Absent artwork must remove the previous cover")
+    model.read(Data("{\"error\":\"test cleanup\"}".utf8))
+  }
   func testPipeRetainsReplyOrderAcrossBatchedAndSplitCallbacks() {
     let pipe=PlaybackPipe()
     XCTAssertTrue(pipe.append(Data("metadata\ncapab".utf8)))
@@ -129,7 +173,7 @@ final class MediaTests: XCTestCase {
     media.position = -1;XCTAssertEqual(media.elapsed(at:1),0)
   }
   @MainActor func testRetiredSubscriptionDuplicateStaleCommandsAndLegacyData() async throws {
-    let model=MacPlaybackModel(); var outgoing:[MediaMessage]=[]
+    let model=MacPlaybackModel(requestSink:{ _ in true }); var outgoing:[MediaMessage]=[]
     model.channel("ble",token:"a") { if let message=try MediaMessage.decode($0) { outgoing.append(message) } else { XCTAssertNotNil(try PlayerVolumeMessage.decode($0)) } }
     let sub=UUID().uuidString, source=UUID().uuidString, revision=UUID().uuidString
     XCTAssertFalse(model.receive(Data("aniCe connection check".utf8),channel:"ble"))

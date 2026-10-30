@@ -162,12 +162,14 @@ struct PlaybackCommandFramer {
 /// Observational reads cannot delay controls; source selection stays serialized with scans.
 struct PlaybackDispatch: Sendable {
     let observation = DispatchQueue(label: "io.github.anisharyal09.anice.now-playing-watch")
+    private let samples = DispatchQueue(label: "io.github.anisharyal09.anice.now-playing-samples", qos: .userInitiated)
     private let commands = DispatchQueue(label: "io.github.anisharyal09.anice.now-playing-commands", qos: .userInitiated)
 
     func submit(_ command: PlaybackCommand, run: @escaping @Sendable () -> Void) {
         switch command {
         // A post-command sample may wait on MediaRemote; it must not queue ahead of the next tap.
-        case .source, .refresh, .sample: observation.async(execute:run)
+        case .source, .refresh: observation.async(execute:run)
+        case .sample: samples.async(execute:run)
         default: commands.async(execute:run)
         }
     }

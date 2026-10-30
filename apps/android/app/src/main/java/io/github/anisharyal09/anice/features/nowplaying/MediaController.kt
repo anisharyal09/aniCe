@@ -65,7 +65,7 @@ class MediaController(
 ) : FeatureHandler {
     override fun available(channel: SecuredChannel) {
         val d = channel.descriptor
-        attach(d.transport, d.instance, d.peer.deviceName, channel::sendData)
+        attach(d.transport, d.instance, d.peer.deviceName, d.peer.deviceId + ":" + d.peer.fingerprint, channel::sendData)
     }
 
     override fun retired(descriptor: ChannelDescriptor) {
@@ -79,7 +79,7 @@ class MediaController(
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray) =
         handleData(descriptor.transport, descriptor.instance, bytes)
 
-    private class Link(val token: String, val origin: String, val send: suspend (ByteArray) -> Unit) {
+    private class Link(val token: String, val origin: String, val peer: String, val send: suspend (ByteArray) -> Unit) {
         var capable = false
         var volumeCapable = false
         var outputCapable = false
@@ -348,6 +348,9 @@ class MediaController(
         presentationChanged()
     }
 
+    private var cachedArtwork: Bitmap? = null
+    private var cachedArtworkHash = byteArrayOf()
+    private var cachedArtworkPeer = ""
     var artwork by mutableStateOf<Bitmap?>(null)
         private set
     var origin by mutableStateOf("")
@@ -357,10 +360,10 @@ class MediaController(
     var busy by mutableStateOf(false)
         private set
 
-    fun attach(kind: String, token: String, origin: String, send: suspend (ByteArray) -> Unit) {
+    fun attach(kind: String, token: String, origin: String, peer: String = origin, send: suspend (ByteArray) -> Unit) {
         if (links[kind]?.token == token) return
         closed(kind)
-        links[kind] = Link(token, origin, send)
+        links[kind] = Link(token, origin, peer, send)
         choose()
     }
 
@@ -373,6 +376,9 @@ class MediaController(
     fun invalidate() {
         scope.launch {
             retire()
+            cachedArtwork = null
+            cachedArtworkHash = byteArrayOf()
+            cachedArtworkPeer = ""
             links.clear()
             connected = false
             supported = false
@@ -444,6 +450,8 @@ class MediaController(
     }
 
     private fun retire() {
+        val retiringPending = pending
+        val retiringSubmitted = submitted
         clearIntents()
         val old = active
         val sub = subscription
@@ -457,7 +465,10 @@ class MediaController(
         pending = null
         timeout?.cancel()
         timeout = null
-        feedback = ""
+        feedback = if (retiringPending != null) {
+            if (retiringSubmitted) "Action outcome unknown. It will not be retried."
+            else "Action was not sent. Connection changed."
+        } else feedback
         clearArtwork()
         clearSeek()
         clearVolume()
@@ -511,6 +522,7 @@ class MediaController(
                 val next = RemotePlayback(message, clock())
                 val old = playback
                 if (old?.source != next.source || old.revision != next.revision || !old.hash.contentEquals(next.hash)) clearArtwork()
+                if (next.hash.isNotEmpty() && cachedArtworkPeer == link.peer && cachedArtworkHash.contentEquals(next.hash)) artwork = cachedArtwork
                 if (old?.source != next.source || old.revision != next.revision) {
                     clearVolume()
                     if (intents.isNotEmpty()) feedback = "Playback changed. Queued actions cleared."
@@ -879,6 +891,7 @@ class MediaController(
                 snapshot.hash
             )
         ) return
+        if (cachedArtworkPeer == links[active]?.peer && cachedArtworkHash.contentEquals(hash) && cachedArtwork != null) return
         val buffer = assembly.accept(
             hash,
             message.number(4).toInt(),
@@ -894,6 +907,8 @@ class MediaController(
         if (buffer == null) return
         artTimeout?.cancel()
         artTimeout = null
+        val artworkToken = links[active]?.token
+        val artworkSubscription = subscription
         scope.launch(Dispatchers.Default) {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(buffer, 0, buffer.size, options)
@@ -906,10 +921,13 @@ class MediaController(
                 runCatching { BitmapFactory.decodeByteArray(buffer, 0, buffer.size) }.getOrNull() ?: return@launch
             withContext(Dispatchers.Main.immediate) {
                 val current = playback
-                if (current != null && current.source == snapshot.source && current.revision == snapshot.revision && current.hash.contentEquals(
+                if (links[active]?.token == artworkToken && subscription == artworkSubscription && current != null && current.source == snapshot.source && current.revision == snapshot.revision && current.hash.contentEquals(
                         hash
                     )
                 ) {
+                    cachedArtworkPeer = links[active]?.peer.orEmpty()
+                    cachedArtworkHash = hash.copyOf()
+                    cachedArtwork = bitmap
                     artwork = bitmap
                     presentationChanged()
                 }

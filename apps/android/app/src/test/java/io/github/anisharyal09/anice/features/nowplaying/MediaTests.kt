@@ -46,6 +46,7 @@ class MediaTests {
         owner.attach("lan","l1","Mac") { lan.add(MediaMessage.decode(it)!!) }
         assertNotNull(owner.playback)
         owner.receive("lan","l1",fixture("capability").encode());assertNull(owner.playback);assertFalse(owner.busy)
+        assertTrue(owner.feedback.contains("outcome unknown"))
         assertEquals(1,ble.count { it.kind==4L });assertNotEquals(oldSub,lan.last().string(0))
         subscribed(owner,"lan","l1",lan);owner.command(1,target=oldTarget);assertEquals(0,lan.count { it.kind==6L });owner.command(3)
         assertEquals(1,ble.count { it.kind==6L });assertEquals(1,lan.count { it.kind==6L })
@@ -69,7 +70,8 @@ class MediaTests {
         full=false;owner.capacity("ble");assertEquals(1,sent.size);subscribed(owner,"ble","b",sent)
         full=true;owner.command(1);assertTrue(owner.busy)
         owner.attach("ble","new","Mac") { sent.add(MediaMessage.decode(it)!!) };assertNull(owner.playback);assertFalse(owner.busy)
-        owner.receive("ble","new",fixture("capability").encode());assertEquals(0,sent.count { it.kind==6L });owner.invalidate()
+        owner.receive("ble","new",fixture("capability").encode());assertTrue(owner.feedback.contains("not sent"))
+        assertEquals(0,sent.count { it.kind==6L });owner.invalidate()
     }
     @Test fun progressUsesPositionRateSampleAndBoundsUnknownDuration() {
         val sample=RemotePlayback(fixture("snapshot"),0)

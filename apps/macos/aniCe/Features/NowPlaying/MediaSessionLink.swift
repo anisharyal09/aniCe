@@ -128,20 +128,22 @@ import Observation
     if link.controls.count+link.volumeControls.count<16 { link.controls.append(message) }
     pump(kind)
   }
-  private func snapshot(_ sub: String, artwork: Bool) -> MediaMessage {
+  private func snapshot(_ sub: String) -> MediaMessage {
     MediaMessage(kind:5,fields:[.text(sub),.text(playback.source),.text(playback.revision),.text(playback.title),.text(playback.artist),.text(playback.player),
       .integer(playback.state),.integer(playback.position),.integer(playback.duration),.integer(playback.rate),.integer(playback.actions),.text(selection),.text(catalogue),
-      .array(sources.map { .array([.text($0.id),.text($0.name),.integer($0.playing ? 1:2)]) }),.bytes(artwork ? playback.artworkHash:Data())])
+      .array(sources.map { .array([.text($0.id),.text($0.name),.integer($0.playing ? 1:2)]) }),.bytes(playback.artworkHash)])
   }
   func publish() {
     guard let kind=subscribed, let sub=subscription, let link=links[kind] else { return }
-    link.snapshot=snapshot(sub,artwork:kind=="lan")
+    link.snapshot=snapshot(sub)
     if link.volumeCompatible {
       link.volumeSnapshot=PlayerVolumeMessage(kind:2,fields:[.text(sub),.text(playback.source),.text(playback.revision),.bool(model.playerVolume != nil),.integer(model.playerVolume ?? -1)])
     }
     publishOutput()
     if kind=="lan", link.hash != playback.artworkHash || link.artworkRevision != playback.revision {
-      link.artworkRevision=playback.revision; link.hash=playback.artworkHash; link.artwork=artwork ?? Data(); link.offset=0
+      let completeUnchanged = link.hash==playback.artworkHash && link.offset==link.artwork.count
+      link.artworkRevision=playback.revision; link.hash=playback.artworkHash; link.artwork=artwork ?? Data()
+      if !completeUnchanged { link.offset=0 }
     }
     pump(kind)
   }
