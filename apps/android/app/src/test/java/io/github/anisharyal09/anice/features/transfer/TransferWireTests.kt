@@ -8,6 +8,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TransferWireTests {
+    @Test fun chunk512RequiresItsOwnCapabilityAndBudget() {
+        val batch = java.util.UUID.randomUUID().toString(); val file = java.util.UUID.randomUUID().toString()
+        val chunk = TransferMessage.chunk(batch, file, 0, ByteArray(524288))
+        val encoded = chunk.encode(524288)
+        assertTrue(encoded.size <= 524416)
+        assertEquals(524288, TransferMessage.decode(encoded, 524288)!!.bytes(3).size)
+        try { TransferMessage.decode(encoded, 262016); fail("Legacy budget accepted 512 KiB") }
+        catch (_: TransferWireException) { }
+        try { TransferMessage.capability(3, 524288, 8).encode(524288); fail("Capability 3 exceeded its original bound") }
+        catch (_: TransferWireException) { }
+        assertEquals(4L, TransferMessage.decode(TransferMessage.capability(4, 524288, 8).encode(524288), 524288)!!.number(0))
+        try { TransferMessage.chunk(batch, file, 0, ByteArray(524289)).encode(524288); fail("Oversized chunk accepted") }
+        catch (_: TransferWireException) { }
+    }
+
     private val root get() = JSONObject(javaClass.classLoader!!.getResource("transfer/transfer-vectors.json")!!.readText())
     private fun hex(text: String) = text.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 

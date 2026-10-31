@@ -10,14 +10,15 @@ aniCe throughput is governed by the authenticated record path: every application
 | Connected-idle CPU | ≤ 0.5% of one core | objective | [Roadmap](ROADMAP.md) milestone 4 |
 | Control round trip | ≤ 100 ms with 25 ms added latency | physical acceptance gate | [LAN benchmark](../protocol/lan/BENCHMARK.md) |
 | Standard record plaintext | 4,000 bytes | protocol | [Session contract](../protocol/session/README.md) |
-| Profile-3 record plaintext | 262,144 bytes | protocol | [LAN transfer profile](../protocol/lan/TRANSFER_PROFILE.md) |
+| Profile-4 record plaintext | 524,416 bytes | protocol | [LAN transfer profile](../protocol/lan/TRANSFER_PROFILE.md) |
+| Legacy profile-3 record plaintext | 262,144 bytes | protocol | [LAN transfer profile](../protocol/lan/TRANSFER_PROFILE.md) |
 | Records per direction | 2^20, then fresh EDHOC | protocol | [Session contract](../protocol/session/README.md) |
 | Session lifetime | 3,600 s; renewal at 3,300 s or 2^20 − 1024 records | protocol | [Session contract](../protocol/session/README.md) |
-| Queued envelopes | 8 / 32,768 bytes (standard); 4 / 1,048,700 bytes (profile 3) | protocol | [LAN transfer profile](../protocol/lan/TRANSFER_PROFILE.md) |
+| Queued envelopes | 8 / 32,768 bytes (standard); 4 / 1,048,700 bytes (profile 3); 4 / 2,097,788 bytes (profile 4) | protocol | [LAN transfer profile](../protocol/lan/TRANSFER_PROFILE.md) |
 | Frame assembly deadline | Before readiness/header/handshake: 10 s absolute; secured encrypted records: 10 s without progress, 60 s absolute | protocol | [LAN contract](../protocol/lan/README.md) |
 | Socket write deadline | 10 s absolute | protocol | [LAN contract](../protocol/lan/README.md) |
-| Session CBOR budget | 4,096 bytes standard; 262,144 bytes profile 3; 512 items; 8 levels | protocol | [Session contract](../protocol/session/README.md) |
-| Transfer chunk and credit | 3,072 bytes / 64 chunks (v1); 131,072 bytes / 8 chunks (v2); 262,016 bytes / 8 chunks (v3) | protocol | [Transfer contract](../protocol/transfer/README.md) |
+| Session CBOR budget | 4,096 bytes standard; 262,144 bytes profile 3; 524,416 bytes profile 4; 512 items; 8 levels | protocol | [Session contract](../protocol/session/README.md) |
+| Transfer chunk and credit | 3,072 bytes / 64 chunks (v1); 131,072 bytes / 8 chunks (v2); 262,016 bytes / 8 chunks (v3); 524,288 bytes / 8 chunks (v4) | protocol | [Transfer contract](../protocol/transfer/README.md) |
 
 Wire bounds are contracts, not tuning knobs. Changing a record bound requires a protocol revision that both peers negotiate before EDHOC.
 
@@ -27,35 +28,36 @@ The isolated [raw TCP diagnostic](../protocol/lan/BENCHMARK.md) can compare norm
 
 | Record payload | Records per second | Wall budget per record |
 | :--- | ---: | ---: |
-| 262,016 bytes (profile 3 v3 chunk) | 32.0 | 31.3 ms |
+| 524,288 bytes (profile 4 v4 chunk) | 16.0 | 62.5 ms |
+| 262,016 bytes (legacy profile 3 v3 chunk) | 32.0 | 31.3 ms |
 | 4,000 bytes (standard) | 2,097 | 477 µs |
 | 3,072 bytes (transfer v1 chunk over a standard record) | 2,730 | 366 µs |
 
-The gate is a record-rate gate, not a byte-rate gate. Native identity and trust validation runs on every authenticated operation and is the only stage that may not be removed, so it sets the floor on record rate. Reaching 8 MiB/s with 4,000-byte records requires 2,097 records per second; 262,016-byte records reduce this to 32. That is why profile 3 exists, and why optimizations are expressed as work removed per record rather than per byte.
+The gate is a record-rate gate, not a byte-rate gate. Native identity and trust validation runs on every authenticated operation and is the only stage that may not be removed, so it sets the floor on record rate. Reaching 8 MiB/s with 4,000-byte records requires 2,097 records per second; profile 3 reduces this to 32 and profile 4 to 16. That is why larger authenticated records help, and why optimizations are expressed as work removed per record rather than per byte.
 
 ## 2. Verified bottlenecks and hardware boundaries
 
 Physical measurement and hardware constraints establish four throughput and latency boundaries on the authenticated record path. Specific test-run transfer telemetry is tracked in [LAN Benchmark Telemetry](../protocol/lan/BENCHMARK.md#verification-results).
 
-1. **Hardware KeyStore IPC ceiling:** Standard transfer v1 carries 3,072-byte chunks across 4,000-byte records. At 8 MiB/s, this requires 2,730 live KeyStore/Keychain validations per second. On physical Android devices, hardware KeyStore IPC (binder transaction to `keystore2` / Secure Element / TEE) caps out at roughly 100–200 queries per second. This hardware boundary caps standard-record physical throughput to ~300–600 KB/s regardless of link bandwidth. Profile 3 v3 (262,016-byte chunks / 262,144-byte records) halves profile-3 record and validation frequency compared with capability 2; Android still performs two live validations per sent record and one per received record.
+1. **Hardware KeyStore IPC ceiling:** Standard transfer v1 carries 3,072-byte chunks across 4,000-byte records. At 8 MiB/s, this requires 2,730 live KeyStore/Keychain validations per second. On physical Android devices, hardware KeyStore IPC (binder transaction to `keystore2` / Secure Element / TEE) caps out at roughly 100–200 queries per second. This hardware boundary caps standard-record physical throughput to ~300–600 KB/s regardless of link bandwidth. Legacy profile 3 capability 3 halves record and validation frequency compared with capability 2; profile 4 capability 4 halves it again. Android still performs two live validations per sent record and one per received record.
 2. **Ingress serialization:** Serializing socket reads with inline frame delivery forces the socket to sit unread during CBOR decoding, native identity verification, and application storage hops, collapsing TCP receive windows. Bounded ordered ingress queues (`LanIngressQueue` / `LanQueueBudget`) decouple transport socket reads from downstream consumption while preserving sequential delivery order.
 3. **Presentation thread saturation:** Incoming chunk CBOR decoding on presentation threads starves UI frame rendering pipelines, causing frame drops and input lag. Multi-kilobyte chunk decode must run off-main (e.g. `Dispatchers.Default`), restricting main-thread dispatch strictly to throttled state snapshots.
 4. **Storage Access Framework (SAF) binder latency:** Writing small chunks through Android's `DocumentFile` tree provider introduces synchronous IPC and file descriptor sync overhead per chunk. Throughput requires sequential streaming into exclusive staging files without per-chunk provider traversal, followed by verified atomic publication or link fallback.
 
 ## 3. Per-record cost model
 
-### Android, sending one 262,016-byte profile-3 chunk
+### Android, sending one 524,288-byte profile-4 chunk
 
 | Stage | Payload-sized allocations | Payload copies | Anchor |
 | :--- | ---: | ---: | :--- |
 | Source read into one per-file buffer | 0 | 0 | `TransferController.kt` sender loop |
 | Chunk CBOR node from the reused buffer | 1 | 1 | `TransferWire.chunkFrom`, `Cbor.Bytes` |
-| Envelope CBOR encode | 1 | 0 | `SessionCbor.Encoder` |
-| AES-GCM seal | 1 | 1 | `RecordCipher.seal` |
+| Envelope CBOR encode | 1 | 1 | `SessionCbor.Encoder` |
+| AES-GCM seal and record assembly | 1 | 0 | `RecordCipher.seal` |
 | TCP framing into transport scratch | 0 | 1 | `LanFraming.encodeInto`, `AndroidLanTransport.send` |
 | Socket write | 0 | 0 | `AndroidLanTransport.send` |
 
-### Android, receiving one 262,016-byte profile-3 chunk
+### Android, receiving one 524,288-byte profile-4 chunk
 
 | Stage | Payload-sized allocations | Payload copies | Anchor |
 | :--- | ---: | ---: | :--- |
@@ -64,9 +66,20 @@ Physical measurement and hardware constraints establish four throughput and late
 | Envelope CBOR decode | 1 | 1 | `SessionCbor.decodeSequence` |
 | Storage write and SHA-256 | 0 | 0 | `TransferController.kt` receive path |
 
+### macOS, sending one 524,288-byte profile-4 chunk
+
+| Stage | Payload-sized allocations | Payload copies | Anchor |
+| :--- | ---: | ---: | :--- |
+| Full source read into owned `Data` (short reads append) | 1 | 0 | `TransferSendStorage.readChunk` |
+| Transfer envelope CBOR encode | 1 | 1 | `SessionCbor.encodeValues` |
+| AES-GCM ciphertext | 1 | 0 | `SessionRecordCodec.seal` / CryptoKit |
+| Record assembly | 1 | 1 | `SessionRecordCodec.seal` |
+| TCP framing | 1 | 1 | `LanFraming.encode` |
+| `NWConnection` submission | 0 | 0 | `LanTcpTransport.submit`; Network.framework ownership is platform-managed |
+
 ### Transfer scheduling and record processing
 
-LAN senders negotiating more than 4,096 chunk bytes begin each file/resume with one chunk of at most 4,096 bytes and wait for advancing, correlated acknowledgement. Confirmation within 100 ms enables the full negotiated chunk size and window (up to eight 262,016-byte chunks, 2,096,128 file bytes). Slower initial confirmation, or a later gap above one second between advancing ACKs, constrains subsequent sends to chunks of at most 65,536 bytes and at most two unacknowledged chunks (128 KiB total), always within peer limits. Window changes apply between source reads; already submitted bytes drain before more data fits a reduced budget.
+LAN senders negotiating more than 4,096 chunk bytes begin each file/resume with one chunk of at most 4,096 bytes and wait for advancing, correlated acknowledgement. Confirmation within 100 ms enables the full negotiated chunk size and window (up to eight 524,288-byte profile-4 chunks, 4,194,304 file bytes; legacy profile 3 is capped at 2,096,128 bytes). Slower initial confirmation, or a later gap above one second between advancing ACKs, constrains subsequent sends to chunks of at most 65,536 bytes and at most two unacknowledged chunks (128 KiB total), always within peer limits. Window changes apply between source reads; already submitted bytes drain before more data fits a reduced budget.
 
 After at least five seconds since its last probe, a span of at least one second with advancing ACK gaps of at most 100 ms permits a one-chunk local budget between source reads so a continuously replenished pipeline drains. A slower gap or fully drained source idle interval over 100 ms resets qualification and leaves the constrained pipeline running. Once a drain starts, its full confirmation permits the fresh probe even if drain completion is delayed. Once all submitted bytes are acknowledged, a fresh small probe must confirm within 100 ms before the large window can reopen. Drain time is excluded from the fresh probe timing. Partial probe confirmation cannot open the large window or reset probe timing. Every new file/resume starts with a fresh probe.
 
@@ -74,11 +87,11 @@ Probe timing starts once encoded bytes are ready for submission, excluding sourc
 
 Session-control classification validates full CBOR structure and canonical map order while omitting byte-string value materialization; the feature decoder still owns the payload copy. This removes one payload-sized allocation/copy per incoming transfer record on each platform without suppressing malformed-CBOR checks.
 
-Source reads and transfer-chunk CBOR construction/encoding run in the existing source-storage actor on Mac and in the existing IO dispatch on Android. The Mac source retains a full FileHandle read directly and appends only on a short read; Android retains its per-file reusable read buffer. Immutable encoded chunks return to the feature owner before epoch checks, credit accounting and session submission. There is at most one unsent prepared chunk, and security validation remains per record.
+Source reads and transfer-chunk CBOR construction/encoding run in the existing source-storage actor on Mac and in the existing IO dispatch on Android. The Mac source retains a full FileHandle read directly and appends only on a short read; Android retains its per-file reusable read buffer. Both CBOR encoders measure the bounded output before writing; Mac reserves that exact `Data` capacity and Android writes into one exact-size array. Immutable encoded chunks return to the feature owner before epoch checks, credit accounting and session submission. There is at most one unsent prepared chunk, and security validation remains per record.
 
 Transfer payload decoding runs off the main actor in one awaited worker per ordered ingress delivery. Immutable bytes and the negotiated chunk bound cross that boundary; cancellation, transfer epoch and channel generation are checked before applying results. This removes chunk CBOR work from presentation without adding a buffering stage or changing record validation. Debug media timing records input/submission/result/presentation events on Android and receipt/native-result/result-submission events on Mac using local monotonic clocks and existing subscription/command identifiers. TCP submission denotes local acceptance, not a remote acknowledgement. Opt-in record timing separates native validation, transport submission and application delivery using process-local object identifiers, payload sizes and local durations; it never logs keys or payloads. Android enables record timing when `AniCeMediaTiming` is DEBUG at process startup; Mac uses `ANICE_MEDIA_TIMING=1`. Command traces include the selected transport.
 
-`SessionRecordCodec.seal` builds one reserved record buffer instead of chaining `+` concatenations, and `LanFraming.encode` builds one reserved frame buffer for the same reason. The seal path still pays CryptoKit's own ciphertext and tag allocations, and `open` copies the header, ciphertext and tag out of the record before handing them to `AES.GCM.SealedBox`. Encoding uses `Data` append growth rather than a measured two-pass write.
+`SessionRecordCodec.seal` builds one reserved record buffer instead of chaining `+` concatenations, and `LanFraming.encode` builds one reserved frame buffer for the same reason. CryptoKit still allocates ciphertext before record assembly; `open` copies the header, ciphertext and tag out of the record before handing them to `AES.GCM.SealedBox`.
 
 Record validation, seal/open and submission events include the secure-channel object identifier, local generation, negotiated profile and directional sequence. Monotonic start/end timestamps correlate overlapping send/receive stages within one process; peer clocks are not synchronized. Seal/open timing includes failed calls. Sequence metadata is diagnostic only and never changes nonce ownership. Timing remains opt-in and does not format log messages when disabled.
 
@@ -137,7 +150,7 @@ Caching this validation is prohibited. See rule 2 in section 6.
 | `apps/macos/aniCe/Infrastructure/Session/SessionConnection.swift` | `receive` | Envelope ordering, gate release before application delivery |
 | `apps/macos/aniCe/Infrastructure/LAN/LanTcpTransport.swift` | `LanIngressQueue` | Bounded ordered ingress hand-off with producer backpressure |
 | `apps/macos/aniCe/Infrastructure/LAN/LanTcpTransport.swift` | `received`, `drain` | Read loop, framing, delivery consumer, write retirement |
-| `apps/macos/aniCe/Infrastructure/Session/SessionCbor.swift` | `decodeSequence` | Bounded decode without re-basing copies |
+| `apps/macos/aniCe/Infrastructure/Session/SessionCbor.swift` | `encodeValues`, `decodeSequence` | Exact-capacity deterministic CBOR output; bounded decode without re-basing copies |
 | `apps/macos/aniCe/Infrastructure/LAN/LanFraming.swift` | `encode`, `feed` | Frame construction and assembly |
 
 ## 6. Optimization rules for this repository
@@ -153,21 +166,17 @@ Caching this validation is prohibited. See rule 2 in section 6.
 
 - **Per-record write watchdog.** `AndroidLanTransport.submit` launches one coroutine and one 10-second timer per record (`AndroidLanTransport.kt:55`). Moving the watchdog to transport lifetime would save roughly 1–2 µs per record against a 15.6 ms budget, and would change the deadline from per-record to earliest-in-flight. Rejected.
 - **Credit-wait fast path.** The transfer send loop installs its credit waiter, then re-checks credit. Wakeup detaches the waiter before resuming it: Android immediate coroutine resumption can shrink the window and install a successor inline. ACK submission completion re-arms the 20-ms coalescing timer when newer written bytes remain below the size-based cadence; an expired timer during submission cannot strand that credit. Failed ACK submissions wait for an external event. A fast path would save one deferred allocation per stall, which is not on the byte path at all. Rejected.
-- **Output-offset `Cipher.doFinal`.** Writing ciphertext and tag directly into the record buffer would remove one 262,016-byte allocation and one copy per record on Android. It requires the output-offset overload, for which this repository has no precedent, and the host JVM unit suite cannot exercise Android's provider path. Deferred; see section 8.
-- **Pooling the receive assembly buffer.** Rejected, not deferred. `LanFraming.feed` allocates one `ByteArray(size)` per assembled envelope (`LanFraming.feed`) and the ingress consumer runs concurrently with the read loop, so the framing cannot know when that array is free. Reuse would need a per-record return round-trip and would put a use-after-hand-off hazard on the record path for a single 262,016-byte allocation. The ownership contract is stated at `LanFraming.kt:35`.
+- **Android AES-GCM output buffer.** `RecordCipher.seal` writes ciphertext and tag directly after the header in one preallocated record array. Provider-internal allocations remain implementation-dependent.
+- **Pooling the receive assembly buffer.** Rejected, not deferred. `LanFraming.feed` allocates one `ByteArray(size)` per assembled envelope (`LanFraming.feed`) and the ingress consumer runs concurrently with the read loop, so the framing cannot know when that array is free. Reuse would need a per-record return round-trip and would put a use-after-hand-off hazard on the record path for a single 524,447-byte profile-4 envelope. The ownership contract is stated at `LanFraming.kt:35`.
 - **Frame-bounded reads.** Android retains a `profile.maximumEnvelope + 5` scratch buffer. Both transports limit each native read to the remaining five-byte header or current frame body. A complete frame is handed to the bounded ingress queue before reading the next header, so local queue suspension cannot age a later frame already coalesced into the same read buffer. This requires separate header/body reads, with additional reads for fragmented delivery; allocation bounds and ordered delivery are unchanged. Secured encrypted-record frames use the bounded progress deadline defined in the LAN contract.
 - **Ingress serialized with delivery.** The read loop delivered every frame inline before issuing the next read, so the socket sat unread for the whole decode, native validation and delivery hop of each record. TCP backpressure then amplified every stall, which is why the same build swung by an order of magnitude between links. Both platforms now hand envelopes to a bounded single-consumer queue and return to reading immediately. Ordering is unchanged because one consumer drains sequentially, and the bound restates the existing admission limit rather than adding one. A full queue suspends the producer rather than dropping: every `AsyncStream` buffering policy discards an element instead, which would fail a valid transfer on a fast link. Normal EOF closes the hand-off without emptying it, so accepted envelopes finish delivery before the end is reported, subject to the bounded drain deadline: the peer's FIN commonly follows its last record, and a close that discarded the queue would drop the record carrying its CLOSE, which inline delivery always delivered.
-- **Direct main-thread chunk delivery.** The 262,016-byte `TransferMessage.decode` for a profile-3 chunk runs on `Dispatchers.Default`; the transfer FIFO consumer resumes on its UI owner and awaits storage on the injected single-parallelism IO dispatcher. Transfer state mutation remains on the main dispatcher, with progress publication rate-limited to the existing 100 ms interval. Feature DATA delivery itself still enters through `Dispatchers.Main.immediate`: every feature handler publishes Compose state, so moving the whole dispatch off main would require per-feature marshalling and is not done.
+- **Direct main-thread chunk delivery.** Chunk CBOR decoding up to 524,288 bytes runs on `Dispatchers.Default`; the transfer FIFO consumer resumes on its UI owner and awaits storage on the injected single-parallelism IO dispatcher. Transfer state mutation remains on the main dispatcher, with progress publication rate-limited to the existing 100 ms interval. Feature DATA delivery itself still enters through `Dispatchers.Main.immediate`: every feature handler publishes Compose state, so moving the whole dispatch off main would require per-feature marshalling and is not done.
 - **Session lock or gate held across application delivery.** Android held `operation` and macOS held `processing` while awaiting the application handler, so a slow handler delayed control flush, deadline maintenance and the next record's authentication. Both release before delivery; ordering survives because every caller awaits one `receive` before starting the next and both transports deliver through a single sequential consumer.
 
 ## 8. Open candidates
 
-1. **Feature DATA dispatch.** Feature delivery still enters through `Dispatchers.Main.immediate`, where every feature handler publishes Compose state. Moving the whole dispatch off main needs per-feature marshalling; transfer chunks now leave shared dispatch after bounded admission, so their decode and storage awaits no longer hold up later handlers. Other handlers still await their own work.
-2. **Larger authenticated records.** Capability 3 now fills the existing profile-3 DATA budget with up to 262,016-byte chunks. It reduces per-byte encryption and native trust-validation work; physical acceptance still requires measurement on target hardware.
-3. **Android encrypt-side allocation.** `RecordCipher.seal` allocates one record buffer and writes AES-GCM ciphertext and tag directly after its header using the provider output-buffer API. No intermediate ciphertext buffer is materialized by aniCe; provider-internal allocations remain platform-dependent.
-4. **macOS `SessionRecordCodec.open` copies.** The header, ciphertext and tag are each copied before `AES.GCM.SealedBox` is constructed. Slicing the record instead would remove three copies per record but extends the lifetime of the full record buffer.
-5. **macOS CBOR encoding growth.** `encodeValues` appends into a growing `Data`; Android measures and writes once. The macOS encoder is not yet symmetric.
-6. **Android CBOR decode of transfer payloads.** `Cbor.Bytes` slicing copies once, and the `Cbor.bytes()` extension copies again at each call site that uses it.
+1. **Feature DATA dispatch.** Feature delivery still enters through `Dispatchers.Main.immediate`, where every feature handler publishes Compose state. Moving the whole dispatch off main needs per-feature marshalling; transfer chunks leave shared dispatch after bounded admission, so their decode and storage awaits no longer hold up later handlers. Other handlers still await their own work.
+2. **macOS `SessionRecordCodec.open` copies.** The header (14 bytes), ciphertext and tag (16 bytes) are materialized before `AES.GCM.SealedBox` is constructed; only the ciphertext copy scales with chunk size. Passing a ciphertext slice may remove that payload-sized copy but keeps the full record buffer alive longer.
 
 ## 9. Measurement procedure
 
@@ -196,3 +205,5 @@ Capacity notification now drains existing waiters into a bounded-by-current-wait
 A full data-preserving Debug APK update removes the observed spin on the same phone: the main thread reports 0.0% CPU in three short idle samples, and `dumpsys gfxinfo` returns rather than timing out. A warm activity launch completes in 649 ms. Identity and trust journal SHA-256 hashes remain unchanged across installation. Initial Debug rendering still records slow frames (9/27 janky frames in the startup sample); this verifies removal of the indefinite main-thread spin, not full cold-start or sustained-frame acceptance. Android JVM tests (227), offline lint and Debug build pass.
 
 Playback thumbnail base64 decoding, resizing, JPEG encoding and hashing run off MainActor; generation and recording checks fence completed work. Prepared Mac display images are reused. Command-triggered position samples use a separate serial queue from catalog observation and command execution. Android keeps only the current recording’s displayed image and releases it on track or subscription replacement; there is no artwork history cache.
+
+Current LAN revision 3 uses [record profile 4](../protocol/lan/TRANSFER_PROFILE.md) and capability 4 for 512-KiB chunks, with eight-chunk maximum credit. Larger chunks increase per-record buffering and control head-of-line delay; sustained fallback retains its existing 128-KiB cap.

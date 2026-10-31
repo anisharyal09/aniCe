@@ -111,7 +111,7 @@ struct AniCeApp: App {
     }
     lan.channelStateChanged = { [weak lan] in
       if let lan, let token=lan.channelToken, let peer=lan.authenticatedPeer {
-        features.available(ChannelDescriptor(instance:token,transport:"lan",peer:peer,maximumDataBytes:SessionProfile.lanTransfer.maximumPlaintext)) { [weak lan] bytes in
+        features.available(ChannelDescriptor(instance:token,transport:"lan",peer:peer,maximumDataBytes:SessionProfile.lanTransfer512.maximumPlaintext)) { [weak lan] bytes in
           guard let lan else { throw SessionFailure.cancelled }; try await lan.sendData(bytes)
         }
       } else { features.retired("lan") }

@@ -2,7 +2,7 @@
 
 Send batches of 1–128 files from the device overview over an already-authenticated local-network or Bluetooth connection. Local network has priority whenever it is secured. The peer must advertise transfer support. Bluetooth is available when local network is disconnected; it is slower and uses the existing secured BLE session. The receiver approves each batch; files transfer sequentially with bounded cumulative credit.
 
-Updated Android and Mac apps use LAN chunks up to 262,016 bytes with an authenticated 256-KiB record profile. Bluetooth retains 3-KiB chunks. Both apps must be updated to use the new transfer capability for larger chunks; older peers retain their negotiated limits. Native identity and trust checks remain live. See the [LAN profile contract](../../protocol/lan/TRANSFER_PROFILE.md).
+Updated Android and Mac apps use LAN chunks up to 524,288 bytes with authenticated profile 4 records. Legacy profile 3 peers retain their 262,016-byte ceiling; Bluetooth retains 3-KiB chunks. Both apps must support revision 3/profile 4 to use 512-KiB chunks. Native identity and trust checks remain live. See the [LAN profile contract](../../protocol/lan/TRANSFER_PROFILE.md).
 
 ## Connection changes
 
@@ -67,3 +67,5 @@ Manual application testing covers transfers in both directions and playback duri
 Android implementation and tests live under `features/transfer/`; Mac implementation and tests live under `Features/Transfer/` and `aniCeTests/Transfer/`. TransferDestination owns the Android folder grant and provider probe; TransferService presents approved foreground ownership. The existing connection and session owners retain authentication, nonce ownership and backpressure.
 
 See the authoritative [transfer contract](../../protocol/transfer/README.md), [CDDL](../../protocol/transfer/transfer.cddl), [LAN contract](../../protocol/lan/README.md) and [design guide](../design/DESIGN.md).
+
+Current LAN revision 3 uses [record profile 4](../../protocol/lan/TRANSFER_PROFILE.md) and capability 4 for 512-KiB chunks, with eight-chunk maximum credit. Larger chunks increase per-record buffering and control head-of-line delay; sustained fallback retains its existing 128-KiB cap.

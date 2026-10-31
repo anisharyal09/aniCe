@@ -222,6 +222,18 @@ final class MediaTests: XCTestCase {
     _ = model.receive(try MediaMessage(kind:4,fields:[.text(sub)]).encode(),channel:"ble")
     XCTAssertFalse(model.phoneSubscribed)
   }
+  @MainActor func testStaleChannelCallbacksDoNotRetireReplacement() throws {
+    let model=MacPlaybackModel(requestSink:{ _ in true })
+    model.channel("ble",token:"old") { _ in XCTFail("Stale channel sent") }
+    model.channel("ble",token:"new") { _ in }
+    let identity=try DeviceIdentity(deviceId:"01234567-89ab-4cde-8fab-0123456789ab",deviceName:"Peer",publicKey:P256.Signing.PrivateKey().publicKey.x963Representation)
+    let stale=ChannelDescriptor(instance:"old",transport:"ble",peer:identity)
+    model.retired(stale)
+    model.capacityAvailable(stale)
+    let subscription=UUID().uuidString
+    XCTAssertTrue(model.receive(try MediaMessage(kind:2,fields:[.text(subscription)]).encode(),channel:"ble"))
+    XCTAssertTrue(model.phoneSubscribed)
+  }
   @MainActor func testInstalledScriptingDictionaryBoundsAndPermissionCapabilities() throws {
     let good=Data("""
       <dictionary><suite name="Playback" code="Musi"><command name="playpause" code="MusiPlPs"/><command name="next track" code="MusiNext"/><class name="application" code="capp"><property name="player position" code="pPos" type="real" access="rw"/></class></suite></dictionary>

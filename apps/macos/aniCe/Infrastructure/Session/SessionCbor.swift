@@ -50,8 +50,62 @@ enum SessionCbor {
   static func encode(_ value: SessionCBOR, maximumBytes: Int = maxBytes) throws -> Data { try encodeValues([value], maximumBytes: maximumBytes) }
 
   private static func encodeValues(_ values: [SessionCBOR], maximumBytes: Int = maxBytes) throws -> Data {
-    guard (1...262144).contains(maximumBytes) else { throw SessionFailure.malformed }
-    var out = Data()
+    guard (1...524416).contains(maximumBytes) else { throw SessionFailure.malformed }
+    var measuredItems = 0
+    func headSize(_ n: UInt64) -> Int {
+      n < 24 ? 1 : n <= 255 ? 2 : n <= 65535 ? 3 : n <= 0xffff_ffff ? 5 : 9
+    }
+    func adding(_ size: Int, _ next: Int) throws -> Int {
+      guard next >= 0, next <= maximumBytes, size <= maximumBytes - next else {
+        throw SessionFailure.malformed
+      }
+      return size + next
+    }
+    func measure(_ value: SessionCBOR, _ depth: Int) throws -> Int {
+      measuredItems += 1
+      guard depth <= maxDepth, measuredItems <= maxItems else { throw SessionFailure.malformed }
+      switch value {
+      case .integer(let n):
+        return headSize(n >= 0 ? UInt64(n) : UInt64(-(n + 1)))
+      case .bytes(let data):
+        guard data.count <= maximumBytes else { throw SessionFailure.malformed }
+        return try adding(headSize(UInt64(data.count)), data.count)
+      case .text(let text):
+        let count = text.utf8.count
+        guard count <= maximumBytes else { throw SessionFailure.malformed }
+        return try adding(headSize(UInt64(count)), count)
+      case .array(let array):
+        guard array.count <= maxItems else { throw SessionFailure.malformed }
+        var size = headSize(UInt64(array.count))
+        for item in array { size = try adding(size, measure(item, depth + 1)) }
+        return size
+      case .map(let map):
+        guard map.count <= maxItems / 2 else { throw SessionFailure.malformed }
+        for pair in map {
+          switch pair.key {
+          case .array, .map: throw SessionFailure.malformed
+          default: break
+          }
+        }
+        let sorted = try map.map { (try encode($0.key), $0) }.sorted { less($0.0, $1.0) }
+        for i in sorted.indices.dropFirst() {
+          guard sorted[i - 1].0 != sorted[i].0 else { throw SessionFailure.malformed }
+        }
+        var size = headSize(UInt64(sorted.count))
+        for (encodedKey, pair) in sorted {
+          let keySize = try measure(pair.key, depth + 1)
+          guard keySize == encodedKey.count else { throw SessionFailure.malformed }
+          size = try adding(size, keySize)
+          size = try adding(size, measure(pair.value, depth + 1))
+        }
+        return size
+      case .bool:
+        return 1
+      }
+    }
+    var encodedSize = 0
+    for value in values { encodedSize = try adding(encodedSize, measure(value, 0)) }
+    var out = Data(capacity: encodedSize)
     var items = 0
     func head(_ major: UInt8, _ n: UInt64) {
       let width = n < 24 ? 0 : n <= 255 ? 1 : n <= 65535 ? 2 : n <= 0xffff_ffff ? 4 : 8
@@ -105,6 +159,7 @@ enum SessionCbor {
       guard out.count <= maximumBytes else { throw SessionFailure.malformed }
     }
     for v in values { try write(v, 0) }
+    guard out.count == encodedSize else { throw SessionFailure.malformed }
     return out
   }
   static func decode(_ data: Data, maximumBytes: Int = maxBytes, materializeBytes: Bool = true) throws -> SessionCBOR {
@@ -113,7 +168,7 @@ enum SessionCbor {
     return values[0]
   }
   static func decodeSequence(_ data: Data, maximumBytes: Int = maxBytes, materializeBytes: Bool = true) throws -> [SessionCBOR] {
-    guard (1...262144).contains(maximumBytes), data.count <= maximumBytes else { throw SessionFailure.malformed }
+    guard (1...524416).contains(maximumBytes), data.count <= maximumBytes else { throw SessionFailure.malformed }
     // Index from the buffer's own start so a sliced input needs no re-basing copy.
     let base = data.startIndex
     var offset = 0

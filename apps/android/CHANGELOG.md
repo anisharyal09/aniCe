@@ -21,6 +21,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
+
 - Replace the app palette and control styling with neutral light/dark colors, compact button faces and native accessible touch targets.
 - Reorganize Home around device status, send actions, playback, transfers and available recent activity.
 - Rework Devices and pairing with direct transport controls, inline security and trust disclosures, QR scanning and code entry.

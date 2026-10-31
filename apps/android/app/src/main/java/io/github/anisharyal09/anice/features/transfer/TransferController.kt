@@ -563,7 +563,7 @@ class TransferController(
     }
 
     private fun chunkLimit(descriptor: ChannelDescriptor?) =
-        if (descriptor?.transport == "lan" && descriptor.maximumDataBytes >= 262144) 262016 else 3072
+        if (descriptor?.transport == "lan" && descriptor.maximumDataBytes >= 524416) 524288 else if (descriptor?.transport == "lan" && descriptor.maximumDataBytes >= 262144) 262016 else 3072
 
     override fun available(channel: SecuredChannel) {
         val transport = channel.descriptor.transport
@@ -584,10 +584,10 @@ class TransferController(
         selectPreferredChannel()
         scope.launch {
             val limit = chunkLimit(channel.descriptor)
-            val versions = if (limit > 131072) listOf(2L, 3L) else listOf(if (limit > 3072) 2L else 1L)
+            val versions = if (limit > 262016) listOf(2L, 3L, 4L) else if (limit > 131072) listOf(2L, 3L) else listOf(if (limit > 3072) 2L else 1L)
             for (version in versions) {
                 if (channels[transport] !== channel) return@launch
-                val chunk = if (version == 2L) minOf(131072, limit) else limit
+                val chunk = if (version == 2L) minOf(131072, limit) else if (version == 3L) minOf(262016, limit) else limit
                 try {
                     sendWithBackpressure(TransferMessage.capability(version, chunk.toLong(),
                         if (transport == "ble") 4 else if (chunk > 3072) 8 else 64).encode(limit), channel, jobBound = false)
@@ -625,7 +625,8 @@ class TransferController(
     private fun applyCapability(message: TransferMessage) {
         peerCompatible = true
         peerMaxChunkBytes = message.number(1).coerceAtMost(when (message.number(0)) {
-            3L -> chunkLimit(activeChannel?.descriptor).toLong()
+            4L -> chunkLimit(activeChannel?.descriptor).toLong()
+            3L -> minOf(262016L, chunkLimit(activeChannel?.descriptor).toLong())
             2L -> minOf(131072L, chunkLimit(activeChannel?.descriptor).toLong())
             else -> 3072L
         })

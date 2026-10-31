@@ -1,6 +1,6 @@
 # aniCe trusted-device session profile v1
 
-The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2 and record profile 3. File transfer capability 3 fills more of the authenticated record budget; standard profile 1/BLE limits remain unchanged.
+The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines current LAN revision 3 and record profile 4 for 512-KiB transfer chunks. Legacy LAN revision 2/profile 3 and standard profile 1/BLE retain their original bounds.
 
 Status: native handshake, AES-GCM records, BLE binding, explicit connections and negotiated keepalive implemented.
 
