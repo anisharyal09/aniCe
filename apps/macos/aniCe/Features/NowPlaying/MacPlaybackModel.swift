@@ -45,9 +45,17 @@ private final class PlaybackEvent: @unchecked Sendable {
 }
 @Observable @MainActor final class MacPlaybackModel: FeatureHandler {
   func available(_ channel: any SecuredChannel) { let d=channel.descriptor; self.channel(d.transport,token:d.instance,send:channel.sendData) }
-  func retired(_ descriptor: ChannelDescriptor) { channel(descriptor.transport,token:nil) { _ in throw SessionFailure.cancelled } }
-  func capacityAvailable(_ descriptor: ChannelDescriptor) { capacity(descriptor.transport) }
-  func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling { sessionLink.handle(bytes,channel:descriptor.transport) }
+  func retired(_ descriptor: ChannelDescriptor) {
+    guard sessionLink.isCurrent(descriptor.transport, token: descriptor.instance) else { return }
+    channel(descriptor.transport,token:nil) { _ in throw SessionFailure.cancelled }
+  }
+  func capacityAvailable(_ descriptor: ChannelDescriptor) {
+    guard sessionLink.isCurrent(descriptor.transport, token: descriptor.instance) else { return }
+    capacity(descriptor.transport)
+  }
+  func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
+    sessionLink.handle(bytes,channel:descriptor.transport,token:descriptor.instance)
+  }
   let outputVolume: MacOutputVolume
   private(set) var playback = MediaPlayback()
   private(set) var sources: [MediaSource] = []

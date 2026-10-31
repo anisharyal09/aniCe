@@ -169,7 +169,7 @@ class SessionConnection(
               liveness?.start(now())
             }
             RecordKind.DATA -> {
-              val control = if (liveness != null) SessionControl.application(result.second, minOf(262144, maxOf(4096, profile.maximumPlaintext))) else null
+              val control = if (liveness != null) SessionControl.application(result.second, minOf(524416, maxOf(4096, profile.maximumPlaintext))) else null
               if (control != null) liveness!!.receive(control, now()) else delivery = result.second
             }
             RecordKind.CLOSE -> {

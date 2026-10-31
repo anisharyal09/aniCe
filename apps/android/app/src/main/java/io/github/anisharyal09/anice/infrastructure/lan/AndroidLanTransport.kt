@@ -37,7 +37,7 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
                 // Set before connect so TCP window scaling includes the bulk receive budget.
                 socket.receiveBufferSize = 8 * 1024 * 1024
                 socket.sendBufferSize = 2 * 1024 * 1024
-            } else if (profile == SessionProfile.LAN_TRANSFER) {
+            } else if (profile == SessionProfile.LAN_TRANSFER || profile == SessionProfile.LAN_TRANSFER_512) {
                 // Profile 3 LAN transfer uses 4 MiB buffers to support near-gigabit streaming without window stall.
                 socket.receiveBufferSize = 4 * 1024 * 1024
                 socket.sendBufferSize = 4 * 1024 * 1024

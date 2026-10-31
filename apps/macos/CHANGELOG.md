@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
+
 - Prepare transfer chunks in the source-storage actor without a second full-read buffer, and defer native Find Device startup so shared DATA delivery can continue.
 
 - Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
@@ -19,6 +21,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
 
 ### Changed
+
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; pre-size Mac CBOR output to avoid payload-sized growth copies and retain legacy Android LAN profiles and standard/BLE bounds.
 
 - Apply neutral light/dark colors, a split window header, compact controls and consistent hover, pressed and focus feedback.
 - Reorganize Overview with device status, send actions, responsive playback/transfer columns and recent activity.

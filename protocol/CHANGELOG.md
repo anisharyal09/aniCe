@@ -14,6 +14,10 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 - Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
 
+### Changed
+
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
+
 ## [v0.3.0]
 
 ### Fixed

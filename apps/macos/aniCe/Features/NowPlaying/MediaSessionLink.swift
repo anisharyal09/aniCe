@@ -37,6 +37,7 @@ import Observation
   private var results: [Int64:Int64] = [:]
   private var resultOrder: [Int64] = []
   private var resultKinds: [Int64:Int] = [:]
+  func isCurrent(_ kind: String, token: String) -> Bool { links[kind]?.token == token }
   private func timing(_ event: String, _ kind: String, _ sub: String, _ id: Int64, duration: TimeInterval = 0) {
     #if DEBUG
     if ProcessInfo.processInfo.environment["ANICE_MEDIA_TIMING"] == "1" {
@@ -52,7 +53,8 @@ import Observation
     if let link=links[kind] { link.controls=[MediaMessage(kind:1,fields:[.integer(1),.bool(kind=="lan")])];link.volumeControls=[PlayerVolumeMessage(kind:1,fields:[.integer(1)]),PlayerVolumeMessage(kind:1,fields:[.integer(1)],scope:.output)]; pump(kind) }
   }
   func capacity(_ kind: String) { if let link=links[kind], link.sending { link.wake=true } else { pump(kind) } }
-  func handle(_ data: Data, channel kind: String) -> DataHandling {
+  func handle(_ data: Data, channel kind: String, token: String? = nil) -> DataHandling {
+    if let token, links[kind]?.token != token { return .discarded }
     guard data.count <= 4000 else { return .unrecognized }
     do {
       if let message=try MediaMessage.decode(data) { return receive(message,channel:kind) ? .handled:.discarded }

@@ -446,7 +446,7 @@ enum TransferEvent: Equatable {
   // MARK: - FeatureHandler conformance
 
   private func chunkLimit(_ descriptor: ChannelDescriptor?) -> Int {
-    descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 262144 ? 262016 : 3072
+    descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 524416 ? 524288 : descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 262144 ? 262016 : 3072
   }
 
   func available(_ channel: any SecuredChannel) {
@@ -468,10 +468,10 @@ enum TransferEvent: Equatable {
     Task {
       guard self.channels[transport]?.descriptor == channel.descriptor else { return }
       let chunkSize = self.chunkLimit(channel.descriptor)
-      let versions: [Int64] = chunkSize > 131072 ? [2, 3] : [chunkSize > 3072 ? 2 : 1]
+      let versions: [Int64] = chunkSize > 262016 ? [2, 3, 4] : chunkSize > 131072 ? [2, 3] : [chunkSize > 3072 ? 2 : 1]
       for version in versions {
         guard self.channels[transport]?.descriptor == channel.descriptor else { return }
-        let chunk = version == 2 ? min(131072, chunkSize) : chunkSize
+        let chunk = version == 2 ? min(131072, chunkSize) : version == 3 ? min(262016, chunkSize) : chunkSize
         do {
           let data = try TransferMessage.capability(version: version, maxChunkBytes: Int64(chunk),
             maxWindow: transport == "ble" ? 4 : chunk > 3072 ? 8 : 64).encode(maximumChunkBytes: chunkSize)
@@ -511,7 +511,7 @@ enum TransferEvent: Equatable {
   private func applyCapability(_ message: TransferMessage) {
     peerCompatible = true
     let localLimit = Int64(chunkLimit(activeChannel?.descriptor))
-    let negotiatedLimit: Int64 = message.number(0) == 3 ? localLimit : message.number(0) == 2 ? min(131072, localLimit) : 3072
+    let negotiatedLimit: Int64 = message.number(0) == 4 ? localLimit : message.number(0) == 3 ? min(262016, localLimit) : message.number(0) == 2 ? min(131072, localLimit) : 3072
     peerMaxChunkBytes = min(message.number(1), negotiatedLimit)
     peerMaxWindow = min(message.number(2), activeChannel?.descriptor.transport == "ble" ? 4 : peerMaxChunkBytes > 3072 ? 8 : 64)
   }

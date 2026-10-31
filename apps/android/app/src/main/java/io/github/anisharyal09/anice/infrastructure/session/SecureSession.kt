@@ -30,6 +30,7 @@ enum class SessionProfile(val wire: Int, val maximumPlaintext: Int, val maximumE
   STANDARD(1, 4000, 4096, "aniCe session"),
   BULK_PROBE(2, 4194304, 4194335, "aniCe bulk probe"),
   LAN_TRANSFER(3, 262144, 262175, "aniCe LAN transfer"),
+  LAN_TRANSFER_512(4, 524416, 524447, "aniCe LAN transfer 512"),
 }
 
 enum class RecordKind(val wire: Int) {
