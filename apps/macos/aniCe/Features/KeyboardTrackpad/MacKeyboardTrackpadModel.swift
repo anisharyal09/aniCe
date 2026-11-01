@@ -386,9 +386,9 @@ enum ClipboardTypingValidationError: Error, Equatable {
     }
     return switch phase {
     case .setupNeeded: "Connect a paired phone, then click a surface to control it."
-    case .disconnected: "Click Connect, or click the keyboard or pad to connect and control."
+    case .disconnected: "Click Connect, or click the keyboard or pad to reconnect and control."
     case .connecting: "Authenticating the paired Bluetooth link and opening HID channels."
-    case .connectedIdle: "Click the keyboard area or pad to start controlling the selected phone."
+    case .connectedIdle: "Click the keyboard or pad to control the phone. Scrolling over an inactive pad scrolls this panel."
     case .controlling: "Input goes to the selected phone while this surface has focus."
     case .suspended: "The phone paused input. Control stays stopped when it resumes."
     case .disconnecting: "Releasing held input and closing this HID connection."
@@ -402,13 +402,14 @@ enum ClipboardTypingValidationError: Error, Equatable {
       return "Choose a trusted phone"
     }
     return switch phase {
-    case .connecting: "Connecting to \(targetPeer.deviceName)"
-    case .connectedIdle: "Bluetooth HID ready · \(targetPeer.deviceName)"
-    case .controlling: "Controlling \(targetPeer.deviceName)"
-    case .suspended: "Input suspended · \(targetPeer.deviceName)"
-    case .disconnecting: "Disconnecting from \(targetPeer.deviceName)"
-    case .failed: "Bluetooth HID failed · \(targetPeer.deviceName)"
-    case .disconnected, .setupNeeded: targetAddress == nil ? "Set up Bluetooth · \(targetPeer.deviceName)" : "Ready to connect · \(targetPeer.deviceName)"
+    case .connecting: "Bluetooth HID · connecting · \(targetPeer.deviceName)"
+    case .connectedIdle: "Bluetooth HID · idle · \(targetPeer.deviceName)"
+    case .controlling: "Bluetooth HID · active · \(targetPeer.deviceName)"
+    case .suspended: "Bluetooth HID · paused · \(targetPeer.deviceName)"
+    case .disconnecting: "Bluetooth HID · closing · \(targetPeer.deviceName)"
+    case .failed: "Bluetooth HID · failed · \(targetPeer.deviceName)"
+    case .disconnected, .setupNeeded:
+      targetAddress == nil ? "Bluetooth HID · link device · \(targetPeer.deviceName)" : "Bluetooth HID · offline · \(targetPeer.deviceName)"
     }
   }
 

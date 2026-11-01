@@ -16,6 +16,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Make the expanded floating keyboard panel movable, keep its shortcut row above the pointer pad, pass inactive-pad scrolling to the local panel, and clarify Bluetooth HID state in the feature and launcher.
 - Refine Mac keyboard and trackpad input with preserved fractional motion, independent speed settings, stable capture, direct clipboard typing and full-screen pointer control.
 - Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
 - Connect Keyboard & Trackpad after first-time Bluetooth linking and automatically reconnect when opening the feature, defaulting to the authenticated BLE-connected phone. Follow aniKey's system-paired, authenticated transport policy while keeping input capture explicit.

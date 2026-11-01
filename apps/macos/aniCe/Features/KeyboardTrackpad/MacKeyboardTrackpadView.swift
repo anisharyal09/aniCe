@@ -6,6 +6,7 @@ import SwiftUI
 struct MacKeyboardTrackpadView: View {
   @Bindable var model: MacKeyboardTrackpadModel
   private let presentationID: UUID?
+  private let floatingPresentation: Bool
   @Environment(\.colorScheme) private var scheme
   @State private var showLinkConfirmation = false
   @State private var linkCandidate: PairedBluetoothDevice?
@@ -16,32 +17,21 @@ struct MacKeyboardTrackpadView: View {
   @State private var fullScreenPad: FullScreenTrackpadController?
   var onOpenDevices: () -> Void = {}
 
-  init(model: MacKeyboardTrackpadModel, presentationID: UUID? = nil,
+  init(model: MacKeyboardTrackpadModel, presentationID: UUID? = nil, floatingPresentation: Bool = false,
     onOpenDevices: @escaping () -> Void = {}) {
     self.model = model
     self.presentationID = presentationID
+    self.floatingPresentation = floatingPresentation
     self.onOpenDevices = onOpenDevices
   }
 
   private var activePresentationID: UUID { presentationID ?? generatedPresentationID }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
+    VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
 
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Image(systemName: stateSymbol)
-          .foregroundStyle(stateColor)
-          .accessibilityHidden(true)
-        Text(model.stateTitle).font(.system(size: 14, weight: .medium))
-        Text(model.stateDetail)
-          .font(.callout)
-          .foregroundStyle(AniCePalette.secondaryText(scheme))
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel("Keyboard and trackpad status")
-      .accessibilityValue(model.stateTitle + ". " + model.stateDetail)
+      connectionStatus
 
       if let notice = model.notice {
         Text(notice)
@@ -51,6 +41,10 @@ struct MacKeyboardTrackpadView: View {
       }
 
       connectionActions
+
+      if floatingPresentation, model.targetPeer != nil, !model.needsDeviceLink {
+        keyboardActionRow
+      }
 
       if model.targetPeer == nil {
         noTarget
@@ -88,15 +82,15 @@ struct MacKeyboardTrackpadView: View {
     HStack(spacing: 12) {
       VStack(alignment: .leading, spacing: 3) {
         Text(model.targetPeer?.deviceName ?? "Choose a trusted phone")
-          .font(.system(size: 16, weight: .medium))
+          .font(.system(size: floatingPresentation ? 14 : 16, weight: .medium))
           .fixedSize(horizontal: false, vertical: true)
-        Text(model.targetPeer == nil
-          ? "Only phones trusted in aniCe can receive input."
-          : "Input uses the phone’s system-paired Bluetooth link.")
-          .font(.caption)
-          .foregroundStyle(AniCePalette.secondaryText(scheme))
-          .fixedSize(horizontal: false, vertical: true)
-        if let peer = model.targetPeer {
+        if !floatingPresentation, model.targetPeer == nil {
+          Text("Only trusted aniCe phones can receive input.")
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        if !floatingPresentation, let peer = model.targetPeer {
           Text("Fingerprint · \(peer.fingerprint.prefix(12))")
             .font(.caption.monospaced())
             .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -122,6 +116,30 @@ struct MacKeyboardTrackpadView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var connectionStatus: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      HStack(alignment: .firstTextBaseline, spacing: 7) {
+        Image(systemName: stateSymbol)
+          .foregroundStyle(stateColor)
+          .accessibilityHidden(true)
+        Text("Bluetooth HID")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+        Text("·")
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+        Text(model.stateTitle)
+          .font(.system(size: 14, weight: .medium))
+      }
+      Text(model.stateDetail)
+        .font(.callout)
+        .foregroundStyle(AniCePalette.secondaryText(scheme))
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Bluetooth HID connection")
+    .accessibilityValue(model.stateTitle + ". " + model.stateDetail)
   }
 
   private func peerMenuOption(_ peer: DeviceIdentity) -> some View {
@@ -216,7 +234,7 @@ struct MacKeyboardTrackpadView: View {
           .disabled(!model.pairedDevicesChecked)
       }
       .controlSize(.small)
-      Text("aniCe reconnects when you open this feature. Click a surface to start input.")
+      Text("After linking, aniCe connects when this feature opens. Input starts only when you click the keyboard or pad.")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
         .fixedSize(horizontal: false, vertical: true)
@@ -286,7 +304,7 @@ struct MacKeyboardTrackpadView: View {
         }
       }
 
-      keyboardActionRow
+      if !floatingPresentation { keyboardActionRow }
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 8) { pointerSettings }
         VStack(alignment: .leading, spacing: 8) { pointerSettings }
@@ -563,7 +581,7 @@ private struct TrackpadPad: View {
     ZStack {
       MousePadSurface(model: model, presentationID: presentationID, inputID: inputID, focused: $focused)
         .accessibilityLabel("Mouse and trackpad pad")
-        .accessibilityHint("Click to connect and arm pointer input. The click is consumed. Move, drag or scroll after control starts.")
+        .accessibilityHint("Click to arm pointer input; the first click is consumed. Two-finger scrolling browses this panel until the pad is active, then scrolls the phone.")
       VStack {
         HStack {
           Label("Phone pointer", systemImage: "cursorarrow")
@@ -578,7 +596,7 @@ private struct TrackpadPad: View {
         }
         Spacer()
         if !model.isControlling(owner: captureOwner) {
-          Text("Click to control")
+          Text("Click to control · scroll to browse")
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
         } else {
@@ -1011,14 +1029,24 @@ private struct MousePadSurface: NSViewRepresentable {
   override func rightMouseDragged(with event: NSEvent) { sendMotion(event) }
 
   override func scrollWheel(with event: NSEvent) {
-    guard !consumingArmingGesture, !blockedTouchSequence,
-          model?.isControlling(owner: captureOwner) == true else { return }
-    guard isInsidePad(event) else {
-      // A gesture ending outside the pad must still release its held drag.
-      if let window, window.isKeyWindow, event.window === window { model?.cancelScrollGesture(owner: captureOwner) }
+    guard let model else { super.scrollWheel(with: event); return }
+    guard !consumingArmingGesture, !blockedTouchSequence else {
+      super.scrollWheel(with: event)
       return
     }
-    model?.scrollGesture(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
+    guard model.isControlling(owner: captureOwner) else {
+      // Let the containing feature or floating-panel scroll view handle inactive-pad gestures.
+      super.scrollWheel(with: event)
+      return
+    }
+    guard isInsidePad(event) else {
+      // A gesture ending outside the pad must still release its held drag.
+      if let window, window.isKeyWindow, event.window === window {
+        model.cancelScrollGesture(owner: captureOwner)
+      }
+      return
+    }
+    model.scrollGesture(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
       phase: event.phase, precise: event.hasPreciseScrollingDeltas,
       momentum: !event.momentumPhase.isEmpty, owner: captureOwner)
   }

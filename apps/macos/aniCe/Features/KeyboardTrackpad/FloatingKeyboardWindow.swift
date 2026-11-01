@@ -371,9 +371,27 @@ private struct FloatingKeyboardPanelView: View {
   private var expandedControls: some View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
+        ZStack {
+          Image(systemName: "line.3.horizontal")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+            .allowsHitTesting(false)
+          FloatingWindowDragHandle()
+        }
+        .frame(width: 22, height: 24)
+        .help("Drag to move floating controls")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Move floating controls")
         Label("Keyboard & Trackpad", systemImage: "keyboard")
           .font(.system(size: 13, weight: .medium))
         Spacer()
+        Label("Floating", systemImage: "macwindow")
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(AniCePalette.accent(scheme))
+          .padding(.horizontal, 7)
+          .padding(.vertical, 4)
+          .background(AniCePalette.accent(scheme).opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
+          .accessibilityLabel("Floating control window")
         Button("Collapse", action: controller.collapse)
         Button("Hide", action: controller.hide)
       }
@@ -384,6 +402,7 @@ private struct FloatingKeyboardPanelView: View {
       Divider()
       ScrollView {
         MacKeyboardTrackpadView(model: model, presentationID: controller.expandedPresentationID,
+          floatingPresentation: true,
           onOpenDevices: onOpenDevices)
           .padding(14)
       }
@@ -395,6 +414,28 @@ private struct FloatingKeyboardPanelView: View {
     .overlay(RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(scheme), lineWidth: 0.75))
     .clipShape(RoundedRectangle(cornerRadius: 12))
     .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
+  }
+}
+
+@MainActor
+private struct FloatingWindowDragHandle: NSViewRepresentable {
+  func makeNSView(context: Context) -> FloatingWindowDragHandleView {
+    FloatingWindowDragHandleView()
+  }
+
+  func updateNSView(_ view: FloatingWindowDragHandleView, context: Context) {}
+}
+
+@MainActor
+private final class FloatingWindowDragHandleView: NSView {
+  override var acceptsFirstResponder: Bool { false }
+
+  override func mouseDown(with event: NSEvent) {
+    window?.performDrag(with: event)
+  }
+
+  override func resetCursorRects() {
+    addCursorRect(bounds, cursor: .openHand)
   }
 }
 

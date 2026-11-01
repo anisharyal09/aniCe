@@ -9,23 +9,23 @@ Keyboard & Trackpad lets the Mac send standard Bluetooth keyboard and mouse inpu
 1. Pair the phone with the Mac in macOS Bluetooth Settings.
 2. Open **Keyboard & Trackpad** from Features or Favourites. The authenticated BLE-connected phone is the default; use **Other devices…** to choose another trusted phone. A live HID session keeps its target until stopped or explicitly changed.
 3. Choose the paired Bluetooth device and confirm **Link device** after checking its address and the aniCe fingerprint. Matching names appear first as suggestions. If the names differ, expand **Other paired Bluetooth devices**. Confirmation stores a local association for that aniCe identity and starts the HID connection.
-4. On later visits, aniCe reconnects once to the saved paired device. Click the keyboard area or pointer pad to begin input; connecting never captures keyboard or pointer input by itself.
+4. On later visits, aniCe reconnects once to the saved paired device over Bluetooth HID. The connection stays idle until you click the keyboard area or pad; connecting never captures input by itself. Two-finger scrolling over an inactive pad scrolls this panel. Once you click the pad to activate it, two-finger scrolling controls the phone.
 
 Use **Other devices…** to select another trusted aniCe phone. Use **Change Bluetooth device…** in that menu to replace the system-paired device associated with the selected phone. A removed aniCe trust or reset local identity clears these local associations. Forgetting a phone in macOS Bluetooth Settings also requires linking again.
 
 ## Keyboard and pointer
 
 - Click the keyboard area to focus it. The click that starts control only arms keyboard input; it is not forwarded to the phone. Type with the Mac keyboard while the area has focus.
-- Click the pointer pad to arm pointer input. Later clicks and held drags are sent as mouse-button reports. Move the pointer to move the phone's pointer.
+- Click the pointer pad to arm pointer input. While inactive, scrolling over it scrolls this panel; once active, scrolling controls the phone. Later clicks and held drags are sent as mouse-button reports. Move the pointer to move the phone's pointer.
 - Pointer motion and vertical scrolling retain fractional deltas between reports so slow movement accumulates without loss. Stopping control discards unsent fractions.
 - **Pointer** and **Scroll** have independent, saved speeds: **Extra slow** (⅛×), **Gentle** (½×), **Standard** (1×) and **Fast** (2×). Pointer defaults to Standard; Scroll defaults to Extra slow. Scroll speed applies to both precise trackpad scrolling and mouse-wheel steps. Android's input settings also affect the resulting movement.
 - **Reverse vertical pointer** is enabled by default, correcting the previous inverted movement. Turn it off in the Pointer menu to restore the old direction; this preference is saved locally.
-- Input stays within the visible pad. **Full-screen trackpad** opens a separate native full-screen pad on one display. Click once to arm it, then move, click, drag or scroll anywhere within that pad. **Stop controlling** and **Done** remain local controls; Done or leaving full-screen releases held input and closes the pad. `⌘⇧Esc` also stops capture. Other applications and displays keep their own input.
+- Input stays within the visible pad. **Full-screen trackpad** opens a separate native full-screen pad on one display. Click once or scroll over the pad to arm it, then move, click, drag or scroll anywhere within that pad. **Stop controlling** and **Done** remain local controls; Done or leaving full-screen releases held input and closes the pad. `⌘⇧Esc` also stops capture. Other applications and displays keep their own input.
 - Use two fingers up/down to scroll. A left/right swipe moves the phone pointer while holding its primary button, so it can pan content or drag/select items. Inertia is ignored, and a physical held click takes precedence. Three-finger gestures stay with macOS.
 - **Back** and **Home** send HID consumer-control actions when the phone uses report protocol. Scrolling and these actions are unavailable in boot protocol. **Recents** sends aniKey's staged Meta+Tab keyboard chord.
 - Keyboard reports retain a neutral trailing byte for compatibility with Android’s cached composite keyboard layout.
 - Direct typing sends physical key positions; the Android keyboard layout determines the resulting text. Clipboard typing uses US-layout ASCII.
-- Preset keyboard and navigation buttons release held keyboard and mouse input before sending their action, then leave capture idle. Click the keyboard area or pad to resume direct input.
+- Preset keyboard and navigation buttons release held keyboard and mouse input before sending their action, then leave capture idle. Click the keyboard area to resume typing, or click or scroll over the pad to resume pointer input.
 - **Stop controlling** releases held input but keeps the HID connection open. `⌘⇧Esc` stops input while a feature surface has keyboard focus. Leaving the feature, losing focus, opening a native menu or sheet, sleep, link loss and Quit also stop capture and attempt neutral releases.
 
 The feature sends mouse input, not touchscreen gestures; pinch and edge swipes are not supported.
@@ -38,7 +38,7 @@ Choose **Show floating keyboard** from the menu-bar companion’s More menu or i
 
 Click once to toggle phone typing on or off. If the HID link is disconnected, aniCe connects first and starts typing only if the button still has focus when the connection completes. Clicking again, losing focus, switching apps, opening a menu or sheet, or hiding the widget cancels pending activation and releases held input. The HID link may remain connected and idle.
 
-Right-click the button for **Show full controls** or **Hide**. Full controls expand in the same panel; **Collapse** returns to the button. Expanding, collapsing or hiding releases input, so a fresh click is required to resume. The widget remembers whether it was visible and its compact position. After a restart it restores collapsed and idle without connecting; **Hide** saves it as hidden. Saved positions are clamped to the available display after display changes.
+Right-click the button for **Show full controls** or **Hide**. Full controls expand in the same panel, with the Tab, Esc, Backspace, Return, Back, Home, Recents and clipboard actions near the top; **Collapse** returns to the button. Drag the grip at the top-left to move the expanded panel. A small Floating label identifies the expanded window, and its phone header omits repeated pairing details. Expanding, collapsing or hiding releases input, so a fresh click is required to resume. The widget remembers whether it was visible and its compact position. After a restart it restores collapsed and idle without connecting; **Hide** saves it as hidden. Saved positions are clamped to the available display after display changes.
 
 ## Type clipboard
 

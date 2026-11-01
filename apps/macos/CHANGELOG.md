@@ -18,6 +18,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Make expanded floating controls movable, pass inactive-pad scrolling to the local panel, reduce repeated header details and clarify Bluetooth HID state.
 - Correct default vertical pointer direction, save independent pointer/scroll speeds, and apply scroll speed to both trackpads and mouse wheels.
 - Reduce Keyboard & Trackpad callback scheduling and duplicate modifier reports; use monotonic motion pacing and cancel pending motion timers when capture stops.
 - Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
