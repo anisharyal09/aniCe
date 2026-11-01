@@ -21,6 +21,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
+
 - Split transfer routing, recovery, resume, sender, receiver and lifecycle flows into feature files; keep sender-window policy beside the existing storage, recovery and ingress components.
 
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
