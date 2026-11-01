@@ -25,7 +25,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.
 - Extract Android SMS thread, history, SIM and search request serving into a focused controller file while retaining channel dispatch and local presentation.
 
-- Split transfer routing, recovery, resume, sender, receiver and lifecycle flows into feature files; keep sender-window policy beside the existing storage, recovery and ingress components.
+- Organize the Android transfer engine into controller, sender, receiver, recovery, storage and wire files; keep the view, notification, service and action handling separate.
 
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 

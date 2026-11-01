@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Coordinates bidirectional file transfer batches, cumulative flow control and sleep assertions over LAN-preferred authenticated LAN/BLE channels.
+// Coordinates transfer state, channel routing, user actions and lifecycle.
+
 import Foundation
 import Observation
 import IOKit.pwr_mgt
@@ -446,4 +447,349 @@ enum TransferEvent: Equatable {
     return .handled
   }
 
+}
+
+// MARK: - Channel routing
+
+extension MacTransferModel {
+  func maintainProgressUpdates() {
+    guard case .transferring(_, _, _, _, _, let total, _) = state else {
+      progressTask?.cancel(); progressTask = nil; progressEpoch = nil
+      return
+    }
+    guard progressTask == nil || progressEpoch != epoch else { return }
+    progressTask?.cancel()
+    progressEpoch = epoch
+    progressRate = TransferRate()
+    progressSampleAt = ProcessInfo.processInfo.systemUptime
+    progressSpeed = 0
+    _ = progressRate.add(total, at: progressSampleAt)
+    let operation = epoch
+    progressTask = Task { [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+        guard let self, self.epoch == operation else { return }
+        self.refreshProgress()
+      }
+    }
+  }
+
+  func sampleProgress(_ total: Int64, at now: TimeInterval) -> Double {
+    if now - progressSampleAt >= 0.25 {
+      progressSpeed = progressRate.add(total, at: now)
+      progressSampleAt = now
+    }
+    return progressSpeed
+  }
+
+  func refreshProgress() {
+    guard case .transferring(let batch, _, _, _, _, _, _) = state else { return }
+    let index = receiving ? receiverCurrentFileIndex : senderFileIndex
+    guard batch.files.indices.contains(index) else { return }
+    let file = batch.files[index]
+    let written = receiving ? receiverWrittenBytes : acknowledgedBytes
+    let total = batch.files.prefix(index).reduce(Int64(0)) { $0 + $1.size } + written
+    let speed = sampleProgress(total, at: ProcessInfo.processInfo.systemUptime)
+    state = .transferring(batch: batch, fileIndex: index + 1, fileName: file.name,
+      fileBytes: written, fileSize: file.size, totalBytes: total, speedBps: speed)
+  }
+
+  func chunkLimit(_ descriptor: ChannelDescriptor?) -> Int {
+    descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 524416 ? 524288 : descriptor?.transport == "lan" && (descriptor?.maximumDataBytes ?? 4000) >= 262144 ? 262016 : 3072
+  }
+
+  var isPaused: Bool {
+    if case .paused = state { return true }
+    return false
+  }
+
+  func selectPreferredChannel(preparingRoute: Bool = false) {
+    // A live batch remains bound to its channel generation. A paused batch, by contrast, must
+    // adopt a newly secured channel so the retained prefix can continue there.
+    let canRebind = !isBusy || isPaused || preparingRoute
+    guard activeChannel == nil || canRebind else { return }
+    let preferred = ["lan", "ble"].first(where: { channels[$0] != nil && capabilities[$0] != nil })
+      .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
+    activeChannel = preferred
+    peerConnected = preferred != nil
+    peerCompatible = false
+    peerMaxChunkBytes = 3072
+    peerMaxWindow = 64
+    clearOfferAssembly()
+    if let preferred, let capability = capabilities[preferred.descriptor.transport] { applyCapability(capability) }
+    refreshPausedCapability()
+    if resumeInterruptedOffer() { return }
+    if isPaused, activeChannel != nil, peerCompatible {
+      // The sender drives LAN auto-resume; the receiver only asks after an explicit opt-in.
+      if receiving { if allowBleResume { requestPeerContinuation() } } else { attemptResume() }
+    }
+  }
+
+  func applyCapability(_ message: TransferMessage) {
+    peerCompatible = true
+    let localLimit = Int64(chunkLimit(activeChannel?.descriptor))
+    let negotiatedLimit: Int64 = message.number(0) == 4 ? localLimit : message.number(0) == 3 ? min(262016, localLimit) : message.number(0) == 2 ? min(131072, localLimit) : 3072
+    peerMaxChunkBytes = min(message.number(1), negotiatedLimit)
+    peerMaxWindow = min(message.number(2), activeChannel?.descriptor.transport == "ble" ? 4 : peerMaxChunkBytes > 3072 ? 8 : 64)
+  }
+
+  func clearCapacityWaiters() {
+    let waiters = capacityWaiters
+    capacityWaiters.removeAll()
+    capacityRevision += 1
+    for waiter in waiters.values {
+      waiter()
+    }
+  }
+
+  func processMessage(_ message: TransferMessage, peerName: String, on descriptor: ChannelDescriptor) async {
+    switch message.kind {
+    case 2: // offer
+      handleOffer(message, peerName: peerName, on: descriptor)
+
+    case 3: // accept
+      handleAccept(message)
+
+    case 4: // reject
+      handleReject(message)
+
+    case 6: // ack
+      handleAck(message)
+
+    case 7:
+      guard let batch = currentBatch, let file = sendingFile,
+        message.string(0) == batch.idString, message.string(1) == file.idString,
+        message.number(2) != 0 || (sentBytes == file.size && message.bytes(3) == file.sha256) else { return }
+      if message.number(2) == 0 { pauseExpiresAt = nil; pauseDeadline = nil }
+      if let waiter = fileResultContinuation { fileResultContinuation = nil; waiter.resume(returning: message) }
+      else { receivedFileResult = message }
+    case 8:
+      // File results are authoritative; a batch result cannot bypass storage verification.
+      break
+    case 10, 11:
+      // Routed before the active-channel guard so a new channel can take over a paused batch.
+      break
+    case 9:
+      guard let batch = currentBatch, message.string(0) == batch.idString,
+        message.string(1).isEmpty || message.string(1) == sendingFile?.idString ||
+        batch.files.indices.contains(receiverCurrentFileIndex) && message.string(1) == batch.files[receiverCurrentFileIndex].idString else { return }
+      cancelTransfer(local: false)
+
+    default:
+      break
+    }
+  }
+
+  func sendWithBackpressure(_ data: Data, on selectedChannel: (any SecuredChannel)? = nil, jobBound: Bool = true) async throws {
+    guard let channel = selectedChannel ?? activeChannel else { throw SessionFailure.cancelled }
+    let operation = epoch
+    while true {
+      try Task.checkCancellation()
+      guard (!jobBound || operation == epoch), channels[channel.descriptor.transport]?.descriptor == channel.descriptor else { throw SessionFailure.cancelled }
+      let revision = capacityRevision
+      // Admission stays cancellable; the session protects records only after nonce ownership.
+      do { try await channel.sendData(data); return }
+      catch is SessionBackpressure {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+          if revision != capacityRevision { continuation.resume(); return }
+          let id = UUID()
+          var resumed = false
+          var timeout: Task<Void, Never>?
+          let resumeOnce = {
+            guard !resumed else { return }; resumed = true; timeout?.cancel(); continuation.resume()
+          }
+          capacityWaiters[id] = resumeOnce
+          timeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            guard !resumed else { return }
+            resumed = true
+            // Remove only this suspended submission; no periodic capacity polling.
+            self?.capacityWaiters[id] = nil
+            continuation.resume(throwing: SessionFailure.expired)
+            self?.clearCapacityWaiters()
+          }
+        }
+      }
+    }
+  }
+
+  func awaitLan(operation: UUID) async {
+    guard channels["lan"] == nil || capabilities["lan"] == nil else { return }
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        guard !Task.isCancelled, operation == epoch else { continuation.resume(); return }
+        var timeout: Task<Void, Never>?
+        rendezvousWait = { [weak self] in
+          guard let self, self.rendezvousWait != nil else { return }
+          self.rendezvousWait = nil
+          timeout?.cancel()
+          continuation.resume()
+        }
+        timeout = Task { [weak self] in
+          do { try await Task.sleep(for: .seconds(3)) } catch { return }
+          if self?.epoch == operation { self?.rendezvousWait?() }
+        }
+      }
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        if self?.epoch == operation { self?.rendezvousWait?() }
+      }
+    }
+  }
+}
+
+// MARK: - Lifecycle and cleanup
+
+extension MacTransferModel {
+  func cancelTransfer(local: Bool = true) {
+    if local, let batch = currentBatch, let channel = activeChannel {
+      let cancelMsg = TransferMessage.cancel(batch: batch.idString, file: "", reason: 0)
+      if let encoded = try? cancelMsg.encode() {
+        Task { [weak self] in
+          guard let self, self.channels[channel.descriptor.transport]?.descriptor == channel.descriptor else { return }
+          try? await self.sendWithBackpressure(encoded, on: channel, jobBound: false)
+        }
+      }
+    }
+    retainedFileResult = nil
+    state = .cancelled
+    cleanupActiveTransfer()
+  }
+
+  func dismiss() {
+    receiving = false
+    publishedURLs.removeAll()
+    receiveFolder = nil
+    retainedFileResult = nil
+    state = .idle
+    cleanupActiveTransfer()
+  }
+
+  func invalidate() {
+    let active = isBusy
+    retainedFileResult = nil
+    state = active ? .failed(reason: "Trust or identity changed. Send the files again after pairing.") : .idle
+    cleanupActiveTransfer()
+    let operation = epoch
+    Task { [weak self] in
+      guard let self, let identity = self.recoveryIdentity else { return }
+      let local = try? await identity.publicIdentity().fingerprint
+      if operation == self.epoch { self.recoveryLocal = local }
+    }
+  }
+
+  func failTransfer(reason: String) {
+    if case .completed = state { return }
+    if case .cancelled = state { return }
+    // A paused batch has no channel to report through; the retained prefix is discarded below.
+    if !isPaused,
+      let batch = currentBatch, receiverPartFileURL != nil,
+      batch.files.indices.contains(receiverCurrentFileIndex), let channel = activeChannel {
+      let file = batch.files[receiverCurrentFileIndex]
+      let result = TransferMessage.fileResult(batch: batch.idString, file: file.idString, result: 2, hash: Data(repeating: 0, count: 32))
+      Task { [weak self] in
+        guard let self, self.channels[channel.descriptor.transport]?.descriptor == channel.descriptor else { return }
+        try? await self.sendWithBackpressure(result.encode(), on: channel, jobBound: false)
+      }
+    }
+    retainedFileResult = nil
+    state = .failed(reason: reason)
+    let wasReceiving = receiving
+    cleanupActiveTransfer()
+    if wasReceiving { onEvent?(.failed(reason: reason)) }
+  }
+
+  func cleanupActiveTransfer(selectChannel: Bool = true) {
+    rendezvousWait?()
+    retainedBatch = nil; offerReplayed = false; restoredSender = false
+    let failed = failedRecovery
+    failedRecovery = nil
+    if let failed, failed.receiving, failed.stage == 0 || failed.stage == 4,
+      let folder = failed.folder, let partial = failed.partial {
+      Task.detached {
+        do { try TransferReceiveStorage.discardOwned(folder: folder, partial: partial,
+          batch: failed.batch.idString, file: failed.batch.files[failed.index].idString) }
+        catch { NSLog("Retained partial cleanup failed: %@", error.localizedDescription) }
+      }
+    }
+    checkpointAt = 0; checkpointPosition = nil
+    finalizationRetired = nil
+    finalizationResumed = false
+    receiptExpiry?.cancel(); receiptExpiry = nil
+    receiptDeadline = nil
+    interruptedOffer = nil
+    if let store = recoveryStore {
+      let previous = recoveryWrite
+      recoveryWrite = Task {
+        await previous?.value
+        do { try await store.clear() }
+        catch { NSLog("Transfer recovery cleanup failed: %@", error.localizedDescription) }
+      }
+    }
+    recoveryPeer = nil; pauseExpiresAt = nil; pauseDeadline = nil
+    resumeAttemptChannel = nil; nextResumeAttemptAt = 0
+    progressTask?.cancel(); progressTask = nil; progressEpoch = nil
+    preparation?.cancel(); preparation = nil; preparing = false
+    clearOfferAssembly()
+    pauseTimerTask?.cancel(); pauseTimerTask = nil
+    resumeTask?.cancel(); resumeTask = nil
+    upgradeTask?.cancel(); upgradeTask = nil
+    abandonStatus()
+    allowBleResume = false
+    pausedTransport = nil
+    pausedFileIndex = 0
+    pausedFileOffset = 0
+    pausedCompletedBytes = 0
+    transferPeerDeviceId = nil
+    transferPeerFingerprint = nil
+    senderFileIndex = 0
+    epoch = UUID()
+    // Cancel unsealed work; SecureSession finishes nonce-owned submissions under the old epoch.
+    transferTask?.cancel(); transferTask = nil
+    fileResultContinuation?.resume(throwing: SessionFailure.cancelled)
+    fileResultContinuation = nil
+    receivedFileResult = nil
+    if let batch = currentBatch {
+      retiredBatches.append(batch.idString)
+      if retiredBatches.count > 32 { retiredBatches.removeFirst() }
+    }
+    currentBatch = nil
+    destinationFolder = nil
+    sendingFile = nil
+    sendWindow = nil
+    finalizing = false
+    ackTask?.cancel(); ackTask = nil
+    ackTimerTask?.cancel()
+    ackTimerTask = nil
+    let storage = receiverStorage
+    receiverStorage = nil
+    receiverPartFileURL = nil
+    Task { await storage?.discard() }
+    resumeCredit()
+    clearCapacityWaiters()
+    receiverTotalTransferred = 0
+    releaseSleepAssertion()
+    if selectChannel { selectPreferredChannel() }
+  }
+
+  func acquireSleepAssertion() {
+    guard !hasSleepAssertion else { return }
+    let reason = "aniCe active file transfer" as CFString
+    let res = IOPMAssertionCreateWithName(
+      kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+      IOPMAssertionLevel(kIOPMAssertionLevelOn),
+      reason,
+      &sleepAssertionID
+    )
+    if res == kIOReturnSuccess {
+      hasSleepAssertion = true
+    }
+  }
+
+  func releaseSleepAssertion() {
+    guard hasSleepAssertion else { return }
+    IOPMAssertionRelease(sleepAssertionID)
+    hasSleepAssertion = false
+    sleepAssertionID = 0
+  }
 }

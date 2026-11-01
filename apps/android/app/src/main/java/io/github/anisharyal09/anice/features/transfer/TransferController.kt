@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Coordinates bidirectional file transfer batches, cumulative flow control and lifecycle leases over LAN-preferred authenticated LAN/BLE channels.
+// Coordinates transfer state, channel routing, user actions and lifecycle.
+
 package io.github.anisharyal09.anice.features.transfer
 
 import android.content.Context
@@ -532,3 +533,310 @@ class TransferController(
 
     fun sendUris(uris: List<Uri>, reviewedPeerDeviceId: String? = null, reviewedPeerFingerprint: String? = null) { sendUrisFlow(uris, reviewedPeerDeviceId, reviewedPeerFingerprint) }
 }
+
+// MARK: - Channel routing
+
+internal fun TransferController.updateState(newState: TransferState) {
+        val previous = state
+        if (newState is TransferState.Transferring && previous is TransferState.Paused && newState.fileBytes > previous.fileBytes) { pauseExpiresAt = null; pauseDeadline = null }
+        var published = newState
+        if (newState is TransferState.Transferring) {
+            val progress = newState
+            if (progressJob?.isActive != true || progressEpoch != epoch) {
+                progressJob?.cancel()
+                progressEpoch = epoch
+                progressSampleAt = clock()
+                progressSpeed = 0.0
+                progressRate = TransferRate().also { it.add(progress.totalBytes, progressSampleAt) }
+                val operation = epoch
+                progressJob = scope.launch(start = CoroutineStart.LAZY) {
+                    while (isActive && operation == epoch) {
+                        delay(250L)
+                        val current = state as? TransferState.Transferring ?: break
+                        val index = if (receiving) receiverCurrentFileIndex else senderFileIndex
+                        val file = current.batch.files.getOrNull(index) ?: break
+                        val written = if (receiving) receiverWrittenBytes else acknowledgedBytes
+                        val completed = current.batch.files.take(index).sumOf { it.size }
+                        updateState(current.copy(fileIndex = index + 1, fileName = file.name,
+                            fileBytes = written, fileSize = file.size, totalBytes = completed + written))
+                    }
+                }.also { it.start() }
+            }
+            val now = clock()
+            if (now - progressSampleAt >= 250L) {
+                progressSpeed = progressRate.add(progress.totalBytes, now)
+                progressSampleAt = now
+            }
+            published = progress.copy(speedBps = progressSpeed)
+        } else {
+            progressJob?.cancel(); progressJob = null
+            progressEpoch = null
+        }
+        state = published
+        checkpoint(force = newState is TransferState.IncomingOffer || newState is TransferState.WaitingForPeerApproval ||
+            newState is TransferState.Transferring && (previous !is TransferState.Transferring || previous.fileIndex != newState.fileIndex))
+        onStateChanged?.invoke(published)
+    }
+
+internal fun TransferController.selectPreferredChannel() {
+        // A live batch remains bound to its channel generation. A paused batch, by contrast, must
+        // adopt a newly secured channel so the retained prefix can continue there.
+        val canRebind = !isBusy || state is TransferState.Connecting || state is TransferState.Paused
+        if (activeChannel != null && !canRebind) return
+        val preferred = listOf("lan", "ble").firstOrNull { channels[it] != null && capabilities[it] != null }
+            ?.let { channels[it] } ?: channels["lan"] ?: channels["ble"]
+        activeChannel = preferred
+        peerConnected = preferred != null
+        peerCompatible = false
+        peerMaxChunkBytes = 3072
+        peerMaxWindow = 64
+        clearOfferAssembly()
+        preferred?.let { channel ->
+            capabilities[channel.descriptor.transport]?.let { applyCapability(it) }
+        }
+        onChannelChanged()
+        if (resumeInterruptedOffer()) return
+        refreshPausedCapability()
+        if (state is TransferState.Paused && activeChannel != null && peerCompatible) {
+            // The sender drives LAN auto-resume; the receiver only asks after an explicit opt-in.
+            if (receiving) { if (allowBleResume) requestPeerContinuation() } else attemptResume()
+        }
+    }
+
+internal fun TransferController.applyCapability(message: TransferMessage) {
+        peerCompatible = true
+        peerMaxChunkBytes = message.number(1).coerceAtMost(when (message.number(0)) {
+            4L -> chunkLimit(activeChannel?.descriptor).toLong()
+            3L -> minOf(262016L, chunkLimit(activeChannel?.descriptor).toLong())
+            2L -> minOf(131072L, chunkLimit(activeChannel?.descriptor).toLong())
+            else -> 3072L
+        })
+        peerMaxWindow = message.number(2).coerceAtMost(if (activeChannel?.descriptor?.transport == "ble") 4L else if (peerMaxChunkBytes > 3072) 8L else 64L)
+        if (state is TransferState.Connecting && (!awaitingLan || activeChannel?.descriptor?.transport == "lan")) {
+            awaitingLan = false
+            connectTimeoutJob?.cancel(); connectTimeoutJob = null
+            val send = pendingSend
+            pendingSend = null
+            updateState(TransferState.Idle)
+            send?.invoke()
+        }
+    }
+
+internal fun TransferController.clearCapacityWaiters() {
+        capacityRevision++
+        val pending = ArrayList<CompletableDeferred<Unit>>()
+        while (true) {
+            val waiter = capacityWaiters.poll() ?: break
+            pending.add(waiter)
+        }
+        // Resumption can synchronously enqueue another waiter; it belongs to the next notification.
+        pending.forEach { it.complete(Unit) }
+    }
+
+internal suspend fun TransferController.sendWithBackpressure(data: ByteArray, channel: SecuredChannel =
+        activeChannel ?: throw SessionException(SessionFailure.CANCELLED), jobBound: Boolean = true) {
+        val operation = epoch
+        while (true) {
+            coroutineContext.ensureActive()
+            if (jobBound && epoch != operation || channels[channel.descriptor.transport] !== channel) throw SessionException(SessionFailure.CANCELLED)
+            val revision = capacityRevision
+            val waiter = CompletableDeferred<Unit>()
+            capacityWaiters.add(waiter)
+            try {
+                // Admission stays cancellable; the session protects records only after nonce ownership.
+                channel.sendData(data)
+                return
+            } catch (_: SessionBackpressure) {
+                if (revision == capacityRevision) withTimeout(10000) { waiter.await() }
+            } finally { capacityWaiters.remove(waiter) }
+        }
+    }
+
+internal suspend fun TransferController.processMessage(message: TransferMessage, peerName: String, descriptor: ChannelDescriptor) {
+        when (message.kind) {
+            2L -> handleOffer(message, peerName, descriptor)
+            3L -> handleAccept(message)
+            4L -> handleReject(message)
+            6L -> handleAck(message)
+            7L -> {
+                val batch = currentBatch ?: return
+                val file = sendingFile ?: return
+                if (message.string(0) != batch.id || message.string(1) != file.id ||
+                    message.number(2) == 0L && (sentBytes != file.size || !message.bytes(3).contentEquals(file.sha256))) return
+                if (message.number(2) == 0L) { pauseExpiresAt = null; pauseDeadline = null }
+                val deferred = synchronized(fileResultLock) {
+                    val waiting = fileResultDeferred
+                    if (waiting != null) fileResultDeferred = null else receivedFileResult = message
+                    waiting
+                }
+                deferred?.complete(message)
+            }
+            8L -> Unit // Verified per-file results determine completion.
+            10L, 11L -> Unit // Routed before the active-channel guard so a new channel can take over.
+            9L -> {
+                val batch = currentBatch ?: return
+                val fileId = message.string(1)
+                if (message.string(0) != batch.id || fileId.isNotEmpty() && fileId != sendingFile?.id &&
+                    fileId != batch.files.getOrNull(receiverCurrentFileIndex)?.id) return
+                cancelTransfer(local = false)
+            }
+        }
+    }
+
+// MARK: - Lifecycle and cleanup
+
+internal fun TransferController.cancelTransferFlow(local: Boolean = true) {
+        val current = state
+        if (local) {
+            val batchId = when (current) {
+                is TransferState.WaitingForPeerApproval -> current.batch.id
+                is TransferState.IncomingOffer -> current.batch.id
+                is TransferState.Transferring -> current.batch.id
+                is TransferState.Paused -> current.batch.id
+                else -> ""
+            }
+            if (batchId.isNotEmpty()) {
+                val cancelMsg = TransferMessage.cancel(batch = batchId, file = "", reason = 0L)
+                val channel = activeChannel
+                scope.launch { if (channel != null && channels[channel.descriptor.transport] === channel) runCatching { sendWithBackpressure(cancelMsg.encode(), channel, jobBound = false) } }
+            }
+        }
+        retainedFileResult = null
+        updateState(TransferState.Cancelled)
+        cleanupTransfer()
+    }
+
+internal fun TransferController.dismissFlow() {
+        receiving = false
+        retainedFileResult = null
+        updateState(TransferState.Idle)
+        cleanupTransfer()
+    }
+
+internal fun TransferController.invalidateFlow() {
+        val active = isBusy
+        retainedFileResult = null
+        updateState(if (active) TransferState.Failed("Trust or identity changed. Send the files again after pairing.") else TransferState.Idle)
+        cleanupTransfer()
+        val operation = epoch
+        if (recoveryStore != null) scope.launch {
+            try {
+                val local = withContext(Dispatchers.IO) { recoveryIdentity() }
+                if (operation == epoch) recoveryLocal = local
+            } catch (error: CancellationException) { throw error }
+            catch (_: Exception) { if (operation == epoch) recoveryLocal = null }
+        }
+    }
+
+internal fun TransferController.failTransfer(reason: String) {
+        if (state is TransferState.Completed || state is TransferState.Cancelled) return
+        val batch = currentBatch
+        val channel = activeChannel
+        val file = batch?.files?.getOrNull(receiverCurrentFileIndex)
+        if (state !is TransferState.Paused && (receiverPartFile != null || receiverPartDocument != null) &&
+            batch != null && file != null && channel != null) {
+            val result = TransferMessage.fileResult(batch.id, file.id, 2L, ByteArray(32))
+            scope.launch { if (channels[channel.descriptor.transport] === channel) runCatching { sendWithBackpressure(result.encode(), channel, jobBound = false) } }
+        }
+        retainedFileResult = null
+        updateState(TransferState.Failed(reason))
+        cleanupTransfer()
+    }
+
+internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
+        restoredSender = false
+        retainedBatch = null; offerReplayed = false
+        checkpointAt = 0; checkpointPosition = null
+        finalizationRetired = null
+        finalizationResumed = false
+        receiptExpiry?.cancel(); receiptExpiry = null
+        receiptDeadline = null
+        val failed = failedRecovery
+        failedRecovery = null
+        val grants = (ownedSourceGrants + (failed?.batch?.files?.filter { it.ownsReadGrant }?.mapNotNull { it.sourceUri } ?: emptyList())).distinct()
+        ownedSourceGrants.clear()
+        interruptedOffer = null
+        if (recoveryStore != null) recoveryWrites.trySend(TransferController.RecoveryWrite(null, null))
+        pauseExpiresAt = null; pauseDeadline = null
+        resumeAttemptChannel = null; nextResumeAttemptAt = 0
+        recoveryPeer = null
+        progressJob?.cancel(); progressJob = null
+        progressEpoch = null
+        connectTimeoutJob?.cancel()
+        connectTimeoutJob = null
+        pendingSend = null
+        awaitingLan = false
+        endPicker()
+        destinationPreparation?.cancel(); destinationPreparation = null
+        preparation?.cancel(); preparation = null; preparing = false
+        clearOfferAssembly()
+        pauseTimerJob?.cancel(); pauseTimerJob = null
+        resumeJob?.cancel(); resumeJob = null
+        upgradeJob?.cancel(); upgradeJob = null
+        statusDeferred?.cancel(); statusDeferred = null
+        allowBleResume = false
+        pausedTransport = null
+        pausedFileIndex = 0
+        pausedFileOffset = 0L
+        pausedCompletedBytes = 0L
+        transferPeerDeviceId = null
+        transferPeerFingerprint = null
+        senderFileIndex = 0
+        epoch = UUID.randomUUID()
+        // Cancel unsealed work; SecureSession finishes nonce-owned submissions under the old epoch.
+        transferJob?.cancel(); transferJob = null
+        ackJob?.cancel(); ackJob = null
+        synchronized(fileResultLock) {
+            fileResultDeferred?.cancel()
+            fileResultDeferred = null
+            receivedFileResult = null
+        }
+        currentBatch?.let { retiredBatches.addLast(it.id); if (retiredBatches.size > 32) retiredBatches.removeFirst() }
+        currentBatch = null
+        destinationDirectory = null
+        sendingFile = null
+        sendWindow = null
+        finalizing = false
+        ackTimerJob?.cancel()
+        ackTimerJob = null
+        receiverCurrentFileIndex = 0
+        receiverWrittenBytes = 0L
+        lastAckedWrittenBytes = 0L
+        val storage = receiverStorage
+        val destination = documentDestination
+        receiverStorage = null
+        receiverPartFile = null
+        receiverPartDocument = null
+        documentDestination = null
+        receiveCleanup = scope.launch(receiveDispatcher) {
+            try {
+                storage?.discard()
+                if (failed?.receiving == true && (failed.stage == 0 || failed.stage == 4)) {
+                    if (failed.tree.isEmpty()) TransferReceiveStorage.discardOwned(File(failed.folder), failed.partial,
+                        failed.batch.id, failed.batch.files[failed.index].id)
+                    else {
+                        val target = TransferDestination(requireNotNull(context), Uri.parse(failed.tree),
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, failed.treeModes)
+                        try {
+                            val uri = Uri.parse(failed.document)
+                            if (target.ownsPartial(uri, ".anice-${failed.batch.id}-${failed.batch.files[failed.index].id}-")) target.delete(uri)
+                        } finally { target.close() }
+                    }
+                }
+            }
+            catch (error: Exception) { System.err.println("Transfer partial cleanup failed: ${error.javaClass.simpleName}") }
+            finally {
+                try { destination?.close() }
+                catch (error: SecurityException) { System.err.println("Transfer destination grant cleanup failed: ${error.javaClass.simpleName}") }
+                for (uri in grants) {
+                    try { context?.contentResolver?.releasePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                    catch (error: SecurityException) { System.err.println("Transfer source grant cleanup failed: ${error.javaClass.simpleName}") }
+                }
+            }
+        }
+        resumeCredit()
+        clearCapacityWaiters()
+        receiverTotalTransferred = 0L
+        onLeaseChanged?.invoke(false)
+        if (selectChannel) selectPreferredChannel()
+    }
