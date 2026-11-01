@@ -120,6 +120,18 @@
 		B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */; };
 		B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */; };
 		B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */; };
+		B10100000000000000000009 /* aniCe/Features/Transfer/TransferRate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000009; };
+		B1010000000000000000000A /* aniCe/Features/Transfer/TransferPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000A; };
+		B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000B; };
+		B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000C; };
+		B1010000000000000000000D /* aniCe/Features/Transfer/TransferIngress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000D; };
+		B1010000000000000000000E /* aniCe/Features/Transfer/TransferSendWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000E; };
+		B1010000000000000000000F /* aniCe/Features/Transfer/MacTransferRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000F; };
+		B10100000000000000000010 /* aniCe/Features/Transfer/MacTransferRecoveryFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000010; };
+		B10100000000000000000011 /* aniCe/Features/Transfer/MacTransferResume.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000011; };
+		B10100000000000000000012 /* aniCe/Features/Transfer/MacTransferSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000012; };
+		B10100000000000000000013 /* aniCe/Features/Transfer/MacTransferReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000013; };
+		B10100000000000000000014 /* aniCe/Features/Transfer/MacTransferLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000014; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -249,6 +261,18 @@
 		B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sms/sms-vectors.json"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000009 /* aniCe/Features/Transfer/TransferRate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRate.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000A /* aniCe/Features/Transfer/TransferPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferPublisher.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRecovery.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000D /* aniCe/Features/Transfer/TransferIngress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferIngress.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000E /* aniCe/Features/Transfer/TransferSendWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferSendWindow.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000F /* aniCe/Features/Transfer/MacTransferRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferRouting.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000010 /* aniCe/Features/Transfer/MacTransferRecoveryFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferRecoveryFlow.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000011 /* aniCe/Features/Transfer/MacTransferResume.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferResume.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000012 /* aniCe/Features/Transfer/MacTransferSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferSender.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000013 /* aniCe/Features/Transfer/MacTransferReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferReceiver.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000014 /* aniCe/Features/Transfer/MacTransferLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/MacTransferLifecycle.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -322,6 +346,18 @@
 				B10200000000000000000006,
 				B10200000000000000000007,
 				B10200000000000000000008,
+				B10200000000000000000009,
+				B1020000000000000000000A,
+				B1020000000000000000000B,
+				B1020000000000000000000C,
+				B1020000000000000000000D,
+				B1020000000000000000000E,
+				B1020000000000000000000F,
+				B10200000000000000000010,
+				B10200000000000000000011,
+				B10200000000000000000012,
+				B10200000000000000000013,
+				B10200000000000000000014,
 				B30200000000000000000001,
 				B30200000000000000000002,
 				B30200000000000000000003,
@@ -713,6 +749,18 @@
 				0000000000000000000000CD /* AniCePalette.swift in Sources */,
 				B10100000000000000000001 /* aniCe/Features/Transfer/TransferWire.swift in Sources */,
 				B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */,
+				B10100000000000000000009 /* aniCe/Features/Transfer/TransferRate.swift in Sources */,
+				B1010000000000000000000A /* aniCe/Features/Transfer/TransferPublisher.swift in Sources */,
+				B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */,
+				B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */,
+				B1010000000000000000000D /* aniCe/Features/Transfer/TransferIngress.swift in Sources */,
+				B1010000000000000000000E /* aniCe/Features/Transfer/TransferSendWindow.swift in Sources */,
+				B1010000000000000000000F /* aniCe/Features/Transfer/MacTransferRouting.swift in Sources */,
+				B10100000000000000000010 /* aniCe/Features/Transfer/MacTransferRecoveryFlow.swift in Sources */,
+				B10100000000000000000011 /* aniCe/Features/Transfer/MacTransferResume.swift in Sources */,
+				B10100000000000000000012 /* aniCe/Features/Transfer/MacTransferSender.swift in Sources */,
+				B10100000000000000000013 /* aniCe/Features/Transfer/MacTransferReceiver.swift in Sources */,
+				B10100000000000000000014 /* aniCe/Features/Transfer/MacTransferLifecycle.swift in Sources */,
 				B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */,
 				B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */,
 				B30100000000000000000001 /* aniCe/Features/Sms/SmsWire.swift in Sources */,

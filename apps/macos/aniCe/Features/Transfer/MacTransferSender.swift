@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Prepares and streams outgoing file batches under peer credit and result correlation.
+import Foundation
+import CryptoKit
+
+extension MacTransferModel {
+  func sendFiles(urls: [URL], reviewedPeer: DeviceIdentity? = nil) async {
+    guard !isBusy, !Task.isCancelled, preparation == nil, transferTask == nil else { return }
+    guard (1...128).contains(urls.count) else {
+      state = .failed(reason: "Transfer batch must contain 1 to 128 files")
+      return
+    }
+    selectPreferredChannel()
+    if let reviewedPeer {
+      guard let current = activeChannel?.descriptor.peer,
+        current.deviceId == reviewedPeer.deviceId, current.fingerprint == reviewedPeer.fingerprint else {
+        failTransfer(reason: "The connected device changed. Review the selected files before sending.")
+        return
+      }
+    }
+    let operation = epoch
+    // Reserve the job and its peer before rendezvous or identity reads can suspend.
+    preparing = true
+    transferPeerDeviceId = activeChannel?.descriptor.peer.deviceId
+    transferPeerFingerprint = activeChannel?.descriptor.peer.fingerprint
+    defer { if operation == epoch { preparing = false } }
+    let requestedLan = activeChannel?.descriptor.transport != "lan" && onLanRequired()
+    if requestedLan { await awaitLan(operation: operation) }
+    guard operation == epoch else { return }
+    guard !Task.isCancelled else { cancelTransfer(); return }
+    selectPreferredChannel(preparingRoute: true)
+    guard let initialChannel = activeChannel, peerConnected else {
+      failTransfer(reason: "No secured local-network or Bluetooth connection")
+      return
+    }
+    // Rendezvous can replace the active channel while this operation is suspended.
+    if let reviewedPeer, (initialChannel.descriptor.peer.deviceId != reviewedPeer.deviceId ||
+      initialChannel.descriptor.peer.fingerprint != reviewedPeer.fingerprint) {
+      failTransfer(reason: "The connected device changed. Review the selected files before sending.")
+      return
+    }
+    guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }
+    if let identity = recoveryIdentity, recoveryStore != nil {
+      do {
+        let local = try await identity.publicIdentity().fingerprint
+        guard operation == epoch else { return }
+        recoveryLocal = local
+      } catch { if operation == epoch { preparing = false; failTransfer(reason: "Cannot access transfer recovery identity") }; return }
+    }
+    transferPeerDeviceId = initialChannel.descriptor.peer.deviceId
+    transferPeerFingerprint = initialChannel.descriptor.peer.fingerprint
+    recoveryPeer = initialChannel.descriptor
+    let work = Task.detached(priority: .utility) { () throws -> ([TransferFile], Int64) in
+      var files: [TransferFile] = []
+      var total: Int64 = 0
+      for url in urls {
+        try Task.checkCancellation()
+        let name = url.lastPathComponent
+        guard (1...255).contains(name.utf8.count), name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+          !name.contains("/"), !name.contains("\\"), !name.contains("\0"), name != ".", name != "..",
+          name.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value != 127 }) else { throw TransferWireError.malformed }
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+          let size = attributes[.size] as? Int64 else { throw CocoaError(.fileReadUnknown) }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256(), read: Int64 = 0
+        while true {
+          try Task.checkCancellation()
+          let chunk = try handle.read(upToCount: 262144) ?? Data()
+          if chunk.isEmpty { break }
+          hasher.update(data: chunk); read += Int64(chunk.count)
+        }
+        guard read == size else { throw CocoaError(.fileReadCorruptFile) }
+        let next = total.addingReportingOverflow(size)
+        guard !next.overflow else { throw TransferWireError.malformed }
+        total = next.partialValue
+        files.append(TransferFile(id: UUID(), name: name, size: size, sha256: Data(hasher.finalize()), localURL: url))
+      }
+      return (files, total)
+    }
+    preparation = work
+    let files: [TransferFile], totalBytes: Int64
+    do {
+      (files, totalBytes) = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+    } catch {
+      if operation == epoch { preparing = false; preparation = nil; failTransfer(reason: "File preparation failed: \(error.localizedDescription)") }
+      return
+    }
+    guard operation == epoch else { return }
+    guard !Task.isCancelled else { cancelTransfer(); return }
+    preparation = nil; preparing = false
+
+    // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
+    selectPreferredChannel(preparingRoute: true)
+    guard let channel = activeChannel, peerConnected,
+      channel.descriptor.peer.deviceId == initialChannel.descriptor.peer.deviceId,
+      channel.descriptor.peer.fingerprint == initialChannel.descriptor.peer.fingerprint else {
+      failTransfer(reason: "No secured local-network or Bluetooth connection")
+      return
+    }
+    guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }
+
+    let batchId = UUID()
+    let batch = TransferBatch(id: batchId, files: files, totalBytes: totalBytes, peerName: channel.descriptor.peer.deviceName)
+    currentBatch = batch
+    receiving = false
+    transferPeerDeviceId = channel.descriptor.peer.deviceId
+    transferPeerFingerprint = channel.descriptor.peer.fingerprint
+    retainedFileResult = nil
+    state = .waitingForPeerApproval(batch: batch)
+    acquireSleepAssertion()
+
+    if activeChannel?.descriptor != channel.descriptor {
+      pauseOffer(.waitingForPeerApproval(batch: batch), descriptor: channel.descriptor)
+      selectPreferredChannel()
+    } else { await sendOfferBatch(batch, channel: channel) }
+  }
+
+  func sendOfferBatch(_ batch: TransferBatch, channel: any SecuredChannel) async {
+    let operation = epoch
+    let files = batch.files, totalBytes = batch.totalBytes
+
+    // Send offer slices
+    let totalFiles = Int64(files.count)
+    let totalSlices = Int64((files.count + 7) / 8)
+    for sliceIdx in 0..<Int(totalSlices) {
+      guard operation == epoch, activeChannel?.descriptor == channel.descriptor else { return }
+      let start = sliceIdx * 8
+      let end = min(start + 8, files.count)
+      let sliceFiles = files[start..<end].map { f in
+        SessionCBOR.array([
+          .text(f.idString),
+          .text(f.name),
+          .integer(f.size),
+          .bytes(f.sha256)
+        ])
+      }
+      let offer = TransferMessage.offer(
+        batch: batch.idString,
+        sliceIndex: Int64(sliceIdx),
+        totalSlices: totalSlices,
+        totalFiles: totalFiles,
+        totalBytes: totalBytes,
+        files: sliceFiles
+      )
+      if let encoded = try? offer.encode() {
+        do {
+          try await sendWithBackpressure(encoded)
+        } catch {
+          if operation == epoch { failTransfer(reason: "Failed sending offer: \(error.localizedDescription)") }
+          return
+        }
+      }
+    }
+  }
+
+  func handleAccept(_ message: TransferMessage) {
+    guard case .waitingForPeerApproval(let batch) = state,
+          message.string(0) == batch.idString else { return }
+
+    guard transferTask == nil, let channel = activeChannel else { return }
+    let operation = epoch
+    if offerReplayed {
+      offerReplayed = false
+      senderFileIndex = 0; acknowledgedBytes = 0; sendingFile = batch.files[0]
+      pauseTransfer(batch: batch, transport: channel.descriptor.transport)
+      selectPreferredChannel()
+      return
+    }
+    transferTask = Task {
+      guard operation == epoch, activeChannel?.descriptor == channel.descriptor else { return }
+      await streamAcceptedBatch(batch)
+    }
+  }
+
+  func streamAcceptedBatch(_ batch: TransferBatch) async {
+    await streamBatchFrom(batch, startFileIndex: 0, startOffset: 0, completedBefore: 0)
+  }
+
+  /// Streams from `startFileIndex` at `startOffset`, where the receiver already retains
+  /// `startOffset` bytes of that file and `completedBefore` complete bytes precede it.
+  func streamBatchFrom(_ batch: TransferBatch, startFileIndex: Int, startOffset: Int64, completedBefore: Int64, recovered: Bool = false) async {
+    guard activeChannel != nil, batch.files.indices.contains(startFileIndex) else { return }
+    let operation = epoch
+    let initialOffset = max(0, min(startOffset, batch.files[startFileIndex].size))
+    var totalTransferred = completedBefore + initialOffset
+    var lastUiUpdate: TimeInterval = 0
+
+    for fileIndex in startFileIndex..<batch.files.count {
+      guard operation == epoch else { return }
+      restoredSender = false
+      let file = batch.files[fileIndex]
+      var initial = fileIndex == startFileIndex ? initialOffset : 0
+      senderFileIndex = fileIndex
+      sendingFile = file; sentBytes = initial
+      acknowledgedBytes = initial
+      state = .transferring(batch: batch, fileIndex: fileIndex + 1, fileName: file.name,
+        fileBytes: initial, fileSize: file.size, totalBytes: totalTransferred, speedBps: 0)
+      if recovered || file.size == 0, fileIndex > startFileIndex, let channel = activeChannel {
+        let request = TransferMessage.resume(batch: batch.idString, file: file.idString, offset: 0,
+          prefixHash: Data(SHA256.hash(data: Data())))
+        guard let encoded = try? request.encode() else { failTransfer(reason: "Cannot encode transfer recovery request"); return }
+        let status = await requestStatus(encoded, on: channel)
+        guard operation == epoch else { return }
+        guard let status, status.number(3) == 0, (0...file.size).contains(status.number(2)) else {
+          pauseTransfer(batch: batch, transport: channel.descriptor.transport); return
+        }
+        initial = status.number(2); acknowledgedBytes = initial; sentBytes = initial
+        totalTransferred = batch.files.prefix(fileIndex).reduce(0) { $0 + $1.size } + initial
+        state = .transferring(batch: batch, fileIndex: fileIndex + 1, fileName: file.name,
+          fileBytes: initial, fileSize: file.size, totalBytes: totalTransferred, speedBps: 0)
+      }
+      checkpoint(force: true)
+      await recoveryWrite?.value
+      guard operation == epoch else { return }
+      guard let url = file.localURL else {
+        failTransfer(reason: "Failed reading local file \(file.name)")
+        return
+      }
+
+      let source: TransferSendStorage
+      do { source = try await TransferSendStorage.open(url, skipping: initial, close: closeSource) }
+      catch { if operation == epoch { failTransfer(reason: "Cannot open source file") }; return }
+      guard operation == epoch else { await source.close(); return }
+
+      sendingFile = file
+      senderFileIndex = fileIndex
+      // A result that arrived just before this file was re-entered belongs to this file.
+      if let pending = receivedFileResult, pending.string(0) != batch.idString || pending.string(1) != file.idString {
+        receivedFileResult = nil
+      }
+      sentBytes = initial
+      acknowledgedBytes = initial
+      lastAckAt = nil
+      let startedAt = ProcessInfo.processInfo.systemUptime
+      streamStartedAt = startedAt
+      sendWindow = TransferSendWindow(maximumChunk: peerMaxChunkBytes, maximumWindow: peerMaxWindow,
+        lan: activeChannel?.descriptor.transport == "lan", started: startedAt)
+      NSLog("aniCe transfer source: transport=%@ chunk=%lld credit=%lld maxChunk=%lld window=%lld",
+        activeChannel?.descriptor.transport ?? "none", senderChunkBytes, sendCreditBytes, peerMaxChunkBytes, peerMaxWindow)
+      var fileBytesSent: Int64 = initial
+      // A LAN capability that arrived while the previous file was finalizing is retried here,
+      // at the new file's start, where the stream is no longer waiting on a file result.
+      if !receiving, let lan = channels["lan"] { maybeUpgradeToLan(lan.descriptor) }
+      var upgradeChecked = false
+
+      while fileBytesSent < file.size {
+        while true {
+          let previousChunk = senderChunkBytes
+          let previousCredit = sendCreditBytes
+          sendWindow?.advance()
+          if previousChunk != senderChunkBytes || previousCredit != sendCreditBytes {
+            NSLog("aniCe transfer send window: chunk=%lld credit=%lld", senderChunkBytes, sendCreditBytes)
+          }
+          if hasSendCredit { break }
+          await withCheckedContinuation { cont in
+            if self.hasSendCredit {
+              cont.resume()
+            } else {
+              self.creditResume = { cont.resume() }
+            }
+          }
+        }
+        guard !Task.isCancelled, operation == epoch, self.activeChannel != nil else {
+          await source.close()
+          return
+        }
+
+        let chunkSize = min(Int(senderChunkBytes), Int(file.size - fileBytesSent))
+        let encoded: Data
+        do {
+          encoded = try await source.readChunk(chunkSize, batch: batch.idString, file: file.idString,
+            offset: fileBytesSent, maximumChunk: chunkLimit(activeChannel?.descriptor))
+        }
+        catch { await source.close(); if operation == epoch { failTransfer(reason: "Source read failed") }; return }
+        guard operation == epoch, !Task.isCancelled else { await source.close(); return }
+
+        do {
+          sendWindow?.beginSubmission(ProcessInfo.processInfo.systemUptime, windowEmpty: sentBytes == acknowledgedBytes)
+          sentBytes += Int64(chunkSize)
+          try await sendWithBackpressure(encoded)
+          guard operation == epoch else { await source.close(); return }
+          fileBytesSent += Int64(chunkSize)
+          totalTransferred += Int64(chunkSize)
+
+          let now = ProcessInfo.processInfo.systemUptime
+          if now - lastUiUpdate >= 0.1 || fileBytesSent == file.size {
+            lastUiUpdate = now
+            let confirmed = totalTransferred - fileBytesSent + acknowledgedBytes
+            let speed = sampleProgress(confirmed, at: now)
+
+            self.state = .transferring(
+              batch: batch,
+              fileIndex: fileIndex + 1,
+              fileName: file.name,
+              fileBytes: acknowledgedBytes,
+              fileSize: file.size,
+              totalBytes: confirmed,
+              speedBps: speed
+            )
+          }
+          if !upgradeChecked {
+            upgradeChecked = true
+            if !receiving, let lan = channels["lan"] { maybeUpgradeToLan(lan.descriptor) }
+          }
+        } catch {
+          await source.close()
+          if !Task.isCancelled && operation == epoch { failTransfer(reason: "Failed sending chunk: \(error.localizedDescription)") }
+          return
+        }
+      }
+
+      await source.close()
+      guard operation == epoch, !Task.isCancelled else { return }
+
+      // Wait for file-result from receiver
+      let fileResult: TransferMessage
+      do {
+        if let pending = receivedFileResult { fileResult = pending; receivedFileResult = nil }
+        else {
+          let operation = epoch
+          let deadline = Task { [weak self] in
+            do { try await Task.sleep(for: self?.confirmationTimeout ?? .seconds(30)) } catch { return }
+            guard let self, self.epoch == operation else { return }
+            self.fileResultContinuation?.resume(throwing: SessionFailure.expired)
+            self.fileResultContinuation = nil
+          }
+          defer { deadline.cancel() }
+          fileResult = try await withCheckedThrowingContinuation { self.fileResultContinuation = $0 }
+        }
+      } catch { if !Task.isCancelled && operation == epoch { pauseOnConfirmationTimeout() }; return }
+      guard operation == epoch else { return }
+      if fileResult.number(2) != 0 {
+        failTransfer(reason: "Receiver reported error for file \(file.name)")
+        return
+      }
+    }
+
+    // All files completed
+    let batchResult = TransferMessage.batchResult(batch: batch.idString, result: 0)
+    if let encoded = try? batchResult.encode() {
+      try? await sendWithBackpressure(encoded)
+    }
+    // Final submission can suspend while a replacement batch acquires this owner.
+    guard operation == epoch else { return }
+    state = .completed(batchId: batch.id, fileCount: batch.files.count, totalBytes: batch.totalBytes)
+    let count = batch.files.count
+    let bytes = batch.totalBytes
+    let wasReceiving = receiving
+    cleanupActiveTransfer()
+    if wasReceiving { onEvent?(.completed(fileCount: count, totalBytes: bytes)) }
+  }
+
+  func handleAck(_ message: TransferMessage) {
+    guard let batch = currentBatch, let file = sendingFile,
+      message.string(0) == batch.idString, message.string(1) == file.idString else { return }
+    let written = message.number(2)
+    guard written >= acknowledgedBytes, written <= sentBytes, written <= file.size else { return }
+    if written > acknowledgedBytes {
+      pauseExpiresAt = nil; pauseDeadline = nil
+      sendWindow?.acknowledged(ProcessInfo.processInfo.systemUptime, fullyConfirmed: written == sentBytes)
+    }
+    acknowledgedBytes = written
+    lastAckAt = ProcessInfo.processInfo.systemUptime
+    checkCreditAndResume()
+  }
+
+  func resumeCredit() {
+    // Detach before waking so cleanup cannot clear a successor's credit wait.
+    let waiting = creditResume
+    creditResume = nil
+    waiting?()
+  }
+
+  func checkCreditAndResume() {
+    if hasSendCredit { resumeCredit() }
+  }
+
+  func handleReject(_ message: TransferMessage) {
+    guard case .waitingForPeerApproval(let batch) = state,
+          message.string(0) == batch.idString else { return }
+    state = .rejected(batchId: batch.id, reason: message.number(1))
+    cleanupActiveTransfer()
+  }
+}
