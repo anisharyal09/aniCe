@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Owns capability gating, provider page serving, live parking and reply assembly for SMS relay.
+// Owns capability gating, live parking and reply assembly for SMS relay.
 package io.github.anisharyal09.anice.features.sms
 
 import androidx.compose.runtime.*
@@ -36,20 +36,20 @@ class SmsComposeOperation internal constructor() {
 }
 
 class SmsController(
-    private val store: SmsStore,
+    internal val store: SmsStore,
     private val sender: SmsSender,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
-    private val subscriptions: SmsSubscriptionSource? = null,
+    internal val subscriptions: SmsSubscriptionSource? = null,
     private val now: () -> Long = android.os.SystemClock::elapsedRealtime,
     private val wallNow: () -> Long = System::currentTimeMillis,
     private val wait: suspend (Long) -> Unit = { delay(it) },
     private val permissions: (String) -> Boolean = { false },
 ) : FeatureHandler {
-    private class Queued(val message: SmsWireMessage, val owner: String, val deadline: Long) {
+    internal class Queued(val message: SmsWireMessage, val owner: String, val deadline: Long) {
         val completion = CompletableDeferred<Boolean>()
     }
     private class Completed(val requestId: String, val outcome: SmsSendOutcome, val expiry: Long)
-    private class Link(val channel: SecuredChannel) {
+    internal class Link(val channel: SecuredChannel) {
         var remoteCapability by mutableStateOf(false)
         /** Caps the Mac advertises on this link; a Bluetooth link gets smaller pages than a local-network one. */
         var remoteThreads = 50
@@ -74,18 +74,18 @@ class SmsController(
     }
     private class Mark(val messageId: String, val expiry: Long)
     private class Extra(val row: SmsDisplayMessage, val expiry: Long, val seq: Long, val sortMillis: Long)
-    private class Serving(val requestId: String, val descriptor: ChannelDescriptor, var job: Job? = null)
+    internal class Serving(val requestId: String, val descriptor: ChannelDescriptor, var job: Job? = null)
     private class Incoming(val descriptor: ChannelDescriptor, val requestId: String, val address: String, val totalBytes: Int, val count: Int, val digest: ByteArray, val subscriptionId: Int, val deadline: Long, val seq: Long, val sortMillis: Long) {
         val fragments = mutableListOf<ByteArray>()
         var committing = false
         var submitted = false
         var job: Job? = null
     }
-    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    internal val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val links = mutableStateMapOf<String, Link>()
-    private val servingThreads = mutableMapOf<String, Serving>()
-    private val servingHistory = mutableMapOf<String, Serving>()
-    private val servingSearch = mutableMapOf<String, Serving>()
+    internal val servingThreads = mutableMapOf<String, Serving>()
+    internal val servingHistory = mutableMapOf<String, Serving>()
+    internal val servingSearch = mutableMapOf<String, Serving>()
     private val incomingReplies = mutableMapOf<String, Incoming>()
     private val completedReplies = mutableMapOf<String, ArrayDeque<Completed>>()
     private val pendingLive = ArrayDeque<Live>()
@@ -130,6 +130,8 @@ class SmsController(
     var failedLive by mutableStateOf(0); private set
     var onLanRequired: () -> Unit = {}
 
+    internal fun recordSkippedRows(count: Int) { skippedRows += count }
+
     // Cold start without visiting the panel first: Settings must know the real grant before it composes.
     init { refreshPermissions() }
 
@@ -138,9 +140,9 @@ class SmsController(
     fun refreshPermissions() {
         permissionsState = SmsPermissionState(permissions(PERMISSION_RECEIVE), permissions(PERMISSION_READ), permissions(PERMISSION_SEND))
     }
-    private fun key(peer: DeviceIdentity) = peer.deviceId + ":" + peer.fingerprint
+    internal fun key(peer: DeviceIdentity) = peer.deviceId + ":" + peer.fingerprint
     private fun live(d: ChannelDescriptor) = links[d.transport]?.channel?.descriptor == d
-    private fun deadline(link: Link) = now() + if (link.channel.descriptor.transport == "ble") 60_000L else 30_000L
+    internal fun deadline(link: Link) = now() + if (link.channel.descriptor.transport == "ble") 60_000L else 30_000L
     private fun candidateLinks() = listOfNotNull(links["lan"], links["ble"]).filter { it.remoteCapability }
 
     override fun available(channel: SecuredChannel) {
@@ -262,124 +264,6 @@ class SmsController(
             }
             else -> return DataHandling.UNRECOGNIZED
         }
-    }
-
-    private fun serveThreads(link: Link, requestId: String, beforeMillis: Long, beforeThreadId: String) {
-        val k = key(link.channel.descriptor.peer)
-        val current = servingThreads[k]
-        if (current?.requestId == requestId && current.job?.isActive == true) return
-        current?.job?.cancel()
-        val job = scope.launch {
-            val self = coroutineContext[Job]
-            try {
-                val deadline = deadline(link)
-                var failed = false
-                val page = try { store.threads(link.remoteThreads, beforeMillis, beforeThreadId) }
-                    catch (e: CancellationException) { throw e }
-                    catch (_: SmsPagingUnsupported) {
-                        send(link, SmsWireMessage.of(4, text(requestId), number(4), number(0), text("")), deadline)
-                        return@launch
-                    }
-                    catch (_: Exception) { failed = true; null }
-                if (page == null) { send(link, SmsWireMessage.of(4, text(requestId), number(if (failed) 5 else 1), number(0), text("")), deadline); return@launch }
-                if (page.partial) { send(link, SmsWireMessage.of(4, text(requestId), number(5), number(0), text("")), deadline); return@launch }
-                skippedRows += page.skipped
-                for (record in page.threads) {
-                    val sent = send(link, SmsWireMessage.of(3, text(requestId), text(record.threadId), text(record.address), text(record.snippet), number(record.dateMillis), number(record.unreadCount)), deadline)
-                    if (!sent) return@launch
-                }
-                send(link, SmsWireMessage.of(4, text(requestId), number(0), number(page.nextBeforeMillis), text(page.nextBeforeThreadId)), deadline)
-            } finally {
-                cancelQueued(link, requestId)
-                if (servingThreads[k]?.job == self) servingThreads.remove(k)
-            }
-        }
-        servingThreads[k] = Serving(requestId, link.channel.descriptor, job)
-    }
-
-    private fun serveHistory(link: Link, requestId: String, threadId: String, beforeMillis: Long, beforeMessageId: String, limit: Int) {
-        val k = key(link.channel.descriptor.peer)
-        val current = servingHistory[k]
-        if (current?.requestId == requestId && current.job?.isActive == true) return
-        current?.job?.cancel()
-        val job = scope.launch {
-            val self = coroutineContext[Job]
-            try {
-                val deadline = deadline(link)
-                suspend fun sendPage(message: SmsWireMessage, end: Long) = send(link, message, end, requestId)
-                var failed = false
-                val page = try { store.history(threadId, beforeMillis, beforeMessageId, minOf(limit, link.remoteMessages)) } catch (e: CancellationException) { throw e } catch (_: SmsPagingUnsupported) { sendPage(SmsWireMessage.of(10, text(requestId), number(4), number(0), text("")), deadline); return@launch } catch (_: Exception) { failed = true; null }
-                if (page == null) { sendPage(SmsWireMessage.of(10, text(requestId), number(if (failed) 5 else 1), number(0), text("")), deadline); return@launch }
-                if (page.partial) { sendPage(SmsWireMessage.of(10, text(requestId), number(5), number(0), text("")), deadline); return@launch }
-                skippedRows += page.skipped
-                for (message in page.messages) {
-                    val data = message.text.toByteArray(Charsets.UTF_8)
-                    val digest = MessageDigest.getInstance("SHA-256").digest(data)
-                    val count = (data.size + 3071) / 3072
-                    val streamId = UUID.randomUUID().toString()
-                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(threadId), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest), number(message.subscriptionId.toLong())), deadline)) return@launch
-                    for (index in 0 until count) {
-                        val from = index * 3072
-                        if (!sendPage(SmsWireMessage.of(7, text(streamId), number(index.toLong()), data(data.copyOfRange(from, minOf(from + 3072, data.size)))), deadline)) return@launch
-                    }
-                    if (!sendPage(SmsWireMessage.of(8, text(streamId)), deadline)) return@launch
-                }
-                sendPage(SmsWireMessage.of(10, text(requestId), number(0), number(page.nextBeforeMillis), text(page.nextBeforeMessageId)), deadline)
-            } finally {
-                cancelQueued(link, requestId)
-                if (servingHistory[k]?.job == self) servingHistory.remove(k)
-            }
-        }
-        servingHistory[k] = Serving(requestId, link.channel.descriptor, job)
-    }
-
-    /** One platform read answered with exactly one simDone; nothing is persisted and nothing is retried. */
-    private fun serveSim(link: Link, requestId: String) {
-        val listing = try { subscriptions?.list() ?: SmsSubscriptionListing(5, emptyList()) } catch (_: Exception) { SmsSubscriptionListing(5, emptyList()) }
-        val entries = Cbor.Array(listing.entries.map { entry ->
-            Cbor.Array(listOf(number(entry.subscriptionId.toLong()), number(entry.slotIndex.toLong()), text(entry.label), flag(entry.isDefault)))
-        })
-        enqueue(link, SmsWireMessage.of(16, text(requestId), number(listing.result), entries))
-    }
-
-    /** A search page streams hits as regular message records under the search requestId; a newer request cancels this one. */
-    private fun serveSearch(link: Link, requestId: String, query: String, beforeMillis: Long, beforeMessageId: String, limit: Int) {
-        val k = key(link.channel.descriptor.peer)
-        val current = servingSearch[k]
-        if (current?.requestId == requestId && current.job?.isActive == true) return
-        current?.job?.cancel()
-        val job = scope.launch {
-            val self = coroutineContext[Job]
-            try {
-                val deadline = deadline(link)
-                suspend fun sendPage(message: SmsWireMessage) = send(link, message, deadline, requestId)
-                val clean = query.trim()
-                if (clean.toByteArray(Charsets.UTF_8).size < 2) { sendPage(SmsWireMessage.of(18, text(requestId), number(6L), number(0), text(""))); return@launch }
-                var failed = false
-                val page = try { store.search(clean, beforeMillis, beforeMessageId, minOf(limit, link.remoteMessages)) } catch (e: CancellationException) { throw e } catch (_: SmsPagingUnsupported) { sendPage(SmsWireMessage.of(18, text(requestId), number(4L), number(0), text(""))); return@launch } catch (_: Exception) { failed = true; null }
-                if (page == null) { sendPage(SmsWireMessage.of(18, text(requestId), number(if (failed) 5L else 1L), number(0), text(""))); return@launch }
-                if (page.partial) { sendPage(SmsWireMessage.of(18, text(requestId), number(5L), number(0), text(""))); return@launch }
-                skippedRows += page.skipped
-                for (message in page.messages) {
-                    val data = message.text.toByteArray(Charsets.UTF_8)
-                    val digest = MessageDigest.getInstance("SHA-256").digest(data)
-                    val count = (data.size + 3071) / 3072
-                    val streamId = UUID.randomUUID().toString()
-                    val thread = message.threadId.ifEmpty { "addr:" + smsNormalizedAddress(message.address).ifEmpty { message.address } }
-                    if (!sendPage(SmsWireMessage.of(6, text(streamId), text(requestId), text(message.messageId), text(thread), text(message.address), number(message.dateMillis), number(message.direction), flag(message.unread), number(data.size.toLong()), number(count.toLong()), data(digest), number(message.subscriptionId.toLong())))) return@launch
-                    for (index in 0 until count) {
-                        val from = index * 3072
-                        if (!sendPage(SmsWireMessage.of(7, text(streamId), number(index.toLong()), data(data.copyOfRange(from, minOf(from + 3072, data.size)))))) return@launch
-                    }
-                    if (!sendPage(SmsWireMessage.of(8, text(streamId)))) return@launch
-                }
-                sendPage(SmsWireMessage.of(18, text(requestId), number(0), number(page.nextBeforeMillis), text(page.nextBeforeMessageId)))
-            } finally {
-                cancelQueued(link, requestId)
-                if (servingSearch[k]?.job == self) servingSearch.remove(k)
-            }
-        }
-        servingSearch[k] = Serving(requestId, link.channel.descriptor, job)
     }
 
     private fun beginIncoming(link: Link, m: SmsWireMessage) {
@@ -633,21 +517,21 @@ class SmsController(
         }
     }
 
-    private fun cancelQueued(link: Link, owner: String) {
+    internal fun cancelQueued(link: Link, owner: String) {
         link.queue.removeAll { queued ->
             if (queued.owner != owner) false else { queued.completion.complete(false); true }
         }
         link.room.toList().forEach { it.complete(Unit) }; link.room.clear()
     }
 
-    private fun enqueue(link: Link, message: SmsWireMessage) {
+    internal fun enqueue(link: Link, message: SmsWireMessage) {
         if (!live(link.channel.descriptor)) return
         if (link.queue.size >= QUEUE_LIMIT) { status = "SMS channel is busy"; return }
         val owner = if (message.kind == 1L) "" else message.text(0)
         link.queue.addLast(Queued(message, owner, deadline(link))); pump(link); schedule()
     }
 
-    private suspend fun send(link: Link, message: SmsWireMessage, deadline: Long, owner: String = message.text(0)): Boolean {
+    internal suspend fun send(link: Link, message: SmsWireMessage, deadline: Long, owner: String = message.text(0)): Boolean {
         var queued: Queued? = null
         try {
             return withTimeout(maxOf(1, deadline - now())) {

@@ -64,7 +64,7 @@ Manual application testing covers transfers in both directions and playback duri
 
 ## Implementation
 
-Android implementation and tests live under `features/transfer/`; Mac implementation and tests live under `Features/Transfer/` and `aniCeTests/Transfer/`. TransferDestination owns the Android folder grant and provider probe; TransferService presents approved foreground ownership. The existing connection and session owners retain authentication, nonce ownership and backpressure.
+Android implementation and tests live under `features/transfer/`; Mac implementation and tests live under `Features/Transfer/` and `aniCeTests/Transfer/`. The subsystem is organized into five focused responsibilities: `TransferController`/`MacTransferModel` coordinates transfer lifecycle, UI states, and channel routing; `TransferSender` owns outgoing batch streaming, chunk reading, and send-window credit; `TransferReceiver` owns incoming chunk buffering, peer credit, and verification; `TransferRecovery` owns checkpoint journals, timeouts, and BLE/LAN resume handshakes; and `TransferStorage` owns filesystem I/O, Android document-tree grants, naming collisions, and verified publication. TransferService presents approved foreground ownership. The existing connection and session owners retain authentication, nonce ownership and backpressure.
 
 See the authoritative [transfer contract](../../protocol/transfer/README.md), [CDDL](../../protocol/transfer/transfer.cddl), [LAN contract](../../protocol/lan/README.md) and [design guide](../design/DESIGN.md).
 

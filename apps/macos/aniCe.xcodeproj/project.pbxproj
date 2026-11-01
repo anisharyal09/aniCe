@@ -120,6 +120,11 @@
 		B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */; };
 		B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */; };
 		B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */; };
+		B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */; };
+		B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000B; };
+		B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000C; };
+		B10100000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000012; };
+		B10100000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000013; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -249,6 +254,11 @@
 		B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sms/sms-vectors.json"; sourceTree = SOURCE_ROOT; };
+		B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Sms/MacSmsReceiving.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRecovery.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferSender.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferReceiver.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -322,6 +332,10 @@
 				B10200000000000000000006,
 				B10200000000000000000007,
 				B10200000000000000000008,
+				B1020000000000000000000B,
+				B1020000000000000000000C,
+				B10200000000000000000012,
+				B10200000000000000000013,
 				B30200000000000000000001,
 				B30200000000000000000002,
 				B30200000000000000000003,
@@ -330,6 +344,7 @@
 				B30200000000000000000006,
 				B30200000000000000000007,
 				B30200000000000000000008,
+				B30200000000000000000009,
 				000000000000000000000206 /* aniCeTests */,
 				00000000000000000000000C /* aniCe */,
 				00000000000000000000000D /* Products */,
@@ -713,12 +728,17 @@
 				0000000000000000000000CD /* AniCePalette.swift in Sources */,
 				B10100000000000000000001 /* aniCe/Features/Transfer/TransferWire.swift in Sources */,
 				B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */,
+				B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */,
+				B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */,
+				B10100000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift in Sources */,
+				B10100000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift in Sources */,
 				B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */,
 				B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */,
 				B30100000000000000000001 /* aniCe/Features/Sms/SmsWire.swift in Sources */,
 				B30100000000000000000002 /* aniCe/Features/Sms/MacSmsModel.swift in Sources */,
 				B30100000000000000000003 /* aniCe/Features/Sms/MacSmsNotifier.swift in Sources */,
 				B30100000000000000000004 /* aniCe/Features/Sms/SmsView.swift in Sources */,
+				B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
