@@ -44,6 +44,7 @@ struct MacSessionView: View {
   var workspaceHeader = false
   var companion = false
   var compact = false
+  var keyboardTrackpad: MacKeyboardTrackpadModel?
   var focusedPeer: String?
   var discovery: MacDiscoveryModel?
   var canDiscover = true
@@ -97,7 +98,7 @@ struct MacSessionView: View {
                 detailContent
                 HStack {
                   Spacer()
-                  if presentation.connected { Button("Disconnect") { model.disconnect(); lan.disconnect() }.buttonStyle(AniCeButtonStyle()) }
+                  if presentation.connected { Button("Disconnect") { disconnectSelectedDevice() }.buttonStyle(AniCeButtonStyle()) }
                   Button("Done") { details = false }.buttonStyle(AniCeButtonStyle(prominent: true)).keyboardShortcut(.cancelAction)
                 }
               }.padding(24)
@@ -110,6 +111,18 @@ struct MacSessionView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func disconnectDevice(_ peer: DeviceIdentity) {
+    keyboardTrackpad?.deviceWasDisconnected(peer)
+    model.disconnect()
+    lan.disconnect()
+  }
+
+  private func disconnectSelectedDevice() {
+    if let device { keyboardTrackpad?.deviceWasDisconnected(device) }
+    model.disconnect()
+    lan.disconnect()
   }
 
   private func isPeerConnected(_ record: PeerTrustRecord) -> Bool {
@@ -157,7 +170,8 @@ struct MacSessionView: View {
             if !state.connected {
               Button(state.action.rawValue) {
                 switch state.action {
-                case .disconnect, .stop: model.disconnect(); lan.disconnect()
+                case .disconnect: disconnectDevice(peer)
+                case .stop: model.disconnect(); lan.disconnect()
                 case .allow, .retry: model.selectedPeer = peer; model.allow()
                 }
               }.buttonStyle(AniCeButtonStyle()).controlSize(.small)
@@ -222,7 +236,8 @@ struct MacSessionView: View {
     automaticControl
     Button(presentation.action.rawValue) {
       switch presentation.action {
-      case .disconnect, .stop: model.disconnect(); lan.disconnect()
+      case .disconnect: disconnectSelectedDevice()
+      case .stop: model.disconnect(); lan.disconnect()
       case .allow, .retry: model.selectedPeer = device; model.allow()
       }
     }.buttonStyle(AniCeButtonStyle()).controlSize(.small).disabled(!peerAvailable)
@@ -252,7 +267,8 @@ struct MacSessionView: View {
         }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
         Button(presentation.action.rawValue) {
           switch presentation.action {
-          case .disconnect, .stop: model.disconnect(); lan.disconnect()
+          case .disconnect: disconnectSelectedDevice()
+          case .stop: model.disconnect(); lan.disconnect()
           case .allow, .retry: model.selectedPeer = device; model.allow()
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
@@ -418,7 +434,12 @@ struct MacSessionView: View {
         }
       }
       if peerAvailable && (model.allowing || lan.allowing || model.automatic) {
-        Button("Disconnect all") { model.disconnect(); lan.disconnect() }
+        Button("Disconnect all") {
+          if let device { keyboardTrackpad?.deviceWasDisconnected(device) }
+          else { keyboardTrackpad?.disconnect() }
+          model.disconnect()
+          lan.disconnect()
+        }
       }
     }
     .buttonStyle(AniCeButtonStyle())

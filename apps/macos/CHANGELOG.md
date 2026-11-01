@@ -7,6 +7,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Added
 
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
+- Add Keyboard & Trackpad with native keyboard capture, pointer and two-finger drag control, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
 - Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
 - Review selected files and their recipient before sending; reject sends when the reviewed device changes.
 - Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.
@@ -14,6 +15,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Automatically connect after linking and reconnect once when Keyboard & Trackpad opens, defaulting to the authenticated BLE-connected phone. Use aniKey's system-paired, authenticated Bluetooth policy; macOS manages encryption without an additional aniCe encryption-status gate.
 - Apply neutral light/dark colors, a split window header, compact controls and consistent hover, pressed and focus feedback.
 - Reorganize Overview with device status, send actions, responsive playback/transfer columns and recent activity.
 - Rework Devices and pairing with compact transport rows, security and trust disclosures and native approval sheets.

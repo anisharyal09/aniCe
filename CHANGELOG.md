@@ -11,9 +11,11 @@ Shared product changes, repository structure, documentation and development conv
 ### Added
 
 - Open Android-shared HTTP(S) links in the Mac's default browser.
+- Add native Mac Keyboard & Trackpad controls for an explicitly linked, aniCe-trusted Android phone over independent Classic Bluetooth HID, retaining keyboard report compatibility with Android’s cached composite descriptor.
 
 ### Changed
 
+- Connect Keyboard & Trackpad after first-time Bluetooth linking and automatically reconnect when opening the feature, defaulting to the authenticated BLE-connected phone. Follow aniKey's system-paired, authenticated transport policy while keeping input capture explicit.
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.
 - Expand the [design guide](docs/design/DESIGN.md) with screen layouts, interaction states, accessibility requirements and semantic palette samples.
 - Run branch push CI for `seamless-redesign`.

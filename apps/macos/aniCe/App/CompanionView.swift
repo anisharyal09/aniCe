@@ -12,6 +12,7 @@ struct CompanionView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
   let clipboard: MacClipboardModel
+  let keyboardTrackpad: MacKeyboardTrackpadModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
   @Environment(\.colorScheme) private var colorScheme
@@ -116,7 +117,7 @@ struct CompanionView: View {
         Button("Stop pairing") { pairing.cancel() }
       } else if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
         MacSessionView(peers: pairing.peers, model: session, lan: lan,
-          details: .constant(false), diagnostics: .constant(false), compact: true,
+          details: .constant(false), diagnostics: .constant(false), compact: true, keyboardTrackpad: keyboardTrackpad,
           onManageDevices: { navigation.open(.devices, present: openMain) },
           onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })
       } else {

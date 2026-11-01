@@ -166,6 +166,8 @@ import AppKit
     let playback = MacPlaybackModel(preferences: preferences, requestSink: { _ in commands += 1; return true })
     let quietPreferences = try XCTUnwrap(UserDefaults(suiteName: "anice.companion.quiet." + UUID().uuidString))
     let quietPlayback = MacPlaybackModel(preferences: quietPreferences, requestSink: { _ in commands += 1; return true })
+    let keyboardTrackpad = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
+    defer { keyboardTrackpad.shutdown() }
     let pid = ProcessInfo.processInfo.processIdentifier
     playback.read(try JSONSerialization.data(withJSONObject: [
       "pid": pid, "playbackRevision": UUID().uuidString, "sourceIsAutomatic": true,
@@ -204,7 +206,8 @@ import AppKit
           for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
           let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
             pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
-            navigation: ConnectionNavigation(), openMainWindow: { XCTFail("Rendering opened the main window") })
+            keyboardTrackpad: keyboardTrackpad, navigation: ConnectionNavigation(),
+            openMainWindow: { XCTFail("Rendering opened the main window") })
             .environment(\.colorScheme, scheme)
           let host = NSHostingView(rootView: view)
           let size = host.fittingSize
@@ -275,16 +278,31 @@ import AppKit
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     var renders = 0
     let trustedRecords = pairing.peers
+    let keyboardTransport = FakeKeyboardTrackpadTransport()
+    let linkedBluetooth = PairedBluetoothDevice(address: "01:23:45:67:89:AB", name: peer.deviceName)
+    keyboardTransport.devices = [linkedBluetooth]
+    let keyboardTrackpad = MacKeyboardTrackpadModel(transport: keyboardTransport, preferences: preferences)
+    keyboardTrackpad.updateTargets([peer], connectedPeerIDs: [peer.deviceId], peerContextID: nil)
+    keyboardTrackpad.refreshPairedDevices()
+    XCTAssertTrue(keyboardTrackpad.link(linkedBluetooth))
+    defer { keyboardTrackpad.shutdown() }
+    let widths = [620.0, 720.0, 1240.0]
     for appearance in ["Light", "Dark"] {
       preferences.set(appearance, forKey: "window.appearance")
       preferences.set("playback,files", forKey: "ui.favouriteFeatures")
-      for width in [720.0, 1240.0] {
+      for width in widths {
         let routes: [(AppDestination, AppFeature?, String?)] =
           AppDestination.primary.map { ($0, nil, nil) } + AppFeature.allCases.map { (.features, $0, nil) } + [
             (.home, nil, "first-run"), (.devices, nil, "pairing"), (.devices, nil, "pairing-code"),
             (.devices, nil, "pairing-approval"), (.settings, nil, "pending-pairing")]
         for (destination, feature, scenario) in routes {
           pairing.peers = scenario == "first-run" ? [] : trustedRecords
+          if feature == .keyboardTrackpad {
+            keyboardTrackpad.updateTargets([peer], connectedPeerIDs: [peer.deviceId], peerContextID: nil)
+            keyboardTrackpad.selectTarget(peer)
+            keyboardTrackpad.refreshPairedDevices()
+            XCTAssertTrue(keyboardTrackpad.link(linkedBluetooth))
+          }
           pairing.active = ["pairing-code", "pairing-approval", "pending-pairing"].contains(scenario ?? "")
           pairing.phase = scenario == "pairing-code" ? "invitation" : pairing.active ? "approval" : "idle"
           pairing.status = pairing.active ? "Approve this pairing on both devices." : "Choose how to pair your Android device."
@@ -296,7 +314,8 @@ import AppKit
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
             discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
             transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
-            sms: MacSmsModel(notifier: VisualSmsNotifier()), smsPreferences: SmsPreferences(storage: nil), navigation: navigation)
+            sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
+            smsPreferences: SmsPreferences(storage: nil), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: 800)
@@ -319,7 +338,7 @@ import AppKit
         }
       }
     }
-    XCTAssertEqual(renders, 64)
+    XCTAssertEqual(renders, 2 * widths.count * (AppDestination.primary.count + AppFeature.allCases.count + 5))
     XCTAssertFalse(radio.started)
     XCTAssertTrue(radio.sent.isEmpty)
     XCTAssertFalse(lan.allowing)

@@ -24,3 +24,8 @@ Decisions affecting the whole app or shared infrastructure live at this level, e
 
 - [0010 — Mac transfer notifications and companion activity](features/file-transfer/0010-macos-transfer-notifications.md)
 - [Usage and limitations](../features/FILE_TRANSFER.md)
+
+### Keyboard & Trackpad
+
+- [0011 — macOS Classic Bluetooth HID input](features/keyboard-trackpad/0011-macos-classic-hid-input.md)
+- [Usage and limitations](../features/KEYBOARD_TRACKPAD.md)

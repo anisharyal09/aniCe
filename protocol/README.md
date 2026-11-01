@@ -12,6 +12,7 @@ Contracts define required behavior.
 | :--- | :--- | :--- | :--- | :--- |
 | **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Protected native P-256 public identity and fingerprint |
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
+| **Classic Bluetooth HID input** | System profile | Implemented on macOS | [`bluetooth/classic-hid.md`](bluetooth/classic-hid.md) | Local keyboard and pointer reports to a system-paired Android HID host |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
@@ -23,6 +24,8 @@ Contracts define required behavior.
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 
 ---
+
+The macOS-only [Classic Bluetooth HID input profile](bluetooth/classic-hid.md) is a system input transport, not an aniCe application-session contract. Its exact descriptor and report fixtures live in [`test-vectors/bluetooth-hid/hid-vectors.json`](test-vectors/bluetooth-hid/hid-vectors.json).
 
 ## 1. Device Identity Contract (`v1`)
 
