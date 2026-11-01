@@ -15,6 +15,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Reduce Keyboard & Trackpad callback scheduling and duplicate modifier reports; use monotonic motion pacing and cancel pending motion timers when capture stops.
+- Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
+- Allow Type clipboard during direct control, releasing held input only after validating the text.
 - Automatically connect after linking and reconnect once when Keyboard & Trackpad opens, defaulting to the authenticated BLE-connected phone. Use aniKey's system-paired, authenticated Bluetooth policy; macOS manages encryption without an additional aniCe encryption-status gate.
 - Apply neutral light/dark colors, a split window header, compact controls and consistent hover, pressed and focus feedback.
 - Reorganize Overview with device status, send actions, responsive playback/transfer columns and recent activity.
@@ -22,6 +25,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Replace feature launcher tiles with compact rows; group Settings with section shortcuts and center About content at wide sizes.
 - Reorganize playback, file transfer, Messages and Clipboard, including split conversations, a bottom SMS composer and separate Share/History tabs.
 - Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
+
+### Fixed
+
+- Preserve fractional pointer and wheel movement, and prevent delayed focus-loss or connection completion callbacks from disarming newly started input.
 
 ## [v0.3.0]
 

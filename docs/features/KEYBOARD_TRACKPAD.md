@@ -17,6 +17,7 @@ Use **Other devices…** to select another trusted aniCe phone. Use **Change Blu
 
 - Click the keyboard area to focus it. The click that starts control only arms keyboard input; it is not forwarded to the phone. Type with the Mac keyboard while the area has focus.
 - Click the pointer pad to arm pointer input. Later clicks and held drags are sent as mouse-button reports. Move the pointer to move the phone's pointer.
+- Pointer motion and vertical scrolling retain fractional deltas between reports so slow movement accumulates without loss. Stopping control discards unsent fractions.
 - Vertical scrolling sends mouse-wheel reports. Select **Extra slow**, **Gentle**, **Standard** or **Fast** beside the keyboard controls. The speed preference is local to this Mac.
 - Two-finger sideways movement sends a held primary-button drag, using aniKey's direction and distance thresholds. Inertia is ignored, and a physical held click owns its drag. Three-finger gestures stay with macOS.
 - **Back** and **Home** send HID consumer-control actions when the phone uses report protocol. Scrolling and these actions are unavailable in boot protocol. **Recents** sends aniKey's staged Meta+Tab keyboard chord.
@@ -31,7 +32,7 @@ When the phone suspends HID, pending input is discarded. Held reports are releas
 
 ## Type clipboard
 
-Choose **Type clipboard** to read the Mac pasteboard once and type the complete validated snapshot. It accepts US-layout printable ASCII, Tab and line endings, normalizes CRLF, and stops before sending if the snapshot is empty, contains unsupported text, or exceeds 1,024 characters. Each character uses a 50 ms press/release interval. **Stop typing** cancels before the next report; check the phone after an interruption because the last character may already have arrived. Text is not logged or saved by this feature.
+Choose **Type clipboard** to read the Mac pasteboard once and type the complete validated snapshot. It can start during direct control: validation happens first, then held input is released and clipboard typing takes over. Invalid text leaves direct control active. It accepts US-layout printable ASCII, Tab and line endings, normalizes CRLF, and stops before sending if the snapshot is empty, contains unsupported text, or exceeds 1,024 characters. Each character uses a 50 ms press/release interval. **Stop typing** cancels before the next report; check the phone after an interruption because the last character may already have arrived. Text is not logged or saved by this feature.
 
 ## Device and connection boundaries
 

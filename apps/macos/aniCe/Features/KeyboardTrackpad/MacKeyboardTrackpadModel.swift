@@ -35,13 +35,14 @@ typealias KeyboardTrackpadVoidCompletion = @MainActor @Sendable () -> Void
 }
 
 @MainActor final class ClassicHIDTransport: KeyboardTrackpadTransport {
+  // The Objective-C boundary delivers every callback on DispatchQueue.main.
   private let adapter = AniCeHIDAdapter()
   var stateChanged: (@MainActor @Sendable (KeyboardTrackpadTransportEvent) -> Void)?
 
   init() {
     adapter.stateChanged = { [weak self] generation, ready, suspended, reportProtocol, message in
       let event = KeyboardTrackpadTransportEvent.changed(generation: generation, ready: ready, suspended: suspended, reportProtocol: reportProtocol, message: message)
-      Task { @MainActor [weak self] in self?.stateChanged?(event) }
+      MainActor.assumeIsolated { self?.stateChanged?(event) }
     }
   }
 
@@ -51,40 +52,40 @@ typealias KeyboardTrackpadVoidCompletion = @MainActor @Sendable () -> Void
         guard let address = value["address"], let name = value["name"] else { return nil }
         return PairedBluetoothDevice(address: address, name: name)
       }
-      Task { @MainActor in completion(devices) }
+      MainActor.assumeIsolated { completion(devices) }
     }
   }
 
   func connect(address: String, generation: UInt64, completion: @escaping KeyboardTrackpadResultCompletion) {
     _ = adapter.connectAddress(address, generation: generation) { success, message in
       let result: KeyboardTrackpadTransportResult = success ? .success : .failure(message ?? "Bluetooth HID could not connect.")
-      Task { @MainActor in completion(result) }
+      MainActor.assumeIsolated { completion(result) }
     }
   }
 
   func keyboard(modifiers: UInt8, usages: [UInt8], completion: @escaping KeyboardTrackpadResultCompletion) {
     _ = adapter.sendKeyboardModifiers(modifiers, usages: usages.map { NSNumber(value: $0) }) { success, message in
       let result: KeyboardTrackpadTransportResult = success ? .success : .failure(message ?? "The keyboard report could not be sent.")
-      Task { @MainActor in completion(result) }
+      MainActor.assumeIsolated { completion(result) }
     }
   }
 
   func mouse(buttons: UInt8, deltaX: Int, deltaY: Int, wheel: Int, completion: @escaping KeyboardTrackpadResultCompletion) {
     _ = adapter.sendMouseButtons(buttons, deltaX: deltaX, deltaY: deltaY, wheel: wheel) { success, message in
       let result: KeyboardTrackpadTransportResult = success ? .success : .failure(message ?? "The mouse report could not be sent.")
-      Task { @MainActor in completion(result) }
+      MainActor.assumeIsolated { completion(result) }
     }
   }
 
   func navigation(usage: UInt16, pressed: Bool, completion: @escaping KeyboardTrackpadResultCompletion) {
     _ = adapter.sendNavigationUsage(usage, pressed: pressed) { success, message in
       let result: KeyboardTrackpadTransportResult = success ? .success : .failure(message ?? "The navigation action could not be sent.")
-      Task { @MainActor in completion(result) }
+      MainActor.assumeIsolated { completion(result) }
     }
   }
 
   func disconnect(completion: @escaping KeyboardTrackpadVoidCompletion) {
-    _ = adapter.disconnect { Task { @MainActor in completion() } }
+    _ = adapter.disconnect { MainActor.assumeIsolated { completion() } }
   }
   func shutdown() { adapter.shutdown() }
 }
@@ -238,7 +239,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   @ObservationIgnored private var heldModifiers: UInt8 = 0
   private var heldButtons: UInt8 = 0
   @ObservationIgnored private var typeKeyDown = false
-  @ObservationIgnored private var lastMotionWrite = Date.distantPast
+  @ObservationIgnored private var lastMotionWrite: ContinuousClock.Instant?
   private var associationRevision = 0
 
   private(set) var trustedPeers: [DeviceIdentity] = []
@@ -319,7 +320,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     if scrollAxis == .vertical { return "Vertical scroll" }
     return heldButtons == 0 ? "Pointer" : "Mouse drag"
   }
-  var canTypeClipboard: Bool { phase == .connectedIdle && typingJob == nil && navigationJob == nil }
+  var canTypeClipboard: Bool { canSendShortcut }
   var canSendShortcut: Bool {
     (phase == .connectedIdle || phase == .controlling) && !isShuttingDown && typingJob == nil && navigationJob == nil
   }
@@ -563,7 +564,8 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func modifiersChanged(_ modifiers: UInt8) {
-    guard phase == .controlling, activeSurface == .keyboard, typingJob == nil else { return }
+    guard phase == .controlling, activeSurface == .keyboard, typingJob == nil,
+          heldModifiers != modifiers else { return }
     heldModifiers = modifiers
     enqueue(.keyboard(heldModifiers, heldUsages))
   }
@@ -747,8 +749,8 @@ enum ClipboardTypingValidationError: Error, Equatable {
   func stopTyping() { cancelTyping(interrupted: true) }
 
   func typeClipboard() {
-    guard phase == .connectedIdle, typingJob == nil else {
-      notice = "Connect the selected phone and stop controlling before typing clipboard text."
+    guard canTypeClipboard else {
+      notice = "Connect the selected phone and wait for the current action to finish before typing clipboard text."
       return
     }
     // This is the only pasteboard read in the feature; it happens only after an explicit click.
@@ -760,7 +762,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func typeClipboardSnapshot(_ text: String) {
-    guard phase == .connectedIdle, typingJob == nil else { return }
+    guard canTypeClipboard else { return }
     switch Self.clipboardKeyStrokes(text) {
     case .success(let keys):
       startTypingJob(keys, clipboard: true)
@@ -812,7 +814,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
       guard let self, !self.isShuttingDown, self.connectionGeneration == operation else { return }
       switch result {
       case .success:
-        self.phase = .connectedIdle
+        self.phase = self.activeSurface == nil ? .connectedIdle : .controlling
         self.failureMessage = nil
         if let surface = self.pendingCaptureSurface {
           self.pendingCaptureSurface = nil
@@ -835,6 +837,8 @@ enum ClipboardTypingValidationError: Error, Equatable {
     pendingCaptureSurface = nil
     guard hadCapture else { return }
     let endedSurface = activeSurface
+    motionTimer?.cancel(); motionTimer = nil
+    lastMotionWrite = nil
     activeSurface = nil
     captureEpoch &+= 1
     let needsKeyboardRelease = endedSurface == .keyboard || !heldUsages.isEmpty || heldModifiers != 0 || typeKeyDown
@@ -910,25 +914,27 @@ enum ClipboardTypingValidationError: Error, Equatable {
           outputQueue.removeFirst()
           continue
         }
-        let earliest = lastMotionWrite.addingTimeInterval(1.0 / 60.0)
-        if Date() < earliest {
-          guard motionTimer == nil else { return }
-          let wait = max(0.001, earliest.timeIntervalSinceNow)
-          motionTimer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(wait))
-            guard let self, !Task.isCancelled else { return }
-            self.motionTimer = nil
-            self.drainOutput()
+        let now = ContinuousClock.now
+        if let lastMotionWrite {
+          let earliest = lastMotionWrite + .nanoseconds(1_000_000_000 / 60)
+          if now < earliest {
+            guard motionTimer == nil else { return }
+            motionTimer = Task { [weak self] in
+              try? await Task.sleep(until: earliest, clock: .continuous)
+              guard let self, !Task.isCancelled else { return }
+              self.motionTimer = nil
+              self.drainOutput()
+            }
+            return
           }
-          return
         }
         let remainderX = x - Double(dx), remainderY = y - Double(dy), remainderWheel = wheel - Double(wh)
         outputQueue.removeFirst()
-        if abs(remainderX) >= 1 || abs(remainderY) >= 1 || abs(remainderWheel) >= 1 {
+        if remainderX != 0 || remainderY != 0 || remainderWheel != 0 {
           outputQueue.insert(Output(generation: first.generation, captureEpoch: first.captureEpoch,
             payload: .motion(buttons, remainderX, remainderY, remainderWheel)), at: 0)
         }
-        lastMotionWrite = Date()
+        lastMotionWrite = now
         send(.mouse(buttons, dx, dy, wh), generation: first.generation)
         return
       }
@@ -1141,6 +1147,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     typingTimer?.cancel(); typingTimer = nil
     navigationTimer?.cancel(); navigationTimer = nil
     motionTimer?.cancel(); motionTimer = nil
+    lastMotionWrite = nil
     typingJob = nil
     navigationJob = nil
     isTypingClipboard = false
@@ -1236,14 +1243,14 @@ enum ClipboardTypingValidationError: Error, Equatable {
     ]
     for name in stopNames {
       observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-        Task { @MainActor [weak self] in self?.applicationWasInterrupted() }
+        MainActor.assumeIsolated { self?.applicationWasInterrupted() }
       })
     }
     sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
-    ) { [weak self] _ in Task { @MainActor [weak self] in self?.systemWillSleep() } }
+    ) { [weak self] _ in MainActor.assumeIsolated { self?.systemWillSleep() } }
     observers.append(center.addObserver(
       forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-    ) { [weak self] _ in Task { @MainActor [weak self] in self?.refreshPairedDevices() } })
+    ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshPairedDevices() } })
   }
 }

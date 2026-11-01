@@ -1059,6 +1059,145 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertEqual(transport.writes.count, stoppedCount)
   }
 
+  @MainActor func testFractionalPointerAndWheelRemaindersSurviveWholeReports() async throws {
+    for direction in [1.0, -1.0] {
+      let peer = try phone("Phone")
+      let transport = FakeKeyboardTrackpadTransport()
+      transport.devices = [paired(peer)]
+      let model = readyModel(peer: peer, transport: transport)
+      defer { model.shutdown() }
+      model.connect()
+      model.requestControl(on: .pad)
+      model.scrollSpeed = .standard
+      for _ in 0..<4 {
+        model.pointerMoved(deltaX: direction * 1.5, deltaY: -direction * 1.5)
+        model.scroll(deltaY: direction * 18, precise: true)
+        try await Task.sleep(for: .milliseconds(40))
+      }
+      var x = 0, y = 0, wheel = 0
+      for write in transport.writes {
+        guard case .mouse(let buttons, let dx, let dy, let wh) = write else { return XCTFail("Unexpected keyboard report") }
+        XCTAssertEqual(buttons, 0)
+        XCTAssertLessThanOrEqual(abs(dx), 127)
+        XCTAssertLessThanOrEqual(abs(wh), 8)
+        x += dx; y += dy; wheel += wh
+      }
+      XCTAssertEqual(x, Int(direction * 6))
+      XCTAssertEqual(y, Int(-direction * 6))
+      XCTAssertEqual(wheel, Int(direction * 6))
+      model.stopControlling()
+      let stopped = transport.writes.count
+      try await Task.sleep(for: .milliseconds(40))
+      XCTAssertEqual(transport.writes.count, stopped, "Stopping must not leave scheduled motion")
+    }
+  }
+
+  @MainActor func testClipboardActionReleasesActiveInputWithoutAnExtraStopClick() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    model.requestControl(on: .keyboard)
+    model.keyDown(usage: 5, modifiers: 2)
+    XCTAssertTrue(model.canTypeClipboard)
+    model.typeClipboardSnapshot("é")
+    XCTAssertTrue(model.isControlling, "Invalid clipboard text must not disturb direct typing")
+    XCTAssertEqual(transport.writes, [.keyboard(2, [5])])
+    model.typeClipboardSnapshot("a")
+    XCTAssertEqual(model.phase, .connectedIdle)
+    XCTAssertEqual(Array(transport.writes.suffix(2)), [.keyboard(0, []), .keyboard(0, [4])])
+    XCTAssertFalse(model.canTypeClipboard)
+    try await Task.sleep(for: .milliseconds(130))
+    XCTAssertEqual(transport.writes.last, .keyboard(0, []))
+    XCTAssertTrue(model.canTypeClipboard)
+    model.disconnect()
+    let disconnected = transport.writes.count
+    model.typeClipboardSnapshot("a")
+    XCTAssertFalse(model.canTypeClipboard)
+    XCTAssertEqual(transport.writes.count, disconnected)
+  }
+
+  @MainActor func testInterruptionReleasesSynchronouslyAndCannotCancelNewCapture() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    model.requestControl(on: .keyboard)
+    model.keyDown(usage: 4, modifiers: 0)
+    NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: nil)
+    XCTAssertFalse(model.isControlling, "The main-queue interruption must release input before returning")
+    model.requestControl(on: .keyboard)
+    await Task.yield()
+    try await Task.sleep(for: .milliseconds(10))
+    XCTAssertTrue(model.isControlling, "The previous interruption must not cancel a later deliberate capture")
+    XCTAssertEqual(transport.writes, [.keyboard(0, [4]), .keyboard(0, [])])
+  }
+
+  @MainActor func testNativeDisconnectedTransportCompletionsStayOnMainActor() async {
+    let transport = ClassicHIDTransport()
+    defer { transport.shutdown() }
+    let reports = expectation(description: "Native reports fail on the main queue")
+    reports.expectedFulfillmentCount = 4
+    let completion: KeyboardTrackpadResultCompletion = { result in
+      XCTAssertTrue(Thread.isMainThread)
+      guard case .failure = result else { return XCTFail("Disconnected transport accepted input") }
+      reports.fulfill()
+    }
+    transport.keyboard(modifiers: 0, usages: [4], completion: completion)
+    transport.mouse(buttons: 0, deltaX: 1, deltaY: 0, wheel: 0, completion: completion)
+    transport.navigation(usage: 0x0224, pressed: true, completion: completion)
+    transport.connect(address: "invalid", generation: 1, completion: completion)
+    await fulfillment(of: [reports], timeout: 2)
+    let disconnected = expectation(description: "Disconnect completes on the main queue")
+    transport.disconnect {
+      XCTAssertTrue(Thread.isMainThread)
+      disconnected.fulfill()
+    }
+    await fulfillment(of: [disconnected], timeout: 2)
+  }
+
+  @MainActor func testConnectCompletionDoesNotDisarmControlStartedAfterReadiness() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    transport.deferConnect = true
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    let generation = try XCTUnwrap(transport.connectedGenerations.last)
+    transport.stateChanged?(.changed(generation: generation, ready: true, suspended: false, reportProtocol: true, message: nil))
+    model.requestControl(on: .keyboard)
+    model.keyDown(usage: 4, modifiers: 0)
+    transport.finishConnect()
+    XCTAssertTrue(model.isControlling)
+    XCTAssertEqual(model.currentSurface, .keyboard)
+    model.keyUp(usage: 4, modifiers: 0)
+    XCTAssertEqual(transport.writes, [.keyboard(0, [4]), .keyboard(0, [])])
+  }
+
+  @MainActor func testRepeatedModifierFlagsDoNotSendDuplicateReports() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    model.requestControl(on: .keyboard)
+    model.modifiersChanged(2)
+    for _ in 0..<20 { model.modifiersChanged(2) }
+    model.keyDown(usage: 4, modifiers: 2)
+    model.modifiersChanged(2)
+    model.modifiersChanged(0)
+    model.modifiersChanged(0)
+    model.keyUp(usage: 4, modifiers: 0)
+    XCTAssertTrue(model.isControlling)
+    XCTAssertEqual(transport.writes, [.keyboard(2, []), .keyboard(2, [4]), .keyboard(0, [4]), .keyboard(0, [])])
+  }
+
   private func phone(_ name: String, id: String = UUID().uuidString.lowercased()) throws -> DeviceIdentity {
     let key = P256.Signing.PrivateKey().publicKey.x963Representation
     let mac = try DeviceIdentity(deviceId: id, deviceName: name, publicKey: key)

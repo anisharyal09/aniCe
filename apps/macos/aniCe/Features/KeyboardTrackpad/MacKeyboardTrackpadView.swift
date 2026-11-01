@@ -256,15 +256,23 @@ struct MacKeyboardTrackpadView: View {
   }
 
   private var inputSurfaces: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(alignment: .top, spacing: 16) {
-        controls.frame(width: 246, alignment: .topLeading)
-        pad.frame(minWidth: 260, maxWidth: .infinity, minHeight: 326, idealHeight: 360, maxHeight: 440)
+    VStack(alignment: .leading, spacing: 12) {
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .top, spacing: 16) {
+          controls.frame(width: 246, alignment: .topLeading)
+          pad.frame(minWidth: 260, maxWidth: .infinity, minHeight: 326, idealHeight: 360, maxHeight: 440)
+        }
+        VStack(alignment: .leading, spacing: 16) {
+          controls
+          pad.frame(height: 360)
+        }
       }
-      VStack(alignment: .leading, spacing: 16) {
-        controls
-        pad.frame(height: 360)
-      }
+
+      keyboardActionRow
+      scrollSpeedControl
+      Text("Stop input: ⌘⇧Esc")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -301,80 +309,149 @@ struct MacKeyboardTrackpadView: View {
       Text(isKeyboardActive ? "Keyboard active · type on your Mac" : "Click to start, then type on your Mac")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
-
-      HStack(spacing: 6) {
-        shortcutKey("Tab", usage: 0x2B)
-        shortcutKey("Esc", usage: 0x29)
-        shortcutKey("⌫", usage: 0x2A)
-        shortcutKey("Return", usage: 0x28)
-      }
-      .buttonStyle(AniCeButtonStyle())
-      .controlSize(.small)
-
-      HStack(spacing: 8) {
-        Button("Back") { model.sendNavigation(usage: 0x0224) }
-          .disabled(!model.canSendShortcut || !model.reportProtocol)
-        Button("Home") { model.sendNavigation(usage: 0x0223) }
-          .disabled(!model.canSendShortcut || !model.reportProtocol)
-        Button("Recents", action: model.sendRecentApps)
-          .disabled(!model.canSendShortcut)
-      }
-      .buttonStyle(AniCeButtonStyle())
-      .controlSize(.small)
-
-      Menu {
-        ForEach(KeyboardTrackpadScrollSpeed.allCases) { speed in
-          Button {
-            model.scrollSpeed = speed
-          } label: {
-            if model.scrollSpeed == speed {
-              Label(speed.title, systemImage: "checkmark")
-            } else {
-              Text(speed.title)
-            }
-          }
-        }
-      } label: {
-        Label("Scroll · \(model.scrollSpeed.title)", systemImage: "arrow.up.and.down")
-      }
-      .menuStyle(.borderlessButton)
-      .buttonStyle(AniCeButtonStyle())
-      .controlSize(.small)
-      .disabled(!model.reportProtocol)
-
-      if model.isTypingClipboard {
-        VStack(alignment: .leading, spacing: 6) {
-          ProgressView(value: Double(model.typingProgress), total: Double(max(model.typingLength, 1)))
-          HStack {
-            Text("\(model.typingProgress) of \(model.typingLength) characters")
-              .font(.caption)
-              .foregroundStyle(AniCePalette.secondaryText(scheme))
-            Spacer()
-            Button("Stop typing", action: model.stopTyping)
-              .buttonStyle(AniCeButtonStyle())
-              .controlSize(.small)
-          }
-        }
-      } else {
-        Button(action: model.typeClipboard) {
-          Label("Type clipboard", systemImage: "doc.on.clipboard")
-        }
-        .buttonStyle(AniCeButtonStyle())
-        .disabled(!model.canTypeClipboard)
-        .help("Types supported plain text from the Mac clipboard after you click.")
-      }
-
-      Text("Stop input: ⌘⇧Esc")
-        .font(.caption)
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private func shortcutKey(_ label: String, usage: UInt8) -> some View {
-    Button(label) { model.sendTap(usage: usage) }
+  private var keyboardActionRow: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 6) {
+        shortcutKeys
+        navigationActions
+        typeClipboardAction
+      }
+      HStack(spacing: 4) {
+        shortcutKeys
+        navigationActions
+        compactClipboardAction
+      }
+      HStack(spacing: 3) {
+        compactShortcutKeys
+        navigationActions
+        compactClipboardAction
+      }
+    }
+    .buttonStyle(AniCeButtonStyle(compact: true))
+    .controlSize(.small)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Keyboard, navigation and clipboard controls")
+  }
+
+  private var shortcutKeys: some View {
+    HStack(spacing: 4) {
+      shortcutKey("Tab", usage: 0x2B)
+      shortcutKey("Esc", usage: 0x29)
+      shortcutKey("⌫", usage: 0x2A)
+      shortcutKey("Return", usage: 0x28)
+    }
+  }
+
+  private var compactShortcutKeys: some View {
+    HStack(spacing: 3) {
+      shortcutKey("Tab", usage: 0x2B)
+      shortcutKey("Esc", usage: 0x29)
+      shortcutKey("⌫", usage: 0x2A)
+      shortcutKey("↵", usage: 0x28, accessibleName: "Return")
+    }
+  }
+
+  private var navigationActions: some View {
+    HStack(spacing: 4) {
+      Button { model.sendNavigation(usage: 0x0224) } label: {
+        Image(systemName: "chevron.left")
+      }
+        .accessibilityLabel("Back")
+        .help("Back")
+        .disabled(!model.canSendShortcut || !model.reportProtocol)
+      Button { model.sendNavigation(usage: 0x0223) } label: {
+        Image(systemName: "house")
+      }
+        .accessibilityLabel("Home")
+        .help("Home")
+        .disabled(!model.canSendShortcut || !model.reportProtocol)
+      Button(action: model.sendRecentApps) {
+        Image(systemName: "square.on.square")
+      }
+        .accessibilityLabel("Recents")
+        .help("Recents")
+        .disabled(!model.canSendShortcut)
+    }
+    .buttonStyle(AniCeButtonStyle(compact: true))
+  }
+
+  @ViewBuilder private var typeClipboardAction: some View {
+    if model.isTypingClipboard {
+      HStack(spacing: 5) {
+        ProgressView(value: Double(model.typingProgress), total: Double(max(model.typingLength, 1)))
+          .frame(width: 58)
+          .accessibilityLabel("Clipboard typing progress")
+          .accessibilityValue("\(model.typingProgress) of \(model.typingLength) characters")
+        Text("\(model.typingProgress)/\(model.typingLength)")
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+        Button("Stop typing", action: model.stopTyping)
+      }
+    } else {
+      Button(action: model.typeClipboard) {
+        Label("Type clipboard", systemImage: "doc.on.clipboard")
+      }
+      .disabled(!model.canTypeClipboard)
+      .help("Types supported plain text from the Mac clipboard after you click.")
+    }
+  }
+
+  @ViewBuilder private var compactClipboardAction: some View {
+    if model.isTypingClipboard {
+      HStack(spacing: 3) {
+        ProgressView(value: Double(model.typingProgress), total: Double(max(model.typingLength, 1)))
+          .frame(width: 24)
+          .accessibilityLabel("Clipboard typing progress")
+          .accessibilityValue("\(model.typingProgress) of \(model.typingLength) characters")
+        Button(action: model.stopTyping) {
+          Image(systemName: "stop.fill")
+        }
+        .accessibilityLabel("Stop typing")
+        .help("Stop typing")
+      }
+    } else {
+      Button(action: model.typeClipboard) {
+        Image(systemName: "doc.on.clipboard")
+      }
+      .accessibilityLabel("Type clipboard")
+      .help("Type clipboard")
+      .disabled(!model.canTypeClipboard)
+    }
+  }
+
+  private var scrollSpeedControl: some View {
+    Menu {
+      ForEach(KeyboardTrackpadScrollSpeed.allCases) { speed in
+        Button {
+          model.scrollSpeed = speed
+        } label: {
+          if model.scrollSpeed == speed {
+            Label(speed.title, systemImage: "checkmark")
+          } else {
+            Text(speed.title)
+          }
+        }
+      }
+    } label: {
+      Label("Scroll · \(model.scrollSpeed.title)", systemImage: "arrow.up.and.down")
+    }
+    .menuStyle(.borderlessButton)
+    .buttonStyle(AniCeButtonStyle())
+    .controlSize(.small)
+    .disabled(!model.reportProtocol)
+  }
+
+  private func shortcutKey(_ label: String, usage: UInt8, accessibleName: String? = nil) -> some View {
+    let spokenName = accessibleName ?? (label == "⌫" ? "Backspace" : label)
+    return Button(label) { model.sendTap(usage: usage) }
       .disabled(!model.canSendShortcut)
-      .accessibilityLabel(label == "⌫" ? "Backspace" : label)
+      .accessibilityLabel(spokenName)
+      .help(spokenName)
   }
 
   private var pad: some View {
@@ -495,7 +572,7 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
       keyWindowObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didResignKeyNotification, object: window, queue: .main
       ) { [weak self] _ in
-        Task { @MainActor [weak self] in self?.model?.surfaceLost(.keyboard) }
+        MainActor.assumeIsolated { self?.model?.surfaceLost(.keyboard) }
       }
       localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
         guard let self else { return event }
@@ -624,7 +701,7 @@ private struct MousePadSurface: NSViewRepresentable {
       keyWindowObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didResignKeyNotification, object: window, queue: .main
       ) { [weak self] _ in
-        Task { @MainActor [weak self] in self?.model?.surfaceLost(.pad) }
+        MainActor.assumeIsolated { self?.model?.surfaceLost(.pad) }
       }
     }
   }

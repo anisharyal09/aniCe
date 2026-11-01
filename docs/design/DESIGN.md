@@ -120,7 +120,7 @@ Default automatic target selection to the authenticated BLE-connected phone. Ret
 
 Stop capture and attempt neutral releases on focus loss, menus, sheets, navigation, sleep, link loss and Quit. Navigation keeps an idle HID connection open. Device-wide Disconnect closes HID for that phone; an individual BLE or LAN disconnect does not. Read the Mac clipboard only after **Type clipboard**; validate all content before sending, show progress and Stop typing, and report uncertainty after interruption without an automatic retry. Keep clipboard text out of logs and persistence. See [Keyboard & Trackpad](../features/KEYBOARD_TRACKPAD.md) and its [Classic HID contract](../../protocol/bluetooth/classic-hid.md).
 
-Keep Back, Home and Recents beside the keyboard controls. Put the two-finger scroll/sideways-drag guide below the pad, and show its current activity without covering the movement area. Linking shows the Bluetooth address and aniCe fingerprint; name matches are suggestions, and differently named pairings remain available through a disclosure. Host resume clears held input and returns to idle rather than restarting capture.
+Keep keyboard shortcuts, Back/Home/Recents and Type clipboard together in one compact horizontal action row below the input surfaces; retain accessible action names as the row adapts to narrower windows. Put the two-finger scroll/sideways-drag guide below the pad, and show its current activity without covering the movement area. Linking shows the Bluetooth address and aniCe fingerprint; name matches are suggestions, and differently named pairings remain available through a disclosure. Host resume clears held input and returns to idle rather than restarting capture.
 
 ### Now Playing
 

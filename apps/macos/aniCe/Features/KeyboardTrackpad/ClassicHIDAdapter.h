@@ -42,7 +42,8 @@ typedef void (^AniCeHIDStateChanged)(uint64_t generation, BOOL ready, BOOL suspe
 - (void)reset;
 @end
 
-/// Public app boundary. All IOBluetooth objects and callbacks stay on its private run-loop worker.
+/// Public app boundary. IOBluetooth operations stay on its private run-loop worker.
+/// Completion and state callbacks are delivered on the main queue.
 @interface AniCeHIDAdapter : NSObject
 @property(nonatomic, copy, nullable) AniCeHIDStateChanged stateChanged;
 - (void)enumeratePairedDevices:(AniCeHIDDevicesCompletion)completion;
