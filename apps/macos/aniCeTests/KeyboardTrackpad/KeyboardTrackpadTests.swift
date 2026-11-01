@@ -506,6 +506,31 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertFalse(preferences.bool(forKey: "keyboardTrackpad.floatingVisible"))
   }
 
+  @MainActor func testFloatingPositionSurvivesHidingExpandedControls() throws {
+    let visible = try XCTUnwrap(NSScreen.main).visibleFrame
+    let saved = NSRect(x: visible.maxX - 68, y: visible.minY + 20, width: 48, height: 48)
+    let preferences = testDefaults()
+    preferences.set(true, forKey: "keyboardTrackpad.floatingVisible")
+    preferences.set(NSStringFromRect(saved), forKey: "keyboardTrackpad.floatingPosition")
+    let model = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
+    let controller = FloatingKeyboardController(model: model, preferences: preferences)
+    defer { controller.shutdown(); model.shutdown() }
+    let existingWindows = Set(NSApp.windows.map { ObjectIdentifier($0) })
+    controller.restoreIfNeeded()
+    let panel = try XCTUnwrap(NSApp.windows.first { !existingWindows.contains(ObjectIdentifier($0)) })
+    XCTAssertEqual(panel.frame, saved)
+
+    for _ in 0..<3 {
+      controller.expand()
+      controller.hide()
+      controller.show(restoring: true)
+      XCTAssertEqual(panel.frame, saved, "Resizing a hidden expanded panel must not replace the compact position.")
+      controller.expand()
+      controller.collapse()
+      XCTAssertEqual(panel.frame, saved)
+    }
+  }
+
   @MainActor func testFloatingPanelPositionIsClampedToVisibleDisplay() {
     let visible = NSRect(x: 0, y: 0, width: 1000, height: 800)
     let offscreen = NSRect(x: 970, y: -20, width: 80, height: 70)

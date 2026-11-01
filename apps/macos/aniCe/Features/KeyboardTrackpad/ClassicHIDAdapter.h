@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 typedef void (^AniCeHIDCompletion)(BOOL success, NSString * _Nullable errorMessage);
 typedef void (^AniCeHIDDevicesCompletion)(NSArray<NSDictionary<NSString *, NSString *> *> *devices);
+/// Consumers discard events whose generation no longer matches their connection attempt.
 typedef void (^AniCeHIDStateChanged)(uint64_t generation, BOOL ready, BOOL suspended, BOOL reportProtocol, NSString * _Nullable message);
 
 /// Pure HIDP/descriptor state shared by the Bluetooth adapter and protocol fixtures.
@@ -38,12 +39,15 @@ typedef void (^AniCeHIDStateChanged)(uint64_t generation, BOOL ready, BOOL suspe
                                       error:(NSString * _Nullable * _Nullable)error;
 - (nullable NSData *)navigationPacketWithUsage:(uint16_t)usage pressed:(BOOL)pressed
                                           error:(NSString * _Nullable * _Nullable)error;
+/// Returns HIDP responses as {control: BOOL, data: NSData}; invalid requests receive protocol errors.
 - (NSArray<NSDictionary<NSString *, id> *> *)consumePacket:(NSData *)packet control:(BOOL)control;
 - (void)reset;
 @end
 
 /// Public app boundary. IOBluetooth operations stay on its private run-loop worker.
 /// Completion and state callbacks are delivered on the main queue.
+/// BOOL results report queue admission; completions report Bluetooth delivery or connection results.
+/// Trusted-peer selection and input ownership belong to MacKeyboardTrackpadModel.
 @interface AniCeHIDAdapter : NSObject
 @property(nonatomic, copy, nullable) AniCeHIDStateChanged stateChanged;
 - (void)enumeratePairedDevices:(AniCeHIDDevicesCompletion)completion;
@@ -52,6 +56,7 @@ typedef void (^AniCeHIDStateChanged)(uint64_t generation, BOOL ready, BOOL suspe
 - (BOOL)sendMouseButtons:(uint8_t)buttons deltaX:(NSInteger)x deltaY:(NSInteger)y wheel:(NSInteger)wheel completion:(AniCeHIDCompletion)completion;
 - (BOOL)sendNavigationUsage:(uint16_t)usage pressed:(BOOL)pressed completion:(AniCeHIDCompletion)completion;
 - (BOOL)disconnectWithCompletion:(nullable dispatch_block_t)completion;
+/// Cancels connection work, attempts held-report release and removes the service; waits at most 500 ms.
 - (void)shutdown;
 @end
 

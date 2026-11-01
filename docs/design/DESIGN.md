@@ -124,9 +124,11 @@ Expose an optional draggable 48 pt floating keyboard button from the menu-bar co
 
 Keep keyboard shortcuts, Back/Home/Recents and Type clipboard together in one compact horizontal action row below the input surfaces in the main feature; retain accessible action names as the row adapts to narrower windows. In the expanded floating panel, place the same row near the top above the input surfaces.
 
+Preserve the native keyboard and pointer view identities when switching between side-by-side and stacked layouts. Resizing must retain focus and held-input ownership rather than replacing the capturing responder.
+
 Keep separate Pointer and Scroll speed menus below this row. Full-screen trackpad opens a dedicated native window with the same pad behavior, visible local Stop and Done controls, and a fresh arming click; it never intercepts other app controls or installs a global monitor.
 
-Document the two-finger gestures consistently: up/down scrolls; left/right moves the phone pointer while dragging. Put the guide below the pad, clear of its movement area. Linking shows the Bluetooth address and aniCe fingerprint; name matches are suggestions, and differently named pairings remain available through a disclosure. Host resume clears held input and returns to idle rather than restarting capture.
+Document the two-finger gestures consistently: up/down scrolls; left/right drags the phone pointer to pan, drag or select. Put the guide below the pad, clear of its movement area. Keep fingerprint fragments out of the ordinary phone header; linking shows the Bluetooth address and full aniCe fingerprint. Allow long connection states to wrap. Name matches are suggestions, and differently named pairings remain available through a disclosure. Host resume clears held input and returns to idle rather than restarting capture.
 
 ### Now Playing
 

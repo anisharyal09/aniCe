@@ -26,3 +26,16 @@ Clipboard typing is an explicit local action. Validate the complete snapshot bef
 - The adapter's protocol fixtures protect exact descriptor and report bytes, but cannot prove system-level pairing, Android recognition, or radio reliability.
 
 See [Keyboard & Trackpad usage](../../../features/KEYBOARD_TRACKPAD.md) and the [Classic Bluetooth HID contract](../../../../protocol/bluetooth/classic-hid.md).
+
+## aniKey adaptation
+
+Reference reviewed: [aniKey Sources/Anikey.m](https://github.com/anishcreations/aniKey/blob/0dc7480509c15f43ba0e7fafd3b9072b6c0fa393/Sources/Anikey.m), GPL-3.0-or-later, copyright 2026 Anish Aryal. The adapter retains that copyright and license notice. This is adapted source, with compatibility-sensitive report conventions intentionally retained.
+
+| Boundary | aniCe implementation |
+| --- | --- |
+| HID transport and reports | Retain SDP/HIDP conventions, Classic channel PSMs and the staged Recents chord; validate the descriptor and channel identity, retain Android’s cached keyboard tail, and never retry failed input. |
+| Native work | Isolate IOBluetooth on a run-loop worker with bounded admission, serial operations during nested callbacks, cancellable connection waits and bounded shutdown. |
+| App lifecycle | Tag events by connection generation; Swift owns trusted-peer associations, registered presentations, input owners and neutral releases. |
+| Interaction | Reuse native keyboard and pointer capture across the feature, full-screen pad and floating panel; preserve fractional motion and independent saved speeds. |
+
+The Objective-C layer does not decide aniCe trust, install global input hooks or add a phone service. Hardware checks remain necessary for Bluetooth interoperability, lock-screen behavior and Spaces/full-screen presentation.

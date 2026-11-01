@@ -15,6 +15,7 @@ struct MacKeyboardTrackpadView: View {
   @State private var generatedPresentationID = UUID()
   @State private var keyboardInputID = UUID()
   @State private var fullScreenPad: FullScreenTrackpadController?
+  @State private var inputWidth: CGFloat = 0
   var onOpenDevices: () -> Void = {}
 
   init(model: MacKeyboardTrackpadModel, presentationID: UUID? = nil, floatingPresentation: Bool = false,
@@ -79,7 +80,7 @@ struct MacKeyboardTrackpadView: View {
   }
 
   private var targetHeader: some View {
-    HStack(spacing: 12) {
+    HStack(alignment: .top, spacing: 12) {
       VStack(alignment: .leading, spacing: 3) {
         Text(model.targetPeer?.deviceName ?? "Choose a trusted phone")
           .font(.system(size: floatingPresentation ? 14 : 16, weight: .medium))
@@ -89,12 +90,6 @@ struct MacKeyboardTrackpadView: View {
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
             .fixedSize(horizontal: false, vertical: true)
-        }
-        if !floatingPresentation, let peer = model.targetPeer {
-          Text("Fingerprint · \(peer.fingerprint.prefix(12))")
-            .font(.caption.monospaced())
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-            .textSelection(.enabled)
         }
       }
       Spacer(minLength: 8)
@@ -131,6 +126,7 @@ struct MacKeyboardTrackpadView: View {
           .foregroundStyle(AniCePalette.secondaryText(scheme))
         Text(model.stateTitle)
           .font(.system(size: 14, weight: .medium))
+          .fixedSize(horizontal: false, vertical: true)
       }
       Text(model.stateDetail)
         .font(.callout)
@@ -292,17 +288,19 @@ struct MacKeyboardTrackpadView: View {
   private var isKeyboardActive: Bool { model.isControlling(owner: keyboardOwner) }
 
   private var inputSurfaces: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: 16) {
-          controls.frame(width: 246, alignment: .topLeading)
-          pad.frame(minWidth: 260, maxWidth: .infinity, minHeight: 326, idealHeight: 360, maxHeight: 440)
-        }
-        VStack(alignment: .leading, spacing: 16) {
-          controls
-          pad.frame(height: 360)
-        }
+    let sideBySide = inputWidth >= 522
+    let layout = sideBySide
+      ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+      : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+    return VStack(alignment: .leading, spacing: 12) {
+      // Rearrange the same native input views so resizing cannot replace the capturing responder.
+      layout {
+        controls.frame(width: sideBySide ? 246 : nil, alignment: .topLeading)
+        pad.frame(maxWidth: .infinity).frame(height: 360)
       }
+      .background(GeometryReader { geometry in
+        Color.clear.onChange(of: geometry.size.width, initial: true) { _, width in inputWidth = width }
+      })
 
       if !floatingPresentation { keyboardActionRow }
       ViewThatFits(in: .horizontal) {
@@ -530,7 +528,7 @@ struct MacKeyboardTrackpadView: View {
   private var pad: some View {
     VStack(alignment: .leading, spacing: 8) {
       TrackpadPad(model: model, presentationID: activePresentationID)
-      Text("Two fingers: up/down to scroll; swipe left/right to move the phone pointer sideways. This can pan content or drag/select items.")
+      Text("Two fingers: up/down to scroll; left/right to drag the phone pointer. Use it to pan, drag or select.")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
         .fixedSize(horizontal: false, vertical: true)

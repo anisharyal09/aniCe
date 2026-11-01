@@ -376,6 +376,7 @@ static NSString *HIDServiceValidationError(IOBluetoothSDPServiceRecord *record) 
 }
 @end
 
+// IOBluetooth needs a live run loop; operations stay serial while SDK waits pump nested callbacks.
 @interface AniCeHIDTransportWorker : NSObject
 @property(nonatomic, strong) NSThread *thread;
 @property(nonatomic, strong) NSCondition *startup;
@@ -439,6 +440,7 @@ static NSString *HIDServiceValidationError(IOBluetoothSDPServiceRecord *record) 
 - (void)finish { self.stopping = YES; }
 @end
 
+// Worker-confined state. The app model supplies trust decisions and fences callback generations.
 @interface AniCeHIDSession : NSObject <IOBluetoothL2CAPChannelDelegate>
 @property(nonatomic, strong) AniCeHIDProtocol *protocol;
 @property(nonatomic, strong, nullable) IOBluetoothDevice *device;
@@ -577,7 +579,7 @@ static NSString *HIDServiceValidationError(IOBluetoothSDPServiceRecord *record) 
         }
     }
     self.authenticated = YES;
-    // Match aniKey: macOS owns encryption; input requires successful authentication of this link.
+    // macOS owns encryption; input requires successful authentication of this connection.
     if (![self authenticatedLinkWithError:error] || ![self openPSM:0x0011 error:error] || ![self openPSM:0x0013 error:error]) {
         self.connecting = NO; [self disconnect]; return NO;
     }
@@ -694,6 +696,7 @@ static NSString *HIDServiceValidationError(IOBluetoothSDPServiceRecord *record) 
         [self publishState:nil];
     }
 }
+// Release held state without replaying relative motion, which would move the pointer again.
 - (BOOL)releaseHeldReportsWithError:(NSString **)error {
     BOOL success = YES;
     if (memcmp(self.protocol.keyboardReport.bytes, (uint8_t[9]){0}, 9) != 0 &&

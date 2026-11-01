@@ -128,10 +128,12 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     preferences.set(true, forKey: Self.visibilityKey)
     model.enterPanel(id: presentationID, automaticallyConnect: false, refreshPairedDevices: false)
     let panel = makePanelIfNeeded()
-    panel.setContentSize(Self.compactSize)
+    // Snapshot the saved position before replacing an expanded hosting view can resize the panel.
+    let compactFrame = positionedFrame(size: Self.compactSize)
     panel.contentView = NSHostingView(rootView: FloatingKeyboardPanelView(
       controller: self, model: model, onOpenDevices: onOpenDevices))
-    panel.setFrame(positionedFrame(size: Self.compactSize), display: false)
+    setPanelFrame(compactFrame, display: false)
+    preferences.set(NSStringFromRect(compactFrame), forKey: Self.positionKey)
     panel.orderFront(nil)
   }
 

@@ -20,12 +20,12 @@ Use **Other devices…** to select another trusted aniCe phone. Use **Change Blu
 - Pointer motion and vertical scrolling retain fractional deltas between reports so slow movement accumulates without loss. Stopping control discards unsent fractions.
 - **Pointer** and **Scroll** have independent, saved speeds: **Extra slow** (⅛×), **Gentle** (½×), **Standard** (1×) and **Fast** (2×). Pointer defaults to Standard; Scroll defaults to Extra slow. Scroll speed applies to both precise trackpad scrolling and mouse-wheel steps. Android's input settings also affect the resulting movement.
 - **Reverse vertical pointer** is enabled by default, correcting the previous inverted movement. Turn it off in the Pointer menu to restore the old direction; this preference is saved locally.
-- Input stays within the visible pad. **Full-screen trackpad** opens a separate native full-screen pad on one display. Click once or scroll over the pad to arm it, then move, click, drag or scroll anywhere within that pad. **Stop controlling** and **Done** remain local controls; Done or leaving full-screen releases held input and closes the pad. `⌘⇧Esc` also stops capture. Other applications and displays keep their own input.
+- Input stays within the visible pad. **Full-screen trackpad** opens a separate native full-screen pad on one display. Click once to arm it, then move, click, drag or scroll anywhere within that pad. **Stop controlling** and **Done** remain local controls; Done or leaving full-screen releases held input and closes the pad. `⌘⇧Esc` also stops capture. Other applications and displays keep their own input.
 - Use two fingers up/down to scroll. A left/right swipe moves the phone pointer while holding its primary button, so it can pan content or drag/select items. Inertia is ignored, and a physical held click takes precedence. Three-finger gestures stay with macOS.
-- **Back** and **Home** send HID consumer-control actions when the phone uses report protocol. Scrolling and these actions are unavailable in boot protocol. **Recents** sends aniKey's staged Meta+Tab keyboard chord.
+- **Back** and **Home** send HID consumer-control actions when the phone uses report protocol. Scrolling and these actions are unavailable in boot protocol. **Recents** sends a staged Meta+Tab keyboard chord.
 - Keyboard reports retain a neutral trailing byte for compatibility with Android’s cached composite keyboard layout.
 - Direct typing sends physical key positions; the Android keyboard layout determines the resulting text. Clipboard typing uses US-layout ASCII.
-- Preset keyboard and navigation buttons release held keyboard and mouse input before sending their action, then leave capture idle. Click the keyboard area to resume typing, or click or scroll over the pad to resume pointer input.
+- Preset keyboard and navigation buttons release held keyboard and mouse input before sending their action, then leave capture idle. Click the keyboard area to resume typing, or click the pad to resume pointer input.
 - **Stop controlling** releases held input but keeps the HID connection open. `⌘⇧Esc` stops input while a feature surface has keyboard focus. Leaving the feature, losing focus, opening a native menu or sheet, sleep, link loss and Quit also stop capture and attempt neutral releases.
 
 The feature sends mouse input, not touchscreen gestures; pinch and edge swipes are not supported.
@@ -47,10 +47,16 @@ Choose **Type clipboard** to read the Mac pasteboard once and type the complete 
 ## Device and connection boundaries
 
 - The target must be an aniCe-trusted Android identity and a separately paired macOS Bluetooth device. Names do not establish identity; linking requires an explicit user confirmation.
-- HID uses aniKey's system-paired, authenticated Classic Bluetooth path. macOS manages link encryption; aniCe does not independently verify it. Pairing, successful authentication of the current connection and matching HID channels are required before input. The active BLE session selects the default phone; input itself does not use BLE, LAN, IP addresses, ADB or scrcpy.
+- HID uses a system-paired, authenticated Classic Bluetooth connection. macOS manages link encryption; aniCe does not independently verify it. Pairing, successful authentication of the current connection and matching HID channels are required before input. The active BLE session selects the default phone; input itself does not use BLE, LAN, IP addresses, ADB or scrcpy.
 - No global keyboard or pointer monitor is installed, and the feature does not request Accessibility permission.
 - macOS Bluetooth pairing and radio state affect availability. If the saved device is no longer paired, open Bluetooth Settings and pair it again before linking.
 - **Disconnect** keeps HID closed for the current feature visit. Choose **Connect** or reopen the feature to reconnect.
 - A successful HID connection can remain idle while the feature is not capturing input. Individual aniCe BLE or LAN disconnects do not close HID; device-wide Disconnect closes HID for that phone.
 
 The Bluetooth profile and exact report bytes are specified in the [Classic Bluetooth HID contract](../../protocol/bluetooth/classic-hid.md). The feature's ownership and security rationale are recorded in [ADR 0011](../decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md).
+
+## Implementation and idle behavior
+
+The Objective-C adapter adapts aniKey’s GPL transport and report conventions. aniCe adds a bounded run-loop worker, current-connection authentication and channel checks, generation-tagged callbacks, and failure handling without replaying input. The Swift model owns trusted-phone selection, input ownership, motion pacing and cancellation; native views own focus and gesture capture. See the [adaptation record](../decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation).
+
+Stopping input or hiding controls releases held reports and cancels pending motion and typing jobs. The independent HID connection can remain idle. Its Bluetooth worker waits on its run loop rather than polling; connection setup uses bounded callback waits. An idle connection still uses system Bluetooth resources. Quit shuts the adapter down. Android decides whether ordinary HID input is accepted on its lock screen; aniCe does not bypass phone authentication or guarantee lock-screen control.

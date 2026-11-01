@@ -18,6 +18,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Refine Keyboard & Trackpad headers and gesture guidance, preserve keyboard focus across layout changes and saved position after hiding expanded controls, and document the native adapter's aniKey provenance and idle behavior.
 - Keep the floating keyboard button in a stable compact position across expand, collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar companion popup, and remove the confusing keyboard shortcut hint.
 - Make expanded floating controls movable, pass inactive-pad scrolling to the local panel, reduce repeated header details and clarify Bluetooth HID state.
 - Correct default vertical pointer direction, save independent pointer/scroll speeds, and apply scroll speed to both trackpads and mouse wheels.
