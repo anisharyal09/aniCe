@@ -32,6 +32,14 @@ The feature sends mouse input, not touchscreen gestures; pinch and edge swipes a
 
 When the phone suspends HID, pending input is discarded. Held reports are released when the host resumes; capture remains stopped until another deliberate click.
 
+## Floating keyboard
+
+Choose **Show floating keyboard** from the menu-bar companion’s More menu or its right-click menu. The draggable 48-point keyboard button stays above regular windows across Spaces and full-screen apps. Its tooltip and accessibility label include the selected phone and current state.
+
+Click once to toggle phone typing on or off. If the HID link is disconnected, aniCe connects first and starts typing only if the button still has focus when the connection completes. Clicking again, losing focus, switching apps, opening a menu or sheet, or hiding the widget cancels pending activation and releases held input. The HID link may remain connected and idle.
+
+Right-click the button for **Show full controls** or **Hide**. Full controls expand in the same panel; **Collapse** returns to the button. Expanding, collapsing or hiding releases input, so a fresh click is required to resume. The widget remembers whether it was visible and its compact position. After a restart it restores collapsed and idle without connecting; **Hide** saves it as hidden. Saved positions are clamped to the available display after display changes.
+
 ## Type clipboard
 
 Choose **Type clipboard** to read the Mac pasteboard once and type the complete validated snapshot. It can start during direct control: validation happens first, then held input is released and clipboard typing takes over. Invalid text leaves direct control active. It accepts US-layout printable ASCII, Tab and line endings, normalizes CRLF, and stops before sending if the snapshot is empty, contains unsupported text, or exceeds 1,024 characters. Each character uses a 50 ms press/release interval. **Stop typing** cancels before the next report; check the phone after an interruption because the last character may already have arrived. Text is not logged or saved by this feature.

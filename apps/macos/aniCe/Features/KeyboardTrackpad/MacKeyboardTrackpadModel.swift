@@ -101,7 +101,13 @@ enum KeyboardTrackpadPhase: Equatable {
   case failed
 }
 
-enum KeyboardTrackpadSurface: Equatable, Sendable { case keyboard, pad }
+enum KeyboardTrackpadSurface: Hashable, Sendable { case keyboard, pad }
+
+struct KeyboardTrackpadCaptureOwner: Equatable, Sendable {
+  let presentationID: UUID
+  let inputID: UUID
+  let surface: KeyboardTrackpadSurface
+}
 
 enum KeyboardTrackpadSpeed: String, CaseIterable, Identifiable {
   case extraSlow, gentle, standard, fast
@@ -268,10 +274,17 @@ enum ClipboardTypingValidationError: Error, Equatable {
   private var connectionGeneration: UInt64 = 0
   private var captureEpoch: UInt64 = 0
   private var pairingRefreshGeneration: UInt64 = 0
-  @ObservationIgnored private var isPanelVisible = false
+  @ObservationIgnored private var panelRegistrations: [UUID: Bool] = [:]
   @ObservationIgnored private var automaticConnectionAttempts = Set<String>()
   private var activeSurface: KeyboardTrackpadSurface?
   private var pendingCaptureSurface: KeyboardTrackpadSurface?
+  private var activeOwner: KeyboardTrackpadCaptureOwner?
+  private var pendingOwner: KeyboardTrackpadCaptureOwner?
+  private static let legacyPresentationID = UUID()
+  private static let legacyKeyboardOwner = KeyboardTrackpadCaptureOwner(
+    presentationID: legacyPresentationID, inputID: UUID(), surface: .keyboard)
+  private static let legacyPadOwner = KeyboardTrackpadCaptureOwner(
+    presentationID: legacyPresentationID, inputID: UUID(), surface: .pad)
   private var lastDeliberatePeerKey: String?
   private var connectedBLEPeerID: String?
   private var outputQueue: [Output] = []
@@ -327,6 +340,10 @@ enum ClipboardTypingValidationError: Error, Equatable {
   var isReady: Bool { phase == .connectedIdle || phase == .controlling || phase == .suspended || (phase == .disconnecting && writeInFlight) }
   var isControlling: Bool { phase == .controlling && activeSurface != nil }
   var currentSurface: KeyboardTrackpadSurface? { activeSurface }
+  func isControlling(owner: KeyboardTrackpadCaptureOwner) -> Bool {
+    isControlling && activeOwner == owner
+  }
+  func isPending(owner: KeyboardTrackpadCaptureOwner) -> Bool { pendingOwner == owner }
   var isScrolling: Bool { scrollAxis != nil }
   var pointerActivity: String {
     if scrollDragging { return "Sideways drag" }
@@ -461,10 +478,21 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func enterPanel() {
-    isPanelVisible = true
-    automaticConnectionAttempts.removeAll(keepingCapacity: true)
-    pairedDevicesChecked = false
-    refreshPairedDevices()
+    enterPanel(id: Self.legacyPresentationID)
+  }
+
+  func enterPanel(
+    id presentationID: UUID,
+    automaticallyConnect: Bool = true,
+    refreshPairedDevices: Bool = true
+  ) {
+    let isFirstPresentation = panelRegistrations.isEmpty
+    panelRegistrations[presentationID] = automaticallyConnect
+    if isFirstPresentation { automaticConnectionAttempts.removeAll(keepingCapacity: true) }
+    if refreshPairedDevices && (isFirstPresentation || !pairedDevicesChecked) {
+      pairedDevicesChecked = false
+      self.refreshPairedDevices()
+    }
     connectAutomaticallyIfReady()
   }
 
@@ -484,7 +512,16 @@ enum ClipboardTypingValidationError: Error, Equatable {
         self.notice = "The linked Bluetooth device is not currently paired. Pair it in Bluetooth Settings, then link it again."
         if self.isReady || self.phase == .connecting { self.disconnect() }
       }
-      self.resolveSetupPhase()
+      if let owner = self.pendingOwner, self.pendingCaptureSurface == nil {
+        if self.canConnect {
+          self.connect(arming: owner.surface)
+        } else {
+          self.pendingOwner = nil
+          self.resolveSetupPhase()
+        }
+      } else {
+        self.resolveSetupPhase()
+      }
     }
   }
 
@@ -531,34 +568,68 @@ enum ClipboardTypingValidationError: Error, Equatable {
   func connect() { connect(arming: nil) }
 
   func requestControl(on surface: KeyboardTrackpadSurface) {
-    guard !isShuttingDown, typingJob == nil, navigationJob == nil else { return }
-    if activeSurface != surface { finishCapture() }
+    requestControl(owner: surface == .keyboard ? Self.legacyKeyboardOwner : Self.legacyPadOwner)
+  }
+
+  func requestControl(owner: KeyboardTrackpadCaptureOwner) {
+    guard !isShuttingDown, typingJob == nil, navigationJob == nil,
+          panelRegistrations[owner.presentationID] != nil || owner.presentationID == Self.legacyPresentationID else { return }
+    if activeOwner != nil && activeOwner != owner { finishCapture() }
     if phase == .connecting {
-      pendingCaptureSurface = surface
+      pendingCaptureSurface = owner.surface
+      pendingOwner = owner
       return
     }
     if phase == .connectedIdle {
       captureEpoch &+= 1
-      activeSurface = surface
+      activeSurface = owner.surface
+      activeOwner = owner
       pendingCaptureSurface = nil
+      pendingOwner = nil
       phase = .controlling
       notice = nil
       return
     }
     guard phase == .disconnected || phase == .setupNeeded || phase == .failed else { return }
-    connect(arming: surface)
+    pendingOwner = owner
+    connect(arming: owner.surface)
+  }
+
+  func toggleControl(owner: KeyboardTrackpadCaptureOwner) {
+    if activeOwner == owner || pendingOwner == owner {
+      stopControl(owner: owner)
+    } else {
+      requestControl(owner: owner)
+    }
+  }
+
+  func stopControl(owner: KeyboardTrackpadCaptureOwner) {
+    if pendingOwner == owner { pendingOwner = nil; pendingCaptureSurface = nil }
+    guard activeOwner == owner else { return }
+    cancelTyping(interrupted: true)
+    finishCapture()
+  }
+
+  func stopControl(presentationID: UUID) {
+    if let pendingOwner, pendingOwner.presentationID == presentationID { stopControl(owner: pendingOwner) }
+    if let activeOwner, activeOwner.presentationID == presentationID { stopControl(owner: activeOwner) }
   }
 
   func surfaceLost(_ surface: KeyboardTrackpadSurface) {
-    if pendingCaptureSurface == surface { pendingCaptureSurface = nil }
-    if activeSurface == surface {
+    surfaceLost(owner: surface == .keyboard ? Self.legacyKeyboardOwner : Self.legacyPadOwner)
+  }
+
+  func surfaceLost(owner: KeyboardTrackpadCaptureOwner) {
+    if pendingOwner == owner { pendingOwner = nil; pendingCaptureSurface = nil }
+    if activeOwner == owner {
       cancelTyping(interrupted: true)
       finishCapture()
     }
   }
 
-  func keyDown(usage: UInt8, modifiers: UInt8) {
-    guard phase == .controlling, activeSurface == .keyboard, usage > 0, typingJob == nil else { return }
+  func keyDown(usage: UInt8, modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+          usage > 0, typingJob == nil else { return }
     heldModifiers = modifiers
     if heldUsages.contains(usage) { return }
     guard heldUsages.count < 6 else {
@@ -569,55 +640,62 @@ enum ClipboardTypingValidationError: Error, Equatable {
     enqueue(.keyboard(heldModifiers, heldUsages))
   }
 
-  func keyUp(usage: UInt8, modifiers: UInt8) {
-    guard phase == .controlling, activeSurface == .keyboard, typingJob == nil else { return }
+  func keyUp(usage: UInt8, modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+          typingJob == nil else { return }
     heldModifiers = modifiers
     heldUsages.removeAll { $0 == usage }
     enqueue(.keyboard(heldModifiers, heldUsages))
   }
 
-  func modifiersChanged(_ modifiers: UInt8) {
-    guard phase == .controlling, activeSurface == .keyboard, typingJob == nil,
+  func modifiersChanged(_ modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+          typingJob == nil,
           heldModifiers != modifiers else { return }
     heldModifiers = modifiers
     enqueue(.keyboard(heldModifiers, heldUsages))
   }
 
-  func pointerButtonDown(secondary: Bool = false) {
-    guard phase == .controlling, activeSurface == .pad, typingJob == nil else { return }
+  func pointerButtonDown(secondary: Bool = false, owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .pad, owner == nil || activeOwner == owner,
+          typingJob == nil else { return }
     heldButtons = secondary ? 2 : 1
     enqueue(.mouse(heldButtons, 0, 0, 0))
   }
 
-  func pointerButtonUp() {
-    guard phase == .controlling, activeSurface == .pad, typingJob == nil else { return }
+  func pointerButtonUp(owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .pad, owner == nil || activeOwner == owner,
+          typingJob == nil else { return }
     heldButtons = 0
     enqueue(.mouse(0, 0, 0, 0))
   }
 
-  func pointerMoved(deltaX: Double, deltaY: Double) {
-    guard phase == .controlling, activeSurface == .pad, typingJob == nil,
+  func pointerMoved(deltaX: Double, deltaY: Double, owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .pad, owner == nil || activeOwner == owner,
+          typingJob == nil,
           deltaX.isFinite, deltaY.isFinite, deltaX != 0 || deltaY != 0 else { return }
     enqueueMotion(buttons: heldButtons, x: deltaX * pointerSpeed.scale, y: deltaY * pointerSpeed.scale, wheel: 0)
   }
 
-  func scroll(deltaY: Double, precise: Bool) {
-    guard phase == .controlling, activeSurface == .pad, typingJob == nil,
+  func scroll(deltaY: Double, precise: Bool, owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard phase == .controlling, activeSurface == .pad, owner == nil || activeOwner == owner,
+          typingJob == nil,
           reportProtocol, deltaY.isFinite, deltaY != 0 else { return }
     let wheel = (precise ? deltaY / 12.0 : deltaY) * scrollSpeed.scale
     enqueueMotion(buttons: heldButtons, x: 0, y: 0, wheel: wheel)
   }
 
-  func scrollGesture(deltaX: Double, deltaY: Double, phase: NSEvent.Phase, precise: Bool, momentum: Bool) {
-    guard isControlling, activeSurface == .pad, !momentum,
+  func scrollGesture(deltaX: Double, deltaY: Double, phase: NSEvent.Phase, precise: Bool, momentum: Bool,
+    owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard isControlling, activeSurface == .pad, owner == nil || activeOwner == owner, !momentum,
           deltaX.isFinite, deltaY.isFinite, heldButtons == 0 || scrollDragging else { return }
-    if phase.contains(.cancelled) { cancelScrollGesture(); return }
+    if phase.contains(.cancelled) { cancelScrollGesture(owner: owner); return }
     if phase.isEmpty {
-      if scrollAxis == nil { scroll(deltaY: deltaY, precise: precise) }
+      if scrollAxis == nil { scroll(deltaY: deltaY, precise: precise, owner: owner) }
       return
     }
     if phase.contains(.began) {
-      cancelScrollGesture()
+      cancelScrollGesture(owner: owner)
       scrollAxis = .undecided
     }
     guard let axis = scrollAxis else { return }
@@ -628,20 +706,21 @@ enum ClipboardTypingValidationError: Error, Equatable {
       x = scrollX; y = scrollY
     }
     if scrollAxis == .vertical {
-      scroll(deltaY: y, precise: precise)
+      scroll(deltaY: y, precise: precise, owner: owner)
     } else if scrollAxis == .horizontal {
       if !scrollDragging, abs(scrollX) >= 12 {
-        pointerButtonDown()
+        pointerButtonDown(owner: owner)
         scrollDragging = true
         x = scrollX
       }
-      if scrollDragging { pointerMoved(deltaX: x, deltaY: 0) }
+      if scrollDragging { pointerMoved(deltaX: x, deltaY: 0, owner: owner) }
     }
-    if phase.contains(.ended) { cancelScrollGesture() }
+    if phase.contains(.ended) { cancelScrollGesture(owner: owner) }
   }
 
-  func cancelScrollGesture() {
-    if scrollDragging { pointerButtonUp() }
+  func cancelScrollGesture(owner: KeyboardTrackpadCaptureOwner? = nil) {
+    guard owner == nil || activeOwner == owner else { return }
+    if scrollDragging { pointerButtonUp(owner: owner) }
     scrollDragging = false
     scrollAxis = nil
     scrollX = 0; scrollY = 0
@@ -709,7 +788,9 @@ enum ClipboardTypingValidationError: Error, Equatable {
       connectionGeneration &+= 1
       let operation = connectionGeneration
       pendingCaptureSurface = nil
+      pendingOwner = nil
       activeSurface = nil
+      activeOwner = nil
       phase = .disconnecting
       transport.disconnect { [weak self] in
         guard let self, !self.isShuttingDown, self.connectionGeneration == operation else { return }
@@ -721,10 +802,12 @@ enum ClipboardTypingValidationError: Error, Equatable {
     retireConnection()
   }
 
-  func leavePanel() {
-    isPanelVisible = false
-    cancelTyping(interrupted: true)
-    finishCapture()
+  func leavePanel() { leavePanel(id: Self.legacyPresentationID) }
+
+  func leavePanel(id presentationID: UUID) {
+    panelRegistrations.removeValue(forKey: presentationID)
+    if pendingOwner?.presentationID == presentationID { pendingOwner = nil; pendingCaptureSurface = nil }
+    if activeOwner?.presentationID == presentationID { finishCapture() }
   }
 
   func applicationWasInterrupted() {
@@ -807,11 +890,22 @@ enum ClipboardTypingValidationError: Error, Equatable {
     guard phase == .setupNeeded || phase == .disconnected || phase == .failed else { return }
     guard !relinkingAssociation else { return }
     guard targetPeer != nil, let address = targetAddress else {
+      pendingCaptureSurface = nil
+      pendingOwner = nil
       phase = .setupNeeded
       notice = "Choose a trusted aniCe phone and link its paired Bluetooth device first."
       return
     }
-    guard pairedDevicesChecked, pairedDevices.contains(where: { $0.address == address }) else {
+    guard pairedDevicesChecked else {
+      pendingCaptureSurface = nil
+      refreshPairedDevices()
+      phase = .setupNeeded
+      notice = "Checking the linked Bluetooth pairing."
+      return
+    }
+    guard pairedDevices.contains(where: { $0.address == address }) else {
+      pendingCaptureSurface = nil
+      pendingOwner = nil
       phase = .setupNeeded
       notice = "This Mac no longer has the linked Bluetooth pairing. Pair the phone in Bluetooth Settings, then link it again."
       refreshPairedDevices()
@@ -820,6 +914,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     connectionGeneration &+= 1
     let operation = connectionGeneration
     pendingCaptureSurface = surface
+    if surface == nil { pendingOwner = nil }
     phase = .connecting
     failureMessage = nil
     notice = nil
@@ -827,19 +922,35 @@ enum ClipboardTypingValidationError: Error, Equatable {
       guard let self, !self.isShuttingDown, self.connectionGeneration == operation else { return }
       switch result {
       case .success:
-        self.phase = self.activeSurface == nil ? .connectedIdle : .controlling
         self.failureMessage = nil
-        if let surface = self.pendingCaptureSurface {
+        if let surface = self.pendingCaptureSurface,
+           let owner = self.pendingOwner,
+           self.panelRegistrations[owner.presentationID] != nil || owner.presentationID == Self.legacyPresentationID {
           self.pendingCaptureSurface = nil
+          self.pendingOwner = nil
           self.captureEpoch &+= 1
           self.activeSurface = surface
+          self.activeOwner = owner
           self.phase = .controlling
+        } else if self.activeOwner != nil, self.activeSurface != nil {
+          // Readiness can arrive before connect() completes and a fresh click can arm the live link.
+          self.pendingCaptureSurface = nil
+          self.pendingOwner = nil
+          self.phase = .controlling
+        } else {
+          self.pendingCaptureSurface = nil
+          self.pendingOwner = nil
+          self.activeSurface = nil
+          self.activeOwner = nil
+          self.phase = .connectedIdle
         }
       case .failure(let message):
         self.pendingCaptureSurface = nil
+        self.pendingOwner = nil
         self.phase = .failed
         self.failureMessage = message
         self.activeSurface = nil
+        self.activeOwner = nil
       }
     }
   }
@@ -848,11 +959,13 @@ enum ClipboardTypingValidationError: Error, Equatable {
     cancelNavigation()
     let hadCapture = activeSurface != nil || !heldUsages.isEmpty || heldButtons != 0 || heldModifiers != 0
     pendingCaptureSurface = nil
+    pendingOwner = nil
     guard hadCapture else { return }
     let endedSurface = activeSurface
     motionTimer?.cancel(); motionTimer = nil
     lastMotionWrite = nil
     activeSurface = nil
+    activeOwner = nil
     captureEpoch &+= 1
     let needsKeyboardRelease = endedSurface == .keyboard || !heldUsages.isEmpty || heldModifiers != 0 || typeKeyDown
     let needsMouseRelease = endedSurface == .pad || heldButtons != 0
@@ -1166,6 +1279,8 @@ enum ClipboardTypingValidationError: Error, Equatable {
     isTypingClipboard = false
     activeSurface = nil
     pendingCaptureSurface = nil
+    activeOwner = nil
+    pendingOwner = nil
     heldUsages.removeAll(); heldModifiers = 0; heldButtons = 0; typeKeyDown = false
     scrollDragging = false; scrollAxis = nil; scrollX = 0; scrollY = 0
   }
@@ -1208,6 +1323,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
         idleAllowed: $0.idleAllowed, release: $0.release)
     }
     pendingCaptureSurface = nil
+    pendingOwner = nil
     if hadReadyLink {
       phase = .disconnecting
       pendingDisconnect = true
@@ -1223,7 +1339,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
         self.resolveSetupPhase()
       }
     }
-    if wasConnecting { activeSurface = nil }
+    if wasConnecting { activeSurface = nil; activeOwner = nil }
   }
 
   private func retireCurrentTarget() {
@@ -1239,7 +1355,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   private func connectAutomaticallyIfReady() {
-    guard isPanelVisible, canConnect,
+    guard panelRegistrations.values.contains(true), canConnect,
           let targetPeer, let address = targetAddress else { return }
     let token = KeyboardTrackpadAssociations.peerKey(targetPeer) + "|" + address
     guard automaticConnectionAttempts.insert(token).inserted else { return }

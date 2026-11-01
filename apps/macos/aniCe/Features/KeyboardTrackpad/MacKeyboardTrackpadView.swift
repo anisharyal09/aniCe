@@ -5,13 +5,25 @@ import SwiftUI
 
 struct MacKeyboardTrackpadView: View {
   @Bindable var model: MacKeyboardTrackpadModel
+  private let presentationID: UUID?
   @Environment(\.colorScheme) private var scheme
   @State private var showLinkConfirmation = false
   @State private var linkCandidate: PairedBluetoothDevice?
   @State private var linkPeer: DeviceIdentity?
   @State private var keyboardFocused = false
+  @State private var generatedPresentationID = UUID()
+  @State private var keyboardInputID = UUID()
   @State private var fullScreenPad: FullScreenTrackpadController?
   var onOpenDevices: () -> Void = {}
+
+  init(model: MacKeyboardTrackpadModel, presentationID: UUID? = nil,
+    onOpenDevices: @escaping () -> Void = {}) {
+    self.model = model
+    self.presentationID = presentationID
+    self.onOpenDevices = onOpenDevices
+  }
+
+  private var activePresentationID: UUID { presentationID ?? generatedPresentationID }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -50,11 +62,11 @@ struct MacKeyboardTrackpadView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .foregroundStyle(AniCePalette.primaryText(scheme))
-    .onAppear { model.enterPanel() }
+    .onAppear { model.enterPanel(id: activePresentationID) }
     .onDisappear {
       fullScreenPad?.close()
       fullScreenPad = nil
-      model.leavePanel()
+      model.leavePanel(id: activePresentationID)
     }
     .alert(
       "Link device to \(linkPeer?.deviceName ?? "this phone")?",
@@ -255,9 +267,11 @@ struct MacKeyboardTrackpadView: View {
     .controlSize(.small)
   }
 
-  private var isKeyboardActive: Bool {
-    model.isControlling && model.currentSurface == .keyboard
+  private var keyboardOwner: KeyboardTrackpadCaptureOwner {
+    KeyboardTrackpadCaptureOwner(presentationID: activePresentationID, inputID: keyboardInputID, surface: .keyboard)
   }
+
+  private var isKeyboardActive: Bool { model.isControlling(owner: keyboardOwner) }
 
   private var inputSurfaces: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -324,7 +338,8 @@ struct MacKeyboardTrackpadView: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Keyboard").font(.system(size: 14, weight: .medium))
       ZStack {
-        KeyboardCaptureSurface(model: model, focused: $keyboardFocused)
+        KeyboardCaptureSurface(model: model, presentationID: activePresentationID,
+          inputID: keyboardInputID, focused: $keyboardFocused)
         VStack(spacing: 4) {
           Image(systemName: isKeyboardActive ? "keyboard.fill" : "keyboard")
             .font(.system(size: 20))
@@ -499,7 +514,7 @@ struct MacKeyboardTrackpadView: View {
 
   private var pad: some View {
     VStack(alignment: .leading, spacing: 8) {
-      TrackpadPad(model: model)
+      TrackpadPad(model: model, presentationID: activePresentationID)
       Text("Two fingers: up/down to scroll; swipe left/right to move the phone pointer sideways. This can pan content or drag/select items.")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -535,12 +550,18 @@ struct MacKeyboardTrackpadView: View {
 
 private struct TrackpadPad: View {
   let model: MacKeyboardTrackpadModel
+  let presentationID: UUID
   @Environment(\.colorScheme) private var scheme
   @State private var focused = false
+  @State private var inputID = UUID()
+
+  private var captureOwner: KeyboardTrackpadCaptureOwner {
+    KeyboardTrackpadCaptureOwner(presentationID: presentationID, inputID: inputID, surface: .pad)
+  }
 
   var body: some View {
     ZStack {
-      MousePadSurface(model: model, focused: $focused)
+      MousePadSurface(model: model, presentationID: presentationID, inputID: inputID, focused: $focused)
         .accessibilityLabel("Mouse and trackpad pad")
         .accessibilityHint("Click to connect and arm pointer input. The click is consumed. Move, drag or scroll after control starts.")
       VStack {
@@ -556,7 +577,7 @@ private struct TrackpadPad: View {
           }
         }
         Spacer()
-        if !model.isControlling || model.currentSurface != .pad {
+        if !model.isControlling(owner: captureOwner) {
           Text("Click to control")
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -582,6 +603,7 @@ private struct TrackpadPad: View {
 
 @MainActor final class FullScreenTrackpadController: NSWindowController, NSWindowDelegate {
   private let model: MacKeyboardTrackpadModel
+  private let presentationID = UUID()
 
   init(model: MacKeyboardTrackpadModel) {
     self.model = model
@@ -593,8 +615,10 @@ private struct TrackpadPad: View {
     window.isReleasedWhenClosed = false
     super.init(window: window)
     window.delegate = self
-    window.contentView = NSHostingView(rootView: FullScreenTrackpadContent(model: model) { [weak self] in self?.close() })
+    window.contentView = NSHostingView(rootView: FullScreenTrackpadContent(
+      model: model, presentationID: presentationID) { [weak self] in self?.close() })
     window.center()
+    model.enterPanel(id: presentationID, automaticallyConnect: false, refreshPairedDevices: false)
   }
 
   @available(*, unavailable)
@@ -608,7 +632,7 @@ private struct TrackpadPad: View {
   }
 
   func windowWillClose(_ notification: Notification) {
-    model.stopControlling()
+    model.leavePanel(id: presentationID)
     window?.contentView = nil
   }
 
@@ -619,6 +643,7 @@ private struct TrackpadPad: View {
 private struct FullScreenTrackpadContent: View {
   @Bindable var model: MacKeyboardTrackpadModel
   @Environment(\.colorScheme) private var scheme
+  let presentationID: UUID
   let onDone: () -> Void
 
   var body: some View {
@@ -631,12 +656,12 @@ private struct FullScreenTrackpadContent: View {
             .foregroundStyle(AniCePalette.secondaryText(scheme))
         }
         Spacer(minLength: 8)
-        Button("Stop controlling", action: model.stopControlling)
+        Button("Stop controlling") { model.stopControl(presentationID: presentationID) }
           .disabled(!model.isControlling)
         Button("Done", action: onDone)
       }
       .buttonStyle(AniCeButtonStyle())
-      TrackpadPad(model: model)
+      TrackpadPad(model: model, presentationID: presentationID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .padding(12)
@@ -648,28 +673,44 @@ private struct FullScreenTrackpadContent: View {
 
 private struct KeyboardCaptureSurface: NSViewRepresentable {
   let model: MacKeyboardTrackpadModel
+  let presentationID: UUID
+  let inputID: UUID
   @Binding var focused: Bool
 
   func makeNSView(context: Context) -> KeyboardInputNSView {
     let view = KeyboardInputNSView()
-    view.model = model
+    view.configure(model: model, presentationID: presentationID, inputID: inputID)
     view.onFocusChange = { focused = $0 }
     return view
   }
 
   func updateNSView(_ view: KeyboardInputNSView, context: Context) {
-    view.model = model
+    view.configure(model: model, presentationID: presentationID, inputID: inputID)
     view.onFocusChange = { focused = $0 }
   }
 }
 
 @MainActor final class KeyboardInputNSView: NSView {
   var model: MacKeyboardTrackpadModel?
+  var presentationID = UUID()
+  var inputID = UUID()
+  var captureOwner: KeyboardTrackpadCaptureOwner {
+    KeyboardTrackpadCaptureOwner(presentationID: presentationID, inputID: inputID, surface: .keyboard)
+  }
   var onFocusChange: ((Bool) -> Void)?
+  var floatingToggleEnabled = false
+  var onFloatingMouseDown: (() -> Void)?
+  var onFloatingClick: (() -> Void)?
+  var onFloatingRightClick: (() -> Void)?
+  var onFloatingFocusLost: (() -> Void)?
   // AppKit owns these views on the main thread; deinit is nonisolated in Swift 6.
   nonisolated(unsafe) private var keyWindowObserver: NSObjectProtocol?
   nonisolated(unsafe) private var localMonitor: Any?
   private var capsLockEnabled = false
+  private var floatingMouseDownPoint: NSPoint?
+  private var floatingWindowOrigin: NSPoint?
+  private var floatingDidDrag = false
+  private var focusedOwner: KeyboardTrackpadCaptureOwner?
 
   override var acceptsFirstResponder: Bool { true }
   override var allowsVibrancy: Bool { false }
@@ -684,11 +725,7 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
       self.localMonitor = nil
     }
     if let window {
-      keyWindowObserver = NotificationCenter.default.addObserver(
-        forName: NSWindow.didResignKeyNotification, object: window, queue: .main
-      ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.model?.surfaceLost(.keyboard) }
-      }
+      observeFocusLoss(in: window)
       localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
         guard let self else { return event }
         return self.handleKeyboardEvent(event) ? nil : event
@@ -696,11 +733,40 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
     }
   }
 
+  private func observeFocusLoss(in window: NSWindow) {
+    if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
+    let observedOwner = captureOwner
+    keyWindowObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.model?.surfaceLost(owner: observedOwner)
+        self.onFloatingFocusLost?()
+      }
+    }
+  }
+
+  func configure(model: MacKeyboardTrackpadModel, presentationID: UUID, inputID: UUID) {
+    let previousOwner = captureOwner
+    let identityChanged = self.model !== model || previousOwner.presentationID != presentationID || previousOwner.inputID != inputID
+    if identityChanged { self.model?.surfaceLost(owner: previousOwner) }
+    self.model = model
+    self.presentationID = presentationID
+    self.inputID = inputID
+    if identityChanged, let window { observeFocusLoss(in: window) }
+    if window?.firstResponder === self {
+      focusedOwner = captureOwner
+    } else if focusedOwner == previousOwner {
+      focusedOwner = nil
+    }
+  }
+
   @discardableResult private func handleKeyboardEvent(_ event: NSEvent) -> Bool {
     guard let window, event.window === window, window.isKeyWindow, window.firstResponder === self,
-          let model, model.isControlling, model.currentSurface == .keyboard else { return false }
+          let model, model.isControlling(owner: captureOwner) else { return false }
     if event.type == .keyDown && event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
-      model.stopControlling()
+      model.stopControl(owner: captureOwner)
       return true
     }
     if event.type == .flagsChanged {
@@ -710,19 +776,19 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
         if enabled != capsLockEnabled {
           capsLockEnabled = enabled
           // AppKit reports Caps Lock as a flag; HID needs a key press and release.
-          model.keyDown(usage: 0x39, modifiers: modifiers)
-          model.keyUp(usage: 0x39, modifiers: modifiers)
+          model.keyDown(usage: 0x39, modifiers: modifiers, owner: captureOwner)
+          model.keyUp(usage: 0x39, modifiers: modifiers, owner: captureOwner)
         }
       } else {
-        model.modifiersChanged(modifiers)
+        model.modifiersChanged(modifiers, owner: captureOwner)
       }
     } else {
       let usage = AniCeHIDProtocol.usage(forMacKeyCode: event.keyCode)
       if usage != 0 {
         if event.type == .keyDown && !event.isARepeat {
-          model.keyDown(usage: usage, modifiers: Self.hidModifiers(event.modifierFlags))
+          model.keyDown(usage: usage, modifiers: Self.hidModifiers(event.modifierFlags), owner: captureOwner)
         } else if event.type == .keyUp {
-          model.keyUp(usage: usage, modifiers: Self.hidModifiers(event.modifierFlags))
+          model.keyUp(usage: usage, modifiers: Self.hidModifiers(event.modifierFlags), owner: captureOwner)
         }
       }
     }
@@ -737,27 +803,72 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
   }
 
   override func mouseDown(with event: NSEvent) {
+    if floatingToggleEnabled {
+      floatingMouseDownPoint = window?.convertPoint(toScreen: event.locationInWindow)
+      floatingWindowOrigin = window?.frame.origin
+      floatingDidDrag = false
+      onFloatingMouseDown?()
+      window?.makeKeyAndOrderFront(nil)
+      window?.makeFirstResponder(self)
+      return
+    }
     capsLockEnabled = event.modifierFlags.contains(.capsLock)
     window?.makeFirstResponder(self)
-    model?.requestControl(on: .keyboard)
+    model?.requestControl(owner: captureOwner)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard floatingToggleEnabled, let window,
+          let start = floatingMouseDownPoint, let origin = floatingWindowOrigin else { return }
+    let current = window.convertPoint(toScreen: event.locationInWindow)
+    let delta = NSPoint(x: current.x - start.x, y: current.y - start.y)
+    if !floatingDidDrag && hypot(delta.x, delta.y) >= 5 { floatingDidDrag = true }
+    if floatingDidDrag {
+      window.setFrameOrigin(NSPoint(x: origin.x + delta.x, y: origin.y + delta.y))
+    }
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    guard floatingToggleEnabled else { return }
+    if !floatingDidDrag { onFloatingClick?() }
+    floatingMouseDownPoint = nil
+    floatingWindowOrigin = nil
+    floatingDidDrag = false
+  }
+
+  override func rightMouseDown(with event: NSEvent) {
+    if floatingToggleEnabled {
+      floatingMouseDownPoint = nil
+      floatingWindowOrigin = nil
+      floatingDidDrag = false
+      onFloatingRightClick?()
+      return
+    }
+    super.rightMouseDown(with: event)
   }
 
   override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
-    if accepted { onFocusChange?(true) }
+    if accepted {
+      focusedOwner = captureOwner
+      onFocusChange?(true)
+    }
     return accepted
   }
 
   override func resignFirstResponder() -> Bool {
     let accepted = super.resignFirstResponder()
     if accepted {
+      let lostOwner = focusedOwner ?? captureOwner
+      focusedOwner = nil
       onFocusChange?(false)
-      model?.surfaceLost(.keyboard)
+      model?.surfaceLost(owner: lostOwner)
+      onFloatingFocusLost?()
     }
     return accepted
   }
 
-  override func cancelOperation(_ sender: Any?) { model?.stopControlling() }
+  override func cancelOperation(_ sender: Any?) { model?.stopControl(owner: captureOwner) }
 
   deinit {
     if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
@@ -771,30 +882,38 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
 
 private struct MousePadSurface: NSViewRepresentable {
   let model: MacKeyboardTrackpadModel
+  let presentationID: UUID
+  let inputID: UUID
   @Binding var focused: Bool
 
   func makeNSView(context: Context) -> MousePadNSView {
     let view = MousePadNSView()
     view.allowedTouchTypes = [.indirect]
-    view.model = model
+    view.configure(model: model, presentationID: presentationID, inputID: inputID)
     view.onFocusChange = { focused = $0 }
     return view
   }
 
   func updateNSView(_ view: MousePadNSView, context: Context) {
-    view.model = model
+    view.configure(model: model, presentationID: presentationID, inputID: inputID)
     view.onFocusChange = { focused = $0 }
   }
 }
 
 @MainActor final class MousePadNSView: NSView {
   var model: MacKeyboardTrackpadModel?
+  var presentationID = UUID()
+  var inputID = UUID()
+  var captureOwner: KeyboardTrackpadCaptureOwner {
+    KeyboardTrackpadCaptureOwner(presentationID: presentationID, inputID: inputID, surface: .pad)
+  }
   var onFocusChange: ((Bool) -> Void)?
   // AppKit owns these views on the main thread; deinit is nonisolated in Swift 6.
   nonisolated(unsafe) private var keyWindowObserver: NSObjectProtocol?
   private var mouseTrackingArea: NSTrackingArea?
   private var consumingArmingGesture = false
   private var blockedTouchSequence = false
+  private var focusedOwner: KeyboardTrackpadCaptureOwner?
 
   override var acceptsFirstResponder: Bool { true }
   override var isOpaque: Bool { false }
@@ -812,29 +931,53 @@ private struct MousePadSurface: NSViewRepresentable {
     if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
     keyWindowObserver = nil
     if let window {
+      observeFocusLoss(in: window)
       window.acceptsMouseMovedEvents = true
-      keyWindowObserver = NotificationCenter.default.addObserver(
-        forName: NSWindow.didResignKeyNotification, object: window, queue: .main
-      ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.model?.surfaceLost(.pad) }
+    }
+  }
+
+  private func observeFocusLoss(in window: NSWindow) {
+    if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
+    let observedOwner = captureOwner
+    keyWindowObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.model?.surfaceLost(owner: observedOwner)
       }
+    }
+  }
+
+  func configure(model: MacKeyboardTrackpadModel, presentationID: UUID, inputID: UUID) {
+    let previousOwner = captureOwner
+    let identityChanged = self.model !== model || previousOwner.presentationID != presentationID || previousOwner.inputID != inputID
+    if identityChanged { self.model?.surfaceLost(owner: previousOwner) }
+    self.model = model
+    self.presentationID = presentationID
+    self.inputID = inputID
+    if identityChanged, let window { observeFocusLoss(in: window) }
+    if window?.firstResponder === self {
+      focusedOwner = captureOwner
+    } else if focusedOwner == previousOwner {
+      focusedOwner = nil
     }
   }
 
   override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
 
   override func mouseDown(with event: NSEvent) {
-    model?.cancelScrollGesture()
-    let wasActivePad = model?.isControlling == true && model?.currentSurface == .pad
+    model?.cancelScrollGesture(owner: captureOwner)
+    let wasActivePad = model?.isControlling(owner: captureOwner) == true
     consumingArmingGesture = !wasActivePad
     window?.makeFirstResponder(self)
-    if wasActivePad { model?.pointerButtonDown() }
-    else { model?.requestControl(on: .pad) }
+    if wasActivePad { model?.pointerButtonDown(owner: captureOwner) }
+    else { model?.requestControl(owner: captureOwner) }
   }
 
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
-      model?.stopControlling()
+      model?.stopControl(owner: captureOwner)
       return
     }
     super.keyDown(with: event)
@@ -842,24 +985,24 @@ private struct MousePadSurface: NSViewRepresentable {
 
   override func mouseUp(with event: NSEvent) {
     if consumingArmingGesture { consumingArmingGesture = false; return }
-    if model?.isControlling == true && model?.currentSurface == .pad {
-      model?.pointerButtonUp()
+    if model?.isControlling(owner: captureOwner) == true {
+      model?.pointerButtonUp(owner: captureOwner)
     }
   }
 
   override func rightMouseDown(with event: NSEvent) {
-    model?.cancelScrollGesture()
-    let wasActivePad = model?.isControlling == true && model?.currentSurface == .pad
+    model?.cancelScrollGesture(owner: captureOwner)
+    let wasActivePad = model?.isControlling(owner: captureOwner) == true
     consumingArmingGesture = !wasActivePad
     window?.makeFirstResponder(self)
-    if wasActivePad { model?.pointerButtonDown(secondary: true) }
-    else { model?.requestControl(on: .pad) }
+    if wasActivePad { model?.pointerButtonDown(secondary: true, owner: captureOwner) }
+    else { model?.requestControl(owner: captureOwner) }
   }
 
   override func rightMouseUp(with event: NSEvent) {
     if consumingArmingGesture { consumingArmingGesture = false; return }
-    if model?.isControlling == true && model?.currentSurface == .pad {
-      model?.pointerButtonUp()
+    if model?.isControlling(owner: captureOwner) == true {
+      model?.pointerButtonUp(owner: captureOwner)
     }
   }
 
@@ -868,14 +1011,16 @@ private struct MousePadSurface: NSViewRepresentable {
   override func rightMouseDragged(with event: NSEvent) { sendMotion(event) }
 
   override func scrollWheel(with event: NSEvent) {
-    guard !consumingArmingGesture, !blockedTouchSequence else { return }
+    guard !consumingArmingGesture, !blockedTouchSequence,
+          model?.isControlling(owner: captureOwner) == true else { return }
     guard isInsidePad(event) else {
       // A gesture ending outside the pad must still release its held drag.
-      if let window, window.isKeyWindow, event.window === window { model?.cancelScrollGesture() }
+      if let window, window.isKeyWindow, event.window === window { model?.cancelScrollGesture(owner: captureOwner) }
       return
     }
     model?.scrollGesture(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
-      phase: event.phase, precise: event.hasPreciseScrollingDeltas, momentum: !event.momentumPhase.isEmpty)
+      phase: event.phase, precise: event.hasPreciseScrollingDeltas,
+      momentum: !event.momentumPhase.isEmpty, owner: captureOwner)
   }
 
   override func touchesBegan(with event: NSEvent) { trackTouches(event) }
@@ -890,26 +1035,31 @@ private struct MousePadSurface: NSViewRepresentable {
     let count = event.touches(matching: .touching, in: self).count
     if count >= 3 {
       blockedTouchSequence = true
-      model?.cancelScrollGesture()
+      model?.cancelScrollGesture(owner: captureOwner)
     } else if count == 0 { blockedTouchSequence = false }
   }
 
   override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
-    if accepted { onFocusChange?(true) }
+    if accepted {
+      focusedOwner = captureOwner
+      onFocusChange?(true)
+    }
     return accepted
   }
 
   override func resignFirstResponder() -> Bool {
     let accepted = super.resignFirstResponder()
     if accepted {
+      let lostOwner = focusedOwner ?? captureOwner
+      focusedOwner = nil
       onFocusChange?(false)
-      model?.surfaceLost(.pad)
+      model?.surfaceLost(owner: lostOwner)
     }
     return accepted
   }
 
-  override func cancelOperation(_ sender: Any?) { model?.stopControlling() }
+  override func cancelOperation(_ sender: Any?) { model?.stopControl(owner: captureOwner) }
 
   deinit {
     if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
@@ -922,10 +1072,10 @@ private struct MousePadSurface: NSViewRepresentable {
 
   private func sendMotion(_ event: NSEvent) {
     guard !consumingArmingGesture, !blockedTouchSequence, model?.isScrolling != true,
-          model?.isControlling == true, model?.currentSurface == .pad else { return }
+          model?.isControlling(owner: captureOwner) == true else { return }
     guard isInsidePad(event), let model else { return }
     // Keep the legacy inverted mapping available without changing canonical HID coordinates in the model.
     let deltaY = model.reverseVerticalPointer ? event.deltaY : -event.deltaY
-    model.pointerMoved(deltaX: event.deltaX, deltaY: deltaY)
+    model.pointerMoved(deltaX: event.deltaX, deltaY: deltaY, owner: captureOwner)
   }
 }

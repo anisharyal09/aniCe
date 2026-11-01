@@ -167,7 +167,8 @@ import AppKit
     let quietPreferences = try XCTUnwrap(UserDefaults(suiteName: "anice.companion.quiet." + UUID().uuidString))
     let quietPlayback = MacPlaybackModel(preferences: quietPreferences, requestSink: { _ in commands += 1; return true })
     let keyboardTrackpad = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
-    defer { keyboardTrackpad.shutdown() }
+    let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: preferences)
+    defer { floatingKeyboard.shutdown(); keyboardTrackpad.shutdown() }
     let pid = ProcessInfo.processInfo.processIdentifier
     playback.read(try JSONSerialization.data(withJSONObject: [
       "pid": pid, "playbackRevision": UUID().uuidString, "sourceIsAutomatic": true,
@@ -206,7 +207,7 @@ import AppKit
           for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
           let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
             pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
-            keyboardTrackpad: keyboardTrackpad, navigation: ConnectionNavigation(),
+            keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, navigation: ConnectionNavigation(),
             openMainWindow: { XCTFail("Rendering opened the main window") })
             .environment(\.colorScheme, scheme)
           let host = NSHostingView(rootView: view)

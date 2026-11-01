@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.
 
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.

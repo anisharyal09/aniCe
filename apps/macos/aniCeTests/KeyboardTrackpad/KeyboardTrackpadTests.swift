@@ -437,6 +437,115 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertFalse(model.isControlling)
   }
 
+  @MainActor func testCaptureLossAndPresentationRemovalCannotStopANewerOwner() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    let oldPresentation = UUID(), newPresentation = UUID()
+    let oldOwner = KeyboardTrackpadCaptureOwner(presentationID: oldPresentation, inputID: UUID(), surface: .keyboard)
+    let newOwner = KeyboardTrackpadCaptureOwner(presentationID: newPresentation, inputID: UUID(), surface: .pad)
+    model.enterPanel(id: oldPresentation, automaticallyConnect: false, refreshPairedDevices: false)
+    model.enterPanel(id: newPresentation, automaticallyConnect: false, refreshPairedDevices: false)
+    model.connect()
+    model.requestControl(owner: oldOwner)
+    model.requestControl(owner: newOwner)
+    XCTAssertTrue(model.isControlling(owner: newOwner))
+
+    model.surfaceLost(owner: oldOwner)
+    model.leavePanel(id: oldPresentation)
+    model.stopControl(presentationID: oldPresentation)
+
+    XCTAssertTrue(model.isControlling(owner: newOwner), "A stale focus or close callback must not stop the current presentation.")
+    XCTAssertEqual(model.currentSurface, .pad)
+  }
+
+  @MainActor func testRemovedFloatingOwnerCannotActivateWhenConnectionCompletes() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    transport.deferConnect = true
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    let presentationID = UUID()
+    let owner = KeyboardTrackpadCaptureOwner(presentationID: presentationID, inputID: UUID(), surface: .keyboard)
+    model.enterPanel(id: presentationID, automaticallyConnect: false, refreshPairedDevices: false)
+    model.requestControl(owner: owner)
+    XCTAssertTrue(model.isPending(owner: owner))
+
+    model.leavePanel(id: presentationID)
+    transport.finishConnect()
+
+    XCTAssertEqual(model.phase, .connectedIdle)
+    XCTAssertFalse(model.isControlling)
+    XCTAssertFalse(model.isPending(owner: owner))
+  }
+
+  @MainActor func testFloatingWidgetRestoresCollapsedAndIdleAndHideClearsPreference() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let preferences = testDefaults()
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    preferences.set(true, forKey: "keyboardTrackpad.floatingVisible")
+    let controller = FloatingKeyboardController(model: model, preferences: preferences)
+    defer { controller.shutdown() }
+
+    controller.restoreIfNeeded()
+    XCTAssertTrue(controller.isVisible)
+    XCTAssertFalse(controller.isExpanded)
+    XCTAssertEqual(transport.connectedAddresses, [], "Restoring the widget must not connect automatically.")
+    controller.expand()
+    XCTAssertTrue(controller.isExpanded)
+    controller.collapse()
+    XCTAssertFalse(controller.isExpanded)
+    controller.hide()
+    XCTAssertFalse(controller.isVisible)
+    XCTAssertFalse(preferences.bool(forKey: "keyboardTrackpad.floatingVisible"))
+  }
+
+  @MainActor func testFloatingPanelPositionIsClampedToVisibleDisplay() {
+    let visible = NSRect(x: 0, y: 0, width: 1000, height: 800)
+    let offscreen = NSRect(x: 970, y: -20, width: 80, height: 70)
+    XCTAssertEqual(FloatingKeyboardController.clamp(offscreen, into: visible),
+      NSRect(x: 920, y: 0, width: 80, height: 70))
+  }
+
+  @MainActor func testFloatingButtonSeparatesClickFromDragAndRightClick() throws {
+    let view = KeyboardInputNSView(frame: NSRect(x: 0, y: 0, width: 48, height: 48))
+    view.floatingToggleEnabled = true
+    var clicks = 0, contextMenus = 0
+    view.onFloatingClick = { clicks += 1 }
+    view.onFloatingRightClick = { contextMenus += 1 }
+    let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 100, y: 100, width: 48, height: 48),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = view
+    defer { window.orderOut(nil); window.contentView = nil }
+
+    func event(_ type: NSEvent.EventType, at point: NSPoint, number: Int) throws -> NSEvent {
+      let screenPoint = window.convertPoint(toScreen: point)
+      return try XCTUnwrap(NSEvent.mouseEvent(with: type, location: screenPoint,
+        modifierFlags: [], timestamp: TimeInterval(number), windowNumber: window.windowNumber,
+        context: nil, eventNumber: number, clickCount: 1, pressure: 1))
+    }
+
+    view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 20, y: 20), number: 1))
+    view.mouseUp(with: try event(.leftMouseUp, at: NSPoint(x: 20, y: 20), number: 2))
+    XCTAssertEqual(clicks, 1)
+
+    let originalOrigin = window.frame.origin
+    view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 20, y: 20), number: 3))
+    view.mouseDragged(with: try event(.leftMouseDragged, at: NSPoint(x: 38, y: 36), number: 4))
+    view.mouseUp(with: try event(.leftMouseUp, at: NSPoint(x: 38, y: 36), number: 5))
+    XCTAssertEqual(clicks, 1, "Dragging the floating control must not toggle typing.")
+    XCTAssertNotEqual(window.frame.origin, originalOrigin, "Dragging moves the compact panel.")
+
+    view.rightMouseDown(with: try event(.rightMouseDown, at: NSPoint(x: 20, y: 20), number: 6))
+    XCTAssertEqual(contextMenus, 1)
+  }
+
   @MainActor func testEndingAnIdleKeyboardCaptureSendsNeutralReleaseAndKeepsLinkOpen() throws {
     let peer = try phone("Phone")
     let transport = FakeKeyboardTrackpadTransport()
@@ -721,6 +830,9 @@ final class KeyboardTrackpadTests: XCTestCase {
     defer { model.shutdown() }
     let view = MousePadNSView()
     view.model = model
+    let presentationID = UUID()
+    view.presentationID = presentationID
+    model.enterPanel(id: presentationID, automaticallyConnect: false, refreshPairedDevices: false)
     let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero,
       modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: .zero,
@@ -828,15 +940,21 @@ final class KeyboardTrackpadTests: XCTestCase {
     model.connect()
     let keyboard = KeyboardInputNSView()
     keyboard.model = model
-    model.requestControl(on: .keyboard)
-    model.keyDown(usage: 4, modifiers: 2)
+    let keyboardPresentationID = UUID()
+    keyboard.presentationID = keyboardPresentationID
+    model.enterPanel(id: keyboardPresentationID, automaticallyConnect: false, refreshPairedDevices: false)
+    model.requestControl(owner: keyboard.captureOwner)
+    model.keyDown(usage: 4, modifiers: 2, owner: keyboard.captureOwner)
     XCTAssertTrue(keyboard.resignFirstResponder())
     XCTAssertEqual(model.phase, .connectedIdle)
     XCTAssertEqual(transport.writes.last, .keyboard(0, []))
     let pad = MousePadNSView()
     pad.model = model
-    model.requestControl(on: .pad)
-    model.pointerButtonDown()
+    let padPresentationID = UUID()
+    pad.presentationID = padPresentationID
+    model.enterPanel(id: padPresentationID, automaticallyConnect: false, refreshPairedDevices: false)
+    model.requestControl(owner: pad.captureOwner)
+    model.pointerButtonDown(owner: pad.captureOwner)
     XCTAssertTrue(pad.resignFirstResponder())
     XCTAssertEqual(model.phase, .connectedIdle)
     XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 0))
@@ -973,7 +1091,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     }
     XCTAssertEqual(Array(transport.writes.suffix(2)), [.keyboard(0, [5]), .keyboard(0, [])])
     let count = transport.writes.count
-    model.surfaceLost(.keyboard)
+    model.surfaceLost(owner: keyboard.captureOwner)
     let releasedCount = transport.writes.count
     XCTAssertGreaterThanOrEqual(releasedCount, count)
     let offline = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
@@ -1038,12 +1156,15 @@ final class KeyboardTrackpadTests: XCTestCase {
     model.connect()
     let keyboard = KeyboardInputNSView()
     keyboard.model = model
+    let presentationID = UUID()
+    keyboard.presentationID = presentationID
+    model.enterPanel(id: presentationID, automaticallyConnect: false, refreshPairedDevices: false)
     let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100), styleMask: [.borderless], backing: .buffered, defer: false)
     window.contentView = keyboard
     defer { window.contentView = nil }
     window.makeFirstResponder(keyboard)
-    model.requestControl(on: .keyboard)
-    model.keyDown(usage: 4, modifiers: 2)
+    model.requestControl(owner: keyboard.captureOwner)
+    model.keyDown(usage: 4, modifiers: 2, owner: keyboard.captureOwner)
     transport.writes.removeAll()
     for flags: NSEvent.ModifierFlags in [[.capsLock, .shift], [.capsLock, .shift], [.shift]] {
       let event = try XCTUnwrap(NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: flags, timestamp: 0,
@@ -1051,7 +1172,7 @@ final class KeyboardTrackpadTests: XCTestCase {
       keyboard.flagsChanged(with: event)
     }
     XCTAssertEqual(transport.writes, [.keyboard(2, [4, 0x39]), .keyboard(2, [4]), .keyboard(2, [4, 0x39]), .keyboard(2, [4])])
-    model.surfaceLost(.keyboard)
+    model.surfaceLost(owner: keyboard.captureOwner)
     let stoppedCount = transport.writes.count
     let event = try XCTUnwrap(NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: [.capsLock], timestamp: 0,
       windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 0x39))
@@ -1258,6 +1379,9 @@ final class KeyboardTrackpadTests: XCTestCase {
     let clip = NSClipView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
     let pad = MousePadNSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
     pad.model = model
+    let presentationID = UUID()
+    pad.presentationID = presentationID
+    model.enterPanel(id: presentationID, automaticallyConnect: false, refreshPairedDevices: false)
     clip.documentView = pad
     root.addSubview(clip)
     let window = KeyboardTrackpadTestWindow(contentRect: root.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1265,7 +1389,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     defer { window.contentView = nil }
     window.makeFirstResponder(pad)
     model.connect()
-    model.requestControl(on: .pad)
+    model.requestControl(owner: pad.captureOwner)
     let visiblePoint = NSPoint(x: pad.visibleRect.midX, y: pad.visibleRect.midY)
 
     func motion(at point: NSPoint, owner: NSWindow? = nil) throws -> NSEvent {

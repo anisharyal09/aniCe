@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add an optional persistent floating keyboard button from the menu-bar companion, with click-to-toggle typing and expanded Keyboard & Trackpad controls.
 - Open Android-shared HTTP(S) links in the Mac's default browser.
 - Add native Mac Keyboard & Trackpad controls for an explicitly linked, aniCe-trusted Android phone over independent Classic Bluetooth HID, retaining keyboard report compatibility with Android’s cached composite descriptor.
 
