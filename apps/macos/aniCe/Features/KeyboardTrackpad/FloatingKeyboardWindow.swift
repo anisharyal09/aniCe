@@ -25,6 +25,9 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
   private var screenObserver: NSObjectProtocol?
   private var interruptionObservers: [NSObjectProtocol] = []
   private weak var previousKeyWindow: NSWindow?
+  private var compactPositionBeforeExpansion: NSPoint?
+  private var didMoveWhileExpanded = false
+  private var isAdjustingPanelFrame = false
   private var didRestoreVisibility = false
   private var waitingForPairingCheck = false
   private var waitingForConnectionResult = false
@@ -136,18 +139,26 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     guard isVisible, !isExpanded else { return }
     cancelPendingActivation()
     model.stopControl(owner: captureOwner)
+    compactPositionBeforeExpansion = panel?.frame.origin
+    didMoveWhileExpanded = false
     isExpanded = true
-    panel?.setContentSize(expandedSize)
-    clampToVisibleScreen()
+    setPanelFrame(expandedFrame(from: panel?.frame ?? positionedFrame(size: Self.compactSize)), display: true)
   }
 
   func collapse() {
     guard isVisible, isExpanded else { return }
     cancelPendingActivation()
     model.leavePanel(id: expandedPresentationID)
+    let compactOrigin = didMoveWhileExpanded
+      ? compactFrame(for: panel?.frame ?? .zero).origin
+      : compactPositionBeforeExpansion ?? panel?.frame.origin ?? .zero
     isExpanded = false
-    panel?.setContentSize(Self.compactSize)
-    clampToVisibleScreen()
+    let compact = NSRect(origin: compactOrigin, size: Self.compactSize)
+    let visibleCompact = screenForCurrentPanel().map { Self.clamp(compact, into: $0.visibleFrame) } ?? compact
+    setPanelFrame(visibleCompact, display: true)
+    preferences.set(NSStringFromRect(visibleCompact), forKey: Self.positionKey)
+    compactPositionBeforeExpansion = nil
+    didMoveWhileExpanded = false
   }
 
   func hide() {
@@ -252,9 +263,19 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     waitingForConnectionResult = false
   }
 
-  func windowDidMove(_ notification: Notification) { persistPosition() }
-  func windowDidResize(_ notification: Notification) { clampToVisibleScreen() }
-  func windowDidChangeScreen(_ notification: Notification) { clampToVisibleScreen() }
+  func windowDidMove(_ notification: Notification) {
+    guard !isAdjustingPanelFrame else { return }
+    if isExpanded { didMoveWhileExpanded = true }
+    persistPosition()
+  }
+  func windowDidResize(_ notification: Notification) {
+    guard !isAdjustingPanelFrame else { return }
+    clampToVisibleScreen()
+  }
+  func windowDidChangeScreen(_ notification: Notification) {
+    guard !isAdjustingPanelFrame else { return }
+    clampToVisibleScreen()
+  }
   func windowShouldClose(_ sender: NSWindow) -> Bool { hide(); return false }
 
   private func makePanelIfNeeded() -> FloatingKeyboardPanel {
@@ -286,11 +307,16 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
       return NSRect(origin: NSPoint(x: 20, y: 20), size: size)
     }
     if let saved = preferences.string(forKey: Self.positionKey) {
-      let origin = NSRectFromString(saved).origin
-      let screenForSavedPosition = screens.first(where: {
-        $0.visibleFrame.intersects(NSRect(origin: origin, size: size))
-      }) ?? screen
-      return Self.clamp(NSRect(origin: origin, size: size), into: screenForSavedPosition.visibleFrame)
+      let savedFrame = NSRectFromString(saved)
+      // Earlier versions saved the expanded panel's bottom-left instead of the button position.
+      let compact = savedFrame.height > Self.compactSize.height
+        ? NSRect(x: savedFrame.minX, y: savedFrame.maxY - Self.compactSize.height,
+          width: Self.compactSize.width, height: Self.compactSize.height)
+        : NSRect(origin: savedFrame.origin, size: Self.compactSize)
+      let screenForSavedPosition = screens.first(where: { $0.visibleFrame.intersects(compact) }) ?? screen
+      let clampedCompact = Self.clamp(compact, into: screenForSavedPosition.visibleFrame)
+      preferences.set(NSStringFromRect(clampedCompact), forKey: Self.positionKey)
+      return frame(size: size, anchoredAt: clampedCompact, in: screenForSavedPosition.visibleFrame)
     }
     let visible = screen.visibleFrame
     return NSRect(x: visible.maxX - size.width - 20, y: visible.minY + 20,
@@ -303,12 +329,35 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     let visible = screen.visibleFrame
     let clamped = Self.clamp(panel.frame, into: visible)
     guard clamped != panel.frame else { return }
-    panel.setFrame(clamped, display: true)
+    setPanelFrame(clamped, display: true)
   }
 
   private func persistPosition() {
     guard isVisible, let panel else { return }
-    preferences.set(NSStringFromRect(panel.frame), forKey: Self.positionKey)
+    let compact = compactFrame(for: panel.frame)
+    preferences.set(NSStringFromRect(compact), forKey: Self.positionKey)
+  }
+
+  private func expandedFrame(from compact: NSRect) -> NSRect {
+    guard let screen = screenForCurrentPanel() else { return NSRect(origin: compact.origin, size: expandedSize) }
+    return Self.clamp(frame(size: expandedSize, anchoredAt: compact, in: screen.visibleFrame), into: screen.visibleFrame)
+  }
+
+  private func compactFrame(for panelFrame: NSRect) -> NSRect {
+    NSRect(x: panelFrame.minX, y: panelFrame.maxY - Self.compactSize.height,
+      width: Self.compactSize.width, height: Self.compactSize.height)
+  }
+
+  private func setPanelFrame(_ frame: NSRect, display: Bool) {
+    guard let panel else { return }
+    isAdjustingPanelFrame = true
+    panel.setFrame(frame, display: display)
+    isAdjustingPanelFrame = false
+  }
+
+  private func frame(size: NSSize, anchoredAt compact: NSRect, in visible: NSRect) -> NSRect {
+    let origin = NSPoint(x: compact.minX, y: compact.maxY - size.height)
+    return Self.clamp(NSRect(origin: origin, size: size), into: visible)
   }
 
   static func clamp(_ frame: NSRect, into visible: NSRect) -> NSRect {

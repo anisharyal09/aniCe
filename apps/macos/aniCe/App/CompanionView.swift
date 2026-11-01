@@ -23,12 +23,15 @@ struct CompanionView: View {
       HStack(spacing: 12) {
         Text("aniCe").font(.headline)
         Spacer()
+        Button { floatingKeyboard.toggleVisibility() } label: {
+          Label("Keyboard", systemImage: "keyboard")
+        }
+        .buttonStyle(AniCeButtonStyle(quiet: true))
+        .accessibilityLabel(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
+        .help(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
         Menu {
           Button("Quick Paste Tray (⌥⌘V)") {
             PasteTrayController.shared.show()
-          }
-          Button(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard") {
-            floatingKeyboard.toggleVisibility()
           }
           Button("Manage devices") { navigation.open(.devices, present: openMain) }
           Button("Settings") { navigation.open(.settings, present: openMain) }

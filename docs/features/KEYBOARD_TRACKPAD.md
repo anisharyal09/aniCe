@@ -34,11 +34,11 @@ When the phone suspends HID, pending input is discarded. Held reports are releas
 
 ## Floating keyboard
 
-Choose **Show floating keyboard** from the menu-bar companion’s More menu or its right-click menu. The draggable 48-point keyboard button stays above regular windows across Spaces and full-screen apps. Its tooltip and accessibility label include the selected phone and current state.
+Choose **Keyboard** in the menu-bar companion or **Show floating keyboard** from its right-click menu. The draggable 48-point keyboard button stays above regular windows across Spaces and full-screen apps. Its tooltip and accessibility label include the selected phone and current state.
 
 Click once to toggle phone typing on or off. If the HID link is disconnected, aniCe connects first and starts typing only if the button still has focus when the connection completes. Clicking again, losing focus, switching apps, opening a menu or sheet, or hiding the widget cancels pending activation and releases held input. The HID link may remain connected and idle.
 
-Right-click the button for **Show full controls** or **Hide**. Full controls expand in the same panel, with the Tab, Esc, Backspace, Return, Back, Home, Recents and clipboard actions near the top; **Collapse** returns to the button. Drag the grip at the top-left to move the expanded panel. A small Floating label identifies the expanded window, and its phone header omits repeated pairing details. Expanding, collapsing or hiding releases input, so a fresh click is required to resume. The widget remembers whether it was visible and its compact position. After a restart it restores collapsed and idle without connecting; **Hide** saves it as hidden. Saved positions are clamped to the available display after display changes.
+Right-click the button for **Show full controls** or **Hide**. Full controls expand in the same panel, with the Tab, Esc, Backspace, Return, Back, Home, Recents and clipboard actions near the top; **Collapse** returns to the button's saved position. Drag the grip at the top-left to move the expanded panel; collapsing uses that new position. A small Floating label identifies the expanded window, and its phone header omits repeated pairing details. Expanding, collapsing or hiding releases input, so a fresh click is required to resume. The widget remembers whether it was visible and its compact position across hiding and reopening. After a restart it restores collapsed and idle without connecting; **Hide** saves it as hidden. Saved positions are clamped to the available display after display changes.
 
 ## Type clipboard
 

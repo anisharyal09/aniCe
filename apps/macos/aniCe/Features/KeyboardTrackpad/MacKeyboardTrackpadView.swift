@@ -365,9 +365,6 @@ struct MacKeyboardTrackpadView: View {
           Text(isKeyboardActive ? "Typing to phone" : "Click here to type")
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(isKeyboardActive ? AniCePalette.primaryText(scheme) : AniCePalette.secondaryText(scheme))
-          Text("⌘ acts as Ctrl · ⌘⇧Esc stops")
-            .font(.caption2)
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
         }
         .allowsHitTesting(false)
       }

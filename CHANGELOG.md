@@ -16,6 +16,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Keep the floating keyboard button in a stable compact position across expand, collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar companion popup, and remove the confusing keyboard shortcut hint.
 - Make the expanded floating keyboard panel movable, keep its shortcut row above the pointer pad, pass inactive-pad scrolling to the local panel, and clarify Bluetooth HID state in the feature and launcher.
 - Refine Mac keyboard and trackpad input with preserved fractional motion, independent speed settings, stable capture, direct clipboard typing and full-screen pointer control.
 - Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
