@@ -22,6 +22,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Move SMS stream assembly and live/provider/search row admission into a focused receiving extension while preserving the model's message handling.
+
 - Split the Mac transfer coordinator into routing, recovery, resume, sender, receiver and lifecycle files; keep storage, publication, ingress, rate and sender-window mechanics in focused components.
 
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; pre-size Mac CBOR output to avoid payload-sized growth copies and retain legacy Android LAN profiles and standard/BLE bounds.

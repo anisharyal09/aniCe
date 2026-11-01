@@ -22,6 +22,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 ### Changed
 
 - Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
+- Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.
+- Extract Android SMS thread, history, SIM and search request serving into a focused controller file while retaining channel dispatch and local presentation.
 
 - Split transfer routing, recovery, resume, sender, receiver and lifecycle flows into feature files; keep sender-window policy beside the existing storage, recovery and ingress components.
 
