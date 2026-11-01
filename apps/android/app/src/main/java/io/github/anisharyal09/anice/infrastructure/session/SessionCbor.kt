@@ -59,7 +59,7 @@ object SessionCbor {
   fun encode(value: Cbor, maximumBytes: Int = MAX_BYTES): ByteArray = encodeValues(listOf(value), maximumBytes)
 
   private fun encodeValues(values: List<Cbor>, maximumBytes: Int = MAX_BYTES): ByteArray {
-    require(maximumBytes in 1..262144)
+    require(maximumBytes in 1..524416)
     return Encoder(maximumBytes).encode(values)
   }
 
@@ -181,7 +181,7 @@ object SessionCbor {
     }
 
   fun decodeSequence(data: ByteArray, maximumBytes: Int = MAX_BYTES, materializeBytes: Boolean = true): List<Cbor> {
-    require(maximumBytes in 1..262144)
+    require(maximumBytes in 1..524416)
     if (data.size > maximumBytes) fail()
     var offset = 0
     var items = 0

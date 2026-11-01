@@ -28,6 +28,11 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MediaView(owner: MediaController, compact: Boolean=false, showPlayerSelector: Boolean=true, compactVolume: Boolean=false, overview: Boolean = false, open: (() -> Unit)? = null) {
     val media=owner.displayedPlayback
+    var showProcessing by remember { mutableStateOf(false) }
+    LaunchedEffect(owner.busy, owner.feedback) {
+        showProcessing=false
+        if(owner.busy && owner.feedback=="Processing…") { delay(300);showProcessing=true }
+    }
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var volumeDrag by remember { mutableStateOf<Float?>(null) }
     var volumeTarget by remember { mutableStateOf<RemotePlayback?>(null) }
@@ -227,7 +232,7 @@ import kotlinx.coroutines.delay
                     if(media.actions and 16L!=0L) Text("Allow playback control on your Mac.",style=MaterialTheme.typography.bodySmall)
                 }
             } else if(!compact) Text(if(!owner.connected) "Connect to your trusted Mac to use Now Playing." else if(!owner.supported) "Update aniCe on your Mac to use Now Playing." else if(owner.awaitingSnapshot) "Waiting for playback information from ${owner.origin}." else "Play media on ${owner.origin} to see it here.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(owner.feedback.isNotEmpty()) Text(owner.feedback,style=MaterialTheme.typography.bodySmall)
+            if(owner.feedback.isNotEmpty() && (owner.feedback!="Processing…" || showProcessing)) Text(owner.feedback,style=MaterialTheme.typography.bodySmall)
             if (overview) {
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

@@ -598,6 +598,8 @@ class LanSessionController(private val app: AniCeApplication,
 
     fun disconnect() {
         automaticPaused = true
+        automaticAttempt = false
+        automaticJob?.cancel(); automaticJob = null
         scheduleAutomatic()
         val engine = connection
         val op = generation
@@ -606,8 +608,12 @@ class LanSessionController(private val app: AniCeApplication,
         scope.launch {
             try {
                 withTimeoutOrNull(2000) { withContext(Dispatchers.IO) { engine?.disconnect() } }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Automatic teardown may retire this session before its best-effort close is sent.
             } finally {
-                if (op == generation) this@LanSessionController.end()
+                if (op == generation) this@LanSessionController.end("Local-network connection disconnected.")
             }
         }
         scope.launch {

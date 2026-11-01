@@ -4,10 +4,20 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+### Fixed
+
+- Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.
+
+- Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
+
 ### Added
 
 - Define Classic HID keyboard, restricted Back/Home consumer and mouse reports; retain a neutral ninth keyboard byte for cached composite-descriptor compatibility and eight-byte boot keyboard payloads.
 - Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
+
+### Changed
+
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 ## [v0.3.0]
 

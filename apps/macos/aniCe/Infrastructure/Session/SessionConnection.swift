@@ -174,7 +174,7 @@ actor SessionConnection {
           try ensure(op)
           try liveness?.start(now())
         case .data:
-          if liveness != nil, let control = try SessionControl.application(result.1, maximumBytes: min(262144, max(4096, profile.maximumPlaintext))) {
+          if liveness != nil, let control = try SessionControl.application(result.1, maximumBytes: min(524416, max(4096, profile.maximumPlaintext))) {
             try liveness?.receive(control, now())
           } else { delivery = result.1 }
         case .close:

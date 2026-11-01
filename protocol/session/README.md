@@ -1,6 +1,6 @@
 # aniCe trusted-device session profile v1
 
-The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines production LAN revision 2 and record profile 3. File transfer capability 3 fills more of the authenticated record budget; standard profile 1/BLE limits remain unchanged.
+The [LAN transfer profile](../lan/TRANSFER_PROFILE.md) defines current LAN revision 3 and record profile 4 for 512-KiB transfer chunks. Legacy LAN revision 2/profile 3 and standard profile 1/BLE retain their original bounds.
 
 Status: native handshake, AES-GCM records, BLE binding, explicit connections and negotiated keepalive implemented.
 
@@ -144,7 +144,7 @@ A renewal flag blocks new application submissions before sealing. One pending Ma
 
 ## Application diagnostic
 
-The connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). It is accepted only after readiness; receipt updates the local connection status. This diagnostic has no automatic echo or persistence; keepalive controls are consumed separately and do not increment received-check counters. Feature synchronization remains deferred. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
+The connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). It is accepted only after readiness; receipt updates the local connection status. This diagnostic has no automatic echo or persistence; keepalive controls are consumed separately and do not increment received-check counters. Feature DATA uses the shared authenticated dispatcher. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
 
 Baseline minimum-OS runtime coverage (API 29 and macOS 14) and independent security review remain tracked as outstanding release gates.
 

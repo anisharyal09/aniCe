@@ -10,8 +10,8 @@ struct TransferMessage: Equatable, Sendable {
 
   func encode(maximumChunkBytes: Int = 3072) throws -> Data {
     try validate(maximumChunkBytes: maximumChunkBytes)
-    let bytes = try SessionCbor.encode(.array([.text("aniCe transfer"), .integer(1), .integer(kind), .array(fields)]), maximumBytes: maximumChunkBytes > 3072 ? 262144 : 4096)
-    guard bytes.count <= (maximumChunkBytes > 3072 ? 262144 : 4000) else { throw TransferWireError.malformed }
+    let bytes = try SessionCbor.encode(.array([.text("aniCe transfer"), .integer(1), .integer(kind), .array(fields)]), maximumBytes: maximumChunkBytes > 262016 ? 524416 : maximumChunkBytes > 3072 ? 262144 : 4096)
+    guard bytes.count <= (maximumChunkBytes > 262016 ? 524416 : maximumChunkBytes > 3072 ? 262144 : 4000) else { throw TransferWireError.malformed }
     return bytes
   }
 
@@ -24,8 +24,8 @@ struct TransferMessage: Equatable, Sendable {
   }
 
   static func decode(_ bytes: Data, maximumChunkBytes: Int = 3072) throws -> Self? {
-    guard bytes.count <= (maximumChunkBytes > 3072 ? 262144 : 4000) else { throw TransferWireError.malformed }
-    guard case .array(let row) = try SessionCbor.decode(bytes, maximumBytes: maximumChunkBytes > 3072 ? 262144 : 4096), row.first == .text("aniCe transfer") else { return nil }
+    guard bytes.count <= (maximumChunkBytes > 262016 ? 524416 : maximumChunkBytes > 3072 ? 262144 : 4000) else { throw TransferWireError.malformed }
+    guard case .array(let row) = try SessionCbor.decode(bytes, maximumBytes: maximumChunkBytes > 262016 ? 524416 : maximumChunkBytes > 3072 ? 262144 : 4096), row.first == .text("aniCe transfer") else { return nil }
     guard row.count == 4, case .integer(let version) = row[1] else { throw TransferWireError.malformed }
     guard version == 1 else { throw TransferWireError.unsupported }
     guard case .integer(let kind) = row[2], case .array(let fields) = row[3] else { throw TransferWireError.malformed }
@@ -35,7 +35,7 @@ struct TransferMessage: Equatable, Sendable {
   }
 
   func validate(maximumChunkBytes: Int = 3072) throws {
-    guard (1...262016).contains(maximumChunkBytes) else { throw TransferWireError.malformed }
+    guard (1...524288).contains(maximumChunkBytes) else { throw TransferWireError.malformed }
     func require(_ value: Bool) throws { if !value { throw TransferWireError.malformed } }
     func integer(_ i: Int, _ range: ClosedRange<Int64>) -> Bool {
       guard fields.indices.contains(i), case .integer(let n) = fields[i] else { return false }
@@ -65,7 +65,8 @@ struct TransferMessage: Equatable, Sendable {
     case 1: // capability: [version, maxChunkBytes, maxWindow]
       try require(fields.count == 3 && (integer(0, 1...1) && integer(1, 1...3072) && integer(2, 1...64) ||
         maximumChunkBytes > 3072 && integer(0, 2...2) && integer(1, 1...Int64(min(131072, maximumChunkBytes))) && integer(2, 1...8) ||
-        maximumChunkBytes > 131072 && integer(0, 3...3) && integer(1, 1...Int64(maximumChunkBytes)) && integer(2, 1...8)))
+        maximumChunkBytes > 131072 && integer(0, 3...3) && integer(1, 1...Int64(min(262016, maximumChunkBytes))) && integer(2, 1...8) ||
+        maximumChunkBytes > 262016 && integer(0, 4...4) && integer(1, 1...Int64(maximumChunkBytes)) && integer(2, 1...8)))
     case 2: // offer: [batch, sliceIndex, totalSlices, totalFiles, totalBytes, files]
       try require(fields.count == 6 && text(0, 36, uuid: true) && integer(1, 0...15)
         && integer(2, 1...16) && integer(3, 1...128) && integer(4, 0...Int64.max))

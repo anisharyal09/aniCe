@@ -26,7 +26,7 @@ struct MediaView: View {
   @State private var hoveredControl: Int64?
   @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private var media: MediaPlayback { model.playback }
+  private var media: MediaPlayback { model.displayedPlayback }
   var body: some View {
     Group {
       if overview { overviewContent } else { standardContent }
@@ -133,7 +133,7 @@ struct MediaView: View {
   private func artwork(size: CGFloat) -> some View {
     ZStack {
       RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme))
-      if let bytes = model.artwork, let image = NSImage(data: bytes) {
+      if let image = model.artworkImage {
         Image(nsImage: image).resizable().scaledToFit()
       } else {
         Image(systemName: "music.note").font(size < 100 ? .title2 : .largeTitle).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -186,7 +186,7 @@ struct MediaView: View {
       HStack(alignment: .top, spacing: 16) {
         ZStack {
           RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme))
-          if let bytes = model.artwork, let image = NSImage(data: bytes) {
+          if let image = model.artworkImage {
             Image(nsImage: image).resizable().scaledToFit()
           } else { Image(systemName: "music.note").font(.title2).foregroundStyle(AniCePalette.secondaryText(scheme)) }
         }.frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 8)).accessibilityHidden(true)

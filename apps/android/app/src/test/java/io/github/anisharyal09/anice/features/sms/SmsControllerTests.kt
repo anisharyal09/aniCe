@@ -1503,4 +1503,23 @@ class SmsControllerTests {
         assertEquals(158, smsTruncate("é".repeat(200), 159).toByteArray().size)
     }
 
+    @Test fun submittedReplyCannotBeSentAgainAfterOriginatingTransportRetires() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel("lan"); val ble = Channel("ble")
+        ready(h, lan, ble)
+        h.sender.pause = CompletableDeferred()
+        val id = request(); val body = "hello"; val bytes = utf8(body)
+        suspend fun submit(channel: Channel) {
+            h.owner.handle(channel.descriptor, SmsWireMessage.of(11, text(id), text("42"), text("+15550000000"),
+                number(bytes.size.toLong()), number(1), data(digest(body)), number(0)).encode())
+            h.owner.handle(channel.descriptor, SmsWireMessage.of(12, text(id), number(0), data(bytes)).encode())
+            h.owner.handle(channel.descriptor, SmsWireMessage.of(13, text(id)).encode())
+        }
+        submit(lan); until { h.sender.bodies.size == 1 }
+        h.owner.retired(lan.descriptor)
+        submit(ble)
+        until { ble.sent.any { it.kind == 14L && it.text(0) == id && it.number(1) == 5L } }
+        assertEquals("Uncertain submission must never reach telephony twice", 1, h.sender.bodies.size)
+        h.owner.invalidate()
+    }
 }

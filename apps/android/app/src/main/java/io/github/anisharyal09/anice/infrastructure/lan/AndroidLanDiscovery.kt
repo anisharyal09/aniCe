@@ -102,7 +102,8 @@ internal class AndroidLanDiscovery(context: Context, private val profile: Sessio
         }
         val properties = links() ?: error("Wi-Fi network changed. Retry.")
         val revision2 = type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(50))
-        if (!(resolved.attributes["v"].contentEquals(byteArrayOf(49)) || revision2) || resolved.port !in 1..65535)
+        val revision3 = type == TYPE && resolved.attributes["v"].contentEquals(byteArrayOf(51))
+        if (!(resolved.attributes["v"].contentEquals(byteArrayOf(49)) || revision2 || revision3) || resolved.port !in 1..65535)
             return emptyList()
         if (Build.VERSION.SDK_INT >= 33 && resolved.network != null && resolved.network != network)
             return emptyList()
@@ -114,7 +115,7 @@ internal class AndroidLanDiscovery(context: Context, private val profile: Sessio
             catch (_: IllegalArgumentException) { continue }
             catch (_: UnknownHostException) { continue }
             if (LanAddress.local(scoped, properties) && endpoints.size < 8)
-                endpoints.add(LanEndpoint(network, scoped, resolved.port, if (revision2) SessionProfile.LAN_TRANSFER else profile))
+                endpoints.add(LanEndpoint(network, scoped, resolved.port, if (revision3) SessionProfile.LAN_TRANSFER_512 else if (revision2) SessionProfile.LAN_TRANSFER else profile))
         }
         return endpoints
     }

@@ -1,6 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Defines deterministic bounded transfer v1 messages carried by authenticated DATA records.
-transfer = capability / offer / accept / reject / chunk / ack / file-result / batch-result / cancel / resume / status / lan-capability / lan-chunk / lan-capability-v3 / lan-chunk-v3
+transfer = capability / offer / accept / reject / chunk / ack / file-result / batch-result / cancel / resume / status / lan-capability / lan-chunk / lan-capability-v3 / lan-chunk-v3 / lan-capability-v4 / lan-chunk-v4
 
 capability = ["aniCe transfer", 1, 1, [version: 1, max-chunk-bytes: 1..3072, max-window: 1..64]]
 offer = ["aniCe transfer", 1, 2, [batch: uuid, slice-index: 0..15, total-slices: 1..16,
@@ -26,3 +26,7 @@ lan-chunk = ["aniCe transfer", 1, 5, [batch: uuid, file: uuid, offset: 0..922337
 ; Capability 3 uses the remaining authenticated LAN profile 3 record budget.
 lan-capability-v3 = ["aniCe transfer", 1, 1, [version: 3, max-chunk-bytes: 1..262016, max-window: 1..8]]
 lan-chunk-v3 = ["aniCe transfer", 1, 5, [batch: uuid, file: uuid, offset: 0..9223372036854775807, data: bstr .size (1..262016)]]
+
+; Capability 4 requires authenticated LAN profile 4.
+lan-capability-v4 = ["aniCe transfer", 1, 1, [version: 4, max-chunk-bytes: 1..524288, max-window: 1..8]]
+lan-chunk-v4 = ["aniCe transfer", 1, 5, [batch: uuid, file: uuid, offset: 0..9223372036854775807, data: bstr .size (1..524288)]]

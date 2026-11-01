@@ -128,6 +128,11 @@
 		D1000000000000000000000C /* KeyboardTrackpadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000000000000000000000B; };
 		D1000000000000000000000E /* hid-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = D1000000000000000000000D; };
 		D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000013; };
+		B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */; };
+		B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000B; };
+		B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000C; };
+		B10100000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000012; };
+		B10100000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000013; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -269,6 +274,11 @@
 		D10000000000000000000011 /* ClassicHIDAdapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "aniCe/Features/KeyboardTrackpad/ClassicHIDAdapter.h"; sourceTree = SOURCE_ROOT; };
 		D10000000000000000000012 /* KeyboardTrackpadTests */ = {isa = PBXGroup; children = (D1000000000000000000000B, D1000000000000000000000D, D10000000000000000000013,); path = KeyboardTrackpad; sourceTree = "<group>"; };
 		D10000000000000000000013 /* ClassicHIDAdapterTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "aniCeTests/KeyboardTrackpad/ClassicHIDAdapterTests.m"; sourceTree = SOURCE_ROOT; };
+		B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Sms/MacSmsReceiving.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
+		B1020000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRecovery.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferSender.swift"; sourceTree = SOURCE_ROOT; };
+		B10200000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferReceiver.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -343,6 +353,10 @@
 				B10200000000000000000006,
 				B10200000000000000000007,
 				B10200000000000000000008,
+				B1020000000000000000000B,
+				B1020000000000000000000C,
+				B10200000000000000000012,
+				B10200000000000000000013,
 				B30200000000000000000001,
 				B30200000000000000000002,
 				B30200000000000000000003,
@@ -351,6 +365,7 @@
 				B30200000000000000000006,
 				B30200000000000000000007,
 				B30200000000000000000008,
+				B30200000000000000000009,
 				000000000000000000000206 /* aniCeTests */,
 				00000000000000000000000C /* aniCe */,
 				00000000000000000000000D /* Products */,
@@ -738,6 +753,10 @@
 				0000000000000000000000CD /* AniCePalette.swift in Sources */,
 				B10100000000000000000001 /* aniCe/Features/Transfer/TransferWire.swift in Sources */,
 				B10100000000000000000004 /* aniCe/Features/Transfer/MacTransferModel.swift in Sources */,
+				B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */,
+				B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */,
+				B10100000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift in Sources */,
+				B10100000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift in Sources */,
 				B10100000000000000000006 /* aniCe/Features/Transfer/TransferView.swift in Sources */,
 				B10100000000000000000007 /* aniCe/Features/Transfer/MacTransferNotifier.swift in Sources */,
 				B30100000000000000000001 /* aniCe/Features/Sms/SmsWire.swift in Sources */,
@@ -748,6 +767,7 @@
 				D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */,
 				D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */,
 				D10000000000000000000005 /* ClassicHIDAdapter.m in Sources */,
+				B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

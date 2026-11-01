@@ -9,8 +9,8 @@ import struct
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-def generate(lan_transfer=False):
-    wire, maximum = (3, 262144) if lan_transfer else (2, 4194304)
+def generate(lan_transfer=False, lan_512=False):
+    wire, maximum = (4, 524416) if lan_512 else (3, 262144) if lan_transfer else (2, 4194304)
     key, iv, sid = bytes(range(32)), bytes(range(12)), bytes(range(32, 64))
     rows = []
     for length in (0, 65536, maximum):
@@ -42,11 +42,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--lan-transfer', action='store_true')
+    parser.add_argument('--lan-512', action='store_true')
     args = parser.parse_args()
-    target = Path(__file__).with_name('lan-transfer-vectors.json' if args.lan_transfer else 'bulk-probe-vectors.json')
-    encoded = json.dumps(generate(args.lan_transfer), indent=2) + '\n'
+    target = Path(__file__).with_name('lan-512-vectors.json' if args.lan_512 else 'lan-transfer-vectors.json' if args.lan_transfer else 'bulk-probe-vectors.json')
+    encoded = json.dumps(generate(args.lan_transfer, args.lan_512), indent=2) + '\n'
     if args.check:
         assert target.read_text() == encoded, 'Bulk probe fixtures differ from independent oracle'
-        print(('LAN transfer' if args.lan_transfer else 'Bulk probe') + ': 3 valid and 10 invalid independent AES-GCM fixtures passed')
+        print(('LAN 512' if args.lan_512 else 'LAN transfer' if args.lan_transfer else 'Bulk probe') + ': 3 valid and 10 invalid independent AES-GCM fixtures passed')
     else:
         target.write_text(encoded)

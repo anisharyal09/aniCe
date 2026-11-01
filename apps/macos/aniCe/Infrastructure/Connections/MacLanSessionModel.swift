@@ -218,7 +218,7 @@ import OSLog
         listener = server
         observeLocalPath()
         // The service name is an ephemeral locator, never an identity or authentication claim.
-        let txt = NWTXTRecord(["v": "2"])
+        let txt = NWTXTRecord(["v": "3"])
         advertisement = NWListener.Service(
           name: "aniCe-" + UUID().uuidString.lowercased(), type: "_anice._tcp", txtRecord: txt)
         server.service = advertisement
@@ -294,7 +294,7 @@ import OSLog
     status = "Authenticating your trusted Android…"
     handshakeDeadline = ProcessInfo.processInfo.systemUptime + 30
     let attempt = candidate
-    let tcp = LanTcpTransport(socket, profile: .lanTransfer)
+    let tcp = LanTcpTransport(socket, profile: .lanTransfer512)
     transport = tcp
     work = Task { [self] in
       do {
@@ -316,7 +316,7 @@ import OSLog
           changed: { [weak self] in Task { @MainActor in
             guard let self, op == self.generation, attempt == self.candidate else { return }
             self.maintain(); self.channelCapacityChanged()
-          } }, profile: .lanTransfer, drain: { [weak self] in await self?.drainApplication(op, attempt) })
+          } }, profile: .lanTransfer512, drain: { [weak self] in await self?.drainApplication(op, attempt) })
         connection = engine
         maintain()
         await tcp.start(

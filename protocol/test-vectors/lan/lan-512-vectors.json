@@ -1,0 +1,77 @@
+{
+  "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "ivHex": "000102030405060708090a0b",
+  "idHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+  "valid": [
+    {
+      "length": 0,
+      "recordSHA256": "daf1affa3fb24e0b802a2784dbde1c12f08c78eb44509a180c006c1ed8493965",
+      "headerHex": "0403000000000000000000000000",
+      "tagHex": "e87123847c85699f591fe1053623df33"
+    },
+    {
+      "length": 65536,
+      "recordSHA256": "b4f9bf0bdc9eb3a6a705321f6ab9096541e0fd129491f954db47e99331afb446",
+      "headerHex": "0403000000000000000000010000",
+      "tagHex": "def80f2d2f06730b51df236d9cd9f9e8"
+    },
+    {
+      "length": 524416,
+      "recordSHA256": "f2a4082a1560c2724d92707557f435e4a81ce5d20350f1cfe91a50507e4fa7ed",
+      "headerHex": "0403000000000000000000080080",
+      "tagHex": "74a77e188990c1ed8f1e30fee890f2df"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "recordHex": "",
+      "reason": "malformed"
+    },
+    {
+      "name": "v1",
+      "recordHex": "0103000000000000000000000000e87123847c85699f591fe1053623df33",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-version",
+      "recordHex": "0503000000000000000000000000e87123847c85699f591fe1053623df33",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-kind",
+      "recordHex": "0405000000000000000000000000e87123847c85699f591fe1053623df33",
+      "reason": "malformed"
+    },
+    {
+      "name": "truncated",
+      "recordHex": "0403000000000000000000000000e87123847c85699f591fe1053623df",
+      "reason": "malformed"
+    },
+    {
+      "name": "oversized-length",
+      "recordHex": "040300000000000000000008008100000000000000000000000000000000",
+      "reason": "malformed"
+    },
+    {
+      "name": "unsigned-length",
+      "recordHex": "04030000000000000000ffffffff00000000000000000000000000000000",
+      "reason": "malformed"
+    },
+    {
+      "name": "trailing",
+      "recordHex": "0403000000000000000000000000e87123847c85699f591fe1053623df3300",
+      "reason": "malformed"
+    },
+    {
+      "name": "sequence",
+      "recordHex": "0403000000000000000100000000e87123847c85699f591fe1053623df33",
+      "reason": "authentication"
+    },
+    {
+      "name": "tag",
+      "recordHex": "0403000000000000000000000000e87123847c85699f591fe1053623df32",
+      "reason": "authentication"
+    }
+  ]
+}

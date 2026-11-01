@@ -9,6 +9,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionChannelTests {
+  @Test fun lan512MatchesIndependentCiphertextAndRejectsLegacyProfile() {
+    val profile = SessionProfile.LAN_TRANSFER_512
+    val key = ByteArray(32) { it.toByte() }; val iv = ByteArray(12) { it.toByte() }
+    val id = ByteArray(32) { (it + 32).toByte() }
+    val plain = ByteArray(profile.maximumPlaintext) { (it % 251).toByte() }
+    val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, plain, profile)
+    val hash = java.security.MessageDigest.getInstance("SHA-256").digest(record).joinToString("") { "%02x".format(it) }
+    assertEquals("f2a4082a1560c2724d92707557f435e4a81ce5d20350f1cfe91a50507e4fa7ed", hash)
+    assertArrayEquals(plain, SessionRecordCodec.open(key, iv, id, 1, 0uL, record, profile).second)
+    try { SessionRecordCodec.open(key, iv, id, 1, 0uL, record, SessionProfile.LAN_TRANSFER); fail("Legacy must reject profile 4") }
+    catch (e: SessionException) { assertEquals(SessionFailure.MALFORMED, e.reason) }
+  }
+
   private fun b(row: JSONObject, name: String) =
     row.getString(name + "Hex").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
@@ -405,15 +418,23 @@ class SessionChannelTests {
     val dataR = mutableListOf<ByteArray>()
     val draining = kotlinx.coroutines.CompletableDeferred<Unit>()
     val drained = kotlinx.coroutines.CompletableDeferred<Unit>()
-    val c =
-      SessionConnection(
+    lateinit var c: SessionConnection
+    c = SessionConnection(
         h.engine(v, false),
         false,
         { true },
         { outboundI.add(it) },
         { dataI.add(it) },
         { securedI++ },
-        drain = { draining.complete(Unit); drained.await() },
+        drain = {
+          withTimeout(1000) { rejects(SessionFailure.CANCELLED) { c.sendData(byteArrayOf(42)) } }
+          assertFalse(c.applicationAvailable)
+          assertNull(c.nextDeadline())
+          c.tick()
+          assertFalse(c.isClosed)
+          assertTrue("Closing must not seal another reply", outboundI.isEmpty())
+          draining.complete(Unit); drained.await()
+        },
       )
     val s =
       SessionConnection(

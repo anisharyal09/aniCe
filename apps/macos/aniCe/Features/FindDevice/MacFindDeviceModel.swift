@@ -117,19 +117,25 @@ import Observation
     guard link.history.processing == nil else { let response = reply(message, .busy); remember(response, link); enqueue(response, link); return .handled }
     if let previous = alerts[key] { dismiss(identifier: previous.identifier) }
     link.history.processing = message.sequence
-    defer { link.history.processing = nil }
     let identifier = "find-device-" + UUID().uuidString.lowercased()
     let alert = Alert(descriptor: descriptor, identifier: identifier, deadline: now() + 60)
     alerts[key] = alert; schedule()
-    let result = await notifier.post(identifier: identifier, peerName: descriptor.peer.deviceName)
-    expire()
-    guard live(descriptor), alerts[key]?.identifier == identifier else {
-      notifier.clear(identifier: identifier); return .discarded
+    Task {
+      guard live(descriptor), alerts[key]?.identifier == identifier else {
+        link.history.processing = nil; return
+      }
+      let result = await notifier.post(identifier: identifier, peerName: descriptor.peer.deviceName)
+      link.history.processing = nil
+      expire()
+      guard live(descriptor), alerts[key]?.identifier == identifier else {
+        notifier.clear(identifier: identifier); return
+      }
+      if result != .submitted { dismiss(identifier: identifier) }
+      let response = reply(message, result)
+      remember(response, link); enqueue(response, link)
+      link.channel.received(bytes)
     }
-    if result != .submitted { dismiss(identifier: identifier) }
-    let response = reply(message, result)
-    remember(response, link); enqueue(response, link)
-    return .handled
+    return .queued
   }
   private func reply(_ m: FindDeviceMessage, _ result: FindResult) -> FindDeviceMessage {
     FindDeviceMessage(kind: 3, id: m.id, sequence: m.sequence, result: result.rawValue)

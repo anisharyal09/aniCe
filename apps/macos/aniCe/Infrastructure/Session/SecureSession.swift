@@ -23,10 +23,10 @@ enum SessionTiming {
 }
 
 enum SessionProfile: UInt8, Sendable {
-  case standard = 1, bulkProbe = 2, lanTransfer = 3
-  var maximumPlaintext: Int { self == .standard ? 4000 : self == .lanTransfer ? 262144 : 4194304 }
+  case standard = 1, bulkProbe = 2, lanTransfer = 3, lanTransfer512 = 4
+  var maximumPlaintext: Int { self == .standard ? 4000 : self == .lanTransfer512 ? 524416 : self == .lanTransfer ? 262144 : 4194304 }
   var maximumEnvelope: Int { self == .standard ? 4096 : maximumPlaintext + 31 }
-  var exporterLabel: String { self == .standard ? "aniCe session" : self == .lanTransfer ? "aniCe LAN transfer" : "aniCe bulk probe" }
+  var exporterLabel: String { self == .standard ? "aniCe session" : self == .lanTransfer512 ? "aniCe LAN transfer 512" : self == .lanTransfer ? "aniCe LAN transfer" : "aniCe bulk probe" }
 }
 
 enum RecordKind: UInt8, Sendable {

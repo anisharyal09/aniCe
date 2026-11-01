@@ -30,6 +30,7 @@ enum class SessionProfile(val wire: Int, val maximumPlaintext: Int, val maximumE
   STANDARD(1, 4000, 4096, "aniCe session"),
   BULK_PROBE(2, 4194304, 4194335, "aniCe bulk probe"),
   LAN_TRANSFER(3, 262144, 262175, "aniCe LAN transfer"),
+  LAN_TRANSFER_512(4, 524416, 524447, "aniCe LAN transfer 512"),
 }
 
 enum class RecordKind(val wire: Int) {
@@ -143,10 +144,9 @@ internal class RecordCipher(key: ByteArray, iv: ByteArray, id: ByteArray, direct
       // GCM concatenates successive AAD updates; two updates avoid materializing header + id.
       cipher.updateAAD(header)
       cipher.updateAAD(aad)
-      val ciphertext = cipher.doFinal(plaintext, 0, plaintext.size)
       val record = ByteArray(plaintext.size + 30)
       System.arraycopy(header, 0, record, 0, 14)
-      System.arraycopy(ciphertext, 0, record, 14, ciphertext.size)
+      cipher.doFinal(plaintext, 0, plaintext.size, record, 14)
       return record
     } catch (_: java.security.GeneralSecurityException) {
       throw SessionException(SessionFailure.AUTHENTICATION)

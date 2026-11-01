@@ -4,6 +4,13 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Fixed
+
+- Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
+
+- Keep artwork only for the current recording, avoid clearing it for control-only revisions, and bound media-notification retirement during a connected transport handoff; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
+- Keep a same-recording cover through temporary metadata gaps and tolerate an already-retired session during manual LAN disconnect.
+
 ### Added
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
@@ -13,6 +20,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Keep full bottom-navigation labels accessible through horizontal scrolling at text sizes of 150% or above.
 
 ### Changed
+
+- Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
+- Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.
+- Extract Android SMS thread, history, SIM and search request serving into a focused controller file while retaining channel dispatch and local presentation.
+
+- Organize the Android transfer engine into controller, sender, receiver, recovery, storage and wire files; keep the view, notification, service and action handling separate.
+
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 - Replace the app palette and control styling with neutral light/dark colors, compact button faces and native accessible touch targets.
 - Reorganize Home around device status, send actions, playback, transfers and available recent activity.

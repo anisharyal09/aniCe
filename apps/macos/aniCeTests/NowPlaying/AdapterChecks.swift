@@ -62,6 +62,15 @@ import Foundation
     precondition(selected.wait(timeout:.now()+0.02) == .timedOut, "Selection bypassed its scan")
     release.signal()
     precondition(selected.wait(timeout:.now()+1) == .success)
+    let confirmationWork = PlaybackDispatch()
+    let scanStarted = DispatchSemaphore(value:0), finishScan = DispatchSemaphore(value:0)
+    let confirmation = DispatchSemaphore(value:0)
+    confirmationWork.observation.async { scanStarted.signal(); finishScan.wait() }
+    precondition(scanStarted.wait(timeout:.now()+1) == .success)
+    confirmationWork.submit(.sample) { confirmation.signal() }
+    let confirmationReady = confirmation.wait(timeout:.now()+1)
+    finishScan.signal()
+    precondition(confirmationReady == .success, "Catalog scan delayed command confirmation")
     let sampleWork = PlaybackDispatch()
     let sampling = DispatchSemaphore(value:0), finishSample = DispatchSemaphore(value:0)
     let validation = DispatchSemaphore(value:0), toggle = DispatchSemaphore(value:0)

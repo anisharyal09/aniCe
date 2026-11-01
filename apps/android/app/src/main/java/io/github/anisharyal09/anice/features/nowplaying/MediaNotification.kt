@@ -27,6 +27,8 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
     private var lastPlaybackState: List<Any?>?=null
     private val actions=mutableListOf<PendingIntent>()
     private val mainHandler=Handler(Looper.getMainLooper())
+    private var retirementScheduled=false
+    private val retireRunnable=Runnable { retirementScheduled=false;clear() }
     private var updateScheduled=false
     private val updateRunnable=Runnable {
         updateScheduled=false
@@ -39,6 +41,8 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         })
     }
     private fun clear() {
+        mainHandler.removeCallbacks(retireRunnable)
+        retirementScheduled=false
         mainHandler.removeCallbacks(updateRunnable)
         updateScheduled=false
         actions.forEach { it.cancel() };actions.clear()
@@ -55,7 +59,13 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
     @android.annotation.SuppressLint("NotificationPermission")
     private fun performUpdate() {
         val target=owner.playback
-        if(!owner.compactVisible || target==null || target.source.isEmpty() || target.state !in 1L..2L) { clear();return }
+        if(!owner.compactVisible || target==null || target.source.isEmpty() || target.state !in 1L..2L) {
+            if(owner.connected && owner.awaitingSnapshot && session!=null) {
+                if(!retirementScheduled) { retirementScheduled=true;mainHandler.postDelayed(retireRunnable,6000) }
+            } else clear()
+            return
+        }
+        mainHandler.removeCallbacks(retireRunnable);retirementScheduled=false
         val current=session ?: MediaSession(app,"aniCe Mac playback").also { newSession ->
             session=newSession
             newSession.setCallback(object : MediaSession.Callback() {
@@ -86,7 +96,7 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         if(target.actions and 8L!=0L && target.duration>0) supported=supported or PlaybackState.ACTION_SEEK_TO
         val presentation=owner.displayedPlayback ?: target
         val nextPlaybackState=listOf(supported,if(target.state==1L) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-            presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f)
+            presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f,presentation.sampledAt)
         if(lastPlaybackState!=nextPlaybackState) {
             lastPlaybackState=nextPlaybackState
             current.setPlaybackState(PlaybackState.Builder().setActions(supported)

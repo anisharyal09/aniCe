@@ -8,6 +8,14 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+### Fixed
+
+- Ignore stale macOS channel callbacks so an old BLE/LAN session cannot retire a replacement connection or make playback controls unresponsive.
+
+- Remove transfer-chunk preparation from presentation threads, keep Find Device startup from blocking shared DATA delivery, and correct interrupted SMS and session-close handling.
+
+- Keep artwork scoped to the current recording, reduce routine playback feedback flashing and bound notification retirement during transport handoffs; make manual LAN teardown tolerate an already-retired session.
+
 ### Added
 
 - Add an optional persistent floating keyboard button from the menu-bar companion, with click-to-toggle typing and expanded Keyboard & Trackpad controls.
@@ -22,6 +30,8 @@ Shared product changes, repository structure, documentation and development conv
 - Refine Mac keyboard and trackpad input with preserved fractional motion, independent speed settings, stable capture, direct clipboard typing and full-screen pointer control.
 - Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
 - Connect Keyboard & Trackpad after first-time Bluetooth linking and automatically reconnect when opening the feature, defaulting to the authenticated BLE-connected phone. Follow aniKey's system-paired, authenticated transport policy while keeping input capture explicit.
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
+
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.
 - Expand the [design guide](docs/design/DESIGN.md) with screen layouts, interaction states, accessibility requirements and semantic palette samples.
 - Run branch push CI for `seamless-redesign`.
