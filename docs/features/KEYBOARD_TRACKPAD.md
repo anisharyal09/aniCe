@@ -18,15 +18,17 @@ Use **Other devices…** to select another trusted aniCe phone. Use **Change Blu
 - Click the keyboard area to focus it. The click that starts control only arms keyboard input; it is not forwarded to the phone. Type with the Mac keyboard while the area has focus.
 - Click the pointer pad to arm pointer input. Later clicks and held drags are sent as mouse-button reports. Move the pointer to move the phone's pointer.
 - Pointer motion and vertical scrolling retain fractional deltas between reports so slow movement accumulates without loss. Stopping control discards unsent fractions.
-- Vertical scrolling sends mouse-wheel reports. Select **Extra slow**, **Gentle**, **Standard** or **Fast** beside the keyboard controls. The speed preference is local to this Mac.
-- Two-finger sideways movement sends a held primary-button drag, using aniKey's direction and distance thresholds. Inertia is ignored, and a physical held click owns its drag. Three-finger gestures stay with macOS.
+- **Pointer** and **Scroll** have independent, saved speeds: **Extra slow** (⅛×), **Gentle** (½×), **Standard** (1×) and **Fast** (2×). Pointer defaults to Standard; Scroll defaults to Extra slow. Scroll speed applies to both precise trackpad scrolling and mouse-wheel steps. Android's input settings also affect the resulting movement.
+- **Reverse vertical pointer** is enabled by default, correcting the previous inverted movement. Turn it off in the Pointer menu to restore the old direction; this preference is saved locally.
+- Input stays within the visible pad. **Full-screen trackpad** opens a separate native full-screen pad on one display. Click once to arm it, then move, click, drag or scroll anywhere within that pad. **Stop controlling** and **Done** remain local controls; Done or leaving full-screen releases held input and closes the pad. `⌘⇧Esc` also stops capture. Other applications and displays keep their own input.
+- Use two fingers up/down to scroll. A left/right swipe moves the phone pointer while holding its primary button, so it can pan content or drag/select items. Inertia is ignored, and a physical held click takes precedence. Three-finger gestures stay with macOS.
 - **Back** and **Home** send HID consumer-control actions when the phone uses report protocol. Scrolling and these actions are unavailable in boot protocol. **Recents** sends aniKey's staged Meta+Tab keyboard chord.
 - Keyboard reports retain a neutral trailing byte for compatibility with Android’s cached composite keyboard layout.
 - Direct typing sends physical key positions; the Android keyboard layout determines the resulting text. Clipboard typing uses US-layout ASCII.
 - Preset keyboard and navigation buttons release held keyboard and mouse input before sending their action, then leave capture idle. Click the keyboard area or pad to resume direct input.
 - **Stop controlling** releases held input but keeps the HID connection open. `⌘⇧Esc` stops input while a feature surface has keyboard focus. Leaving the feature, losing focus, opening a native menu or sheet, sleep, link loss and Quit also stop capture and attempt neutral releases.
 
-The feature reports keyboard and mouse input, not touchscreen contacts. Android apps decide what pointer clicks, scrolling and dragging do. Touch-only edge gestures and pinch gestures are not available.
+The feature sends mouse input, not touchscreen gestures; pinch and edge swipes are not supported.
 
 When the phone suspends HID, pending input is discarded. Held reports are released when the host resumes; capture remains stopped until another deliberate click.
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Exercises trusted-phone selection, association lifecycle and clipboard prevalidation.
+// Exercises trusted-phone selection, native input capture, HID report behavior and clipboard typing.
 import CryptoKit
 import AppKit
 import Foundation
@@ -1196,6 +1196,198 @@ final class KeyboardTrackpadTests: XCTestCase {
     model.keyUp(usage: 4, modifiers: 0)
     XCTAssertTrue(model.isControlling)
     XCTAssertEqual(transport.writes, [.keyboard(2, []), .keyboard(2, [4]), .keyboard(0, [4]), .keyboard(0, [])])
+  }
+
+  @MainActor func testPointerPreferencesDefaultToCorrectedDirectionAndRestoreExplicitChoices() {
+    let preferences = testDefaults()
+    let first = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
+    XCTAssertTrue(first.reverseVerticalPointer)
+    XCTAssertEqual(first.pointerSpeed, .standard)
+    first.reverseVerticalPointer = false
+    first.pointerSpeed = .fast
+    first.scrollSpeed = .gentle
+    first.shutdown()
+
+    let restored = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
+    defer { restored.shutdown() }
+    XCTAssertFalse(restored.reverseVerticalPointer, "An explicit false preference must survive reconstruction")
+    XCTAssertEqual(restored.pointerSpeed, .fast)
+    XCTAssertEqual(restored.scrollSpeed, .gentle)
+  }
+
+  @MainActor func testPointerAndBothScrollSourcesHaveDistinctSpeedTotals() async throws {
+    let speeds: [(KeyboardTrackpadSpeed, KeyboardTrackpadSpeed, Int, Int)] = [
+      (.extraSlow, .extraSlow, 1, 1), (.gentle, .gentle, 4, 4),
+      (.standard, .standard, 8, 8), (.fast, .fast, 16, 16),
+      (.fast, .extraSlow, 16, 1), (.extraSlow, .fast, 1, 16)
+    ]
+    for (pointerSpeed, scrollSpeed, expectedPointer, expectedWheel) in speeds {
+      for precise in [false, true] {
+        let peer = try phone("Phone")
+        let transport = FakeKeyboardTrackpadTransport()
+        transport.devices = [paired(peer)]
+        let model = readyModel(peer: peer, transport: transport)
+        defer { model.shutdown() }
+        model.pointerSpeed = pointerSpeed
+        model.scrollSpeed = scrollSpeed
+        model.connect()
+        model.requestControl(on: .pad)
+        model.pointerMoved(deltaX: 8, deltaY: -8)
+        model.scroll(deltaY: precise ? 96 : 8, precise: precise)
+        try await Task.sleep(for: .milliseconds(70))
+        var x = 0, y = 0, wheel = 0
+        for write in transport.writes {
+          guard case .mouse(let buttons, let dx, let dy, let wh) = write else { return XCTFail("Unexpected non-pointer report") }
+          XCTAssertEqual(buttons, 0)
+          x += dx; y += dy; wheel += wh
+        }
+        XCTAssertEqual(x, expectedPointer, "Pointer x at \(pointerSpeed), precise scroll: \(precise)")
+        XCTAssertEqual(y, -expectedPointer, "Pointer coordinates remain in HID space")
+        XCTAssertEqual(wheel, expectedWheel, "Scroll at \(scrollSpeed), precise: \(precise)")
+      }
+    }
+  }
+
+  @MainActor func testNativePadDirectionAndVisibleClipping() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
+    let clip = NSClipView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+    let pad = MousePadNSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
+    pad.model = model
+    clip.documentView = pad
+    root.addSubview(clip)
+    let window = KeyboardTrackpadTestWindow(contentRect: root.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = root
+    defer { window.contentView = nil }
+    window.makeFirstResponder(pad)
+    model.connect()
+    model.requestControl(on: .pad)
+    let visiblePoint = NSPoint(x: pad.visibleRect.midX, y: pad.visibleRect.midY)
+
+    func motion(at point: NSPoint, owner: NSWindow? = nil) throws -> NSEvent {
+      let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved,
+        location: pad.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+        windowNumber: (owner ?? window).windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+      let cgEvent = try XCTUnwrap(event.cgEvent)
+      cgEvent.setIntegerValueField(.mouseEventDeltaX, value: 8)
+      cgEvent.setIntegerValueField(.mouseEventDeltaY, value: 4)
+      return try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+    }
+
+    func wheel(at point: NSPoint, phase: Int64 = 0, owner: NSWindow? = nil) throws -> NSEvent {
+      let cgEvent = try XCTUnwrap(motion(at: point, owner: owner).cgEvent)
+      cgEvent.type = .scrollWheel
+      cgEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
+      cgEvent.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 8)
+      cgEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+      return try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+    }
+
+    pad.mouseMoved(with: try motion(at: visiblePoint))
+    XCTAssertEqual(transport.writes, [.mouse(0, 8, 4, 0)], "The default direction preserves AppKit's downward-positive delta")
+    model.reverseVerticalPointer = false
+    try await Task.sleep(for: .milliseconds(30))
+    pad.mouseMoved(with: try motion(at: visiblePoint))
+    XCTAssertEqual(transport.writes.last, .mouse(0, 8, -4, 0))
+    let count = transport.writes.count
+    let clippedPoint = NSPoint(x: pad.visibleRect.maxX + 20, y: pad.visibleRect.midY)
+    XCTAssertTrue(pad.bounds.contains(clippedPoint))
+    XCTAssertFalse(pad.visibleRect.contains(clippedPoint))
+    try await Task.sleep(for: .milliseconds(30))
+    pad.mouseMoved(with: try motion(at: clippedPoint))
+    XCTAssertEqual(transport.writes.count, count, "Clipped pad content must not capture motion")
+    let otherWindow = KeyboardTrackpadTestWindow(contentRect: root.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    pad.mouseMoved(with: try motion(at: visiblePoint, owner: otherWindow))
+    XCTAssertEqual(transport.writes.count, count, "A different window cannot feed the active pad")
+    model.scrollSpeed = .standard
+    let outsideWheel = try wheel(at: clippedPoint)
+    XCTAssertEqual(outsideWheel.scrollingDeltaY, 8)
+    pad.scrollWheel(with: outsideWheel)
+    XCTAssertEqual(transport.writes.count, count, "Clipped content must not capture wheel input either")
+    pad.scrollWheel(with: try wheel(at: visiblePoint))
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 8))
+    for (cgPhase, nativePhase) in [(Int64(4), NSEvent.Phase.ended), (Int64(8), .cancelled)] {
+      model.scrollGesture(deltaX: 12, deltaY: 0, phase: .began, precise: true, momentum: false)
+      XCTAssertTrue(model.isScrolling)
+      let wrongWindowEnd = try wheel(at: clippedPoint, phase: cgPhase, owner: otherWindow)
+      pad.scrollWheel(with: wrongWindowEnd)
+      XCTAssertTrue(model.isScrolling, "Another window must not retire this pad's gesture")
+      let outsideEnd = try wheel(at: clippedPoint, phase: cgPhase)
+      XCTAssertEqual(outsideEnd.phase, nativePhase)
+      pad.scrollWheel(with: outsideEnd)
+      XCTAssertFalse(model.isScrolling, "Leaving the visible pad must retire its sideways drag")
+      try await Task.sleep(for: .milliseconds(30))
+      XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 0), "An ended or cancelled gesture outside the pad must release its held button")
+    }
+    model.pointerButtonDown()
+    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+    XCTAssertFalse(model.isControlling)
+    XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 0), "Focus loss must synchronously release a held phone button")
+    let stoppedCount = transport.writes.count
+    pad.mouseMoved(with: try motion(at: visiblePoint))
+    pad.scrollWheel(with: try wheel(at: visiblePoint))
+    XCTAssertEqual(transport.writes.count, stoppedCount)
+  }
+
+  @MainActor func testFullScreenPadCoversMovementAreaAndKeepsLocalExitSeparate() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    let controller = FullScreenTrackpadController(model: model)
+    defer { controller.close() }
+    let window = try XCTUnwrap(controller.window)
+    let host = try XCTUnwrap(window.contentView)
+    func pads(_ view: NSView) -> [MousePadNSView] {
+      (view as? MousePadNSView).map { [$0] } ?? view.subviews.flatMap(pads)
+    }
+    for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+      window.appearance = NSAppearance(named: appearance)
+      for size in [NSSize(width: 600, height: 400), NSSize(width: 1200, height: 800)] {
+        window.setContentSize(size)
+        try await Task.sleep(for: .milliseconds(80))
+        host.layoutSubtreeIfNeeded()
+        let pad = try XCTUnwrap(pads(host).first)
+        XCTAssertEqual(pads(host).count, 1)
+        XCTAssertGreaterThan(pad.bounds.width, size.width - 40)
+        XCTAssertGreaterThan(pad.bounds.height, size.height - 160)
+        for point in [NSPoint(x: 20, y: 20), NSPoint(x: pad.bounds.maxX - 20, y: pad.bounds.maxY - 20),
+                      NSPoint(x: pad.bounds.midX, y: pad.bounds.midY)] {
+          XCTAssertTrue(host.hitTest(pad.convert(point, to: host.superview)) === pad,
+            "The pointer surface must receive clicks throughout its visible area at \(size), \(appearance)")
+        }
+        let headerPoint = NSPoint(x: host.bounds.maxX - 40, y: host.isFlipped ? 20 : host.bounds.maxY - 20)
+        XCTAssertFalse(host.hitTest(host.convert(headerPoint, to: host.superview)) === pad,
+          "Done and Stop controlling must remain outside the phone-input surface")
+      }
+    }
+    let pad = try XCTUnwrap(pads(host).first)
+    let point = pad.convert(NSPoint(x: pad.bounds.midX, y: pad.bounds.midY), to: nil)
+    let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+      modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+      eventNumber: 0, clickCount: 1, pressure: 1))
+    let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: point,
+      modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber, context: nil,
+      eventNumber: 1, clickCount: 1, pressure: 0))
+    pad.mouseDown(with: down)
+    pad.mouseUp(with: up)
+    XCTAssertTrue(model.isControlling)
+    XCTAssertTrue(transport.writes.isEmpty, "The full-screen arming click must be consumed")
+    pad.mouseDown(with: down)
+    pad.mouseUp(with: up)
+    XCTAssertEqual(transport.writes, [.mouse(1, 0, 0, 0), .mouse(0, 0, 0, 0)])
+    pad.mouseDown(with: down)
+    controller.close()
+    XCTAssertFalse(model.isControlling)
+    XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 0), "Closing must release a held phone button")
+    XCTAssertNil(window.contentView)
   }
 
   private func phone(_ name: String, id: String = UUID().uuidString.lowercased()) throws -> DeviceIdentity {

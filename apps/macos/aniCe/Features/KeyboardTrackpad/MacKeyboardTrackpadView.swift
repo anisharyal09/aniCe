@@ -10,7 +10,7 @@ struct MacKeyboardTrackpadView: View {
   @State private var linkCandidate: PairedBluetoothDevice?
   @State private var linkPeer: DeviceIdentity?
   @State private var keyboardFocused = false
-  @State private var padFocused = false
+  @State private var fullScreenPad: FullScreenTrackpadController?
   var onOpenDevices: () -> Void = {}
 
   var body: some View {
@@ -51,7 +51,11 @@ struct MacKeyboardTrackpadView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .foregroundStyle(AniCePalette.primaryText(scheme))
     .onAppear { model.enterPanel() }
-    .onDisappear { model.leavePanel() }
+    .onDisappear {
+      fullScreenPad?.close()
+      fullScreenPad = nil
+      model.leavePanel()
+    }
     .alert(
       "Link device to \(linkPeer?.deviceName ?? "this phone")?",
       isPresented: $showLinkConfirmation,
@@ -269,12 +273,51 @@ struct MacKeyboardTrackpadView: View {
       }
 
       keyboardActionRow
-      scrollSpeedControl
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 8) { pointerSettings }
+        VStack(alignment: .leading, spacing: 8) { pointerSettings }
+      }
+      .controlSize(.small)
       Text("Stop input: ⌘⇧Esc")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder private var pointerSettings: some View {
+    scrollSpeedControl
+    Menu {
+      ForEach(KeyboardTrackpadSpeed.allCases) { speed in
+        Button {
+          model.pointerSpeed = speed
+        } label: {
+          if model.pointerSpeed == speed {
+            Label("\(speed.title) · \(speed.scale.formatted())×", systemImage: "checkmark")
+          } else {
+            Text("\(speed.title) · \(speed.scale.formatted())×")
+          }
+        }
+      }
+      Divider()
+      Toggle("Reverse vertical pointer", isOn: $model.reverseVerticalPointer)
+    } label: {
+      Label("Pointer · \(model.pointerSpeed.title)", systemImage: "cursorarrow")
+    }
+    .menuStyle(.borderlessButton)
+    .buttonStyle(AniCeButtonStyle())
+    Button {
+      if let fullScreenPad, fullScreenPad.window?.isVisible == true {
+        fullScreenPad.showWindow(nil)
+        return
+      }
+      let controller = FullScreenTrackpadController(model: model)
+      fullScreenPad = controller
+      controller.start()
+    } label: {
+      Label("Full-screen trackpad", systemImage: "arrow.up.left.and.arrow.down.right")
+    }
+    .buttonStyle(AniCeButtonStyle())
   }
 
   private var controls: some View {
@@ -426,14 +469,14 @@ struct MacKeyboardTrackpadView: View {
 
   private var scrollSpeedControl: some View {
     Menu {
-      ForEach(KeyboardTrackpadScrollSpeed.allCases) { speed in
+      ForEach(KeyboardTrackpadSpeed.allCases) { speed in
         Button {
           model.scrollSpeed = speed
         } label: {
           if model.scrollSpeed == speed {
-            Label(speed.title, systemImage: "checkmark")
+            Label("\(speed.title) · \(speed.scale.formatted())×", systemImage: "checkmark")
           } else {
-            Text(speed.title)
+            Text("\(speed.title) · \(speed.scale.formatted())×")
           }
         }
       }
@@ -456,53 +499,12 @@ struct MacKeyboardTrackpadView: View {
 
   private var pad: some View {
     VStack(alignment: .leading, spacing: 8) {
-      padSurface
-      Text("Two fingers: up/down to scroll, sideways to drag. Android apps decide whether a drag selects text or moves content.")
+      TrackpadPad(model: model)
+      Text("Two fingers: up/down to scroll; swipe left/right to move the phone pointer sideways. This can pan content or drag/select items.")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(scheme))
         .fixedSize(horizontal: false, vertical: true)
     }
-  }
-
-  private var padSurface: some View {
-    ZStack {
-      MousePadSurface(model: model, focused: $padFocused)
-        .accessibilityLabel("Mouse and trackpad pad")
-        .accessibilityHint("Click to connect and arm pointer input. The click is consumed. Move, drag or scroll after control starts.")
-      VStack {
-        HStack {
-          Label("Phone pointer", systemImage: "cursorarrow")
-            .font(.caption)
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-          Spacer()
-          if padFocused {
-            Image(systemName: "viewfinder")
-              .foregroundStyle(AniCePalette.accent(scheme))
-              .accessibilityLabel("Pad focused")
-          }
-        }
-        Spacer()
-        if !model.isControlling || model.currentSurface != .pad {
-          Text("Click to control")
-            .font(.caption)
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-        } else {
-          Text(model.pointerActivity)
-            .font(.caption)
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-        }
-      }
-      .padding(14)
-      .allowsHitTesting(false)
-    }
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10))
-    .overlay {
-      RoundedRectangle(cornerRadius: 10)
-        .stroke(padFocused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme),
-          lineWidth: padFocused ? 1.5 : 0.75)
-        .allowsHitTesting(false)
-    }
-    .contentShape(RoundedRectangle(cornerRadius: 10))
   }
 
   private var stateSymbol: String {
@@ -530,6 +532,119 @@ struct MacKeyboardTrackpadView: View {
   }
 }
 
+
+private struct TrackpadPad: View {
+  let model: MacKeyboardTrackpadModel
+  @Environment(\.colorScheme) private var scheme
+  @State private var focused = false
+
+  var body: some View {
+    ZStack {
+      MousePadSurface(model: model, focused: $focused)
+        .accessibilityLabel("Mouse and trackpad pad")
+        .accessibilityHint("Click to connect and arm pointer input. The click is consumed. Move, drag or scroll after control starts.")
+      VStack {
+        HStack {
+          Label("Phone pointer", systemImage: "cursorarrow")
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+          Spacer()
+          if focused {
+            Image(systemName: "viewfinder")
+              .foregroundStyle(AniCePalette.accent(scheme))
+              .accessibilityLabel("Pad focused")
+          }
+        }
+        Spacer()
+        if !model.isControlling || model.currentSurface != .pad {
+          Text("Click to control")
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+        } else {
+          Text(model.pointerActivity)
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+        }
+      }
+      .padding(14)
+      .allowsHitTesting(false)
+    }
+    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10))
+    .overlay {
+      RoundedRectangle(cornerRadius: 10)
+        .stroke(focused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme),
+          lineWidth: focused ? 1.5 : 0.75)
+        .allowsHitTesting(false)
+    }
+    .contentShape(RoundedRectangle(cornerRadius: 10))
+  }
+}
+
+@MainActor final class FullScreenTrackpadController: NSWindowController, NSWindowDelegate {
+  private let model: MacKeyboardTrackpadModel
+
+  init(model: MacKeyboardTrackpadModel) {
+    self.model = model
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+      styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+    window.title = "Phone trackpad"
+    window.minSize = NSSize(width: 480, height: 320)
+    window.collectionBehavior = [.fullScreenPrimary]
+    window.isReleasedWhenClosed = false
+    super.init(window: window)
+    window.delegate = self
+    window.contentView = NSHostingView(rootView: FullScreenTrackpadContent(model: model) { [weak self] in self?.close() })
+    window.center()
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("Use init(model:)") }
+
+  func start() {
+    // Opening another surface releases the old owner; a fresh click arms the full-screen pad.
+    model.stopControlling()
+    showWindow(nil)
+    window?.toggleFullScreen(nil)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    model.stopControlling()
+    window?.contentView = nil
+  }
+
+  func windowDidExitFullScreen(_ notification: Notification) { close() }
+  func windowDidFailToEnterFullScreen(_ window: NSWindow) { close() }
+}
+
+private struct FullScreenTrackpadContent: View {
+  @Bindable var model: MacKeyboardTrackpadModel
+  @Environment(\.colorScheme) private var scheme
+  let onDone: () -> Void
+
+  var body: some View {
+    VStack(spacing: 8) {
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(model.targetPeer?.deviceName ?? "Phone trackpad").font(.headline)
+          Text("\(model.stateTitle) · ⌘⇧Esc stops input")
+            .font(.caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+        }
+        Spacer(minLength: 8)
+        Button("Stop controlling", action: model.stopControlling)
+          .disabled(!model.isControlling)
+        Button("Done", action: onDone)
+      }
+      .buttonStyle(AniCeButtonStyle())
+      TrackpadPad(model: model)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .foregroundStyle(AniCePalette.primaryText(scheme))
+    .background(AniCePalette.background(scheme))
+  }
+}
 
 private struct KeyboardCaptureSurface: NSViewRepresentable {
   let model: MacKeyboardTrackpadModel
@@ -754,6 +869,11 @@ private struct MousePadSurface: NSViewRepresentable {
 
   override func scrollWheel(with event: NSEvent) {
     guard !consumingArmingGesture, !blockedTouchSequence else { return }
+    guard isInsidePad(event) else {
+      // A gesture ending outside the pad must still release its held drag.
+      if let window, window.isKeyWindow, event.window === window { model?.cancelScrollGesture() }
+      return
+    }
     model?.scrollGesture(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
       phase: event.phase, precise: event.hasPreciseScrollingDeltas, momentum: !event.momentumPhase.isEmpty)
   }
@@ -795,9 +915,17 @@ private struct MousePadSurface: NSViewRepresentable {
     if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
   }
 
+  private func isInsidePad(_ event: NSEvent) -> Bool {
+    guard let window, window.isKeyWindow, event.window === window else { return false }
+    return visibleRect.contains(convert(event.locationInWindow, from: nil))
+  }
+
   private func sendMotion(_ event: NSEvent) {
     guard !consumingArmingGesture, !blockedTouchSequence, model?.isScrolling != true,
           model?.isControlling == true, model?.currentSurface == .pad else { return }
-    model?.pointerMoved(deltaX: event.deltaX, deltaY: -event.deltaY)
+    guard isInsidePad(event), let model else { return }
+    // Keep the legacy inverted mapping available without changing canonical HID coordinates in the model.
+    let deltaY = model.reverseVerticalPointer ? event.deltaY : -event.deltaY
+    model.pointerMoved(deltaX: event.deltaX, deltaY: deltaY)
   }
 }

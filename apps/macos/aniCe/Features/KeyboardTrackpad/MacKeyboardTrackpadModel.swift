@@ -103,7 +103,7 @@ enum KeyboardTrackpadPhase: Equatable {
 
 enum KeyboardTrackpadSurface: Equatable, Sendable { case keyboard, pad }
 
-enum KeyboardTrackpadScrollSpeed: String, CaseIterable, Identifiable {
+enum KeyboardTrackpadSpeed: String, CaseIterable, Identifiable {
   case extraSlow, gentle, standard, fast
   var id: Self { self }
   var title: String {
@@ -114,12 +114,12 @@ enum KeyboardTrackpadScrollSpeed: String, CaseIterable, Identifiable {
     case .fast: "Fast"
     }
   }
-  fileprivate var scale: Double {
+  var scale: Double {
     switch self {
     case .extraSlow: 0.125
     case .gentle: 0.5
     case .standard: 1.0
-    case .fast: 1.5
+    case .fast: 2.0
     }
   }
 }
@@ -255,7 +255,13 @@ enum ClipboardTypingValidationError: Error, Equatable {
   private(set) var isTypingClipboard = false
   private(set) var typingProgress = 0
   private(set) var typingLength = 0
-  var scrollSpeed: KeyboardTrackpadScrollSpeed = .extraSlow {
+  var reverseVerticalPointer = true {
+    didSet { preferences.set(reverseVerticalPointer, forKey: "keyboardTrackpad.reverseVerticalPointer") }
+  }
+  var pointerSpeed: KeyboardTrackpadSpeed = .standard {
+    didSet { preferences.set(pointerSpeed.rawValue, forKey: "keyboardTrackpad.pointerSpeed") }
+  }
+  var scrollSpeed: KeyboardTrackpadSpeed = .extraSlow {
     didSet { preferences.set(scrollSpeed.rawValue, forKey: "keyboardTrackpad.scrollSpeed") }
   }
 
@@ -283,8 +289,15 @@ enum ClipboardTypingValidationError: Error, Equatable {
     self.preferences = preferences
     associations = KeyboardTrackpadAssociations(storage: preferences)
     if let raw = preferences.string(forKey: "keyboardTrackpad.scrollSpeed"),
-       let stored = KeyboardTrackpadScrollSpeed(rawValue: raw) {
+       let stored = KeyboardTrackpadSpeed(rawValue: raw) {
       scrollSpeed = stored
+    }
+    if preferences.object(forKey: "keyboardTrackpad.reverseVerticalPointer") != nil {
+      reverseVerticalPointer = preferences.bool(forKey: "keyboardTrackpad.reverseVerticalPointer")
+    }
+    if let raw = preferences.string(forKey: "keyboardTrackpad.pointerSpeed"),
+       let speed = KeyboardTrackpadSpeed(rawValue: raw) {
+      pointerSpeed = speed
     }
     transport.stateChanged = { [weak self] event in self?.transportChanged(event) }
     installLifecycleObservers()
@@ -585,13 +598,13 @@ enum ClipboardTypingValidationError: Error, Equatable {
   func pointerMoved(deltaX: Double, deltaY: Double) {
     guard phase == .controlling, activeSurface == .pad, typingJob == nil,
           deltaX.isFinite, deltaY.isFinite, deltaX != 0 || deltaY != 0 else { return }
-    enqueueMotion(buttons: heldButtons, x: deltaX, y: deltaY, wheel: 0)
+    enqueueMotion(buttons: heldButtons, x: deltaX * pointerSpeed.scale, y: deltaY * pointerSpeed.scale, wheel: 0)
   }
 
   func scroll(deltaY: Double, precise: Bool) {
     guard phase == .controlling, activeSurface == .pad, typingJob == nil,
           reportProtocol, deltaY.isFinite, deltaY != 0 else { return }
-    let wheel = precise ? deltaY * scrollSpeed.scale / 12.0 : deltaY
+    let wheel = (precise ? deltaY / 12.0 : deltaY) * scrollSpeed.scale
     enqueueMotion(buttons: heldButtons, x: 0, y: 0, wheel: wheel)
   }
 

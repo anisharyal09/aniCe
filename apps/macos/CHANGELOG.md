@@ -6,8 +6,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add a dedicated full-screen trackpad with local Stop and Done controls.
+
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
-- Add Keyboard & Trackpad with native keyboard capture, pointer and two-finger drag control, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
+- Add Keyboard & Trackpad with native keyboard capture, pointer input, two-finger up/down scrolling and left/right pointer dragging, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
 - Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
 - Review selected files and their recipient before sending; reject sends when the reviewed device changes.
 - Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.
@@ -15,6 +17,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Correct default vertical pointer direction, save independent pointer/scroll speeds, and apply scroll speed to both trackpads and mouse wheels.
 - Reduce Keyboard & Trackpad callback scheduling and duplicate modifier reports; use monotonic motion pacing and cancel pending motion timers when capture stops.
 - Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
 - Allow Type clipboard during direct control, releasing held input only after validating the text.
@@ -27,6 +30,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
 
 ### Fixed
+
+- Confine pointer movement and scrolling to the visible pad, releasing sideways drags that end outside.
 
 - Preserve fractional pointer and wheel movement, and prevent delayed focus-loss or connection completion callbacks from disarming newly started input.
 
