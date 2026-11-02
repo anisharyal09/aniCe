@@ -4,4 +4,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <application>
+        <activity
+            android:name=".spikes.ImeProbeActivity"
+            android:exported="true"
+            android:label="IME input probe"
+            android:permission="android.permission.DUMP"
+            android:theme="@style/Theme.AniCe" />
+    </application>
 </manifest>

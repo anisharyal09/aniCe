@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Remove redundant macOS SDK signing-identity overrides so local signing choices are not shadowed; retain Sign to Run Locally as the default.
+
 - Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
 
 - Prepare transfer chunks in the source-storage actor without a second full-read buffer, and defer native Find Device startup so shared DATA delivery can continue.
