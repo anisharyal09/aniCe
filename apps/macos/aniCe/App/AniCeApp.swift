@@ -17,6 +17,8 @@ struct AniCeApp: App {
   @State private var findDevice: MacFindDeviceModel
   private let findNotifier: MacFindDeviceNotifier
   @State private var sms: MacSmsModel
+  @State private var keyboardTrackpad: MacKeyboardTrackpadModel
+  @State private var floatingKeyboard: FloatingKeyboardController
   @State private var smsPreferences: SmsPreferences
   private let smsNotifier: MacSmsNotifier
   @State private var transfer: MacTransferModel
@@ -81,6 +83,10 @@ struct AniCeApp: App {
     self.smsNotifier = smsNotifier
     let sms = MacSmsModel(notifier: smsNotifier)
     _sms = State(initialValue: sms)
+    let keyboardTrackpad = MacKeyboardTrackpadModel(preferences: .standard)
+    _keyboardTrackpad = State(initialValue: keyboardTrackpad)
+    let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
+    _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     smsNotifier.onOpenMessages = { [weak navigation] in
       navigation?.openFeature(.messages)
@@ -139,6 +145,7 @@ struct AniCeApp: App {
         await pairing.refresh()
         clipboard.prune(pairing.peers.map(\.peer), confirmedTrust: true)
         smsPreferences.prune(pairing.peers.map(\.peer))
+        keyboardTrackpad.trustWasRemoved(retaining: pairing.peers.map(\.peer))
       }
     }
     identity.onIdentityReset = {
@@ -148,6 +155,7 @@ struct AniCeApp: App {
       lan.cancel()
       session.retireTrust()
       pairing.cancel()
+      keyboardTrackpad.identityWasReset()
     }
     _pairing = State(initialValue: pairing)
     _session = State(initialValue: session)
@@ -183,15 +191,17 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms, smsPreferences: smsPreferences, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
-            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); PasteTrayController.shared.hide() }
+            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); PasteTrayController.shared.hide() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, navigation: navigation,
+                session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
+                keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, navigation: navigation,
                 openMainWindow: { delegate.openMainFromCompanion() }),
-              navigation: navigation)
+              navigation: navigation, floatingKeyboard: floatingKeyboard)
+            floatingKeyboard.restoreIfNeeded()
           }
         }
     }

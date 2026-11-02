@@ -22,9 +22,10 @@ aniCe/
   Features/                    Identity, discovery, pairing and session presentation
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
     FindDevice/                Peer ring request actions, sound player and notification setup
+    KeyboardTrackpad/          Native input model/views, floating panel and Objective-C HID adapter
     NowPlaying/                Playback model, native bridge, session link, codecs and views
-    Sms/                       SMS relay model, wire codec, notifier and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
+    Sms/                       SMS relay model, wire codec, notifier and views
     Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
   Infrastructure/
     Connections/               BLE/LAN owners and feature-neutral DATA dispatch
@@ -39,6 +40,7 @@ aniCe/
 aniCeTests/                    Hosted suites and shared fixtures
   Clipboard/                   Clipboard model, debounce and wire codec test suites
   FindDevice/                  Find device payload and state transition test suites
+  KeyboardTrackpad/            Input ownership, focus, gestures and native HID protocol tests
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
   Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
@@ -98,6 +100,14 @@ Overview, Devices, Features, Favourites, Settings and About use a native sidebar
 ## Now Playing
 
 Features → Now Playing → Playback setup provides remote playback to Android. Local Overview/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
+
+## Keyboard & Trackpad (unreleased)
+
+Features → Keyboard & Trackpad sends native keyboard and mouse input to a trusted Android phone over Classic Bluetooth HID. Pair in macOS Bluetooth Settings, then confirm the paired device's link to the aniCe phone once. Connecting leaves input idle until you click the keyboard or pointer pad. Two fingers up/down scroll; left/right drags the phone pointer. Scrolling over an inactive embedded pad browses the local panel.
+
+The menu-bar companion's **Keyboard** button shows or hides a persistent floating button; its right-click menu also offers **Show floating keyboard**. Click the floating button to toggle typing, or right-click it for full controls and Hide. Compact position and visibility are saved; reopening restores idle controls. Resizing the full controls preserves keyboard focus. Stopping or hiding releases held input while the HID connection can remain idle.
+
+The Objective-C adapter adapts aniKey's GPL transport and report conventions with aniCe's bounded worker and connection checks; Swift owns trusted targets, input capture and cancellation. See the [feature guide](../../docs/features/KEYBOARD_TRACKPAD.md), [Classic HID contract](../../protocol/bluetooth/classic-hid.md) and [adaptation record](../../docs/decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation). No Android app component or Accessibility permission is required.
 
 ## Local File Transfer
 

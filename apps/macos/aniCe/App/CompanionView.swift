@@ -12,6 +12,8 @@ struct CompanionView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
   let clipboard: MacClipboardModel
+  let keyboardTrackpad: MacKeyboardTrackpadModel
+  @Bindable var floatingKeyboard: FloatingKeyboardController
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
   @Environment(\.colorScheme) private var colorScheme
@@ -21,6 +23,12 @@ struct CompanionView: View {
       HStack(spacing: 12) {
         Text("aniCe").font(.headline)
         Spacer()
+        Button { floatingKeyboard.toggleVisibility() } label: {
+          Label("Keyboard", systemImage: "keyboard")
+        }
+        .buttonStyle(AniCeButtonStyle(quiet: true))
+        .accessibilityLabel(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
+        .help(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
         Menu {
           Button("Quick Paste Tray (⌥⌘V)") {
             PasteTrayController.shared.show()
@@ -116,7 +124,7 @@ struct CompanionView: View {
         Button("Stop pairing") { pairing.cancel() }
       } else if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
         MacSessionView(peers: pairing.peers, model: session, lan: lan,
-          details: .constant(false), diagnostics: .constant(false), compact: true,
+          details: .constant(false), diagnostics: .constant(false), compact: true, keyboardTrackpad: keyboardTrackpad,
           onManageDevices: { navigation.open(.devices, present: openMain) },
           onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })
       } else {
@@ -172,12 +180,16 @@ struct CompanionView: View {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let popover = NSPopover()
   private let playback: MacPlaybackModel
+  private let floatingKeyboard: FloatingKeyboardController
   private let onOpen: () -> Void
   private let onManage: () -> Void
+  private var handoffCompletion: (() -> Void)?
+  private var suppressRefocusAfterClose = false
 
-  init(content: CompanionView, onOpen: @escaping () -> Void,
+  init(content: CompanionView, floatingKeyboard: FloatingKeyboardController, onOpen: @escaping () -> Void,
     onManage: @escaping () -> Void) {
     self.playback = content.playback
+    self.floatingKeyboard = floatingKeyboard
     self.onOpen = onOpen
     self.onManage = onManage
     super.init()
@@ -205,7 +217,7 @@ struct CompanionView: View {
     if Self.showsContextMenu(eventType: event?.type,
       modifiers: event?.modifierFlags ?? []) {
       popover.performClose(nil)
-      item.popUpMenu(Self.makeMenu(target: self))
+      item.popUpMenu(Self.makeMenu(target: self, floatingKeyboardVisible: floatingKeyboard.isVisible))
     } else if popover.isShown {
       popover.performClose(nil)
     } else {
@@ -218,8 +230,8 @@ struct CompanionView: View {
     eventType == .rightMouseUp || eventType == .rightMouseDown || modifiers.contains(.control)
   }
 
-  /// Constructs the static right-click status bar menu for window routes and Quit.
-  static func makeMenu(target: AnyObject) -> NSMenu {
+  /// Constructs the status bar menu for window routes, the floating keyboard and Quit.
+  static func makeMenu(target: AnyObject, floatingKeyboardVisible: Bool = false) -> NSMenu {
     let menu = NSMenu()
     for (title, action) in [("Open aniCe", #selector(openMain)),
                              ("Manage devices", #selector(manageDevices))] {
@@ -227,6 +239,11 @@ struct CompanionView: View {
       entry.target = target
       menu.addItem(entry)
     }
+
+    let keyboard = NSMenuItem(title: floatingKeyboardVisible ? "Hide floating keyboard" : "Show floating keyboard",
+      action: #selector(toggleFloatingKeyboard), keyEquivalent: "")
+    keyboard.target = target
+    menu.addItem(keyboard)
 
     menu.addItem(.separator())
     let quit = NSMenuItem(title: "Quit aniCe", action: #selector(quitApp), keyEquivalent: "")
@@ -246,13 +263,38 @@ struct CompanionView: View {
     NSApp.activate(ignoringOtherApps: true)
     onManage()
   }
+  @objc private func toggleFloatingKeyboard() { floatingKeyboard.toggleVisibility() }
   @objc private func quitApp() { NSApp.terminate(nil) }
   func close() { popover.performClose(nil) }
+
+  var isShown: Bool { popover.isShown }
+
+  @discardableResult
+  func closeForInputHandoff(completion: @escaping () -> Void) -> Bool {
+    guard !isPickingFile else { return false }
+    guard popover.isShown else { completion(); return true }
+    handoffCompletion = completion
+    suppressRefocusAfterClose = true
+    popover.performClose(nil)
+    guard !popover.isShown else {
+      handoffCompletion = nil
+      suppressRefocusAfterClose = false
+      return false
+    }
+    return true
+  }
 
   func popoverDidShow(_ notification: Notification) { playback.presented("companion",true) }
 
   func popoverDidClose(_ notification: Notification) {
     playback.presented("companion",false)
+    if suppressRefocusAfterClose {
+      suppressRefocusAfterClose = false
+      let completion = handoffCompletion
+      handoffCompletion = nil
+      completion?()
+      return
+    }
     if let button = item.button { button.window?.makeFirstResponder(button) }
   }
 

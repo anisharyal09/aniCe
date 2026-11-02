@@ -60,9 +60,10 @@ enum AniCePalette {
 struct AniCeButtonStyle: ButtonStyle {
   var prominent = false
   var quiet = false
+  var compact = false
   func makeBody(configuration: Configuration) -> some View {
     AniCeButtonFace(label: configuration.label, pressed: configuration.isPressed,
-      prominent: prominent, quiet: quiet)
+      prominent: prominent, quiet: quiet, compact: compact)
   }
 }
 
@@ -71,6 +72,7 @@ private struct AniCeButtonFace<Label: View>: View {
   let pressed: Bool
   let prominent: Bool
   let quiet: Bool
+  let compact: Bool
   @Environment(\.colorScheme) private var scheme
   @Environment(\.isEnabled) private var enabled
   @Environment(\.isFocused) private var focused
@@ -79,8 +81,8 @@ private struct AniCeButtonFace<Label: View>: View {
     label
       .font(.system(size: 13, weight: .medium))
       .foregroundStyle(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
-      .padding(.horizontal, quiet ? 0 : 12).padding(.vertical, 7)
-      .frame(minHeight: quiet ? 30 : 32)
+      .padding(.horizontal, quiet ? 0 : (compact ? 6 : 12)).padding(.vertical, compact ? 5 : 7)
+      .frame(minWidth: compact ? 32 : nil, minHeight: (quiet || compact) ? 30 : 32)
       .background(prominent ? AniCePalette.accent(scheme) : (quiet ? .clear : AniCePalette.surface(scheme)), in: RoundedRectangle(cornerRadius: 7))
       .overlay {
         if !quiet || focused {

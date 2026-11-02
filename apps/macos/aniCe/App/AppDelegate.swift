@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var findNotifier: MacFindDeviceNotifier?
     private var smsNotifier: MacSmsNotifier?
     private var companion: CompanionHost?
+    private var floatingKeyboard: FloatingKeyboardController?
     var onTerminate: () -> Void = {}
     func applicationWillTerminate(_ notification: Notification) { onTerminate() }
 
@@ -71,9 +72,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         reopenMainWindow?()
     }
 
-    func installCompanion(_ content: CompanionView, navigation: ConnectionNavigation) {
+    func installCompanion(_ content: CompanionView, navigation: ConnectionNavigation,
+        floatingKeyboard: FloatingKeyboardController) {
         guard companion == nil else { return }
-        companion = CompanionHost(content: content, onOpen: { [weak self] in
+        self.floatingKeyboard = floatingKeyboard
+        floatingKeyboard.onOpenApp = { [weak self, weak navigation] in
+            navigation?.openFeature(.keyboardTrackpad)
+            self?.openMainFromCompanion()
+        }
+        floatingKeyboard.onOpenDevices = { [weak self, weak navigation, weak floatingKeyboard] in
+            guard let self, let navigation else { return }
+            floatingKeyboard?.collapse()
+            navigation.open(.devices, present: { [weak self] in self?.openMainFromCompanion() })
+        }
+        companion = CompanionHost(content: content, floatingKeyboard: floatingKeyboard, onOpen: { [weak self] in
             self?.openMainFromCompanion()
         }, onManage: { [weak self] in
             navigation.diagnostics = false

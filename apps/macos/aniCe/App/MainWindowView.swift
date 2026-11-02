@@ -17,6 +17,7 @@ struct MainWindowView: View {
   let findDevice: MacFindDeviceModel
   let findNotifier: MacFindDeviceNotifier?
   let sms: MacSmsModel
+  let keyboardTrackpad: MacKeyboardTrackpadModel
   let smsPreferences: SmsPreferences
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -67,34 +68,7 @@ struct MainWindowView: View {
               .accessibilityLabel("Forward").keyboardShortcut("]", modifiers: .command)
           }
         }
-    } detail: {
-      VStack(spacing: 0) {
-        if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
-          PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
-            detail: pairing.status) { navigation.show(.devices, route: .pairing) }
-        }
-        if let offer = transfer.pendingOffer,
-          navigation.destination != .home && !(navigation.destination == .features && navigation.featurePanel == .files) {
-          PendingRequestRow(title: "Incoming files", detail: "\(offer.files.count) files from \(offer.peerName)") {
-            navigation.openFeature(.files)
-          }
-        }
-        Group {
-          switch navigation.destination {
-          case .home: homeContent
-          case .devices: devicesContent
-          case .features: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation)
-          case .favourites: FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, sms: sms, smsPreferences: smsPreferences, findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: true)
-          case .about: aboutContent
-          case .settings: settingsContent
-          }
-        }
-      }.navigationTitle("aniCe")
-        .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
-        .toolbarBackground(.visible, for: .windowToolbar)
-        .background(AniCePalette.background(colorScheme))
-        .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
-    }
+    } detail: { detailContent }
     .sheet(isPresented: $showingLocalIdentity) {
       IdentityView(model: identity).preferredColorScheme(colorScheme)
     }
@@ -109,6 +83,11 @@ struct MainWindowView: View {
       }
     }
     .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
+    .onAppear { updateKeyboardTrackpadTargets() }
+    .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
+    .onChange(of: session.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
+    .onChange(of: lan.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
+    .onChange(of: navigation.focusedPeer) { _, _ in updateKeyboardTrackpadTargets() }
     // Pairing signs the identity snapshot captured by its invitation; renaming requires a fresh invitation.
     .onChange(of: identity.local?.identity.deviceName) { old, new in
       if old != nil, old != new, pairing.active {
@@ -133,6 +112,55 @@ struct MainWindowView: View {
       }
     }
   }
+
+  private var detailContent: some View {
+    VStack(spacing: 0) {
+      pendingRequestRows
+      destinationContent
+    }
+    .navigationTitle("aniCe")
+    .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
+    .toolbarBackground(.visible, for: .windowToolbar)
+    .background(AniCePalette.background(colorScheme))
+    .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+  }
+
+  @ViewBuilder private var pendingRequestRows: some View {
+    if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
+      PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
+        detail: pairing.status) { navigation.show(.devices, route: .pairing) }
+    }
+    if let offer = transfer.pendingOffer,
+      navigation.destination != .home && !(navigation.destination == .features && navigation.featurePanel == .files) {
+      PendingRequestRow(title: "Incoming files", detail: "\(offer.files.count) files from \(offer.peerName)") {
+        navigation.openFeature(.files)
+      }
+    }
+  }
+
+  @ViewBuilder private var destinationContent: some View {
+    switch navigation.destination {
+    case .home: homeContent
+    case .devices: devicesContent
+    case .features: featureDestination(favouritesOnly: false)
+    case .favourites: featureDestination(favouritesOnly: true)
+    case .about: aboutContent
+    case .settings: settingsContent
+    }
+  }
+
+  private func featureDestination(favouritesOnly: Bool) -> some View {
+    FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
+      sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences,
+      findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: favouritesOnly)
+  }
+
+  private func updateKeyboardTrackpadTargets() {
+    let connected = Set([session.authenticatedPeer, lan.authenticatedPeer].compactMap { $0?.deviceId })
+    keyboardTrackpad.updateTargets(pairing.peers.map(\.peer), connectedPeerIDs: connected, peerContextID: navigation.focusedPeer,
+      connectedBLEPeerID: session.authenticatedPeer?.deviceId)
+  }
+
   private func sidebarItem(_ destination: AppDestination) -> some View {
     let selected = navigation.destination == destination
     return Button {

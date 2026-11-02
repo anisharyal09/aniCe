@@ -14,7 +14,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
+- Add a dedicated full-screen trackpad with local Stop and Done controls.
+- Add a saved drag handle below the pointer pad to resize its height in both feature and floating controls; keep keyboard height fixed.
+
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
+- Add Keyboard & Trackpad with native keyboard capture, pointer input, two-finger up/down scrolling and left/right pointer dragging, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
 - Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
 - Review selected files and their recipient before sending; reject sends when the reviewed device changes.
 - Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.
@@ -22,6 +27,20 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input styling in the feature and floating controls.
+- Highlight active typing on the floating keyboard button with the accent fill and a contrasting icon.
+- Remove the rectangular native panel shadow around the floating keyboard controls; retain the rounded content shadow.
+- Simplify expanded floating controls to the selected phone, Open in app, input actions and contextual recovery details.
+- Reduce unused space below the expanded floating controls.
+
+- Refine Keyboard & Trackpad headers and gesture guidance, preserve keyboard focus across layout changes and saved position after hiding expanded controls, and document the native adapter's aniKey provenance and idle behavior.
+- Keep the floating keyboard button in a stable compact position across expand, collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar companion popup, and remove the confusing keyboard shortcut hint.
+- Make expanded floating controls movable, pass inactive-pad scrolling to the local panel, reduce repeated header details and clarify Bluetooth HID state.
+- Correct default vertical pointer direction, save independent pointer/scroll speeds, and apply scroll speed to both trackpads and mouse wheels.
+- Reduce Keyboard & Trackpad callback scheduling and duplicate modifier reports; use monotonic motion pacing and cancel pending motion timers when capture stops.
+- Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
+- Allow Type clipboard during direct control, releasing held input only after validating the text.
+- Automatically connect after linking and reconnect once when Keyboard & Trackpad opens, defaulting to the authenticated BLE-connected phone. Use aniKey's system-paired, authenticated Bluetooth policy; macOS manages encryption without an additional aniCe encryption-status gate.
 - Move SMS stream assembly and live/provider/search row admission into a focused receiving extension while preserving the model's message handling.
 
 - Organize the Mac transfer engine into coordinator, sender, receiver, recovery, storage and wire files; keep the view and notification handling separate.
@@ -34,6 +53,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Replace feature launcher tiles with compact rows; group Settings with section shortcuts and center About content at wide sizes.
 - Reorganize playback, file transfer, Messages and Clipboard, including split conversations, a bottom SMS composer and separate Share/History tabs.
 - Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
+
+### Fixed
+
+- Confine pointer movement and scrolling to the visible pad, releasing sideways drags that end outside.
+
+- Preserve fractional pointer and wheel movement, and prevent delayed focus-loss or connection completion callbacks from disarming newly started input.
 
 ## [v0.3.0]
 

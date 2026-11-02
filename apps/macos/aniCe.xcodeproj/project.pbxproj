@@ -120,6 +120,14 @@
 		B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */; };
 		B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */; };
 		B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */; };
+		D10000000000000000000001 /* MacKeyboardTrackpadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002; };
+		D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000004; };
+		D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002; };
+		D10000000000000000000005 /* ClassicHIDAdapter.m in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000006; };
+		D10000000000000000000007 /* IOBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D10000000000000000000008; };
+		D1000000000000000000000C /* KeyboardTrackpadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1000000000000000000000B; };
+		D1000000000000000000000E /* hid-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = D1000000000000000000000D; };
+		D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000013; };
 		B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */; };
 		B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000B; };
 		B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000C; };
@@ -254,6 +262,18 @@
 		B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sms/sms-vectors.json"; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000002 /* MacKeyboardTrackpadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/MacKeyboardTrackpadModel.swift"; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000004 /* MacKeyboardTrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/MacKeyboardTrackpadView.swift"; sourceTree = SOURCE_ROOT; };
+		D20000000000000000000002 /* FloatingKeyboardWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/FloatingKeyboardWindow.swift"; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000006 /* ClassicHIDAdapter.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "aniCe/Features/KeyboardTrackpad/ClassicHIDAdapter.m"; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000008 /* IOBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOBluetooth.framework; path = System/Library/Frameworks/IOBluetooth.framework; sourceTree = SDKROOT; };
+		D10000000000000000000009 /* AniCeBridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "aniCe/AniCeBridgingHeader.h"; sourceTree = SOURCE_ROOT; };
+		D1000000000000000000000A /* KeyboardTrackpad */ = {isa = PBXGroup; children = (D10000000000000000000002, D10000000000000000000004, D20000000000000000000002, D10000000000000000000006, D10000000000000000000011,); path = KeyboardTrackpad; sourceTree = "<group>"; };
+		D1000000000000000000000B /* KeyboardTrackpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/KeyboardTrackpad/KeyboardTrackpadTests.swift"; sourceTree = SOURCE_ROOT; };
+		D1000000000000000000000D /* hid-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/bluetooth-hid/hid-vectors.json"; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000011 /* ClassicHIDAdapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "aniCe/Features/KeyboardTrackpad/ClassicHIDAdapter.h"; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000012 /* KeyboardTrackpadTests */ = {isa = PBXGroup; children = (D1000000000000000000000B, D1000000000000000000000D, D10000000000000000000013,); path = KeyboardTrackpad; sourceTree = "<group>"; };
+		D10000000000000000000013 /* ClassicHIDAdapterTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "aniCeTests/KeyboardTrackpad/ClassicHIDAdapterTests.m"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Sms/MacSmsReceiving.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRecovery.swift"; sourceTree = SOURCE_ROOT; };
@@ -266,6 +286,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D10000000000000000000007 /* IOBluetooth.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -378,6 +399,7 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				D10000000000000000000012 /* KeyboardTrackpadTests */,
 				AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */,
 				0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */,
 				A0FAD41BE08DB04EA6CA9505 /* aniCeTests/SessionChannelTests.swift */,
@@ -402,6 +424,7 @@
 				000000000000000000000066 /* MainWindowView.swift */,
 				000000000000000000000068 /* CompanionView.swift */,
 				000000000000000000000074 /* IdentityAssembly.swift */,
+				D10000000000000000000009 /* AniCeBridgingHeader.h */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -439,6 +462,7 @@
 			children = (
 				000000000000000000000304 /* DeviceIdentity */,
 				000000000000000000000461 /* Discovery */,
+				D1000000000000000000000A /* KeyboardTrackpad */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -637,6 +661,7 @@
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 				B10100000000000000000003 /* ../../protocol/test-vectors/transfer/transfer-vectors.json in Resources */,
 				B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */,
+				D1000000000000000000000E /* hid-vectors.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -738,6 +763,10 @@
 				B30100000000000000000002 /* aniCe/Features/Sms/MacSmsModel.swift in Sources */,
 				B30100000000000000000003 /* aniCe/Features/Sms/MacSmsNotifier.swift in Sources */,
 				B30100000000000000000004 /* aniCe/Features/Sms/SmsView.swift in Sources */,
+				D10000000000000000000001 /* MacKeyboardTrackpadModel.swift in Sources */,
+				D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */,
+				D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */,
+				D10000000000000000000005 /* ClassicHIDAdapter.m in Sources */,
 				B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -766,6 +795,8 @@
 				B30100000000000000000005 /* aniCeTests/Sms/SmsWireTests.swift in Sources */,
 				B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */,
 				B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */,
+				D1000000000000000000000C /* KeyboardTrackpadTests.swift in Sources */,
+				D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -827,7 +858,7 @@
 				);
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
-				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/aniCe/AniCeBridgingHeader.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
@@ -878,7 +909,7 @@
 				);
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/../../core/rust/pairing/include/anice_pairing.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/aniCe/AniCeBridgingHeader.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 			};

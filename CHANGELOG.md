@@ -18,10 +18,11 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Open Android-shared HTTP(S) links in the Mac's default browser.
+- Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed
 
+- Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.

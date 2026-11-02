@@ -63,7 +63,7 @@ extension SessionTests {
     XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
     XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
     XCTAssertEqual(AppFeature.findDevice.toggled(in: "files,files"), "files,findDevice")
-    XCTAssertEqual(AppFeature.allCases.count, 5)
+    XCTAssertEqual(AppFeature.allCases.count, 6)
     for feature in AppFeature.allCases {
       XCTAssertEqual(AppFeature.favourites(in: feature.toggled(in: "")), [feature])
       XCTAssertEqual(feature.toggled(in: feature.toggled(in: "")), "")
@@ -203,13 +203,15 @@ extension SessionTests {
     let target = NSObject()
     let items = CompanionHost.makeMenu(target: target).items
     XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Manage devices", "Quit aniCe"])
+      ["Open aniCe", "Manage devices", "Show floating keyboard", "Quit aniCe"])
     XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
     for item in items where !item.isSeparatorItem {
       XCTAssertTrue(item.target === target)
       XCTAssertNotNil(item.action)
     }
-    XCTAssertEqual(Set(items.compactMap(\.action)).count, 3)
+    XCTAssertEqual(Set(items.compactMap(\.action)).count, 4)
+    XCTAssertEqual(CompanionHost.makeMenu(target: target, floatingKeyboardVisible: true).items[2].title,
+      "Hide floating keyboard")
   }
 
   func testConnectionSummaryRequiresReadinessAcrossBothTransports() {

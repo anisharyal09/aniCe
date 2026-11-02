@@ -10,6 +10,10 @@ The pairing and transport foundations include P-256 identities, QR and OPAQUE PI
 
 Physical testing includes authenticated connections, real transfers in both directions, Find Device ringing/Stop/timeout, and manual feature/UI use on an Apple M5 MacBook Air and Samsung Galaxy A34.
 
+## In development
+
+[Keyboard & Trackpad](docs/features/KEYBOARD_TRACKPAD.md) controls a trusted Android phone through separately paired Classic Bluetooth HID. The Mac provides keyboard input, pointer movement, two-finger scrolling and dragging, navigation buttons, clipboard typing, and optional floating controls from the menu-bar companion. Input starts with a deliberate click; an idle HID connection can remain open after control stops. These additions are unreleased.
+
 ---
 
 Automatic LAN connection is available through an opt-in preference in Settings and pairing on both apps. It coordinates over secured Bluetooth; [LAN behavior and limits](docs/LAN_CONNECTIONS.md#automatic-connection-on-events-and-demand) describe eligibility and event-triggered initiation.
@@ -22,7 +26,7 @@ apps/
   android/              Android app and tests (Kotlin, Jetpack Compose, Material 3)
   macos/                Mac app, Xcode project, and tests (Swift 6, SwiftUI, AppKit)
 protocol/
-  bluetooth/            BLE discovery contract (unauthenticated 20-byte probe)
+  bluetooth/            BLE discovery and independent Classic Bluetooth HID contracts
   lan/                  Local network stream framing and mDNS discovery contract
   pairing/              Authenticated bootstrap and control-pipe contract (QR & OPAQUE PIN)
   session/              EDHOC, encrypted records, controls and session envelopes
@@ -52,7 +56,7 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 - **Architecture Decisions:** [Shared foundations and feature decisions](docs/decisions/README.md)
 - **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
 - **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
-- **Features:** [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md) · [Find Device](docs/features/FIND_DEVICE.md) · [Clipboard](docs/features/CLIPBOARD.md) · [Messages (SMS relay)](docs/features/SMS.md)
+- **Features:** [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md) · [Find Device](docs/features/FIND_DEVICE.md) · [Clipboard](docs/features/CLIPBOARD.md) · [Messages (SMS relay)](docs/features/SMS.md) · [Keyboard & Trackpad (unreleased)](docs/features/KEYBOARD_TRACKPAD.md)
 - **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
 
 Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
