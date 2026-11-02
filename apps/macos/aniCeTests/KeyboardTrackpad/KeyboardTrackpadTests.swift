@@ -506,6 +506,28 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertFalse(preferences.bool(forKey: "keyboardTrackpad.floatingVisible"))
   }
 
+  @MainActor func testOpenInAppCollapsesFloatingControlsBeforeCallback() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    let controller = FloatingKeyboardController(model: model, preferences: testDefaults())
+    defer { controller.shutdown() }
+    controller.show(restoring: true)
+    controller.expand()
+    XCTAssertTrue(controller.isExpanded)
+    var opened = false
+    controller.onOpenApp = { [weak controller] in
+      XCTAssertEqual(controller?.isExpanded, false)
+      opened = true
+    }
+    controller.openInApp()
+    XCTAssertTrue(opened)
+    XCTAssertTrue(controller.isVisible)
+    XCTAssertFalse(model.isControlling)
+  }
+
   @MainActor func testFloatingPositionSurvivesHidingExpandedControls() throws {
     let visible = try XCTUnwrap(NSScreen.main).visibleFrame
     let saved = NSRect(x: visible.maxX - 68, y: visible.minY + 20, width: 48, height: 48)

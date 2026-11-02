@@ -16,6 +16,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.
+- Add a saved drag handle below the pointer pad to resize its height in both feature and floating controls; keep keyboard height fixed.
 
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
 - Add Keyboard & Trackpad with native keyboard capture, pointer input, two-finger up/down scrolling and left/right pointer dragging, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
@@ -26,7 +27,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input outlines in the feature and floating controls.
+- Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input styling in the feature and floating controls.
+- Highlight active typing on the floating keyboard button with the accent fill and a contrasting icon.
+- Remove the rectangular native panel shadow around the floating keyboard controls; retain the rounded content shadow.
+- Simplify expanded floating controls to the selected phone, Open in app, input actions and contextual recovery details.
+- Reduce unused space below the expanded floating controls.
 
 - Refine Keyboard & Trackpad headers and gesture guidance, preserve keyboard focus across layout changes and saved position after hiding expanded controls, and document the native adapter's aniKey provenance and idle behavior.
 - Keep the floating keyboard button in a stable compact position across expand, collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar companion popup, and remove the confusing keyboard shortcut hint.

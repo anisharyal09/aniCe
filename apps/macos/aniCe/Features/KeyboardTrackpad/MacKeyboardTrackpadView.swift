@@ -5,6 +5,7 @@ import SwiftUI
 
 struct MacKeyboardTrackpadView: View {
   @Bindable var model: MacKeyboardTrackpadModel
+  @AppStorage("keyboardTrackpad.trackpadAreaHeight") private var savedTrackpadAreaHeight = 260.0
   private let presentationID: UUID?
   private let floatingPresentation: Bool
   @Environment(\.colorScheme) private var scheme
@@ -15,34 +16,51 @@ struct MacKeyboardTrackpadView: View {
   @State private var generatedPresentationID = UUID()
   @State private var keyboardInputID = UUID()
   @State private var fullScreenPad: FullScreenTrackpadController?
+  @State private var resizeStartTrackpadHeight: CGFloat?
+  @State private var currentResizeTrackpadHeight: CGFloat = 260
+  @State private var resizeHandleHovered = false
   var onOpenDevices: () -> Void = {}
+  var onOpenApp: () -> Void = {}
 
   init(model: MacKeyboardTrackpadModel, presentationID: UUID? = nil, floatingPresentation: Bool = false,
-    onOpenDevices: @escaping () -> Void = {}) {
+    onOpenDevices: @escaping () -> Void = {}, onOpenApp: @escaping () -> Void = {}) {
     self.model = model
     self.presentationID = presentationID
     self.floatingPresentation = floatingPresentation
     self.onOpenDevices = onOpenDevices
+    self.onOpenApp = onOpenApp
   }
 
   private var activePresentationID: UUID { presentationID ?? generatedPresentationID }
+  private let minimumTrackpadAreaHeight: CGFloat = 160
+  private let maximumTrackpadAreaHeight: CGFloat = 520
+  private var trackpadAreaHeight: CGFloat {
+    clampedTrackpadAreaHeight(resizeStartTrackpadHeight == nil
+      ? CGFloat(savedTrackpadAreaHeight) : currentResizeTrackpadHeight)
+  }
+  private var showsConnectionControls: Bool {
+    guard floatingPresentation, model.targetPeer != nil, !model.needsDeviceLink else { return true }
+    return model.phase != .connectedIdle && model.phase != .controlling
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
 
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .center, spacing: 16) {
-          connectionStatus.frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
-          connectionActions.fixedSize(horizontal: true, vertical: false)
-        }
-        VStack(alignment: .leading, spacing: 8) {
-          connectionStatus
-          connectionActions
+      if showsConnectionControls {
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .center, spacing: 16) {
+            connectionStatus.frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
+            connectionActions.fixedSize(horizontal: true, vertical: false)
+          }
+          VStack(alignment: .leading, spacing: 8) {
+            connectionStatus
+            connectionActions
+          }
         }
       }
 
-      if let notice = model.notice {
+      if !floatingPresentation, let notice = model.notice {
         Text(notice)
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -51,6 +69,13 @@ struct MacKeyboardTrackpadView: View {
 
       if model.targetPeer != nil, !model.needsDeviceLink {
         keyboardActionRow
+      }
+
+      if floatingPresentation, let notice = model.notice {
+        Text(notice)
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
       }
 
       if model.targetPeer == nil {
@@ -97,6 +122,21 @@ struct MacKeyboardTrackpadView: View {
             .foregroundStyle(AniCePalette.secondaryText(scheme))
             .fixedSize(horizontal: false, vertical: true)
         }
+      }
+      if floatingPresentation {
+        Button(action: onOpenApp) {
+          HStack(spacing: 4) {
+            Text("Open in app")
+              .font(.system(size: 12, weight: .medium))
+            Image(systemName: "arrow.up.right")
+              .font(.system(size: 10, weight: .semibold))
+              .accessibilityHidden(true)
+          }
+          .foregroundStyle(AniCePalette.accent(scheme))
+        }
+        .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
+        .help("Open Keyboard & Trackpad in the main aniCe window")
+        .accessibilityHint("Opens this control in the main aniCe window")
       }
       Spacer(minLength: 8)
       if model.trustedPeers.count > 1 || model.targetPeer != nil {
@@ -294,9 +334,16 @@ struct MacKeyboardTrackpadView: View {
   private var isKeyboardActive: Bool { model.isControlling(owner: keyboardOwner) }
 
   private var inputSurfaces: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: 8) {
       controls
-      pad.frame(maxWidth: .infinity).frame(height: floatingPresentation ? 260 : 280)
+      TrackpadPad(model: model, presentationID: activePresentationID)
+        .frame(maxWidth: .infinity)
+        .frame(height: trackpadAreaHeight)
+      trackpadResizeHandle
+      Text("Drag the handle to resize the pad. Two fingers: up/down to scroll; left/right to drag, pan or select.")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(scheme))
+        .fixedSize(horizontal: false, vertical: true)
 
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 8) { pointerSettings }
@@ -308,6 +355,51 @@ struct MacKeyboardTrackpadView: View {
         .foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var trackpadResizeHandle: some View {
+    Capsule()
+      .fill(resizeHandleHovered ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme))
+      .frame(width: 44, height: 5)
+      .frame(maxWidth: .infinity)
+      .frame(height: 22)
+      .contentShape(Rectangle())
+      .onHover { hovering in
+        withAnimation(.easeOut(duration: 0.12)) { resizeHandleHovered = hovering }
+      }
+      .gesture(
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
+          .onChanged { value in
+            let startHeight = resizeStartTrackpadHeight ?? trackpadAreaHeight
+            if resizeStartTrackpadHeight == nil { resizeStartTrackpadHeight = startHeight }
+            currentResizeTrackpadHeight = clampedTrackpadAreaHeight(startHeight + value.translation.height)
+          }
+          .onEnded { _ in
+            savedTrackpadAreaHeight = Double(currentResizeTrackpadHeight)
+            resizeStartTrackpadHeight = nil
+          }
+      )
+      .help("Drag up or down to resize the trackpad")
+      .accessibilityElement()
+      .accessibilityLabel("Trackpad height")
+      .accessibilityValue("\(Int(trackpadAreaHeight)) points")
+      .accessibilityHint("Drag vertically to resize the trackpad. The keyboard area stays the same height.")
+      .accessibilityAdjustableAction { direction in
+        switch direction {
+        case .increment: setTrackpadAreaHeight(trackpadAreaHeight + 16)
+        case .decrement: setTrackpadAreaHeight(trackpadAreaHeight - 16)
+        @unknown default: break
+        }
+      }
+  }
+
+  private func clampedTrackpadAreaHeight(_ height: CGFloat) -> CGFloat {
+    guard height.isFinite else { return 260 }
+    return min(max(height, minimumTrackpadAreaHeight), maximumTrackpadAreaHeight)
+  }
+
+  private func setTrackpadAreaHeight(_ height: CGFloat) {
+    savedTrackpadAreaHeight = Double(clampedTrackpadAreaHeight(height))
   }
 
   @ViewBuilder private var pointerSettings: some View {
@@ -520,16 +612,6 @@ struct MacKeyboardTrackpadView: View {
       .help(spokenName)
   }
 
-  private var pad: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      TrackpadPad(model: model, presentationID: activePresentationID)
-      Text("Two fingers: up/down to scroll; left/right to drag the phone pointer. Use it to pan, drag or select.")
-        .font(.caption)
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
   private var stateSymbol: String {
     switch model.phase {
     case .connectedIdle, .controlling: "checkmark.circle"
@@ -724,6 +806,10 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
 
   override var acceptsFirstResponder: Bool { true }
   override var allowsVibrancy: Bool { false }
+  override var focusRingType: NSFocusRingType {
+    get { floatingToggleEnabled ? .none : super.focusRingType }
+    set { super.focusRingType = newValue }
+  }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
   override func viewDidMoveToWindow() {

@@ -76,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         floatingKeyboard: FloatingKeyboardController) {
         guard companion == nil else { return }
         self.floatingKeyboard = floatingKeyboard
+        floatingKeyboard.onOpenApp = { [weak self, weak navigation] in
+            navigation?.openFeature(.keyboardTrackpad)
+            self?.openMainFromCompanion()
+        }
         floatingKeyboard.onOpenDevices = { [weak self, weak navigation, weak floatingKeyboard] in
             guard let self, let navigation else { return }
             floatingKeyboard?.collapse()

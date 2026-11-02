@@ -18,20 +18,11 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Add an optional persistent floating keyboard button from the menu-bar companion, with click-to-toggle typing and expanded Keyboard & Trackpad controls.
-- Open Android-shared HTTP(S) links in the Mac's default browser.
-- Add native Mac Keyboard & Trackpad controls for an explicitly linked, aniCe-trusted Android phone over independent Classic Bluetooth HID, retaining keyboard report compatibility with Android’s cached composite descriptor.
+- Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed
 
-- Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input outlines in the feature and floating controls.
-
-- Refine Keyboard & Trackpad headers and gesture guidance, preserve keyboard focus across layout changes and saved position after hiding expanded controls, and document the native adapter's aniKey provenance and idle behavior.
-- Keep the floating keyboard button in a stable compact position across expand, collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar companion popup, and remove the confusing keyboard shortcut hint.
-- Make the expanded floating keyboard panel movable, keep its shortcut row above the pointer pad, pass inactive-pad scrolling to the local panel, and clarify Bluetooth HID state in the feature and launcher.
-- Refine Mac keyboard and trackpad input with preserved fractional motion, independent speed settings, stable capture, direct clipboard typing and full-screen pointer control.
-- Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
-- Connect Keyboard & Trackpad after first-time Bluetooth linking and automatically reconnect when opening the feature, defaulting to the authenticated BLE-connected phone. Follow aniKey's system-paired, authenticated transport policy while keeping input capture explicit.
+- Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.

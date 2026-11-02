@@ -33,6 +33,7 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
   private var waitingForConnectionResult = false
   private var isShuttingDown = false
   var onOpenDevices: () -> Void = {}
+  var onOpenApp: () -> Void = {}
 
   private(set) var isVisible = false
   private(set) var isExpanded = false
@@ -64,8 +65,8 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
   }
 
   var expandedSize: NSSize {
-    guard let frame = screenForCurrentPanel()?.visibleFrame else { return NSSize(width: 680, height: 700) }
-    return NSSize(width: min(680, max(300, frame.width - 24)), height: min(700, max(320, frame.height - 24)))
+    guard let frame = screenForCurrentPanel()?.visibleFrame else { return NSSize(width: 680, height: 640) }
+    return NSSize(width: min(680, max(300, frame.width - 24)), height: min(640, max(320, frame.height - 24)))
   }
 
   var accessibilityName: String {
@@ -106,6 +107,11 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
 
   func toggleVisibility() {
     if isVisible { hide() } else { show() }
+  }
+
+  func openInApp() {
+    if isExpanded { collapse() }
+    onOpenApp()
   }
 
   func show(restoring: Bool = false) {
@@ -290,7 +296,7 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     panel.isMovableByWindowBackground = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = true
+    panel.hasShadow = false
     panel.isReleasedWhenClosed = false
     panel.delegate = self
     self.panel = panel
@@ -393,26 +399,33 @@ private struct FloatingKeyboardPanelView: View {
   }
 
   private var compactControl: some View {
-    ZStack {
+    let isActive = model.isControlling(owner: controller.captureOwner)
+    return ZStack {
       RoundedRectangle(cornerRadius: 15)
-        .fill(AniCePalette.surface(scheme))
+        .fill(isActive ? AniCePalette.accent(scheme) : AniCePalette.surface(scheme))
       FloatingKeyboardInputSurface(controller: controller, model: model)
         .padding(3)
       Image(systemName: controller.symbolName)
         .font(.system(size: 20, weight: .medium))
-        .foregroundStyle(AniCePalette.primaryText(scheme))
+        .foregroundStyle(isActive ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
         .accessibilityHidden(true)
         .allowsHitTesting(false)
-      if model.isControlling(owner: controller.captureOwner) {
-        Circle().fill(AniCePalette.accent(scheme)).frame(width: 9, height: 9)
-          .overlay(Circle().stroke(AniCePalette.surface(scheme), lineWidth: 1.5))
+      if isActive {
+        Circle().fill(AniCePalette.success(scheme)).frame(width: 9, height: 9)
+          .overlay(Circle().stroke(AniCePalette.onAccent(scheme), lineWidth: 1.5))
           .offset(x: 19, y: 19)
           .accessibilityHidden(true)
           .allowsHitTesting(false)
       }
     }
-    .overlay(RoundedRectangle(cornerRadius: 15).stroke(AniCePalette.separator(scheme), lineWidth: 0.75))
+    .overlay {
+      RoundedRectangle(cornerRadius: 15)
+        .stroke(isActive ? AniCePalette.onAccent(scheme).opacity(0.55) : AniCePalette.separator(scheme),
+          lineWidth: isActive ? 1.25 : 0.75)
+        .allowsHitTesting(false)
+    }
     .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+    .aniCeControlFeedback(prominent: isActive, cornerRadius: 15)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(controller.accessibilityName)
     .accessibilityHint("Click to toggle typing to the phone. Right-click for full controls or to hide the button.")
@@ -454,7 +467,8 @@ private struct FloatingKeyboardPanelView: View {
       ScrollView {
         MacKeyboardTrackpadView(model: model, presentationID: controller.expandedPresentationID,
           floatingPresentation: true,
-          onOpenDevices: onOpenDevices)
+          onOpenDevices: onOpenDevices,
+          onOpenApp: { controller.openInApp() })
           .padding(14)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -507,6 +521,7 @@ private struct FloatingKeyboardInputSurface: NSViewRepresentable {
     view.model = model
     view.presentationID = controller.captureOwner.presentationID
     view.inputID = controller.captureOwner.inputID
+    view.focusRingType = .none
     view.floatingToggleEnabled = true
     view.onFloatingMouseDown = { [weak controller] in controller?.rememberPreviousKeyWindow() }
     view.onFloatingClick = { [weak controller] in controller?.toggleCapture(from: view) }
