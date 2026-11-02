@@ -18,6 +18,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Define the Phone-to-Mac input v1 wire contract and cross-platform codec fixtures over the existing authenticated BLE session.
+
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed

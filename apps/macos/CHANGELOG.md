@@ -16,6 +16,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
+
 - Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.
 - Add a saved drag handle below the pointer pad to resize its height in both feature and floating controls; keep keyboard height fixed.

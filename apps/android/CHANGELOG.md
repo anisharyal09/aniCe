@@ -13,6 +13,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add the Phone-to-Mac input v1 codec for authenticated BLE text and control events.
+
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.
 - Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
