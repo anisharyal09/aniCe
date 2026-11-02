@@ -187,7 +187,7 @@ enum TransferDropValidation {
   }
 }
 
-@MainActor private enum TransferDropSubmission {
+@MainActor enum TransferDropSubmission {
   static func receive(_ providers: [NSItemProvider], model: MacTransferModel) -> Bool {
     guard !providers.isEmpty else { return false }
     guard let recipient = model.connectedAndroidRecipient else {
@@ -213,16 +213,44 @@ enum TransferDropValidation {
       do {
         var urls: [URL] = []
         for provider in providers { urls.append(try await loadURL(from: provider)) }
-        let access = TransferFileAccessLease(urls: urls)
-        try await Task.detached(priority: .utility) { try TransferDropValidation.validate(urls) }.value
-        await model.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferAvailable,
-          dropReservation: reservation, fileAccess: access)
+        await submit(urls, recipient: recipient, reservation: reservation, model: model)
       } catch {
         model.failDrop(reservation: reservation,
           message: (error as? LocalizedError)?.errorDescription ?? "Could not access one of the dropped files. No files were sent.")
       }
     }
     return true
+  }
+
+  static func receive(urls: [URL], model: MacTransferModel) -> Bool {
+    guard !urls.isEmpty else { return false }
+    guard let recipient = model.connectedAndroidRecipient else {
+      model.dropStatus = model.peerConnected
+        ? "File transfer is unavailable on this phone."
+        : "Connect your Android phone to send files."
+      return false
+    }
+    guard (1...128).contains(urls.count) else {
+      model.dropStatus = TransferDropFailure.fileCount.localizedDescription
+      return true
+    }
+    guard let reservation = model.reserveDrop(for: recipient) else { return true }
+    Task { await submit(urls, recipient: recipient, reservation: reservation, model: model) }
+    return true
+  }
+
+  private static func submit(
+    _ urls: [URL], recipient: TransferRecipient, reservation: UUID, model: MacTransferModel
+  ) async {
+    let access = TransferFileAccessLease(urls: urls)
+    do {
+      try await Task.detached(priority: .utility) { try TransferDropValidation.validate(urls) }.value
+      await model.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferAvailable,
+        dropReservation: reservation, fileAccess: access)
+    } catch {
+      model.failDrop(reservation: reservation,
+        message: (error as? LocalizedError)?.errorDescription ?? "Could not access one of the dropped files. No files were sent.")
+    }
   }
 
   private static func loadURL(from provider: NSItemProvider) async throws -> URL {

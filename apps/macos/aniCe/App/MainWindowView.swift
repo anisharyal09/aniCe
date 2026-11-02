@@ -13,6 +13,7 @@ struct MainWindowView: View {
   let lan: MacLanSessionModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
+  let edgeDrop: MacEdgeDropController
   let clipboard: MacClipboardModel
   let findDevice: MacFindDeviceModel
   let findNotifier: MacFindDeviceNotifier?

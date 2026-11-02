@@ -361,6 +361,48 @@ final class TransferModelTests: XCTestCase {
     XCTAssertFalse(TransferDropValidation.containsPromisedFile([UTType.fileURL.identifier]))
   }
 
+  func testEdgeDropDefaultsRightAndPersistsTheSelectedEdge() throws {
+    let suite = "aniCe.edge-drop.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = EdgeDropPreferences(storage: defaults)
+
+    XCTAssertFalse(preferences.enabled)
+    XCTAssertEqual(preferences.edge, .right)
+    preferences.setEnabled(true)
+    preferences.setEdge(.top)
+
+    let restored = EdgeDropPreferences(storage: defaults)
+    XCTAssertTrue(restored.enabled)
+    XCTAssertEqual(restored.edge, .top)
+    restored.setEnabled(false)
+    XCTAssertFalse(EdgeDropPreferences(storage: defaults).enabled)
+  }
+
+  func testEdgeDropRequiresFreshHeldFileDragAndRespectsDisplaySafeArea() {
+    let frame = NSRect(x: -1200, y: 100, width: 1000, height: 800)
+    let visible = NSRect(x: -1200, y: 128, width: 1000, height: 748)
+    let right = NSPoint(x: frame.maxX - 10, y: frame.midY)
+    func qualifies(_ point: NSPoint, edge: EdgeDropEdge, fresh: Bool = true, held: Bool = true) -> Bool {
+      EdgeDropGeometry.qualifies(point: point, edge: edge, screenFrame: frame, visibleFrame: visible,
+        hasFreshFileDrag: fresh, leftMouseDown: held)
+    }
+
+    XCTAssertTrue(qualifies(right, edge: .right))
+    XCTAssertFalse(qualifies(right, edge: .right, fresh: false))
+    XCTAssertFalse(qualifies(right, edge: .right, held: false))
+    XCTAssertFalse(qualifies(NSPoint(x: frame.maxX - 40, y: frame.midY), edge: .right))
+    XCTAssertTrue(qualifies(NSPoint(x: frame.minX + 10, y: frame.midY), edge: .left))
+    XCTAssertTrue(qualifies(NSPoint(x: frame.midX, y: visible.maxY - 10), edge: .top))
+    XCTAssertFalse(qualifies(NSPoint(x: frame.midX, y: frame.maxY - 2), edge: .top))
+
+    let topShelf = EdgeDropGeometry.shelfFrame(edge: .top,
+      point: NSPoint(x: frame.maxX - 4, y: visible.maxY - 10), screenFrame: frame, visibleFrame: visible)
+    XCTAssertEqual(topShelf.maxY, visible.maxY)
+    XCTAssertEqual(topShelf.maxX, visible.maxX)
+    XCTAssertEqual(EdgeDropGeometry.offscreenFrame(from: topShelf, edge: .top).minY, topShelf.maxY)
+  }
+
   func testDropReservationPinsFullPeerIdentityAndRejectsBusyOrChangedPeer() throws {
     let owner = MacTransferModel()
     let first = MockSecuredChannel(deviceName: "Same phone", peer: try androidPeer(name: "Same phone"))

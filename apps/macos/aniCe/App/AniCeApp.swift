@@ -22,6 +22,7 @@ struct AniCeApp: App {
   @State private var smsPreferences: SmsPreferences
   private let smsNotifier: MacSmsNotifier
   @State private var transfer: MacTransferModel
+  @State private var edgeDrop: MacEdgeDropController
   @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
@@ -53,6 +54,9 @@ struct AniCeApp: App {
       autoReceivePreferences: TransferAutoReceivePreferences(storage: .standard),
       receiveDestinationPreferences: TransferReceiveDestinationPreferences(storage: .standard))
     _transfer = State(initialValue: transfer)
+    let edgeDrop = MacEdgeDropController(model: transfer, preferences: EdgeDropPreferences(storage: .standard))
+    _edgeDrop = State(initialValue: edgeDrop)
+    if !IdentityView.isTesting { edgeDrop.start() }
     let transferNotifier = MacTransferNotifier(
       model: transfer,
       openMainWindow: {
@@ -195,10 +199,16 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
+        clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
+        keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
-            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); PasteTrayController.shared.hide() }
+            delegate.onTerminate = {
+              findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll()
+              floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); edgeDrop.shutdown()
+              PasteTrayController.shared.hide()
+            }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
                 session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,

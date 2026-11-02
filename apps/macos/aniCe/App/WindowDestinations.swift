@@ -362,6 +362,7 @@ extension MainWindowView {
                   VStack(alignment: .leading, spacing: 10) {
                     TransferNotificationControls(preferences: transfer.notificationPreferences)
                     TransferAutoReceiveSettings(preferences: transfer.autoReceivePreferences, peers: pairing.peers, compact: true)
+                    EdgeDropSettingsView(controller: edgeDrop)
                   }
                   .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }

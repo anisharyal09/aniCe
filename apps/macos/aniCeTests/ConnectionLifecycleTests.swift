@@ -314,7 +314,8 @@ import AppKit
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
             discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
-            transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
+            transfer: transfer, edgeDrop: MacEdgeDropController(model: transfer),
+            clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
             sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
             smsPreferences: SmsPreferences(storage: nil), navigation: navigation)
             .defaultAppStorage(preferences)
