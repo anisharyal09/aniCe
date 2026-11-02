@@ -113,7 +113,7 @@ The Objective-C adapter adapts aniKey's GPL transport and report conventions wit
 
 ## Type to Mac (unreleased)
 
-Features → Type to Mac lets the currently authenticated Android phone send text to the Mac over the existing secured Bluetooth session. Turn on phone input in this panel before starting from Android. Input goes to the Mac app with keyboard focus; turning the toggle off or leaving the feature releases held input. The panel checks macOS event-posting access without requesting it and links to System Settings when access is unavailable. See the [Phone-to-Mac feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
+Features → Type to Mac lets the currently authenticated Android phone send text and trackpad input to the Mac over the existing secured Bluetooth session. Turn on phone input in this panel before starting from Android. Input goes to the Mac app with keyboard focus; turning the toggle off or leaving the feature releases held input. The panel checks macOS event-posting access without requesting it and links to System Settings when access is unavailable. See the [Phone-to-Mac feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 

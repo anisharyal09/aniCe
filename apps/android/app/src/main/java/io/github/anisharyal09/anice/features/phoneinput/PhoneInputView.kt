@@ -2,18 +2,25 @@
 // Presents phone-side typing with the normal Android keyboard and explicit BLE session controls.
 package io.github.anisharyal09.anice.features.phoneinput
 
+import android.content.Context.INPUT_METHOD_SERVICE
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.content.Context.INPUT_METHOD_SERVICE
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,11 +40,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -47,6 +61,8 @@ import io.github.anisharyal09.anice.features.session.SessionViewModel
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 
 @Composable
 fun PhoneInputView(
@@ -195,6 +211,15 @@ fun PhoneInputView(
                     MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
+        if (connectedPeer != null) {
+            PhoneInputTrackpad(
+                owner = owner,
+                enabled = owner.active && owner.supportsPointer(connectedPeer),
+                pointerUnavailable = owner.active && !owner.supportsPointer(connectedPeer),
+                onHideKeyboard = { keyboard?.hide() },
+            )
+        }
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -256,6 +281,145 @@ fun PhoneInputView(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun PhoneInputTrackpad(
+    owner: PhoneInputController,
+    enabled: Boolean,
+    pointerUnavailable: Boolean,
+    onHideKeyboard: () -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val viewConfiguration = LocalViewConfiguration.current
+    val touchSlop = viewConfiguration.touchSlop
+    val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = colorScheme.surfaceContainerLow,
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Mac trackpad", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.weight(1f))
+                if (enabled) TextButton(onClick = onHideKeyboard, modifier = Modifier.heightIn(min = 40.dp)) {
+                    Text("Hide keyboard")
+                }
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth().height(176.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colorScheme.surface)
+                    .border(1.dp, colorScheme.outlineVariant, RoundedCornerShape(10.dp))
+                    .semantics {
+                        contentDescription = "Trackpad for the connected Mac"
+                        stateDescription = if (enabled) "Active" else "Inactive"
+                    }
+                    .pointerInput(owner, enabled, touchSlop, longPressTimeout) {
+                        // Leave events to the page's scroll container until the Mac session is active.
+                        if (!enabled) return@pointerInput
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            var lastPosition = down.position
+                            var lastCentroid: Offset? = null
+                            var moved = false
+                            var sentMovement = false
+                            var multiplePointers = false
+                            var dragging = false
+                            var longPressTriggered = false
+                            try {
+                                while (true) {
+                                    val remainingLongPress =
+                                        (down.uptimeMillis + longPressTimeout - SystemClock.uptimeMillis())
+                                            .coerceAtLeast(1L)
+                                    val event = if (!moved && !multiplePointers && !dragging && !longPressTriggered) {
+                                        withTimeoutOrNull(remainingLongPress) {
+                                            awaitPointerEvent(PointerEventPass.Main)
+                                        }
+                                    } else {
+                                        awaitPointerEvent(PointerEventPass.Main)
+                                    }
+                                    if (event == null) {
+                                        // A failed long-press must not retry in a tight loop or become a tap.
+                                        longPressTriggered = true
+                                        dragging = owner.sendPointerButtons(1)
+                                        continue
+                                    }
+
+                                    val pressed = event.changes.filter { it.pressed }
+                                    if (pressed.isEmpty()) {
+                                        event.changes.forEach { it.consume() }
+                                        if (dragging) owner.sendPointerButtons(0)
+                                        else if (!multiplePointers && !moved && !longPressTriggered) {
+                                            owner.sendPointerButtons(1)
+                                            owner.sendPointerButtons(0)
+                                        }
+                                        break
+                                    }
+
+                                    if (pressed.size > 1) {
+                                        if (dragging) {
+                                            owner.sendPointerButtons(0)
+                                            dragging = false
+                                        }
+                                        multiplePointers = true
+                                        val center = pressed.fold(Offset.Zero) { total, change -> total + change.position } /
+                                            pressed.size.toFloat()
+                                        lastCentroid?.let { previous ->
+                                            val delta = center - previous
+                                            owner.sendScroll((-delta.x).roundToInt(), (-delta.y).roundToInt())
+                                        }
+                                        lastCentroid = center
+                                    } else if (!multiplePointers) {
+                                        val change = pressed.first()
+                                        val position = change.position
+                                        val delta = position - lastPosition
+                                        val total = position - down.position
+                                        if (!moved && total.getDistance() > touchSlop) moved = true
+                                        if (dragging) {
+                                            owner.sendPointerMotion(delta.x.roundToInt(), delta.y.roundToInt())
+                                        } else if (moved) {
+                                            val movement = if (sentMovement) delta else total
+                                            owner.sendPointerMotion(
+                                                movement.x.roundToInt(), movement.y.roundToInt(),
+                                            )
+                                            sentMovement = true
+                                        }
+                                        lastPosition = position
+                                    }
+                                    event.changes.forEach { it.consume() }
+                                }
+                            } finally {
+                                if (dragging) owner.sendPointerButtons(0)
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("⌖", style = MaterialTheme.typography.headlineMedium, color = colorScheme.onSurfaceVariant)
+                    Text(
+                        when {
+                            enabled -> "Move to point · tap to click"
+                            pointerUnavailable -> "Trackpad input needs a Mac update"
+                            else -> "Start typing to use the trackpad"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            Text(
+                "One finger moves · long-press to drag · two fingers to scroll",
+                style = MaterialTheme.typography.bodySmall,
+                color = colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

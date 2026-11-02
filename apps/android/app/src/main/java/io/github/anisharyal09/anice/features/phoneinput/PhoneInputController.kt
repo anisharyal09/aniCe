@@ -11,8 +11,8 @@ import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
-import io.github.anisharyal09.anice.infrastructure.session.SessionException
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
+import io.github.anisharyal09.anice.infrastructure.session.SessionException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -33,9 +33,20 @@ class PhoneInputController(
         var remoteTextBytes = 0L
         var remoteEvents = 0L
         val queue = ArrayDeque<ByteArray>()
+        var pendingPointer: PendingPointer? = null
+        var pointerFlushJob: Job? = null
         var sending = false
         var wake = false
     }
+
+    // Keep pointer and scroll coalescing separate so changing gesture types preserves order.
+    private enum class PointerKind(val messageKind: Long) { MOTION(6), SCROLL(8) }
+    private data class PendingPointer(
+        val sessionId: String,
+        val kind: PointerKind,
+        var horizontal: Long = 0,
+        var vertical: Long = 0,
+    )
 
     private data class PendingStart(val id: String, val peer: DeviceIdentity, var cancelled: Boolean = false)
     private data class ActiveSession(val id: String, var sequence: Long = 0L)
@@ -61,6 +72,9 @@ class PhoneInputController(
         val current = liveLink(peer) ?: return false
         return current.remoteTextBytes > 0 && (current.remoteEvents and REQUIRED_INPUT_EVENTS) == REQUIRED_INPUT_EVENTS
     }
+
+    fun supportsPointer(peer: DeviceIdentity): Boolean =
+        (liveLink(peer)?.remoteEvents?.and(POINTER_INPUT_EVENT) ?: 0L) != 0L
 
     fun canStart(peer: DeviceIdentity): Boolean = compatible(peer) &&
         state == PhoneInputState.IDLE && pendingStart == null
@@ -144,6 +158,11 @@ class PhoneInputController(
             abortSession(session)
             return false
         }
+        flushPendingPointer(current, session, reserveMessages = messageCount)
+        if (current.queue.size + messageCount + TERMINAL_MESSAGES > MAX_QUEUED_EVENTS) {
+            abortSession(session)
+            return false
+        }
 
         for (action in plan.actions) {
             when (action) {
@@ -185,6 +204,11 @@ class PhoneInputController(
             abortSession(session)
             return false
         }
+        flushPendingPointer(current, session, reserveMessages = 1)
+        if (current.queue.size + 1 + TERMINAL_MESSAGES > MAX_QUEUED_EVENTS) {
+            abortSession(session)
+            return false
+        }
         enqueueSession(
             current, session, PhoneInputMessage.of(
                 5, Cbor.Text(session.id), sequence(session), Cbor.Integer(usage.toLong()),
@@ -194,6 +218,113 @@ class PhoneInputController(
         pump(current)
         return true
     }
+
+    fun sendPointerMotion(deltaX: Int, deltaY: Int): Boolean =
+        accumulatePointer(PointerKind.MOTION, deltaX, deltaY)
+
+    fun sendScroll(horizontal: Int, vertical: Int): Boolean =
+        accumulatePointer(PointerKind.SCROLL, horizontal, vertical)
+
+    fun sendPointerButtons(mask: Int, modifiers: Int = 0): Boolean {
+        val session = activeSession ?: return false
+        val current = link ?: return false
+        if (!live(current.channel.descriptor) || !supportsPointer(current) || mask !in 0..7 || modifiers !in 0..255) {
+            return false
+        }
+        if (session.sequence + TERMINAL_MESSAGES + 1 > MAX_SEQUENCE) {
+            abortSession(session, "Input stopped at the session limit. Start a new session to continue.")
+            return false
+        }
+        flushPendingPointer(current, session, reserveMessages = 1)
+        if (current.queue.size + 1 + TERMINAL_MESSAGES > MAX_QUEUED_EVENTS) {
+            abortSession(session)
+            return false
+        }
+        enqueueSession(
+            current, session, PhoneInputMessage.of(
+                7, Cbor.Text(session.id), sequence(session), Cbor.Integer(mask.toLong()),
+                Cbor.Integer(modifiers.toLong()),
+            ),
+        )
+        pump(current)
+        return true
+    }
+
+    private fun accumulatePointer(kind: PointerKind, horizontal: Int, vertical: Int): Boolean {
+        val session = activeSession ?: return false
+        val current = link ?: return false
+        if (!live(current.channel.descriptor) || !supportsPointer(current)) return false
+        if (horizontal == 0 && vertical == 0) return true
+        if (session.sequence + TERMINAL_MESSAGES + 1 > MAX_SEQUENCE) {
+            abortSession(session, "Input stopped at the session limit. Start a new session to continue.")
+            return false
+        }
+
+        val pending = current.pendingPointer
+        if (pending != null && (pending.sessionId != session.id || pending.kind != kind)) {
+            flushPendingPointer(current, session, reserveMessages = 0)
+            if (current.pendingPointer != null) current.pendingPointer = null
+        }
+        val accumulator = current.pendingPointer?.takeIf { it.sessionId == session.id && it.kind == kind }
+            ?: PendingPointer(session.id, kind).also { current.pendingPointer = it }
+        accumulator.horizontal = (accumulator.horizontal + horizontal).coerceIn(
+            -MAX_PENDING_POINTER_DELTA, MAX_PENDING_POINTER_DELTA,
+        )
+        accumulator.vertical = (accumulator.vertical + vertical).coerceIn(
+            -MAX_PENDING_POINTER_DELTA, MAX_PENDING_POINTER_DELTA,
+        )
+        schedulePointerFlush(current)
+        return true
+    }
+
+    private fun schedulePointerFlush(current: Link) {
+        if (current.pointerFlushJob?.isActive == true) return
+        current.pointerFlushJob = scope.launch {
+            delay(POINTER_FLUSH_MILLIS)
+            if (live(current.channel.descriptor)) pump(current)
+        }
+    }
+
+    // Keep high-rate deltas in one bounded slot and leave queue capacity for keys, clicks, and stop messages.
+    private fun flushPendingPointer(
+        current: Link,
+        session: ActiveSession,
+        reserveMessages: Int,
+        flushAll: Boolean = true,
+    ) {
+        var pending = current.pendingPointer?.takeIf { it.sessionId == session.id } ?: return
+        val queueLimit = MAX_QUEUED_EVENTS - TERMINAL_MESSAGES - reserveMessages
+        var flushed = false
+        while ((pending.horizontal != 0L || pending.vertical != 0L) && current.queue.size < queueLimit) {
+            if (flushed && !flushAll) break
+            if (session.sequence + TERMINAL_MESSAGES + reserveMessages + 1 > MAX_SEQUENCE) {
+                clearPendingPointer(current)
+                abortSession(session, "Input stopped at the session limit. Start a new session to continue.")
+                return
+            }
+            val horizontal = pending.horizontal.coerceIn(-MAX_POINTER_DELTA, MAX_POINTER_DELTA).toInt()
+            val vertical = pending.vertical.coerceIn(-MAX_POINTER_DELTA, MAX_POINTER_DELTA).toInt()
+            pending.horizontal -= horizontal
+            pending.vertical -= vertical
+            val message = PhoneInputMessage.of(
+                pending.kind.messageKind, Cbor.Text(session.id), sequence(session),
+                Cbor.Integer(horizontal.toLong()), Cbor.Integer(vertical.toLong()),
+            )
+            val bytes = try { message.encode() } catch (_: Exception) { break }
+            current.queue.addLast(bytes)
+            flushed = true
+        }
+        if (pending.horizontal == 0L && pending.vertical == 0L) clearPendingPointer(current)
+        // Motion may be dropped under pressure, but it never consumes slots reserved for discrete input.
+        else if (reserveMessages > 0) clearPendingPointer(current)
+    }
+
+    private fun clearPendingPointer(current: Link) {
+        current.pendingPointer = null
+    }
+
+    private fun supportsPointer(current: Link): Boolean =
+        (current.remoteEvents and POINTER_INPUT_EVENT) != 0L
 
     override fun available(channel: SecuredChannel) {
         val descriptor = channel.descriptor
@@ -222,6 +353,7 @@ class PhoneInputController(
         startTimeout?.cancel()
         startTimeout = null
         current.queue.clear()
+        clearPendingPointer(current)
         link = null
         state = PhoneInputState.IDLE
     }
@@ -318,6 +450,8 @@ class PhoneInputController(
 
     private fun sendTerminal(session: ActiveSession, current: Link? = link) {
         val target = current ?: return
+        flushPendingPointer(target, session, reserveMessages = 0)
+        clearPendingPointer(target)
         if (!live(target.channel.descriptor) || session.sequence + TERMINAL_MESSAGES > MAX_SEQUENCE) return
         val terminal = listOf(
             PhoneInputMessage.of(9, Cbor.Text(session.id), sequence(session)),
@@ -335,6 +469,7 @@ class PhoneInputController(
         activeSession = null
         state = PhoneInputState.IDLE
         current.queue.clear()
+        clearPendingPointer(current)
         status = message
         sendTerminal(session, current)
     }
@@ -370,8 +505,12 @@ class PhoneInputController(
             try {
                 do {
                     current.wake = false
-                    while (live(current.channel.descriptor) && current.queue.isNotEmpty()) {
-                        val next = current.queue.first()
+                    while (live(current.channel.descriptor)) {
+                        if (current.queue.isEmpty()) {
+                            activeSession?.takeIf { it.id == current.pendingPointer?.sessionId }
+                                ?.let { flushPendingPointer(current, it, reserveMessages = 0, flushAll = false) }
+                        }
+                        val next = current.queue.firstOrNull() ?: break
                         try { current.channel.sendData(next) }
                         catch (_: SessionBackpressure) { break }
                         catch (error: CancellationException) { throw error }
@@ -413,6 +552,12 @@ class PhoneInputController(
         private const val MAX_SEQUENCE = 4_294_967_295L
         private const val REQUIRED_INPUT_EVENTS = 0x03L
         private const val KEY_TRANSITION_EVENT = 0x02L
-        private const val ANDROID_SUPPORTED_EVENTS = 0x03L
+        private const val POINTER_INPUT_EVENT = 0x04L
+        private const val MAX_POINTER_DELTA = 32_767L
+        // Cap accumulated motion to four wire-sized records per axis while the channel is busy.
+        private const val MAX_PENDING_POINTER_DELTA = MAX_POINTER_DELTA * 4
+        // Coalesce at a responsive cadence; channel-capacity callbacks can flush sooner.
+        private const val POINTER_FLUSH_MILLIS = 16L
+        private const val ANDROID_SUPPORTED_EVENTS = 0x07L
     }
 }

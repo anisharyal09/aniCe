@@ -31,7 +31,7 @@ The Mac sends `session ended` when a live session ends locally so Android can cl
 
 ## BLE pacing and failure behavior
 
-Implementations that send pointer motion or scroll should accumulate those deltas separately and flush them when the secured channel reports capacity. They should not wait for a round-trip acknowledgement per motion or scroll record; accumulation preserves signed deltas and splits any flush that exceeds the on-wire range. The current Android sender advertises only text and key transitions; it does not send pointer, button or scroll events.
+Implementations that send pointer motion or scroll should accumulate those deltas separately and flush them when the secured channel reports capacity. They should not wait for a round-trip acknowledgement per motion or scroll record; accumulation preserves signed deltas and splits any flush that exceeds the on-wire range. The Android sender coalesces pending motion or scroll in one bounded slot, flushes at transport pace, and keeps discrete key, button, text and terminal events ahead of accumulated motion when needed.
 
 Text commits, key transitions, button changes and session controls are discrete events. Keep their queue bounded and ordered. Never drop a key-up, button-up, text commit, or session boundary silently. If the bounded discrete queue cannot accept an event, stop that session and release all input; do not let congestion build an unbounded backlog. Motion alone must not trip a queue circuit breaker during ordinary BLE connection intervals.
 
@@ -43,4 +43,4 @@ The Android editor keeps the IME's active composing range local and reconciles t
 
 ## Implementation gate
 
-Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with no permission prompt. Phase 3 adds the Android in-app editor and bounded BLE sender for text and key transitions. Phase 4 exposes explicit receiver arming and access recovery in the Mac feature panel. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).
+Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with no permission prompt. Phase 3 adds the Android in-app editor and bounded BLE sender for text and key transitions. Phase 4 exposes explicit receiver arming and access recovery in the Mac feature panel. Phase 5 adds the Android trackpad sender for pointer, button and scroll events. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).

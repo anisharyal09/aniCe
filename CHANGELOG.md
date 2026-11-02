@@ -26,6 +26,8 @@ Shared product changes, repository structure, documentation and development conv
 
 - Add a Mac Type to Mac panel for explicit receiver arming, current-phone status and event-access recovery without a permission prompt.
 
+- Add Android trackpad input for pointer movement, clicks, drag selection and two-finger scrolling over the existing session.
+
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed

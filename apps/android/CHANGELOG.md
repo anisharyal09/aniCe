@@ -17,6 +17,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Add a Type to Mac feature panel that uses the normal Android keyboard, starts only after Mac acceptance, reconciles IME composing and autocorrect edits, and releases the session when the panel leaves or pauses.
 
+- Add a phone trackpad with pointer movement, tap clicks, long-press dragging, two-finger scrolling and BLE-paced motion coalescing.
+
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.
 - Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
