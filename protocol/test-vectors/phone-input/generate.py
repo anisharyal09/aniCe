@@ -44,6 +44,7 @@ def generate():
         ("scroll-both-axes", [tag, 1, 8, [session, 6, -12, 31]]),
         ("release-all", [tag, 1, 9, [session, 7]]),
         ("stop", [tag, 1, 10, [session, 8]]),
+        ("session-ended-local-stop", [tag, 1, 11, [session, 0]]),
     ]
     bad_values = [
         [tag, 2, 1, [1024, 7]],
@@ -71,6 +72,8 @@ def generate():
         [tag, 1, 9, [session]],
         [tag, 1, 10, [session, 1, 0]],
         [tag, 1, 10, [session.upper(), 1]],
+        [tag, 1, 11, [session, 4]],
+        [tag, 1, 11, ["bad", 0]],
         [tag, 1, 4, [session, 1, "x"], 0],
     ]
     invalid = [row("invalid-" + str(i), value) for i, value in enumerate(bad_values)]

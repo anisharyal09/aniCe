@@ -20,6 +20,8 @@ Shared product changes, repository structure, documentation and development conv
 
 - Define the Phone-to-Mac input v1 wire contract and cross-platform codec fixtures over the existing authenticated BLE session.
 
+- Add the Mac Phone-to-Mac receiver and fail-safe native event adapter, gated by explicit local arming and existing event-posting access.
+
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed

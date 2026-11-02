@@ -19,12 +19,15 @@ The exact deterministic-CBOR message shapes are in [phone-input.cddl](phone-inpu
 | 8 scroll | Android → Mac | Sends signed horizontal and vertical scroll deltas |
 | 9 release all | Android → Mac | Releases every held key, modifier and pointer button |
 | 10 stop | Android → Mac | Ends the input session |
+| 11 session ended | Mac → Android | Ends a session after a local stop, access loss or invalid input |
 
-Text commits and key transitions are distinct. Text is UTF-8 Unicode committed by the phone editor; it is not a sequence of guessed hardware keycodes. Key transitions represent physical keys and shortcuts. Modifiers remain explicit so a shortcut can span multiple ordered transitions, and a modified pointer-button event can be synthesized before its modifier latch is cleared.
+Text commits and key transitions are distinct. Text is UTF-8 Unicode committed by the phone editor; it is not a sequence of guessed hardware keycodes. Key transitions represent physical keys and shortcuts. The modifier byte uses USB HID bits 0–7 for left Control, Shift, Alt, GUI, then right Control, Shift, Alt and GUI; it describes the active modifiers after that transition. Pointer-button bits 0, 1 and 2 represent left, right and middle. The button event carries the current modifier snapshot so a modified click is applied before a modifier latch is cleared.
 
 The Mac accepts a start only when its local input surface is explicitly armed, its event-posting access is available, and the authenticated BLE peer is the selected peer. The session binds to that authenticated peer and channel instance. Only one session may be active for a peer. A rejected start does not enable input. No input is accepted before a successful start result.
 
 Each event sequence starts at one and increases within its UUID session. Sequences must be strictly increasing; gaps are expected when adjacent pointer or scroll deltas are coalesced. A session UUID is never reused. A channel replacement, session stop, local capture loss, or app shutdown ends the session and releases held input locally; the Mac does not wait for a remote release message before releasing.
+
+The Mac sends `session ended` when a live session ends locally so Android can clear its active editor state. Its reason is 0 for a local stop, 1 for event-posting access loss, 2 for malformed or unsupported input, and 3 for local capture loss. A retired channel already informs Android through transport state and does not carry this message.
 
 ## BLE pacing and failure behavior
 
@@ -32,10 +35,10 @@ The sender accumulates pending pointer motion and scroll separately, then flushe
 
 Text commits, key transitions, button changes and session controls are discrete events. Keep their queue bounded and ordered. Never drop a key-up, button-up, text commit, or session boundary silently. If the bounded discrete queue cannot accept an event, stop that session and release all input; do not let congestion build an unbounded backlog. Motion alone must not trip a queue circuit breaker during ordinary BLE connection intervals.
 
-The Mac applies local pointer scaling and clamps the resulting absolute cursor position to a live display bound before posting an event. Secure Keyboard Entry and system privacy dialogs may block synthesized input; surface the local blocked state and stop the session rather than retrying or escalating permissions.
+The Mac checks `CGPreflightPostEventAccess` without prompting, adds relative pointer deltas to the live cursor position in global display coordinates, and clamps the absolute position to a live display bound before posting an event. System privacy dialogs can block synthesized input. macOS has no documented API that reliably identifies another app's secure text field, so event-access preflight cannot guarantee delivery; do not retry automatically or escalate permissions.
 
 Text chunks are limited to 1,024 UTF-8 bytes per record. The Mac native adapter further splits commits on extended-grapheme boundaries, at no more than 16 UTF-16 units per key event, and rejects a single grapheme that exceeds that limit. It does not log or persist text.
 
 ## Implementation gate
 
-Phase 1 locks the wire shapes and cross-platform codecs. Later phases connect them to the Android editor and Mac event adapter, then validate physical BLE pacing, interruption release, text corrections and modified mouse actions on real devices. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).
+Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with fake-sink tests and no permission prompt. The Android editor/sender and user-facing Mac controls are still pending. Before release, validate physical BLE pacing, interruption release, text corrections and modified mouse actions on real devices. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).

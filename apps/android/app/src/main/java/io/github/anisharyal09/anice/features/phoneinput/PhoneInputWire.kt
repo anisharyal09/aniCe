@@ -91,6 +91,11 @@ data class PhoneInputMessage(val kind: Long, val fields: List<Cbor>) {
                 requireWire(fields.size == 2)
                 sessionSequence()
             }
+            11L -> {
+                requireWire(fields.size == 2)
+                uuid(0)
+                requireWire(number(1) in 0L..3L)
+            }
             else -> throw PhoneInputWireException()
         }
     }

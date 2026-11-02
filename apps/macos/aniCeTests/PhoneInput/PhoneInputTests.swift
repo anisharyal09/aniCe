@@ -8,8 +8,8 @@ final class PhoneInputTests: XCTestCase {
     let root = try SessionFixtures().root("phone-input-vectors")
     let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
     let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
-    XCTAssertEqual(valid.count, 12)
-    XCTAssertGreaterThanOrEqual(invalid.count, 29)
+    XCTAssertEqual(valid.count, 13)
+    XCTAssertGreaterThanOrEqual(invalid.count, 31)
 
     for row in valid {
       let bytes = try SessionFixtures().b(row, "bytes")

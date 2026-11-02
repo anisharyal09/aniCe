@@ -17,6 +17,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Added
 
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
+- Add an explicitly armed Phone-to-Mac receiver over authenticated BLE, with Unicode commits, HID key mapping, clamped pointer events, held-input release and no permission prompt.
 
 - Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.

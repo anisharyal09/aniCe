@@ -22,8 +22,8 @@ class PhoneInputWireTests {
             )
         val valid = root.getJSONArray("valid")
         val invalid = root.getJSONArray("invalid")
-        assertEquals(12, valid.length())
-        assertTrue(invalid.length() >= 29)
+        assertEquals(13, valid.length())
+        assertTrue(invalid.length() >= 31)
 
         for (index in 0 until valid.length()) {
             val row = valid.getJSONObject(index)

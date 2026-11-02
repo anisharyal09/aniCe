@@ -101,6 +101,10 @@ struct PhoneInputMessage: Equatable, Sendable {
     case 9, 10:
       try check(fields.count == 2)
       try sessionSequence()
+    case 11:
+      try check(fields.count == 2)
+      try uuid(0)
+      try check((0...3).contains(try number(1)))
     default:
       throw PhoneInputWireError.malformed
     }
@@ -126,8 +130,8 @@ struct PhoneInputMessage: Equatable, Sendable {
 
   private static let tag = "aniCe phone input"
   private static let version: Int64 = 1
-  private static let maxTextBytes: Int64 = 1024
-  private static let supportedEvents: Int64 = 7
+  static let maxTextBytes: Int64 = 1024
+  static let supportedEvents: Int64 = 7
   private static let maxSequence: Int64 = 4294967295
   private static let minKeyUsage: Int64 = 4
   private static let maxKeyUsage: Int64 = 231
