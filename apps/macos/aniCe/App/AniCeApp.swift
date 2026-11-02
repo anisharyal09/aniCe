@@ -49,7 +49,8 @@ struct AniCeApp: App {
     let identity = IdentityAssembly.makeModel()
     let transfer = MacTransferModel(recoveryURL: IdentityView.isTesting ? nil : FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/aniCe/Transfers/checkpoint.json"), identity: identity.service,
-      notificationPreferences: TransferNotificationPreferences(storage: .standard))
+      notificationPreferences: TransferNotificationPreferences(storage: .standard),
+      receiveDestinationPreferences: TransferReceiveDestinationPreferences(storage: .standard))
     _transfer = State(initialValue: transfer)
     let transferNotifier = MacTransferNotifier(
       model: transfer,

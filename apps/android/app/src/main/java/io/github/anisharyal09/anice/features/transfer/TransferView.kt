@@ -192,9 +192,15 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
     val destinationPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val intent = result.data
         if (result.resultCode == android.app.Activity.RESULT_OK && intent?.data != null) {
-            controller.acceptIncomingOffer(intent.data!!, intent.flags)
+            controller.saveReceiveDestination(intent.data!!, intent.flags)
         }
         controller.endPicker()
+    }
+    fun chooseReceiveFolder() {
+        controller.beginPicker()
+        destinationPicker.launch(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT_TREE)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION))
     }
 
     Surface(
@@ -225,6 +231,36 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                 ) {
                     Text("Show transfer notifications")
                 }
+            }
+            if (!overview) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Save received files to", style = MaterialTheme.typography.bodySmall)
+                        Text(if (controller.hasCustomReceiveDestination) "Selected folder" else "Downloads/aniCe",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(
+                        onClick = ::chooseReceiveFolder,
+                        enabled = controller.state !is TransferState.Transferring && controller.state !is TransferState.Paused,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) { Text("Choose folder…") }
+                    if (controller.hasCustomReceiveDestination) {
+                        TextButton(
+                            onClick = controller::resetReceiveDestination,
+                            enabled = controller.state !is TransferState.Transferring && controller.state !is TransferState.Paused,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) { Text("Reset") }
+                    }
+                }
+            }
+            controller.destinationMessage?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall,
+                    color = if (message.startsWith("Cannot") || message.contains("expired") || message.contains("unavailable"))
+                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (controller.destinationPreparing && controller.destinationMessage == null) {
+                Text("Preparing receive folder…", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (controller.preparing) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -386,23 +422,20 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                         }
                     }
                     Text(
-                        "Choose a local folder for received files.",
+                        if (controller.hasCustomReceiveDestination) "Files will be saved to your selected folder."
+                        else "Files will be saved to Downloads/aniCe.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
-                            onClick = {
-                                controller.beginPicker()
-                                destinationPicker.launch(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT_TREE)
-                                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                                        android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION))
-                            },
+                            onClick = controller::acceptIncomingOffer,
+                            enabled = !controller.destinationPreparing,
                             shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) {
-                            Text("Accept")
+                            Text(if (controller.destinationPreparing) "Preparing…" else "Accept")
                         }
                         OutlinedButton(
                             onClick = { controller.rejectIncomingOffer(reason = 0L) },

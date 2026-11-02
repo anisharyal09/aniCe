@@ -109,6 +109,9 @@ class TransferController(
 ) : FeatureHandler {
 
     var state by mutableStateOf<TransferState>(TransferState.Idle); internal set
+    var destinationMessage by mutableStateOf<String?>(null); internal set
+    internal val destinationPreferences by lazy { context?.let(::TransferDestinationPreferences) }
+    val hasCustomReceiveDestination: Boolean get() = destinationPreferences?.hasCustomDestination == true
     var peerConnected by mutableStateOf(false); internal set
     var peerCompatible by mutableStateOf(false); internal set
     var onPickerChanged: (Boolean) -> Unit = {}
@@ -289,7 +292,8 @@ class TransferController(
     internal var offerAssembly: OfferAssembly? = null
     internal var offerTimeout: Job? = null
     internal var destinationPreparation: Job? = null
-    internal var documentDestination: TransferDestination? = null
+    val destinationPreparing: Boolean get() = destinationPreparation?.isActive == true
+    internal var documentDestination: TransferReceiveDestination? = null
     internal var receiverPartDocument: Uri? = null
     internal var destinationDirectory: File? = null
     internal var receiverCurrentFileIndex = 0
@@ -335,6 +339,12 @@ class TransferController(
     fun restoreOnLaunch() { restoreOnLaunchFlow() }
 
     fun acceptIncomingOffer(tree: Uri, modes: Int) { acceptIncomingOfferFlow(tree, modes) }
+
+    fun acceptIncomingOffer() { acceptSavedIncomingOfferFlow() }
+
+    fun saveReceiveDestination(tree: Uri, modes: Int) { saveReceiveDestinationFlow(tree, modes) }
+
+    fun resetReceiveDestination() { resetReceiveDestinationFlow() }
 
     suspend fun acceptIncomingOffer(destinationDir: File) { acceptIncomingOfferFlow(destinationDir) }
 
@@ -812,16 +822,7 @@ internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
             try {
                 storage?.discard()
                 if (failed?.receiving == true && (failed.stage == 0 || failed.stage == 4)) {
-                    if (failed.tree.isEmpty()) TransferReceiveStorage.discardOwned(File(failed.folder), failed.partial,
-                        failed.batch.id, failed.batch.files[failed.index].id)
-                    else {
-                        val target = TransferDestination(requireNotNull(context), Uri.parse(failed.tree),
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, failed.treeModes)
-                        try {
-                            val uri = Uri.parse(failed.document)
-                            if (target.ownsPartial(uri, ".anice-${failed.batch.id}-${failed.batch.files[failed.index].id}-")) target.delete(uri)
-                        } finally { target.close() }
-                    }
+                    discardCheckpointPartial(context, failed)
                 }
             }
             catch (error: Exception) { System.err.println("Transfer partial cleanup failed: ${error.javaClass.simpleName}") }

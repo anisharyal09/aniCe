@@ -139,8 +139,18 @@ extension MacTransferModel {
     offerAssembly = nil
   }
 
+  func acceptIncomingOffer() async {
+    do {
+      let destination = try receiveDestinationPreferences.folderForReceive()
+      await acceptIncomingOffer(destination: destination)
+    } catch {
+      receiveDestinationError = error.localizedDescription
+    }
+  }
+
   func acceptIncomingOffer(destination: URL) async {
     guard case .incomingOffer(let batch) = state, let channel = activeChannel else { return }
+    receiveDestinationError = nil
     let operation = epoch
     do {
       if let identity = recoveryIdentity, recoveryStore != nil {

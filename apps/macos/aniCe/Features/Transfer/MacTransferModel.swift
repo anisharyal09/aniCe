@@ -70,6 +70,7 @@ enum TransferEvent: Equatable {
 
 @Observable @MainActor final class MacTransferModel: FeatureHandler {
   let notificationPreferences: TransferNotificationPreferences
+  let receiveDestinationPreferences: TransferReceiveDestinationPreferences
   var state: TransferState = .idle {
     didSet {
       if case .transferring(_, _, _, let bytes, _, _, _) = state,
@@ -88,6 +89,7 @@ enum TransferEvent: Equatable {
   var peerConnected = false
   var peerCompatible = false
   var dropStatus: String?
+  var receiveDestinationError: String?
   var dropReservation: UUID?
   var dropFileAccess: TransferFileAccessLease?
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
@@ -250,8 +252,10 @@ enum TransferEvent: Equatable {
   init(pauseTimeout: Duration = .seconds(900), recoveryURL: URL? = nil, identity: IdentityService? = nil,
        resumeTimeout: Duration = .seconds(15), confirmationTimeout: Duration = .seconds(30),
        notificationPreferences: TransferNotificationPreferences = TransferNotificationPreferences(),
+       receiveDestinationPreferences: TransferReceiveDestinationPreferences = TransferReceiveDestinationPreferences(),
        closeSource: @escaping @Sendable (FileHandle) throws -> Void = { try $0.close() }) {
     self.notificationPreferences = notificationPreferences
+    self.receiveDestinationPreferences = receiveDestinationPreferences
     precondition(recoveryURL == nil || identity != nil)
     self.pauseTimeout = pauseTimeout
     self.resumeTimeout = resumeTimeout

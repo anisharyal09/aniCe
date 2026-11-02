@@ -18,6 +18,66 @@ import UserNotifications
   }
 }
 
+@Observable @MainActor final class TransferReceiveDestinationPreferences {
+  private let storage: UserDefaults?
+  private let key = "transfer.receiveDestinationBookmark"
+  private var bookmark: Data?
+
+  init(storage: UserDefaults? = nil) {
+    self.storage = storage
+    bookmark = storage?.data(forKey: key)
+  }
+
+  var hasCustomFolder: Bool { bookmark != nil }
+
+  var summary: String {
+    do { return try configuredFolder().lastPathComponent }
+    catch { return "Unavailable folder" }
+  }
+
+  func save(folder: URL) throws {
+    try Self.validate(folder)
+    let data = try folder.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    bookmark = data
+    storage?.set(data, forKey: key)
+  }
+
+  func reset() {
+    bookmark = nil
+    storage?.removeObject(forKey: key)
+  }
+
+  func folderForReceive() throws -> URL {
+    let folder = try configuredFolder()
+    if bookmark == nil {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    }
+    return folder
+  }
+
+  private func configuredFolder() throws -> URL {
+    guard let bookmark else {
+      let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+      return downloads.appendingPathComponent("aniCe", isDirectory: true)
+    }
+    var stale = false
+    let folder = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+    guard !stale else { throw CocoaError(.fileReadNoPermission, userInfo: [NSLocalizedDescriptionKey: "The saved folder link has expired. Choose it again or reset to Downloads/aniCe."]) }
+    try Self.validate(folder)
+    return folder
+  }
+
+  private static func validate(_ folder: URL) throws {
+    let values = try folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .volumeIsLocalKey])
+    guard folder.isFileURL, values.isDirectory == true, values.isSymbolicLink != true,
+      values.volumeIsLocal != false else {
+      throw CocoaError(.fileReadNoPermission, userInfo: [NSLocalizedDescriptionKey: "Choose an available local folder."])
+    }
+  }
+}
+
 // Separates offer delivery and legacy-notice cleanup from the native notification center.
 protocol TransferNotificationCenter: AnyObject {
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void)
@@ -280,10 +340,8 @@ struct TransferNotificationContent: Equatable {
       guard let model, model.pendingOffer != nil else {
         return
       }
-      let destination = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        ?? URL(fileURLWithPath: NSHomeDirectory())
       Task { [weak model] in
-        await model?.acceptIncomingOffer(destination: destination)
+        await model?.acceptIncomingOffer()
       }
 
     case Action.choose:

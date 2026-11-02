@@ -20,6 +20,7 @@ struct TransferCheckpoint: Codable, Sendable {
   let expiresAt: Date
   var stage = 0
   var fileIdentity = ""
+  var destinationBackend: String? = "localFolder"
 
   func validate() throws {
     let hex = Set("0123456789abcdef")
@@ -28,7 +29,8 @@ struct TransferCheckpoint: Codable, Sendable {
       UUID(uuidString: peerId) != nil, (1...128).contains(batch.files.count),
       batch.files.indices.contains(index), Set(batch.files.map(\.id)).count == batch.files.count,
       offset >= 0, offset <= batch.files[index].size, ["lan", "ble"].contains(transport),
-      expiresAt.timeIntervalSince1970.isFinite, (0...4).contains(stage) else { throw CocoaError(.fileReadCorruptFile) }
+      expiresAt.timeIntervalSince1970.isFinite, (0...4).contains(stage),
+      destinationBackend == nil || destinationBackend == "localFolder" else { throw CocoaError(.fileReadCorruptFile) }
     var total: Int64 = 0
     for file in batch.files {
       guard file.size >= 0, file.sha256.count == 32, (1...255).contains(file.name.utf8.count),
@@ -116,7 +118,7 @@ extension MacTransferModel {
       offset: offset, folder: destinationFolder,
       partial: receiverPartFileURL, transport: pausedTransport ?? peer.transport,
       expiresAt: pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds)),
-      stage: stage, fileIdentity: publishingIdentity ?? "")
+      stage: stage, fileIdentity: publishingIdentity ?? "", destinationBackend: "localFolder")
     let previous = recoveryWrite, storage = receiving ? receiverStorage : nil
     recoveryWrite = Task { [weak self] in
       await previous?.value

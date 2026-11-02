@@ -19,6 +19,59 @@ struct TransferNotificationControls: View {
   }
 }
 
+private struct TransferReceiveDestinationControls: View {
+  let model: MacTransferModel
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Save received files to").font(.caption.weight(.medium))
+          Text(model.receiveDestinationPreferences.summary)
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)).lineLimit(1).truncationMode(.middle)
+        }
+        Spacer(minLength: 8)
+        Button("Choose…", action: chooseFolder)
+          .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+        if model.receiveDestinationPreferences.hasCustomFolder {
+          Button("Reset", action: resetFolder)
+            .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+        }
+      }
+      if let error = model.receiveDestinationError {
+        Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme))
+      }
+    }
+  }
+
+  @MainActor private func chooseFolder() {
+    CompanionHost.currentHost?.isPickingFile = true
+    defer {
+      CompanionHost.currentHost?.isPickingFile = false
+      CompanionHost.currentHost?.refocus()
+    }
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Use Folder"
+    if panel.runModal() == .OK, let url = panel.url {
+      do {
+        try model.receiveDestinationPreferences.save(folder: url)
+        model.receiveDestinationError = nil
+      } catch {
+        model.receiveDestinationError = error.localizedDescription
+      }
+    }
+  }
+
+  private func resetFolder() {
+    model.receiveDestinationPreferences.reset()
+    model.receiveDestinationError = nil
+  }
+}
+
 // Hoisted file picker helper shared between TransferView and CompanionView.
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
@@ -190,7 +243,6 @@ struct TransferView: View {
   var open: (() -> Void)? = nil
   @Environment(\.colorScheme) private var colorScheme
   @State private var controlsOpen = false
-  @State private var selectedFolder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory())
 
   var body: some View {
     VStack(alignment: .leading, spacing: compact ? 8 : 12) {
@@ -208,6 +260,7 @@ struct TransferView: View {
         }
         if controlsOpen {
           TransferNotificationControls(preferences: model.notificationPreferences)
+          TransferReceiveDestinationControls(model: model)
           Text("Optional incoming offers when aniCe is in the background. Progress and results stay here.")
             .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         }
@@ -225,6 +278,9 @@ struct TransferView: View {
       }
       if let dropStatus = model.dropStatus {
         Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      }
+      if let error = model.receiveDestinationError {
+        Text(error).font(.caption).foregroundStyle(AniCePalette.error(colorScheme))
       }
       switch model.state {
       case .idle:
@@ -368,34 +424,16 @@ struct TransferView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(AniCePalette.background(colorScheme), in: RoundedRectangle(cornerRadius: 6))
 
-      HStack {
-        Text("Save to: \(selectedFolder.lastPathComponent)")
-          .font(.caption)
-          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Spacer()
-        Button("Choose…") {
-          CompanionHost.currentHost?.isPickingFile = true
-          defer {
-            CompanionHost.currentHost?.isPickingFile = false
-            CompanionHost.currentHost?.refocus()
-          }
-          let panel = NSOpenPanel()
-          panel.canChooseFiles = false
-          panel.canChooseDirectories = true
-          panel.allowsMultipleSelection = false
-          if panel.runModal() == .OK, let url = panel.url {
-            selectedFolder = url
-          }
-        }
-        .buttonStyle(.bordered).aniCeControlFeedback()
-        .controlSize(.small)
+      if !controlsOpen || compact {
+        TransferReceiveDestinationControls(model: model)
+      } else {
+        Text("Save to: \(model.receiveDestinationPreferences.summary)")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
 
       HStack(spacing: 8) {
         Button("Accept") {
-          Task { await model.acceptIncomingOffer(destination: selectedFolder) }
+          Task { await model.acceptIncomingOffer() }
         }
         .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
         .controlSize(.small)
@@ -524,8 +562,7 @@ struct TransferView: View {
 
   @ViewBuilder
   private func completedContent(batchId: UUID, fileCount: Int, totalBytes: Int64) -> some View {
-    // Reads model.receiveFolder rather than tentative selectedFolder to report where files actually landed on disk.
-    let destName = model.receiveFolder?.lastPathComponent ?? selectedFolder.lastPathComponent
+    let destName = model.receiveFolder?.lastPathComponent ?? model.receiveDestinationPreferences.summary
     VStack(alignment: .leading, spacing: compact ? 8 : 12) {
       HStack(spacing: 8) {
         Image(systemName: "checkmark.circle.fill")

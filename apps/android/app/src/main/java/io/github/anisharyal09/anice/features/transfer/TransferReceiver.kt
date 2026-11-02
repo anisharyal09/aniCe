@@ -511,3 +511,105 @@ internal class TransferIngress(private val scope: CoroutineScope, private val co
     }
     private fun wake() { waiters.toList().forEach { it.complete(Unit) } }
 }
+
+internal fun TransferController.acceptSavedIncomingOfferFlow() {
+    val ctx = context ?: return
+    val current = state as? TransferState.IncomingOffer ?: return
+    if (destinationPreparation?.isActive == true) return
+    destinationMessage = "Preparing receive folder…"
+    val operation = epoch
+    onLeaseChanged?.invoke(true)
+    destinationPreparation = scope.launch {
+        var destination: TransferReceiveDestination? = null
+        try {
+            receiveCleanup?.join()
+            if (operation != epoch) return@launch
+            destination = withContext(receiveDispatcher) {
+                val preferences = destinationPreferences ?: throw java.io.IOException("Receive settings are unavailable.")
+                val tree = preferences.savedTree()
+                val target = if (tree == null) MediaStoreTransferDestination(ctx)
+                    else TransferDestination(ctx, tree, preferences.savedModes(), restoredOwnedModes = 0)
+                try { target.preflight(current.batch.totalBytes); target }
+                catch (error: Exception) { target.close(); throw error }
+            }
+            if (operation != epoch || activeChannel == null || state !is TransferState.IncomingOffer) {
+                withContext(NonCancellable + receiveDispatcher) { destination.close() }
+                if (operation == epoch) onLeaseChanged?.invoke(false)
+                return@launch
+            }
+            documentDestination = destination
+            destinationMessage = null
+            acceptIncomingOfferFlow(File(ctx.filesDir, "unused-document-destination"))
+        } catch (error: CancellationException) {
+            withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+            if (operation == epoch) onLeaseChanged?.invoke(false)
+            throw error
+        } catch (error: Exception) {
+            withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+            if (operation == epoch) {
+                destinationMessage = error.message ?: "Choose another folder or reset to Downloads/aniCe."
+                onLeaseChanged?.invoke(false)
+            }
+        }
+    }
+}
+
+internal fun TransferController.saveReceiveDestinationFlow(tree: Uri, modes: Int) {
+    val ctx = context ?: return
+    if (state is TransferState.Transferring || state is TransferState.Paused) {
+        destinationMessage = "Finish the current transfer before changing its destination."
+        return
+    }
+    val preferences = destinationPreferences ?: return
+    val flags = modes and (android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    if (flags != (android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)) {
+        destinationMessage = "The selected folder must grant read and write access."
+        return
+    }
+    destinationMessage = "Checking folder…"
+    destinationPreparation?.cancel()
+    destinationPreparation = scope.launch {
+        val resolver = ctx.contentResolver
+        val oldTree = runCatching { preferences.storedTree() }.getOrNull()
+        val oldModes = preferences.savedModes()
+        val previous = resolver.persistedUriPermissions.firstOrNull { it.uri == tree }?.let {
+            (if (it.isReadPermission) android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                (if (it.isWritePermission) android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+        } ?: 0
+        val newlyOwned = flags and previous.inv()
+        var retained = false
+        try {
+            resolver.takePersistableUriPermission(tree, flags)
+            withContext(receiveDispatcher) {
+                val target = TransferDestination(ctx, tree, flags, restoredOwnedModes = 0)
+                try { target.preflight(0) } finally { target.close() }
+            }
+            preferences.save(tree, flags)
+            retained = true
+            if (oldTree != null && oldTree != tree) {
+                runCatching { resolver.releasePersistableUriPermission(oldTree, oldModes) }
+            }
+            destinationMessage = "Incoming files will be saved to the selected folder."
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) {
+            destinationMessage = "Cannot use this folder: ${error.message ?: "choose another local folder."}"
+        } finally {
+            if (!retained && newlyOwned != 0) {
+                runCatching { resolver.releasePersistableUriPermission(tree, newlyOwned) }
+            }
+        }
+    }
+}
+
+internal fun TransferController.resetReceiveDestinationFlow() {
+    val ctx = context ?: return
+    if (state is TransferState.Transferring || state is TransferState.Paused) {
+        destinationMessage = "Finish the current transfer before changing its destination."
+        return
+    }
+    val preferences = destinationPreferences ?: return
+    val modes = preferences.savedModes()
+    val tree = preferences.reset()
+    if (tree != null && modes != 0) runCatching { ctx.contentResolver.releasePersistableUriPermission(tree, modes) }
+    destinationMessage = "Incoming files will be saved to Downloads/aniCe."
+}

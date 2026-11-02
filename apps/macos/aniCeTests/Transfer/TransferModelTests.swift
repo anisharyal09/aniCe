@@ -54,6 +54,35 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(transferAckThreshold(maximumChunk: 3072, maximumWindow: 64, chunkBytes: 1), 24576)
   }
 
+  func testReceiveDestinationBookmarkPersistsAndCanBeReset() throws {
+    let suite = "aniCe.transfer-destination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let folder = tempDir.appendingPathComponent("Received", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let preferences = TransferReceiveDestinationPreferences(storage: defaults)
+
+    try preferences.save(folder: folder)
+    XCTAssertTrue(preferences.hasCustomFolder)
+    XCTAssertEqual(preferences.summary, "Received")
+    XCTAssertEqual(try preferences.folderForReceive().standardizedFileURL, folder.standardizedFileURL)
+    XCTAssertEqual(TransferReceiveDestinationPreferences(storage: defaults).summary, "Received")
+
+    preferences.reset()
+    XCTAssertFalse(preferences.hasCustomFolder)
+    XCTAssertEqual(preferences.summary, "aniCe")
+  }
+
+  func testOlderCheckpointWithoutDestinationBackendStillDecodes() async throws {
+    let (saved, _, _, _) = try await checkpointFixture()
+    let encoded = try JSONEncoder().encode(saved)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    object.removeValue(forKey: "destinationBackend")
+    let legacy = try JSONSerialization.data(withJSONObject: object)
+    let decoded = try JSONDecoder().decode(TransferCheckpoint.self, from: legacy)
+    XCTAssertNil(decoded.destinationBackend)
+  }
+
   func testDelayedLanDoesNotDrainForRecoveryUntilProgressIsConsistentlyTimely() {
     var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     window.beginSubmission(0)

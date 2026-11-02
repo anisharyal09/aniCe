@@ -25,13 +25,18 @@ import kotlinx.coroutines.sync.withLock
 import android.content.Context
 import android.content.Intent
 import android.provider.DocumentsContract
+import android.content.ContentValues
+import android.os.Environment
+import android.os.StatFs
+import android.provider.MediaStore
+import android.content.SharedPreferences
 
 // Shared across receiver instances; storage mutexes retain state ownership across suspension.
 internal val transferReceiveDispatcher = Dispatchers.IO.limitedParallelism(1)
 
 internal class TransferReceiveStorage(
     private val folder: File,
-    private val destination: TransferDestination?,
+    private val destination: TransferReceiveDestination?,
     private val ioDispatcher: CoroutineDispatcher = transferReceiveDispatcher,
     /** The link primitive, so a destination that cannot hold hard links is verifiable without one. */
     private val link: (target: File, owned: File) -> Unit = { target, owned -> Files.createLink(target.toPath(), owned.toPath()) },
@@ -259,14 +264,69 @@ internal class TransferReceiveStorage(
 
 // MARK: - Destination grants
 
-internal class TransferDestination(private val context: Context, val tree: Uri, modes: Int, restoredOwnedModes: Int? = null) {
+internal interface TransferReceiveDestination {
+    val backend: String
+    val tree: Uri? get() = null
+    val ownedModes: Int get() = 0
+    fun preflight(bytes: Long)
+    fun create(name: String): Uri
+    fun descriptor(uri: Uri): ParcelFileDescriptor
+    fun read(uri: Uri): java.io.InputStream
+    fun ownsPartial(uri: Uri, prefix: String): Boolean
+    fun isPublished(uri: Uri, file: TransferFile): Boolean = false
+    fun finish(uri: Uri, name: String): Uri
+    fun delete(uri: Uri)
+    fun close()
+}
+
+internal class TransferDestinationPreferences(private val context: Context) {
+    private val preferences: SharedPreferences = context.getSharedPreferences("transfer_preferences", Context.MODE_PRIVATE)
+    val hasCustomDestination: Boolean get() = preferences.contains(TREE_KEY)
+    fun storedTree(): Uri? = preferences.getString(TREE_KEY, null)?.let(Uri::parse)
+
+    fun savedTree(): Uri? {
+        if (!hasCustomDestination) return null
+        val tree = storedTree()
+            ?: throw IOException("The saved folder is unavailable. Choose another folder or reset to Downloads/aniCe.")
+        val modes = preferences.getInt(MODES_KEY, 0)
+        val granted = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == tree }
+        val actual = granted?.let {
+            (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+        } ?: 0
+        if (modes != (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) || actual and modes != modes) {
+            throw IOException("Access to the saved folder has expired. Choose another folder or reset to Downloads/aniCe.")
+        }
+        return tree
+    }
+
+    fun savedModes(): Int = preferences.getInt(MODES_KEY, 0)
+
+    fun save(tree: Uri, modes: Int) {
+        preferences.edit().putString(TREE_KEY, tree.toString()).putInt(MODES_KEY, modes).apply()
+    }
+
+    fun reset(): Uri? {
+        val previous = preferences.getString(TREE_KEY, null)?.let(Uri::parse)
+        preferences.edit().remove(TREE_KEY).remove(MODES_KEY).apply()
+        return previous
+    }
+
+    companion object {
+        private const val TREE_KEY = "transfer.receiveDestination.tree"
+        private const val MODES_KEY = "transfer.receiveDestination.modes"
+    }
+}
+
+internal class TransferDestination(private val context: Context, override val tree: Uri, modes: Int, restoredOwnedModes: Int? = null) : TransferReceiveDestination {
     private val resolver = context.contentResolver
     private val flags = modes and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     private val previousModes = resolver.persistedUriPermissions.firstOrNull { it.uri == tree }?.let {
         (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
             (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
     } ?: 0
-    val ownedModes = restoredOwnedModes ?: (flags and previousModes.inv())
+    override val backend = "documentTree"
+    override val ownedModes = restoredOwnedModes ?: (flags and previousModes.inv())
     private val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
     private var closed = false
 
@@ -281,7 +341,7 @@ internal class TransferDestination(private val context: Context, val tree: Uri, 
         if (restoredOwnedModes == null) resolver.takePersistableUriPermission(tree, flags)
     }
 
-    fun preflight(bytes: Long) {
+    override fun preflight(bytes: Long) {
         var probe = create(".anice-probe-${UUID.randomUUID()}")
         try {
             descriptor(probe).use { fd ->
@@ -303,16 +363,16 @@ internal class TransferDestination(private val context: Context, val tree: Uri, 
         }
     }
 
-    fun create(name: String): Uri = DocumentsContract.createDocument(resolver, root, "application/octet-stream", name)
+    override fun create(name: String): Uri = DocumentsContract.createDocument(resolver, root, "application/octet-stream", name)
         ?: throw IOException("Cannot create a partial file in this folder.")
 
-    fun descriptor(uri: Uri): ParcelFileDescriptor = resolver.openFileDescriptor(uri, "rw")
+    override fun descriptor(uri: Uri): ParcelFileDescriptor = resolver.openFileDescriptor(uri, "rw")
         ?: throw IOException("Cannot open the received document.")
 
-    fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
+    override fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
         ?: throw IOException("Cannot read the received document.")
 
-    fun ownsPartial(uri: Uri, prefix: String): Boolean {
+    override fun ownsPartial(uri: Uri, prefix: String): Boolean {
         if (uri.authority != tree.authority) return false
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(root))
         resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -327,7 +387,29 @@ internal class TransferDestination(private val context: Context, val tree: Uri, 
         return false
     }
 
-    fun finish(uri: Uri, name: String): Uri {
+    override fun isPublished(uri: Uri, file: TransferFile): Boolean {
+        if (uri.authority != tree.authority) return false
+        var name: String? = null
+        var size = -1L
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(root))
+        resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { cursor ->
+            val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(0) == DocumentsContract.getDocumentId(uri)) {
+                    name = cursor.getString(1)
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
+                    break
+                }
+            }
+        } ?: return false
+        val publishedName = name ?: return false
+        if (!TransferNaming.matches(publishedName, file.name) ||
+            (size >= 0 && size != file.size)) return false
+        return hashMatches(uri, file)
+    }
+
+    override fun finish(uri: Uri, name: String): Uri {
         val taken = existingNames()
         var suffix = 0
         while (suffix < TransferNaming.MAXIMUM_SUFFIX) {
@@ -360,12 +442,134 @@ internal class TransferDestination(private val context: Context, val tree: Uri, 
         return names
     }
 
-    fun delete(uri: Uri) { if (!DocumentsContract.deleteDocument(resolver, uri)) throw IOException("Cannot remove partial document.") }
+    private fun hashMatches(uri: Uri, file: TransferFile): Boolean {
+        val digest = MessageDigest.getInstance("SHA-256")
+        read(uri).use { input ->
+            val buffer = ByteArray(131072)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) throw IOException("Published file made no progress")
+                total += count
+                if (total > file.size) return false
+                digest.update(buffer, 0, count)
+            }
+            return total == file.size && digest.digest().contentEquals(file.sha256)
+        }
+    }
 
-    fun close() {
+    override fun delete(uri: Uri) { if (!DocumentsContract.deleteDocument(resolver, uri)) throw IOException("Cannot remove partial document.") }
+
+    override fun close() {
         if (closed) return
         closed = true
         if (ownedModes != 0) resolver.releasePersistableUriPermission(tree, ownedModes)
+    }
+}
+
+/** Writes into app-owned pending Downloads rows and publishes them only after verification. */
+internal class MediaStoreTransferDestination(private val context: Context) : TransferReceiveDestination {
+    private val resolver = context.contentResolver
+    override val backend = "mediaStore"
+    private val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/aniCe/"
+
+    override fun preflight(bytes: Long) {
+        val available = StatFs(Environment.getExternalStorageDirectory().path).availableBytes
+        if (bytes > available || available - bytes < 64L * 1024 * 1024) {
+            throw IOException("Not enough free space; 64 MiB must remain available.")
+        }
+        val probe = create(".anice-probe-${UUID.randomUUID()}.part")
+        try {
+            descriptor(probe).use { fd ->
+                android.system.Os.write(fd.fileDescriptor, byteArrayOf(42), 0, 1)
+                android.system.Os.fsync(fd.fileDescriptor)
+                android.system.Os.lseek(fd.fileDescriptor, 0, android.system.OsConstants.SEEK_SET)
+                val sample = ByteArray(1)
+                if (android.system.Os.read(fd.fileDescriptor, sample, 0, 1) != 1 || sample[0] != 42.toByte()) {
+                    throw IOException("Downloads cannot read back received data.")
+                }
+            }
+        } finally { delete(probe) }
+    }
+
+    override fun create(name: String): Uri {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        return resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IOException("Cannot create a pending file in Downloads/aniCe.")
+    }
+
+    override fun descriptor(uri: Uri): ParcelFileDescriptor = resolver.openFileDescriptor(uri, "rw")
+        ?: throw IOException("Cannot open the received file.")
+
+    override fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
+        ?: throw IOException("Cannot read the received file.")
+
+    override fun ownsPartial(uri: Uri, prefix: String): Boolean = row(uri)?.let { row ->
+        row.pending && row.path == relativePath && row.name.startsWith(prefix) && row.name.endsWith(".part")
+    } == true
+
+    override fun isPublished(uri: Uri, file: TransferFile): Boolean {
+        val row = row(uri) ?: return false
+        if (row.pending || row.path != relativePath || !TransferNaming.matches(row.name, file.name) || row.size != file.size) return false
+        val digest = MessageDigest.getInstance("SHA-256")
+        read(uri).use { input ->
+            val buffer = ByteArray(131072)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) throw IOException("Published file made no progress")
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().contentEquals(file.sha256)
+    }
+
+    override fun finish(uri: Uri, name: String): Uri {
+        val partial = row(uri) ?: throw IOException("The pending Downloads file is unavailable.")
+        if (!partial.pending || partial.path != relativePath || !partial.name.endsWith(".part")) {
+            throw IOException("The pending Downloads file changed before it could be published.")
+        }
+        val existing = existingNames()
+        for (suffix in 0 until TransferNaming.MAXIMUM_SUFFIX) {
+            val candidate = TransferNaming.suffixed(name, suffix)
+            if (candidate in existing) continue
+            val changed = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, candidate)
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            if (resolver.update(uri, changed, null, null) == 1) return uri
+            throw IOException("Cannot publish the verified file in Downloads/aniCe.")
+        }
+        throw IOException("Cannot find an unused name for \"$name\".")
+    }
+
+    override fun delete(uri: Uri) {
+        if (resolver.delete(uri, null, null) == 0 && row(uri) != null) throw IOException("Cannot remove the pending file.")
+    }
+
+    override fun close() = Unit
+
+    private data class Row(val name: String, val path: String, val pending: Boolean, val size: Long)
+
+    private fun row(uri: Uri): Row? = resolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME,
+        MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.IS_PENDING, MediaStore.MediaColumns.SIZE), null, null, null)?.use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        Row(cursor.getString(0) ?: "", cursor.getString(1) ?: "", cursor.getInt(2) != 0, cursor.getLong(3))
+    }
+
+    private fun existingNames(): Set<String> {
+        val names = mutableSetOf<String>()
+        resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
+            arrayOf(relativePath), null)?.use { cursor -> while (cursor.moveToNext()) cursor.getString(0)?.let(names::add) }
+            ?: throw IOException("Cannot check Downloads filenames.")
+        return names
     }
 }
 
@@ -391,4 +595,7 @@ internal object TransferNaming {
         val ext = if (dot > 0) name.substring(dot) else ""
         return "$base ($suffix)$ext"
     }
+
+    fun matches(candidate: String, name: String): Boolean =
+        candidate == name || (1 until MAXIMUM_SUFFIX).any { candidate == suffixed(name, it) }
 }
