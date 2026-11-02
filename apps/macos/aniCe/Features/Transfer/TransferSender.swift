@@ -4,28 +4,74 @@
 import Foundation
 import CryptoKit
 
+final class TransferFileAccessLease {
+  private var scopedURLs: [URL] = []
+
+  init(urls: [URL]) {
+    for url in urls where url.startAccessingSecurityScopedResource() {
+      scopedURLs.append(url)
+    }
+  }
+
+  func release() {
+    let urls = scopedURLs
+    scopedURLs.removeAll()
+    for url in urls { url.stopAccessingSecurityScopedResource() }
+  }
+
+  deinit { release() }
+}
+
 extension MacTransferModel {
   func sendFiles(urls: [URL], reviewedPeer: DeviceIdentity? = nil) async {
-    guard !isBusy, !Task.isCancelled, preparation == nil, transferTask == nil else { return }
+    await sendFiles(urls: urls, recipient: reviewedPeer.map { TransferRecipient(peer: $0) },
+      transportPolicy: .preferAvailable)
+  }
+
+  func sendFiles(
+    urls: [URL], recipient: TransferRecipient?, transportPolicy: TransferTransportPolicy,
+    dropReservation: UUID? = nil, fileAccess: TransferFileAccessLease? = nil
+  ) async {
+    if let dropReservation {
+      guard self.dropReservation == dropReservation else { return }
+    } else {
+      guard !isBusy else { return }
+    }
+    guard !Task.isCancelled, preparation == nil, transferTask == nil else {
+      if let dropReservation {
+        failDrop(reservation: dropReservation, message: "File drop was cancelled. Drop the files again to retry.")
+      }
+      return
+    }
     guard (1...128).contains(urls.count) else {
-      state = .failed(reason: "Transfer batch must contain 1 to 128 files")
+      if let dropReservation {
+        failDrop(reservation: dropReservation, message: "Choose 1 to 128 files. No files were sent.")
+      } else {
+        state = .failed(reason: "Transfer batch must contain 1 to 128 files")
+      }
       return
     }
     selectPreferredChannel()
-    if let reviewedPeer {
+    if let recipient {
       guard let current = activeChannel?.descriptor.peer,
-        current.deviceId == reviewedPeer.deviceId, current.fingerprint == reviewedPeer.fingerprint else {
-        failTransfer(reason: "The connected device changed. Review the selected files before sending.")
+        recipient.matches(current) else {
+        failTransfer(reason: "The connected device changed. No files were sent. Choose the files again for the current device.")
         return
       }
     }
     let operation = epoch
     // Reserve the job and its peer before rendezvous or identity reads can suspend.
     preparing = true
+    if dropReservation != nil { self.dropReservation = nil }
+    dropFileAccess = fileAccess
     transferPeerDeviceId = activeChannel?.descriptor.peer.deviceId
     transferPeerFingerprint = activeChannel?.descriptor.peer.fingerprint
     defer { if operation == epoch { preparing = false } }
-    let requestedLan = activeChannel?.descriptor.transport != "lan" && onLanRequired()
+    let requestedLan: Bool
+    switch transportPolicy {
+    case .preferAvailable:
+      requestedLan = activeChannel?.descriptor.transport != "lan" && onLanRequired()
+    }
     if requestedLan { await awaitLan(operation: operation) }
     guard operation == epoch else { return }
     guard !Task.isCancelled else { cancelTransfer(); return }
@@ -35,9 +81,8 @@ extension MacTransferModel {
       return
     }
     // Rendezvous can replace the active channel while this operation is suspended.
-    if let reviewedPeer, (initialChannel.descriptor.peer.deviceId != reviewedPeer.deviceId ||
-      initialChannel.descriptor.peer.fingerprint != reviewedPeer.fingerprint) {
-      failTransfer(reason: "The connected device changed. Review the selected files before sending.")
+    if let recipient, !recipient.matches(initialChannel.descriptor.peer) {
+      failTransfer(reason: "The connected device changed. No files were sent. Choose the files again for the current device.")
       return
     }
     guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }

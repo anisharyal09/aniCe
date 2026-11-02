@@ -2,6 +2,7 @@
 // Presents local file transfer controls, incoming batch approval and progress in the feature workspace and companion.
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TransferNotificationControls: View {
   let preferences: TransferNotificationPreferences
@@ -58,6 +59,131 @@ struct TransferNotificationControls: View {
   }
 }
 
+private enum TransferDropFailure: LocalizedError {
+  case fileCount
+  case promisedFile
+  case unavailableFile
+
+  var errorDescription: String? {
+    switch self {
+    case .fileCount: "Choose 1 to 128 files. No files were sent."
+    case .promisedFile: "Drop files already saved on this Mac. Promised files aren’t supported."
+    case .unavailableFile: "Drop regular local files that are available now. No files were sent."
+    }
+  }
+}
+
+enum TransferDropValidation {
+  static func containsPromisedFile(_ identifiers: [String]) -> Bool {
+    !Set(identifiers).isDisjoint(with: NSFilePromiseReceiver.readableDraggedTypes)
+  }
+
+  static func validate(_ urls: [URL]) throws {
+    guard (1...128).contains(urls.count) else { throw TransferDropFailure.fileCount }
+    let keys: Set<URLResourceKey> = [
+      .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey,
+      .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey
+    ]
+    for url in urls {
+      guard url.isFileURL else { throw TransferDropFailure.unavailableFile }
+      let values = try url.resourceValues(forKeys: keys)
+      guard values.isSymbolicLink != true, values.isDirectory != true, values.isRegularFile == true else {
+        throw TransferDropFailure.unavailableFile
+      }
+      if values.isUbiquitousItem == true {
+        guard let status = values.ubiquitousItemDownloadingStatus,
+          status == .current || status == .downloaded else { throw TransferDropFailure.unavailableFile }
+      }
+    }
+  }
+}
+
+@MainActor private enum TransferDropSubmission {
+  static func receive(_ providers: [NSItemProvider], model: MacTransferModel) -> Bool {
+    guard !providers.isEmpty else { return false }
+    guard let recipient = model.connectedAndroidRecipient else {
+      model.dropStatus = model.peerConnected
+        ? "File transfer is unavailable on this phone."
+        : "Connect your Android phone to send files."
+      return false
+    }
+    guard (1...128).contains(providers.count) else {
+      model.dropStatus = TransferDropFailure.fileCount.localizedDescription
+      return true
+    }
+    guard providers.allSatisfy({
+      $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) &&
+        !TransferDropValidation.containsPromisedFile($0.registeredTypeIdentifiers)
+    }) else {
+      model.dropStatus = TransferDropFailure.promisedFile.localizedDescription
+      return true
+    }
+    guard let reservation = model.reserveDrop(for: recipient) else { return true }
+
+    Task { @MainActor in
+      do {
+        var urls: [URL] = []
+        for provider in providers { urls.append(try await loadURL(from: provider)) }
+        let access = TransferFileAccessLease(urls: urls)
+        try await Task.detached(priority: .utility) { try TransferDropValidation.validate(urls) }.value
+        await model.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferAvailable,
+          dropReservation: reservation, fileAccess: access)
+      } catch {
+        model.failDrop(reservation: reservation,
+          message: (error as? LocalizedError)?.errorDescription ?? "Could not access one of the dropped files. No files were sent.")
+      }
+    }
+    return true
+  }
+
+  private static func loadURL(from provider: NSItemProvider) async throws -> URL {
+    try await withCheckedThrowingContinuation { continuation in
+      provider.loadObject(ofClass: NSURL.self) { object, error in
+        if let error {
+          continuation.resume(throwing: error)
+        } else if let url = object as? NSURL, url.isFileURL {
+          continuation.resume(returning: url as URL)
+        } else {
+          continuation.resume(throwing: TransferDropFailure.unavailableFile)
+        }
+      }
+    }
+  }
+
+}
+
+private struct TransferFileDropTarget: ViewModifier {
+  let model: MacTransferModel
+  let cornerRadius: CGFloat
+  @Environment(\.colorScheme) private var colorScheme
+  @State private var isTargeted = false
+
+  func body(content: Content) -> some View {
+    content
+      .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
+        TransferDropSubmission.receive(providers, model: model)
+      }
+      .overlay {
+        if isTargeted, model.connectedAndroidRecipient != nil {
+          RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(AniCePalette.accent(colorScheme).opacity(0.06))
+            .overlay {
+              RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(AniCePalette.accent(colorScheme), lineWidth: 2)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+      }
+  }
+}
+
+extension View {
+  func transferFileDropTarget(model: MacTransferModel, cornerRadius: CGFloat) -> some View {
+    modifier(TransferFileDropTarget(model: model, cornerRadius: cornerRadius))
+  }
+}
+
 struct TransferView: View {
   let model: MacTransferModel
   var compact: Bool = false
@@ -97,6 +223,9 @@ struct TransferView: View {
             .controlSize(.small)
         }
       }
+      if let dropStatus = model.dropStatus {
+        Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      }
       switch model.state {
       case .idle:
         idleContent
@@ -122,6 +251,7 @@ struct TransferView: View {
     .padding(compact ? 0 : 8)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .background(Color.clear)
+    .transferFileDropTarget(model: model, cornerRadius: 10)
   }
 
   @ViewBuilder
@@ -187,7 +317,7 @@ struct TransferView: View {
   private var transferTargetDescription: String {
     guard model.peerConnected else { return "Connect your phone to send files." }
     guard model.peerCompatible else { return "File transfer is unavailable on this device." }
-    return "To \(model.activeChannel?.descriptor.peer.deviceName ?? "your phone")"
+    return "Drop files here to send to \(model.activeChannel?.descriptor.peer.deviceName ?? "your phone")"
   }
 
   @ViewBuilder

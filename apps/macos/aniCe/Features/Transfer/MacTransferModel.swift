@@ -24,6 +24,26 @@ struct TransferBatch: Identifiable, Equatable, Codable, Sendable {
   var idString: String { id.uuidString.lowercased() }
 }
 
+struct TransferRecipient: Equatable, Sendable {
+  let deviceId: String
+  let fingerprint: String
+  let deviceName: String
+
+  init(peer: DeviceIdentity) {
+    deviceId = peer.deviceId
+    fingerprint = peer.fingerprint
+    deviceName = peer.deviceName
+  }
+
+  func matches(_ peer: DeviceIdentity) -> Bool {
+    deviceId == peer.deviceId && fingerprint == peer.fingerprint
+  }
+}
+
+enum TransferTransportPolicy: Sendable {
+  case preferAvailable
+}
+
 enum TransferState: Equatable {
   case idle
   case waitingForPeerApproval(batch: TransferBatch)
@@ -67,6 +87,9 @@ enum TransferEvent: Equatable {
   var activeChannel: (any SecuredChannel)?
   var peerConnected = false
   var peerCompatible = false
+  var dropStatus: String?
+  var dropReservation: UUID?
+  var dropFileAccess: TransferFileAccessLease?
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
   var onEvent: ((TransferEvent) -> Void)?
   /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
@@ -96,6 +119,36 @@ enum TransferEvent: Equatable {
     case .incomingOffer, .waitingForPeerApproval, .transferring, .paused: return true
     default: return false
     }
+  }
+
+  var connectedAndroidRecipient: TransferRecipient? {
+    guard peerConnected, peerCompatible, let peer = activeChannel?.descriptor.peer,
+      peer.platform == "android" else { return nil }
+    return TransferRecipient(peer: peer)
+  }
+
+  func reserveDrop(for recipient: TransferRecipient) -> UUID? {
+    guard !isBusy, preparation == nil, transferTask == nil else {
+      dropStatus = "A transfer is already in progress. Try again when it finishes."
+      return nil
+    }
+    guard let current = activeChannel?.descriptor.peer, peerConnected, peerCompatible,
+      recipient.matches(current), current.platform == "android" else {
+      dropStatus = "The connected phone changed. Drop the files again."
+      return nil
+    }
+    let reservation = UUID()
+    dropReservation = reservation
+    preparing = true
+    dropStatus = nil
+    return reservation
+  }
+
+  func failDrop(reservation: UUID, message: String) {
+    guard dropReservation == reservation else { return }
+    dropReservation = nil
+    preparing = false
+    dropStatus = message
   }
 
   @ObservationIgnored nonisolated(unsafe) var sleepAssertionID: IOPMAssertionID = 0
@@ -730,6 +783,8 @@ extension MacTransferModel {
     resumeAttemptChannel = nil; nextResumeAttemptAt = 0
     progressTask?.cancel(); progressTask = nil; progressEpoch = nil
     preparation?.cancel(); preparation = nil; preparing = false
+    dropReservation = nil
+    dropFileAccess?.release(); dropFileAccess = nil
     clearOfferAssembly()
     pauseTimerTask?.cancel(); pauseTimerTask = nil
     resumeTask?.cancel(); resumeTask = nil

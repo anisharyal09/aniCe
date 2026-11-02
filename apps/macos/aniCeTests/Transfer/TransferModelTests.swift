@@ -3,6 +3,8 @@
 import XCTest
 import CryptoKit
 import os
+import AppKit
+import UniformTypeIdentifiers
 @testable import aniCe
 
 @MainActor
@@ -28,6 +30,15 @@ final class MockSecuredChannel: SecuredChannel {
 @MainActor
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
+
+  private func androidPeer(name: String = "Pixel 9") throws -> DeviceIdentity {
+    let key = P256.Signing.PrivateKey()
+    let macPeer = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: name,
+      publicKey: key.publicKey.x963Representation)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(macPeer)) as? [String: Any])
+    object["platform"] = "android"
+    return try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: object))
+  }
 
   func testLanAcknowledgementsFitTheChunksActuallyReceived() {
     XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 4096), 4096)
@@ -253,6 +264,85 @@ final class TransferModelTests: XCTestCase {
     XCTAssertTrue(reason.contains("device changed"))
     XCTAssertTrue(channel.sentData.isEmpty)
     XCTAssertFalse(owner.preparing)
+  }
+
+  func testDropValidationAcceptsRegularFilesAndRejectsLinksDirectoriesAndOversize() throws {
+    let file = tempDir.appendingPathComponent("drop.bin")
+    try Data([1, 2, 3]).write(to: file)
+    XCTAssertNoThrow(try TransferDropValidation.validate([file]))
+
+    let directory = tempDir.appendingPathComponent("folder", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    XCTAssertThrowsError(try TransferDropValidation.validate([directory]))
+
+    let link = tempDir.appendingPathComponent("link.bin")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+    XCTAssertThrowsError(try TransferDropValidation.validate([link]))
+    XCTAssertThrowsError(try TransferDropValidation.validate(Array(repeating: file, count: 129)))
+  }
+
+  func testDropValidationRejectsFilePromises() {
+    XCTAssertTrue(TransferDropValidation.containsPromisedFile(NSFilePromiseReceiver.readableDraggedTypes))
+    XCTAssertFalse(TransferDropValidation.containsPromisedFile([UTType.fileURL.identifier]))
+  }
+
+  func testDropReservationPinsFullPeerIdentityAndRejectsBusyOrChangedPeer() throws {
+    let owner = MacTransferModel()
+    let first = MockSecuredChannel(deviceName: "Same phone", peer: try androidPeer(name: "Same phone"))
+    let second = MockSecuredChannel(deviceName: "Same phone", peer: try androidPeer(name: "Same phone"))
+    owner.activeChannel = first
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let recipient = TransferRecipient(peer: first.descriptor.peer)
+    XCTAssertTrue(recipient.matches(first.descriptor.peer))
+    XCTAssertFalse(recipient.matches(second.descriptor.peer))
+
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    XCTAssertTrue(owner.preparing)
+    XCTAssertNil(owner.reserveDrop(for: recipient))
+    XCTAssertTrue(owner.dropStatus?.contains("already in progress") == true)
+    owner.failDrop(reservation: reservation, message: "Drop failed")
+    XCTAssertFalse(owner.preparing)
+    XCTAssertNil(owner.dropReservation)
+
+    XCTAssertNil(owner.reserveDrop(for: TransferRecipient(peer: second.descriptor.peer)))
+    XCTAssertTrue(owner.dropStatus?.contains("phone changed") == true)
+  }
+
+  func testCancelledDropReservationCannotSendAfterProviderLoadCompletes() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(peer: try androidPeer())
+    owner.activeChannel = channel
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let recipient = TransferRecipient(peer: channel.descriptor.peer)
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    let file = tempDir.appendingPathComponent("late-drop.bin")
+    try Data([4, 5, 6]).write(to: file)
+
+    owner.cancelTransfer(local: false)
+    await owner.sendFiles(urls: [file], recipient: recipient, transportPolicy: .preferAvailable,
+      dropReservation: reservation, fileAccess: TransferFileAccessLease(urls: [file]))
+
+    XCTAssertTrue(channel.sentData.isEmpty)
+    XCTAssertFalse(owner.preparing)
+    XCTAssertNil(owner.dropReservation)
+  }
+
+  func testInvalidDropBatchReleasesItsReservation() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(peer: try androidPeer())
+    owner.activeChannel = channel
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let recipient = TransferRecipient(peer: channel.descriptor.peer)
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    let urls = Array(repeating: URL(fileURLWithPath: "/missing"), count: 129)
+
+    await owner.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferAvailable,
+      dropReservation: reservation)
+
+    XCTAssertFalse(owner.preparing)
+    XCTAssertNil(owner.dropReservation)
+    XCTAssertTrue(owner.dropStatus?.contains("1 to 128 files") == true)
   }
 
   func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {

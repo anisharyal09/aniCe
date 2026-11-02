@@ -97,7 +97,7 @@ extension MainWindowView {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           VStack(alignment: .leading, spacing: 6) {
             Text("Send files").font(.system(size: 14, weight: .medium))
-            Text(transfer.activeChannel.map { "Send to " + $0.descriptor.peer.deviceName } ?? "Connect your phone to send files")
+            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.deviceName } ?? "Connect a compatible Android phone to send files")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer(minLength: 12)
@@ -105,6 +105,10 @@ extension MainWindowView {
             .buttonStyle(AniCeButtonStyle()).disabled(!transfer.peerConnected || !transfer.peerCompatible)
         }.padding(24).frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
           .overlay { RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(colorScheme), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+          .transferFileDropTarget(model: transfer, cornerRadius: 8)
+        if let dropStatus = transfer.dropStatus {
+          Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        }
       } else if !isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
     }
   }
