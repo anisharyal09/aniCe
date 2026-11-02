@@ -15,7 +15,6 @@ struct MacKeyboardTrackpadView: View {
   @State private var generatedPresentationID = UUID()
   @State private var keyboardInputID = UUID()
   @State private var fullScreenPad: FullScreenTrackpadController?
-  @State private var inputWidth: CGFloat = 0
   var onOpenDevices: () -> Void = {}
 
   init(model: MacKeyboardTrackpadModel, presentationID: UUID? = nil, floatingPresentation: Bool = false,
@@ -32,7 +31,16 @@ struct MacKeyboardTrackpadView: View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
 
-      connectionStatus
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .center, spacing: 16) {
+          connectionStatus.frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
+          connectionActions.fixedSize(horizontal: true, vertical: false)
+        }
+        VStack(alignment: .leading, spacing: 8) {
+          connectionStatus
+          connectionActions
+        }
+      }
 
       if let notice = model.notice {
         Text(notice)
@@ -41,9 +49,7 @@ struct MacKeyboardTrackpadView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
 
-      connectionActions
-
-      if floatingPresentation, model.targetPeer != nil, !model.needsDeviceLink {
+      if model.targetPeer != nil, !model.needsDeviceLink {
         keyboardActionRow
       }
 
@@ -107,6 +113,7 @@ struct MacKeyboardTrackpadView: View {
         }
         .menuStyle(.borderlessButton)
         .buttonStyle(AniCeButtonStyle())
+        .aniCeControlFeedback()
         .accessibilityHint("Choose another trusted aniCe phone")
       }
     }
@@ -273,7 +280,6 @@ struct MacKeyboardTrackpadView: View {
       case .disconnecting:
         EmptyView()
       }
-      Spacer(minLength: 0)
       Button("Stop controlling", action: model.stopControlling)
         .buttonStyle(AniCeButtonStyle())
         .disabled(!model.isControlling)
@@ -288,21 +294,10 @@ struct MacKeyboardTrackpadView: View {
   private var isKeyboardActive: Bool { model.isControlling(owner: keyboardOwner) }
 
   private var inputSurfaces: some View {
-    let sideBySide = inputWidth >= 522
-    let layout = sideBySide
-      ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
-      : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-    return VStack(alignment: .leading, spacing: 12) {
-      // Rearrange the same native input views so resizing cannot replace the capturing responder.
-      layout {
-        controls.frame(width: sideBySide ? 246 : nil, alignment: .topLeading)
-        pad.frame(maxWidth: .infinity).frame(height: 360)
-      }
-      .background(GeometryReader { geometry in
-        Color.clear.onChange(of: geometry.size.width, initial: true) { _, width in inputWidth = width }
-      })
+    VStack(alignment: .leading, spacing: 12) {
+      controls
+      pad.frame(maxWidth: .infinity).frame(height: floatingPresentation ? 260 : 280)
 
-      if !floatingPresentation { keyboardActionRow }
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 8) { pointerSettings }
         VStack(alignment: .leading, spacing: 8) { pointerSettings }
@@ -336,6 +331,7 @@ struct MacKeyboardTrackpadView: View {
     }
     .menuStyle(.borderlessButton)
     .buttonStyle(AniCeButtonStyle())
+    .aniCeControlFeedback()
     Button {
       if let fullScreenPad, fullScreenPad.window?.isVisible == true {
         fullScreenPad.showWindow(nil)
@@ -366,7 +362,7 @@ struct MacKeyboardTrackpadView: View {
         }
         .allowsHitTesting(false)
       }
-      .frame(height: 94)
+      .frame(height: 72)
       .background(AniCePalette.background(scheme), in: RoundedRectangle(cornerRadius: 7))
       .overlay {
         RoundedRectangle(cornerRadius: 7)
@@ -374,12 +370,10 @@ struct MacKeyboardTrackpadView: View {
             lineWidth: isKeyboardActive ? 1.5 : 0.75)
           .allowsHitTesting(false)
       }
+      .aniCeControlFeedback(cornerRadius: 7)
       .accessibilityLabel("Keyboard input area")
       .accessibilityHint("Click to start typing on your Mac to the phone.")
 
-      Text(isKeyboardActive ? "Keyboard active · type on your Mac" : "Click to start, then type on your Mac")
-        .font(.caption)
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -515,6 +509,7 @@ struct MacKeyboardTrackpadView: View {
     .buttonStyle(AniCeButtonStyle())
     .controlSize(.small)
     .disabled(!model.reportProtocol)
+    .aniCeControlFeedback()
   }
 
   private func shortcutKey(_ label: String, usage: UInt8, accessibleName: String? = nil) -> some View {
@@ -583,10 +578,10 @@ private struct TrackpadPad: View {
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
           Spacer()
-          if focused {
+          if model.isControlling(owner: captureOwner) {
             Image(systemName: "viewfinder")
               .foregroundStyle(AniCePalette.accent(scheme))
-              .accessibilityLabel("Pad focused")
+              .accessibilityLabel("Pointer input active")
           }
         }
         Spacer()
@@ -606,11 +601,13 @@ private struct TrackpadPad: View {
     .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10))
     .overlay {
       RoundedRectangle(cornerRadius: 10)
-        .stroke(focused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme),
-          lineWidth: focused ? 1.5 : 0.75)
+        .stroke(model.isControlling(owner: captureOwner) ? AniCePalette.accent(scheme) :
+          (focused ? AniCePalette.accent(scheme).opacity(0.5) : AniCePalette.separator(scheme)),
+          lineWidth: model.isControlling(owner: captureOwner) ? 1.5 : 0.75)
         .allowsHitTesting(false)
     }
     .contentShape(RoundedRectangle(cornerRadius: 10))
+    .aniCeControlFeedback(cornerRadius: 10)
   }
 }
 
