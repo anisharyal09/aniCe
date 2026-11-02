@@ -9,6 +9,7 @@ struct FeaturesView: View {
   let findDevice: MacFindDeviceModel
   let sms: MacSmsModel
   @Bindable var keyboardTrackpad: MacKeyboardTrackpadModel
+  @Bindable var phoneInput: MacPhoneInputModel
   let smsPreferences: SmsPreferences
   let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
@@ -43,6 +44,7 @@ struct FeaturesView: View {
           case .clipboard: ClipboardView(model: clipboard, peers: peers)
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
+          case .typeToMac: MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
           }
         } else {
@@ -135,6 +137,14 @@ struct FeaturesView: View {
       return peers.isEmpty ? "Pair a phone to relay messages" : "Connect your phone"
     case .keyboardTrackpad:
       return keyboardTrackpad.featureSummary
+    case .typeToMac:
+      guard let peer = phoneInput.connectedPeer, peer.platform == "android" else {
+        return "Connect an Android phone over Bluetooth"
+      }
+      if phoneInput.needsPostEventAccess { return "macOS event access needed" }
+      if phoneInput.isReceiving { return "Receiving from \(peer.deviceName)" }
+      if phoneInput.isArmed { return "Ready to receive from \(peer.deviceName)" }
+      return "Connected to \(peer.deviceName) · input off"
     case .findDevice:
       if findDevice.busy { return "Request in progress" }
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }

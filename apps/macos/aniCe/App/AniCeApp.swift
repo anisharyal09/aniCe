@@ -195,7 +195,9 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
+        findNotifier: findNotifier, sms: sms, keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput,
+        smsPreferences: smsPreferences, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
             delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); PasteTrayController.shared.hide() }

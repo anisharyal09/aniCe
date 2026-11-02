@@ -24,6 +24,8 @@ Shared product changes, repository structure, documentation and development conv
 
 - Add the Android Type to Mac panel with the normal phone keyboard, bounded BLE input sessions and IME-aware text correction.
 
+- Add a Mac Type to Mac panel for explicit receiver arming, current-phone status and event-access recovery without a permission prompt.
+
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed

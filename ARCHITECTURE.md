@@ -116,7 +116,7 @@ The native Mac Keyboard & Trackpad panel publishes a system Classic Bluetooth HI
 
 ## Phone-to-Mac Input
 
-Android's **Type to Mac** feature uses the normal on-screen keyboard inside aniCe and the existing authenticated BLE record channel. The editor keeps IME composition local, reconciles committed text corrections, and sends literal Unicode separately from keyboard transitions. The Mac receiver binds one explicitly armed input session to the authenticated peer and channel, and releases held events on interruption. It adds no pairing or permission path. The Android sender currently supports text and keyboard transitions; user-facing Mac receiver controls and end-to-end use remain pending. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
+Android's **Type to Mac** feature uses the normal on-screen keyboard inside aniCe and the existing authenticated BLE record channel. The editor keeps IME composition local, reconciles committed text corrections, and sends literal Unicode separately from keyboard transitions. The Mac feature panel arms only the currently authenticated phone after checking event-posting access without prompting. The receiver binds one input session to that peer and channel, and releases held events on interruption. The Android sender currently supports text and keyboard transitions. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
 
 ## Clipboard
 

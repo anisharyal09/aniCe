@@ -43,4 +43,4 @@ The Android editor keeps the IME's active composing range local and reconciles t
 
 ## Implementation gate
 
-Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with no permission prompt. Phase 3 adds the Android in-app editor and bounded BLE sender for text and key transitions. User-facing Mac receiver controls and end-to-end acceptance remain pending. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).
+Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with no permission prompt. Phase 3 adds the Android in-app editor and bounded BLE sender for text and key transitions. Phase 4 exposes explicit receiver arming and access recovery in the Mac feature panel. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).

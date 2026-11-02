@@ -166,6 +166,50 @@ import XCTest
     model.shutdown()
   }
 
+  func testAccessRefreshUpdatesArmedStateAfterSettingsChange() {
+    let sink = PhoneInputEventSinkFake()
+    sink.canPostEvents = false
+    let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
+    let owner = UUID()
+    let peer = MockSecuredChannel(transport: "ble").descriptor.peer
+
+    model.arm(ownerID: owner, for: peer)
+    XCTAssertTrue(model.needsPostEventAccess)
+    XCTAssertTrue(model.isArmed(by: owner))
+
+    sink.canPostEvents = true
+    model.refreshAccessState()
+
+    XCTAssertFalse(model.needsPostEventAccess)
+    XCTAssertEqual(model.statusMessage, "Ready to receive from \(peer.deviceName).")
+    model.disarm(ownerID: owner)
+  }
+
+  func testRevokedAccessStopsTheActiveReceiveSession() async throws {
+    let sink = PhoneInputEventSinkFake()
+    let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
+    let channel = MockSecuredChannel(transport: "ble")
+    let session = "01234567-89ab-4cde-8fab-0123456789ab"
+    model.available(channel)
+    await eventually { channel.sentData.contains { (try? PhoneInputMessage.decode($0))?.kind == 1 } }
+    _ = await model.handle(
+      try PhoneInputMessage.of(1, .integer(1024), .integer(7)).encode(), on: channel.descriptor)
+    model.arm(ownerID: UUID(), for: channel.descriptor.peer)
+    _ = await model.handle(try PhoneInputMessage.of(2, .text(session)).encode(), on: channel.descriptor)
+    await eventually { model.isReceiving }
+
+    sink.canPostEvents = false
+    let result = await model.handle(
+      try PhoneInputMessage.of(4, .text(session), .integer(1), .text("hello")).encode(),
+      on: channel.descriptor)
+
+    XCTAssertEqual(result, .discarded)
+    XCTAssertFalse(model.isReceiving)
+    XCTAssertTrue(model.needsPostEventAccess)
+    XCTAssertTrue(model.statusMessage.contains("revoked"))
+    model.shutdown()
+  }
+
   func testRepeatedSequenceStopsAndReleasesHeldKeys() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))

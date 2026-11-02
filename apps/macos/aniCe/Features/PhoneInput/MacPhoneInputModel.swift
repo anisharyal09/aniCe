@@ -52,25 +52,46 @@ import Observation
   private var activeSession: ActiveSession?
   private var armedOwnerID: UUID?
   private var armedPeer: DeviceIdentity?
+  private(set) var eventAccessAvailable: Bool
   private(set) var statusMessage = "Phone input is off."
 
   init(eventAdapter: MacPhoneInputEventAdapter = MacPhoneInputEventAdapter()) {
     self.eventAdapter = eventAdapter
+    self.eventAccessAvailable = eventAdapter.canPostEvents
   }
 
   var isArmed: Bool { armedOwnerID != nil }
   var isReceiving: Bool { activeSession != nil }
-  var needsPostEventAccess: Bool { !eventAdapter.canPostEvents }
+  var needsPostEventAccess: Bool { !eventAccessAvailable }
   var targetPeer: DeviceIdentity? { armedPeer }
+  var connectedPeer: DeviceIdentity? { links["ble"]?.channel.descriptor.peer }
+
+  func isArmed(by ownerID: UUID) -> Bool { armedOwnerID == ownerID }
+
+  // System Settings can revoke event access while a receive session is active.
+  func refreshAccessState() {
+    let available = eventAdapter.canPostEvents
+    guard eventAccessAvailable != available else { return }
+    eventAccessAvailable = available
+    guard isArmed, let peer = armedPeer else { return }
+    if available {
+      if !isReceiving { statusMessage = "Ready to receive from \(peer.deviceName)." }
+    } else if isReceiving {
+      endSession("macOS event access was revoked; receiving stopped.", reason: .accessUnavailable)
+    } else {
+      statusMessage = "macOS event-posting access is off."
+    }
+  }
 
   func arm(ownerID: UUID, for peer: DeviceIdentity) {
     if armedOwnerID == ownerID, samePeer(armedPeer, peer) { return }
+    refreshAccessState()
     disarmCurrent()
     armedOwnerID = ownerID
     armedPeer = peer
-    statusMessage = eventAdapter.canPostEvents
+    statusMessage = eventAccessAvailable
       ? "Ready to receive from \(peer.deviceName)."
-      : "Allow aniCe to control your Mac before receiving input."
+      : "macOS event-posting access is off."
   }
 
   func disarm(ownerID: UUID) {
@@ -162,6 +183,7 @@ import Observation
   }
 
   private func receiveStart(_ message: PhoneInputMessage, from link: Link) -> DataHandling {
+    refreshAccessState()
     let id = message.text(0)
     guard let peer = armedPeer, let ownerID = armedOwnerID,
       samePeer(peer, link.channel.descriptor.peer), activeSession == nil, pendingStart == nil,
@@ -174,8 +196,8 @@ import Observation
       replyToStart(id, result: .unsupported, on: link)
       return .handled
     }
-    guard eventAdapter.canPostEvents else {
-      statusMessage = "Allow aniCe to control your Mac before receiving input."
+    guard eventAccessAvailable else {
+      statusMessage = "macOS event-posting access is off."
       replyToStart(id, result: .unavailable, on: link)
       return .handled
     }
@@ -210,7 +232,7 @@ import Observation
           reason: eventAdapter.canPostEvents ? .localStop : .accessUnavailable)
         statusMessage = eventAdapter.canPostEvents
           ? "Input activation was canceled. Turn it on again."
-          : "Allow aniCe to control your Mac before receiving input."
+          : "macOS event-posting access is off."
       }
       return
     }
@@ -220,6 +242,7 @@ import Observation
   }
 
   private func receiveInput(_ message: PhoneInputMessage, from link: Link) -> DataHandling {
+    refreshAccessState()
     guard var active = activeSession, active.descriptor == link.channel.descriptor,
       active.id == message.text(0), active.ownerID == armedOwnerID,
       samePeer(armedPeer, link.channel.descriptor.peer)

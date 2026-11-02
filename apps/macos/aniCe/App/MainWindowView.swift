@@ -18,6 +18,7 @@ struct MainWindowView: View {
   let findNotifier: MacFindDeviceNotifier?
   let sms: MacSmsModel
   let keyboardTrackpad: MacKeyboardTrackpadModel
+  let phoneInput: MacPhoneInputModel
   let smsPreferences: SmsPreferences
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -151,7 +152,7 @@ struct MainWindowView: View {
 
   private func featureDestination(favouritesOnly: Bool) -> some View {
     FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
-      sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences,
+      sms: sms, keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
       findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: favouritesOnly)
   }
 

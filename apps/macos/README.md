@@ -23,6 +23,7 @@ aniCe/
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
     FindDevice/                Peer ring request actions, sound player and notification setup
     KeyboardTrackpad/          Native input model/views, floating panel and Objective-C HID adapter
+    PhoneInput/                Secured BLE receiver, native input adapter and receiver controls
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
     Sms/                       SMS relay model, wire codec, notifier and views
@@ -41,6 +42,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   Clipboard/                   Clipboard model, debounce and wire codec test suites
   FindDevice/                  Find device payload and state transition test suites
   KeyboardTrackpad/            Input ownership, focus, gestures and native HID protocol tests
+  PhoneInput/                  Phone-to-Mac receiver, event translation and wire codec tests
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
   Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
@@ -108,6 +110,10 @@ Features → Keyboard & Trackpad sends native keyboard and mouse input to a trus
 The menu-bar companion's **Keyboard** button shows or hides a persistent floating button; its right-click menu also offers **Show floating keyboard**. Click the floating button to toggle typing, or right-click it for full controls and Hide. Compact position and visibility are saved; reopening restores idle controls. Resizing the full controls preserves keyboard focus. Stopping or hiding releases held input while the HID connection can remain idle.
 
 The Objective-C adapter adapts aniKey's GPL transport and report conventions with aniCe's bounded worker and connection checks; Swift owns trusted targets, input capture and cancellation. See the [feature guide](../../docs/features/KEYBOARD_TRACKPAD.md), [Classic HID contract](../../protocol/bluetooth/classic-hid.md) and [adaptation record](../../docs/decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation). No Android app component or Accessibility permission is required.
+
+## Type to Mac (unreleased)
+
+Features → Type to Mac lets the currently authenticated Android phone send text to the Mac over the existing secured Bluetooth session. Turn on phone input in this panel before starting from Android. Input goes to the Mac app with keyboard focus; turning the toggle off or leaving the feature releases held input. The panel checks macOS event-posting access without requesting it and links to System Settings when access is unavailable. See the [Phone-to-Mac feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 

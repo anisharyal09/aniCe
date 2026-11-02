@@ -5,11 +5,12 @@
 
 ## Use
 
-1. Pair the Mac and connect to it over Bluetooth from **Devices**.
-2. Open **Features → Type to Mac** and start typing.
-3. Stop typing or leave the feature to release remote input and clear the temporary phone editor.
+1. Connect the trusted phone and Mac over Bluetooth.
+2. On the Mac, open **Features → Type to Mac** and turn on phone input.
+3. On Android, open **Features → Type to Mac** and start typing.
+4. Stop on either device to release remote input and clear the temporary phone editor.
 
-The Mac must support Phone-to-Mac input, have its receiver armed for this phone, and already have the required macOS event-posting access. The Mac-side receive controls are not yet exposed, so the Android sender cannot complete a normal end-to-end session until that UI phase lands. The start response indicates whether the receiver accepted the session; the phone does not type before acceptance.
+The Mac receiver is limited to the currently authenticated Bluetooth phone. It checks macOS event-posting access without opening a permission prompt; if access is off, the Mac panel explains where to review it in System Settings. The start response indicates whether the receiver accepted the session; the phone does not type before acceptance.
 
 ## Text and IME behavior
 
