@@ -110,11 +110,23 @@ class AppNavigationTest {
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
         assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
-        assertEquals(5, AppFeature.entries.size)
+        assertEquals("TypeToMac", AppFeature.TypeToMac.toggled(""))
+        assertEquals(6, AppFeature.entries.size)
         AppFeature.entries.forEach { feature ->
             assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
             assertEquals("", feature.toggled(feature.toggled("")))
         }
+    }
+
+    @Test fun typeToMacFeatureUsesTheExistingFeatureRoute() {
+        val state = AppNavigation(AppDestination.Favourites)
+        state.openFeature(AppFeature.TypeToMac)
+        assertEquals(AppDestination.Features, state.destination)
+        assertEquals(AppDestination.Favourites, state.featureOrigin)
+        assertEquals(AppFeature.TypeToMac, state.featurePanel)
+        state.closeFeature()
+        assertEquals(AppDestination.Favourites, state.destination)
+        assertNull(state.featurePanel)
     }
 
     @Test fun favouriteRoutingAndAboutBackPreservePeerAndSavedPreferences() {

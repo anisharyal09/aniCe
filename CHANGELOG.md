@@ -22,6 +22,8 @@ Shared product changes, repository structure, documentation and development conv
 
 - Add the Mac Phone-to-Mac receiver and fail-safe native event adapter, gated by explicit local arming and existing event-posting access.
 
+- Add the Android Type to Mac panel with the normal phone keyboard, bounded BLE input sessions and IME-aware text correction.
+
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 
 ### Changed

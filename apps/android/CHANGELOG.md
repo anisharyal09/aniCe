@@ -15,6 +15,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
 
+- Add a Type to Mac feature panel that uses the normal Android keyboard, starts only after Mac acceptance, reconciles IME composing and autocorrect edits, and releases the session when the panel leaves or pauses.
+
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.
 - Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.

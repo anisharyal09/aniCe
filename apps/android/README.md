@@ -119,3 +119,7 @@ Features → Messages relays incoming SMS to the Mac, serves its reads of conver
 ## Clipboard
 
 Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior](../../docs/features/CLIPBOARD.md) describes permissions, focus rules and the background-overwrite limitation.
+
+## Type to Mac
+
+Features → Type to Mac uses the phone's normal Android keyboard to send committed Unicode text and control keys to the connected Mac over the existing authenticated Bluetooth session. IME composing text stays local until committed; autocorrect and range replacement are reconciled against the sent text, and the temporary editor is cleared when typing stops or the screen leaves. Text is not logged or saved by aniCe. Each session is bounded to 64 KiB of editor text and each wire commit to 1 KiB. The Mac receiver controls are not exposed yet, so accepted end-to-end typing still requires the Mac-side UI phase. See [Phone-to-Mac input](../../docs/features/PHONE_TO_MAC.md).

@@ -31,14 +31,16 @@ The Mac sends `session ended` when a live session ends locally so Android can cl
 
 ## BLE pacing and failure behavior
 
-The sender accumulates pending pointer motion and scroll separately, then flushes them when the secured channel reports capacity. It sends no round-trip acknowledgement for individual motion or scroll records. Accumulation preserves signed deltas and splits any flush that exceeds the on-wire range.
+Implementations that send pointer motion or scroll should accumulate those deltas separately and flush them when the secured channel reports capacity. They should not wait for a round-trip acknowledgement per motion or scroll record; accumulation preserves signed deltas and splits any flush that exceeds the on-wire range. The current Android sender advertises only text and key transitions; it does not send pointer, button or scroll events.
 
 Text commits, key transitions, button changes and session controls are discrete events. Keep their queue bounded and ordered. Never drop a key-up, button-up, text commit, or session boundary silently. If the bounded discrete queue cannot accept an event, stop that session and release all input; do not let congestion build an unbounded backlog. Motion alone must not trip a queue circuit breaker during ordinary BLE connection intervals.
 
 The Mac checks `CGPreflightPostEventAccess` without prompting, adds relative pointer deltas to the live cursor position in global display coordinates, and clamps the absolute position to a live display bound before posting an event. System privacy dialogs can block synthesized input. macOS has no documented API that reliably identifies another app's secure text field, so event-access preflight cannot guarantee delivery; do not retry automatically or escalate permissions.
 
-Text chunks are limited to 1,024 UTF-8 bytes per record. The Mac native adapter further splits commits on extended-grapheme boundaries, at no more than 16 UTF-16 units per key event, and rejects a single grapheme that exceeds that limit. It does not log or persist text.
+Text chunks may not exceed the receiver's advertised limit, up to 1,024 UTF-8 bytes per record. The Mac native adapter further splits commits on extended-grapheme boundaries, at no more than 16 UTF-16 units per key event, and rejects a single grapheme that exceeds that limit. It does not log or persist text.
+
+The Android editor keeps the IME's active composing range local and reconciles the committed editor snapshot against the text already sent. A replacement or autocorrect edit becomes grapheme-counted Backspace key transitions followed by a new literal text commit; ordinary text is never guessed from a keyboard layout. Android chunks commits on grapheme boundaries within the receiver's advertised limit. The editor and its current session text are transient, capped at 64 KiB, and are cleared on stop or presentation exit. The editor does not insert a sentinel.
 
 ## Implementation gate
 
-Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with fake-sink tests and no permission prompt. The Android editor/sender and user-facing Mac controls are still pending. Before release, validate physical BLE pacing, interruption release, text corrections and modified mouse actions on real devices. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).
+Phase 1 locks the wire shapes and cross-platform codecs. Phase 2 adds the Mac receiver and native event adapter behind an explicitly armed owner, with no permission prompt. Phase 3 adds the Android in-app editor and bounded BLE sender for text and key transitions. User-facing Mac receiver controls and end-to-end acceptance remain pending. Protocol fixtures live in [phone-input-vectors.json](../test-vectors/phone-input/phone-input-vectors.json).

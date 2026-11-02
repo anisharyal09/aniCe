@@ -24,7 +24,20 @@ import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.SessionViewModel, peers: List<PeerTrustRecord>, navigation: AppNavigation, favouritesOnly: Boolean = false) {
     val findDevice = session.findDevice
     val panel = navigation.featurePanel
-    if (!favouritesOnly && panel == AppFeature.Sms) {
+    if (panel == AppFeature.TypeToMac) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            TextButton(onClick = navigation::closeFeature) {
+                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Back to ${navigation.featureOrigin.label}")
+            }
+            Text(panel.label, style = MaterialTheme.typography.titleMedium)
+            io.github.anisharyal09.anice.features.phoneinput.PhoneInputView(
+                session.phoneInput, session, peers,
+                onOpenDevice = { peer -> if (peer == null) navigation.select(AppDestination.Devices, peers.isEmpty()) else navigation.openDevice(peer.deviceId) },
+            )
+        }
+    } else if (!favouritesOnly && panel == AppFeature.Sms) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TextButton(onClick = navigation::closeFeature) {
                 Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
@@ -89,7 +102,7 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
 
 @Composable
 internal fun FeatureEntry(feature: AppFeature, favourite: Boolean, status: String, onFavourite: () -> Unit, onClick: () -> Unit) {
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.Sms -> R.drawable.ic_sms }
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.Sms -> R.drawable.ic_sms; AppFeature.TypeToMac -> R.drawable.ic_laptop }
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
@@ -144,6 +157,12 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         peers.any { session.sms.reachable(it.peer) } -> "SMS sharing with your Mac"
         peers.isEmpty() -> "Pair a Mac to relay messages"
         else -> "Connect your Mac"
+    }
+    AppFeature.TypeToMac -> when {
+        session.phoneInput.active -> "Typing to ${session.selected?.deviceName ?: "Mac"}"
+        session.selected?.let { session.state == io.github.anisharyal09.anice.infrastructure.connections.ConnectionState.SECURED && session.phoneInput.compatible(it) } == true -> "Ready to type over Bluetooth"
+        peers.any { it.peer.platform == "macos" } -> "Connect to your Mac over Bluetooth"
+        else -> "Pair a Mac to type from your phone"
     }
     AppFeature.FindDevice -> when {
         session.findDevice.busy -> "Request in progress"

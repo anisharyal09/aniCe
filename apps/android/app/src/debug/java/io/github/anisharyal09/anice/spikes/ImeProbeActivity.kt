@@ -6,6 +6,7 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
@@ -213,7 +214,9 @@ class ImeProbeActivity : Activity() {
                 override fun getSurroundingText(beforeLength: Int, afterLength: Int, flags: Int): SurroundingText? {
                     val result = super.getSurroundingText(beforeLength, afterLength, flags)
                     val summary = result?.let {
-                        "${textShape(it.text)}, selection=${it.selectionStart}..${it.selectionEnd}, offset=${it.offset}"
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            "${textShape(it.text)}, selection=${it.selectionStart}..${it.selectionEnd}, offset=${it.offset}"
+                        } else "SurroundingText unavailable on this Android version"
                     } ?: "null"
                     emit("getSurroundingText(before=$beforeLength, after=$afterLength, result=$summary)")
                     return result
