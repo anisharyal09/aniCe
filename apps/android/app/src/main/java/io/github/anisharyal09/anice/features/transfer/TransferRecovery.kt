@@ -408,6 +408,9 @@ internal fun TransferController.pauseOnConfirmationTimeout() {
 
 internal fun TransferController.pauseOffer(descriptor: ChannelDescriptor, previous: TransferState) {
         val batch = currentBatch ?: return
+        // Recheck the saved destination after reconnect; keep the captured sender and folder selection with this offer.
+        destinationPreparation?.cancel(); destinationPreparation = null
+        destinationMessage = null
         interruptedOffer = previous
         recoveryPeer = descriptor; pausedTransport = descriptor.transport
         pauseExpiresAt = pauseExpiresAt ?: (System.currentTimeMillis() + pauseTimeoutMillis)
@@ -432,6 +435,7 @@ internal fun TransferController.resumeInterruptedOffer(): Boolean {
         offerReplayed = previous is TransferState.WaitingForPeerApproval
         updateState(previous)
         onLeaseChanged?.invoke(true)
+        if (previous is TransferState.IncomingOffer) startAutomaticReceiveIfEligible()
         if (previous is TransferState.WaitingForPeerApproval) sendOfferBatch(previous.batch, channel)
         return true
     }

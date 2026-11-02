@@ -30,6 +30,10 @@ import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
 import android.content.SharedPreferences
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 
 // Shared across receiver instances; storage mutexes retain state ownership across suspension.
 internal val transferReceiveDispatcher = Dispatchers.IO.limitedParallelism(1)
@@ -302,6 +306,15 @@ internal class TransferDestinationPreferences(private val context: Context) {
 
     fun savedModes(): Int = preferences.getInt(MODES_KEY, 0)
 
+    fun selection(): TransferReceiveDestinationSelection = TransferReceiveDestinationSelection(
+        tree = preferences.getString(TREE_KEY, null)?.let(Uri::parse),
+        modes = preferences.getInt(MODES_KEY, 0)
+    )
+
+    fun create(selection: TransferReceiveDestinationSelection): TransferReceiveDestination =
+        selection.tree?.let { TransferDestination(context, it, selection.modes, restoredOwnedModes = 0) }
+            ?: MediaStoreTransferDestination(context)
+
     fun save(tree: Uri, modes: Int) {
         preferences.edit().putString(TREE_KEY, tree.toString()).putInt(MODES_KEY, modes).apply()
     }
@@ -315,6 +328,48 @@ internal class TransferDestinationPreferences(private val context: Context) {
     companion object {
         private const val TREE_KEY = "transfer.receiveDestination.tree"
         private const val MODES_KEY = "transfer.receiveDestination.modes"
+    }
+}
+
+internal data class TransferReceiveDestinationSelection(val tree: Uri?, val modes: Int)
+
+/** Auto-receive consent is local to one full trusted peer credential and defaults off. */
+class TransferAutoReceivePreferences(private val storage: SharedPreferences? = null) {
+    private val values = mutableMapOf<String, Boolean>()
+    private val prefix = "transfer.autoReceive."
+    var revision by mutableIntStateOf(0)
+        private set
+
+    fun key(peer: DeviceIdentity) = prefix + peer.deviceId + ":" + peer.fingerprint
+    fun enabled(peer: DeviceIdentity) = values[key(peer)] ?: storage?.getBoolean(key(peer), false) ?: false
+
+    fun set(peer: DeviceIdentity, enabled: Boolean) {
+        val key = key(peer)
+        if (enabled) {
+            values[key] = true
+            storage?.edit()?.putBoolean(key, true)?.apply()
+        } else {
+            values.remove(key)
+            storage?.edit()?.remove(key)?.apply()
+        }
+        revision++
+    }
+
+    fun prune(peers: List<DeviceIdentity>) {
+        val keep = peers.map(::key).toSet()
+        values.keys.retainAll(keep)
+        storage?.edit()?.also { editor ->
+            storage.all.keys.filter { it.startsWith(prefix) && it !in keep }.forEach(editor::remove)
+        }?.apply()
+        revision++
+    }
+
+    fun clear() {
+        values.clear()
+        storage?.edit()?.also { editor ->
+            storage.all.keys.filter { it.startsWith(prefix) }.forEach(editor::remove)
+        }?.apply()
+        revision++
     }
 }
 

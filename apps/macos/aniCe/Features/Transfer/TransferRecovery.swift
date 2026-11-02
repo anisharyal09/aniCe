@@ -243,6 +243,8 @@ extension MacTransferModel {
 
   func pauseOffer(_ previous: TransferState, descriptor: ChannelDescriptor) {
     guard let batch = currentBatch, let file = batch.files.first else { return }
+    automaticReceiveTask?.cancel(); automaticReceiveTask = nil
+    autoReceivePreparing = false
     interruptedOffer = previous
     recoveryPeer = descriptor; pausedTransport = descriptor.transport
     pauseExpiresAt = pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds))
@@ -266,6 +268,7 @@ extension MacTransferModel {
     if case .waitingForPeerApproval = previous { offerReplayed = true }
     state = previous
     acquireSleepAssertion()
+    if case .incomingOffer = previous { startAutomaticReceiveIfEligible() }
     if case .waitingForPeerApproval(let batch) = previous {
       Task { [weak self] in await self?.sendOfferBatch(batch, channel: channel) }
     }

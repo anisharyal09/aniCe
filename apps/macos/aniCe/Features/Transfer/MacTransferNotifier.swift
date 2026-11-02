@@ -18,6 +18,47 @@ import UserNotifications
   }
 }
 
+/// Local consent to receive future batches from a specific trusted identity.
+@Observable @MainActor final class TransferAutoReceivePreferences {
+  private let storage: UserDefaults?
+  private static let keyPrefix = "transfer.autoReceive."
+  private(set) var enabledKeys: Set<String>
+
+  init(storage: UserDefaults? = nil) {
+    self.storage = storage
+    enabledKeys = Set(storage?.dictionaryRepresentation().keys.filter { $0.hasPrefix(Self.keyPrefix) } ?? [])
+  }
+
+  func enabled(for peer: DeviceIdentity) -> Bool {
+    enabledKeys.contains(key(peer))
+  }
+
+  func setEnabled(_ enabled: Bool, for peer: DeviceIdentity) {
+    let key = key(peer)
+    if enabled { enabledKeys.insert(key); storage?.set(true, forKey: key) }
+    else { enabledKeys.remove(key); storage?.removeObject(forKey: key) }
+  }
+
+  func prune(_ peers: [DeviceIdentity]) {
+    let keep = Set(peers.map(key))
+    for storedKey in enabledKeys.subtracting(keep) { storage?.removeObject(forKey: storedKey) }
+    enabledKeys.formIntersection(keep)
+  }
+
+  func clear() {
+    for storedKey in enabledKeys { storage?.removeObject(forKey: storedKey) }
+    enabledKeys.removeAll()
+  }
+
+  private func key(_ peer: DeviceIdentity) -> String {
+    Self.keyPrefix + peer.deviceId + ":" + peer.fingerprint
+  }
+}
+
+struct TransferReceiveDestinationSelection: Sendable {
+  let bookmark: Data?
+}
+
 @Observable @MainActor final class TransferReceiveDestinationPreferences {
   private let storage: UserDefaults?
   private let key = "transfer.receiveDestinationBookmark"
@@ -31,8 +72,12 @@ import UserNotifications
   var hasCustomFolder: Bool { bookmark != nil }
 
   var summary: String {
-    do { return try configuredFolder().lastPathComponent }
+    do { return try configuredFolder(selection()).lastPathComponent }
     catch { return "Unavailable folder" }
+  }
+
+  func selection() -> TransferReceiveDestinationSelection {
+    TransferReceiveDestinationSelection(bookmark: bookmark)
   }
 
   func save(folder: URL) throws {
@@ -48,16 +93,20 @@ import UserNotifications
   }
 
   func folderForReceive() throws -> URL {
-    let folder = try configuredFolder()
-    if bookmark == nil {
+    try folderForReceive(selection())
+  }
+
+  func folderForReceive(_ selection: TransferReceiveDestinationSelection) throws -> URL {
+    let folder = try configuredFolder(selection)
+    if selection.bookmark == nil {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
         attributes: [.posixPermissions: 0o700])
     }
     return folder
   }
 
-  private func configuredFolder() throws -> URL {
-    guard let bookmark else {
+  private func configuredFolder(_ selection: TransferReceiveDestinationSelection) throws -> URL {
+    guard let bookmark = selection.bookmark else {
       let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
       return downloads.appendingPathComponent("aniCe", isDirectory: true)

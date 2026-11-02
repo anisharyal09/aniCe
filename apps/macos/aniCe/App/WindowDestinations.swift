@@ -25,7 +25,7 @@ extension MainWindowView {
             }
           }
           if transfer.pendingOffer != nil {
-            TransferView(model: transfer, open: { navigation.openFeature(.files) })
+            TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) })
           }
           if pairing.hasTrustedAndroid {
             HStack(spacing: 8) {
@@ -82,7 +82,7 @@ extension MainWindowView {
         }
         if transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
       }
-      if isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
+      if isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }
   }
 
@@ -109,7 +109,7 @@ extension MainWindowView {
         if let dropStatus = transfer.dropStatus {
           Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         }
-      } else if !isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
+      } else if !isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }
   }
 
@@ -359,8 +359,11 @@ extension MainWindowView {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("File transfer", id: "file-transfer") {
-                  TransferNotificationControls(preferences: transfer.notificationPreferences)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                  VStack(alignment: .leading, spacing: 10) {
+                    TransferNotificationControls(preferences: transfer.notificationPreferences)
+                    TransferAutoReceiveSettings(preferences: transfer.autoReceivePreferences, peers: pairing.peers, compact: true)
+                  }
+                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))

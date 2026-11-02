@@ -39,7 +39,7 @@ struct FeaturesView: View {
           case .playback:
             MediaView(model: playback, visible: playback.mainVisible)
             DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
-          case .files: TransferView(model: transfer)
+          case .files: TransferView(model: transfer, peers: peers)
           case .clipboard: ClipboardView(model: clipboard, peers: peers)
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })

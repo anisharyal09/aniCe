@@ -50,6 +50,7 @@ struct AniCeApp: App {
     let transfer = MacTransferModel(recoveryURL: IdentityView.isTesting ? nil : FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/aniCe/Transfers/checkpoint.json"), identity: identity.service,
       notificationPreferences: TransferNotificationPreferences(storage: .standard),
+      autoReceivePreferences: TransferAutoReceivePreferences(storage: .standard),
       receiveDestinationPreferences: TransferReceiveDestinationPreferences(storage: .standard))
     _transfer = State(initialValue: transfer)
     let transferNotifier = MacTransferNotifier(
@@ -146,6 +147,7 @@ struct AniCeApp: App {
         await pairing.refresh()
         clipboard.prune(pairing.peers.map(\.peer), confirmedTrust: true)
         smsPreferences.prune(pairing.peers.map(\.peer))
+        transfer.autoReceivePreferences.prune(pairing.peers.map(\.peer))
         keyboardTrackpad.trustWasRemoved(retaining: pairing.peers.map(\.peer))
       }
     }
@@ -153,6 +155,7 @@ struct AniCeApp: App {
       transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()
       sms.invalidate(); smsPreferences.clear()
+      transfer.autoReceivePreferences.clear()
       lan.cancel()
       session.retireTrust()
       pairing.cancel()

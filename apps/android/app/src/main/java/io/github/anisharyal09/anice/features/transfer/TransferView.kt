@@ -28,6 +28,7 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 internal data class TransferReviewFile(val uri: Uri, val name: String, val size: Long?)
 private data class TransferReviewPeer(val deviceId: String, val fingerprint: String, val name: String)
@@ -184,7 +185,12 @@ private fun reviewFile(resolver: ContentResolver, uri: Uri): TransferReviewFile 
 }
 
 @Composable
-fun TransferView(controller: TransferController, open: (() -> Unit)? = null, overview: Boolean = false) {
+fun TransferView(
+    controller: TransferController,
+    peers: List<PeerTrustRecord> = emptyList(),
+    open: (() -> Unit)? = null,
+    overview: Boolean = false,
+) {
     val context = LocalContext.current
     val sendFiles = rememberSendFilesAction(controller)
 
@@ -233,6 +239,7 @@ fun TransferView(controller: TransferController, open: (() -> Unit)? = null, ove
                 }
             }
             if (!overview) {
+                TransferAutoReceiveSettings(controller.autoReceivePreferences, peers, compact = true)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text("Save received files to", style = MaterialTheme.typography.bodySmall)

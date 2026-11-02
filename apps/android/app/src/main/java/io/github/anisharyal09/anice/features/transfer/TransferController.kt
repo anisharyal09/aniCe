@@ -16,6 +16,7 @@ import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
 import io.github.anisharyal09.anice.infrastructure.session.SessionException
 import io.github.anisharyal09.anice.infrastructure.session.SessionFailure
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import kotlinx.coroutines.*
 import kotlin.coroutines.coroutineContext
 import java.io.File
@@ -53,6 +54,12 @@ data class TransferBatch(
     val files: List<TransferFile>,
     val totalBytes: Long,
     val peerName: String
+)
+
+internal data class PendingAutomaticReceive(
+    val batchId: String,
+    val peer: DeviceIdentity,
+    val destination: TransferReceiveDestinationSelection,
 )
 
 sealed interface TransferState {
@@ -111,6 +118,9 @@ class TransferController(
     var state by mutableStateOf<TransferState>(TransferState.Idle); internal set
     var destinationMessage by mutableStateOf<String?>(null); internal set
     internal val destinationPreferences by lazy { context?.let(::TransferDestinationPreferences) }
+    val autoReceivePreferences by lazy {
+        TransferAutoReceivePreferences(context?.getSharedPreferences("transfer_auto_receive", Context.MODE_PRIVATE))
+    }
     val hasCustomReceiveDestination: Boolean get() = destinationPreferences?.hasCustomDestination == true
     var peerConnected by mutableStateOf(false); internal set
     var peerCompatible by mutableStateOf(false); internal set
@@ -171,6 +181,9 @@ class TransferController(
         internal set
     var onLeaseChanged: ((Boolean) -> Unit)? = null
     var onStateChanged: ((TransferState) -> Unit)? = null
+    var canAutomaticallyReceive: () -> Boolean = { false }
+    internal var pendingAutomaticReceive: PendingAutomaticReceive? = null
+    var automaticReceiveNeedsApp by mutableStateOf(false); internal set
     /** Requests one bounded automatic LAN attempt after a pause; transport policy still decides. */
     var onLanRequired: (() -> Unit)? = null
 
@@ -187,6 +200,9 @@ class TransferController(
     internal var pendingSend: (() -> Unit)? = null
     internal var awaitingLan = false
     internal var connectTimeoutJob: Job? = null
+
+    fun applicationForegrounded() { startAutomaticReceiveIfEligible() }
+    fun applicationBackgrounded() { deferAutomaticReceiveIfNeeded() }
 
     internal val scope = CoroutineScope(SupervisorJob() + dispatcher)
     internal var activeChannel by mutableStateOf<SecuredChannel?>(null); internal set
@@ -287,8 +303,9 @@ class TransferController(
     @Volatile internal var receivedFileResult: TransferMessage? = null
 
     // Receiver state
-    internal data class OfferAssembly(val batch: String, val totalSlices: Long, val totalFiles: Long,
-                                     val totalBytes: Long, val slices: MutableMap<Long, List<TransferFile>> = mutableMapOf())
+    internal data class OfferAssembly(val batch: String, val peerId: String, val peerFingerprint: String,
+                                     val totalSlices: Long, val totalFiles: Long, val totalBytes: Long,
+                                     val slices: MutableMap<Long, List<TransferFile>> = mutableMapOf())
     internal var offerAssembly: OfferAssembly? = null
     internal var offerTimeout: Job? = null
     internal var destinationPreparation: Job? = null
@@ -754,6 +771,8 @@ internal fun TransferController.failTransfer(reason: String) {
     }
 
 internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
+        pendingAutomaticReceive = null
+        automaticReceiveNeedsApp = false
         restoredSender = false
         retainedBatch = null; offerReplayed = false
         checkpointAt = 0; checkpointPosition = null

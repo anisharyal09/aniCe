@@ -58,6 +58,14 @@ enum TransferState: Equatable {
   case cancelled
 }
 
+struct MacPendingAutomaticReceive {
+  // Keep offer-time consent and destination stable across preparation and reconnects.
+  let batchId: UUID
+  let peerId: String
+  let peerFingerprint: String
+  let destination: TransferReceiveDestinationSelection
+}
+
 enum TransferEvent: Equatable {
   case incomingOffer(TransferBatch)
   /// A paused batch, emitted for both directions so the notification can offer Cancel; the
@@ -70,6 +78,7 @@ enum TransferEvent: Equatable {
 
 @Observable @MainActor final class MacTransferModel: FeatureHandler {
   let notificationPreferences: TransferNotificationPreferences
+  let autoReceivePreferences: TransferAutoReceivePreferences
   let receiveDestinationPreferences: TransferReceiveDestinationPreferences
   var state: TransferState = .idle {
     didSet {
@@ -90,6 +99,9 @@ enum TransferEvent: Equatable {
   var peerCompatible = false
   var dropStatus: String?
   var receiveDestinationError: String?
+  var autoReceivePreparing = false
+  var automaticReceiveTask: Task<Void, Never>?
+  var pendingAutomaticReceive: MacPendingAutomaticReceive?
   var dropReservation: UUID?
   var dropFileAccess: TransferFileAccessLease?
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
@@ -252,9 +264,11 @@ enum TransferEvent: Equatable {
   init(pauseTimeout: Duration = .seconds(900), recoveryURL: URL? = nil, identity: IdentityService? = nil,
        resumeTimeout: Duration = .seconds(15), confirmationTimeout: Duration = .seconds(30),
        notificationPreferences: TransferNotificationPreferences = TransferNotificationPreferences(),
+       autoReceivePreferences: TransferAutoReceivePreferences = TransferAutoReceivePreferences(),
        receiveDestinationPreferences: TransferReceiveDestinationPreferences = TransferReceiveDestinationPreferences(),
        closeSource: @escaping @Sendable (FileHandle) throws -> Void = { try $0.close() }) {
     self.notificationPreferences = notificationPreferences
+    self.autoReceivePreferences = autoReceivePreferences
     self.receiveDestinationPreferences = receiveDestinationPreferences
     precondition(recoveryURL == nil || identity != nil)
     self.pauseTimeout = pauseTimeout
@@ -296,6 +310,8 @@ enum TransferEvent: Equatable {
   // Receiver state
   struct OfferAssembly {
     let batch: String
+    let peerId: String
+    let peerFingerprint: String
     let totalSlices: Int64
     let totalFiles: Int64
     let totalBytes: Int64
@@ -757,6 +773,9 @@ extension MacTransferModel {
   }
 
   func cleanupActiveTransfer(selectChannel: Bool = true) {
+    automaticReceiveTask?.cancel(); automaticReceiveTask = nil
+    autoReceivePreparing = false
+    pendingAutomaticReceive = nil
     rendezvousWait?()
     retainedBatch = nil; offerReplayed = false; restoredSender = false
     let failed = failedRecovery

@@ -19,6 +19,42 @@ struct TransferNotificationControls: View {
   }
 }
 
+struct TransferAutoReceiveSettings: View {
+  let preferences: TransferAutoReceivePreferences
+  let peers: [PeerTrustRecord]
+  var compact = false
+  @Environment(\.colorScheme) private var scheme
+
+  private var senders: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+      Text("Automatically receive files")
+        .font(compact ? .caption.weight(.medium) : .callout.weight(.medium))
+      if senders.isEmpty {
+        Text("Pair an Android phone to manage automatic receiving.")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      } else {
+        ForEach(senders) { record in
+          Toggle("From \(label(for: record))", isOn: Binding(
+            get: { preferences.enabled(for: record.peer) },
+            set: { preferences.setEnabled($0, for: record.peer) }))
+            .aniCeControlFeedback(feedbackPadding: 3)
+        }
+        Text("New offers from enabled phones start without asking. Files use the saved receive folder; you can cancel an active transfer.")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+    }
+    .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+  }
+
+  private func label(for record: PeerTrustRecord) -> String {
+    let name = record.peer.deviceName
+    let duplicates = senders.filter { $0.peer.deviceName == name }
+    return duplicates.count > 1 ? "\(name) · \(record.peer.fingerprint.suffix(8))" : name
+  }
+}
+
 private struct TransferReceiveDestinationControls: View {
   let model: MacTransferModel
   @Environment(\.colorScheme) private var scheme
@@ -239,6 +275,7 @@ extension View {
 
 struct TransferView: View {
   let model: MacTransferModel
+  var peers: [PeerTrustRecord] = []
   var compact: Bool = false
   var open: (() -> Void)? = nil
   @Environment(\.colorScheme) private var colorScheme
@@ -260,8 +297,9 @@ struct TransferView: View {
         }
         if controlsOpen {
           TransferNotificationControls(preferences: model.notificationPreferences)
+          TransferAutoReceiveSettings(preferences: model.autoReceivePreferences, peers: peers, compact: true)
           TransferReceiveDestinationControls(model: model)
-          Text("Optional incoming offers when aniCe is in the background. Progress and results stay here.")
+          Text("Progress and results stay here.")
             .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         }
       }
@@ -430,13 +468,17 @@ struct TransferView: View {
         Text("Save to: \(model.receiveDestinationPreferences.summary)")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
+      if model.autoReceivePreparing {
+        Text("Checking the saved folder…")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      }
 
       HStack(spacing: 8) {
-        Button("Accept") {
+        Button(model.autoReceivePreparing ? "Preparing…" : "Accept") {
           Task { await model.acceptIncomingOffer() }
         }
         .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
-        .controlSize(.small)
+        .controlSize(.small).disabled(model.autoReceivePreparing)
 
         Button("Decline", role: .cancel) {
           Task { await model.rejectIncomingOffer(reason: 0) }

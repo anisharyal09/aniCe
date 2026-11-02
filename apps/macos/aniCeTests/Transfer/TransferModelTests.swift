@@ -31,9 +31,9 @@ final class MockSecuredChannel: SecuredChannel {
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
 
-  private func androidPeer(name: String = "Pixel 9") throws -> DeviceIdentity {
+  private func androidPeer(deviceId: String = UUID().uuidString.lowercased(), name: String = "Pixel 9") throws -> DeviceIdentity {
     let key = P256.Signing.PrivateKey()
-    let macPeer = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: name,
+    let macPeer = try DeviceIdentity(deviceId: deviceId, deviceName: name,
       publicKey: key.publicKey.x963Representation)
     var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(macPeer)) as? [String: Any])
     object["platform"] = "android"
@@ -71,6 +71,52 @@ final class TransferModelTests: XCTestCase {
     preferences.reset()
     XCTAssertFalse(preferences.hasCustomFolder)
     XCTAssertEqual(preferences.summary, "aniCe")
+  }
+
+  func testAutoReceiveConsentUsesTheFullTrustedIdentityAndCanBeCleared() throws {
+    let suite = "aniCe.transfer-auto-receive.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = TransferAutoReceivePreferences(storage: defaults)
+    let peer = try androidPeer()
+    let replacementIdentity = try androidPeer(deviceId: peer.deviceId)
+
+    XCTAssertFalse(preferences.enabled(for: peer))
+    preferences.setEnabled(true, for: peer)
+    XCTAssertTrue(TransferAutoReceivePreferences(storage: defaults).enabled(for: peer))
+    XCTAssertFalse(preferences.enabled(for: replacementIdentity))
+
+    preferences.prune([replacementIdentity])
+    XCTAssertFalse(preferences.enabled(for: peer))
+    preferences.setEnabled(true, for: replacementIdentity)
+    preferences.clear()
+    XCTAssertFalse(preferences.enabled(for: replacementIdentity))
+  }
+
+  func testConsentedAndroidOfferIsAcceptedToTheCapturedDestination() async throws {
+    let suite = "aniCe.transfer-auto-receive-flow.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let peer = try androidPeer()
+    let consent = TransferAutoReceivePreferences(storage: defaults)
+    consent.setEnabled(true, for: peer)
+    let destinations = TransferReceiveDestinationPreferences(storage: defaults)
+    try destinations.save(folder: tempDir)
+    let owner = MacTransferModel(autoReceivePreferences: consent, receiveDestinationPreferences: destinations)
+    let channel = MockSecuredChannel(peer: peer)
+    owner.available(channel)
+    defer { owner.dismiss() }
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+
+    try await offer(owner, channel, size: 1)
+    for _ in 0..<200 {
+      if channel.sentData.compactMap({ try? TransferMessage.decode($0) }).contains(where: { $0.kind == 3 }) { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+
+    XCTAssertTrue(channel.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 3 })
+    guard case .transferring = owner.state else { return XCTFail("Consented offer did not start receiving") }
+    XCTAssertEqual(owner.destinationFolder?.standardizedFileURL, tempDir.standardizedFileURL)
   }
 
   func testOlderCheckpointWithoutDestinationBackendStillDecodes() async throws {
@@ -1875,7 +1921,7 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: unrelated), Data("keep".utf8))
   }
 
-  func testFailedDestinationDoesNotAcceptOrReportSuccess() async throws {
+  func testFailedDestinationLeavesOfferPendingForRecovery() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel()
     owner.available(channel)
     _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
@@ -1883,7 +1929,8 @@ final class TransferModelTests: XCTestCase {
     let blocked = tempDir.appendingPathComponent("not-a-folder")
     try Data("keep".utf8).write(to: blocked)
     await owner.acceptIncomingOffer(destination: blocked)
-    guard case .failed = owner.state else { return XCTFail("Destination error ignored") }
+    guard case .incomingOffer = owner.state else { return XCTFail("Offer should remain available while the folder is repaired") }
+    XCTAssertNotNil(owner.receiveDestinationError)
     let messages = channel.sentData.compactMap { try? TransferMessage.decode($0) }
     XCTAssertFalse(messages.contains { $0.kind == 3 || $0.kind == 7 && $0.number(2) == 0 })
     XCTAssertEqual(try Data(contentsOf: blocked), Data("keep".utf8))

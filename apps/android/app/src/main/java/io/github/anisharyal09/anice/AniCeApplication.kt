@@ -30,6 +30,10 @@ class AniCeApplication : Application() {
             if (picking) lanSessionController.requestAutomaticConnection()
         }
         transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
+        transfer.canAutomaticallyReceive = {
+            (lanOwner.isInitialized() && lanOwner.value.foreground) ||
+                (bleOwner.isInitialized() && bleOwner.value.foreground)
+        }
         // A paused batch asks the normal automatic policy for one bounded LAN attempt; an explicit
         // Disconnect still wins because requestAutomaticConnection respects it.
         transfer.onLanRequired = { lanSessionController.requestAutomaticConnection() }
