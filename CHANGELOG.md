@@ -16,6 +16,8 @@ Shared product changes, repository structure, documentation and development conv
 
 - Keep artwork scoped to the current recording, reduce routine playback feedback flashing and bound notification retirement during transport handoffs; make manual LAN teardown tolerate an already-retired session.
 
+- Retry constrained LAN transfer probes on cadence so a slow 64-KiB fallback cannot keep itself permanently rate-limited.
+
 ### Added
 
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.

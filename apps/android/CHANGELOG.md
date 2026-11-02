@@ -11,6 +11,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Keep artwork only for the current recording, avoid clearing it for control-only revisions, and bound media-notification retirement during a connected transport handoff; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
 - Keep a same-recording cover through temporary metadata gaps and tolerate an already-retired session during manual LAN disconnect.
 
+- Retry constrained LAN transfer probes on cadence so slow fallback ACK intervals cannot permanently keep transfers at 64-KiB chunks.
+
 ### Added
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.

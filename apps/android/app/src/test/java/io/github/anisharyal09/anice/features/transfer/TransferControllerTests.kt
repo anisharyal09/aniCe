@@ -80,17 +80,23 @@ class TransferControllerTests {
         assertEquals(24576L, transferAckThreshold(3072, 64, 1))
     }
 
-    @Test fun delayedLanDoesNotDrainForRecoveryUntilProgressIsConsistentlyTimely() {
+    @Test fun delayedLanRetriesAfterFiveSecondsAndDrainsBeforeReprobe() {
         val window = TransferSendWindow(262016, 8, true, 0)
         window.beginSubmission(0)
         window.acknowledged(101, fullyConfirmed = true); window.advance()
-        for (now in 1000L..30000L step 1000) {
+        for (now in 1000L..4000L step 1000) {
             window.acknowledged(now, fullyConfirmed = false); window.advance()
             assertEquals("A delayed path must keep its existing pipeline", 131072L, window.creditBytes)
         }
+        window.acknowledged(5000, fullyConfirmed = false); window.advance()
+        assertEquals("The retry timer drains even when ACK gaps are slow", 65536L, window.creditBytes)
+        for (now in 6000L..30000L step 1000) {
+            window.acknowledged(now, fullyConfirmed = false); window.advance()
+            assertEquals("Drain keeps one chunk in flight until confirmed", 65536L, window.creditBytes)
+        }
         for (now in listOf(30050L, 30100L, 30300L) + (30350L..31200L step 50)) {
             window.acknowledged(now, fullyConfirmed = false); window.advance()
-            assertEquals("A slow ACK resets recovery qualification", 131072L, window.creditBytes)
+            assertEquals("Slow ACKs do not restore the larger fallback budget", 65536L, window.creditBytes)
         }
         window.acknowledged(31300, fullyConfirmed = false); window.advance()
         assertEquals(65536L, window.creditBytes)
@@ -151,17 +157,11 @@ class TransferControllerTests {
         resumed.acknowledged(3101, fullyConfirmed = true); resumed.advance()
         resumed.acknowledged(7999, fullyConfirmed = true); resumed.advance()
         assertEquals("Recovery interval starts at actual probe submission", 131072L, resumed.creditBytes)
-        for (now in 8000L..8900L step 50) {
-            resumed.acknowledged(now, fullyConfirmed = true); resumed.advance()
-            assertEquals(131072L, resumed.creditBytes)
-        }
-        resumed.acknowledged(9000, fullyConfirmed = true); resumed.advance()
+        resumed.acknowledged(8000, fullyConfirmed = true); resumed.advance()
         assertEquals(4096L, resumed.creditBytes)
-        resumed.beginSubmission(11000)
-        resumed.acknowledged(11050, fullyConfirmed = false); resumed.advance()
-        assertEquals("Partial confirmation must not open a large window", 4096L, resumed.creditBytes)
-        resumed.acknowledged(11101, fullyConfirmed = true); resumed.advance()
-        assertEquals("A slow retry probe must remain constrained", 131072L, resumed.creditBytes)
+        resumed.beginSubmission(8010)
+        resumed.acknowledged(8060, fullyConfirmed = true); resumed.advance()
+        assertEquals("A fresh timely probe restores negotiated chunks", 262016L, resumed.chunkBytes)
     }
 
     @Test fun sustainedConstrainedTrafficDrainsForAFreshLanProbe() = runBlocking {
@@ -182,24 +182,23 @@ class TransferControllerTests {
             now.set(101)
             owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096).encode())
             awaitChunks(3)
-            for ((index, time) in (listOf(200L, 300L, 400L, 5000L) + (5050L..5950L step 50)).withIndex()) {
+            for ((index, time) in listOf(200L, 300L, 400L).withIndex()) {
                 now.set(time)
                 owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + (index + 1) * 65536L).encode())
                 awaitChunks(index + 4)
             }
-            // Short ACK bursts do not qualify recovery; a full second of steady progress does.
-            now.set(6000)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 24 * 65536L).encode())
-            delay(60)
-            assertEquals("Requalification must stop replacing acknowledged chunks", 26, chunks().size)
-            now.set(6010)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 25 * 65536L).encode())
-            awaitChunks(27)
+            // Retry after five seconds even though this fallback's ACK interval is slow.
+            now.set(5000)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 4 * 65536L).encode())
+            assertEquals("The reduced window drains before the retry probe", 6, chunks().size)
+            now.set(5050)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 4096L + 5 * 65536L).encode())
+            awaitChunks(7)
             assertEquals(4096, chunks().last().bytes(3).size)
-            now.set(6060)
-            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192L + 25 * 65536L).encode())
-            awaitChunks(28)
-            assertEquals(262016, chunks()[27].bytes(3).size)
+            now.set(5100)
+            owner.handle(channel.descriptor, TransferMessage.ack(batch.id, batch.files[0].id, 8192L + 5 * 65536L).encode())
+            awaitChunks(8)
+            assertEquals(262016, chunks()[7].bytes(3).size)
         } finally { owner.dismiss() }
     }
 
@@ -275,9 +274,16 @@ class TransferControllerTests {
         window.acknowledged(5090, fullyConfirmed = false); window.advance()
         window.acknowledged(5150, fullyConfirmed = true); window.advance()
         assertEquals("Partial confirmation cannot disguise a slow probe", 131072L, window.creditBytes)
-        for (now in 10000L..11000L step 50) { window.acknowledged(now, fullyConfirmed = true); window.advance() }
+        window.beginSubmission(10000, windowEmpty = true)
+        window.acknowledged(10050, fullyConfirmed = true); window.advance()
+        assertEquals("Source idle resets the retry interval", 131072L, window.creditBytes)
+        window.beginSubmission(10100, windowEmpty = true)
+        window.acknowledged(15100, fullyConfirmed = false); window.advance()
+        assertEquals("A slow active transfer still reaches its scheduled retry", 65536L, window.creditBytes)
+        window.acknowledged(15150, fullyConfirmed = true); window.advance()
         assertEquals(4096L, window.creditBytes)
-        window.acknowledged(11050, fullyConfirmed = true); window.advance()
+        window.beginSubmission(15200)
+        window.acknowledged(15250, fullyConfirmed = true); window.advance()
         assertEquals(262016L, window.chunkBytes); assertEquals(2096128L, window.creditBytes)
     }
 
