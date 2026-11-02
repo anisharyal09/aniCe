@@ -19,10 +19,13 @@ Shared product changes, repository structure, documentation and development conv
 ### Added
 
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
+- Add native file-drop targets on Home and File transfer, plus an optional configurable macOS Edge Drop shelf.
+- Add per-trusted-peer automatic-receive consent and remembered default/custom receive destinations on Mac and Android.
 
 ### Changed
 
 - Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
+- Keep confirmed Mac sends pinned to their trusted recipient and require an explicit Bluetooth choice when LAN setup is unavailable.
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.

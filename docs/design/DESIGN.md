@@ -12,7 +12,7 @@ Feature panels demonstrate layout and interaction, not capability availability o
 
 ## Reference fidelity
 
-The approved reference is the visual target. Preserve its hierarchy, proportions, typography, outlined actions, sidebar branding, grouped connection rows, flat Home player, file-selection target, and Mac pairing/detail sheets. Match each platform before moving to another area. Adapt only where native behavior, supported capabilities or accessibility require it. Use Choose files unless native drag-and-drop is implemented; pairing requires mutual approval rather than the simulator’s Continue action.
+The approved reference is the visual target. Preserve its hierarchy, proportions, typography, outlined actions, sidebar branding, grouped connection rows, flat Home player, file-selection target, and Mac pairing/detail sheets. Match each platform before moving to another area. Adapt only where native behavior, supported capabilities or accessibility require it. Keep Choose files and use native drag-and-drop where implemented; pairing requires mutual approval rather than the simulator’s Continue action.
 
 ## Visual system
 
@@ -136,7 +136,11 @@ Keep the compact Home player concise: artwork when available, title, artist/orig
 
 ### File transfer
 
-Keep the overview and menu-bar send entry compact. Show Choose files; only promise drag-and-drop when native support exists. Review selected files and named target before sending. Require review and approval for incoming files. Show direction, peer, progress and result or recovery action. Closing a surface does not cancel a transfer.
+Keep the overview and menu-bar send entry compact, and keep **Choose files** available. On Mac, Home and Features → File transfer accept local file drops. The optional **Edge Drop** shelf starts disabled, defaults to the right edge when enabled, and can move to the left or top; reveal it only for a fresh file drag on the selected display. Keep it non-activating, place top shelves below the menu bar/notch safe area, honor reduced motion, and allow the main window to keep its focus. Do not request Accessibility permission or install global input capture.
+
+Picker sends review the selected files and named target before sending. A drop names and pins the current compatible Android phone and replaces that Mac-side review step; Android still applies its approval or per-sender automatic-receive setting. Keep automatic receiving off by default on both platforms and make consent specific to each trusted peer. When enabled, keep the destination visible and let the user cancel active work. On Android, preserve an offer for **Open aniCe to receive** when background ownership is unavailable.
+
+Mac sends prefer a ready authenticated LAN channel. If bounded setup does not produce one, keep the selected files and recipient visible with **Retry**, **Send over Bluetooth**, and **Cancel**; Bluetooth starts only after that explicit choice. Keep controls responsive at narrow widths. Show direction, peer, progress, receiver-confirmed result or recovery action. Closing a surface or shelf does not cancel an admitted transfer.
 
 ### Messages
 
