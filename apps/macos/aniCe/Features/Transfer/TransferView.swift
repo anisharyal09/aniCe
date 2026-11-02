@@ -112,7 +112,6 @@ private struct TransferReceiveDestinationControls: View {
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
   guard let reviewedPeer = model.activeChannel?.descriptor.peer else { return }
-  _ = model.onLanRequired()
   CompanionHost.currentHost?.isPickingFile = true
   defer {
     CompanionHost.currentHost?.isPickingFile = false
@@ -143,7 +142,8 @@ private struct TransferReceiveDestinationControls: View {
       return
     }
     Task {
-      await model.sendFiles(urls: urls, reviewedPeer: reviewedPeer)
+      await model.sendFiles(urls: urls, reviewedPeer: reviewedPeer,
+        fileAccess: TransferFileAccessLease(urls: urls))
     }
   }
 }
@@ -245,7 +245,7 @@ enum TransferDropValidation {
     let access = TransferFileAccessLease(urls: urls)
     do {
       try await Task.detached(priority: .utility) { try TransferDropValidation.validate(urls) }.value
-      await model.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferAvailable,
+      await model.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferLanWithChoice,
         dropReservation: reservation, fileAccess: access)
     } catch {
       model.failDrop(reservation: reservation,
@@ -281,7 +281,7 @@ private struct TransferFileDropTarget: ViewModifier {
         TransferDropSubmission.receive(providers, model: model)
       }
       .overlay {
-        if isTargeted, model.connectedAndroidRecipient != nil {
+        if isTargeted, model.connectedAndroidRecipient != nil, !model.isBusy {
           RoundedRectangle(cornerRadius: cornerRadius)
             .fill(AniCePalette.accent(colorScheme).opacity(0.06))
             .overlay {
@@ -342,31 +342,35 @@ struct TransferView: View {
             .controlSize(.small)
         }
       }
-      if let dropStatus = model.dropStatus {
+      if model.pendingRouteSelection == nil, let dropStatus = model.dropStatus {
         Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
       if let error = model.receiveDestinationError {
         Text(error).font(.caption).foregroundStyle(AniCePalette.error(colorScheme))
       }
-      switch model.state {
-      case .idle:
-        idleContent
-      case .waitingForPeerApproval(let batch):
-        waitingContent(batch: batch)
-      case .incomingOffer(let batch):
-        incomingOfferContent(batch: batch)
-      case .transferring(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let speedBps):
-        transferringContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, speedBps: speedBps)
-      case .paused(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let reason, let canResumeOverBle):
-        pausedContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, reason: reason, canResumeOverBle: canResumeOverBle)
-      case .completed(let batchId, let fileCount, let totalBytes):
-        completedContent(batchId: batchId, fileCount: fileCount, totalBytes: totalBytes)
-      case .rejected:
-        statusNotice(icon: "xmark.circle", message: "Transfer declined by your Android device.")
-      case .failed(let reason):
-        statusNotice(icon: "exclamationmark.triangle", message: "Transfer failed: \(reason)", isError: true)
-      case .cancelled:
-        statusNotice(icon: "slash.circle", message: "Transfer cancelled.")
+      if let selection = model.pendingRouteSelection {
+        pendingRouteContent(selection)
+      } else {
+        switch model.state {
+        case .idle:
+          idleContent
+        case .waitingForPeerApproval(let batch):
+          waitingContent(batch: batch)
+        case .incomingOffer(let batch):
+          incomingOfferContent(batch: batch)
+        case .transferring(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let speedBps):
+          transferringContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, speedBps: speedBps)
+        case .paused(let batch, let fileIndex, let fileName, let fileBytes, let fileSize, let totalBytes, let reason, let canResumeOverBle):
+          pausedContent(batch: batch, fileIndex: fileIndex, fileName: fileName, fileBytes: fileBytes, fileSize: fileSize, totalBytes: totalBytes, reason: reason, canResumeOverBle: canResumeOverBle)
+        case .completed(let batchId, let fileCount, let totalBytes):
+          completedContent(batchId: batchId, fileCount: fileCount, totalBytes: totalBytes)
+        case .rejected:
+          statusNotice(icon: "xmark.circle", message: "Transfer declined by your Android device.")
+        case .failed(let reason):
+          statusNotice(icon: "exclamationmark.triangle", message: "Transfer failed: \(reason)", isError: true)
+        case .cancelled:
+          statusNotice(icon: "slash.circle", message: "Transfer cancelled.")
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -434,6 +438,44 @@ struct TransferView: View {
           .accessibilityHidden(true)
       }
     }
+  }
+
+  private func pendingRouteContent(_ selection: PendingTransferRouteSelection) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label("Choose how to send", systemImage: "wifi.exclamationmark")
+        .font(.callout.weight(.medium))
+        .foregroundStyle(AniCePalette.primaryText(colorScheme))
+      Text("\(selection.urls.count) file\(selection.urls.count == 1 ? "" : "s") selected for \(selection.recipient.deviceName). \(model.pendingRouteStatus)")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .fixedSize(horizontal: false, vertical: true)
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 8) { retryRouteButton; bluetoothRouteButton; cancelRouteButton }
+        VStack(alignment: .leading, spacing: 8) { retryRouteButton; bluetoothRouteButton; cancelRouteButton }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(12)
+    .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+    .overlay {
+      RoundedRectangle(cornerRadius: 10).stroke(AniCePalette.separator(colorScheme), lineWidth: 1)
+    }
+  }
+
+  private var retryRouteButton: some View {
+    Button("Retry") { Task { await model.retryPendingRouteSelection() } }
+      .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true).controlSize(.small)
+  }
+
+  private var bluetoothRouteButton: some View {
+    Button("Send over Bluetooth") { Task { await model.sendPendingRouteOverBluetooth() } }
+      .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+      .disabled(!model.canSendPendingOverBluetooth)
+  }
+
+  private var cancelRouteButton: some View {
+    Button("Cancel", role: .cancel) { model.cancelPendingRouteSelection() }
+      .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
   }
 
   private var transferTargetDescription: String {

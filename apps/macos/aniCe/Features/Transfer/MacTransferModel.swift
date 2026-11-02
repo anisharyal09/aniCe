@@ -40,8 +40,18 @@ struct TransferRecipient: Equatable, Sendable {
   }
 }
 
-enum TransferTransportPolicy: Sendable {
+enum TransferTransportPolicy: Equatable, Sendable {
   case preferAvailable
+  case preferLanWithChoice
+  case bluetooth
+}
+
+@MainActor struct PendingTransferRouteSelection {
+  // Keep the original destination and file grant together while the user chooses a route.
+  let urls: [URL]
+  let recipient: TransferRecipient
+  let fileAccess: TransferFileAccessLease?
+  var message: String
 }
 
 enum TransferState: Equatable {
@@ -104,6 +114,8 @@ enum TransferEvent: Equatable {
   var pendingAutomaticReceive: MacPendingAutomaticReceive?
   var dropReservation: UUID?
   var dropFileAccess: TransferFileAccessLease?
+  var pendingRouteSelection: PendingTransferRouteSelection?
+  var preferBluetoothForCurrentTransfer = false
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
   var onEvent: ((TransferEvent) -> Void)?
   /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
@@ -128,7 +140,7 @@ enum TransferEvent: Equatable {
   var capabilities: [String: TransferMessage] = [:]
   var rendezvousWait: (() -> Void)?
   var isBusy: Bool {
-    if preparing || offerAssembly != nil { return true }
+    if preparing || offerAssembly != nil || pendingRouteSelection != nil { return true }
     switch state {
     case .incomingOffer, .waitingForPeerApproval, .transferring, .paused: return true
     default: return false
@@ -403,6 +415,8 @@ enum TransferEvent: Equatable {
       pauseOffer(previous, descriptor: descriptor)
     } else if case .waitingForPeerApproval = previous {
       pauseOffer(previous, descriptor: descriptor)
+    } else if pendingRouteSelection != nil {
+      dropStatus = "Connection to the selected phone was lost. Retry when it reconnects, or cancel."
     } else if preparing {
       // Source hashing belongs to the pending send, not the channel that started it.
     } else if case .paused = previous {
@@ -576,13 +590,19 @@ extension MacTransferModel {
     return false
   }
 
-  func selectPreferredChannel(preparingRoute: Bool = false) {
+  func selectPreferredChannel(preparingRoute: Bool = false, preferredTransport: String? = nil) {
     // A live batch remains bound to its channel generation. A paused batch, by contrast, must
     // adopt a newly secured channel so the retained prefix can continue there.
-    let canRebind = !isBusy || isPaused || preparingRoute
+    // A pending route keeps the recipient pinned but may adopt a replacement channel for that peer.
+    let canRebind = !isBusy || isPaused || preparingRoute || pendingRouteSelection != nil
     guard activeChannel == nil || canRebind else { return }
-    let preferred = ["lan", "ble"].first(where: { channels[$0] != nil && capabilities[$0] != nil })
-      .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
+    let preferred: (any SecuredChannel)?
+    if let preferredTransport {
+      preferred = channels[preferredTransport]
+    } else {
+      preferred = ["lan", "ble"].first(where: { channels[$0] != nil && capabilities[$0] != nil })
+        .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
+    }
     activeChannel = preferred
     peerConnected = preferred != nil
     peerCompatible = false
@@ -807,6 +827,8 @@ extension MacTransferModel {
     progressTask?.cancel(); progressTask = nil; progressEpoch = nil
     preparation?.cancel(); preparation = nil; preparing = false
     dropReservation = nil
+    pendingRouteSelection?.fileAccess?.release(); pendingRouteSelection = nil
+    preferBluetoothForCurrentTransfer = false
     dropFileAccess?.release(); dropFileAccess = nil
     clearOfferAssembly()
     pauseTimerTask?.cancel(); pauseTimerTask = nil

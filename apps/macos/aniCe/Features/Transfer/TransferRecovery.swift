@@ -829,7 +829,8 @@ extension MacTransferModel {
   /// triggers the existing resume handshake; the receiver accepts while transferring, reports its
   /// actual written offset, and both sides switch without a visible pause.
   func maybeUpgradeToLan(_ descriptor: ChannelDescriptor) {
-    guard descriptor.transport == "lan", !receiving, isTransferring else { return }
+    guard descriptor.transport == "lan", !receiving, isTransferring,
+      !preferBluetoothForCurrentTransfer else { return }
     guard let active = activeChannel, active.descriptor.transport == "ble",
       let lan = channels["lan"], lan.descriptor == descriptor, capabilities["lan"] != nil else { return }
     guard upgradeTask == nil, resumeTask == nil, statusWaiter == nil,

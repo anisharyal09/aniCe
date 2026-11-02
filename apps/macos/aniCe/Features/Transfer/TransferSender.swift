@@ -23,9 +23,12 @@ final class TransferFileAccessLease {
 }
 
 extension MacTransferModel {
-  func sendFiles(urls: [URL], reviewedPeer: DeviceIdentity? = nil) async {
+  func sendFiles(
+    urls: [URL], reviewedPeer: DeviceIdentity? = nil, fileAccess: TransferFileAccessLease? = nil
+  ) async {
+    let policy: TransferTransportPolicy = reviewedPeer == nil ? .preferAvailable : .preferLanWithChoice
     await sendFiles(urls: urls, recipient: reviewedPeer.map { TransferRecipient(peer: $0) },
-      transportPolicy: .preferAvailable)
+      transportPolicy: policy, fileAccess: fileAccess)
   }
 
   func sendFiles(
@@ -52,36 +55,82 @@ extension MacTransferModel {
       return
     }
     selectPreferredChannel()
-    if let recipient {
-      guard let current = activeChannel?.descriptor.peer,
-        recipient.matches(current) else {
+    let activePeer = activeChannel?.descriptor.peer
+    let pinnedRecipient = recipient ?? activePeer.map(TransferRecipient.init)
+    if let recipient, activePeer.map({ recipient.matches($0) }) != true {
+      if transportPolicy != .preferAvailable {
+        retainPendingRouteSelection(urls: urls, recipient: recipient, fileAccess: fileAccess,
+          message: "Reconnect to \(recipient.deviceName) before sending. No files were sent.")
+      } else {
         failTransfer(reason: "The connected device changed. No files were sent. Choose the files again for the current device.")
-        return
       }
+      return
+    }
+    if transportPolicy != .preferAvailable, pinnedRecipient == nil {
+      failTransfer(reason: "Connect the selected phone before sending files.")
+      return
     }
     let operation = epoch
     // Reserve the job and its peer before rendezvous or identity reads can suspend.
     preparing = true
     if dropReservation != nil { self.dropReservation = nil }
     dropFileAccess = fileAccess
-    transferPeerDeviceId = activeChannel?.descriptor.peer.deviceId
-    transferPeerFingerprint = activeChannel?.descriptor.peer.fingerprint
+    transferPeerDeviceId = pinnedRecipient?.deviceId
+    transferPeerFingerprint = pinnedRecipient?.fingerprint
     defer { if operation == epoch { preparing = false } }
-    let requestedLan: Bool
+    let requiredTransport: String?
+    switch transportPolicy {
+    case .preferAvailable: requiredTransport = nil
+    case .preferLanWithChoice: requiredTransport = "lan"
+    case .bluetooth: requiredTransport = "ble"
+    }
     switch transportPolicy {
     case .preferAvailable:
-      requestedLan = activeChannel?.descriptor.transport != "lan" && onLanRequired()
+      if activeChannel?.descriptor.transport != "lan", onLanRequired() {
+        await awaitLan(operation: operation)
+      }
+    case .preferLanWithChoice:
+      guard let pinnedRecipient else {
+        failTransfer(reason: "Connect the selected phone before sending files.")
+        return
+      }
+      if !hasReadyChannel("lan", for: pinnedRecipient) {
+        if onLanRequired() { await awaitLan(operation: operation) }
+        guard operation == epoch else { return }
+        guard !Task.isCancelled else { cancelTransfer(); return }
+        guard hasReadyChannel("lan", for: pinnedRecipient) else {
+          retainPendingRouteSelection(urls: urls, recipient: pinnedRecipient,
+            fileAccess: fileAccess,
+            message: "The local network isn’t ready. Choose Retry, send over Bluetooth, or cancel.")
+          return
+        }
+      }
+      preferBluetoothForCurrentTransfer = false
+      selectPreferredChannel(preparingRoute: true, preferredTransport: "lan")
+    case .bluetooth:
+      guard let pinnedRecipient else {
+        failTransfer(reason: "Connect the selected phone before sending files.")
+        return
+      }
+      guard hasReadyChannel("ble", for: pinnedRecipient) else {
+        retainPendingRouteSelection(urls: urls, recipient: pinnedRecipient,
+          fileAccess: fileAccess,
+          message: "Bluetooth is unavailable. Retry the local network or cancel.")
+        return
+      }
+      preferBluetoothForCurrentTransfer = true
+      selectPreferredChannel(preparingRoute: true, preferredTransport: "ble")
     }
-    if requestedLan { await awaitLan(operation: operation) }
     guard operation == epoch else { return }
     guard !Task.isCancelled else { cancelTransfer(); return }
-    selectPreferredChannel(preparingRoute: true)
+    // Keep the user's route choice fixed while hashing; a late LAN channel must not auto-fallback.
+    selectPreferredChannel(preparingRoute: true, preferredTransport: requiredTransport)
     guard let initialChannel = activeChannel, peerConnected else {
       failTransfer(reason: "No secured local-network or Bluetooth connection")
       return
     }
     // Rendezvous can replace the active channel while this operation is suspended.
-    if let recipient, !recipient.matches(initialChannel.descriptor.peer) {
+    if let pinnedRecipient, !pinnedRecipient.matches(initialChannel.descriptor.peer) {
       failTransfer(reason: "The connected device changed. No files were sent. Choose the files again for the current device.")
       return
     }
@@ -137,8 +186,20 @@ extension MacTransferModel {
     guard !Task.isCancelled else { cancelTransfer(); return }
     preparation = nil; preparing = false
 
-    // Hashing can outlast the rendezvous wait; adopt a LAN channel that became capable meanwhile.
-    selectPreferredChannel(preparingRoute: true)
+    // Recheck the chosen route after hashing, which may take longer than the LAN rendezvous.
+    if let requiredTransport, !hasReadyChannel(requiredTransport, for: pinnedRecipient) {
+      let message = requiredTransport == "lan"
+        ? "The local network disconnected before sending. Choose Retry, send over Bluetooth, or cancel."
+        : "Bluetooth disconnected before sending. No files were sent. Retry or cancel."
+      guard let pinnedRecipient else {
+        failTransfer(reason: "Connect the selected phone before sending files.")
+        return
+      }
+      retainPendingRouteSelection(urls: urls, recipient: pinnedRecipient,
+        fileAccess: fileAccess, message: message)
+      return
+    }
+    selectPreferredChannel(preparingRoute: true, preferredTransport: requiredTransport)
     guard let channel = activeChannel, peerConnected,
       channel.descriptor.peer.deviceId == initialChannel.descriptor.peer.deviceId,
       channel.descriptor.peer.fingerprint == initialChannel.descriptor.peer.fingerprint else {
@@ -161,6 +222,71 @@ extension MacTransferModel {
       pauseOffer(.waitingForPeerApproval(batch: batch), descriptor: channel.descriptor)
       selectPreferredChannel()
     } else { await sendOfferBatch(batch, channel: channel) }
+  }
+
+  func hasReadyChannel(_ transport: String, for recipient: TransferRecipient?) -> Bool {
+    guard let channel = channels[transport], capabilities[transport] != nil else { return false }
+    return recipient.map { $0.matches(channel.descriptor.peer) } ?? true
+  }
+
+  func retainPendingRouteSelection(
+    urls: [URL], recipient: TransferRecipient, fileAccess: TransferFileAccessLease?, message: String
+  ) {
+    // A pending selection pins both the destination and its security-scoped file access.
+    pendingRouteSelection = PendingTransferRouteSelection(
+      urls: urls, recipient: recipient, fileAccess: fileAccess, message: message)
+    dropReservation = nil
+    preparing = false
+    dropFileAccess = fileAccess
+    transferPeerDeviceId = recipient.deviceId
+    transferPeerFingerprint = recipient.fingerprint
+    dropStatus = message
+  }
+
+  var canSendPendingOverBluetooth: Bool {
+    guard let pendingRouteSelection else { return false }
+    return hasReadyChannel("ble", for: pendingRouteSelection.recipient)
+  }
+
+  var pendingRouteStatus: String {
+    guard let selection = pendingRouteSelection else { return "" }
+    if hasReadyChannel("lan", for: selection.recipient) {
+      return "The local network is ready. Retry to send these files."
+    }
+    if !canSendPendingOverBluetooth {
+      return "Waiting for \(selection.recipient.deviceName) to reconnect. Retry or cancel."
+    }
+    return selection.message
+  }
+
+  func retryPendingRouteSelection() async {
+    guard let selection = pendingRouteSelection else { return }
+    pendingRouteSelection = nil
+    dropStatus = nil
+    await sendFiles(urls: selection.urls, recipient: selection.recipient,
+      transportPolicy: .preferLanWithChoice, fileAccess: selection.fileAccess)
+  }
+
+  func sendPendingRouteOverBluetooth() async {
+    guard canSendPendingOverBluetooth, let selection = pendingRouteSelection else { return }
+    pendingRouteSelection = nil
+    dropStatus = nil
+    await sendFiles(urls: selection.urls, recipient: selection.recipient,
+      transportPolicy: .bluetooth, fileAccess: selection.fileAccess)
+  }
+
+  func cancelPendingRouteSelection() {
+    guard let selection = pendingRouteSelection else { return }
+    pendingRouteSelection = nil
+    selection.fileAccess?.release()
+    dropFileAccess?.release()
+    dropFileAccess = nil
+    dropReservation = nil
+    transferPeerDeviceId = nil
+    transferPeerFingerprint = nil
+    preferBluetoothForCurrentTransfer = false
+    dropStatus = nil
+    state = .cancelled
   }
 
   func sendOfferBatch(_ batch: TransferBatch, channel: any SecuredChannel) async {

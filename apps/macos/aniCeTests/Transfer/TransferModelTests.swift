@@ -327,7 +327,7 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(batch, next.id)
   }
 
-  func testReviewedRecipientChangeStopsBeforeReadingOrSendingFiles() async throws {
+  func testReviewedRecipientChangeKeepsTheSelectionPinnedUntilThatPhoneReturns() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel()
     owner.available(channel)
     let reviewedPeer = MockSecuredChannel().descriptor.peer
@@ -335,8 +335,9 @@ final class TransferModelTests: XCTestCase {
 
     await owner.sendFiles(urls: [missingFile], reviewedPeer: reviewedPeer)
 
-    guard case .failed(let reason) = owner.state else { return XCTFail("A changed recipient must stop the send") }
-    XCTAssertTrue(reason.contains("device changed"))
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient.deviceId, reviewedPeer.deviceId)
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient.fingerprint, reviewedPeer.fingerprint)
+    XCTAssertTrue(owner.isBusy)
     XCTAssertTrue(channel.sentData.isEmpty)
     XCTAssertFalse(owner.preparing)
   }
@@ -460,6 +461,120 @@ final class TransferModelTests: XCTestCase {
     XCTAssertFalse(owner.preparing)
     XCTAssertNil(owner.dropReservation)
     XCTAssertTrue(owner.dropStatus?.contains("1 to 128 files") == true)
+  }
+
+  func testDropKeepsPinnedSelectionUntilBluetoothIsExplicitlyChosen() async throws {
+    let owner = MacTransferModel()
+    let peer = try androidPeer()
+    let ble = MockSecuredChannel(instance: "drop-ble", transport: "ble", peer: peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    let source = tempDir.appendingPathComponent("pending-route.txt")
+    try Data("selection stays local until a route is ready".utf8).write(to: source)
+    let recipient = TransferRecipient(peer: peer)
+    let access = TransferFileAccessLease(urls: [source])
+    var lanRequests = 0
+    owner.onLanRequired = { lanRequests += 1; return false }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient,
+      transportPolicy: .preferLanWithChoice, fileAccess: access)
+
+    XCTAssertEqual(lanRequests, 1)
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient, recipient)
+    XCTAssertEqual(owner.pendingRouteSelection?.urls, [source])
+    XCTAssertTrue(owner.dropFileAccess === access)
+    XCTAssertTrue(owner.canSendPendingOverBluetooth)
+    XCTAssertTrue(owner.isBusy)
+    XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 },
+      "The pending selection must not start over Bluetooth without a choice")
+
+    await owner.sendPendingRouteOverBluetooth()
+
+    guard case .waitingForPeerApproval = owner.state else { return XCTFail("Bluetooth choice did not start the offer") }
+    XCTAssertNil(owner.pendingRouteSelection)
+    XCTAssertTrue(owner.preferBluetoothForCurrentTransfer)
+    XCTAssertEqual(lanRequests, 1, "Explicit Bluetooth must not request LAN again")
+    XCTAssertTrue(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+  }
+
+  func testPendingDropCanRetryOrCancelAndReleasesItsSourceAccess() async throws {
+    let owner = MacTransferModel()
+    let peer = try androidPeer()
+    let ble = MockSecuredChannel(instance: "retry-ble", transport: "ble", peer: peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    let source = tempDir.appendingPathComponent("retry-route.txt")
+    try Data([1, 2, 3]).write(to: source)
+    let recipient = TransferRecipient(peer: peer)
+    let access = TransferFileAccessLease(urls: [source])
+    var lanRequests = 0
+    owner.onLanRequired = { lanRequests += 1; return false }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient,
+      transportPolicy: .preferLanWithChoice, fileAccess: access)
+    await owner.retryPendingRouteSelection()
+
+    XCTAssertEqual(lanRequests, 2)
+    XCTAssertNotNil(owner.pendingRouteSelection)
+    XCTAssertEqual(owner.dropFileAccess === access, true)
+    XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+
+    owner.cancelPendingRouteSelection()
+
+    XCTAssertNil(owner.pendingRouteSelection)
+    XCTAssertNil(owner.dropFileAccess)
+    XCTAssertFalse(owner.isBusy)
+    guard case .cancelled = owner.state else { return XCTFail("Cancel should leave a visible cancelled state") }
+  }
+
+  func testPendingDropSurvivesLinkLossWithoutRedirectingToAnotherPhone() async throws {
+    let owner = MacTransferModel()
+    let originalPeer = try androidPeer(name: "Shared name")
+    let original = MockSecuredChannel(instance: "pending-original", transport: "ble", peer: originalPeer)
+    owner.available(original)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: original.descriptor)
+    let source = tempDir.appendingPathComponent("pinned-route.txt")
+    try Data([1]).write(to: source)
+    let recipient = TransferRecipient(peer: originalPeer)
+    owner.onLanRequired = { false }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient, transportPolicy: .preferLanWithChoice)
+    owner.retired(original.descriptor)
+    let other = MockSecuredChannel(instance: "other-phone", transport: "ble", peer: try androidPeer(name: "Shared name"))
+    owner.available(other)
+
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient, recipient)
+    XCTAssertFalse(owner.canSendPendingOverBluetooth)
+    XCTAssertNil(owner.activeChannel)
+    XCTAssertFalse(owner.peerConnected)
+    XCTAssertFalse(other.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+
+    owner.cancelPendingRouteSelection()
+  }
+
+  func testDropUsesAReadyLanChannelWithoutOfferingOverBluetooth() async throws {
+    let owner = MacTransferModel()
+    let peer = try androidPeer()
+    let ble = MockSecuredChannel(instance: "preferred-ble", transport: "ble", peer: peer)
+    let lan = MockSecuredChannel(instance: "preferred-lan", transport: "lan", peer: peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    owner.available(lan)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    let source = tempDir.appendingPathComponent("lan-route.txt")
+    try Data([7, 8, 9]).write(to: source)
+    let recipient = TransferRecipient(peer: peer)
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient, transportPolicy: .preferLanWithChoice)
+
+    guard case .waitingForPeerApproval = owner.state else { return XCTFail("LAN route did not start the offer") }
+    XCTAssertTrue(lan.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+    XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+    XCTAssertNil(owner.pendingRouteSelection)
   }
 
   func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {
