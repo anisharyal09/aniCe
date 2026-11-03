@@ -84,6 +84,26 @@ class SendToMacActivity : ComponentActivity() {
     private val app get() = application as AniCeApplication
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val fileShare = try {
+            intent.action == Intent.ACTION_SEND_MULTIPLE || intent.hasExtra(Intent.EXTRA_STREAM) ||
+                intent.clipData?.let { clip -> (0 until minOf(clip.itemCount, 129)).any { clip.getItemAt(it).uri != null } } == true
+        } catch (_: RuntimeException) { false }
+        if (fileShare) {
+            val forwarded = Intent(intent).setClass(this,
+                io.github.anisharyal09.anice.features.transfer.ShareFilesActivity::class.java)
+            forwarded.flags = intent.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            io.github.anisharyal09.anice.features.transfer.sharedFileUris(intent)?.let { files ->
+                // Carry every launch grant into the file activity, including EXTRA_STREAM-only shares.
+                forwarded.clipData = android.content.ClipData.newRawUri("Shared files", files.first()).apply {
+                    files.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
+                }
+                forwarded.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try { startActivity(forwarded) }
+            catch (_: SecurityException) { Toast.makeText(this, "Could not access the shared files. Share them again from their app.", Toast.LENGTH_LONG).show() }
+            finish()
+            return
+        }
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         val factory = viewModelFactory { initializer { SelectionSendState(app.clipboard) } }
         state = ViewModelProvider(this, factory)[SelectionSendState::class.java]

@@ -20,7 +20,10 @@ class AniCeApplication : Application() {
         lanSessionController.onUnleasedBackgroundWork = {
             if (transfer.isBusy && (transfer.activeChannel?.descriptor?.transport == "lan" ||
                     transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting)) {
-                transfer.cancelTransfer(); true
+                val incomingOffer = transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.IncomingOffer ||
+                    transfer.interruptedOffer is io.github.anisharyal09.anice.features.transfer.TransferState.IncomingOffer
+                if (!incomingOffer) transfer.cancelTransfer()
+                true
             } else false
         }
         lanSessionController.onDemandFailure = { reason -> transfer.onLanUnavailable(reason) }
@@ -32,7 +35,8 @@ class AniCeApplication : Application() {
         transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
         transfer.canAutomaticallyReceive = {
             (lanOwner.isInitialized() && lanOwner.value.foreground) ||
-                (bleOwner.isInitialized() && bleOwner.value.foreground)
+                (bleOwner.isInitialized() && (bleOwner.value.foreground || bleOwner.value.hasCompanionOwner)) ||
+                transfer.backgroundAllowed
         }
         // A paused batch asks the normal automatic policy for one bounded LAN attempt; an explicit
         // Disconnect still wins because requestAutomaticConnection respects it.
@@ -41,7 +45,9 @@ class AniCeApplication : Application() {
         transfer.onLeaseChanged = { approved ->
             transferNotification.update()
             if (approved) {
-                if (lanSessionController.foreground || bleOwner.isInitialized() && bleOwner.value.foreground) {
+                val backgroundOwner = bleOwner.isInitialized() && bleOwner.value.hasCompanionOwner
+                if (transfer.backgroundAllowed || lanSessionController.foreground ||
+                    bleOwner.isInitialized() && bleOwner.value.foreground || backgroundOwner) {
                     try {
                         transfer.backgroundAllowed = true
                         androidx.core.content.ContextCompat.startForegroundService(this,

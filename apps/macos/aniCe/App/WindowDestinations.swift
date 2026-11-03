@@ -359,9 +359,13 @@ extension MainWindowView {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("File transfer", id: "file-transfer") {
-                  VStack(alignment: .leading, spacing: 10) {
+                  VStack(alignment: .leading, spacing: 8) {
                     TransferNotificationControls(preferences: transfer.notificationPreferences)
+                    Divider().overlay(AniCePalette.separator(colorScheme))
                     TransferAutoReceiveSettings(preferences: transfer.autoReceivePreferences, peers: pairing.peers, compact: true)
+                    Divider().overlay(AniCePalette.separator(colorScheme))
+                    TransferReceiveDestinationControls(model: transfer)
+                    Divider().overlay(AniCePalette.separator(colorScheme))
                     EdgeDropSettingsView(controller: edgeDrop)
                   }
                   .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)

@@ -6,6 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Keep **Send files** available from a completed receive or terminal result without dismissing the result first.
+
 - Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
 
 - Prepare transfer chunks in the source-storage actor without a second full-read buffer, and defer native Find Device startup so shared DATA delivery can continue.
@@ -28,6 +30,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
 
 ### Changed
+
+- Enlarge the File transfer send target and place Edge Drop controls and a position preview below it; enlarge result actions.
+
+- Keep the receive folder and Edge Drop options concise in File transfer Settings.
 
 - Prefer ready LAN for confirmed Mac sends; keep pending files and their recipient pinned and require an explicit Bluetooth fallback choice.
 - Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input styling in the feature and floating controls.

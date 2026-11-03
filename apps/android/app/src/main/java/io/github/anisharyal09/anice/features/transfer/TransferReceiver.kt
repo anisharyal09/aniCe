@@ -156,22 +156,28 @@ private fun TransferController.captureAutomaticReceive(batch: TransferBatch, des
     )
     automaticReceiveNeedsApp = !canAutomaticallyReceive() || context == null || destinationPreferences == null
     if (automaticReceiveNeedsApp) onStateChanged?.invoke(state)
-    else startAutomaticReceiveIfEligible()
+    else {
+        // A complete offer plus saved per-peer consent owns a bounded receive lease before the UI backgrounds.
+        onLeaseChanged?.invoke(true)
+        startAutomaticReceiveIfEligible()
+    }
 }
 
 internal fun TransferController.startAutomaticReceiveIfEligible() {
     val pending = pendingAutomaticReceive ?: return
     val incoming = state as? TransferState.IncomingOffer ?: return
     if (incoming.batch.id != pending.batchId) return
-    // Incoming offers alone cannot start Android background work; retain them until existing app ownership allows receipt.
+    // Without foreground or companion ownership, keep the offer pending for the next foreground visit.
     if (!canAutomaticallyReceive()) {
         automaticReceiveNeedsApp = true
+        onLeaseChanged?.invoke(false)
         onStateChanged?.invoke(state)
         return
     }
     val activePeer = activeChannel?.descriptor?.peer
     if (activePeer?.deviceId != pending.peer.deviceId || activePeer.fingerprint != pending.peer.fingerprint) {
         automaticReceiveNeedsApp = true
+        onLeaseChanged?.invoke(false)
         onStateChanged?.invoke(state)
         return
     }
@@ -181,6 +187,7 @@ internal fun TransferController.startAutomaticReceiveIfEligible() {
     val preferences = destinationPreferences
     if (ctx == null || preferences == null) {
         automaticReceiveNeedsApp = true
+        onLeaseChanged?.invoke(false)
         onStateChanged?.invoke(state)
         return
     }
@@ -202,6 +209,7 @@ internal fun TransferController.startAutomaticReceiveIfEligible() {
                 if (operation == epoch && pendingAutomaticReceive?.batchId == pending.batchId) {
                     automaticReceiveNeedsApp = true
                     destinationMessage = null
+                    onLeaseChanged?.invoke(false)
                     onStateChanged?.invoke(state)
                 }
                 return@launch
@@ -221,6 +229,7 @@ internal fun TransferController.startAutomaticReceiveIfEligible() {
                 pendingAutomaticReceive = null
                 automaticReceiveNeedsApp = false
                 destinationMessage = error.message ?: "Choose another folder or reset to Downloads/aniCe."
+                onLeaseChanged?.invoke(false)
                 onStateChanged?.invoke(state)
             }
         }
@@ -230,12 +239,14 @@ internal fun TransferController.startAutomaticReceiveIfEligible() {
 internal fun TransferController.deferAutomaticReceiveIfNeeded() {
     val pending = pendingAutomaticReceive ?: return
     if ((state as? TransferState.IncomingOffer)?.batch?.id != pending.batchId) return
+    if (canAutomaticallyReceive()) return
     if (destinationPreparation?.isActive == true) {
         destinationPreparation?.cancel()
         destinationPreparation = null
         destinationMessage = null
     }
     automaticReceiveNeedsApp = true
+    onLeaseChanged?.invoke(false)
     onStateChanged?.invoke(state)
 }
 

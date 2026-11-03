@@ -25,6 +25,7 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
     <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE" />
     <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
     <application android:name=".AniCeApplication" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules"
@@ -39,10 +40,13 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+        <activity android:name=".features.transfer.ShareFilesActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.AniCe.ClipboardAction" />
         <service android:name=".features.clipboard.ClipboardTileService" android:exported="true"
             android:label="Send to Mac" android:icon="@drawable/ic_clipboard_tile"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">

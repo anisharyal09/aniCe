@@ -304,6 +304,20 @@ internal class TransferDestinationPreferences(private val context: Context) {
         return tree
     }
 
+    fun summary(): String {
+        if (!hasCustomDestination) return "Downloads/aniCe"
+        return try {
+            val tree = savedTree() ?: return "Unavailable folder"
+            val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            context.contentResolver.query(root, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+            } ?: "Unavailable folder"
+        } catch (_: Exception) {
+            "Unavailable folder"
+        }
+    }
+
     fun savedModes(): Int = preferences.getInt(MODES_KEY, 0)
 
     fun selection(): TransferReceiveDestinationSelection = TransferReceiveDestinationSelection(

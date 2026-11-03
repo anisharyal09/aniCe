@@ -134,6 +134,7 @@ fun SettingsScreen(
                         preferences = app.transfer.autoReceivePreferences,
                         peers = peers,
                         compact = true,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
 

@@ -392,10 +392,17 @@ final class TransferModelTests: XCTestCase {
     XCTAssertTrue(qualifies(right, edge: .right))
     XCTAssertFalse(qualifies(right, edge: .right, fresh: false))
     XCTAssertFalse(qualifies(right, edge: .right, held: false))
-    XCTAssertFalse(qualifies(NSPoint(x: frame.maxX - 40, y: frame.midY), edge: .right))
+    XCTAssertTrue(qualifies(NSPoint(x: frame.maxX - 40, y: frame.midY), edge: .right))
+    XCTAssertFalse(qualifies(NSPoint(x: frame.maxX - 52, y: frame.midY), edge: .right))
     XCTAssertTrue(qualifies(NSPoint(x: frame.minX + 10, y: frame.midY), edge: .left))
     XCTAssertTrue(qualifies(NSPoint(x: frame.midX, y: visible.maxY - 10), edge: .top))
     XCTAssertFalse(qualifies(NSPoint(x: frame.midX, y: frame.maxY - 2), edge: .top))
+
+    let rightShelf = EdgeDropGeometry.shelfFrame(edge: .right, point: right, screenFrame: frame, visibleFrame: visible)
+    let leftShelf = EdgeDropGeometry.shelfFrame(edge: .left, point: right, screenFrame: frame, visibleFrame: visible)
+    XCTAssertEqual(rightShelf.maxX, frame.maxX)
+    XCTAssertEqual(leftShelf.minX, frame.minX)
+    XCTAssertEqual(rightShelf.height, 152)
 
     let topShelf = EdgeDropGeometry.shelfFrame(edge: .top,
       point: NSPoint(x: frame.maxX - 4, y: visible.maxY - 10), screenFrame: frame, visibleFrame: visible)

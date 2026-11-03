@@ -10,6 +10,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Keep consented Android background receives under the existing companion owner, and allow the next send from a terminal result without dismissing it first.
+
 - Ignore stale macOS channel callbacks so an old BLE/LAN session cannot retire a replacement connection or make playback controls unresponsive.
 
 - Remove transfer-chunk preparation from presentation threads, keep Find Device startup from blocking shared DATA delivery, and correct interrupted SMS and session-close handling.
@@ -18,11 +20,17 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Send files from Android’s Share sheet to the connected Mac through aniCe.
+
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 - Add native file-drop targets on Home and File transfer, plus an optional configurable macOS Edge Drop shelf.
 - Add per-trusted-peer automatic-receive consent and remembered default/custom receive destinations on Mac and Android.
 
 ### Changed
+
+- Enlarge the Mac send target and place Edge Drop controls and a position preview below it; simplify transfer settings and enlarge result actions.
+
+- Make the Mac Edge Drop shelf easier to find and label its selected edge.
 
 - Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
 - Keep confirmed Mac sends pinned to their trusted recipient and require an explicit Bluetooth choice when LAN setup is unavailable.

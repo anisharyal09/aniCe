@@ -22,10 +22,18 @@ class TransferService : Service() {
             return START_NOT_STICKY
         }
         lease = app.transfer.operationID
+        val status = when (val state = app.transfer.state) {
+            is TransferState.IncomingOffer -> if (app.transfer.pendingAutomaticReceive?.batchId == state.batch.id) {
+                "Preparing automatic receive"
+            } else "Preparing transfer"
+            is TransferState.Transferring -> "Transferring with your trusted device"
+            is TransferState.Paused -> "Waiting to reconnect"
+            else -> "Preparing transfer"
+        }
         val notification = NotificationCompat.Builder(this, TransferNotification.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Local file transfer")
-            .setContentText("Transferring with your trusted device")
+            .setContentText(status)
             .setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build()
         try {
             ServiceCompat.startForeground(this, TransferNotification.NOTIFICATION_ID, notification,

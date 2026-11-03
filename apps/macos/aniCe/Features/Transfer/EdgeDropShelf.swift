@@ -41,8 +41,8 @@ enum EdgeDropEdge: String, CaseIterable, Identifiable {
 }
 
 enum EdgeDropGeometry {
-  static let edgeBand: CGFloat = 36
-  static let shelfSize = NSSize(width: 348, height: 124)
+  static let edgeBand: CGFloat = 48
+  static let shelfSize = NSSize(width: 360, height: 152)
 
   static func qualifies(
     point: NSPoint, edge: EdgeDropEdge, screenFrame: NSRect, visibleFrame: NSRect,
@@ -174,7 +174,7 @@ enum EdgeDropGeometry {
   }
 
   var shelfTitle: String {
-    if hasPromisedFiles { return "Saved files are required" }
+    if hasPromisedFiles { return "Save files before sending" }
     if selectionHasUnsupportedItems { return "Drop files only" }
     if !hasFileURLs { return "Drop a file to send" }
     if draggedFileCount > 128 { return "Choose 1–128 files" }
@@ -183,8 +183,10 @@ enum EdgeDropGeometry {
     guard model.connectedAndroidRecipient != nil else {
       return model.peerConnected ? "File transfer is unavailable" : "Connect an Android phone"
     }
-    return "Drop \(draggedFileCount) file\(draggedFileCount == 1 ? "" : "s") to send to"
+    return "Send \(draggedFileCount) file\(draggedFileCount == 1 ? "" : "s") to"
   }
+
+  var edgeHint: String { "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" }
 
   var shelfDetail: String {
     if hasPromisedFiles { return "Promised files aren’t supported." }
@@ -488,6 +490,10 @@ private struct EdgeDropShelfView: View {
         .frame(width: 38)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
+        Text(controller.edgeHint)
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(AniCePalette.accent(scheme))
+          .lineLimit(1)
         Text(controller.shelfTitle)
           .font(.system(size: 15, weight: .semibold))
           .foregroundStyle(AniCePalette.primaryText(scheme))
@@ -512,14 +518,16 @@ private struct EdgeDropShelfView: View {
 
 struct EdgeDropSettingsView: View {
   let controller: MacEdgeDropController
+  var showsPlacementPreview = false
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: 4) {
       Toggle("Edge Drop", isOn: Binding(
         get: { controller.preferences.enabled },
         set: { controller.setEnabled($0) }))
-        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small)
+        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
+        .controlSize(.regular).frame(minHeight: 40, alignment: .leading)
       HStack {
         Text("Shelf edge")
         Spacer()
@@ -528,14 +536,71 @@ struct EdgeDropSettingsView: View {
           set: { controller.setEdge($0) })) {
           ForEach(EdgeDropEdge.allCases) { edge in Text(edge.title).tag(edge) }
         }
-        .labelsHidden().pickerStyle(.menu).controlSize(.small).frame(width: 112)
+        .labelsHidden().pickerStyle(.menu).controlSize(.regular).frame(width: 112)
+          .accessibilityLabel("Shelf edge")
       }
-      Text("Drag saved files to this screen edge to send them to your connected Android phone. Choose another edge if a screen-edge utility uses the same space.")
+      .frame(minHeight: 40)
+      Text(controller.preferences.enabled
+        ? "Drag files to the selected edge and drop them on the shelf."
+        : "Turn on to send files from Finder.")
         .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        .fixedSize(horizontal: false, vertical: true)
       if let error = controller.monitorError {
         Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme))
       }
+      if showsPlacementPreview {
+        EdgeDropPlacementPreview(edge: controller.preferences.edge, enabled: controller.preferences.enabled)
+          .padding(.top, 4)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct EdgeDropPlacementPreview: View {
+  let edge: EdgeDropEdge
+  let enabled: Bool
+  @Environment(\.colorScheme) private var scheme
+
+  private var markerAlignment: Alignment {
+    switch edge {
+    case .left: .leading
+    case .right: .trailing
+    case .top: .top
+    }
+  }
+
+  var body: some View {
+    HStack(spacing: 12) {
+      RoundedRectangle(cornerRadius: 8)
+        .stroke(AniCePalette.separator(scheme), lineWidth: 1)
+        .overlay(alignment: .top) {
+          Capsule()
+            .fill(AniCePalette.separator(scheme))
+            .frame(width: 38, height: 3)
+            .padding(.top, 6)
+        }
+        .overlay(alignment: markerAlignment) {
+          RoundedRectangle(cornerRadius: 3)
+            .fill(enabled ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+            .frame(width: edge == .top ? 36 : 9, height: edge == .top ? 8 : 22)
+            .padding(.leading, edge == .left ? 6 : 0)
+            .padding(.trailing, edge == .right ? 6 : 0)
+            .padding(.top, edge == .top ? 14 : 0)
+        }
+        .frame(width: 148, height: 72)
+        .accessibilityHidden(true)
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text("\(edge.title) edge")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(AniCePalette.primaryText(scheme))
+        Text(enabled ? "Shelf appears here." : "Turn on Edge Drop to use the shelf.")
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .accessibilityElement(children: .combine)
   }
 }

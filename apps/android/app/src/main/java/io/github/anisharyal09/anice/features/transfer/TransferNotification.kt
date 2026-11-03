@@ -32,6 +32,7 @@ class TransferNotification(
     @SuppressLint("NotificationPermission")
     fun update() {
         val offer = controller.state as? TransferState.IncomingOffer
+            ?: (controller.interruptedOffer as? TransferState.IncomingOffer)
         if (offer == null) {
             announcedOffer = null
             announcedNeedsApp = null
@@ -39,7 +40,14 @@ class TransferNotification(
             if (!controller.backgroundAllowed || !controller.isBusy) manager.cancel(NOTIFICATION_ID)
             return
         }
-        val needsApp = controller.automaticReceiveNeedsApp
+        val paused = controller.state is TransferState.Paused
+        val needsApp = controller.automaticReceiveNeedsApp || paused
+        val autoAccepted = !paused && controller.pendingAutomaticReceive?.batchId == offer.batch.id && !needsApp
+        if (autoAccepted) {
+            announcedOffer = offer.batch.id
+            announcedNeedsApp = null
+            return
+        }
         if (isForeground() || announcedOffer == offer.batch.id && announcedNeedsApp == needsApp) return
         // State delivery can announce the offer before foreground eligibility is known; replace the notice when it changes.
         announcedOffer = offer.batch.id
@@ -51,7 +59,12 @@ class TransferNotification(
             Intent(context, TransferActionReceiver::class.java).setAction(TransferActionReceiver.ACTION_CANCEL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val files = "${offer.batch.files.size} file${if (offer.batch.files.size == 1) "" else "s"}"
-        val title = if (needsApp) "Open aniCe to receive" else "Incoming files from ${offer.batch.peerName}"
+        val title = when {
+            paused && controller.automaticReceiveNeedsApp -> "Open aniCe to receive"
+            paused -> "Open aniCe to review files"
+            needsApp -> "Open aniCe to receive"
+            else -> "Incoming files from ${offer.batch.peerName}"
+        }
         val body = if (needsApp) "$files from ${offer.batch.peerName}"
             else "${files} (${Formatter.formatFileSize(context, offer.batch.totalBytes)})"
         val notice = NotificationCompat.Builder(context, CHANNEL_ID)
