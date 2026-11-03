@@ -15,6 +15,7 @@ import android.widget.EditText
 class PhoneInputEditor(context: Context) : EditText(context) {
     var sendComposingText = false
     var onEditorSnapshot: ((String) -> Unit)? = null
+    var onRawTextChanged: ((String) -> Unit)? = null
     var onKeyTransition: ((usage: Int, modifiers: Int, pressed: Boolean) -> Boolean)? = null
 
     private val localDeleteKeys = mutableSetOf<Int>()
@@ -22,6 +23,7 @@ class PhoneInputEditor(context: Context) : EditText(context) {
     private val heldModifiers = mutableMapOf<Int, Int>()
     private var modifierSnapshot = 0
     private val publishSnapshot = Runnable {
+        onRawTextChanged?.invoke(text.toString())
         val snapshot = if (sendComposingText) text.toString() else PhoneInputTextSync.committedSnapshot(
             text.toString(), BaseInputConnection.getComposingSpanStart(text),
             BaseInputConnection.getComposingSpanEnd(text),

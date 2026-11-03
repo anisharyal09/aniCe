@@ -12,6 +12,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -83,6 +85,7 @@ fun PhoneInputView(
     val inputTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val inputHintColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
     var editor by remember { mutableStateOf<PhoneInputEditor?>(null) }
+    var fullScreenEditor by remember { mutableStateOf<PhoneInputEditor?>(null) }
     var localStatus by remember { mutableStateOf("") }
     var liveTyping by remember { mutableStateOf(false) }
     var fullTrackpad by remember { mutableStateOf(false) }
@@ -96,8 +99,9 @@ fun PhoneInputView(
     val compatible = connectedPeer?.let(owner::compatible) == true
 
     fun clearEditor() {
-        editor?.let { field ->
+        listOfNotNull(editor, fullScreenEditor).distinct().forEach { field ->
             field.onEditorSnapshot = null
+            field.onRawTextChanged = null
             field.onKeyTransition = null
             field.resetForwardedKeys()
             field.text.clear()
@@ -110,8 +114,14 @@ fun PhoneInputView(
         if (owner.active && connectedPeer != null) {
             localStatus = ""
             textSync.reset()
-            editor?.let { field ->
+            listOfNotNull(editor, fullScreenEditor).distinct().forEach { field ->
+                val rawTextCallback = field.onRawTextChanged
+                field.onRawTextChanged = null
                 field.setText("")
+                field.setSelection(field.text.length)
+                field.onRawTextChanged = rawTextCallback
+            }
+            (if (fullTrackpad) fullScreenEditor else editor)?.let { field ->
                 field.requestFocus()
                 field.post {
                     (context.getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
@@ -122,14 +132,7 @@ fun PhoneInputView(
             owner.stop()
         } else if (previouslyActive) {
             keyboard?.hide()
-            editor?.let { field ->
-                field.onEditorSnapshot = null
-                field.onKeyTransition = null
-                field.resetForwardedKeys()
-                field.text.clear()
-                field.clearFocus()
-            }
-            textSync.reset()
+            clearEditor()
         }
         previouslyActive = owner.active
     }
@@ -150,10 +153,71 @@ fun PhoneInputView(
         }
     }
 
+    DisposableEffect(fullTrackpad) {
+        onDispose {
+            if (fullTrackpad) {
+                fullScreenEditor?.let { field ->
+                    field.onRawTextChanged = null
+                    field.onEditorSnapshot = null
+                    field.onKeyTransition = null
+                    field.clearFocus()
+                }
+                fullScreenEditor = null
+            }
+        }
+    }
+
     fun stopAndClear() {
         owner.stop()
         keyboard?.hide()
         clearEditor()
+    }
+
+    fun syncEditorText(source: PhoneInputEditor, value: String) {
+        // Mirror text while leaving IME composition metadata with the focused editor.
+        val target = if (source === editor) fullScreenEditor else editor
+        if (target == null || target.text.toString() == value) return
+        val callback = target.onRawTextChanged
+        target.onRawTextChanged = null
+        target.setText(value)
+        target.setSelection(target.text.length)
+        target.onRawTextChanged = callback
+    }
+
+    fun handleEditorSnapshot(snapshot: String) {
+        val commitLimit = connectedPeer?.let(owner::maximumTextBytes)
+            ?: PhoneInputTextSync.MAX_COMMIT_BYTES
+        when (val result = textSync.plan(snapshot, commitLimit)) {
+            is PhoneInputTextResult.Ready -> {
+                if (!owner.sendText(result.plan)) localStatus = owner.status
+            }
+            PhoneInputTextResult.Unchanged -> Unit
+            PhoneInputTextResult.TooLarge -> {
+                localStatus = "This typing session is limited to 64 KiB. Stop and start a new session."
+                stopAndClear()
+            }
+            PhoneInputTextResult.InvalidUnicode -> {
+                localStatus = "This keyboard edit could not be sent safely. Typing stopped."
+                stopAndClear()
+            }
+            PhoneInputTextResult.CorrectionTooLarge -> {
+                localStatus = "That edit changed too much sent text. Start a new typing session."
+                stopAndClear()
+            }
+            PhoneInputTextResult.GraphemeTooLarge -> {
+                localStatus = "That character sequence is too large to send safely."
+                stopAndClear()
+            }
+        }
+    }
+
+    fun configurePhoneEditor(field: PhoneInputEditor, hint: String = "Type here") {
+        field.sendComposingText = liveTyping
+        configureInput(field, enabled = owner.active, textColor = inputTextColor, hintColor = inputHintColor)
+        field.hint = hint
+        field.onRawTextChanged = { value -> syncEditorText(field, value) }
+        field.onEditorSnapshot = ::handleEditorSnapshot
+        field.onKeyTransition = owner::sendKey
     }
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -226,6 +290,7 @@ fun PhoneInputView(
                 pointerUnavailable = owner.active && !owner.supportsPointer(connectedPeer),
                 onHideKeyboard = { keyboard?.hide() },
                 onFullScreen = { keyboard?.hide(); fullTrackpad = true },
+                sessionActive = owner.active,
             )
         }
 
@@ -251,41 +316,13 @@ fun PhoneInputView(
                         .semantics { contentDescription = "Text field for typing on the connected Mac" },
                     factory = { viewContext ->
                         PhoneInputEditor(viewContext).apply {
-                            configureInput(this, enabled = owner.active, textColor = inputTextColor, hintColor = inputHintColor)
+                            configurePhoneEditor(this)
                             editor = this
                         }
                     },
                     update = { field ->
                         editor = field
-                        field.sendComposingText = liveTyping
-                        configureInput(field, enabled = owner.active, textColor = inputTextColor, hintColor = inputHintColor)
-                        field.onEditorSnapshot = { snapshot ->
-                            val commitLimit = connectedPeer?.let(owner::maximumTextBytes)
-                                ?: PhoneInputTextSync.MAX_COMMIT_BYTES
-                            when (val result = textSync.plan(snapshot, commitLimit)) {
-                                is PhoneInputTextResult.Ready -> {
-                                    if (!owner.sendText(result.plan)) localStatus = owner.status
-                                }
-                                PhoneInputTextResult.Unchanged -> Unit
-                                PhoneInputTextResult.TooLarge -> {
-                                    localStatus = "This typing session is limited to 64 KiB. Stop and start a new session."
-                                    stopAndClear()
-                                }
-                                PhoneInputTextResult.InvalidUnicode -> {
-                                    localStatus = "This keyboard edit could not be sent safely. Typing stopped."
-                                    stopAndClear()
-                                }
-                                PhoneInputTextResult.CorrectionTooLarge -> {
-                                    localStatus = "That edit changed too much sent text. Start a new typing session."
-                                    stopAndClear()
-                                }
-                                PhoneInputTextResult.GraphemeTooLarge -> {
-                                    localStatus = "That character sequence is too large to send safely."
-                                    stopAndClear()
-                                }
-                            }
-                        }
-                        field.onKeyTransition = owner::sendKey
+                        configurePhoneEditor(field)
                     },
                 )
                 Text(
@@ -303,12 +340,88 @@ fun PhoneInputView(
         )
     }
     if (fullTrackpad) Dialog(
-        onDismissRequest = { fullTrackpad = false },
+        onDismissRequest = { keyboard?.hide(); fullTrackpad = false },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(Modifier.fillMaxSize()) {
-            PhoneInputTrackpad(owner, owner.active && connectedPeer?.let(owner::supportsPointer) == true,
-                false, { keyboard?.hide() }, { fullTrackpad = false }, fullScreen = true)
+            PhoneInputTrackpad(
+                owner = owner,
+                enabled = owner.active && connectedPeer?.let(owner::supportsPointer) == true,
+                pointerUnavailable = owner.active && connectedPeer?.let { !owner.supportsPointer(it) } == true,
+                onHideKeyboard = { keyboard?.hide() },
+                onFullScreen = { keyboard?.hide(); fullTrackpad = false },
+                fullScreen = true,
+                sessionActive = owner.active,
+                statusMessage = if (owner.active) null else localStatus.ifEmpty { owner.status },
+                typingField = {
+                    if (connectedPeer != null) {
+                        Box(
+                            Modifier.fillMaxWidth().height(52.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize().semantics {
+                                    contentDescription = "Tap to type on the connected Mac"
+                                },
+                                factory = { viewContext ->
+                                    PhoneInputEditor(viewContext).apply {
+                                        editor?.let { setText(it.text) }
+                                        configurePhoneEditor(this, "Type here on Mac")
+                                        fullScreenEditor = this
+                                        onFocusChangeListener = android.view.View.OnFocusChangeListener { view, focused ->
+                                            if (focused) view.post {
+                                                (context.getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+                                                    ?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+                                            }
+                                        }
+                                    }
+                                },
+                                update = { field ->
+                                    fullScreenEditor = field
+                                    configurePhoneEditor(field, "Type here on Mac")
+                                },
+                            )
+                            if (!owner.active) {
+                                Surface(
+                                    modifier = Modifier.fillMaxSize().clickable(
+                                        enabled = owner.state != PhoneInputState.STARTING && compatible &&
+                                            owner.canStart(connectedPeer),
+                                        role = Role.Button,
+                                    ) {
+                                        localStatus = ""
+                                        owner.start(connectedPeer)
+                                    }.semantics {
+                                        contentDescription = when {
+                                            !compatible -> "Update the Mac app to enable phone typing"
+                                            owner.state == PhoneInputState.STARTING -> "Connecting to Mac"
+                                            else -> "Tap to start typing on the connected Mac"
+                                        }
+                                    },
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                ) {
+                                    Box(contentAlignment = Alignment.CenterStart) {
+                                        Text(
+                                            when {
+                                                !compatible -> "Update the Mac app to enable typing"
+                                                owner.state == PhoneInputState.STARTING -> "Connecting to Mac…"
+                                                else -> "Tap to start typing"
+                                            },
+                                            modifier = Modifier.padding(horizontal = 12.dp),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Reconnect to a Mac to type.", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+            )
         }
     }
 }
@@ -321,6 +434,9 @@ private fun PhoneInputTrackpad(
     onHideKeyboard: () -> Unit,
     onFullScreen: () -> Unit,
     fullScreen: Boolean = false,
+    sessionActive: Boolean = enabled,
+    statusMessage: String? = null,
+    typingField: (@Composable () -> Unit)? = null,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val viewConfiguration = LocalViewConfiguration.current
@@ -336,11 +452,23 @@ private fun PhoneInputTrackpad(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Mac trackpad", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.weight(1f))
-                if (fullScreen && enabled) TextButton(onClick = owner::stop) { Text("Stop control") }
+                if (fullScreen && sessionActive) TextButton(onClick = owner::stop) { Text("Stop control") }
+                else if (fullScreen && owner.state == PhoneInputState.STARTING) {
+                    TextButton(onClick = owner::stop) { Text("Cancel") }
+                }
+                if (fullScreen && sessionActive) TextButton(onClick = onHideKeyboard) { Text("Hide keyboard") }
                 TextButton(onClick = onFullScreen) { Text(if (fullScreen) "Done" else "Full screen") }
-                if (enabled && !fullScreen) TextButton(onClick = onHideKeyboard, modifier = Modifier.heightIn(min = 40.dp)) {
+                if (sessionActive && !fullScreen) TextButton(onClick = onHideKeyboard, modifier = Modifier.heightIn(min = 40.dp)) {
                     Text("Hide keyboard")
                 }
+            }
+            if (fullScreen) typingField?.invoke()
+            if (fullScreen && !sessionActive && !statusMessage.isNullOrBlank()) {
+                Text(
+                    statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorScheme.onSurfaceVariant,
+                )
             }
             Box(
                 modifier = Modifier.fillMaxWidth().then(if (fullScreen) Modifier.weight(1f) else Modifier.height(240.dp))

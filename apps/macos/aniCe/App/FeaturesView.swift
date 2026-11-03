@@ -141,7 +141,7 @@ struct FeaturesView: View {
       guard let peer = phoneInput.connectedPeer, peer.platform == "android" else {
         return "Connect an Android phone over Bluetooth"
       }
-      if phoneInput.needsPostEventAccess { return "Device Control permission needed" }
+      if phoneInput.needsPostEventAccess { return "Mac input permission needed" }
       if phoneInput.isReceiving { return "Receiving from \(peer.deviceName)" }
       if phoneInput.isArmed { return "Ready to receive from \(peer.deviceName)" }
       return "Connected to \(peer.deviceName) · input off"

@@ -6,12 +6,12 @@
 ## Use
 
 1. Connect the trusted phone and Mac over Bluetooth.
-2. On the Mac, open **Features → Control Mac** and turn on phone input.
-3. On Android, open **Features → Control Mac** and start typing.
+2. Allow aniCe's **Event Posting** request in **System Settings → Privacy & Security → Device Control and Data Access** on the Mac.
+3. On Android, open **Features → Control Mac** and tap **Start control**. While aniCe is running, the authenticated phone request arms the Mac receiver for that session; the Mac feature page does not need to be open.
 4. Use one finger to move, tap to click, long-press and move to drag, and two fingers to scroll.
 5. Stop on either device to release remote input and clear the temporary phone editor.
 
-On the Mac, choose **Set up Device Control** and allow aniCe in **System Settings → Privacy & Security → Device Control and Data Access**. The page checks automatically while open and shows **Device Control allowed** when macOS confirms event-posting access. If Settings already shows aniCe enabled but the check remains denied, quit and reopen the same app build. The receiver turns on once for each trusted phone after setup; later visits use **Receive keyboard and trackpad input**. The phone receives a permission message if a start request is denied.
+The Mac checks `CGPreflightPostEventAccess()` before accepting a start. A phone request cannot grant or bypass macOS permission; if access is missing, the phone reports that setup is needed. The Settings switch and Accessibility trust are not treated as proof that Event Posting is available. When you return from System Settings, aniCe refreshes the status and stays open. If Event Posting still appears blocked after you allow it, **Restart aniCe** is available as an explicit recovery action. If it remains blocked after restart, remove aniCe from **Privacy & Security → Device Control and Data Access** and add the current stable signed copy again. Input goes to the Mac app with keyboard focus.
 
 Choose Live typing to send composing text immediately, or keyboard-committed typing to wait for the keyboard to commit it. Changing modes stops the session.
 
@@ -25,7 +25,7 @@ Corrections assume the Mac caret remains after the text sent by the phone. After
 
 ## Trackpad behavior
 
-After the Mac accepts the session, the phone trackpad sends pointer movement, clicks, drag selection and two-finger scroll over the same BLE session. Hide the on-screen keyboard from the trackpad header for more space, or expand the trackpad to full screen. Motion and scroll deltas are coalesced while the BLE channel is busy. Older Mac builds can still receive typing but must advertise pointer support for the trackpad.
+After the Mac accepts the session, the phone trackpad sends pointer movement, clicks, drag selection and two-finger scroll over the same BLE session. Hide the on-screen keyboard from the trackpad header for more space, or expand the trackpad to full screen. The full-screen view keeps a compact text field above the pad; tapping it starts control if needed and opens the phone keyboard. Motion and scroll deltas are coalesced while the BLE channel is busy. Older Mac builds can still receive typing but must advertise pointer support for the trackpad.
 
 ## Session and interruption behavior
 

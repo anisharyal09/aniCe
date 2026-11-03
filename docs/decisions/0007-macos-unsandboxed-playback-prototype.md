@@ -2,7 +2,7 @@
 
 ## Decision
 
-Mac Debug and Release disable App Sandbox in the Xcode target and app entitlements. This applies to the entire Mac app; playback motivated the change but does not limit its scope. Hardened runtime remains enabled in build settings; signing remains Manual / Sign to Run Locally. The existing development Keychain backend, key tags, trust credentials and session cryptography remain unchanged.
+Mac Debug and Release disable App Sandbox in the Xcode target and app entitlements. This applies to the entire Mac app; playback motivated the change but does not limit its scope. Hardened runtime remains enabled. Shared local builds default to ad-hoc signing; developers can use a stable Apple Development identity locally for permission-persistence checks. Automated tests remain ad-hoc signed. The existing development Keychain backend, key tags, trust credentials and session cryptography remain unchanged.
 
 Identity metadata and trust journals keep their original location beneath `~/Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe/`. Resolve the account home independently of Foundation's sandbox redirection. Removing sandboxing must not select a fresh journal directory, create another identity or migrate existing trust. Explicit test journal URLs remain supported.
 

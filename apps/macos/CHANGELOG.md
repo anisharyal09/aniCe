@@ -6,9 +6,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Report missing Events access to the phone before the first-run receiver-arming check.
+- Report missing Events access to the phone before rejecting a remote start request.
 
-- Remove redundant macOS SDK signing-identity overrides so local signing choices are not shadowed; retain Sign to Run Locally as the default.
+- Keep shared local builds account-free by default; use a stable local signing identity when verifying Event Posting persistence.
 
 - Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
 
@@ -18,11 +18,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Enable the Control Mac receiver once on first setup for each trusted phone when macOS event access is available.
+- Diagnose Event Posting separately from Accessibility, show stale-signature recovery guidance and refresh status on return from permission Settings without restarting.
+
+- Arm the Control Mac receiver for an authenticated phone session when the phone explicitly starts and macOS event access is available.
 
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
-- Add an explicitly armed Phone-to-Mac receiver over authenticated BLE, with Unicode commits, HID key mapping, clamped pointer events, held-input release and no permission prompt on launch.
-- Add **Control Mac** controls to arm the currently authenticated phone, show receiver state and provide one Device Control setup action with automatic permission checks.
+- Add a Phone-to-Mac receiver over authenticated BLE, with Unicode commits, HID key mapping, clamped pointer events, held-input release and no permission prompt on launch.
+- Add **Control Mac** controls to show receiver state and provide one Event Posting setup action with automatic permission checks.
 
 - Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.

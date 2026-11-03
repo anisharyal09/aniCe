@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Translates one armed Phone-to-Mac session into bounded native keyboard and pointer events.
 import AppKit
+import ApplicationServices
 import CoreGraphics
+import Security
 
 enum MacPhoneInputEvent: Equatable {
   case text([UInt16])
@@ -23,6 +25,8 @@ enum MacPhoneInputEventError: Error, Equatable {
 
 @MainActor protocol MacPhoneInputEventSink: AnyObject {
   var canPostEvents: Bool { get }
+  var accessibilityTrusted: Bool { get }
+  var hasStableSigningIdentity: Bool { get }
   func requestPostEventAccess() -> Bool
   func cursorLocation() -> CGPoint?
   func displayBounds() -> [CGRect]
@@ -55,6 +59,8 @@ enum MacPhoneInputEventError: Error, Equatable {
   }
 
   var canPostEvents: Bool { sink.canPostEvents }
+  var accessibilityTrusted: Bool { sink.accessibilityTrusted }
+  var hasStableSigningIdentity: Bool { sink.hasStableSigningIdentity }
 
   func requestPostEventAccess() -> Bool { sink.requestPostEventAccess() }
 
@@ -231,8 +237,25 @@ enum MacPhoneInputEventError: Error, Equatable {
 
 @MainActor final class CoreGraphicsPhoneInputEventSink: MacPhoneInputEventSink {
   var canPostEvents: Bool { CGPreflightPostEventAccess() }
+  // Accessibility and Event Posting are separate TCC services; this is diagnostic only.
+  var accessibilityTrusted: Bool { AXIsProcessTrusted() }
+  var hasStableSigningIdentity: Bool { Self.hasTeamSignedIdentity }
 
   func requestPostEventAccess() -> Bool { CGRequestPostEventAccess() }
+
+  // A Team ID survives rebuilds; ad-hoc requirements fall back to a build-specific cdhash.
+  // Cache this check because pointer and key events arrive at high frequency.
+  private static let hasTeamSignedIdentity: Bool = {
+    var code: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, SecCSFlags(), &code) == errSecSuccess,
+      let code
+    else { return false }
+    var information: CFDictionary?
+    guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
+      let information
+    else { return false }
+    return ((information as NSDictionary)[kSecCodeInfoTeamIdentifier] as? String)?.isEmpty == false
+  }()
 
   func cursorLocation() -> CGPoint? { CGEvent(source: nil)?.location }
 

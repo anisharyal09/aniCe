@@ -11,6 +11,8 @@ import XCTest
   var events = [MacPhoneInputEvent]()
   var requestResult = false
   var requestCount = 0
+  var accessibilityTrusted = false
+  var hasStableSigningIdentity = true
 
   func requestPostEventAccess() -> Bool {
     requestCount += 1
@@ -118,22 +120,20 @@ import XCTest
     XCTAssertTrue(adapter.heldKeys.isEmpty)
   }
 
-  func testOnlyArmedBLEPeerCanStartAndTextUsesTheExistingCapability() async throws {
+  func testPhoneStartArmsAuthenticatedBLEPeerAndTextUsesTheExistingCapability() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
-    let owner = UUID()
+    let channel = try phoneChannel()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
     await eventually { channel.sentData.contains { (try? PhoneInputMessage.decode($0))?.kind == 1 } }
     _ = await model.handle(
       try PhoneInputMessage.of(1, .integer(1024), .integer(1)).encode(), on: channel.descriptor)
-    model.arm(ownerID: owner, for: channel.descriptor.peer)
-
     let result = await model.handle(
       try PhoneInputMessage.of(2, .text(session)).encode(), on: channel.descriptor)
     XCTAssertEqual(result, .handled)
     await eventually { model.isReceiving }
+    XCTAssertTrue(model.isArmed(for: channel.descriptor.peer))
     XCTAssertEqual(
       try channel.sentData.compactMap { try PhoneInputMessage.decode($0) }.last?.number(1), 0)
 
@@ -141,8 +141,9 @@ import XCTest
       try PhoneInputMessage.of(4, .text(session), .integer(1), .text("hello नमस्ते 👩🏽‍💻")).encode(),
       on: channel.descriptor)
     XCTAssertTrue(sink.events.contains { if case .text = $0 { true } else { false } })
-    model.disarm(ownerID: owner)
+    model.disarm(for: channel.descriptor.peer)
     XCTAssertFalse(model.isReceiving)
+    XCTAssertFalse(model.isArmed)
     await eventually {
       channel.sentData.contains {
         guard let message = try? PhoneInputMessage.decode($0) else { return false }
@@ -152,11 +153,26 @@ import XCTest
     model.shutdown()
   }
 
+  func testMacPeerDoesNotReceivePhoneInputCapability() async throws {
+    let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: PhoneInputEventSinkFake()))
+    let channel = MockSecuredChannel(transport: "ble")
+
+    model.available(channel)
+    await Task.yield()
+
+    XCTAssertTrue(channel.sentData.isEmpty)
+    let session = "01234567-89ab-4cde-8fab-0123456789ab"
+    let result = await model.handle(
+      try PhoneInputMessage.of(2, .text(session)).encode(), on: channel.descriptor)
+    XCTAssertEqual(result, .unrecognized)
+    model.shutdown()
+  }
+
   func testMissingEventAccessIsReportedBeforeUnarmedReceiverStatus() async throws {
     let sink = PhoneInputEventSinkFake()
     sink.canPostEvents = false
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
     await eventually { channel.sentData.contains { (try? PhoneInputMessage.decode($0))?.kind == 1 } }
@@ -171,6 +187,7 @@ import XCTest
     XCTAssertFalse(model.isReceiving)
     XCTAssertFalse(model.isArmed)
     XCTAssertTrue(model.needsPostEventAccess)
+    XCTAssertEqual(sink.requestCount, 0)
     model.shutdown()
   }
 
@@ -220,10 +237,29 @@ import XCTest
     XCTAssertFalse(model.needsPostEventAccess)
   }
 
+  func testPermissionRecoverySeparatesRestartAndStaleGrantStates() {
+    let sink = PhoneInputEventSinkFake()
+    sink.canPostEvents = false
+    sink.accessibilityTrusted = true
+    sink.hasStableSigningIdentity = false
+    let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
+
+    XCTAssertTrue(model.permissionGrantMayBeStale)
+    XCTAssertFalse(model.hasStableSigningIdentity)
+    XCTAssertFalse(model.canOfferPermissionRestart)
+    XCTAssertFalse(model.requestEventAccess())
+    XCTAssertTrue(model.canOfferPermissionRestart)
+
+    sink.canPostEvents = true
+    model.refreshAccessState()
+    XCTAssertFalse(model.permissionGrantMayBeStale)
+    XCTAssertFalse(model.canOfferPermissionRestart)
+  }
+
   func testRevokedAccessStopsTheActiveReceiveSession() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
     await eventually { channel.sentData.contains { (try? PhoneInputMessage.decode($0))?.kind == 1 } }
@@ -248,7 +284,7 @@ import XCTest
   func testRepeatedSequenceStopsAndReleasesHeldKeys() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let owner = UUID()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
@@ -277,7 +313,7 @@ import XCTest
   func testPhoneCannotSendMacOnlySessionEndedMessage() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
     await eventually { channel.sentData.contains { (try? PhoneInputMessage.decode($0))?.kind == 1 } }
@@ -311,7 +347,7 @@ import XCTest
   func testBLERetirementReleasesHeldKeysAndRequiresFreshArming() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let owner = UUID()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
@@ -339,7 +375,7 @@ import XCTest
   func testPeerMismatchAndUnadvertisedKeyEventsAreRejected() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let otherPeer = MockSecuredChannel(transport: "ble").descriptor.peer
     let owner = UUID()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
@@ -371,7 +407,7 @@ import XCTest
   func testDisarmingDuringStartResponseCannotActivateStaleOwner() async throws {
     let sink = PhoneInputEventSinkFake()
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
-    let channel = MockSecuredChannel(transport: "ble")
+    let channel = try phoneChannel()
     let owner = UUID()
     let session = "01234567-89ab-4cde-8fab-0123456789ab"
     model.available(channel)
@@ -418,5 +454,15 @@ import XCTest
       await Task.yield()
     }
     XCTFail("Condition did not become true", file: file, line: line)
+  }
+
+  private func phoneChannel() throws -> MockSecuredChannel {
+    let template = MockSecuredChannel(transport: "ble").descriptor.peer
+    var identity = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(template)) as? [String: Any])
+    identity["platform"] = "android"
+    let peer = try JSONDecoder().decode(
+      DeviceIdentity.self, from: JSONSerialization.data(withJSONObject: identity))
+    return MockSecuredChannel(transport: "ble", peer: peer)
   }
 }

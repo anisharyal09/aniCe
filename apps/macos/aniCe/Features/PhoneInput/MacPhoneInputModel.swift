@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Binds authenticated BLE input to one explicitly armed local surface and releases it on every exit.
+// Arms one authenticated phone session on demand and releases it on every exit.
 import Foundation
 import Observation
 
@@ -51,26 +51,42 @@ import Observation
   private var pendingStart: PendingStart?
   private var activeSession: ActiveSession?
   private var armedOwnerID: UUID?
+  // Phone-started arming ends with its session; a local owner can remain armed between sessions.
+  private var automaticOwnerID: UUID?
   private var armedPeer: DeviceIdentity?
   private(set) var eventAccessAvailable: Bool
+  private(set) var accessibilityTrusted: Bool
+  private(set) var hasStableSigningIdentity: Bool
+  // A successful Settings change may not reach this process until it restarts.
+  private(set) var eventAccessRequestAttempted = false
   private(set) var statusMessage = "Phone input is off."
 
   init(eventAdapter: MacPhoneInputEventAdapter = MacPhoneInputEventAdapter()) {
     self.eventAdapter = eventAdapter
     self.eventAccessAvailable = eventAdapter.canPostEvents
+    self.accessibilityTrusted = eventAdapter.accessibilityTrusted
+    self.hasStableSigningIdentity = eventAdapter.hasStableSigningIdentity
   }
 
   var isArmed: Bool { armedOwnerID != nil }
   var isReceiving: Bool { activeSession != nil }
   var needsPostEventAccess: Bool { !eventAccessAvailable }
+  var permissionGrantMayBeStale: Bool { accessibilityTrusted && !eventAccessAvailable }
+  var canOfferPermissionRestart: Bool { eventAccessRequestAttempted && !eventAccessAvailable }
   var targetPeer: DeviceIdentity? { armedPeer }
   var connectedPeer: DeviceIdentity? { links["ble"]?.channel.descriptor.peer }
 
   func isArmed(by ownerID: UUID) -> Bool { armedOwnerID == ownerID }
+  func isArmed(for peer: DeviceIdentity) -> Bool { armedOwnerID != nil && samePeer(armedPeer, peer) }
 
   // System Settings can revoke event access while a receive session is active.
-  func refreshAccessState() {
+  func refreshAccessState(collectDiagnostics: Bool = true) {
+    if collectDiagnostics {
+      accessibilityTrusted = eventAdapter.accessibilityTrusted
+      hasStableSigningIdentity = eventAdapter.hasStableSigningIdentity
+    }
     let available = eventAdapter.canPostEvents
+    if available { eventAccessRequestAttempted = false }
     guard eventAccessAvailable != available else { return }
     eventAccessAvailable = available
     guard isArmed, let peer = armedPeer else { return }
@@ -85,6 +101,7 @@ import Observation
 
   // Call only from an explicit user action; requesting can show the macOS Events consent prompt.
   @discardableResult func requestEventAccess() -> Bool {
+    eventAccessRequestAttempted = true
     _ = eventAdapter.requestPostEventAccess()
     refreshAccessState()
     return eventAccessAvailable
@@ -107,6 +124,12 @@ import Observation
     statusMessage = "Phone input is off."
   }
 
+  func disarm(for peer: DeviceIdentity) {
+    guard isArmed(for: peer) else { return }
+    disarmCurrent()
+    statusMessage = "Phone input stopped."
+  }
+
   func disarmAll() {
     disarmCurrent()
     statusMessage = "Phone input is off."
@@ -114,7 +137,7 @@ import Observation
 
   func available(_ channel: any SecuredChannel) {
     let descriptor = channel.descriptor
-    guard descriptor.transport == "ble" else { return }
+    guard descriptor.transport == "ble", descriptor.peer.platform == "android" else { return }
     if let old = links[descriptor.transport], old.channel.descriptor != descriptor {
       retired(old.channel.descriptor)
     }
@@ -130,12 +153,14 @@ import Observation
 
   func retired(_ descriptor: ChannelDescriptor) {
     guard let link = liveLink(descriptor) else { return }
+    let wasArmedForPeer = samePeer(armedPeer, descriptor.peer)
     if pendingStart?.descriptor == descriptor { cancelPendingStart(notifyRemote: false) }
     let releaseSucceeded = activeSession?.descriptor == descriptor
       ? endSession("Phone connection ended.", notifyRemote: false) : true
     links[descriptor.transport] = nil
-    if armedPeer.map({ samePeer($0, descriptor.peer) }) == true {
+    if wasArmedForPeer {
       armedOwnerID = nil
+      automaticOwnerID = nil
       armedPeer = nil
       statusMessage = releaseSucceeded
         ? "Phone connection ended. Turn input on again after reconnecting."
@@ -151,7 +176,9 @@ import Observation
   }
 
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
-    guard descriptor.transport == "ble", let link = liveLink(descriptor) else { return .unrecognized }
+    guard descriptor.transport == "ble", descriptor.peer.platform == "android",
+      let link = liveLink(descriptor)
+    else { return .unrecognized }
     let message: PhoneInputMessage
     do {
       guard let decoded = try PhoneInputMessage.decode(bytes) else { return .unrecognized }
@@ -190,23 +217,33 @@ import Observation
   }
 
   private func receiveStart(_ message: PhoneInputMessage, from link: Link) -> DataHandling {
-    refreshAccessState()
+    refreshAccessState(collectDiagnostics: false)
     let id = message.text(0)
-    // First setup cannot arm the surface until Events access is available, so report this first.
+    // A phone's explicit Start is consent for one session; macOS access remains mandatory.
     guard eventAccessAvailable else {
       statusMessage = "macOS event-posting access is off."
       replyToStart(id, result: .unavailable, on: link)
       return .handled
     }
-    guard let peer = armedPeer, let ownerID = armedOwnerID,
-      samePeer(peer, link.channel.descriptor.peer), activeSession == nil, pendingStart == nil,
-      link.pendingEnd == nil
-    else {
+    guard link.remoteTextBytes > 0, link.remoteEvents & 1 != 0 else {
+      replyToStart(id, result: .unsupported, on: link)
+      return .handled
+    }
+    guard activeSession == nil, pendingStart == nil, link.pendingEnd == nil else {
       replyToStart(id, result: .busy, on: link)
       return .handled
     }
-    guard link.remoteTextBytes > 0, link.remoteEvents & 1 != 0 else {
-      replyToStart(id, result: .unsupported, on: link)
+
+    let peer = link.channel.descriptor.peer
+    if armedOwnerID == nil {
+      let ownerID = UUID()
+      automaticOwnerID = ownerID
+      armedOwnerID = ownerID
+      armedPeer = peer
+      statusMessage = "Ready to receive from \(peer.deviceName)."
+    }
+    guard let ownerID = armedOwnerID, samePeer(armedPeer, peer) else {
+      replyToStart(id, result: .busy, on: link)
       return .handled
     }
 
@@ -219,6 +256,7 @@ import Observation
       didSend: { [weak self, weak link] in self?.activate(start, messageID: id, link: link) })
     else {
       pendingStart = nil
+      releaseAutomaticOwner(start.ownerID)
       statusMessage = "The phone connection is busy. Try again."
       return .discarded
     }
@@ -250,7 +288,7 @@ import Observation
   }
 
   private func receiveInput(_ message: PhoneInputMessage, from link: Link) -> DataHandling {
-    refreshAccessState()
+    refreshAccessState(collectDiagnostics: false)
     guard var active = activeSession, active.descriptor == link.channel.descriptor,
       active.id == message.text(0), active.ownerID == armedOwnerID,
       samePeer(armedPeer, link.channel.descriptor.peer)
@@ -312,6 +350,7 @@ import Observation
       statusMessage = "Input access changed; held input could not be released."
     }
     armedOwnerID = nil
+    automaticOwnerID = nil
     armedPeer = nil
   }
 
@@ -323,6 +362,7 @@ import Observation
       link.outgoing.removeAll { $0.purpose == .startResult(start.id, StartResult.accepted.rawValue) }
     }
     pendingStart = nil
+    releaseAutomaticOwner(start.ownerID)
     if notifyRemote, let link = liveLink(start.descriptor) {
       queueSessionEnded(start.messageID, reason: reason, on: link)
     }
@@ -336,6 +376,7 @@ import Observation
     let released = eventAdapter.releaseAll()
     activeSession = nil
     statusMessage = released ? message : "Input access changed; held input could not be released."
+    releaseAutomaticOwner(session.ownerID)
     if notifyRemote, let link = liveLink(session.descriptor) {
       queueSessionEnded(session.id, reason: released ? reason : .accessUnavailable, on: link)
     }
@@ -398,6 +439,15 @@ import Observation
   private func liveLink(_ descriptor: ChannelDescriptor) -> Link? {
     guard let link = links[descriptor.transport], link.channel.descriptor == descriptor else { return nil }
     return link
+  }
+
+  private func releaseAutomaticOwner(_ ownerID: UUID) {
+    guard automaticOwnerID == ownerID else { return }
+    automaticOwnerID = nil
+    if armedOwnerID == ownerID {
+      armedOwnerID = nil
+      armedPeer = nil
+    }
   }
 
   private func samePeer(_ lhs: DeviceIdentity?, _ rhs: DeviceIdentity?) -> Bool {

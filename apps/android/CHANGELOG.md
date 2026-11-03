@@ -17,6 +17,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add a compact, tap-to-start typing field above the full-screen Control Mac trackpad.
+
 - Add a larger Control Mac trackpad, compact editor, full-screen controls and a live typing choice.
 
 - Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.

@@ -10,7 +10,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
-- Clarify Control Mac naming and Device Control setup and recovery; prevent stale editor errors from hiding new start results.
+- Keep shared Mac builds account-free by default, refresh permission status on return without restarting, and distinguish missing, restart-required and stale Event Posting grants.
+
+- Clarify Control Mac naming and Event Posting setup and recovery; prevent stale editor errors from hiding new start results.
 
 - Clear stale Phone-to-Mac input after remote stops or send failures.
 
@@ -22,15 +24,17 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Refine Control Mac controls with a larger phone trackpad, compact editor, full-screen pad, live typing choice, and first-setup Mac receiver enablement.
+- Add a compact typing field to the full-screen phone trackpad; let an authenticated phone Start request arm Mac input for that session when macOS event access is already granted.
+
+- Refine Control Mac controls with a larger phone trackpad, compact editor, full-screen pad and live typing choice.
 
 - Define the Phone-to-Mac input v1 wire contract and cross-platform codec fixtures over the existing authenticated BLE session.
 
-- Add the Mac Phone-to-Mac receiver and fail-safe native event adapter, gated by explicit local arming and existing event-posting access.
+- Add the Mac Phone-to-Mac receiver and fail-safe native event adapter, gated by an authenticated phone start and existing event-posting access.
 
 - Add the Android Control Mac panel with the normal phone keyboard, bounded BLE input sessions and IME-aware text correction.
 
-- Add a Mac Control Mac panel for explicit receiver arming, current-phone status and Device Control setup with automatic permission checks.
+- Add a Mac Control Mac panel for receiver status, a local stop action and Event Posting setup with automatic permission checks.
 
 - Add Android trackpad input for pointer movement, clicks, drag selection and two-finger scrolling over the existing session.
 

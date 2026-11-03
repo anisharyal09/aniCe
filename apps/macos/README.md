@@ -55,9 +55,9 @@ The window and companion share identity, connection state and the allowed-device
 
 ## Run and check
 
-First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). Then open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. The default project build uses ad-hoc signing and requires no Apple account/certificate. macOS privacy grants may not persist across rebuilt ad-hoc binaries; use a stable Apple Development identity when testing permission persistence. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For permission-persistence testing, use a stable Apple Development identity and the same app path across rebuilds. Keep that personal team selection local to your checkout. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
 
-For Control Mac permission testing, select your existing **Apple Development** certificate in the aniCe target’s **Signing & Capabilities** build settings. Use the same certificate and app location for subsequent builds. A command-line signing override applies only to that build; it does not change the project’s ad-hoc default. After changing signing identity, grant permission to the new aniCe build in System Settings. Permission persistence remains controlled by macOS.
+Control Mac checks `CGPreflightPostEventAccess()`; a visible Settings switch or Accessibility trust alone does not prove Event Posting is available. After returning from System Settings, aniCe refreshes the status and stays open. **Restart aniCe** is an explicit action if you just allowed access and the status still appears blocked. If a grant still does not match after restart, remove the old aniCe entry from **Privacy & Security → Device Control and Data Access**, then add the current stable signed build again. Do this once after switching from ad-hoc signing. Copying an ad-hoc app to `/Applications` does not make its signature stable across rebuilds.
 
 
 From `apps/macos/`, with Xcode installed at the path below:
@@ -69,7 +69,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
     -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
-    -derivedDataPath /tmp/aniCe-DerivedData -destination 'platform=macOS' test
+    -derivedDataPath /tmp/aniCe-DerivedData -destination 'platform=macOS' \
+    CODE_SIGN_IDENTITY=- test
 ```
 
 App: `/tmp/aniCe-DerivedData/Build/Products/Debug/aniCe.app`. Prefix the test command with `TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS=1` to include isolated Keychain integration tests.
@@ -84,7 +85,7 @@ The gate enables the Keychain tests, cross-checks the result bundle against `xco
 
 ## Development storage
 
-The storage backend remains the development login Keychain, without hardware isolation. The default build uses local ad-hoc signing without a certificate requirement. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Stable certificate signing keeps code identity across rebuilds; ad-hoc builds may require renewed Keychain authorization. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
+The storage backend remains the development login Keychain, without hardware isolation. Local app builds default to ad-hoc signing; developers may use a stable Apple Development identity locally when testing macOS permission persistence. Automated tests remain ad-hoc signed. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
 The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Universal builds support Apple Silicon and Intel; macOS 14 is the deployment target.
 
@@ -116,7 +117,7 @@ The Objective-C adapter adapts aniKey's GPL transport and report conventions wit
 
 ## Control Mac (unreleased)
 
-Features → Control Mac receives keyboard and trackpad input from the authenticated Android phone over the secured Bluetooth session. Choose **Set up Device Control** to grant permission in System Settings. The page checks automatically while open and shows **Device Control allowed** when macOS confirms event-posting access. The receiver enables once per trusted phone after setup; later visits use **Receive keyboard and trackpad input**. Input goes to the focused Mac app. Turning reception off or leaving the page releases held input. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
+Features → Control Mac receives keyboard and trackpad input from the authenticated Android phone over the secured Bluetooth session. Choose **Set up Mac input** to request Event Posting in System Settings. When you return, aniCe refreshes its status without closing. **Restart aniCe** is available as an explicit recovery action if access still appears blocked after you allow it. If the Settings row is on but Event Posting remains blocked after restart, remove aniCe and add the current signed build again. Once permission is available, **Start control** on the phone arms the receiver for that session, even when this feature page is closed. A phone request cannot grant or bypass macOS permission. Input goes to the focused Mac app; stop on either device to release held input. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 
