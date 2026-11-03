@@ -123,6 +123,7 @@ class PhoneInputControllerTests {
         assertEquals(listOf(9L, 10L), terminal.map { it.kind })
         assertEquals(PhoneInputState.IDLE, owner.state)
         assertEquals("Typing stopped.", owner.status)
+        assertTrue(owner.connected(peer))
     }
 
     @Test fun showsMacEventsAccessRecoveryWhenStartIsRejected() = runBlocking {

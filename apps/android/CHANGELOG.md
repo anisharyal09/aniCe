@@ -6,7 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
-- Show a clear Mac Device Control setup and recovery message when the Mac rejects a phone-input start.
+- Show Event Posting setup guidance when macOS rejects a Control Mac start.
+
+- Keep the Bluetooth link when the Control Mac screen closes, avoid opening the keyboard on Start, and preserve the session when Live typing changes.
 
 - Discard queued Phone-to-Mac input when the Mac ends a session, and retire failed input channels before allowing another start.
 
@@ -17,15 +19,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Add a compact, tap-to-start typing field above the full-screen Control Mac trackpad.
-
-- Add a larger Control Mac trackpad, compact editor, full-screen controls and a live typing choice.
+- Add Control Mac under Settings → Permissions, with the normal Android keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
 
 - Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
-
-- Add a Control Mac feature panel that uses the normal Android keyboard, starts only after Mac acceptance, reconciles IME composing and autocorrect edits, and releases the session when the panel leaves or pauses.
-
-- Add a phone trackpad with pointer movement, tap clicks, long-press dragging, two-finger scrolling and BLE-paced motion coalescing.
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.

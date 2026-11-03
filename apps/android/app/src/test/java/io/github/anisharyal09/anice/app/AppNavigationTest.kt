@@ -110,23 +110,22 @@ class AppNavigationTest {
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
         assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
-        assertEquals("TypeToMac", AppFeature.TypeToMac.toggled(""))
-        assertEquals(6, AppFeature.entries.size)
+        assertEquals(5, AppFeature.entries.size)
         AppFeature.entries.forEach { feature ->
             assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
             assertEquals("", feature.toggled(feature.toggled("")))
         }
     }
 
-    @Test fun typeToMacFeatureUsesTheExistingFeatureRoute() {
-        val state = AppNavigation(AppDestination.Favourites)
-        state.openFeature(AppFeature.TypeToMac)
-        assertEquals(AppDestination.Features, state.destination)
-        assertEquals(AppDestination.Favourites, state.featureOrigin)
-        assertEquals(AppFeature.TypeToMac, state.featurePanel)
-        state.closeFeature()
-        assertEquals(AppDestination.Favourites, state.destination)
-        assertNull(state.featurePanel)
+    @Test fun macRemoteControlLivesUnderSettingsPermissions() {
+        assertFalse(AppFeature.entries.any { it.label == "Control Mac" })
+        val state = AppNavigation(AppDestination.Settings, settingsRoute = SettingsRoute.Permissions)
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(state) }!!
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals(SettingsRoute.Permissions, restored.settingsRoute)
+        restored.back()
+        assertEquals(SettingsRoute.Overview, restored.settingsRoute)
     }
 
     @Test fun favouriteRoutingAndAboutBackPreservePeerAndSavedPreferences() {

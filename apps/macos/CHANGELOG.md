@@ -6,9 +6,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Report missing Events access to the phone before rejecting a remote start request.
+- Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.
 
-- Keep shared local builds account-free by default; use a stable local signing identity when verifying Event Posting persistence.
+- Move Mac input permission and receiver status from Features to Settings → Permissions; keep receiving automatic after a phone start.
 
 - Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
 
@@ -18,13 +18,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Diagnose Event Posting separately from Accessibility, show stale-signature recovery guidance and refresh status on return from permission Settings without restarting.
-
-- Arm the Control Mac receiver for an authenticated phone session when the phone explicitly starts and macOS event access is available.
-
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
-- Add a Phone-to-Mac receiver over authenticated BLE, with Unicode commits, HID key mapping, clamped pointer events, held-input release and no permission prompt on launch.
-- Add **Control Mac** controls to show receiver state and provide one Event Posting setup action with automatic permission checks.
+- Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.
 
 - Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.

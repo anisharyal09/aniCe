@@ -20,50 +20,52 @@ struct MacPhoneInputView: View {
         Label(phone.deviceName, systemImage: "iphone")
           .font(.headline)
           .foregroundStyle(AniCePalette.primaryText(colorScheme))
+      }
 
-        if model.needsPostEventAccess {
-          VStack(alignment: .leading, spacing: 10) {
-            Label("Allow Mac input", systemImage: "exclamationmark.triangle")
-              .font(.subheadline.weight(.medium))
-              .foregroundStyle(AniCePalette.error(colorScheme))
-            Text("Allow aniCe's event-posting request in System Settings → Privacy & Security → Device Control and Data Access. When you return, aniCe checks the permission and stays open.")
+      if model.needsPostEventAccess {
+        VStack(alignment: .leading, spacing: 10) {
+          Label("Allow Mac input", systemImage: "exclamationmark.triangle")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(AniCePalette.error(colorScheme))
+          Text("Allow aniCe's event-posting request in System Settings → Privacy & Security → Device Control and Data Access. When you return, aniCe checks the permission and stays open.")
+            .font(.callout)
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Set up Mac input") {
+            if !model.requestEventAccess() { openSystemSettings() }
+          }
+          .buttonStyle(AniCeButtonStyle())
+          if !model.hasStableSigningIdentity {
+            Text("This build has no stable Apple Development signature. macOS may not match its permission after a rebuild. Use the Apple Development signed aniCe build, then add that copy in System Settings.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            Button("Set up Mac input") {
-              if !model.requestEventAccess() { openSystemSettings() }
-            }
-            .buttonStyle(AniCeButtonStyle())
-            if !model.hasStableSigningIdentity {
-              Text("This build has no stable Apple Development signature. macOS may not match its permission after a rebuild. Use the Apple Development signed aniCe build, then add that copy in System Settings.")
+          }
+          if model.permissionGrantMayBeStale {
+            Text("macOS reports Accessibility as allowed, but Event Posting is unavailable for this aniCe build. Confirm that the Events grant belongs to this same copy.")
+              .font(.callout)
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          if model.canOfferPermissionRestart {
+            Button("Restart aniCe") { restartAniCe() }
+              .buttonStyle(AniCeButtonStyle())
+            Text("Restart aniCe only if you just allowed access and the status is still blocked. This closes and reopens the app to refresh macOS’s check.")
+              .font(.callout)
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            if !model.permissionGrantMayBeStale {
+              Text("If access is still blocked, check the Events permission for this exact aniCe copy and its signing identity.")
                 .font(.callout)
                 .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            }
-            if model.permissionGrantMayBeStale {
-              Text("macOS reports Accessibility (Device Control and Data Access) as allowed, but Event Posting is still blocked. Remove aniCe from that settings list and add this signed copy again.")
-                .font(.callout)
-                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            }
-            if model.canOfferPermissionRestart {
-              Button("Restart aniCe") { restartAniCe() }
-                .buttonStyle(AniCeButtonStyle())
-              Text("Restart aniCe only if you just allowed access and the status is still blocked. This closes and reopens the app to refresh macOS’s check.")
-                .font(.callout)
-                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              if !model.permissionGrantMayBeStale {
-                Text("If access is still blocked, remove aniCe from this settings list and add the current signed copy again.")
-                  .font(.callout)
-                  .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              }
             }
           }
-          .padding(14)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
-        } else {
-          Label("Mac input allowed", systemImage: "checkmark.circle")
-            .font(.callout)
-            .foregroundStyle(AniCePalette.success(colorScheme))
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+      } else {
+        Label("Mac input allowed", systemImage: "checkmark.circle")
+          .font(.callout)
+          .foregroundStyle(AniCePalette.success(colorScheme))
 
+        if let phone = connectedPhone {
           Label(
             model.isArmed(for: phone) || model.statusMessage != "Phone input is off."
               ? model.statusMessage : "Ready. Start Control Mac on your phone.",
@@ -80,16 +82,16 @@ struct MacPhoneInputView: View {
           Text("Start Control Mac on your phone to begin. Input goes to the Mac app with keyboard focus.")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        } else {
+          Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
+            .font(.headline)
+            .foregroundStyle(AniCePalette.primaryText(colorScheme))
+          Text("The phone can start input when it is ready.")
+            .font(.callout)
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Open Devices", action: onOpenDevices)
+            .buttonStyle(AniCeButtonStyle())
         }
-      } else {
-        Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
-          .font(.headline)
-          .foregroundStyle(AniCePalette.primaryText(colorScheme))
-        Text("Choose a trusted phone and connect from Devices. The phone can start a session when it is ready.")
-          .font(.callout)
-          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-        Button("Open Devices", action: onOpenDevices)
-          .buttonStyle(AniCeButtonStyle())
       }
     }
     .frame(maxWidth: 680, alignment: .leading)

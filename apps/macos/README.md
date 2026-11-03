@@ -55,9 +55,7 @@ The window and companion share identity, connection state and the allowed-device
 
 ## Run and check
 
-First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For permission-persistence testing, use a stable Apple Development identity and the same app path across rebuilds. Keep that personal team selection local to your checkout. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
-
-Control Mac checks `CGPreflightPostEventAccess()`; a visible Settings switch or Accessibility trust alone does not prove Event Posting is available. After returning from System Settings, aniCe refreshes the status and stays open. **Restart aniCe** is an explicit action if you just allowed access and the status still appears blocked. If a grant still does not match after restart, remove the old aniCe entry from **Privacy & Security → Device Control and Data Access**, then add the current stable signed build again. Do this once after switching from ad-hoc signing. Copying an ad-hoc app to `/Applications` does not make its signature stable across rebuilds.
+First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For Event Posting checks, pass local `xcodebuild` overrides for `CODE_SIGN_IDENTITY=Apple Development` and your `DEVELOPMENT_TEAM`. Verify that the built app has a `TeamIdentifier`, then use the same app path across runs. The checked-in target explicitly selects ad-hoc signing. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
 
 
 From `apps/macos/`, with Xcode installed at the path below:
@@ -115,9 +113,9 @@ The menu-bar companion's **Keyboard** button shows or hides a persistent floatin
 
 The Objective-C adapter adapts aniKey's GPL transport and report conventions with aniCe's bounded worker and connection checks; Swift owns trusted targets, input capture and cancellation. See the [feature guide](../../docs/features/KEYBOARD_TRACKPAD.md), [Classic HID contract](../../protocol/bluetooth/classic-hid.md) and [adaptation record](../../docs/decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation). No Android app component or Accessibility permission is required.
 
-## Control Mac (unreleased)
+## Phone-to-Mac input
 
-Features → Control Mac receives keyboard and trackpad input from the authenticated Android phone over the secured Bluetooth session. Choose **Set up Mac input** to request Event Posting in System Settings. When you return, aniCe refreshes its status without closing. **Restart aniCe** is available as an explicit recovery action if access still appears blocked after you allow it. If the Settings row is on but Event Posting remains blocked after restart, remove aniCe and add the current signed build again. Once permission is available, **Start control** on the phone arms the receiver for that session, even when this feature page is closed. A phone request cannot grant or bypass macOS permission. Input goes to the focused Mac app; stop on either device to release held input. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
+Settings → Permissions shows Event Posting status and setup for Mac input. aniCe checks `CGPreflightPostEventAccess()` before accepting a phone start; Accessibility trust alone is not enough. After access is granted, the authenticated phone can start input without a Mac feature page or receiver toggle. For permission checks, use the same stable signed app across the request and later runs. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 

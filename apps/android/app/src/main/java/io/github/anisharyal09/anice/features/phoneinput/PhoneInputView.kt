@@ -89,6 +89,7 @@ fun PhoneInputView(
     var localStatus by remember { mutableStateOf("") }
     var liveTyping by remember { mutableStateOf(false) }
     var fullTrackpad by remember { mutableStateOf(false) }
+    var openKeyboardAfterStart by remember { mutableStateOf(false) }
     var previouslyActive by remember { mutableStateOf(false) }
 
     val connectedPeer = session.selected?.takeIf {
@@ -122,18 +123,23 @@ fun PhoneInputView(
                 field.onRawTextChanged = rawTextCallback
             }
             (if (fullTrackpad) fullScreenEditor else editor)?.let { field ->
-                field.requestFocus()
-                field.post {
-                    (context.getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
-                        ?.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+                if (openKeyboardAfterStart) {
+                    openKeyboardAfterStart = false
+                    field.requestFocus()
+                    field.post {
+                        (context.getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+                            ?.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+                    }
                 }
             }
         } else if (owner.active) {
+            openKeyboardAfterStart = false
             owner.stop()
         } else if (previouslyActive) {
             keyboard?.hide()
             clearEditor()
         }
+        if (owner.state == PhoneInputState.IDLE) openKeyboardAfterStart = false
         previouslyActive = owner.active
     }
 
@@ -168,6 +174,7 @@ fun PhoneInputView(
     }
 
     fun stopAndClear() {
+        openKeyboardAfterStart = false
         owner.stop()
         keyboard?.hide()
         clearEditor()
@@ -241,7 +248,7 @@ fun PhoneInputView(
                 Text("Pair a Mac, then connect over Bluetooth to type.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(onClick = { onOpenDevice(null) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("Open Devices")
+                    Text("Pair a Mac")
                 }
             }
         }
@@ -262,7 +269,7 @@ fun PhoneInputView(
                 TextButton(onClick = ::stopAndClear, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
             }
             else -> OutlinedButton(
-                onClick = { localStatus = ""; connectedPeer?.let(owner::start) },
+                onClick = { openKeyboardAfterStart = false; localStatus = ""; connectedPeer?.let(owner::start) },
                 shape = RoundedCornerShape(8.dp),
                 enabled = connectedPeer != null && compatible && owner.canStart(connectedPeer),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -288,7 +295,6 @@ fun PhoneInputView(
                 owner = owner,
                 enabled = owner.active && owner.supportsPointer(connectedPeer),
                 pointerUnavailable = owner.active && !owner.supportsPointer(connectedPeer),
-                onHideKeyboard = { keyboard?.hide() },
                 onFullScreen = { keyboard?.hide(); fullTrackpad = true },
                 sessionActive = owner.active,
             )
@@ -298,11 +304,9 @@ fun PhoneInputView(
             checked = liveTyping,
             enabled = true,
             label = "Live typing",
-            description = "Send composing text now, or wait for the keyboard to commit it.",
-            onCheckedChange = {
-                stopAndClear()
-                liveTyping = it
-            },
+            description = "Send text as it is composed.",
+            compact = true,
+            onCheckedChange = { liveTyping = it },
         )
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -326,8 +330,8 @@ fun PhoneInputView(
                     },
                 )
                 Text(
-                    if (owner.active) "Type with your usual Android keyboard."
-                    else "Start typing to open your usual Android keyboard.",
+                    if (owner.active) "Tap here to open your keyboard."
+                    else "Start control, then tap here to type.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -348,7 +352,6 @@ fun PhoneInputView(
                 owner = owner,
                 enabled = owner.active && connectedPeer?.let(owner::supportsPointer) == true,
                 pointerUnavailable = owner.active && connectedPeer?.let { !owner.supportsPointer(it) } == true,
-                onHideKeyboard = { keyboard?.hide() },
                 onFullScreen = { keyboard?.hide(); fullTrackpad = false },
                 fullScreen = true,
                 sessionActive = owner.active,
@@ -392,7 +395,8 @@ fun PhoneInputView(
                                         role = Role.Button,
                                     ) {
                                         localStatus = ""
-                                        owner.start(connectedPeer)
+                                        openKeyboardAfterStart = true
+                                        if (!owner.start(connectedPeer)) openKeyboardAfterStart = false
                                     }.semantics {
                                         contentDescription = when {
                                             !compatible -> "Update the Mac app to enable phone typing"
@@ -431,7 +435,6 @@ private fun PhoneInputTrackpad(
     owner: PhoneInputController,
     enabled: Boolean,
     pointerUnavailable: Boolean,
-    onHideKeyboard: () -> Unit,
     onFullScreen: () -> Unit,
     fullScreen: Boolean = false,
     sessionActive: Boolean = enabled,
@@ -456,11 +459,7 @@ private fun PhoneInputTrackpad(
                 else if (fullScreen && owner.state == PhoneInputState.STARTING) {
                     TextButton(onClick = owner::stop) { Text("Cancel") }
                 }
-                if (fullScreen && sessionActive) TextButton(onClick = onHideKeyboard) { Text("Hide keyboard") }
                 TextButton(onClick = onFullScreen) { Text(if (fullScreen) "Done" else "Full screen") }
-                if (sessionActive && !fullScreen) TextButton(onClick = onHideKeyboard, modifier = Modifier.heightIn(min = 40.dp)) {
-                    Text("Hide keyboard")
-                }
             }
             if (fullScreen) typingField?.invoke()
             if (fullScreen && !sessionActive && !statusMessage.isNullOrBlank()) {

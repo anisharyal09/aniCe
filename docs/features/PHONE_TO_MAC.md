@@ -5,15 +5,15 @@
 
 ## Use
 
-1. Connect the trusted phone and Mac over Bluetooth.
-2. Allow aniCe's **Event Posting** request in **System Settings → Privacy & Security → Device Control and Data Access** on the Mac.
-3. On Android, open **Features → Control Mac** and tap **Start control**. While aniCe is running, the authenticated phone request arms the Mac receiver for that session; the Mac feature page does not need to be open.
+1. On the Mac, open **aniCe Settings → Permissions**, choose **Set up Mac input**, and allow the Events request in **System Settings → Privacy & Security → Device Control and Data Access**.
+2. Connect the trusted phone and Mac over Bluetooth.
+3. On Android, open **Settings → Permissions → Mac remote control** and tap **Start control**. Once Mac permission is available, the authenticated phone request starts input automatically; no Mac feature page or receiver toggle is needed.
 4. Use one finger to move, tap to click, long-press and move to drag, and two fingers to scroll.
 5. Stop on either device to release remote input and clear the temporary phone editor.
 
-The Mac checks `CGPreflightPostEventAccess()` before accepting a start. A phone request cannot grant or bypass macOS permission; if access is missing, the phone reports that setup is needed. The Settings switch and Accessibility trust are not treated as proof that Event Posting is available. When you return from System Settings, aniCe refreshes the status and stays open. If Event Posting still appears blocked after you allow it, **Restart aniCe** is available as an explicit recovery action. If it remains blocked after restart, remove aniCe from **Privacy & Security → Device Control and Data Access** and add the current stable signed copy again. Input goes to the Mac app with keyboard focus.
+The Mac checks `CGPreflightPostEventAccess()` before accepting a start. Accessibility trust alone does not confirm Event Posting. The Mac Settings permission section refreshes status when you return from System Settings. If access remains blocked, restart the same aniCe copy once and check that copy's permission. The shared Xcode target defaults to ad-hoc signing; permission checks across rebuilds require an Apple Development-signed build at a stable path. Input goes to the Mac app with keyboard focus.
 
-Choose Live typing to send composing text immediately, or keyboard-committed typing to wait for the keyboard to commit it. Changing modes stops the session.
+Choose Live typing to send composing text immediately, or keyboard-committed typing to wait for the keyboard to commit it. Changing modes keeps the session active.
 
 ## Text and IME behavior
 
@@ -25,10 +25,10 @@ Corrections assume the Mac caret remains after the text sent by the phone. After
 
 ## Trackpad behavior
 
-After the Mac accepts the session, the phone trackpad sends pointer movement, clicks, drag selection and two-finger scroll over the same BLE session. Hide the on-screen keyboard from the trackpad header for more space, or expand the trackpad to full screen. The full-screen view keeps a compact text field above the pad; tapping it starts control if needed and opens the phone keyboard. Motion and scroll deltas are coalesced while the BLE channel is busy. Older Mac builds can still receive typing but must advertise pointer support for the trackpad.
+After the Mac accepts the session, the phone trackpad sends pointer movement, clicks, drag selection and two-finger scroll over the same BLE session. Expand the trackpad to full screen for more space. The full-screen view keeps a compact text field above the pad; tapping it starts control if needed and opens the phone keyboard. Motion and scroll deltas are coalesced while the BLE channel is busy. Older Mac builds can still receive typing but must advertise pointer support for the trackpad.
 
 ## Session and interruption behavior
 
-Only one accepted BLE session is active at a time. The phone sends `release-all` before `stop`, and the Mac receiver also releases held input locally on channel loss, capture loss or shutdown. Leaving the feature or pausing aniCe stops the session. The sender uses a bounded ordered queue, reserves room for terminal release messages and stops with visible status if discrete input cannot be queued; it never retries text automatically.
+Only one accepted BLE session is active at a time. The phone sends `release-all` before `stop`, and the Mac receiver also releases held input locally on channel loss, capture loss or shutdown. Leaving the Mac remote-control page or pausing aniCe stops input but does not directly disconnect the shared Bluetooth link. The sender uses a bounded ordered queue, reserves room for terminal release messages and stops with visible status if discrete input cannot be queued; it never retries text automatically.
 
 See the [Phone-to-Mac v1 contract](../../protocol/phone-input/README.md) for message bounds and lifecycle details.

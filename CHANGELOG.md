@@ -10,9 +10,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
-- Keep shared Mac builds account-free by default, refresh permission status on return without restarting, and distinguish missing, restart-required and stale Event Posting grants.
+- Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
 
-- Clarify Control Mac naming and Event Posting setup and recovery; prevent stale editor errors from hiding new start results.
+- Move Android Control Mac to Settings → Permissions; keep BLE connected when leaving the page, keep input active when Live typing changes and open the keyboard only after tapping the text field.
 
 - Clear stale Phone-to-Mac input after remote stops or send failures.
 
@@ -24,19 +24,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Add a compact typing field to the full-screen phone trackpad; let an authenticated phone Start request arm Mac input for that session when macOS event access is already granted.
-
-- Refine Control Mac controls with a larger phone trackpad, compact editor, full-screen pad and live typing choice.
-
-- Define the Phone-to-Mac input v1 wire contract and cross-platform codec fixtures over the existing authenticated BLE session.
-
-- Add the Mac Phone-to-Mac receiver and fail-safe native event adapter, gated by an authenticated phone start and existing event-posting access.
-
-- Add the Android Control Mac panel with the normal phone keyboard, bounded BLE input sessions and IME-aware text correction.
-
-- Add a Mac Control Mac panel for receiver status, a local stop action and Event Posting setup with automatic permission checks.
-
-- Add Android trackpad input for pointer movement, clicks, drag selection and two-finger scrolling over the existing session.
+- Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
 
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 

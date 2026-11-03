@@ -152,7 +152,7 @@ struct MainWindowView: View {
 
   private func featureDestination(favouritesOnly: Bool) -> some View {
     FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
-      sms: sms, keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
+      sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences,
       findNotifier: findNotifier, peers: pairing.peers, navigation: navigation, favouritesOnly: favouritesOnly)
   }
 

@@ -308,7 +308,8 @@ extension MainWindowView {
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
-                ("appearance", "Appearance"), ("connection", "Connection"), ("clipboard", "Clipboard"),
+                ("appearance", "Appearance"), ("connection", "Connection"), ("permissions", "Permissions"),
+                ("clipboard", "Clipboard"),
                 ("messages", "Messages"), ("file-transfer", "File transfer"),
                 ("now-playing", "Now Playing"), ("this-device", "This device")
               ]
@@ -345,6 +346,10 @@ extension MainWindowView {
                     Text("Enable on both devices to use Wi-Fi.").font(.caption)
                       .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
                   }.frame(minHeight: 48, alignment: .leading)
+                }
+                preferenceSection("Permissions", id: "permissions") {
+                  MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Clipboard", id: "clipboard") {
                   ClipboardSettingsView(model: clipboard, peers: pairing.peers, compactSettings: true)
