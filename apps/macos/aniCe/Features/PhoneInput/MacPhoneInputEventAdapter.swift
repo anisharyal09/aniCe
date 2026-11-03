@@ -23,6 +23,7 @@ enum MacPhoneInputEventError: Error, Equatable {
 
 @MainActor protocol MacPhoneInputEventSink: AnyObject {
   var canPostEvents: Bool { get }
+  func requestPostEventAccess() -> Bool
   func cursorLocation() -> CGPoint?
   func displayBounds() -> [CGRect]
   func post(_ event: MacPhoneInputEvent) throws
@@ -54,6 +55,8 @@ enum MacPhoneInputEventError: Error, Equatable {
   }
 
   var canPostEvents: Bool { sink.canPostEvents }
+
+  func requestPostEventAccess() -> Bool { sink.requestPostEventAccess() }
 
   func apply(_ message: PhoneInputMessage) throws {
     switch message.kind {
@@ -228,6 +231,8 @@ enum MacPhoneInputEventError: Error, Equatable {
 
 @MainActor final class CoreGraphicsPhoneInputEventSink: MacPhoneInputEventSink {
   var canPostEvents: Bool { CGPreflightPostEventAccess() }
+
+  func requestPostEventAccess() -> Bool { CGRequestPostEventAccess() }
 
   func cursorLocation() -> CGPoint? { CGEvent(source: nil)?.location }
 

@@ -55,7 +55,10 @@ The window and companion share identity, connection state and the allowed-device
 
 ## Run and check
 
-First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). Then open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. The project uses local ad-hoc signing and requires no Apple account/certificate. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). Then open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. The default project build uses ad-hoc signing and requires no Apple account/certificate. macOS privacy grants may not persist across rebuilt ad-hoc binaries; use a stable Apple Development identity when testing permission persistence. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+
+For Control Mac permission testing, select your existing **Apple Development** certificate in the aniCe target’s **Signing & Capabilities** build settings. Use the same certificate and app location for subsequent builds. A command-line signing override applies only to that build; it does not change the project’s ad-hoc default. After changing signing identity, grant permission to the new aniCe build in System Settings. Permission persistence remains controlled by macOS.
+
 
 From `apps/macos/`, with Xcode installed at the path below:
 
@@ -111,9 +114,9 @@ The menu-bar companion's **Keyboard** button shows or hides a persistent floatin
 
 The Objective-C adapter adapts aniKey's GPL transport and report conventions with aniCe's bounded worker and connection checks; Swift owns trusted targets, input capture and cancellation. See the [feature guide](../../docs/features/KEYBOARD_TRACKPAD.md), [Classic HID contract](../../protocol/bluetooth/classic-hid.md) and [adaptation record](../../docs/decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation). No Android app component or Accessibility permission is required.
 
-## Type to Mac (unreleased)
+## Control Mac (unreleased)
 
-Features → Type to Mac lets the currently authenticated Android phone send text and trackpad input to the Mac over the existing secured Bluetooth session. Turn on phone input in this panel before starting from Android. Input goes to the Mac app with keyboard focus; turning the toggle off or leaving the feature releases held input. The panel checks macOS event-posting access without requesting it and links to System Settings when access is unavailable. See the [Phone-to-Mac feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
+Features → Control Mac receives keyboard and trackpad input from the authenticated Android phone over the secured Bluetooth session. Choose **Set up Device Control** to grant permission in System Settings. The page checks automatically while open and shows **Device Control allowed** when macOS confirms event-posting access. The receiver enables once per trusted phone after setup; later visits use **Receive keyboard and trackpad input**. Input goes to the focused Mac app. Turning reception off or leaving the page releases held input. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 

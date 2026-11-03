@@ -292,7 +292,7 @@ class PhoneInputController(
         reserveMessages: Int,
         flushAll: Boolean = true,
     ) {
-        var pending = current.pendingPointer?.takeIf { it.sessionId == session.id } ?: return
+        val pending = current.pendingPointer?.takeIf { it.sessionId == session.id } ?: return
         val queueLimit = MAX_QUEUED_EVENTS - TERMINAL_MESSAGES - reserveMessages
         var flushed = false
         while ((pending.horizontal != 0L || pending.vertical != 0L) && current.queue.size < queueLimit) {
@@ -354,6 +354,7 @@ class PhoneInputController(
         startTimeout = null
         current.queue.clear()
         clearPendingPointer(current)
+        current.pointerFlushJob?.cancel()
         link = null
         state = PhoneInputState.IDLE
     }
@@ -415,7 +416,10 @@ class PhoneInputController(
                 status = "Typing to ${request.peer.deviceName}."
             }
             1L -> { state = PhoneInputState.IDLE; status = "Your Mac is not ready to receive input yet." }
-            2L -> { state = PhoneInputState.IDLE; status = "macOS input access is unavailable on your Mac." }
+            2L -> {
+                state = PhoneInputState.IDLE
+                status = "Allow aniCe in Device Control and Data Access on your Mac, then try again."
+            }
             else -> { state = PhoneInputState.IDLE; status = "Update aniCe on your Mac to enable phone typing." }
         }
         return DataHandling.HANDLED
@@ -425,6 +429,7 @@ class PhoneInputController(
         val id = message.text(0)
         val request = pendingStart?.takeIf { it.id == id }
         if (request != null) {
+            clearEndedInput()
             pendingStart = null
             startTimeout?.cancel()
             startTimeout = null
@@ -434,11 +439,21 @@ class PhoneInputController(
         }
         val session = activeSession
         if (session?.id == id) {
+            clearEndedInput()
             activeSession = null
             state = PhoneInputState.IDLE
             status = endedStatus(message.number(1))
         }
         return DataHandling.HANDLED
+    }
+
+    // A remote stop invalidates unsent events too; they must not delay the next session.
+    private fun clearEndedInput() {
+        link?.let { current ->
+            current.queue.clear()
+            clearPendingPointer(current)
+            current.pointerFlushJob?.cancel()
+        }
     }
 
     private fun endedStatus(reason: Long) = when (reason) {
@@ -515,13 +530,7 @@ class PhoneInputController(
                         catch (_: SessionBackpressure) { break }
                         catch (error: CancellationException) { throw error }
                         catch (_: Exception) {
-                            current.queue.clear()
-                            if (link === current) {
-                                activeSession = null
-                                pendingStart = null
-                                state = PhoneInputState.IDLE
-                                status = "Bluetooth disconnected. Typing stopped."
-                            }
+                            retired(current.channel.descriptor)
                             break
                         }
                         if (current.queue.firstOrNull() === next) current.queue.removeFirst()

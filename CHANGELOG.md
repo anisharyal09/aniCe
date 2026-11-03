@@ -10,6 +10,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Clarify Control Mac naming and Device Control setup and recovery; prevent stale editor errors from hiding new start results.
+
+- Clear stale Phone-to-Mac input after remote stops or send failures.
+
 - Ignore stale macOS channel callbacks so an old BLE/LAN session cannot retire a replacement connection or make playback controls unresponsive.
 
 - Remove transfer-chunk preparation from presentation threads, keep Find Device startup from blocking shared DATA delivery, and correct interrupted SMS and session-close handling.
@@ -18,13 +22,15 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Refine Control Mac controls with a larger phone trackpad, compact editor, full-screen pad, live typing choice, and first-setup Mac receiver enablement.
+
 - Define the Phone-to-Mac input v1 wire contract and cross-platform codec fixtures over the existing authenticated BLE session.
 
 - Add the Mac Phone-to-Mac receiver and fail-safe native event adapter, gated by explicit local arming and existing event-posting access.
 
-- Add the Android Type to Mac panel with the normal phone keyboard, bounded BLE input sessions and IME-aware text correction.
+- Add the Android Control Mac panel with the normal phone keyboard, bounded BLE input sessions and IME-aware text correction.
 
-- Add a Mac Type to Mac panel for explicit receiver arming, current-phone status and event-access recovery without a permission prompt.
+- Add a Mac Control Mac panel for explicit receiver arming, current-phone status and Device Control setup with automatic permission checks.
 
 - Add Android trackpad input for pointer movement, clicks, drag selection and two-finger scrolling over the existing session.
 

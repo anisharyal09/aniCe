@@ -6,6 +6,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Show a clear Mac Device Control setup and recovery message when the Mac rejects a phone-input start.
+
+- Discard queued Phone-to-Mac input when the Mac ends a session, and retire failed input channels before allowing another start.
+
 - Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
 
 - Keep artwork only for the current recording, avoid clearing it for control-only revisions, and bound media-notification retirement during a connected transport handoff; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
@@ -13,9 +17,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add a larger Control Mac trackpad, compact editor, full-screen controls and a live typing choice.
+
 - Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
 
-- Add a Type to Mac feature panel that uses the normal Android keyboard, starts only after Mac acceptance, reconciles IME composing and autocorrect edits, and releases the session when the panel leaves or pauses.
+- Add a Control Mac feature panel that uses the normal Android keyboard, starts only after Mac acceptance, reconciles IME composing and autocorrect edits, and releases the session when the panel leaves or pauses.
 
 - Add a phone trackpad with pointer movement, tap clicks, long-press dragging, two-finger scrolling and BLE-paced motion coalescing.
 

@@ -28,6 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,6 +64,7 @@ import io.github.anisharyal09.anice.features.session.SessionViewModel
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 
@@ -80,6 +84,8 @@ fun PhoneInputView(
     val inputHintColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
     var editor by remember { mutableStateOf<PhoneInputEditor?>(null) }
     var localStatus by remember { mutableStateOf("") }
+    var liveTyping by remember { mutableStateOf(false) }
+    var fullTrackpad by remember { mutableStateOf(false) }
     var previouslyActive by remember { mutableStateOf(false) }
 
     val connectedPeer = session.selected?.takeIf {
@@ -179,8 +185,9 @@ fun PhoneInputView(
         when {
             owner.state == PhoneInputState.ACTIVE -> OutlinedButton(
                 onClick = ::stopAndClear,
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text("Stop typing") }
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Stop control") }
             owner.state == PhoneInputState.STARTING -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -191,10 +198,11 @@ fun PhoneInputView(
                 TextButton(onClick = ::stopAndClear, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
             }
             else -> OutlinedButton(
-                onClick = { connectedPeer?.let(owner::start) },
+                onClick = { localStatus = ""; connectedPeer?.let(owner::start) },
+                shape = RoundedCornerShape(8.dp),
                 enabled = connectedPeer != null && compatible && owner.canStart(connectedPeer),
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text("Start typing") }
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Start control") }
         }
 
         if (connectedPeer != null && !compatible) {
@@ -217,9 +225,20 @@ fun PhoneInputView(
                 enabled = owner.active && owner.supportsPointer(connectedPeer),
                 pointerUnavailable = owner.active && !owner.supportsPointer(connectedPeer),
                 onHideKeyboard = { keyboard?.hide() },
+                onFullScreen = { keyboard?.hide(); fullTrackpad = true },
             )
         }
 
+        AutomaticConnectionToggle(
+            checked = liveTyping,
+            enabled = true,
+            label = "Live typing",
+            description = "Send composing text now, or wait for the keyboard to commit it.",
+            onCheckedChange = {
+                stopAndClear()
+                liveTyping = it
+            },
+        )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -228,7 +247,7 @@ fun PhoneInputView(
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Phone keyboard", style = MaterialTheme.typography.titleSmall)
                 AndroidView(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp, max = 176.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp, max = 104.dp)
                         .semantics { contentDescription = "Text field for typing on the connected Mac" },
                     factory = { viewContext ->
                         PhoneInputEditor(viewContext).apply {
@@ -238,6 +257,7 @@ fun PhoneInputView(
                     },
                     update = { field ->
                         editor = field
+                        field.sendComposingText = liveTyping
                         configureInput(field, enabled = owner.active, textColor = inputTextColor, hintColor = inputHintColor)
                         field.onEditorSnapshot = { snapshot ->
                             val commitLimit = connectedPeer?.let(owner::maximumTextBytes)
@@ -282,6 +302,15 @@ fun PhoneInputView(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+    if (fullTrackpad) Dialog(
+        onDismissRequest = { fullTrackpad = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            PhoneInputTrackpad(owner, owner.active && connectedPeer?.let(owner::supportsPointer) == true,
+                false, { keyboard?.hide() }, { fullTrackpad = false }, fullScreen = true)
+        }
+    }
 }
 
 @Composable
@@ -290,6 +319,8 @@ private fun PhoneInputTrackpad(
     enabled: Boolean,
     pointerUnavailable: Boolean,
     onHideKeyboard: () -> Unit,
+    onFullScreen: () -> Unit,
+    fullScreen: Boolean = false,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val viewConfiguration = LocalViewConfiguration.current
@@ -301,16 +332,18 @@ private fun PhoneInputTrackpad(
         shape = RoundedCornerShape(12.dp),
         color = colorScheme.surfaceContainerLow,
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Mac trackpad", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.weight(1f))
-                if (enabled) TextButton(onClick = onHideKeyboard, modifier = Modifier.heightIn(min = 40.dp)) {
+                if (fullScreen && enabled) TextButton(onClick = owner::stop) { Text("Stop control") }
+                TextButton(onClick = onFullScreen) { Text(if (fullScreen) "Done" else "Full screen") }
+                if (enabled && !fullScreen) TextButton(onClick = onHideKeyboard, modifier = Modifier.heightIn(min = 40.dp)) {
                     Text("Hide keyboard")
                 }
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(176.dp)
+                modifier = Modifier.fillMaxWidth().then(if (fullScreen) Modifier.weight(1f) else Modifier.height(240.dp))
                     .clip(RoundedCornerShape(10.dp))
                     .background(colorScheme.surface)
                     .border(1.dp, colorScheme.outlineVariant, RoundedCornerShape(10.dp))
@@ -433,8 +466,8 @@ private fun configureInput(field: PhoneInputEditor, enabled: Boolean, textColor:
         if (inputType != textInput) inputType = textInput
         val options = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         if (imeOptions != options) imeOptions = options
-        if (minLines != 2) minLines = 2
-        if (maxLines != 4) maxLines = 4
+        if (minLines != 1) minLines = 1
+        if (maxLines != 2) maxLines = 2
         if (gravity != (Gravity.TOP or Gravity.START)) gravity = Gravity.TOP or Gravity.START
         textSize = 16f
         typeface = Typeface.DEFAULT

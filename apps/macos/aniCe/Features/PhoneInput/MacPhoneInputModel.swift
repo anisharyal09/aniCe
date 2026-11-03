@@ -83,6 +83,13 @@ import Observation
     }
   }
 
+  // Call only from an explicit user action; requesting can show the macOS Events consent prompt.
+  @discardableResult func requestEventAccess() -> Bool {
+    _ = eventAdapter.requestPostEventAccess()
+    refreshAccessState()
+    return eventAccessAvailable
+  }
+
   func arm(ownerID: UUID, for peer: DeviceIdentity) {
     if armedOwnerID == ownerID, samePeer(armedPeer, peer) { return }
     refreshAccessState()
@@ -185,6 +192,12 @@ import Observation
   private func receiveStart(_ message: PhoneInputMessage, from link: Link) -> DataHandling {
     refreshAccessState()
     let id = message.text(0)
+    // First setup cannot arm the surface until Events access is available, so report this first.
+    guard eventAccessAvailable else {
+      statusMessage = "macOS event-posting access is off."
+      replyToStart(id, result: .unavailable, on: link)
+      return .handled
+    }
     guard let peer = armedPeer, let ownerID = armedOwnerID,
       samePeer(peer, link.channel.descriptor.peer), activeSession == nil, pendingStart == nil,
       link.pendingEnd == nil
@@ -194,11 +207,6 @@ import Observation
     }
     guard link.remoteTextBytes > 0, link.remoteEvents & 1 != 0 else {
       replyToStart(id, result: .unsupported, on: link)
-      return .handled
-    }
-    guard eventAccessAvailable else {
-      statusMessage = "macOS event-posting access is off."
-      replyToStart(id, result: .unavailable, on: link)
       return .handled
     }
 

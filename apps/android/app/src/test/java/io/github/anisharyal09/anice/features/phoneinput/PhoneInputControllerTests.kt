@@ -125,6 +125,23 @@ class PhoneInputControllerTests {
         assertEquals("Typing stopped.", owner.status)
     }
 
+    @Test fun showsMacEventsAccessRecoveryWhenStartIsRejected() = runBlocking {
+        val (owner, channel, descriptor, peer) = connectedController()
+        assertTrue(owner.start(peer))
+        val request = channel.messages().last()
+
+        owner.handle(
+            descriptor,
+            PhoneInputMessage.of(3, Cbor.Text(request.text(0)), Cbor.Integer(2)).encode(),
+        )
+
+        assertEquals(PhoneInputState.IDLE, owner.state)
+        assertEquals(
+            "Allow aniCe in Device Control and Data Access on your Mac, then try again.",
+            owner.status,
+        )
+    }
+
     @Test fun cancellationWhileMacIsDecidingReleasesLateAcceptanceWithoutActivating() = runBlocking {
         val (owner, channel, descriptor, peer) = connectedController()
         owner.start(peer)
@@ -147,6 +164,37 @@ class PhoneInputControllerTests {
         assertFalse(owner.sendText(PhoneInputTextPlan(listOf(PhoneInputTextAction.Commit("hello")))))
         assertEquals(PhoneInputState.IDLE, owner.state)
         assertEquals(listOf(9L, 10L), channel.messages().takeLast(2).map { it.kind })
+    }
+
+    @Test fun remoteStopDiscardsUnsentInputBeforeAnotherSession() = runBlocking {
+        val (owner, channel, descriptor, peer) = connectedController()
+        owner.start(peer)
+        val id = channel.messages().last().text(0)
+        owner.handle(descriptor, PhoneInputMessage.of(3, Cbor.Text(id), Cbor.Integer(0)).encode())
+        channel.blocked = true
+        owner.sendPointerMotion(10, 20)
+        owner.sendKey(0x28, 0, true)
+        owner.handle(descriptor, PhoneInputMessage.of(11, Cbor.Text(id), Cbor.Integer(0)).encode())
+
+        assertFalse(owner.active)
+        channel.blocked = false
+        owner.capacityAvailable(descriptor)
+        assertTrue(owner.start(peer))
+        assertEquals(listOf(1L, 2L, 2L), channel.messages().map { it.kind })
+    }
+
+    @Test fun sendFailureRetiresTheChannelUntilTransportReconnects() = runBlocking {
+        val (owner, channel, descriptor, peer) = connectedController()
+        owner.start(peer)
+        val id = channel.messages().last().text(0)
+        owner.handle(descriptor, PhoneInputMessage.of(3, Cbor.Text(id), Cbor.Integer(0)).encode())
+        channel.failed = true
+        owner.sendPointerButtons(1)
+
+        assertFalse(owner.active)
+        assertFalse(owner.connected(peer))
+        assertFalse(owner.canStart(peer))
+        assertFalse(owner.start(peer))
     }
 
     private suspend fun connectedController(remoteEvents: Long = 7, remoteTextBytes: Long = 1024): TestSetup {
@@ -174,7 +222,9 @@ class PhoneInputControllerTests {
     private class FakeChannel(override val descriptor: ChannelDescriptor) : SecuredChannel {
         private val sent = mutableListOf<ByteArray>()
         var blocked = false
+        var failed = false
         override suspend fun sendData(bytes: ByteArray) {
+            if (failed) throw java.io.IOException("Test connection closed")
             if (blocked) throw SessionBackpressure()
             sent += bytes.copyOf()
         }

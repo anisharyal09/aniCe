@@ -9,6 +9,14 @@ import XCTest
   var cursor: CGPoint? = CGPoint(x: 10, y: 10)
   var displays = [CGRect(x: 0, y: 0, width: 100, height: 100)]
   var events = [MacPhoneInputEvent]()
+  var requestResult = false
+  var requestCount = 0
+
+  func requestPostEventAccess() -> Bool {
+    requestCount += 1
+    if requestResult { canPostEvents = true }
+    return requestResult
+  }
 
   func cursorLocation() -> CGPoint? { cursor }
   func displayBounds() -> [CGRect] { displays }
@@ -144,7 +152,7 @@ import XCTest
     model.shutdown()
   }
 
-  func testMissingEventAccessRejectsStartWithoutActivating() async throws {
+  func testMissingEventAccessIsReportedBeforeUnarmedReceiverStatus() async throws {
     let sink = PhoneInputEventSinkFake()
     sink.canPostEvents = false
     let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
@@ -154,7 +162,6 @@ import XCTest
     await eventually { channel.sentData.contains { (try? PhoneInputMessage.decode($0))?.kind == 1 } }
     _ = await model.handle(
       try PhoneInputMessage.of(1, .integer(1024), .integer(1)).encode(), on: channel.descriptor)
-    model.arm(ownerID: UUID(), for: channel.descriptor.peer)
 
     _ = await model.handle(try PhoneInputMessage.of(2, .text(session)).encode(), on: channel.descriptor)
     await eventually {
@@ -162,6 +169,7 @@ import XCTest
         .contains { $0.kind == 3 && $0.number(1) == 2 }) == true
     }
     XCTAssertFalse(model.isReceiving)
+    XCTAssertFalse(model.isArmed)
     XCTAssertTrue(model.needsPostEventAccess)
     model.shutdown()
   }
@@ -183,6 +191,33 @@ import XCTest
     XCTAssertFalse(model.needsPostEventAccess)
     XCTAssertEqual(model.statusMessage, "Ready to receive from \(peer.deviceName).")
     model.disarm(ownerID: owner)
+  }
+
+  func testEventAccessIsRequestedOnlyThroughExplicitModelAction() {
+    let sink = PhoneInputEventSinkFake()
+    sink.canPostEvents = false
+    sink.requestResult = true
+    let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
+
+    XCTAssertTrue(model.needsPostEventAccess)
+    XCTAssertEqual(sink.requestCount, 0)
+    XCTAssertTrue(model.requestEventAccess())
+    XCTAssertEqual(sink.requestCount, 1)
+    XCTAssertFalse(model.needsPostEventAccess)
+  }
+
+  func testDeniedEventAccessRequestRemainsUnavailableUntilSettingsGrant() {
+    let sink = PhoneInputEventSinkFake()
+    sink.canPostEvents = false
+    let model = MacPhoneInputModel(eventAdapter: MacPhoneInputEventAdapter(sink: sink))
+
+    XCTAssertFalse(model.requestEventAccess())
+    XCTAssertEqual(sink.requestCount, 1)
+    XCTAssertTrue(model.needsPostEventAccess)
+
+    sink.canPostEvents = true
+    model.refreshAccessState()
+    XCTAssertFalse(model.needsPostEventAccess)
   }
 
   func testRevokedAccessStopsTheActiveReceiveSession() async throws {
