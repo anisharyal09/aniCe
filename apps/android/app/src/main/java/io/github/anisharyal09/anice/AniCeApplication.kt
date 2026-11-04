@@ -110,6 +110,10 @@ class AniCeApplication : Application() {
         if (bleOwner.isInitialized()) bleOwner.value.onWorkServiceStopped()
     }
 
+    internal fun updateTransferForegroundNotification() {
+        transferNotification.update(force = true)
+    }
+
     private val clipboardOwner = lazy {
         io.github.anisharyal09.anice.features.clipboard.ClipboardController(
             native = io.github.anisharyal09.anice.features.clipboard.AndroidClipboard(this),

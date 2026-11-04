@@ -31,13 +31,14 @@ class TransferService : Service() {
             else -> "Preparing transfer"
         }
         val notification = NotificationCompat.Builder(this, TransferNotification.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_file_send)
             .setContentTitle("Local file transfer")
             .setContentText(status)
             .setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build()
         try {
             ServiceCompat.startForeground(this, TransferNotification.NOTIFICATION_ID, notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            app.updateTransferForegroundNotification()
         } catch (_: SecurityException) {
             app.transfer.backgroundAllowed = false
             stopSelf(startId)

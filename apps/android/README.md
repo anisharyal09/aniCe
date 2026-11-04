@@ -106,7 +106,7 @@ Home and Features → Now Playing provide playback, player selection and support
 
 ## Local File Transfer
 
-Home → Files and Features → Send files provide transfer controls and rolling-window rate tracking. Incoming files default to `Downloads/aniCe`; a supported document-tree folder can be saved instead and reset to the default. Per-trusted-Mac automatic receiving is off by default. Verified files are published without overwriting existing names; provider atomicity is not assumed. Background continuation requires approved work and the connected-device transfer service; notification permission controls drawer visibility. Mid-stream channel loss automatically pauses with checkpointed partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; private checkpoints retain prepared jobs across restarts for 15 minutes. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Home → Files and Features → Send files provide transfer controls; Android’s system Share sheet can send files to a connected Mac. Receives default to `Downloads/aniCe`; File transfer settings allow a saved custom folder and per-Mac automatic receiving. Eligible background work uses the existing connected-device service; otherwise offers wait until aniCe opens. Transfers pause on connection loss and resume over LAN or explicit Bluetooth continuation. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 ## Find Device
 

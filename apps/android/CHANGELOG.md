@@ -6,7 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
-- Let an opted-in Android receive keep its active companion connection when the app backgrounds, and keep sending available after a completed or failed batch.
+- Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
+
+- Show a numeric percentage and the transfer icon in progress notifications.
 
 - Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
 
@@ -15,11 +17,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Send files from Android’s Share sheet to the connected Mac through aniCe.
+- Send files to a connected Mac from Android’s Share sheet.
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
-- Save incoming files to `Downloads/aniCe` by default, remember a supported custom folder, and allow reset to the default.
-- Add off-by-default automatic-receive consent for each trusted Mac, with background offers kept pending until aniCe can safely receive them.
+- Save incoming files to `Downloads/aniCe` by default, with a remembered custom folder and reset action.
+- Add off-by-default automatic-receive consent for each trusted Mac.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.
 - Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
@@ -27,11 +29,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
-- Label each Mac sender clearly, tighten the receive row, and leave space below its helper text in Settings.
+- Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
 
-- Show the send action before receive preferences in File transfer.
-
-- Show the saved receive folder’s name in File transfer; identify unavailable folders.
+- Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.
 - Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
 - Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.
 - Extract Android SMS thread, history, SIM and search request serving into a focused controller file while retaining channel dispatch and local presentation.

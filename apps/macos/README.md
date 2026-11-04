@@ -111,7 +111,7 @@ The Objective-C adapter adapts aniKey's GPL transport and report conventions wit
 
 ## Local File Transfer
 
-Overview → Files and Features → File transfer accept file drops, and the optional **Edge Drop** shelf reveals on a configurable screen edge; **Choose files** remains available. Incoming files default to `~/Downloads/aniCe`; saved local folders can be selected or reset to the default. Per-trusted-phone automatic receiving is off by default. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication by atomic hard link or copy fallback. Mid-stream channel loss automatically pauses with checkpointed partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; private checkpoints retain prepared jobs across restarts for 15 minutes. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 

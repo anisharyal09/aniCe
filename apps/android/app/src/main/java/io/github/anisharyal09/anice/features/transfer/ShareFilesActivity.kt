@@ -5,10 +5,13 @@ package io.github.anisharyal09.anice.features.transfer
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,8 +20,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 
 internal fun sharedFileUris(intent: Intent): List<Uri>? {
@@ -52,6 +58,7 @@ private class FileShareState : ViewModel() {
         if (batch == null && owner.epoch == epoch) batch = owner.currentBatch?.id
         return batch?.let { owner.currentBatch?.id == it } ?: (owner.epoch == epoch)
     }
+    fun isActive(owner: TransferController): Boolean = owns(owner) && owner.isBusy
     fun send(owner: TransferController) {
         if (started) return
         val files = urls ?: return
@@ -84,31 +91,70 @@ class ShareFilesActivity : ComponentActivity() {
                 "Share 1–128 readable files. No files were sent." else "Share interrupted. Check aniCe before sharing these files again."
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() { share.cancel(app.transfer); finish() }
+            override fun handleOnBackPressed() {
+                if (share.isActive(app.transfer)) moveTaskToBack(true) else finish()
+            }
         })
         setContent { AniCeTheme {
             val owner = app.transfer
             LaunchedEffect(Unit) { share.send(owner) }
-            Surface { Column(Modifier.padding(24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Send files to Mac", style = MaterialTheme.typography.titleLarge)
-                if (!share.started) {
-                    Text(share.message ?: "Preparing share…")
-                    if (share.urls != null) Button(onClick = { share.send(owner) }) { Text("Retry") }
-                    TextButton(onClick = { startActivity(Intent(this@ShareFilesActivity, MainActivity::class.java)) }) { Text("Open aniCe") }
-                } else {
-                    Text("To ${share.peerName}")
-                    val owns = share.owns(owner)
-                    if (owns && owner.isBusy) TransferView(owner, overview = true)
-                    else Text(when (val state = owner.state) {
-                        is TransferState.Completed -> if (share.matches(state.batchId)) "Files received by your Mac." else "Transfer ended. Check aniCe for the result."
-                        is TransferState.Rejected -> if (share.matches(state.batchId)) "The Mac declined the files." else "Transfer ended. Check aniCe for the result."
-                        else -> "Transfer ended. Check aniCe for the result."
-                    })
+            val active = share.isActive(owner)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 1.dp,
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(24.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Send files to Mac", style = MaterialTheme.typography.titleMedium)
+                            if (share.peerName.isNotBlank()) {
+                                Text("To ${share.peerName}", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                    when {
+                        active -> ShareTransferProgress(owner)
+                        !share.started -> {
+                            Text(share.message ?: "Preparing share…", style = MaterialTheme.typography.bodyMedium)
+                            if (share.urls != null) {
+                                Button(onClick = { share.send(owner) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                                    Text("Retry")
+                                }
+                            }
+                            TextButton(
+                                onClick = {
+                                    startActivity(Intent(this@ShareFilesActivity, MainActivity::class.java))
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Open aniCe") }
+                        }
+                        else -> ShareTransferResult(share, owner)
+                    }
+                    if (active) {
+                        HorizontalDivider()
+                        Button(onClick = { moveTaskToBack(true) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                            Text("Continue in background")
+                        }
+                        TextButton(
+                            onClick = { share.cancel(owner); finish() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Cancel transfer") }
+                    } else if (share.started) {
+                        Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                            Text("Done")
+                        }
+                    }
                 }
-                TextButton(onClick = { share.cancel(owner); finish() }) {
-                    Text(if (share.owns(owner) && owner.isBusy) "Cancel transfer" else "Close")
-                }
-            } }
+            }
         } }
     }
     override fun onStart() {
@@ -116,14 +162,74 @@ class ShareFilesActivity : ComponentActivity() {
         app.sessionController.foreground(this); app.lanSessionController.foreground(this)
         app.transfer.applicationForegrounded()
     }
-    override fun onDestroy() {
-        if (isFinishing && ::share.isInitialized) share.cancel(app.transfer)
-        super.onDestroy()
-    }
     override fun onStop() {
         super.onStop()
         app.sessionController.background(this, isChangingConfigurations)
         app.lanSessionController.background(this, isChangingConfigurations)
         if (!isChangingConfigurations) app.transfer.applicationBackgrounded()
+    }
+}
+
+@Composable
+private fun ShareTransferProgress(controller: TransferController) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    when (val state = controller.state) {
+        is TransferState.Transferring -> {
+            val total = state.batch.totalBytes
+            val fraction = if (total > 0) (state.totalBytes.toFloat() / total).coerceIn(0f, 1f) else 0f
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (controller.receiving) "Receiving from ${state.batch.peerName}" else "Sending to ${state.batch.peerName}",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                if (total > 0) LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    "${Formatter.formatFileSize(context, state.totalBytes)} of ${Formatter.formatFileSize(context, total)} · File ${state.fileIndex} of ${state.batch.files.size}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(state.fileName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        is TransferState.Paused -> {
+            val total = state.batch.totalBytes
+            val fraction = if (total > 0) (state.totalBytes.toFloat() / total).coerceIn(0f, 1f) else 0f
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Transfer paused", style = MaterialTheme.typography.titleSmall)
+                if (total > 0) LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                Text("${Formatter.formatFileSize(context, state.totalBytes)} of ${Formatter.formatFileSize(context, total)} · ${state.reason}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        is TransferState.WaitingForPeerApproval -> {
+            Text("Waiting for ${state.batch.peerName} to accept the files…", style = MaterialTheme.typography.bodyMedium)
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        is TransferState.Connecting -> {
+            Text("Connecting to ${state.peerName}…", style = MaterialTheme.typography.bodyMedium)
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        else -> {
+            Text(if (controller.preparing) "Preparing files…" else "Starting transfer…", style = MaterialTheme.typography.bodyMedium)
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun ShareTransferResult(share: FileShareState, controller: TransferController) {
+    when (val state = controller.state) {
+        is TransferState.Completed -> Text(
+            if (share.matches(state.batchId)) "Files sent to ${share.peerName}." else "Transfer ended. Check aniCe for the result.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        is TransferState.Rejected -> Text(
+            if (share.matches(state.batchId)) "The Mac declined the files." else "Transfer ended. Check aniCe for the result.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        is TransferState.Failed -> Text(state.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        TransferState.Cancelled -> Text("Transfer cancelled.", style = MaterialTheme.typography.bodyMedium)
+        else -> Text("Transfer ended. Check aniCe for the result.", style = MaterialTheme.typography.bodyMedium)
     }
 }
