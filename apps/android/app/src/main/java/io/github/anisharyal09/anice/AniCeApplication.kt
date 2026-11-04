@@ -118,6 +118,8 @@ class AniCeApplication : Application() {
         ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
     }
     val sms get() = smsOwner.value
+    private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
+    val phoneInput get() = phoneInputOwner.value
     val findDeviceNotification by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceNotification(this) }
     val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
@@ -137,6 +139,7 @@ class AniCeApplication : Application() {
             it.register(findDevice)
             it.register(clipboard)
             it.register(sms)
+            it.register(phoneInput)
         }
     }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()

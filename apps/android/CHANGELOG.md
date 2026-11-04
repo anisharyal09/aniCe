@@ -4,7 +4,15 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Document the remote-control source layout and remove outdated blanket validation claims.
+
 ### Fixed
+
+- Show Event Posting setup guidance when macOS rejects a Control Mac start.
+
+- Keep the Bluetooth link when the Control Mac screen closes, avoid opening the keyboard on Start, and preserve the session when Live typing changes.
+
+- Discard queued Phone-to-Mac input when the Mac ends a session, and retire failed input channels before allowing another start.
 
 - Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
 
@@ -14,6 +22,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Retry constrained LAN transfer probes on cadence so slow fallback ACK intervals cannot permanently keep transfers at 64-KiB chunks.
 
 ### Added
+
+- Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
+
+- Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.

@@ -12,6 +12,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define Phone-to-Mac input v1 over authenticated BLE DATA, with phone-started sessions gated by Mac Event Posting, Unicode text separate from key transitions, bounded motion coalescing, fail-safe release and Mac-to-phone session-ended notices.
+
 - Define Classic HID keyboard, restricted Back/Home consumer and mouse reports; retain a neutral ninth keyboard byte for cached composite-descriptor compatibility and eight-byte boot keyboard payloads.
 - Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
 

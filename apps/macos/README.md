@@ -23,6 +23,7 @@ aniCe/
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
     FindDevice/                Peer ring request actions, sound player and notification setup
     KeyboardTrackpad/          Native input model/views, floating panel and Objective-C HID adapter
+    PhoneInput/                Secured BLE receiver, native input adapter and receiver controls
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
     Sms/                       SMS relay model, wire codec, notifier and views
@@ -41,6 +42,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   Clipboard/                   Clipboard model, debounce and wire codec test suites
   FindDevice/                  Find device payload and state transition test suites
   KeyboardTrackpad/            Input ownership, focus, gestures and native HID protocol tests
+  PhoneInput/                  Phone-to-Mac receiver, event translation and wire codec tests
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
   Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
@@ -53,7 +55,8 @@ The window and companion share identity, connection state and the allowed-device
 
 ## Run and check
 
-First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). Then open `aniCe.xcodeproj`, select **aniCe → My Mac**, and press **Command-R**. The project uses local ad-hoc signing and requires no Apple account/certificate. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For Event Posting checks, use local `xcodebuild` overrides for `CODE_SIGN_IDENTITY=Apple Development` and `DEVELOPMENT_TEAM`. Verify the app with `codesign --verify --deep --strict`; `codesign -dv --verbose=4` should show the expected Apple Development authority and TeamIdentifier. A TeamIdentifier alone does not confirm a trusted signature. Use the same signed app copy for setup and later runs; ad-hoc rebuilds can invalidate the saved permission. The checked-in target explicitly selects ad-hoc signing. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+
 
 From `apps/macos/`, with Xcode installed at the path below:
 
@@ -64,7 +67,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
     -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
-    -derivedDataPath /tmp/aniCe-DerivedData -destination 'platform=macOS' test
+    -derivedDataPath /tmp/aniCe-DerivedData -destination 'platform=macOS' \
+    CODE_SIGN_IDENTITY=- test
 ```
 
 App: `/tmp/aniCe-DerivedData/Build/Products/Debug/aniCe.app`. Prefix the test command with `TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS=1` to include isolated Keychain integration tests.
@@ -79,7 +83,7 @@ The gate enables the Keychain tests, cross-checks the result bundle against `xco
 
 ## Development storage
 
-The storage backend remains the development login Keychain, without hardware isolation. The default build uses local ad-hoc signing without a certificate requirement. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Stable certificate signing keeps code identity across rebuilds; ad-hoc builds may require renewed Keychain authorization. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
+The storage backend remains the development login Keychain, without hardware isolation. Local app builds default to ad-hoc signing; developers may use a stable Apple Development identity locally when testing macOS permission persistence. Automated tests remain ad-hoc signed. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
 The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Universal builds support Apple Silicon and Intel; macOS 14 is the deployment target.
 
@@ -108,6 +112,10 @@ Features → Keyboard & Trackpad sends native keyboard and mouse input to a trus
 The menu-bar companion's **Keyboard** button shows or hides a persistent floating button; its right-click menu also offers **Show floating keyboard**. Click the floating button to toggle typing, or right-click it for full controls and Hide. Compact position and visibility are saved; reopening restores idle controls. Resizing the full controls preserves keyboard focus. Stopping or hiding releases held input while the HID connection can remain idle.
 
 The Objective-C adapter adapts aniKey's GPL transport and report conventions with aniCe's bounded worker and connection checks; Swift owns trusted targets, input capture and cancellation. See the [feature guide](../../docs/features/KEYBOARD_TRACKPAD.md), [Classic HID contract](../../protocol/bluetooth/classic-hid.md) and [adaptation record](../../docs/decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation). No Android app component or Accessibility permission is required.
+
+## Phone-to-Mac input
+
+Settings → Permissions shows Event Posting status and setup for Mac input. aniCe checks `CGPreflightPostEventAccess()` before accepting a phone start; Accessibility trust alone is not enough. After access is granted, the authenticated phone can start input without a Mac feature page or receiver toggle. Use the same signed app copy for setup and later runs; ad-hoc rebuilds can invalidate the saved permission. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 

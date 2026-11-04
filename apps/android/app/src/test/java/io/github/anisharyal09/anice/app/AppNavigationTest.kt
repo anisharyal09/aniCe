@@ -110,11 +110,20 @@ class AppNavigationTest {
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
         assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
-        assertEquals(5, AppFeature.entries.size)
+        assertEquals(6, AppFeature.entries.size)
         AppFeature.entries.forEach { feature ->
             assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
             assertEquals("", feature.toggled(feature.toggled("")))
         }
+    }
+
+    @Test fun controlMacLivesInFeaturesAndLegacyPermissionRouteReturnsToSettings() {
+        assertTrue(AppFeature.entries.contains(AppFeature.PhoneInput))
+        val saved = listOf("Settings", "Overview", "", "Permissions", "false", "false", "")
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals(SettingsRoute.Overview, restored.settingsRoute)
+        restored.back()
+        assertEquals(AppDestination.Home, restored.destination)
     }
 
     @Test fun favouriteRoutingAndAboutBackPreservePeerAndSavedPreferences() {

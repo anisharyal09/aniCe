@@ -18,6 +18,7 @@ struct AniCeApp: App {
   private let findNotifier: MacFindDeviceNotifier
   @State private var sms: MacSmsModel
   @State private var keyboardTrackpad: MacKeyboardTrackpadModel
+  @State private var phoneInput: MacPhoneInputModel
   @State private var floatingKeyboard: FloatingKeyboardController
   @State private var smsPreferences: SmsPreferences
   private let smsNotifier: MacSmsNotifier
@@ -85,6 +86,8 @@ struct AniCeApp: App {
     _sms = State(initialValue: sms)
     let keyboardTrackpad = MacKeyboardTrackpadModel(preferences: .standard)
     _keyboardTrackpad = State(initialValue: keyboardTrackpad)
+    let phoneInput = MacPhoneInputModel()
+    _phoneInput = State(initialValue: phoneInput)
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
@@ -108,6 +111,7 @@ struct AniCeApp: App {
     features.register(findDevice)
     features.register(clipboard)
     features.register(sms)
+    features.register(phoneInput)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
         features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
@@ -191,10 +195,12 @@ struct AniCeApp: App {
     Window("aniCe", id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences, navigation: navigation)
+        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
+        findNotifier: findNotifier, sms: sms, keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput,
+        smsPreferences: smsPreferences, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
-            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); PasteTrayController.shared.hide() }
+            delegate.onTerminate = { findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); PasteTrayController.shared.hide() }
             delegate.installCompanion(
               CompanionView(identity: identity, discovery: discovery, pairing: pairing,
                 session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,

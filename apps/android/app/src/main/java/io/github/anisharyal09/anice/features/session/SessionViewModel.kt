@@ -18,6 +18,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private val owner = (application as AniCeApplication).sessionController
     val clipboard = (application as AniCeApplication).clipboard
     val sms = (application as AniCeApplication).sms
+    val phoneInput = (application as AniCeApplication).phoneInput
     val findDevice = (application as AniCeApplication).findDevice
     val media = (application as AniCeApplication).nowPlaying
     val transfer = (application as AniCeApplication).transfer

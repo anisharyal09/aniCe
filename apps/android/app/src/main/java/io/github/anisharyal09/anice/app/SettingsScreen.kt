@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
+import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
@@ -32,7 +33,7 @@ fun SettingsScreen(
     snackbars: SnackbarHostState,
     navigation: AppNavigation,
     context: Context,
-    peers: List<io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord> = emptyList()
+    peers: List<PeerTrustRecord> = emptyList(),
 ) {
     var showingIdentity by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }

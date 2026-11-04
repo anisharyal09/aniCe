@@ -22,6 +22,7 @@ Contracts define required behavior.
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
+| **Phone-to-Mac input** | 1 | In progress | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
 
 ---
 
@@ -127,6 +128,9 @@ protocol/
 │   └── BULK_PROBE.md              # Isolated bulk record profiling specification
 ├── pairing/
 │   └── README.md                  # Pairing protocol, framing, cryptography & state machine
+├── phone-input/
+│   ├── README.md                  # Phone-to-Mac input v1 contract and lifecycle rules
+│   └── phone-input.cddl           # Phone-to-Mac input message shapes
 ├── schemas/
 │   └── identity.schema.json       # Canonical JSON Schema for public identity
 ├── session/
@@ -147,6 +151,9 @@ protocol/
     │   └── generate_lan_vectors.py # Independent Python oracle and fixture generator
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
+    ├── phone-input/
+    │   ├── phone-input-vectors.json # Positive & negative Phone-to-Mac input fixtures
+    │   └── generate.py              # Independent Phone-to-Mac input fixture generator
     ├── session/
     │   ├── session-vectors.json  # Complete method-0/suite-5 traces and invalid handshakes
     │   ├── record-vectors.json   # AES-GCM records, nonce/counter boundaries and tampering cases
@@ -172,6 +179,10 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## Find Device
 
 [Find Device v1](find-device/README.md) defines bidirectional notification requests and correlated OS-submission results over existing authenticated DATA.
+
+## Phone-to-Mac input
+
+[Phone-to-Mac input v1](phone-input/README.md) defines committed Unicode text separately from physical key transitions, with session-bound sequencing, fail-safe release and BLE motion coalescing. Its [CDDL](phone-input/phone-input.cddl) and [independent fixtures](test-vectors/phone-input/phone-input-vectors.json) lock the cross-platform encoding.
 
 ## Clipboard
 

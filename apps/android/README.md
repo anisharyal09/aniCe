@@ -1,6 +1,6 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
+Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust.
 
 Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations.
 
@@ -25,6 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
+        phoneinput/                 Remote Mac keyboard, text reconciliation and trackpad controls
         sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/
@@ -119,3 +120,7 @@ Features → Messages relays incoming SMS to the Mac, serves its reads of conver
 ## Clipboard
 
 Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior](../../docs/features/CLIPBOARD.md) describes permissions, focus rules and the background-overwrite limitation.
+
+## Control Mac
+
+Features → Control Mac uses the phone's normal keyboard and trackpad to control a connected Mac over the existing authenticated Bluetooth session. Tap **Start control**, then type, move, click, drag or scroll. macOS Event Posting permission is required; a denied start shows recovery guidance on the phone. See [Phone-to-Mac input](../../docs/features/PHONE_TO_MAC.md) for typing modes, limits and interruption behavior.

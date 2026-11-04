@@ -890,7 +890,8 @@ def run_macos_with_skips(env, artifacts, documented, extra):
         [
             "xcodebuild", "-project", "aniCe.xcodeproj", "-scheme", "aniCe",
             "-configuration", "Debug", "-derivedDataPath", str(derived),
-            "-destination", "platform=macOS", "-resultBundlePath", str(bundle), "test",
+            "-destination", "platform=macOS", "-resultBundlePath", str(bundle),
+            "CODE_SIGN_IDENTITY=-", "test",
         ],
         artifacts, cwd=MACOS, env=env, timeout=2400,
     )
