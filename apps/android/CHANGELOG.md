@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Document the remote-control source layout and remove outdated blanket validation claims.
+
 ### Fixed
 
 - Show Event Posting setup guidance when macOS rejects a Control Mac start.

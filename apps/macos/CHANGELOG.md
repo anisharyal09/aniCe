@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Shorten Mac input permission guidance and remove repeated recovery instructions.
+
 ### Fixed
 
 - Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.

@@ -8,6 +8,12 @@ struct MacPhoneInputView: View {
   let onOpenDevices: () -> Void
   @Environment(\.colorScheme) private var colorScheme
 
+  private var appDisplayName: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+      ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+      ?? "aniCe"
+  }
+
   // Device selection stays in Devices; status follows the live authenticated phone.
   private var connectedPhone: DeviceIdentity? {
     guard let peer = model.connectedPeer, peer.platform == "android" else { return nil }
@@ -27,34 +33,29 @@ struct MacPhoneInputView: View {
           Label("Allow Mac input", systemImage: "exclamationmark.triangle")
             .font(.subheadline.weight(.medium))
             .foregroundStyle(AniCePalette.error(colorScheme))
-          Text("Allow aniCe's event-posting request in System Settings → Privacy & Security → Device Control and Data Access. When you return, aniCe checks the permission and stays open.")
+          Text("Allow the Events request for \(appDisplayName) in System Settings → Privacy & Security → Device Control and Data Access.")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          Button("Set up Mac input") {
+          Button("Request Events access") {
             if !model.requestEventAccess() { openSystemSettings() }
           }
           .buttonStyle(AniCeButtonStyle())
           if !model.hasStableSigningIdentity {
-            Text("This build has no stable Apple Development signature. macOS may not match its permission after a rebuild. Use the Apple Development signed aniCe build, then add that copy in System Settings.")
+            Text("This copy is ad hoc signed. Permission can be lost when its code changes; use a consistent Apple Development build for testing.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           if model.permissionGrantMayBeStale {
-            Text("macOS reports Accessibility as allowed, but Event Posting is unavailable for this aniCe build. Confirm that the Events grant belongs to this same copy.")
+            Text("Accessibility is allowed for \(appDisplayName), but macOS still blocks Events. Check the Events request for this copy.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           if model.canOfferPermissionRestart {
-            Button("Restart aniCe") { restartAniCe() }
+            Button("Restart \(appDisplayName)") { restartAniCe() }
               .buttonStyle(AniCeButtonStyle())
-            Text("Restart aniCe only if you just allowed access and the status is still blocked. This closes and reopens the app to refresh macOS’s check.")
+            Text("If you just allowed access, restart the app to check again.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            if !model.permissionGrantMayBeStale {
-              Text("If access is still blocked, check the Events permission for this exact aniCe copy and its signing identity.")
-                .font(.callout)
-                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            }
           }
         }
         .padding(14)
@@ -79,14 +80,14 @@ struct MacPhoneInputView: View {
               .buttonStyle(AniCeButtonStyle())
           }
 
-          Text("Start Control Mac on your phone to begin. Input goes to the Mac app with keyboard focus.")
+          Text("Input goes to the Mac app with keyboard focus.")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         } else {
           Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
             .font(.headline)
             .foregroundStyle(AniCePalette.primaryText(colorScheme))
-          Text("The phone can start input when it is ready.")
+          Text("Open Control Mac on the phone after connecting.")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Open Devices", action: onOpenDevices)

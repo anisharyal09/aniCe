@@ -236,6 +236,7 @@ enum MacPhoneInputEventError: Error, Equatable {
 }
 
 @MainActor final class CoreGraphicsPhoneInputEventSink: MacPhoneInputEventSink {
+  // Accessibility trust can remain true while macOS denies synthetic event posting.
   var canPostEvents: Bool { CGPreflightPostEventAccess() }
   // Accessibility and Event Posting are separate TCC services; this is diagnostic only.
   var accessibilityTrusted: Bool { AXIsProcessTrusted() }

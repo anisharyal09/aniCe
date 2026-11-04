@@ -55,7 +55,7 @@ The window and companion share identity, connection state and the allowed-device
 
 ## Run and check
 
-First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For Event Posting checks, pass local `xcodebuild` overrides for `CODE_SIGN_IDENTITY=Apple Development` and your `DEVELOPMENT_TEAM`. Verify that the built app has a `TeamIdentifier`, then use the same app path across runs. The checked-in target explicitly selects ad-hoc signing. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
+First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For Event Posting checks, use local `xcodebuild` overrides for `CODE_SIGN_IDENTITY=Apple Development` and `DEVELOPMENT_TEAM`. Verify the app with `codesign --verify --deep --strict`; `codesign -dv --verbose=4` should show the expected Apple Development authority and TeamIdentifier. A TeamIdentifier alone does not confirm a trusted signature. Use the same signed app copy for setup and later runs; ad-hoc rebuilds can invalidate the saved permission. The checked-in target explicitly selects ad-hoc signing. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
 
 
 From `apps/macos/`, with Xcode installed at the path below:
@@ -115,7 +115,7 @@ The Objective-C adapter adapts aniKey's GPL transport and report conventions wit
 
 ## Phone-to-Mac input
 
-Settings → Permissions shows Event Posting status and setup for Mac input. aniCe checks `CGPreflightPostEventAccess()` before accepting a phone start; Accessibility trust alone is not enough. After access is granted, the authenticated phone can start input without a Mac feature page or receiver toggle. For permission checks, use the same stable signed app across the request and later runs. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
+Settings → Permissions shows Event Posting status and setup for Mac input. aniCe checks `CGPreflightPostEventAccess()` before accepting a phone start; Accessibility trust alone is not enough. After access is granted, the authenticated phone can start input without a Mac feature page or receiver toggle. Use the same signed app copy for setup and later runs; ad-hoc rebuilds can invalidate the saved permission. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
 
 ## Local File Transfer
 

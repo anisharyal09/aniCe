@@ -1,6 +1,6 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
+Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust.
 
 Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations.
 
@@ -25,6 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
+        phoneinput/                 Remote Mac keyboard, text reconciliation and trackpad controls
         sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
       infrastructure/

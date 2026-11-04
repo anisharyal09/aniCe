@@ -11,7 +11,7 @@
 4. Use one finger to move, tap to click, long-press and move to drag, and two fingers to scroll.
 5. Stop on either device to release remote input and clear the temporary phone editor.
 
-The Mac checks `CGPreflightPostEventAccess()` before accepting a start. Accessibility trust alone does not confirm Event Posting. The Mac Settings permission section refreshes status when you return from System Settings. If access remains blocked, restart the same aniCe copy once and check that copy's permission. The shared Xcode target defaults to ad-hoc signing; permission checks across rebuilds require an Apple Development-signed build at a stable path. Input goes to the Mac app with keyboard focus.
+The Mac checks `CGPreflightPostEventAccess()` before accepting a start. Accessibility trust alone does not confirm Event Posting. The Mac Settings permission section refreshes status when you return from System Settings. If access remains blocked, restart aniCe once and check its Events permission. macOS tracks privacy grants by code identity: a stable Apple Development signature survives rebuilds, while an ad-hoc signature identifies only that exact build. Input goes to the Mac app with keyboard focus.
 
 Choose Live typing to send composing text immediately, or keyboard-committed typing to wait for the keyboard to commit it. Changing modes keeps the session active.
 

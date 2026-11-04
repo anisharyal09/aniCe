@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Clarify Mac remote-control permission guidance and correct the transfer recovery description.
+
 ### Fixed
 
 - Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
