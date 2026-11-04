@@ -14,7 +14,7 @@ Shared product changes, repository structure, documentation and development conv
 
 - Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
 
-- Move Android Control Mac to Settings → Permissions; keep BLE connected when leaving the page, keep input active when Live typing changes and open the keyboard only after tapping the text field.
+- List Android Control Mac in Features and Favourites; keep BLE connected when leaving the feature, preserve the session when Live typing changes and open the keyboard only after tapping the text field.
 
 - Clear stale Phone-to-Mac input after remote stops or send failures.
 

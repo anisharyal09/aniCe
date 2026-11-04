@@ -4,7 +4,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
-- Shorten Mac input permission guidance and remove repeated recovery instructions.
+- Shorten Mac input permission and connection guidance.
 
 ### Fixed
 

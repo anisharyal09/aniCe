@@ -9,11 +9,12 @@ enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"),
     companion object { val primary = listOf(Home, Devices, Features, Favourites, Settings) }
 }
 enum class DeviceRoute { Overview, Pairing, Discovery }
-enum class SettingsRoute { Overview, Identity, Permissions, About }
+enum class SettingsRoute { Overview, Identity, About }
 
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
-    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device"), Clipboard("Clipboard"), Sms("Messages");
+    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device"), Clipboard("Clipboard"),
+    PhoneInput("Control Mac"), Sms("Messages");
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableSet()
         if (!saved.add(this)) saved.remove(this)
@@ -72,6 +73,24 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     companion object {
         val saver = listSaver<AppNavigation, String>(
             save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString(), it.findDetails.toString(), it.favouriteFeatures, it.featurePanel?.name.orEmpty(), it.featureOrigin.name) },
-            restore = { AppNavigation(AppDestination.valueOf(it[0]), DeviceRoute.valueOf(it[1]), it[2].ifEmpty { null }, SettingsRoute.valueOf(it.getOrNull(3) ?: SettingsRoute.Overview.name)).also { value -> value.mediaDetails=it.getOrNull(4)=="true"; value.findDetails=it.getOrNull(5)=="true"; value.favouriteFeatures=it.getOrNull(6).orEmpty(); value.featurePanel=AppFeature.entries.firstOrNull { feature -> feature.name == it.getOrNull(7) }; value.featureOrigin=AppDestination.entries.firstOrNull { page -> page.name == it.getOrNull(8) } ?: AppDestination.Features } })
+            restore = { saved ->
+                // Older saved state can still point at the removed Permissions destination.
+                val settingsRoute = SettingsRoute.entries.firstOrNull { it.name == saved.getOrNull(3) }
+                    ?: SettingsRoute.Overview
+                AppNavigation(
+                    AppDestination.valueOf(saved[0]),
+                    DeviceRoute.valueOf(saved[1]),
+                    saved[2].ifEmpty { null },
+                    settingsRoute,
+                ).also { value ->
+                    value.mediaDetails = saved.getOrNull(4) == "true"
+                    value.findDetails = saved.getOrNull(5) == "true"
+                    value.favouriteFeatures = saved.getOrNull(6).orEmpty()
+                    value.featurePanel = AppFeature.entries.firstOrNull { feature -> feature.name == saved.getOrNull(7) }
+                    value.featureOrigin = AppDestination.entries.firstOrNull { page -> page.name == saved.getOrNull(8) }
+                        ?: AppDestination.Features
+                }
+            }
+        )
     }
 }

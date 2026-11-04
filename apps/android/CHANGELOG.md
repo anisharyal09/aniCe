@@ -21,7 +21,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Add Control Mac under Settings → Permissions, with the normal Android keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
+- Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
 
 - Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
 

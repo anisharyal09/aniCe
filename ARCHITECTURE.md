@@ -116,9 +116,9 @@ The native Mac Keyboard & Trackpad panel publishes a system Classic Bluetooth HI
 
 ## Phone-to-Mac Input
 
-Android's **Control Mac** page lives under Settings → Permissions. It uses the phone's normal keyboard and an in-app trackpad over authenticated BLE. Text commits remain separate from key transitions; pointer and scroll motion is coalesced. Leaving the page stops input without directly disconnecting BLE.
+Android's **Control Mac** feature lives in Features and uses the phone's normal keyboard and an in-app trackpad over authenticated BLE. Text commits remain separate from key transitions; pointer and scroll motion is coalesced. Leaving the feature stops input without directly disconnecting BLE.
 
-Mac Event Posting setup and receiver status also live under Settings → Permissions. After permission is available, the Mac accepts an explicit Start from the authenticated phone without a separate Features page or receiver toggle. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
+Mac Event Posting setup and receiver status live under Mac Settings → Permissions. After permission is available, the Mac accepts an explicit Start from the authenticated phone without a Mac-side Features page or receiver toggle. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
 
 ## Clipboard
 

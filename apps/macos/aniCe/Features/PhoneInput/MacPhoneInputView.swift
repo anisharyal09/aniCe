@@ -33,7 +33,7 @@ struct MacPhoneInputView: View {
           Label("Allow Mac input", systemImage: "exclamationmark.triangle")
             .font(.subheadline.weight(.medium))
             .foregroundStyle(AniCePalette.error(colorScheme))
-          Text("Allow the Events request for \(appDisplayName) in System Settings → Privacy & Security → Device Control and Data Access.")
+          Text("Allow Events access for \(appDisplayName) in System Settings → Privacy & Security → Device Control and Data Access.")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Request Events access") {
@@ -41,19 +41,19 @@ struct MacPhoneInputView: View {
           }
           .buttonStyle(AniCeButtonStyle())
           if !model.hasStableSigningIdentity {
-            Text("This copy is ad hoc signed. Permission can be lost when its code changes; use a consistent Apple Development build for testing.")
+            Text("This ad hoc build may need permission again after a rebuild. Use the same Apple Development-signed app for repeat tests.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           if model.permissionGrantMayBeStale {
-            Text("Accessibility is allowed for \(appDisplayName), but macOS still blocks Events. Check the Events request for this copy.")
+            Text("Accessibility is allowed, but macOS still blocks Events for \(appDisplayName).")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           if model.canOfferPermissionRestart {
             Button("Restart \(appDisplayName)") { restartAniCe() }
               .buttonStyle(AniCeButtonStyle())
-            Text("If you just allowed access, restart the app to check again.")
+            Text("Restart the app to check access again.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
@@ -87,7 +87,7 @@ struct MacPhoneInputView: View {
           Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
             .font(.headline)
             .foregroundStyle(AniCePalette.primaryText(colorScheme))
-          Text("Open Control Mac on the phone after connecting.")
+          Text("Then start Control Mac on the phone.")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Open Devices", action: onOpenDevices)

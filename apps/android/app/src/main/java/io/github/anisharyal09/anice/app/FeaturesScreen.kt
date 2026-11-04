@@ -18,6 +18,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.finddevice.FindDeviceController
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
@@ -46,6 +48,27 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
             else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(session.clipboard, peers)
             else if (panel == AppFeature.Sms) io.github.anisharyal09.anice.features.sms.SmsView(session.sms, peers)
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer)
+        }
+    } else if (!favouritesOnly && panel == AppFeature.PhoneInput) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(onClick = navigation::closeFeature) {
+                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Back to " + navigation.featureOrigin.label)
+            }
+            Text(panel.label, style = MaterialTheme.typography.titleMedium)
+            io.github.anisharyal09.anice.features.phoneinput.PhoneInputView(
+                session.phoneInput,
+                session,
+                peers,
+                onOpenDevice = { peer: DeviceIdentity? ->
+                    if (peer == null) navigation.select(
+                        AppDestination.Devices,
+                        unpaired = peers.none { it.peer.platform == "macos" },
+                    )
+                    else navigation.openDevice(peer.deviceId)
+                },
+            )
         }
     } else if (!favouritesOnly && navigation.findDetails) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -89,7 +112,7 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
 
 @Composable
 internal fun FeatureEntry(feature: AppFeature, favourite: Boolean, status: String, onFavourite: () -> Unit, onClick: () -> Unit) {
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.Sms -> R.drawable.ic_sms }
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.PhoneInput -> R.drawable.ic_laptop; AppFeature.Sms -> R.drawable.ic_sms }
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
@@ -120,7 +143,11 @@ internal fun FeatureEntry(feature: AppFeature, favourite: Boolean, status: Strin
 }
 
 private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.anice.features.session.SessionViewModel,
-    peers: List<PeerTrustRecord>): String = when (feature) {
+    peers: List<PeerTrustRecord>): String {
+    val connectedMac = session.selected?.takeIf {
+        session.state == ConnectionState.SECURED && it.platform == "macos" && session.phoneInput.connected(it)
+    }
+    return when (feature) {
     AppFeature.Playback -> session.media.playback?.let { current ->
         if (current.source.isEmpty()) "No active playback" else
             (if (current.state == 1L) "Playing" else "Paused") + current.title.takeIf(String::isNotEmpty)?.let { " · $it" }.orEmpty()
@@ -145,10 +172,19 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         peers.isEmpty() -> "Pair a Mac to relay messages"
         else -> "Connect your Mac"
     }
+    AppFeature.PhoneInput -> when {
+        session.phoneInput.active -> "Controlling Mac"
+        session.phoneInput.state == io.github.anisharyal09.anice.features.phoneinput.PhoneInputState.STARTING -> "Connecting to Mac"
+        connectedMac != null && session.phoneInput.compatible(connectedMac) -> "Connected to Mac"
+        connectedMac != null -> "Update Mac app"
+        peers.any { it.peer.platform == "macos" } -> "Connect a Mac"
+        else -> "Pair a Mac"
+    }
     AppFeature.FindDevice -> when {
         session.findDevice.busy -> "Request in progress"
         peers.any { session.findDevice.canFind(it.peer) } -> "Ready to alert your device"
         peers.any { session.findDevice.connected(it.peer) } -> "Not available on this device"
         else -> "Device offline"
+    }
     }
 }

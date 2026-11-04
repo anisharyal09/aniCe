@@ -123,4 +123,4 @@ Features → Clipboard provides manual text sharing and off-by-default per-devic
 
 ## Control Mac
 
-Settings → Permissions → Mac remote control uses the phone's normal keyboard and trackpad to control a connected Mac over the existing authenticated Bluetooth session. Tap **Start control**, then type, move, click, drag or scroll. macOS Event Posting permission is required; a denied start shows setup guidance on the phone. See [Phone-to-Mac input](../../docs/features/PHONE_TO_MAC.md) for typing modes, limits and interruption behavior.
+Features → Control Mac uses the phone's normal keyboard and trackpad to control a connected Mac over the existing authenticated Bluetooth session. Tap **Start control**, then type, move, click, drag or scroll. macOS Event Posting permission is required; a denied start shows recovery guidance on the phone. See [Phone-to-Mac input](../../docs/features/PHONE_TO_MAC.md) for typing modes, limits and interruption behavior.

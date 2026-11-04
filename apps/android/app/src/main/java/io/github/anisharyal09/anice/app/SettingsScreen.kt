@@ -21,9 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
-import io.github.anisharyal09.anice.features.phoneinput.PhoneInputView
-import io.github.anisharyal09.anice.features.session.SessionViewModel
-import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import io.github.anisharyal09.anice.ui.theme.Appearance
@@ -36,15 +33,12 @@ fun SettingsScreen(
     snackbars: SnackbarHostState,
     navigation: AppNavigation,
     context: Context,
-    session: SessionViewModel,
     peers: List<PeerTrustRecord> = emptyList(),
 ) {
     var showingIdentity by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
     if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
         AboutScreen(context)
-    } else if (navigation.settingsRoute == SettingsRoute.Permissions) {
-        PermissionsScreen(session, peers, navigation)
     } else {
         val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
         val lan = app.lanSessionController
@@ -126,32 +120,6 @@ fun SettingsScreen(
                     }
                 }
 
-                PreferenceSection("Permissions") {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 60.dp)
-                            .clickable(role = Role.Button, onClickLabel = "Open Mac remote control permissions") {
-                                navigation.settingsRoute = SettingsRoute.Permissions
-                            }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Mac remote control", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Use this phone's keyboard and trackpad on a Mac.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Icon(
-                            painterResource(R.drawable.ic_chevron_forward),
-                            contentDescription = null,
-                            modifier = Modifier.padding(start = 8.dp).size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
                 PreferenceSection("Clipboard") {
                     io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
                 }
@@ -181,41 +149,6 @@ fun SettingsScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun PermissionsScreen(
-    session: SessionViewModel,
-    peers: List<PeerTrustRecord>,
-    navigation: AppNavigation,
-) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier.widthIn(max = 680.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Permissions", style = MaterialTheme.typography.titleMedium)
-            Text("Mac remote control", style = MaterialTheme.typography.titleSmall)
-            Text(
-                "Allow Event Posting on the Mac, then start control here.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            PhoneInputView(
-                session.phoneInput,
-                session,
-                peers,
-                onOpenDevice = { peer: DeviceIdentity? ->
-                    if (peer == null) navigation.select(
-                        AppDestination.Devices,
-                        unpaired = peers.none { it.peer.platform == "macos" },
-                    )
-                    else navigation.openDevice(peer.deviceId)
-                },
-            )
         }
     }
 }

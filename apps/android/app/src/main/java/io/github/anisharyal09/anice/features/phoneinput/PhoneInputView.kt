@@ -18,8 +18,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -240,14 +242,24 @@ fun PhoneInputView(
             pairedMac != null -> {
                 Text("Connect to ${pairedMac.deviceName} over Bluetooth to type.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = { onOpenDevice(pairedMac) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("Open device connection")
+                OutlinedButton(
+                    onClick = { onOpenDevice(pairedMac) },
+                    shape = MaterialTheme.shapes.small,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
+                    Text("Open connection")
                 }
             }
             else -> {
                 Text("Pair a Mac, then connect over Bluetooth to type.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = { onOpenDevice(null) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                OutlinedButton(
+                    onClick = { onOpenDevice(null) },
+                    shape = MaterialTheme.shapes.small,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                ) {
                     Text("Pair a Mac")
                 }
             }
@@ -300,21 +312,21 @@ fun PhoneInputView(
             )
         }
 
-        AutomaticConnectionToggle(
-            checked = liveTyping,
-            enabled = true,
-            label = "Live typing",
-            description = "Send text as it is composed.",
-            compact = true,
-            onCheckedChange = { liveTyping = it },
-        )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Phone keyboard", style = MaterialTheme.typography.titleSmall)
+                Text("Type on Mac", style = MaterialTheme.typography.titleSmall)
+                AutomaticConnectionToggle(
+                    checked = liveTyping,
+                    enabled = true,
+                    label = "Live typing",
+                    description = "Send text as it is composed.",
+                    compact = true,
+                    onCheckedChange = { liveTyping = it },
+                )
                 AndroidView(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp, max = 104.dp)
                         .semantics { contentDescription = "Text field for typing on the connected Mac" },
@@ -335,13 +347,13 @@ fun PhoneInputView(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    "Text is encrypted in transit and cleared when control stops.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        Text(
-            "Text stays in this screen. It is sent over the encrypted Bluetooth session and cleared when typing stops.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
     if (fullTrackpad) Dialog(
         onDismissRequest = { keyboard?.hide(); fullTrackpad = false },
