@@ -1,0 +1,10 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Mac telemetry and explicit trusted-phone actions in authenticated DATA.
+desk-deck = ["aniCe desk deck", 1, kind: 1..6, fields: capability / subscribe / sample / command / result / stop]
+capability = [action-mask: 0..15]
+subscribe = [subscription: uuid]
+sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100, memory-used: 0..9223372036854775807, memory-total: 0..9223372036854775807, thermal-state: 0..3, action-mask: 0..15, output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100, microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool, brightness-supported: bool, brightness-target: tstr, brightness-revision: tstr, brightness-level: -1..100]
+command = [subscription: uuid, command-id: 1..4294967295, action: 1..7, target: tstr, revision: tstr, value: -1..100]
+result = [subscription: uuid, command-id: 1..4294967295, result: 0..7]
+stop = [subscription: uuid]
+uuid = tstr .size 36
