@@ -129,17 +129,23 @@ final class TransferModelTests: XCTestCase {
     XCTAssertNil(decoded.destinationBackend)
   }
 
-  func testDelayedLanDoesNotDrainForRecoveryUntilProgressIsConsistentlyTimely() {
+  func testDelayedLanRetriesAfterFiveSecondsAndDrainsBeforeReprobe() {
     var window = TransferSendWindow(maximumChunk: 262016, maximumWindow: 8, lan: true, started: 0)
     window.beginSubmission(0)
     window.acknowledged(0.101, fullyConfirmed: true); window.advance()
-    for now in 1...30 {
+    for now in 1...4 {
       window.acknowledged(Double(now), fullyConfirmed: false); window.advance()
       XCTAssertEqual(window.creditBytes, 131072, "A delayed path must keep its existing pipeline")
     }
+    window.acknowledged(5, fullyConfirmed: false); window.advance()
+    XCTAssertEqual(window.creditBytes, 65536, "The retry timer drains even when ACK gaps are slow")
+    for now in 6...30 {
+      window.acknowledged(Double(now), fullyConfirmed: false); window.advance()
+      XCTAssertEqual(window.creditBytes, 65536, "Drain keeps one chunk in flight until confirmed")
+    }
     for millis in [30050, 30100, 30300] + Array(stride(from: 30350, through: 31200, by: 50)) {
       window.acknowledged(Double(millis) / 1000, fullyConfirmed: false); window.advance()
-      XCTAssertEqual(window.creditBytes, 131072, "A slow ACK resets recovery qualification")
+      XCTAssertEqual(window.creditBytes, 65536, "Slow ACKs do not restore the larger fallback budget")
     }
     window.acknowledged(31.3, fullyConfirmed: false); window.advance()
     XCTAssertEqual(window.creditBytes, 65536)
@@ -199,17 +205,11 @@ final class TransferModelTests: XCTestCase {
     resumed.acknowledged(3.101, fullyConfirmed: true); resumed.advance()
     resumed.acknowledged(7.999, fullyConfirmed: true); resumed.advance()
     XCTAssertEqual(resumed.creditBytes, 131072, "Recovery interval starts at actual probe submission")
-    for millis in stride(from: 8000, through: 8900, by: 50) {
-      resumed.acknowledged(Double(millis) / 1000, fullyConfirmed: true); resumed.advance()
-      XCTAssertEqual(resumed.creditBytes, 131072)
-    }
-    resumed.acknowledged(9, fullyConfirmed: true); resumed.advance()
+    resumed.acknowledged(8, fullyConfirmed: true); resumed.advance()
     XCTAssertEqual(resumed.creditBytes, 4096)
-    resumed.beginSubmission(11)
-    resumed.acknowledged(11.05, fullyConfirmed: false); resumed.advance()
-    XCTAssertEqual(resumed.creditBytes, 4096, "Partial confirmation must not open a large window")
-    resumed.acknowledged(11.101, fullyConfirmed: true); resumed.advance()
-    XCTAssertEqual(resumed.creditBytes, 131072, "A slow retry probe must remain constrained")
+    resumed.beginSubmission(8.01)
+    resumed.acknowledged(8.06, fullyConfirmed: true); resumed.advance()
+    XCTAssertEqual(resumed.chunkBytes, 262016, "A fresh timely probe restores negotiated chunks")
   }
 
   func testReceiverResumeRunsInTheChunkConsumerBeforeLaterOldChannelData() async throws {
@@ -635,9 +635,16 @@ final class TransferModelTests: XCTestCase {
     window.acknowledged(5.09, fullyConfirmed: false); window.advance()
     window.acknowledged(5.15, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.creditBytes, 131072, "Partial confirmation cannot disguise a slow probe")
-    for millis in stride(from: 10000, through: 11000, by: 50) { window.acknowledged(Double(millis) / 1000, fullyConfirmed: true); window.advance() }
+    window.beginSubmission(10, windowEmpty: true)
+    window.acknowledged(10.05, fullyConfirmed: true); window.advance()
+    XCTAssertEqual(window.creditBytes, 131072, "Source idle resets the retry interval")
+    window.beginSubmission(10.1, windowEmpty: true)
+    window.acknowledged(15.1, fullyConfirmed: false); window.advance()
+    XCTAssertEqual(window.creditBytes, 65536, "A slow active transfer still reaches its scheduled retry")
+    window.acknowledged(15.15, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.creditBytes, 4096)
-    window.acknowledged(11.05, fullyConfirmed: true); window.advance()
+    window.beginSubmission(15.2)
+    window.acknowledged(15.25, fullyConfirmed: true); window.advance()
     XCTAssertEqual(window.chunkBytes, 262016); XCTAssertEqual(window.creditBytes, 2096128)
   }
 

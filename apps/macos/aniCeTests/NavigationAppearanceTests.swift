@@ -61,6 +61,7 @@ extension SessionTests {
   @MainActor func testFavouritesIgnoreUnknownEntriesAndRouteWithoutChangingDeviceContext() {
     XCTAssertEqual(AppFeature.favourites(in: "files,files,unknown,playback"), [.playback, .files])
     XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
+    XCTAssertTrue(AppFeature.favourites(in: "typeToMac").isEmpty)
     XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
     XCTAssertEqual(AppFeature.findDevice.toggled(in: "files,files"), "files,findDevice")
     XCTAssertEqual(AppFeature.allCases.count, 6)

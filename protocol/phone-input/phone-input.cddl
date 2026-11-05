@@ -1,0 +1,18 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Phone-to-Mac input messages carried inside authenticated session DATA.
+phone-input = ["aniCe phone input", 1, kind, fields]
+kind = capability / start / start-result / text-commit / key-transition /
+       pointer-motion / pointer-buttons / scroll / release-all / stop / session-ended
+capability = (1, [1..1024, 1..7])
+start = (2, [uuid])
+start-result = (3, [uuid, 0..3])
+text-commit = (4, [uuid, sequence, tstr .size (1..1024)])
+key-transition = (5, [uuid, sequence, 4..231, 0..255, bool])
+pointer-motion = (6, [uuid, sequence, -32767..32767, -32767..32767])
+pointer-buttons = (7, [uuid, sequence, 0..7, 0..255])
+scroll = (8, [uuid, sequence, -32767..32767, -32767..32767])
+release-all = (9, [uuid, sequence])
+stop = (10, [uuid, sequence])
+session-ended = (11, [uuid, 0..3])
+sequence = 1..4294967295
+uuid = tstr .regexp "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"

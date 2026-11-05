@@ -580,7 +580,6 @@ struct TransferSendWindow {
   private var drainRequested = false
   private var draining = false
   private var decision: Bool?
-  private var timelySince: TimeInterval?
   init(maximumChunk: Int64, maximumWindow: Int64, lan: Bool, started: TimeInterval) {
     self.maximumChunk = maximumChunk; self.maximumWindow = maximumWindow; self.lan = lan
     probing = lan && maximumChunk > 4096
@@ -600,7 +599,10 @@ struct TransferSendWindow {
       probeStartedAt = now
       probeSubmitted = true
     } else if !probing && windowEmpty {
-      if ((now - lastAcknowledgedAt) * 1_000_000_000).rounded() > 100_000_000 { timelySince = nil }
+      if constrained && ((now - lastAcknowledgedAt) * 1_000_000_000).rounded() > 100_000_000 {
+        // Source idle time must not consume the constrained path's recovery interval.
+        probeStartedAt = now
+      }
       lastAcknowledgedAt = now
     }
   }
@@ -612,10 +614,9 @@ struct TransferSendWindow {
     let timely = (elapsed * 1_000_000_000).rounded() <= 100_000_000
     if probing { if decision == nil { decision = !timely } }
     else if constrained {
-      if !timely { timelySince = nil } else if timelySince == nil { timelySince = lastAcknowledgedAt }
-      // Batched ACK arrivals cannot qualify recovery without a full second of steady progress.
-      let stable = timelySince.map { ((now - $0) * 1_000_000_000).rounded() >= 1_000_000_000 } ?? false
-      if draining && fullyConfirmed || stable && now - probeStartedAt >= 5 {
+      // Retry on a fixed cadence: 64-KiB fallback ACK gaps can exceed 100 ms because of
+      // the fallback itself, so requiring timely gaps here can permanently lock the sender.
+      if (draining && fullyConfirmed) || now - probeStartedAt >= 5 {
         if fullyConfirmed { reprobe = true } else { drainRequested = true }
       }
     }
@@ -624,7 +625,7 @@ struct TransferSendWindow {
   }
   // Apply shrinkage between records, never while a previously admitted source read is suspended.
   mutating func advance() {
-    if let decision { constrained = decision; probing = false; timelySince = nil }
+    if let decision { constrained = decision; probing = false }
     decision = nil
     // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
     if drainRequested { draining = true; drainRequested = false }

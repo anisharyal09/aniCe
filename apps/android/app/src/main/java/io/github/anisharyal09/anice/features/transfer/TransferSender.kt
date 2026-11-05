@@ -521,7 +521,6 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
     private var drainRequested = false
     private var draining = false
     private var decision: Boolean? = null
-    private var timelySince: Long? = null
     // Sustained fallback amortizes live per-record validation under a 128-KiB fallback backlog cap.
     val chunkBytes get() = when {
         probing -> minOf(4096L, maximumChunk)
@@ -540,7 +539,10 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
             probeStartedAt = now
             probeSubmitted = true
         } else if (!probing && windowEmpty) {
-            if (now - lastAcknowledgedAt > 100) timelySince = null
+            if (constrained && now - lastAcknowledgedAt > 100) {
+                // Source idle time must not consume the constrained path's recovery interval.
+                probeStartedAt = now
+            }
             lastAcknowledgedAt = now
         }
     }
@@ -550,10 +552,9 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
         val elapsed = now - lastAcknowledgedAt
         if (probing) { if (decision == null) decision = elapsed > 100 }
         else if (constrained) {
-            if (elapsed > 100) timelySince = null else if (timelySince == null) timelySince = lastAcknowledgedAt
-            // Batched ACK arrivals cannot qualify recovery without a full second of steady progress.
-            val stable = timelySince?.let { now - it >= 1000 } == true
-            if (draining && fullyConfirmed || stable && now - probeStartedAt >= 5000) {
+            // Retry on a fixed cadence: 64-KiB fallback ACK gaps can exceed 100 ms because of
+            // the fallback itself, so requiring timely gaps here can permanently lock the sender.
+            if ((draining && fullyConfirmed) || now - probeStartedAt >= 5000) {
                 if (fullyConfirmed) reprobe = true else drainRequested = true
             }
         }
@@ -562,7 +563,7 @@ internal class TransferSendWindow(private val maximumChunk: Long, private val ma
     }
     // Apply shrinkage between records, never while a previously admitted source read is suspended.
     fun advance() {
-        decision?.let { constrained = it; probing = false; timelySince = null }
+        decision?.let { constrained = it; probing = false }
         decision = null
         // A one-chunk budget drains a continuously replenished two-chunk pipeline before probing.
         if (drainRequested) { draining = true; drainRequested = false }

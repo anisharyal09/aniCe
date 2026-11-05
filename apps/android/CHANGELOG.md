@@ -4,20 +4,34 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Document the remote-control source layout and remove outdated blanket validation claims.
+
 ### Fixed
 
 - Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
 
 - Show a numeric percentage and the transfer icon in progress notifications.
 
+- Show Event Posting setup guidance when macOS rejects a Control Mac start.
+
+- Keep the Bluetooth link when the Control Mac screen closes, avoid opening the keyboard on Start, and preserve the session when Live typing changes.
+
+- Discard queued Phone-to-Mac input when the Mac ends a session, and retire failed input channels before allowing another start.
+
 - Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
 
 - Keep artwork only for the current recording, avoid clearing it for control-only revisions, and bound media-notification retirement during a connected transport handoff; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
 - Keep a same-recording cover through temporary metadata gaps and tolerate an already-retired session during manual LAN disconnect.
 
+- Retry constrained LAN transfer probes on cadence so slow fallback ACK intervals cannot permanently keep transfers at 64-KiB chunks.
+
 ### Added
 
 - Send files to a connected Mac from Android’s Share sheet.
+
+- Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
+
+- Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
 - Save incoming files to `Downloads/aniCe` by default, with a remembered custom folder and reset action.

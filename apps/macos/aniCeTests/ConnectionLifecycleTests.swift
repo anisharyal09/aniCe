@@ -317,6 +317,7 @@ import AppKit
             transfer: transfer, edgeDrop: MacEdgeDropController(model: transfer),
             clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
             sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
+            phoneInput: MacPhoneInputModel(),
             smsPreferences: SmsPreferences(storage: nil), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)

@@ -4,17 +4,28 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Shorten Mac input permission and connection guidance.
+
 ### Fixed
 
 - Leave **Send files** available after a receive or terminal result.
+
+- Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.
+
+- Move Mac input permission and receiver status from Features to Settings → Permissions; keep receiving automatic after a phone start.
 
 - Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
 
 - Prepare transfer chunks in the source-storage actor without a second full-read buffer, and defer native Find Device startup so shared DATA delivery can continue.
 
+- Retry constrained LAN transfer probes on cadence so slow fallback ACK intervals cannot permanently keep transfers at 64-KiB chunks.
+
 - Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
 
 ### Added
+
+- Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
+- Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.
 
 - Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
 - Add a dedicated full-screen trackpad with local Stop and Done controls.

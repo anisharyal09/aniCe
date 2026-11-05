@@ -36,4 +36,6 @@ Mac background offer notifications are optional. When enabled, their actions sta
 
 Only one batch runs at a time. There is no manual pause while a connection is healthy. Prepared offers and verified progress can recover after restart; file selection and unfinished initial hashing cannot. A Mac selection waiting for a route is process-local and is discarded if aniCe quits before the user retries, chooses Bluetooth, or cancels.
 
+Five seconds after its previous probe, a constrained LAN sender retries when an advancing acknowledgement arrives, draining outstanding data first. Slow fallback acknowledgements do not prevent that retry. A confirmed probe within 100 ms restores the negotiated window.
+
 LAN profile 4 supports transfer chunks up to 512 KiB; legacy profile 3 supports up to 262,016 bytes. BLE transfer chunks are 3,072 bytes. These are protocol limits, not promised transfer rates. See the [performance guide](../PERFORMANCE.md), [transfer contract](../../protocol/transfer/README.md), [LAN contract](../../protocol/lan/README.md), and [design guide](../design/DESIGN.md).

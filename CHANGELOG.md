@@ -8,9 +8,17 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Clarify Mac remote-control permission guidance and correct the transfer recovery description.
+
 ### Fixed
 
 - Keep opted-in Android receives active in the background and allow another send from terminal results.
+
+- Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
+
+- List Android Control Mac in Features and Favourites; keep BLE connected when leaving the feature, preserve the session when Live typing changes and open the keyboard only after tapping the text field.
+
+- Clear stale Phone-to-Mac input after remote stops or send failures.
 
 - Ignore stale macOS channel callbacks so an old BLE/LAN session cannot retire a replacement connection or make playback controls unresponsive.
 
@@ -18,9 +26,13 @@ Shared product changes, repository structure, documentation and development conv
 
 - Keep artwork scoped to the current recording, reduce routine playback feedback flashing and bound notification retirement during transport handoffs; make manual LAN teardown tolerate an already-retired session.
 
+- Retry constrained LAN transfer probes on cadence so a slow 64-KiB fallback cannot keep itself permanently rate-limited.
+
 ### Added
 
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
+
+- Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
 
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 - Add per-peer automatic receiving and saved default/custom destinations on both platforms.
