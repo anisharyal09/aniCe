@@ -6,13 +6,19 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Fixed
 
+- Reject stale v2 app-catalog revisions and obsolete Desk Deck messages; allow unknown battery percentages without manufacturing values.
+
 - Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.
 
 - Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
 
 ### Added
 
-- Define Mac Desk Deck v1 bounded CBOR capability, one-second subscription samples, device-bound controls and no-replay command results over authenticated DATA.
+- Add Desk Deck v2 catalog revision announcements so an open phone panel reloads approved apps after Mac-side edits.
+
+- Define Mac Desk Deck v2 with backward-compatible v1 support, richer memory and Mac power samples, five-second subscription renewal and fifteen-second expiry, bounded paged app catalogs and opaque approved-app launch IDs.
+- Define Device Power v1 for phone charging state and percentage on existing Mac device surfaces over secured DATA, without opening or renewing a connection lease.
+- Add shared positive and negative Desk Deck and Device Power wire fixtures.
 
 - Define Phone-to-Mac input v1 over authenticated BLE DATA, with phone-started sessions gated by Mac Event Posting, Unicode text separate from key transitions, bounded motion coalescing, fail-safe release and Mac-to-phone session-ended notices.
 

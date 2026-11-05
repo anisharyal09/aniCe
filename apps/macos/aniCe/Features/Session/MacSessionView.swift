@@ -39,6 +39,7 @@ struct MacSessionView: View {
   let peers: [PeerTrustRecord]
   @Bindable var model: MacSessionModel
   @Bindable var lan: MacLanSessionModel
+  @Bindable var phonePower: MacPhonePowerModel
   @Binding var details: Bool
   @Binding var diagnostics: Bool
   var workspaceHeader = false
@@ -160,7 +161,7 @@ struct MacSessionView: View {
             Button { onOpenDevice(peer.deviceId) } label: {
               HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(peer.deviceName).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                Text(state.connected ? "Connected" : state.summary).font(.caption)
+                Text(state.summary).font(.caption)
                   .foregroundStyle(state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
                   .fixedSize(horizontal: false, vertical: true)
               }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
@@ -181,6 +182,7 @@ struct MacSessionView: View {
             Button { onOpenDevice(peer.deviceId) } label: { Image(systemName: "chevron.right") }
               .buttonStyle(.borderless).aniCeControlFeedback().accessibilityLabel("Device details for " + peer.deviceName)
           }
+          Text(phonePower.summary(for: peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }
       }
       if lan.allowing && lan.authenticatedPeer == nil {
@@ -225,7 +227,9 @@ struct MacSessionView: View {
           Image(systemName: "chevron.forward").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
         }
         .fixedSize(horizontal: false, vertical: true)
-        Text(presentation.connected ? "Connected" : presentation.summary).font(.callout)
+        Text(presentation.summary).font(.callout)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+        Text(phonePower.summary(for: device)).font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
     }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Connection details for " + (device?.deviceName ?? "your phone"))
@@ -262,7 +266,7 @@ struct MacSessionView: View {
           VStack(alignment: .leading, spacing: 6) {
             Text(device?.deviceName ?? "Any trusted phone").font(.system(size: 14, weight: .medium))
               .fixedSize(horizontal: false, vertical: true)
-            Text(presentation.connected ? "Connected" : presentation.summary).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+            Text(presentation.summary).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
         Button(presentation.action.rawValue) {
@@ -273,6 +277,8 @@ struct MacSessionView: View {
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
       }.padding(.vertical, 14).padding(.bottom, 4)
+      Text(phonePower.summary(for: device)).font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(scheme)).frame(maxWidth: .infinity, alignment: .leading)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 16) {
           Button {
@@ -350,7 +356,7 @@ struct MacSessionView: View {
         Button { details = false } label: { Image(systemName: "xmark") }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Close connection details")
       }
       HStack(spacing: 12) {
-        Text(presentation.connected ? "Connected" : presentation.summary)
+        Text(presentation.summary)
         if device != nil { Text("Trusted device") }
       }.font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       VStack(spacing: 14) {

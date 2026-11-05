@@ -12,6 +12,7 @@ extension MainWindowView {
           Text("Overview").font(.system(size: 20, weight: .medium))
           if pairing.hasTrustedAndroid {
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
+              phonePower: phonePower,
               details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
               focusedPeer: navigation.focusedPeer, discovery: discovery,
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
@@ -133,6 +134,7 @@ extension MainWindowView {
           }
           ForEach(primary) { record in
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
+              phonePower: phonePower,
               details: Binding(get: { navigation.details && navigation.focusedPeer == record.peer.deviceId },
                 set: { navigation.focusedPeer = record.peer.deviceId; navigation.details = $0 }),
               diagnostics: $navigation.diagnostics, focusedPeer: record.peer.deviceId, discovery: discovery,
@@ -312,7 +314,7 @@ extension MainWindowView {
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
-                ("appearance", "Appearance"), ("connection", "Connection"), ("permissions", "Permissions"),
+                ("appearance", "Appearance"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
                 ("clipboard", "Clipboard"),
                 ("messages", "Messages"), ("file-transfer", "File transfer"),
                 ("now-playing", "Now Playing"), ("this-device", "This device")
@@ -353,6 +355,10 @@ extension MainWindowView {
                 }
                 preferenceSection("Permissions", id: "permissions") {
                   MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                }
+                preferenceSection("Desk Deck", id: "desk-deck") {
+                  DeskDeckSettingsView(model: deskDeck, peers: pairing.peers)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Clipboard", id: "clipboard") {
@@ -542,4 +548,72 @@ private struct SettingsScrollAnchor: NSViewRepresentable {
     return view
   }
   func updateNSView(_ view: NSView, context: Context) { coordinator.anchors[id] = view }
+}
+
+private struct DeskDeckSettingsView: View {
+  @Bindable var model: MacDeskDeckModel
+  let peers: [PeerTrustRecord]
+  @Environment(\.colorScheme) private var colorScheme
+  @State private var notice = ""
+
+  private var androidPeers: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }
+
+  var body: some View {
+    let catalogGeneration = model.catalogGeneration
+    return VStack(alignment: .leading, spacing: 12) {
+      Text("Choose which Mac apps each trusted phone can launch from Desk Deck.")
+        .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      if androidPeers.isEmpty {
+        Text("Pair an Android phone before approving app shortcuts.").font(.callout)
+      } else {
+        ForEach(androidPeers, id: \.peer.fingerprint) { record in
+          let peer = record.peer
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text(peer.deviceName).font(.system(size: 13, weight: .medium)).lineLimit(1)
+              Spacer()
+              Button("Approve app…") { chooseApplication(for: peer) }
+                .controlSize(.small).disabled(model.availableApprovalCount(for: peer) >= 32)
+            }.frame(minHeight: 48)
+            let apps = model.approvedApps(for: peer)
+            if apps.isEmpty {
+              Text("No apps approved").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
+            ForEach(apps) { app in
+              HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(app.name).lineLimit(1)
+                  Text(model.applicationIsAvailable(app) ? app.bundleIdentifier : "Unavailable or replaced")
+                    .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
+                  .controlSize(.small).accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
+              }.frame(minHeight: 44)
+            }
+            if model.availableApprovalCount(for: peer) >= 32 {
+              Text("This phone has reached the 32-app limit.").font(.caption)
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
+          }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(AniCePalette.secondarySurface(colorScheme), in: RoundedRectangle(cornerRadius: 8))
+        }
+      }
+      if !notice.isEmpty { Text(notice).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)) }
+    }
+    .id(catalogGeneration)
+  }
+
+  private func chooseApplication(for peer: DeviceIdentity) {
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.applicationBundle]
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Approve App"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    notice = model.addApprovedApp(at: url, for: peer)
+      ? "\(url.deletingPathExtension().lastPathComponent) is available to \(peer.deviceName)."
+      : "App could not be approved. It may already be listed or the 32-app limit has been reached."
+  }
 }

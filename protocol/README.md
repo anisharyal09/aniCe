@@ -17,7 +17,8 @@ Contracts define required behavior.
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
-| **Mac Desk Deck** | `1` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry and explicit trusted-phone controls in secured DATA |
+| **Mac Desk Deck** | `1` and `2` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
+| **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Phone battery status on existing Mac device surfaces over authenticated DATA, with no new connection lease |
 | **LAN Binding** | `1` | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
@@ -121,6 +122,12 @@ protocol/
 ├── README.md                      # This document
 ├── bluetooth/
 │   └── README.md                  # BLE discovery wire format & lifecycle
+├── desk-deck/
+│   ├── README.md                  # Mac telemetry, app approval and control behavior
+│   └── desk-deck.cddl             # Bounded Desk Deck v1/v2 messages
+├── device-power/
+│   ├── README.md                  # Reciprocal phone power status behavior
+│   └── device-power.cddl          # Shared device-power capability and report
 ├── fixtures/
 │   └── identity/                  # Sample valid JSON records (android.json, macos.json)
 ├── lan/
@@ -143,6 +150,8 @@ protocol/
 │   └── transfer.cddl              # Authoritative message and envelope CDDL definitions
 └── test-vectors/
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
+    ├── desk-deck-vectors.json      # Desk Deck v2 samples, leases, app catalog and invalid records
+    ├── device-power-vectors.json   # Phone power states and invalid records
     ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
     ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
     ├── lan/
@@ -166,6 +175,10 @@ protocol/
         ├── transfer-vectors.json  # Positive & negative transfer message fixtures
         └── generate_transfer_vectors.py # Fixture generator
 ```
+
+## Mac Desk Deck and Device Power
+
+[Mac Desk Deck v1/v2](desk-deck/README.md) defines subscription-bound Mac telemetry and controls. V2 adds renewable leases, richer memory and Mac power readings, and paged launches for Mac-approved app bundles; older v1 peers remain supported. [Device Power v1](device-power/README.md) sends the phone's battery state to existing Mac device surfaces over a secured channel that is already open. Both contracts have shared Kotlin/Swift fixtures under [test-vectors](test-vectors/desk-deck-vectors.json).
 
 ## Media
 

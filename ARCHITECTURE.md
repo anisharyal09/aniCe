@@ -123,7 +123,7 @@ Mac Event Posting setup and receiver status live under Mac Settings → Permissi
 
 ## Mac Desk Deck
 
-Android's Mac Desk Deck subscribes to one trusted Mac while the feature panel is foreground. The Mac samples CPU, memory, OS thermal pressure and supported controls over the existing authenticated channel; explicit commands are scoped to the subscription and current hardware target. It does not add a transport or permission stack. Temperature readings and display brightness are not advertised, and microphone mute is capability-gated to devices with a writable CoreAudio mute property. See the [feature guide](docs/features/MAC_DESK_DECK.md) and [Desk Deck v1 contract](protocol/desk-deck/README.md).
+Android's Mac Desk Deck subscribes to one trusted Mac while the feature panel is foreground. The Mac samples CPU, memory, OS thermal pressure and supported controls over the existing authenticated channel; v2 adds memory breakdown, Mac power state, renewable subscription leases and paged, per-phone approved app shortcuts while v1 remains supported. Commands are scoped to the subscription and current hardware target. A separate Device Power v1 capability carries phone battery state to existing Mac device-status surfaces only while an authenticated channel is already open; it creates no connection lease. Temperature readings and display brightness are not advertised, and microphone mute is capability-gated to devices with a writable CoreAudio mute property. See the [feature guide](docs/features/MAC_DESK_DECK.md), [Desk Deck v1/v2 contract](protocol/desk-deck/README.md) and [Device Power contract](protocol/device-power/README.md).
 
 ## Clipboard
 

@@ -104,7 +104,7 @@ Connection state must distinguish trusted, connecting, secured, offline, permiss
 
 Show one device row with its name, readiness state, Auto connect where appropriate and a compact Disconnect/Connect action. Keep connection management and device lists in Devices.
 
-Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Do not invent battery, storage or charging values.
+Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Show battery and charging only from actual device-power readings beside a connected peer; keep unavailable values explicit, never estimate them, and do not add a Mac battery page.
 
 ### Devices and device details
 
@@ -113,6 +113,10 @@ Show a flat peer group with device name, secured readiness, automatic preference
 ### Features and Favourites
 
 Present a compact launcher as clear flat rows, not a wall of equal large tiles. Each row has a neutral icon, feature name, concise current availability or state, separate favourite control and trailing chevron. Entire row opens the feature except for independent star or overflow controls. On Mac use two columns only when the detail width supports readable rows; on phones use full-width rows. Favourites use the same feature destination and permission rules as Features.
+
+### Mac Desk Deck
+
+Open the Android shell before transport or meter readiness. Keep the Mac name, truthful connection state and transport, last-sample age, and both devices' power state in a compact header; put further diagnostics behind one disclosure. Keep the latest readings visible but disable controls while stale. Show one recovery action, and never replay a command during Refresh. Use an adaptive landscape card grid that stacks in portrait, expandable CPU/memory details, truthful unknown/unsupported states, and a touch grid for controls and approved apps. Keep the output-volume slider separate from horizontal navigation gestures and preserve at least 48 dp targets. A 60-sample graph has visible gaps at disconnects and contains no interpolation. The optional keep-awake setting starts off and applies only while the deck is visible and the phone is plugged in.
 
 **Android Control Mac** is a feature in Features and can be added to Favourites. It uses the phone's normal IME in aniCe. Keep composition local in committed mode, send it in Live typing, reconcile corrections on grapheme boundaries and send Unicode separately from key transitions. The trackpad supports pointer movement, tap-to-click, long-press dragging and two-finger scrolling; an inactive pad passes gestures to the page. Start control does not open the keyboard; tapping a text field does. Changing Live typing preserves the session. Leaving this page or backgrounding stops input but does not directly disconnect BLE. Do not log or persist text, install a cross-app keyboard or add another transport.
 

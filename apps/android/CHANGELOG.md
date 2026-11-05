@@ -8,6 +8,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Keep Desk Deck shell responsive while subscriptions start; fence timeouts, acknowledgements and slider previews to the live channel generation, stop retry loops after one resubscription, and mark old readings stale before disabling actions.
+- Keep a first sample live when it cancels an in-flight subscription send instead of treating that cancellation as a failed connection.
+
 - Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
 
 - Show a numeric percentage and the transfer icon in progress notifications.
@@ -27,7 +30,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Add a responsive Android Mac Desk Deck with Mac hardware meters, trusted quick actions and a default-output volume slider.
+- Add a responsive Android Mac Desk Deck with CPU and memory history, memory breakdown, Mac and phone power state, trusted quick actions, Mac-approved app shortcuts, output-volume control, a locally cached stale snapshot and a charging-only keep-awake option.
+- Add bounded v2 subscription renewal and approved-app catalog requests while retaining v1 Mac support; store the selected Mac and per-Mac shortcut pin/order locally.
 
 - Send files to a connected Mac from Android’s Share sheet.
 

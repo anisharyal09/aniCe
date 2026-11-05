@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice
 
 import android.app.Application
+import android.os.SystemClock
 import kotlinx.coroutines.launch
 import android.os.Build
 import io.github.anisharyal09.anice.infrastructure.identity.AndroidIdentityKeys
@@ -11,12 +12,25 @@ import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 import io.github.anisharyal09.anice.features.sms.SmsTrace
 
 class AniCeApplication : Application() {
+    val processStartElapsedMillis: Long = SystemClock.elapsedRealtime()
+    private var lastStartupMarkMillis = processStartElapsedMillis
+
+    internal fun startupMark(stage: String) {
+        val now = SystemClock.elapsedRealtime()
+        android.util.Log.i("aniCe-startup", "event=stage stage=$stage duration_ms=${now - lastStartupMarkMillis} total_ms=${now - processStartElapsedMillis}")
+        lastStartupMarkMillis = now
+    }
+
     private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
     override fun onCreate() {
+        startupMark("application_on_create")
         super.onCreate()
+        startupMark("application_super")
         transfer.restoreOnLaunch()
+        startupMark("transfer_restore_scheduled")
         nowPlaying.presentationChanged={ mediaNotification.update() }
         mediaNotification.update()
+        startupMark("media_notification_updated")
         lanSessionController.onUnleasedBackgroundWork = {
             if (transfer.isBusy && (transfer.activeChannel?.descriptor?.transport == "lan" ||
                     transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting)) {
@@ -134,7 +148,13 @@ class AniCeApplication : Application() {
     val sms get() = smsOwner.value
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
-    val deskDeck by lazy { io.github.anisharyal09.anice.features.deskdeck.DeskDeckController() }
+    val devicePower by lazy { io.github.anisharyal09.anice.features.deskdeck.DevicePowerController(this) }
+    val deskDeck by lazy {
+        io.github.anisharyal09.anice.features.deskdeck.DeskDeckController(
+            shortcutPreferences = getSharedPreferences("desk_deck_shortcuts", MODE_PRIVATE),
+            snapshotPreferences = getSharedPreferences("desk_deck", MODE_PRIVATE)
+        )
+    }
     val findDeviceNotification by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceNotification(this) }
     val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
@@ -155,6 +175,7 @@ class AniCeApplication : Application() {
             it.register(clipboard)
             it.register(sms)
             it.register(phoneInput)
+            it.register(devicePower)
             it.register(deskDeck)
         }
     }

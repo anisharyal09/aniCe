@@ -12,6 +12,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Fence Desk Deck commands and samples to the active peer, channel, subscription and generation; bound opening and recovery, renew visible v2 leases, retain at most 60 history points and disable controls while readings are stale.
+
 - Keep opted-in Android receives active in the background and allow another send from terminal results.
 
 - Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
@@ -30,7 +32,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Add Android Mac Desk Deck with live Mac CPU, memory and thermal-pressure meters, capability-gated quick actions, and default-output volume control.
+- Add a responsive Android Mac Desk Deck with live CPU, memory, thermal-pressure and reciprocal battery status, per-action feedback, Mac-approved app shortcuts, output volume and a charging-only keep-awake option.
+- Add Mac Settings approval for per-phone app shortcuts; keep launch authorization on Mac and transmit only catalog IDs and revisions.
+- Add authenticated phone power status to the Mac overview and menu-bar companion without creating a connection lease.
 
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
 
@@ -40,6 +44,8 @@ Shared product changes, repository structure, documentation and development conv
 - Add per-peer automatic receiving and saved default/custom destinations on both platforms.
 
 ### Changed
+
+- Extend Desk Deck with backward-compatible v2 memory and power details, subscription renewal, paged approved-app catalogs, clear stale/failure recovery and responsive landscape/portrait layouts; keep the shell available before telemetry.
 
 - Let Android file sends continue when the share panel is hidden and show progress for active sends and receives in notifications.
 

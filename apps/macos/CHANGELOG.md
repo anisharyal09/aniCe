@@ -8,6 +8,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Keep one Mac sampling task per active Deck session, fence cleanup by generation, coalesce pending telemetry to the latest sample and expire v2 subscriptions without renewal.
+- Revalidate approved app bundle identity immediately before launch; move legacy Blender/Terminal launch codes out of v2 requests.
+
 - Leave **Send files** available after a receive or terminal result.
 
 - Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.
@@ -23,6 +26,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
 
 ### Added
+
+- Add Settings → Desk Deck with a native app picker and independent shortcut approval for each trusted phone; add phone battery and charging status beside connected-device state in Overview and the menu-bar companion.
+- Add Mac v2 memory and battery samples, paged catalogs for up to 32 approved apps, renewable foreground subscriptions and the public Control–Command–Q lock request.
 
 - Serve foreground Desk Deck samples and trusted-phone Mac lock, app-launch, screenshot, microphone-mute and output-volume commands over the existing authenticated session.
 

@@ -23,7 +23,13 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
-fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.SessionViewModel, peers: List<PeerTrustRecord>, navigation: AppNavigation, favouritesOnly: Boolean = false) {
+fun FeaturesScreen(
+    session: io.github.anisharyal09.anice.features.session.SessionViewModel,
+    peers: List<PeerTrustRecord>,
+    navigation: AppNavigation,
+    favouritesOnly: Boolean = false,
+    trustedPeersLoaded: Boolean = false,
+) {
     val findDevice = session.findDevice
     val panel = navigation.featurePanel
     if (!favouritesOnly && panel == AppFeature.Sms) {
@@ -80,7 +86,9 @@ fun FeaturesScreen(session: io.github.anisharyal09.anice.features.session.Sessio
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             io.github.anisharyal09.anice.features.deskdeck.DeskDeckView(
                 session.deskDeck,
+                session.devicePower,
                 peers.filter { it.peer.platform == "macos" },
+                trustedPeersLoaded,
                 onConnect = session::connect,
                 onPairMac = { navigation.select(AppDestination.Devices, unpaired = peers.none { it.peer.platform == "macos" }) },
                 modifier = Modifier.weight(1f),

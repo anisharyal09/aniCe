@@ -136,6 +136,7 @@
 		D40000000000000000000003 /* MacPhoneInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000006; };
 		D40000000000000000000007 /* MacPhoneInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000008; };
 		D50000000000000000000001 /* MacDeskDeck.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000002; };
+		D60000000000000000000001 /* DeskDeckWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002; };
 		B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */; };
 		B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000B; };
 		B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000C; };
@@ -291,6 +292,7 @@
 		D40000000000000000000006 /* MacPhoneInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PhoneInput/MacPhoneInputTests.swift"; sourceTree = SOURCE_ROOT; };
 		D40000000000000000000008 /* MacPhoneInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PhoneInput/MacPhoneInputView.swift"; sourceTree = SOURCE_ROOT; };
 		D50000000000000000000002 /* MacDeskDeck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeck.swift"; sourceTree = SOURCE_ROOT; };
+		D60000000000000000000002 /* DeskDeckWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DeskDeckWireTests.swift"; sourceTree = SOURCE_ROOT; };
 		D50000000000000000000003 /* DeskDeck */ = {isa = PBXGroup; children = (D50000000000000000000002,); path = DeskDeck; sourceTree = "<group>"; };
 		B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Sms/MacSmsReceiving.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
@@ -421,6 +423,7 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				D60000000000000000000002 /* DeskDeckWireTests.swift */,
 				D30000000000000000000008 /* PhoneInputTests */,
 				D10000000000000000000012 /* KeyboardTrackpadTests */,
 				AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */,
@@ -831,6 +834,7 @@
 				D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */,
 				D30000000000000000000003 /* PhoneInputTests.swift in Sources */,
 				D40000000000000000000003 /* MacPhoneInputTests.swift in Sources */,
+				D60000000000000000000001 /* DeskDeckWireTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
