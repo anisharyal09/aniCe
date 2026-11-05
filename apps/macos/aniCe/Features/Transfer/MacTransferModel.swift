@@ -24,6 +24,36 @@ struct TransferBatch: Identifiable, Equatable, Codable, Sendable {
   var idString: String { id.uuidString.lowercased() }
 }
 
+struct TransferRecipient: Equatable, Sendable {
+  let deviceId: String
+  let fingerprint: String
+  let deviceName: String
+
+  init(peer: DeviceIdentity) {
+    deviceId = peer.deviceId
+    fingerprint = peer.fingerprint
+    deviceName = peer.deviceName
+  }
+
+  func matches(_ peer: DeviceIdentity) -> Bool {
+    deviceId == peer.deviceId && fingerprint == peer.fingerprint
+  }
+}
+
+enum TransferTransportPolicy: Equatable, Sendable {
+  case preferAvailable
+  case preferLanWithChoice
+  case bluetooth
+}
+
+@MainActor struct PendingTransferRouteSelection {
+  // Keep the original destination and file grant together while the user chooses a route.
+  let urls: [URL]
+  let recipient: TransferRecipient
+  let fileAccess: TransferFileAccessLease?
+  var message: String
+}
+
 enum TransferState: Equatable {
   case idle
   case waitingForPeerApproval(batch: TransferBatch)
@@ -38,6 +68,14 @@ enum TransferState: Equatable {
   case cancelled
 }
 
+struct MacPendingAutomaticReceive {
+  // Keep offer-time consent and destination stable across preparation and reconnects.
+  let batchId: UUID
+  let peerId: String
+  let peerFingerprint: String
+  let destination: TransferReceiveDestinationSelection
+}
+
 enum TransferEvent: Equatable {
   case incomingOffer(TransferBatch)
   /// A paused batch, emitted for both directions so the notification can offer Cancel; the
@@ -50,6 +88,8 @@ enum TransferEvent: Equatable {
 
 @Observable @MainActor final class MacTransferModel: FeatureHandler {
   let notificationPreferences: TransferNotificationPreferences
+  let autoReceivePreferences: TransferAutoReceivePreferences
+  let receiveDestinationPreferences: TransferReceiveDestinationPreferences
   var state: TransferState = .idle {
     didSet {
       if case .transferring(_, _, _, let bytes, _, _, _) = state,
@@ -67,6 +107,15 @@ enum TransferEvent: Equatable {
   var activeChannel: (any SecuredChannel)?
   var peerConnected = false
   var peerCompatible = false
+  var dropStatus: String?
+  var receiveDestinationError: String?
+  var autoReceivePreparing = false
+  var automaticReceiveTask: Task<Void, Never>?
+  var pendingAutomaticReceive: MacPendingAutomaticReceive?
+  var dropReservation: UUID?
+  var dropFileAccess: TransferFileAccessLease?
+  var pendingRouteSelection: PendingTransferRouteSelection?
+  var preferBluetoothForCurrentTransfer = false
   /// External event sink for native notification bridges. Emits completed and failed only when receiving.
   var onEvent: ((TransferEvent) -> Void)?
   /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
@@ -91,11 +140,41 @@ enum TransferEvent: Equatable {
   var capabilities: [String: TransferMessage] = [:]
   var rendezvousWait: (() -> Void)?
   var isBusy: Bool {
-    if preparing || offerAssembly != nil { return true }
+    if preparing || offerAssembly != nil || pendingRouteSelection != nil { return true }
     switch state {
     case .incomingOffer, .waitingForPeerApproval, .transferring, .paused: return true
     default: return false
     }
+  }
+
+  var connectedAndroidRecipient: TransferRecipient? {
+    guard peerConnected, peerCompatible, let peer = activeChannel?.descriptor.peer,
+      peer.platform == "android" else { return nil }
+    return TransferRecipient(peer: peer)
+  }
+
+  func reserveDrop(for recipient: TransferRecipient) -> UUID? {
+    guard !isBusy, preparation == nil, transferTask == nil else {
+      dropStatus = "A transfer is already in progress. Try again when it finishes."
+      return nil
+    }
+    guard let current = activeChannel?.descriptor.peer, peerConnected, peerCompatible,
+      recipient.matches(current), current.platform == "android" else {
+      dropStatus = "The connected phone changed. Drop the files again."
+      return nil
+    }
+    let reservation = UUID()
+    dropReservation = reservation
+    preparing = true
+    dropStatus = nil
+    return reservation
+  }
+
+  func failDrop(reservation: UUID, message: String) {
+    guard dropReservation == reservation else { return }
+    dropReservation = nil
+    preparing = false
+    dropStatus = message
   }
 
   @ObservationIgnored nonisolated(unsafe) var sleepAssertionID: IOPMAssertionID = 0
@@ -197,8 +276,12 @@ enum TransferEvent: Equatable {
   init(pauseTimeout: Duration = .seconds(900), recoveryURL: URL? = nil, identity: IdentityService? = nil,
        resumeTimeout: Duration = .seconds(15), confirmationTimeout: Duration = .seconds(30),
        notificationPreferences: TransferNotificationPreferences = TransferNotificationPreferences(),
+       autoReceivePreferences: TransferAutoReceivePreferences = TransferAutoReceivePreferences(),
+       receiveDestinationPreferences: TransferReceiveDestinationPreferences = TransferReceiveDestinationPreferences(),
        closeSource: @escaping @Sendable (FileHandle) throws -> Void = { try $0.close() }) {
     self.notificationPreferences = notificationPreferences
+    self.autoReceivePreferences = autoReceivePreferences
+    self.receiveDestinationPreferences = receiveDestinationPreferences
     precondition(recoveryURL == nil || identity != nil)
     self.pauseTimeout = pauseTimeout
     self.resumeTimeout = resumeTimeout
@@ -239,6 +322,8 @@ enum TransferEvent: Equatable {
   // Receiver state
   struct OfferAssembly {
     let batch: String
+    let peerId: String
+    let peerFingerprint: String
     let totalSlices: Int64
     let totalFiles: Int64
     let totalBytes: Int64
@@ -330,6 +415,8 @@ enum TransferEvent: Equatable {
       pauseOffer(previous, descriptor: descriptor)
     } else if case .waitingForPeerApproval = previous {
       pauseOffer(previous, descriptor: descriptor)
+    } else if pendingRouteSelection != nil {
+      dropStatus = "Connection to the selected phone was lost. Retry when it reconnects, or cancel."
     } else if preparing {
       // Source hashing belongs to the pending send, not the channel that started it.
     } else if case .paused = previous {
@@ -503,13 +590,19 @@ extension MacTransferModel {
     return false
   }
 
-  func selectPreferredChannel(preparingRoute: Bool = false) {
+  func selectPreferredChannel(preparingRoute: Bool = false, preferredTransport: String? = nil) {
     // A live batch remains bound to its channel generation. A paused batch, by contrast, must
     // adopt a newly secured channel so the retained prefix can continue there.
-    let canRebind = !isBusy || isPaused || preparingRoute
+    // A pending route keeps the recipient pinned but may adopt a replacement channel for that peer.
+    let canRebind = !isBusy || isPaused || preparingRoute || pendingRouteSelection != nil
     guard activeChannel == nil || canRebind else { return }
-    let preferred = ["lan", "ble"].first(where: { channels[$0] != nil && capabilities[$0] != nil })
-      .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
+    let preferred: (any SecuredChannel)?
+    if let preferredTransport {
+      preferred = channels[preferredTransport]
+    } else {
+      preferred = ["lan", "ble"].first(where: { channels[$0] != nil && capabilities[$0] != nil })
+        .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
+    }
     activeChannel = preferred
     peerConnected = preferred != nil
     peerCompatible = false
@@ -700,6 +793,9 @@ extension MacTransferModel {
   }
 
   func cleanupActiveTransfer(selectChannel: Bool = true) {
+    automaticReceiveTask?.cancel(); automaticReceiveTask = nil
+    autoReceivePreparing = false
+    pendingAutomaticReceive = nil
     rendezvousWait?()
     retainedBatch = nil; offerReplayed = false; restoredSender = false
     let failed = failedRecovery
@@ -730,6 +826,10 @@ extension MacTransferModel {
     resumeAttemptChannel = nil; nextResumeAttemptAt = 0
     progressTask?.cancel(); progressTask = nil; progressEpoch = nil
     preparation?.cancel(); preparation = nil; preparing = false
+    dropReservation = nil
+    pendingRouteSelection?.fileAccess?.release(); pendingRouteSelection = nil
+    preferBluetoothForCurrentTransfer = false
+    dropFileAccess?.release(); dropFileAccess = nil
     clearOfferAssembly()
     pauseTimerTask?.cancel(); pauseTimerTask = nil
     resumeTask?.cancel(); resumeTask = nil

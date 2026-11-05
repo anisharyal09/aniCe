@@ -77,7 +77,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                         if (pairing.peers.isNotEmpty()) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = sendFiles::chooseFiles,
-                                    enabled = transfer.peerConnected && transfer.peerCompatible && !transfer.preparing && transfer.state is TransferState.Idle,
+                                    enabled = transfer.peerConnected && transfer.peerCompatible && !transfer.preparing && !transfer.isBusy,
                                     shape = MaterialTheme.shapes.small,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.heightIn(min = 48.dp)) {

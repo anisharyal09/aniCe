@@ -35,6 +35,9 @@ class MainActivity : ComponentActivity() {
         discovery = ViewModelProvider(this, discoveryFactory)[DiscoveryViewModel::class.java]
         val pairingFactory = viewModelFactory { initializer { PairingViewModel(application) } }
         pairing = ViewModelProvider(this, pairingFactory)[PairingViewModel::class.java]
+        pairing.onPeersChanged = { records ->
+            (application as AniCeApplication).transfer.autoReceivePreferences.prune(records.map { it.peer })
+        }
         val sessionFactory = viewModelFactory { initializer { SessionViewModel(application) } }
         session = ViewModelProvider(this, sessionFactory)[SessionViewModel::class.java]
         session.beforeConnect = {
@@ -61,9 +64,12 @@ class MainActivity : ComponentActivity() {
             pairing.cancel()
         }
         identity.onIdentityReset = {
-            (application as AniCeApplication).clipboard.preferences.clear()
-            (application as AniCeApplication).clipboard.invalidate()
-            (application as AniCeApplication).sms.invalidate()
+            val app = application as AniCeApplication
+            app.transfer.autoReceivePreferences.clear()
+            app.transfer.invalidate()
+            app.clipboard.preferences.clear()
+            app.clipboard.invalidate()
+            app.sms.invalidate()
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this).stop("Identity changed. Set up automatic connection again.")
             session.cancel()
             pairing.cancel()
@@ -98,6 +104,7 @@ class MainActivity : ComponentActivity() {
         if (::discovery.isInitialized) discovery.foreground()
         if (::pairing.isInitialized) pairing.foreground()
         if (::session.isInitialized) session.foreground(this)
+        (application as AniCeApplication).transfer.applicationForegrounded()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -112,5 +119,6 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations && ::discovery.isInitialized) discovery.background()
         if (!isChangingConfigurations && ::pairing.isInitialized) pairing.background()
         if (::session.isInitialized) session.background(this, isChangingConfigurations)
+        if (!isChangingConfigurations) (application as AniCeApplication).transfer.applicationBackgrounded()
     }
 }

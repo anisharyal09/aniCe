@@ -8,6 +8,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
+
+- Show a numeric percentage and the transfer icon in progress notifications.
+
 - Show Event Posting setup guidance when macOS rejects a Control Mac start.
 
 - Keep the Bluetooth link when the Control Mac screen closes, avoid opening the keyboard on Start, and preserve the session when Live typing changes.
@@ -23,11 +27,15 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Send files to a connected Mac from Android’s Share sheet.
+
 - Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
 
 - Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
 
 - Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
+- Save incoming files to `Downloads/aniCe` by default, with a remembered custom folder and reset action.
+- Add off-by-default automatic-receive consent for each trusted Mac.
 - Review selected files and their recipient before sending; require renewed review when the connected device changes.
 - Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
@@ -35,6 +43,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
+
+- Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.
 - Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
 - Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.
 - Extract Android SMS thread, history, SIM and search request serving into a focused controller file while retaining channel dispatch and local presentation.

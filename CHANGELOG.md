@@ -12,6 +12,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Keep opted-in Android receives active in the background and allow another send from terminal results.
+
 - Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
 
 - List Android Control Mac in Features and Favourites; keep BLE connected when leaving the feature, preserve the session when Live typing changes and open the keyboard only after tapping the text field.
@@ -28,13 +30,21 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
+
 - Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
 
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
+- Add per-peer automatic receiving and saved default/custom destinations on both platforms.
 
 ### Changed
 
+- Let Android file sends continue when the share panel is hidden and show progress for active sends and receives in notifications.
+
+- Clarify Edge Drop placement, enlarge the Mac send target, and simplify transfer settings and result actions.
+
 - Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
+- Keep confirmed Mac sends pinned to their trusted recipient and require an explicit Bluetooth choice when LAN setup is unavailable.
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.

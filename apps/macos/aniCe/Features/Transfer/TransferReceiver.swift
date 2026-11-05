@@ -36,6 +36,7 @@ extension MacTransferModel {
   }
 
   func handleOffer(_ message: TransferMessage, peerName: String, on descriptor: ChannelDescriptor) {
+    guard let sourceChannel = channels[descriptor.transport], sourceChannel.descriptor == descriptor else { return }
     let batchIdStr = message.string(0)
     guard !retiredBatches.contains(batchIdStr) || retainedBatch?.idString == batchIdStr else { return }
     guard let batchUUID = UUID(uuidString: batchIdStr) else { return }
@@ -43,6 +44,9 @@ extension MacTransferModel {
     let totalSlices = message.number(2)
     let totalFiles = message.number(3)
     let totalBytes = message.number(4)
+
+    guard (1...16).contains(totalSlices), (1...128).contains(totalFiles), totalBytes >= 0,
+      (0..<totalSlices).contains(sliceIdx) else { clearOfferAssembly(); return }
 
     guard case .array(let filesCbor) = message.fields[5] else { return }
     var sliceFiles: [TransferFile] = []
@@ -54,10 +58,13 @@ extension MacTransferModel {
             case .bytes(let hash) = row[3] else { continue }
       sliceFiles.append(TransferFile(id: id, name: name, size: sz, sha256: hash, localURL: nil))
     }
+    guard (1...8).contains(sliceFiles.count) else { clearOfferAssembly(); return }
 
     if let assembly = offerAssembly, assembly.batch != batchIdStr { return }
     if offerAssembly == nil {
-      offerAssembly = OfferAssembly(batch: batchIdStr, totalSlices: totalSlices, totalFiles: totalFiles, totalBytes: totalBytes)
+      offerAssembly = OfferAssembly(batch: batchIdStr, peerId: descriptor.peer.deviceId,
+        peerFingerprint: descriptor.peer.fingerprint, totalSlices: totalSlices, totalFiles: totalFiles,
+        totalBytes: totalBytes)
       offerTimeout = Task { [weak self] in
         do { try await Task.sleep(for: .seconds(10)) } catch { return }
         self?.clearOfferAssembly()
@@ -66,6 +73,12 @@ extension MacTransferModel {
     }
     guard var assembly = offerAssembly, assembly.totalSlices == totalSlices,
       assembly.totalFiles == totalFiles, assembly.totalBytes == totalBytes else { clearOfferAssembly(); return }
+    guard assembly.peerId == descriptor.peer.deviceId,
+      assembly.peerFingerprint == descriptor.peer.fingerprint else {
+      clearOfferAssembly()
+      rejectInvalidOffer(batchIdStr, on: descriptor)
+      return
+    }
     if let previous = assembly.slices[sliceIdx] {
       if previous != sliceFiles { clearOfferAssembly() }
       return
@@ -87,7 +100,12 @@ extension MacTransferModel {
         sum = next.partialValue
       }
       guard allFiles.count == Int(totalFiles), sum == totalBytes,
-        Set(allFiles.map(\.id)).count == allFiles.count else { clearOfferAssembly(); return }
+        Set(allFiles.map(\.id)).count == allFiles.count,
+        allFiles.allSatisfy(Self.validIncomingFile) else {
+        rejectInvalidOffer(batchIdStr, on: descriptor)
+        clearOfferAssembly()
+        return
+      }
       clearOfferAssembly()
       let batch = TransferBatch(id: batchUUID, files: allFiles, totalBytes: totalBytes, peerName: peerName)
 
@@ -116,22 +134,48 @@ extension MacTransferModel {
 
       if isBusy || preparing || transferTask != nil {
         // Busy with another active transfer
-        guard let channel = activeChannel else { return }
         Task {
           let reject = TransferMessage.reject(batch: batchIdStr, reason: 3)
           if let encoded = try? reject.encode() {
-            try? await sendWithBackpressure(encoded, on: channel, jobBound: false)
+            try? await sendWithBackpressure(encoded, on: sourceChannel, jobBound: false)
           }
         }
         return
       }
 
       cleanupActiveTransfer(selectChannel: false)
+      activeChannel = sourceChannel
+      transferPeerDeviceId = descriptor.peer.deviceId
+      transferPeerFingerprint = descriptor.peer.fingerprint
       currentBatch = batch
       state = .incomingOffer(batch: batch)
       acquireSleepAssertion()
-      onEvent?(.incomingOffer(batch))
+      if descriptor.peer.platform == "android", autoReceivePreferences.enabled(for: descriptor.peer) {
+        pendingAutomaticReceive = MacPendingAutomaticReceive(batchId: batch.id,
+          peerId: descriptor.peer.deviceId, peerFingerprint: descriptor.peer.fingerprint,
+          destination: receiveDestinationPreferences.selection())
+        startAutomaticReceiveIfEligible()
+      } else {
+        pendingAutomaticReceive = nil
+        onEvent?(.incomingOffer(batch))
+      }
     }
+  }
+
+  private func rejectInvalidOffer(_ batchId: String, on descriptor: ChannelDescriptor) {
+    guard let channel = channels[descriptor.transport], channel.descriptor == descriptor else { return }
+    Task { [weak self] in
+      guard let self, let encoded = try? TransferMessage.reject(batch: batchId, reason: 4).encode() else { return }
+      try? await self.sendWithBackpressure(encoded, on: channel, jobBound: false)
+    }
+  }
+
+  private static func validIncomingFile(_ file: TransferFile) -> Bool {
+    guard file.size >= 0, file.sha256.count == 32,
+      let length = file.name.data(using: .utf8)?.count, (1...255).contains(length),
+      file.name == file.name.trimmingCharacters(in: .whitespacesAndNewlines),
+      file.name != ".", file.name != "..", !file.name.contains("/"), !file.name.contains("\\") else { return false }
+    return !file.name.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
   }
 
   func clearOfferAssembly() {
@@ -139,8 +183,25 @@ extension MacTransferModel {
     offerAssembly = nil
   }
 
-  func acceptIncomingOffer(destination: URL) async {
+  func acceptIncomingOffer() async {
+    guard !autoReceivePreparing else { return }
+    do {
+      let destination = try receiveDestinationPreferences.folderForReceive()
+      await acceptIncomingOffer(destination: destination)
+    } catch {
+      receiveDestinationError = error.localizedDescription
+    }
+  }
+
+  func acceptIncomingOffer(destination: URL, automatic: Bool = false) async {
+    guard automatic || !autoReceivePreparing else { return }
     guard case .incomingOffer(let batch) = state, let channel = activeChannel else { return }
+    guard channel.descriptor.peer.deviceId == transferPeerDeviceId,
+      channel.descriptor.peer.fingerprint == transferPeerFingerprint else {
+      receiveDestinationError = "The sending device is no longer connected. Reconnect it before receiving."
+      return
+    }
+    receiveDestinationError = nil
     let operation = epoch
     do {
       if let identity = recoveryIdentity, recoveryStore != nil {
@@ -150,7 +211,10 @@ extension MacTransferModel {
       }
       try await TransferReceiveStorage.checkCapacity(destination, bytes: batch.totalBytes)
       guard operation == epoch else { return }
-    } catch { if operation == epoch { failTransfer(reason: "Cannot use destination: \(error.localizedDescription)") }; return }
+    } catch {
+      if operation == epoch { receiveDestinationError = "Cannot use destination: \(error.localizedDescription)" }
+      return
+    }
     destinationFolder = destination
     receiveFolder = destination
     publishedURLs.removeAll()
@@ -165,7 +229,14 @@ extension MacTransferModel {
     lastReceiverUiUpdate = 0
 
     do { try await prepareReceiverForFile(at: 0, in: batch) }
-    catch { failTransfer(reason: "Cannot create destination: \(error.localizedDescription)"); return }
+    catch {
+      receiverStorage = nil
+      receiverPartFileURL = nil
+      destinationFolder = nil
+      receiving = false
+      if operation == epoch { receiveDestinationError = "Cannot create destination: \(error.localizedDescription)" }
+      return
+    }
     guard operation == epoch, activeChannel?.descriptor == channel.descriptor else { return }
     state = .transferring(
       batch: batch,
@@ -189,6 +260,10 @@ extension MacTransferModel {
 
   func rejectIncomingOffer(reason: Int64 = 0) async {
     guard case .incomingOffer(let batch) = state, let channel = activeChannel else { return }
+    automaticReceiveTask?.cancel()
+    automaticReceiveTask = nil
+    autoReceivePreparing = false
+    pendingAutomaticReceive = nil
     let operation = epoch
     let reject = TransferMessage.reject(batch: batch.idString, reason: reason)
     if let encoded = try? reject.encode() {
@@ -197,6 +272,52 @@ extension MacTransferModel {
     guard operation == epoch else { return }
     state = .idle
     cleanupActiveTransfer()
+  }
+
+  func startAutomaticReceiveIfEligible() {
+    guard automaticReceiveTask == nil, let pending = pendingAutomaticReceive,
+      case .incomingOffer(let batch) = state, batch.id == pending.batchId,
+      let activePeer = activeChannel?.descriptor.peer,
+      activePeer.deviceId == pending.peerId, activePeer.fingerprint == pending.peerFingerprint else { return }
+    let operation = epoch
+    autoReceivePreparing = true
+    automaticReceiveTask = Task { [weak self] in
+      guard let self else { return }
+      await self.automaticallyAcceptIncomingOffer(batch, pending: pending, operation: operation)
+    }
+  }
+
+  private func automaticallyAcceptIncomingOffer(
+    _ batch: TransferBatch, pending: MacPendingAutomaticReceive, operation: UUID
+  ) async {
+    defer {
+      if operation == epoch {
+        autoReceivePreparing = false
+        automaticReceiveTask = nil
+      }
+    }
+    do {
+      let destination = try receiveDestinationPreferences.folderForReceive(pending.destination)
+      guard !Task.isCancelled, operation == epoch,
+        case .incomingOffer(let current) = state, current.id == batch.id else { return }
+      guard activeChannel?.descriptor.peer.deviceId == pending.peerId,
+        activeChannel?.descriptor.peer.fingerprint == pending.peerFingerprint else { return }
+      await acceptIncomingOffer(destination: destination, automatic: true)
+      if case .incomingOffer(let current) = state, current.id == batch.id {
+        pendingAutomaticReceive = nil
+        onEvent?(.incomingOffer(batch))
+      } else if case .paused = state {
+        return
+      } else {
+        pendingAutomaticReceive = nil
+      }
+    } catch {
+      guard !Task.isCancelled, operation == epoch,
+        case .incomingOffer(let pending) = state, pending.id == batch.id else { return }
+      pendingAutomaticReceive = nil
+      receiveDestinationError = "Cannot use destination: \(error.localizedDescription)"
+      onEvent?(.incomingOffer(batch))
+    }
   }
 
   func prepareReceiverForFile(at index: Int, in batch: TransferBatch) async throws {

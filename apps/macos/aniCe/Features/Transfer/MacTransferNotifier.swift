@@ -18,6 +18,115 @@ import UserNotifications
   }
 }
 
+/// Local consent to receive future batches from a specific trusted identity.
+@Observable @MainActor final class TransferAutoReceivePreferences {
+  private let storage: UserDefaults?
+  private static let keyPrefix = "transfer.autoReceive."
+  private(set) var enabledKeys: Set<String>
+
+  init(storage: UserDefaults? = nil) {
+    self.storage = storage
+    enabledKeys = Set(storage?.dictionaryRepresentation().keys.filter { $0.hasPrefix(Self.keyPrefix) } ?? [])
+  }
+
+  func enabled(for peer: DeviceIdentity) -> Bool {
+    enabledKeys.contains(key(peer))
+  }
+
+  func setEnabled(_ enabled: Bool, for peer: DeviceIdentity) {
+    let key = key(peer)
+    if enabled { enabledKeys.insert(key); storage?.set(true, forKey: key) }
+    else { enabledKeys.remove(key); storage?.removeObject(forKey: key) }
+  }
+
+  func prune(_ peers: [DeviceIdentity]) {
+    let keep = Set(peers.map(key))
+    for storedKey in enabledKeys.subtracting(keep) { storage?.removeObject(forKey: storedKey) }
+    enabledKeys.formIntersection(keep)
+  }
+
+  func clear() {
+    for storedKey in enabledKeys { storage?.removeObject(forKey: storedKey) }
+    enabledKeys.removeAll()
+  }
+
+  private func key(_ peer: DeviceIdentity) -> String {
+    Self.keyPrefix + peer.deviceId + ":" + peer.fingerprint
+  }
+}
+
+struct TransferReceiveDestinationSelection: Sendable {
+  let bookmark: Data?
+}
+
+@Observable @MainActor final class TransferReceiveDestinationPreferences {
+  private let storage: UserDefaults?
+  private let key = "transfer.receiveDestinationBookmark"
+  private var bookmark: Data?
+
+  init(storage: UserDefaults? = nil) {
+    self.storage = storage
+    bookmark = storage?.data(forKey: key)
+  }
+
+  var hasCustomFolder: Bool { bookmark != nil }
+
+  var summary: String {
+    do { return try configuredFolder(selection()).lastPathComponent }
+    catch { return "Unavailable folder" }
+  }
+
+  func selection() -> TransferReceiveDestinationSelection {
+    TransferReceiveDestinationSelection(bookmark: bookmark)
+  }
+
+  func save(folder: URL) throws {
+    try Self.validate(folder)
+    let data = try folder.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    bookmark = data
+    storage?.set(data, forKey: key)
+  }
+
+  func reset() {
+    bookmark = nil
+    storage?.removeObject(forKey: key)
+  }
+
+  func folderForReceive() throws -> URL {
+    try folderForReceive(selection())
+  }
+
+  func folderForReceive(_ selection: TransferReceiveDestinationSelection) throws -> URL {
+    let folder = try configuredFolder(selection)
+    if selection.bookmark == nil {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    }
+    return folder
+  }
+
+  private func configuredFolder(_ selection: TransferReceiveDestinationSelection) throws -> URL {
+    guard let bookmark = selection.bookmark else {
+      let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+      return downloads.appendingPathComponent("aniCe", isDirectory: true)
+    }
+    var stale = false
+    let folder = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+    guard !stale else { throw CocoaError(.fileReadNoPermission, userInfo: [NSLocalizedDescriptionKey: "The saved folder link has expired. Choose it again or reset to Downloads/aniCe."]) }
+    try Self.validate(folder)
+    return folder
+  }
+
+  private static func validate(_ folder: URL) throws {
+    let values = try folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .volumeIsLocalKey])
+    guard folder.isFileURL, values.isDirectory == true, values.isSymbolicLink != true,
+      values.volumeIsLocal != false else {
+      throw CocoaError(.fileReadNoPermission, userInfo: [NSLocalizedDescriptionKey: "Choose an available local folder."])
+    }
+  }
+}
+
 // Separates offer delivery and legacy-notice cleanup from the native notification center.
 protocol TransferNotificationCenter: AnyObject {
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void)
@@ -280,10 +389,8 @@ struct TransferNotificationContent: Equatable {
       guard let model, model.pendingOffer != nil else {
         return
       }
-      let destination = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        ?? URL(fileURLWithPath: NSHomeDirectory())
       Task { [weak model] in
-        await model?.acceptIncomingOffer(destination: destination)
+        await model?.acceptIncomingOffer()
       }
 
     case Action.choose:

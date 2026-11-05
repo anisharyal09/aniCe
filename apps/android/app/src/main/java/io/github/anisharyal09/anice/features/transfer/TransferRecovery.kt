@@ -44,6 +44,7 @@ internal data class TransferCheckpoint(
     val stage: Int = 0,
     val fileIdentity: String = "",
     val treeModes: Int = 0,
+    val destinationBackend: String = if (tree.isNotEmpty()) "documentTree" else "file",
 )
 
 internal class TransferRecoveryStore(private val file: File, private val replace: (File, File) -> Unit = { source, target ->
@@ -90,7 +91,7 @@ internal class TransferRecoveryStore(private val file: File, private val replace
             validate(value)
             val bytes = ByteArrayOutputStream()
             DataOutputStream(bytes).use { out ->
-                out.writeInt(1)
+                out.writeInt(2)
                 for (s in listOf(value.localFingerprint, value.peerId, value.peerFingerprint,
                     value.batch.id, value.batch.peerName)) out.text(s)
                 out.writeLong(value.batch.totalBytes); out.writeInt(value.batch.files.size)
@@ -105,13 +106,15 @@ internal class TransferRecoveryStore(private val file: File, private val replace
                 out.writeInt(value.stage)
                 out.text(value.fileIdentity)
                 out.writeInt(value.treeModes)
+                out.text(value.destinationBackend)
             }
             return bytes.toByteArray().also { require(it.size <= MAX_BYTES) }
         }
         fun decode(bytes: ByteArray): TransferCheckpoint {
             if (bytes.size.toLong() !in 1..MAX_BYTES) throw IOException("Invalid checkpoint size")
             return DataInputStream(ByteArrayInputStream(bytes)).use { input ->
-                if (input.readInt() != 1) throw IOException("Unsupported checkpoint")
+                val version = input.readInt()
+                if (version !in 1..2) throw IOException("Unsupported checkpoint")
                 val local = input.text(); val peer = input.text(); val fingerprint = input.text()
                 val id = input.text(); val name = input.text(); val total = input.readLong()
                 val count = input.readInt()
@@ -123,9 +126,14 @@ internal class TransferRecoveryStore(private val file: File, private val replace
                     TransferFile(fileId, fileName, size, hash, source.takeIf { it.isNotEmpty() }?.let(::File),
                         uri.takeIf { it.isNotEmpty() }?.let(Uri::parse), input.readBoolean())
                 }
+                val receiving = input.readBoolean(); val index = input.readInt(); val offset = input.readLong()
+                val folder = input.text(); val tree = input.text(); val partial = input.text(); val document = input.text()
+                val transport = input.text(); val expiresAt = input.readLong(); val stage = input.readInt()
+                val fileIdentity = input.text(); val treeModes = input.readInt()
+                val destinationBackend = if (version >= 2) input.text() else if (tree.isNotEmpty()) "documentTree" else "file"
                 TransferCheckpoint(local, peer, fingerprint, TransferBatch(id, files, total, name),
-                    input.readBoolean(), input.readInt(), input.readLong(), input.text(), input.text(),
-                    input.text(), input.text(), input.text(), input.readLong(), input.readInt(), input.text(), input.readInt()).also {
+                    receiving, index, offset, folder, tree, partial, document, transport, expiresAt, stage, fileIdentity,
+                    treeModes, destinationBackend).also {
                     if (input.available() != 0) throw IOException("Trailing checkpoint data")
                     validate(it)
                 }
@@ -153,6 +161,9 @@ internal class TransferRecoveryStore(private val file: File, private val replace
             require(value.stage != 3 || value.receiving && value.index == value.batch.files.lastIndex && value.offset == value.batch.files.last().size)
             require(value.stage != 4 || value.receiving && value.offset == value.batch.files[value.index].size)
             require(value.treeModes in 0..3)
+            require(value.destinationBackend in listOf("file", "documentTree", "mediaStore"))
+            require(value.destinationBackend != "documentTree" || value.tree.isNotEmpty())
+            require(value.destinationBackend != "mediaStore" || value.tree.isEmpty())
         }
     }
 }
@@ -234,9 +245,11 @@ internal fun TransferController.checkpoint(force: Boolean = false, publishingIde
         val expires = pauseExpiresAt ?: (System.currentTimeMillis() + pauseTimeoutMillis)
         val snapshot = TransferCheckpoint(local, peer.peer.deviceId, peer.peer.fingerprint, batch, receiving || stage == 2,
             index, offset,
-            destinationDirectory?.absolutePath ?: "", documentDestination?.tree?.toString() ?: "",
+            if (documentDestination == null) destinationDirectory?.absolutePath ?: "" else "",
+            documentDestination?.tree?.toString() ?: "",
             receiverPartFile?.absolutePath ?: "", receiverPartDocument?.toString() ?: "",
-            pausedTransport ?: peer.transport, expires, stage, publishingIdentity ?: "", documentDestination?.ownedModes ?: 0)
+            pausedTransport ?: peer.transport, expires, stage, publishingIdentity ?: "", documentDestination?.ownedModes ?: 0,
+            documentDestination?.backend ?: "file")
         val done = if (force) CompletableDeferred<Unit>() else null
         recoveryWrites.trySend(TransferController.RecoveryWrite(snapshot, if (receiving) receiverStorage else null, done))
         return done
@@ -248,18 +261,7 @@ internal suspend fun TransferController.restoreRecovery(snapshot: TransferCheckp
         val remaining = saved.expiresAt - System.currentTimeMillis()
         if (local != saved.localFingerprint || remaining !in 1..pauseTimeoutMillis) {
             withContext(receiveDispatcher) {
-                if (saved.receiving && (saved.stage == 0 || saved.stage == 4)) {
-                    val destination = if (saved.tree.isNotEmpty()) TransferDestination(requireNotNull(context), Uri.parse(saved.tree),
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, saved.treeModes) else null
-                    try {
-                        if (destination == null) TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial,
-                            saved.batch.id, saved.batch.files[saved.index].id)
-                        else {
-                            val uri = Uri.parse(saved.document)
-                            if (destination.ownsPartial(uri, ".anice-${saved.batch.id}-${saved.batch.files[saved.index].id}-")) destination.delete(uri)
-                        }
-                    } finally { destination?.close() }
-                }
+                runCatching { discardCheckpointPartial(context, saved) }
                 for (file in saved.batch.files.filter { it.ownsReadGrant }) {
                     file.sourceUri?.let { context?.contentResolver?.releasePersistableUriPermission(it,
                         android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -270,20 +272,36 @@ internal suspend fun TransferController.restoreRecovery(snapshot: TransferCheckp
                 else "Transfer paused for too long without a connection. Send the files again."))
             return
         }
-        if (saved.stage == 4 && saved.tree.isEmpty()) {
+        var restoredDestination: TransferReceiveDestination? = null
+        if (saved.receiving && (saved.stage == 0 || saved.stage == 4) && saved.destinationBackend != "file") {
+            restoredDestination = createCheckpointDestination(requireNotNull(context), saved)
+        }
+        if (saved.stage == 4) {
             val file = saved.batch.files[saved.index]
-            val published = withContext(receiveDispatcher) { TransferReceiveStorage.published(File(saved.folder), file, saved.fileIdentity) }
+            val published = withContext(receiveDispatcher) {
+                if (saved.destinationBackend == "file") TransferReceiveStorage.published(File(saved.folder), file, saved.fileIdentity)
+                else restoredDestination?.isPublished(Uri.parse(saved.document), file) == true
+            }
             if (published) {
-                withContext(receiveDispatcher) { TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id) }
+                if (saved.destinationBackend == "file") {
+                    withContext(receiveDispatcher) { TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id) }
+                }
                 if (saved.index == saved.batch.files.lastIndex) saved = saved.copy(stage = 3)
                 else {
-                    val storage = TransferReceiveStorage(File(saved.folder), null, ioDispatcher = receiveDispatcher)
+                    val destination = restoredDestination
+                    val folder = if (destination == null) File(saved.folder) else File(requireNotNull(context).filesDir, "unused-document-destination")
+                    val storage = TransferReceiveStorage(folder, destination, ioDispatcher = receiveDispatcher)
                     val next = saved.index + 1
                     val paths = storage.create(saved.batch.id, saved.batch.files[next].id)
                     if (operation != epoch) { storage.discard(); return }
                     receiverStorage = storage; receiverPartFile = paths.first; receiverPartDocument = paths.second
-                    destinationDirectory = File(saved.folder)
-                    saved = saved.copy(index = next, offset = 0, stage = 0, partial = paths.first?.absolutePath ?: "")
+                    destinationDirectory = folder
+                    documentDestination = destination
+                    saved = saved.copy(index = next, offset = 0, stage = 0,
+                        folder = if (destination == null) folder.absolutePath else "",
+                        partial = paths.first?.absolutePath ?: "", document = paths.second?.toString() ?: "",
+                        tree = destination?.tree?.toString() ?: "", treeModes = destination?.ownedModes ?: 0,
+                        destinationBackend = destination?.backend ?: "file")
                 }
                 withContext(receiveDispatcher) { recoveryStore?.save(saved) }
             }
@@ -291,6 +309,7 @@ internal suspend fun TransferController.restoreRecovery(snapshot: TransferCheckp
         if (operation != epoch) return
         val batch = saved.batch
         if (saved.stage == 3) {
+            restoredDestination?.close()
             val file = batch.files.last()
             retainedFileResult = TransferController.RetainedResult(batch.id, file.id, file.size,
                 TransferMessage.fileResult(batch.id, file.id, 0, file.sha256), saved.peerId, saved.peerFingerprint)
@@ -301,9 +320,8 @@ internal suspend fun TransferController.restoreRecovery(snapshot: TransferCheckp
             return
         }
         if (saved.receiving && (saved.stage == 0 || saved.stage == 4) && receiverStorage == null) {
-            val folder = File(saved.folder)
-            val destination = if (saved.tree.isNotEmpty()) TransferDestination(requireNotNull(context), Uri.parse(saved.tree),
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION, saved.treeModes) else null
+            val destination = restoredDestination
+            val folder = if (destination == null) File(saved.folder) else File(requireNotNull(context).filesDir, "unused-document-destination")
             val storage = TransferReceiveStorage(folder, destination, ioDispatcher = receiveDispatcher)
             try {
                 val paths = storage.restore(batch.id, batch.files[saved.index].id, saved.partial, saved.document, saved.offset)
@@ -342,6 +360,30 @@ internal suspend fun TransferController.restoreRecovery(snapshot: TransferCheckp
         startPauseTimer()
     }
 
+private fun createCheckpointDestination(context: Context, saved: TransferCheckpoint): TransferReceiveDestination = when (saved.destinationBackend) {
+    "documentTree" -> TransferDestination(context, Uri.parse(saved.tree),
+        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        saved.treeModes)
+    "mediaStore" -> MediaStoreTransferDestination(context)
+    else -> throw IOException("Unsupported receive destination")
+}
+
+internal fun discardCheckpointPartial(context: Context?, saved: TransferCheckpoint) {
+    if (!saved.receiving || saved.stage !in listOf(0, 4)) return
+    val file = saved.batch.files[saved.index]
+    if (saved.destinationBackend == "file") {
+        TransferReceiveStorage.discardOwned(File(saved.folder), saved.partial, saved.batch.id, file.id)
+        return
+    }
+    val destination = createCheckpointDestination(requireNotNull(context), saved)
+    try {
+        val uri = Uri.parse(saved.document)
+        if (destination.isPublished(uri, file)) return
+        val prefix = ".anice-${saved.batch.id}-${file.id}-"
+        if (destination.ownsPartial(uri, prefix)) destination.delete(uri)
+    } finally { destination.close() }
+}
+
 // MARK: - Pause and transport resume
 
 internal fun TransferController.expirePausedIfNeeded(): Boolean {
@@ -366,6 +408,9 @@ internal fun TransferController.pauseOnConfirmationTimeout() {
 
 internal fun TransferController.pauseOffer(descriptor: ChannelDescriptor, previous: TransferState) {
         val batch = currentBatch ?: return
+        // Recheck the saved destination after reconnect; keep the captured sender and folder selection with this offer.
+        destinationPreparation?.cancel(); destinationPreparation = null
+        destinationMessage = null
         interruptedOffer = previous
         recoveryPeer = descriptor; pausedTransport = descriptor.transport
         pauseExpiresAt = pauseExpiresAt ?: (System.currentTimeMillis() + pauseTimeoutMillis)
@@ -390,6 +435,7 @@ internal fun TransferController.resumeInterruptedOffer(): Boolean {
         offerReplayed = previous is TransferState.WaitingForPeerApproval
         updateState(previous)
         onLeaseChanged?.invoke(true)
+        if (previous is TransferState.IncomingOffer) startAutomaticReceiveIfEligible()
         if (previous is TransferState.WaitingForPeerApproval) sendOfferBatch(previous.batch, channel)
         return true
     }

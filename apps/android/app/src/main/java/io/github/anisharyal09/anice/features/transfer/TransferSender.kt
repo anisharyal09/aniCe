@@ -37,6 +37,9 @@ internal fun TransferController.sendUrisFlow(uris: List<Uri>, reviewedPeerDevice
             reviewedPeerDeviceId to reviewedPeerFingerprint else null
         val operation = epoch
         prepareSources(uris, reviewedPeer = reviewedPeer) { uri ->
+            if (resolver.getType(uri) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                throw java.io.IOException("Choose files rather than folders")
+            }
             var ownsGrant = false
             if (resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) {
                 try {

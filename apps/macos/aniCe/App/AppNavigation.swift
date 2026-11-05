@@ -16,7 +16,7 @@ enum SettingsRoute: Equatable { case overview, identity, about }
 enum AppFeature: String, CaseIterable, Identifiable {
   case playback, files, findDevice, clipboard, messages, keyboardTrackpad
   var id: Self { self }
-  var title: String { switch self { case .playback: "Now Playing"; case .files: "Send files"; case .findDevice: "Find Device"; case .clipboard: "Clipboard"; case .messages: "Messages"; case .keyboardTrackpad: "Keyboard & Trackpad" } }
+  var title: String { switch self { case .playback: "Now Playing"; case .files: "Send files"; case .findDevice: "Find Device"; case .clipboard: "Clipboard"; case .messages: "Messages"; case .keyboardTrackpad: "Control Android" } }
   var symbol: String { switch self { case .playback: "music.note"; case .files: "arrow.up.doc"; case .findDevice: "bell"; case .clipboard: "doc.on.clipboard"; case .messages: "message"; case .keyboardTrackpad: "keyboard" } }
   static func favourites(in value: String) -> [Self] {
     let saved = Set(value.split(separator: ",").map(String.init))

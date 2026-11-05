@@ -8,6 +8,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Leave **Send files** available after a receive or terminal result.
+
 - Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.
 
 - Move Mac input permission and receiver status from Features to Settings → Permissions; keep receiving automatic after a phone start.
@@ -30,6 +32,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Add a saved drag handle below the pointer pad to resize its height in both feature and floating controls; keep keyboard height fixed.
 
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
+- Add Home and File transfer drop targets, an optional right/left/top Edge Drop shelf, and saved receive destinations with per-phone automatic-receive consent.
 - Add Keyboard & Trackpad with native keyboard capture, pointer input, two-finger up/down scrolling and left/right pointer dragging, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
 - Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
 - Review selected files and their recipient before sending; reject sends when the reviewed device changes.
@@ -38,6 +41,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Clarify File transfer settings and Edge Drop placement; enlarge send and result controls.
+- Pin each Mac send to its selected phone, prefer LAN, and require an explicit Bluetooth fallback choice.
 - Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input styling in the feature and floating controls.
 - Highlight active typing on the floating keyboard button with the accent fill and a contrasting icon.
 - Remove the rectangular native panel shadow around the floating keyboard controls; retain the rounded content shadow.

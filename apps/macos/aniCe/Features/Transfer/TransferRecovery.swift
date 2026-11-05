@@ -20,6 +20,7 @@ struct TransferCheckpoint: Codable, Sendable {
   let expiresAt: Date
   var stage = 0
   var fileIdentity = ""
+  var destinationBackend: String? = "localFolder"
 
   func validate() throws {
     let hex = Set("0123456789abcdef")
@@ -28,7 +29,8 @@ struct TransferCheckpoint: Codable, Sendable {
       UUID(uuidString: peerId) != nil, (1...128).contains(batch.files.count),
       batch.files.indices.contains(index), Set(batch.files.map(\.id)).count == batch.files.count,
       offset >= 0, offset <= batch.files[index].size, ["lan", "ble"].contains(transport),
-      expiresAt.timeIntervalSince1970.isFinite, (0...4).contains(stage) else { throw CocoaError(.fileReadCorruptFile) }
+      expiresAt.timeIntervalSince1970.isFinite, (0...4).contains(stage),
+      destinationBackend == nil || destinationBackend == "localFolder" else { throw CocoaError(.fileReadCorruptFile) }
     var total: Int64 = 0
     for file in batch.files {
       guard file.size >= 0, file.sha256.count == 32, (1...255).contains(file.name.utf8.count),
@@ -116,7 +118,7 @@ extension MacTransferModel {
       offset: offset, folder: destinationFolder,
       partial: receiverPartFileURL, transport: pausedTransport ?? peer.transport,
       expiresAt: pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds)),
-      stage: stage, fileIdentity: publishingIdentity ?? "")
+      stage: stage, fileIdentity: publishingIdentity ?? "", destinationBackend: "localFolder")
     let previous = recoveryWrite, storage = receiving ? receiverStorage : nil
     recoveryWrite = Task { [weak self] in
       await previous?.value
@@ -241,6 +243,8 @@ extension MacTransferModel {
 
   func pauseOffer(_ previous: TransferState, descriptor: ChannelDescriptor) {
     guard let batch = currentBatch, let file = batch.files.first else { return }
+    automaticReceiveTask?.cancel(); automaticReceiveTask = nil
+    autoReceivePreparing = false
     interruptedOffer = previous
     recoveryPeer = descriptor; pausedTransport = descriptor.transport
     pauseExpiresAt = pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds))
@@ -264,6 +268,7 @@ extension MacTransferModel {
     if case .waitingForPeerApproval = previous { offerReplayed = true }
     state = previous
     acquireSleepAssertion()
+    if case .incomingOffer = previous { startAutomaticReceiveIfEligible() }
     if case .waitingForPeerApproval(let batch) = previous {
       Task { [weak self] in await self?.sendOfferBatch(batch, channel: channel) }
     }
@@ -824,7 +829,8 @@ extension MacTransferModel {
   /// triggers the existing resume handshake; the receiver accepts while transferring, reports its
   /// actual written offset, and both sides switch without a visible pause.
   func maybeUpgradeToLan(_ descriptor: ChannelDescriptor) {
-    guard descriptor.transport == "lan", !receiving, isTransferring else { return }
+    guard descriptor.transport == "lan", !receiving, isTransferring,
+      !preferBluetoothForCurrentTransfer else { return }
     guard let active = activeChannel, active.descriptor.transport == "ble",
       let lan = channels["lan"], lan.descriptor == descriptor, capabilities["lan"] != nil else { return }
     guard upgradeTask == nil, resumeTask == nil, statusWaiter == nil,

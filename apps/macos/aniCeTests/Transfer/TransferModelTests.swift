@@ -3,6 +3,8 @@
 import XCTest
 import CryptoKit
 import os
+import AppKit
+import UniformTypeIdentifiers
 @testable import aniCe
 
 @MainActor
@@ -29,6 +31,15 @@ final class MockSecuredChannel: SecuredChannel {
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
 
+  private func androidPeer(deviceId: String = UUID().uuidString.lowercased(), name: String = "Pixel 9") throws -> DeviceIdentity {
+    let key = P256.Signing.PrivateKey()
+    let macPeer = try DeviceIdentity(deviceId: deviceId, deviceName: name,
+      publicKey: key.publicKey.x963Representation)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(macPeer)) as? [String: Any])
+    object["platform"] = "android"
+    return try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: object))
+  }
+
   func testLanAcknowledgementsFitTheChunksActuallyReceived() {
     XCTAssertEqual(transferAckThreshold(maximumChunk: 262016, maximumWindow: 8, chunkBytes: 4096), 4096)
     XCTAssertEqual(transferAckThreshold(maximumChunk: 4096, maximumWindow: 8, chunkBytes: 4096), 8192)
@@ -41,6 +52,81 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(transferAckThreshold(maximumChunk: 5000, maximumWindow: 1, chunkBytes: 65536), 5000)
     XCTAssertEqual(transferAckThreshold(maximumChunk: 3072, maximumWindow: 4, chunkBytes: 4096), 6144)
     XCTAssertEqual(transferAckThreshold(maximumChunk: 3072, maximumWindow: 64, chunkBytes: 1), 24576)
+  }
+
+  func testReceiveDestinationBookmarkPersistsAndCanBeReset() throws {
+    let suite = "aniCe.transfer-destination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let folder = tempDir.appendingPathComponent("Received", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let preferences = TransferReceiveDestinationPreferences(storage: defaults)
+
+    try preferences.save(folder: folder)
+    XCTAssertTrue(preferences.hasCustomFolder)
+    XCTAssertEqual(preferences.summary, "Received")
+    XCTAssertEqual(try preferences.folderForReceive().standardizedFileURL, folder.standardizedFileURL)
+    XCTAssertEqual(TransferReceiveDestinationPreferences(storage: defaults).summary, "Received")
+
+    preferences.reset()
+    XCTAssertFalse(preferences.hasCustomFolder)
+    XCTAssertEqual(preferences.summary, "aniCe")
+  }
+
+  func testAutoReceiveConsentUsesTheFullTrustedIdentityAndCanBeCleared() throws {
+    let suite = "aniCe.transfer-auto-receive.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = TransferAutoReceivePreferences(storage: defaults)
+    let peer = try androidPeer()
+    let replacementIdentity = try androidPeer(deviceId: peer.deviceId)
+
+    XCTAssertFalse(preferences.enabled(for: peer))
+    preferences.setEnabled(true, for: peer)
+    XCTAssertTrue(TransferAutoReceivePreferences(storage: defaults).enabled(for: peer))
+    XCTAssertFalse(preferences.enabled(for: replacementIdentity))
+
+    preferences.prune([replacementIdentity])
+    XCTAssertFalse(preferences.enabled(for: peer))
+    preferences.setEnabled(true, for: replacementIdentity)
+    preferences.clear()
+    XCTAssertFalse(preferences.enabled(for: replacementIdentity))
+  }
+
+  func testConsentedAndroidOfferIsAcceptedToTheCapturedDestination() async throws {
+    let suite = "aniCe.transfer-auto-receive-flow.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let peer = try androidPeer()
+    let consent = TransferAutoReceivePreferences(storage: defaults)
+    consent.setEnabled(true, for: peer)
+    let destinations = TransferReceiveDestinationPreferences(storage: defaults)
+    try destinations.save(folder: tempDir)
+    let owner = MacTransferModel(autoReceivePreferences: consent, receiveDestinationPreferences: destinations)
+    let channel = MockSecuredChannel(peer: peer)
+    owner.available(channel)
+    defer { owner.dismiss() }
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+
+    try await offer(owner, channel, size: 1)
+    for _ in 0..<200 {
+      if channel.sentData.compactMap({ try? TransferMessage.decode($0) }).contains(where: { $0.kind == 3 }) { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+
+    XCTAssertTrue(channel.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 3 })
+    guard case .transferring = owner.state else { return XCTFail("Consented offer did not start receiving") }
+    XCTAssertEqual(owner.destinationFolder?.standardizedFileURL, tempDir.standardizedFileURL)
+  }
+
+  func testOlderCheckpointWithoutDestinationBackendStillDecodes() async throws {
+    let (saved, _, _, _) = try await checkpointFixture()
+    let encoded = try JSONEncoder().encode(saved)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    object.removeValue(forKey: "destinationBackend")
+    let legacy = try JSONSerialization.data(withJSONObject: object)
+    let decoded = try JSONDecoder().decode(TransferCheckpoint.self, from: legacy)
+    XCTAssertNil(decoded.destinationBackend)
   }
 
   func testDelayedLanRetriesAfterFiveSecondsAndDrainsBeforeReprobe() {
@@ -241,7 +327,7 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(batch, next.id)
   }
 
-  func testReviewedRecipientChangeStopsBeforeReadingOrSendingFiles() async throws {
+  func testReviewedRecipientChangeKeepsTheSelectionPinnedUntilThatPhoneReturns() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel()
     owner.available(channel)
     let reviewedPeer = MockSecuredChannel().descriptor.peer
@@ -249,10 +335,253 @@ final class TransferModelTests: XCTestCase {
 
     await owner.sendFiles(urls: [missingFile], reviewedPeer: reviewedPeer)
 
-    guard case .failed(let reason) = owner.state else { return XCTFail("A changed recipient must stop the send") }
-    XCTAssertTrue(reason.contains("device changed"))
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient.deviceId, reviewedPeer.deviceId)
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient.fingerprint, reviewedPeer.fingerprint)
+    XCTAssertTrue(owner.isBusy)
     XCTAssertTrue(channel.sentData.isEmpty)
     XCTAssertFalse(owner.preparing)
+  }
+
+  func testDropValidationAcceptsRegularFilesAndRejectsLinksDirectoriesAndOversize() throws {
+    let file = tempDir.appendingPathComponent("drop.bin")
+    try Data([1, 2, 3]).write(to: file)
+    XCTAssertNoThrow(try TransferDropValidation.validate([file]))
+
+    let directory = tempDir.appendingPathComponent("folder", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    XCTAssertThrowsError(try TransferDropValidation.validate([directory]))
+
+    let link = tempDir.appendingPathComponent("link.bin")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+    XCTAssertThrowsError(try TransferDropValidation.validate([link]))
+    XCTAssertThrowsError(try TransferDropValidation.validate(Array(repeating: file, count: 129)))
+  }
+
+  func testDropValidationRejectsFilePromises() {
+    XCTAssertTrue(TransferDropValidation.containsPromisedFile(NSFilePromiseReceiver.readableDraggedTypes))
+    XCTAssertFalse(TransferDropValidation.containsPromisedFile([UTType.fileURL.identifier]))
+  }
+
+  func testEdgeDropDefaultsRightAndPersistsTheSelectedEdge() throws {
+    let suite = "aniCe.edge-drop.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = EdgeDropPreferences(storage: defaults)
+
+    XCTAssertFalse(preferences.enabled)
+    XCTAssertEqual(preferences.edge, .right)
+    preferences.setEnabled(true)
+    preferences.setEdge(.top)
+
+    let restored = EdgeDropPreferences(storage: defaults)
+    XCTAssertTrue(restored.enabled)
+    XCTAssertEqual(restored.edge, .top)
+    restored.setEnabled(false)
+    XCTAssertFalse(EdgeDropPreferences(storage: defaults).enabled)
+  }
+
+  func testEdgeDropRequiresFreshHeldFileDragAndRespectsDisplaySafeArea() {
+    let frame = NSRect(x: -1200, y: 100, width: 1000, height: 800)
+    let visible = NSRect(x: -1200, y: 128, width: 1000, height: 748)
+    let right = NSPoint(x: frame.maxX - 10, y: frame.midY)
+    func qualifies(_ point: NSPoint, edge: EdgeDropEdge, fresh: Bool = true, held: Bool = true) -> Bool {
+      EdgeDropGeometry.qualifies(point: point, edge: edge, screenFrame: frame, visibleFrame: visible,
+        hasFreshFileDrag: fresh, leftMouseDown: held)
+    }
+
+    XCTAssertTrue(qualifies(right, edge: .right))
+    XCTAssertFalse(qualifies(right, edge: .right, fresh: false))
+    XCTAssertFalse(qualifies(right, edge: .right, held: false))
+    XCTAssertTrue(qualifies(NSPoint(x: frame.maxX - 40, y: frame.midY), edge: .right))
+    XCTAssertFalse(qualifies(NSPoint(x: frame.maxX - 52, y: frame.midY), edge: .right))
+    XCTAssertTrue(qualifies(NSPoint(x: frame.minX + 10, y: frame.midY), edge: .left))
+    XCTAssertTrue(qualifies(NSPoint(x: frame.midX, y: visible.maxY - 10), edge: .top))
+    XCTAssertFalse(qualifies(NSPoint(x: frame.midX, y: frame.maxY - 2), edge: .top))
+
+    let rightShelf = EdgeDropGeometry.shelfFrame(edge: .right, point: right, screenFrame: frame, visibleFrame: visible)
+    let leftShelf = EdgeDropGeometry.shelfFrame(edge: .left, point: right, screenFrame: frame, visibleFrame: visible)
+    XCTAssertEqual(rightShelf.maxX, frame.maxX)
+    XCTAssertEqual(leftShelf.minX, frame.minX)
+    XCTAssertEqual(rightShelf.height, 152)
+
+    let topShelf = EdgeDropGeometry.shelfFrame(edge: .top,
+      point: NSPoint(x: frame.maxX - 4, y: visible.maxY - 10), screenFrame: frame, visibleFrame: visible)
+    XCTAssertEqual(topShelf.maxY, visible.maxY)
+    XCTAssertEqual(topShelf.maxX, visible.maxX)
+    XCTAssertEqual(EdgeDropGeometry.offscreenFrame(from: topShelf, edge: .top).minY, topShelf.maxY)
+  }
+
+  func testDropReservationPinsFullPeerIdentityAndRejectsBusyOrChangedPeer() throws {
+    let owner = MacTransferModel()
+    let first = MockSecuredChannel(deviceName: "Same phone", peer: try androidPeer(name: "Same phone"))
+    let second = MockSecuredChannel(deviceName: "Same phone", peer: try androidPeer(name: "Same phone"))
+    owner.activeChannel = first
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let recipient = TransferRecipient(peer: first.descriptor.peer)
+    XCTAssertTrue(recipient.matches(first.descriptor.peer))
+    XCTAssertFalse(recipient.matches(second.descriptor.peer))
+
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    XCTAssertTrue(owner.preparing)
+    XCTAssertNil(owner.reserveDrop(for: recipient))
+    XCTAssertTrue(owner.dropStatus?.contains("already in progress") == true)
+    owner.failDrop(reservation: reservation, message: "Drop failed")
+    XCTAssertFalse(owner.preparing)
+    XCTAssertNil(owner.dropReservation)
+
+    XCTAssertNil(owner.reserveDrop(for: TransferRecipient(peer: second.descriptor.peer)))
+    XCTAssertTrue(owner.dropStatus?.contains("phone changed") == true)
+  }
+
+  func testCancelledDropReservationCannotSendAfterProviderLoadCompletes() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(peer: try androidPeer())
+    owner.activeChannel = channel
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let recipient = TransferRecipient(peer: channel.descriptor.peer)
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    let file = tempDir.appendingPathComponent("late-drop.bin")
+    try Data([4, 5, 6]).write(to: file)
+
+    owner.cancelTransfer(local: false)
+    await owner.sendFiles(urls: [file], recipient: recipient, transportPolicy: .preferAvailable,
+      dropReservation: reservation, fileAccess: TransferFileAccessLease(urls: [file]))
+
+    XCTAssertTrue(channel.sentData.isEmpty)
+    XCTAssertFalse(owner.preparing)
+    XCTAssertNil(owner.dropReservation)
+  }
+
+  func testInvalidDropBatchReleasesItsReservation() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(peer: try androidPeer())
+    owner.activeChannel = channel
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let recipient = TransferRecipient(peer: channel.descriptor.peer)
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    let urls = Array(repeating: URL(fileURLWithPath: "/missing"), count: 129)
+
+    await owner.sendFiles(urls: urls, recipient: recipient, transportPolicy: .preferAvailable,
+      dropReservation: reservation)
+
+    XCTAssertFalse(owner.preparing)
+    XCTAssertNil(owner.dropReservation)
+    XCTAssertTrue(owner.dropStatus?.contains("1 to 128 files") == true)
+  }
+
+  func testDropKeepsPinnedSelectionUntilBluetoothIsExplicitlyChosen() async throws {
+    let owner = MacTransferModel()
+    let peer = try androidPeer()
+    let ble = MockSecuredChannel(instance: "drop-ble", transport: "ble", peer: peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    let source = tempDir.appendingPathComponent("pending-route.txt")
+    try Data("selection stays local until a route is ready".utf8).write(to: source)
+    let recipient = TransferRecipient(peer: peer)
+    let access = TransferFileAccessLease(urls: [source])
+    var lanRequests = 0
+    owner.onLanRequired = { lanRequests += 1; return false }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient,
+      transportPolicy: .preferLanWithChoice, fileAccess: access)
+
+    XCTAssertEqual(lanRequests, 1)
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient, recipient)
+    XCTAssertEqual(owner.pendingRouteSelection?.urls, [source])
+    XCTAssertTrue(owner.dropFileAccess === access)
+    XCTAssertTrue(owner.canSendPendingOverBluetooth)
+    XCTAssertTrue(owner.isBusy)
+    XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 },
+      "The pending selection must not start over Bluetooth without a choice")
+
+    await owner.sendPendingRouteOverBluetooth()
+
+    guard case .waitingForPeerApproval = owner.state else { return XCTFail("Bluetooth choice did not start the offer") }
+    XCTAssertNil(owner.pendingRouteSelection)
+    XCTAssertTrue(owner.preferBluetoothForCurrentTransfer)
+    XCTAssertEqual(lanRequests, 1, "Explicit Bluetooth must not request LAN again")
+    XCTAssertTrue(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+  }
+
+  func testPendingDropCanRetryOrCancelAndReleasesItsSourceAccess() async throws {
+    let owner = MacTransferModel()
+    let peer = try androidPeer()
+    let ble = MockSecuredChannel(instance: "retry-ble", transport: "ble", peer: peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    let source = tempDir.appendingPathComponent("retry-route.txt")
+    try Data([1, 2, 3]).write(to: source)
+    let recipient = TransferRecipient(peer: peer)
+    let access = TransferFileAccessLease(urls: [source])
+    var lanRequests = 0
+    owner.onLanRequired = { lanRequests += 1; return false }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient,
+      transportPolicy: .preferLanWithChoice, fileAccess: access)
+    await owner.retryPendingRouteSelection()
+
+    XCTAssertEqual(lanRequests, 2)
+    XCTAssertNotNil(owner.pendingRouteSelection)
+    XCTAssertEqual(owner.dropFileAccess === access, true)
+    XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+
+    owner.cancelPendingRouteSelection()
+
+    XCTAssertNil(owner.pendingRouteSelection)
+    XCTAssertNil(owner.dropFileAccess)
+    XCTAssertFalse(owner.isBusy)
+    guard case .cancelled = owner.state else { return XCTFail("Cancel should leave a visible cancelled state") }
+  }
+
+  func testPendingDropSurvivesLinkLossWithoutRedirectingToAnotherPhone() async throws {
+    let owner = MacTransferModel()
+    let originalPeer = try androidPeer(name: "Shared name")
+    let original = MockSecuredChannel(instance: "pending-original", transport: "ble", peer: originalPeer)
+    owner.available(original)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: original.descriptor)
+    let source = tempDir.appendingPathComponent("pinned-route.txt")
+    try Data([1]).write(to: source)
+    let recipient = TransferRecipient(peer: originalPeer)
+    owner.onLanRequired = { false }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient, transportPolicy: .preferLanWithChoice)
+    owner.retired(original.descriptor)
+    let other = MockSecuredChannel(instance: "other-phone", transport: "ble", peer: try androidPeer(name: "Shared name"))
+    owner.available(other)
+
+    XCTAssertEqual(owner.pendingRouteSelection?.recipient, recipient)
+    XCTAssertFalse(owner.canSendPendingOverBluetooth)
+    XCTAssertNil(owner.activeChannel)
+    XCTAssertFalse(owner.peerConnected)
+    XCTAssertFalse(other.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+
+    owner.cancelPendingRouteSelection()
+  }
+
+  func testDropUsesAReadyLanChannelWithoutOfferingOverBluetooth() async throws {
+    let owner = MacTransferModel()
+    let peer = try androidPeer()
+    let ble = MockSecuredChannel(instance: "preferred-ble", transport: "ble", peer: peer)
+    let lan = MockSecuredChannel(instance: "preferred-lan", transport: "lan", peer: peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    owner.available(lan)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    let source = tempDir.appendingPathComponent("lan-route.txt")
+    try Data([7, 8, 9]).write(to: source)
+    let recipient = TransferRecipient(peer: peer)
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient, transportPolicy: .preferLanWithChoice)
+
+    guard case .waitingForPeerApproval = owner.state else { return XCTFail("LAN route did not start the offer") }
+    XCTAssertTrue(lan.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+    XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
+    XCTAssertNil(owner.pendingRouteSelection)
   }
 
   func testPendingAckRetainsSmallProgressWhenItsTimerExpiresDuringSubmission() async throws {
@@ -1763,7 +2092,7 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: unrelated), Data("keep".utf8))
   }
 
-  func testFailedDestinationDoesNotAcceptOrReportSuccess() async throws {
+  func testFailedDestinationLeavesOfferPendingForRecovery() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel()
     owner.available(channel)
     _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
@@ -1771,7 +2100,8 @@ final class TransferModelTests: XCTestCase {
     let blocked = tempDir.appendingPathComponent("not-a-folder")
     try Data("keep".utf8).write(to: blocked)
     await owner.acceptIncomingOffer(destination: blocked)
-    guard case .failed = owner.state else { return XCTFail("Destination error ignored") }
+    guard case .incomingOffer = owner.state else { return XCTFail("Offer should remain available while the folder is repaired") }
+    XCTAssertNotNil(owner.receiveDestinationError)
     let messages = channel.sentData.compactMap { try? TransferMessage.decode($0) }
     XCTAssertFalse(messages.contains { $0.kind == 3 || $0.kind == 7 && $0.number(2) == 0 })
     XCTAssertEqual(try Data(contentsOf: blocked), Data("keep".utf8))

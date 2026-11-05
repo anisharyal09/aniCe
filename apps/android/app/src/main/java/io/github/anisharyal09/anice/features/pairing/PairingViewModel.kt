@@ -63,6 +63,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
     var beforePairing: () -> Unit = {}
     var trustRemoved: () -> Unit = {}
+    var onPeersChanged: (List<PeerTrustRecord>) -> Unit = {}
     private var foreground = false
     private var overall = 0L
     private var deadline = 0L
@@ -474,7 +475,12 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 val local = app.identityService.getOrCreateIdentity().identity
                 val trust = store ?: app.trustStore.also { store = it }
                 val list = trust.list(local.fingerprint)
-                handler.post { if (generation == op) peers = list }
+                handler.post {
+                    if (generation == op) {
+                        peers = list
+                        onPeersChanged(list)
+                    }
+                }
             } catch (error: Exception) {
                 handler.post {
                     if (generation == op) {
@@ -501,6 +507,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                         recovery = ""
                         trustRemoved()
                         peers = emptyList()
+                        onPeersChanged(emptyList())
                         status =
                             "Local trust was reset. Pair your devices again. The unreadable file was preserved."
                     }

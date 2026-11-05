@@ -10,6 +10,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.UUID
+import java.nio.ByteBuffer
 
 class TransferRecoveryTests {
     private val local = "a".repeat(64)
@@ -86,6 +87,26 @@ class TransferRecoveryTests {
             catch (_: IOException) {}
             assertEquals(saved, store.load())
             assertTrue(File(saved.partial).exists())
+        } finally { folder.deleteRecursively() }
+    }
+
+    @Test fun destinationBackendRoundTripsAndLegacyCheckpointsRemainReadable() {
+        val folder = Files.createTempDirectory("anice-destination-checkpoint-").toFile()
+        try {
+            val local = snapshot(folder)
+            val mediaStore = local.copy(folder = "", partial = "", document = "content://media/external/downloads/42",
+                destinationBackend = "mediaStore")
+            assertEquals(mediaStore, TransferRecoveryStore.decode(TransferRecoveryStore.encode(mediaStore)))
+
+            for (saved in listOf(local, local.copy(tree = "content://com.android.externalstorage.documents/tree/primary%3ADownloads",
+                destinationBackend = "documentTree"))) {
+                val encoded = TransferRecoveryStore.encode(saved)
+                val backendBytes = saved.destinationBackend.toByteArray(Charsets.UTF_8)
+                val legacy = encoded.copyOf(encoded.size - 4 - backendBytes.size)
+                ByteBuffer.wrap(legacy).putInt(0, 1)
+                val decoded = TransferRecoveryStore.decode(legacy)
+                assertEquals(saved.destinationBackend, decoded.destinationBackend)
+            }
         } finally { folder.deleteRecursively() }
     }
 

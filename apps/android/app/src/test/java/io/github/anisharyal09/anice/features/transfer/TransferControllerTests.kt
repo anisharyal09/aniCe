@@ -51,6 +51,114 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun automaticReceiveConsentIsScopedToTheFullTrustedIdentity() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val peer = MockAndroidSecuredChannel().descriptor.peer
+        val replacementIdentity = peer.copy(fingerprint = "f".repeat(64))
+        val preferences = owner.autoReceivePreferences
+
+        assertFalse(preferences.enabled(peer))
+        preferences.set(peer, true)
+        assertTrue(preferences.enabled(peer))
+        assertFalse(preferences.enabled(replacementIdentity))
+
+        preferences.prune(listOf(replacementIdentity))
+        assertFalse(preferences.enabled(peer))
+        preferences.set(replacementIdentity, true)
+        preferences.clear()
+        assertFalse(preferences.enabled(replacementIdentity))
+        owner.dismiss()
+    }
+
+    @Test fun consentedOfferWaitsForTheAppWhenAutomaticReceiveIsUnavailable() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val channel = MockAndroidSecuredChannel()
+        owner.canAutomaticallyReceive = { false }
+        owner.autoReceivePreferences.set(channel.descriptor.peer, true)
+        val offerNoticeStates = mutableListOf<Boolean>()
+        owner.onStateChanged = { state ->
+            if (state is TransferState.IncomingOffer) offerNoticeStates += owner.automaticReceiveNeedsApp
+        }
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+
+        val (batch, _) = offered(owner, channel)
+        val pending = owner.pendingAutomaticReceive
+        assertTrue(owner.state is TransferState.IncomingOffer)
+        assertEquals(batch, pending?.batchId)
+        assertEquals(channel.descriptor.peer.deviceId, pending?.peer?.deviceId)
+        assertEquals(channel.descriptor.peer.fingerprint, pending?.peer?.fingerprint)
+        assertTrue(owner.automaticReceiveNeedsApp)
+        assertEquals(true, offerNoticeStates.lastOrNull())
+        assertFalse(channel.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 3L })
+
+        // The offer keeps the consent decision captured at admission; the change applies next time.
+        owner.autoReceivePreferences.set(channel.descriptor.peer, false)
+        assertNotNull(owner.pendingAutomaticReceive)
+        owner.rejectIncomingOffer()
+        assertNull(owner.pendingAutomaticReceive)
+        assertFalse(owner.automaticReceiveNeedsApp)
+        owner.dismiss()
+    }
+
+    @Test fun backgroundTransitionKeepsConsentedOfferWhenAReceiveOwnerIsAvailable() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val peer = MockAndroidSecuredChannel().descriptor.peer
+        val batch = TransferBatch(
+            id = UUID.randomUUID().toString(),
+            files = listOf(TransferFile(UUID.randomUUID().toString(), "note.txt", 0, ByteArray(32))),
+            totalBytes = 0,
+            peerName = peer.deviceName,
+        )
+        val pending = PendingAutomaticReceive(batch.id, peer, TransferReceiveDestinationSelection(null, 0))
+        owner.state = TransferState.IncomingOffer(batch)
+        owner.pendingAutomaticReceive = pending
+        owner.canAutomaticallyReceive = { true }
+
+        owner.applicationBackgrounded()
+
+        assertSame(pending, owner.pendingAutomaticReceive)
+        assertFalse(owner.automaticReceiveNeedsApp)
+        owner.dismiss()
+    }
+
+    @Test fun backgroundTransitionKeepsOfferPendingWhenNoReceiveOwnerIsAvailable() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val peer = MockAndroidSecuredChannel().descriptor.peer
+        val batch = TransferBatch(
+            id = UUID.randomUUID().toString(),
+            files = listOf(TransferFile(UUID.randomUUID().toString(), "note.txt", 0, ByteArray(32))),
+            totalBytes = 0,
+            peerName = peer.deviceName,
+        )
+        val pending = PendingAutomaticReceive(batch.id, peer, TransferReceiveDestinationSelection(null, 0))
+        owner.state = TransferState.IncomingOffer(batch)
+        owner.pendingAutomaticReceive = pending
+        owner.canAutomaticallyReceive = { false }
+
+        owner.applicationBackgrounded()
+
+        assertSame(pending, owner.pendingAutomaticReceive)
+        assertTrue(owner.automaticReceiveNeedsApp)
+        assertTrue(owner.state is TransferState.IncomingOffer)
+        owner.dismiss()
+    }
+
+    @Test fun retiringTheChannelKeepsAnUnapprovedOfferForForegroundReturn() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val channel = MockAndroidSecuredChannel()
+        owner.available(channel)
+        owner.handle(channel.descriptor, TransferMessage.capability().encode())
+        offered(owner, channel)
+
+        owner.retired(channel.descriptor)
+
+        assertTrue(owner.state is TransferState.Paused)
+        assertTrue(owner.interruptedOffer is TransferState.IncomingOffer)
+        assertTrue(owner.isBusy)
+        owner.dismiss()
+    }
+
     @Test fun staleFileMetadataCannotFinishANewerOrDismissedReview() {
         val review = TransferSendReview(TransferController(dispatcher = Dispatchers.Unconfined))
         val first = review.selectionReturned(true)!!

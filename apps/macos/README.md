@@ -95,7 +95,7 @@ Signing diagnostics log only operation counts under `identity-signing`; repeated
 
 ## Secure sessions
 
-Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) provides bidirectional file transfers over authenticated LAN with BLE fallback when LAN is disconnected.
+Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) prefers authenticated LAN for new sends and asks before using Bluetooth when the LAN attempt does not succeed.
 
 Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
 
@@ -105,9 +105,9 @@ Overview, Devices, Features, Favourites, Settings and About use a native sidebar
 
 Features → Now Playing → Playback setup provides remote playback to Android. Local Overview/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
 
-## Keyboard & Trackpad (unreleased)
+## Control Android (Keyboard & Trackpad, unreleased)
 
-Features → Keyboard & Trackpad sends native keyboard and mouse input to a trusted Android phone over Classic Bluetooth HID. Pair in macOS Bluetooth Settings, then confirm the paired device's link to the aniCe phone once. Connecting leaves input idle until you click the keyboard or pointer pad. Two fingers up/down scroll; left/right drags the phone pointer. Scrolling over an inactive embedded pad browses the local panel.
+Features → Control Android sends native keyboard and mouse input to a trusted Android phone over Classic Bluetooth HID. Pair in macOS Bluetooth Settings, then confirm the paired device's link to the aniCe phone once. Connecting leaves input idle until you click the keyboard or pointer pad. Two fingers up/down scroll; left/right drags the phone pointer. Scrolling over an inactive embedded pad browses the local panel.
 
 The menu-bar companion's **Keyboard** button shows or hides a persistent floating button; its right-click menu also offers **Show floating keyboard**. Click the floating button to toggle typing, or right-click it for full controls and Hide. Compact position and visibility are saved; reopening restores idle controls. Resizing the full controls preserves keyboard focus. Stopping or hiding releases held input while the HID connection can remain idle.
 
@@ -119,7 +119,7 @@ Settings → Permissions shows Event Posting status and setup for Mac input. ani
 
 ## Local File Transfer
 
-Overview → Files and the companion provide file sending, incoming batch approval, folder selection and progress tracking with rolling rate metrics. Incoming files use exclusive job-owned partials and checked verification before non-overwriting publication via atomic hard link or copy fallback. Mid-stream channel loss automatically pauses with checkpointed partial retention, auto-resuming over reconnected LAN or explicit Bluetooth continuation; private checkpoints retain prepared jobs across restarts for 15 minutes. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 

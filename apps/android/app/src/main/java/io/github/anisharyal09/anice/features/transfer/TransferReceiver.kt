@@ -27,12 +27,16 @@ import io.github.anisharyal09.anice.infrastructure.session.SessionTiming
 import java.util.ArrayDeque
 
 internal fun TransferController.handleOffer(message: TransferMessage, peerName: String, descriptor: ChannelDescriptor) {
+        val sourceChannel = channels[descriptor.transport]?.takeIf { it.descriptor == descriptor } ?: return
         val batchId = message.string(0)
+        if (!canonicalTransferUuid(batchId)) return
         if (batchId in retiredBatches && retainedBatch?.id != batchId) return
         val sliceIdx = message.number(1)
         val totalSlices = message.number(2)
         val totalFiles = message.number(3)
         val totalBytes = message.number(4)
+        if (totalSlices !in 1L..16L || totalFiles !in 1L..128L || totalBytes < 0L ||
+            sliceIdx !in 0 until totalSlices) { clearOfferAssembly(); return }
 
         val filesCbor = (message.fields.getOrNull(5) as? Cbor.Array)?.value ?: return
         val sliceFiles = mutableListOf<TransferFile>()
@@ -40,19 +44,27 @@ internal fun TransferController.handleOffer(message: TransferMessage, peerName: 
             val row = (f as? Cbor.Array)?.value ?: continue
             if (row.size != 4) continue
             val id = (row[0] as? Cbor.Text)?.value ?: continue
+            if (!canonicalTransferUuid(id)) continue
             val name = (row[1] as? Cbor.Text)?.value ?: continue
             val sz = (row[2] as? Cbor.Integer)?.value ?: continue
             val hash = (row[3] as? Cbor.Bytes)?.value ?: continue
             sliceFiles.add(TransferFile(id, name, sz, hash))
         }
+        if (sliceFiles.size !in 1..8) { clearOfferAssembly(); return }
 
         if (offerAssembly?.let { it.batch != batchId } == true) return
-        val assembly = offerAssembly ?: TransferController.OfferAssembly(batchId, totalSlices, totalFiles, totalBytes).also {
+        val assembly = offerAssembly ?: TransferController.OfferAssembly(batchId, descriptor.peer.deviceId,
+            descriptor.peer.fingerprint, totalSlices, totalFiles, totalBytes).also {
             offerAssembly = it
             offerTimeout = scope.launch { delay(10000); clearOfferAssembly(); selectPreferredChannel() }
         }
         if (assembly.totalSlices != totalSlices || assembly.totalFiles != totalFiles ||
             assembly.totalBytes != totalBytes) { clearOfferAssembly(); return }
+        if (assembly.peerId != descriptor.peer.deviceId || assembly.peerFingerprint != descriptor.peer.fingerprint) {
+            clearOfferAssembly()
+            rejectInvalidOffer(batchId, descriptor)
+            return
+        }
         val sliceMap = assembly.slices
         sliceMap[sliceIdx]?.let { previous ->
             if (previous != sliceFiles) clearOfferAssembly()
@@ -72,7 +84,12 @@ internal fun TransferController.handleOffer(message: TransferMessage, peerName: 
                 sum += file.size
             }
             if (allFiles.size.toLong() != totalFiles || sum != totalBytes ||
-                allFiles.map { it.id }.toSet().size != allFiles.size) { clearOfferAssembly(); return }
+                allFiles.map { it.id }.toSet().size != allFiles.size ||
+                allFiles.any { it.size < 0L || it.sha256.size != 32 || !validTransferName(it.name) }) {
+                rejectInvalidOffer(batchId, descriptor)
+                clearOfferAssembly()
+                return
+            }
             clearOfferAssembly()
             val batch = TransferBatch(batchId, allFiles, totalBytes, peerName)
 
@@ -90,19 +107,148 @@ internal fun TransferController.handleOffer(message: TransferMessage, peerName: 
             val isBusy = this.isBusy
 
             if (isBusy) {
-                val channel = activeChannel ?: return
                 scope.launch {
                     val reject = TransferMessage.reject(batch = batchId, reason = 3L) // Busy
-                    runCatching { sendWithBackpressure(reject.encode(), channel, jobBound = false) }
+                    runCatching { sendWithBackpressure(reject.encode(), sourceChannel, jobBound = false) }
                 }
                 return
             }
 
             cleanupTransfer(selectChannel = false)
+            activeChannel = sourceChannel
+            transferPeerDeviceId = descriptor.peer.deviceId
+            transferPeerFingerprint = descriptor.peer.fingerprint
+            peerConnected = true
+            peerCompatible = capabilities[descriptor.transport] != null
+            capabilities[descriptor.transport]?.let { applyCapability(it) }
             currentBatch = batch
             updateState(TransferState.IncomingOffer(batch))
+            captureAutomaticReceive(batch, descriptor)
         }
     }
+
+private fun validTransferName(name: String): Boolean = name.toByteArray(Charsets.UTF_8).size in 1..255 &&
+    name == name.trim() && name != "." && name != ".." && '/' !in name && '\\' !in name &&
+    name.none { Character.isISOControl(it) }
+
+private fun canonicalTransferUuid(value: String): Boolean = value.length == 36 &&
+    runCatching { UUID.fromString(value).toString().equals(value, ignoreCase = true) }.getOrDefault(false)
+
+private fun TransferController.rejectInvalidOffer(batchId: String, descriptor: ChannelDescriptor) {
+    val channel = channels[descriptor.transport]?.takeIf { it.descriptor == descriptor } ?: return
+    scope.launch {
+        runCatching { sendWithBackpressure(TransferMessage.reject(batchId, 4L).encode(), channel, jobBound = false) }
+    }
+}
+
+private fun TransferController.captureAutomaticReceive(batch: TransferBatch, descriptor: ChannelDescriptor) {
+    val peer = descriptor.peer
+    if (peer.platform != "macos" || !autoReceivePreferences.enabled(peer)) {
+        pendingAutomaticReceive = null
+        automaticReceiveNeedsApp = false
+        return
+    }
+    // Freeze consent and destination when the complete, sender-pinned offer is admitted; edits apply to later offers.
+    pendingAutomaticReceive = PendingAutomaticReceive(
+        batchId = batch.id,
+        peer = peer,
+        destination = destinationPreferences?.selection() ?: TransferReceiveDestinationSelection(null, 0),
+    )
+    automaticReceiveNeedsApp = !canAutomaticallyReceive() || context == null || destinationPreferences == null
+    if (automaticReceiveNeedsApp) onStateChanged?.invoke(state)
+    else {
+        // A complete offer plus saved per-peer consent owns a bounded receive lease before the UI backgrounds.
+        onLeaseChanged?.invoke(true)
+        startAutomaticReceiveIfEligible()
+    }
+}
+
+internal fun TransferController.startAutomaticReceiveIfEligible() {
+    val pending = pendingAutomaticReceive ?: return
+    val incoming = state as? TransferState.IncomingOffer ?: return
+    if (incoming.batch.id != pending.batchId) return
+    // Without foreground or companion ownership, keep the offer pending for the next foreground visit.
+    if (!canAutomaticallyReceive()) {
+        automaticReceiveNeedsApp = true
+        onLeaseChanged?.invoke(false)
+        onStateChanged?.invoke(state)
+        return
+    }
+    val activePeer = activeChannel?.descriptor?.peer
+    if (activePeer?.deviceId != pending.peer.deviceId || activePeer.fingerprint != pending.peer.fingerprint) {
+        automaticReceiveNeedsApp = true
+        onLeaseChanged?.invoke(false)
+        onStateChanged?.invoke(state)
+        return
+    }
+    if (destinationPreparation?.isActive == true) return
+
+    val ctx = context
+    val preferences = destinationPreferences
+    if (ctx == null || preferences == null) {
+        automaticReceiveNeedsApp = true
+        onLeaseChanged?.invoke(false)
+        onStateChanged?.invoke(state)
+        return
+    }
+    automaticReceiveNeedsApp = false
+    destinationMessage = "Preparing receive folder…"
+    val operation = epoch
+    destinationPreparation = scope.launch {
+        var destination: TransferReceiveDestination? = null
+        try {
+            destination = withContext(receiveDispatcher) {
+                preferences.create(pending.destination).also { target ->
+                    try { target.preflight(incoming.batch.totalBytes) }
+                    catch (error: Exception) { target.close(); throw error }
+                }
+            }
+            if (operation != epoch || (state as? TransferState.IncomingOffer)?.batch?.id != pending.batchId ||
+                !canAutomaticallyReceive()) {
+                withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+                if (operation == epoch && pendingAutomaticReceive?.batchId == pending.batchId) {
+                    automaticReceiveNeedsApp = true
+                    destinationMessage = null
+                    onLeaseChanged?.invoke(false)
+                    onStateChanged?.invoke(state)
+                }
+                return@launch
+            }
+            documentDestination = destination
+            destination = null
+            pendingAutomaticReceive = null
+            automaticReceiveNeedsApp = false
+            destinationMessage = null
+            acceptIncomingOfferFlow(File(ctx.filesDir, "unused-document-destination"))
+        } catch (error: CancellationException) {
+            withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+            throw error
+        } catch (error: Exception) {
+            withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+            if (operation == epoch && (state as? TransferState.IncomingOffer)?.batch?.id == pending.batchId) {
+                pendingAutomaticReceive = null
+                automaticReceiveNeedsApp = false
+                destinationMessage = error.message ?: "Choose another folder or reset to Downloads/aniCe."
+                onLeaseChanged?.invoke(false)
+                onStateChanged?.invoke(state)
+            }
+        }
+    }
+}
+
+internal fun TransferController.deferAutomaticReceiveIfNeeded() {
+    val pending = pendingAutomaticReceive ?: return
+    if ((state as? TransferState.IncomingOffer)?.batch?.id != pending.batchId) return
+    if (canAutomaticallyReceive()) return
+    if (destinationPreparation?.isActive == true) {
+        destinationPreparation?.cancel()
+        destinationPreparation = null
+        destinationMessage = null
+    }
+    automaticReceiveNeedsApp = true
+    onLeaseChanged?.invoke(false)
+    onStateChanged?.invoke(state)
+}
 
 internal fun TransferController.clearOfferAssembly() {
         offerTimeout?.cancel(); offerTimeout = null
@@ -113,6 +259,8 @@ internal fun TransferController.acceptIncomingOfferFlow(tree: Uri, modes: Int) {
         val ctx = context ?: return
         val current = state as? TransferState.IncomingOffer ?: return
         if (destinationPreparation?.isActive == true) return
+        pendingAutomaticReceive = null
+        automaticReceiveNeedsApp = false
         val operation = epoch
         onLeaseChanged?.invoke(true)
         destinationPreparation = scope.launch {
@@ -144,6 +292,8 @@ internal suspend fun TransferController.acceptIncomingOfferFlow(destinationDir: 
         val current = state
         val channel = activeChannel ?: return
         if (current !is TransferState.IncomingOffer) return
+        pendingAutomaticReceive = null
+        automaticReceiveNeedsApp = false
         val operation = epoch
         if (recoveryStore != null) {
             try {
@@ -198,6 +348,8 @@ internal fun TransferController.rejectIncomingOfferFlow(reason: Long = 0L) {
         val current = state
         val channel = activeChannel ?: return
         if (current !is TransferState.IncomingOffer) return
+        pendingAutomaticReceive = null
+        automaticReceiveNeedsApp = false
 
         scope.launch {
             val reject = TransferMessage.reject(batch = current.batch.id, reason = reason)
@@ -510,4 +662,108 @@ internal class TransferIngress(private val scope: CoroutineScope, private val co
         try { waiter.await() } finally { waiters.remove(waiter) }
     }
     private fun wake() { waiters.toList().forEach { it.complete(Unit) } }
+}
+
+internal fun TransferController.acceptSavedIncomingOfferFlow() {
+    val ctx = context ?: return
+    val current = state as? TransferState.IncomingOffer ?: return
+    if (destinationPreparation?.isActive == true) return
+    pendingAutomaticReceive = null
+    automaticReceiveNeedsApp = false
+    val selection = destinationPreferences?.selection()
+        ?: run { destinationMessage = "Receive settings are unavailable."; return }
+    destinationMessage = "Preparing receive folder…"
+    val operation = epoch
+    onLeaseChanged?.invoke(true)
+    destinationPreparation = scope.launch {
+        var destination: TransferReceiveDestination? = null
+        try {
+            receiveCleanup?.join()
+            if (operation != epoch) return@launch
+            destination = withContext(receiveDispatcher) {
+                val preferences = destinationPreferences ?: throw java.io.IOException("Receive settings are unavailable.")
+                val target = preferences.create(selection)
+                try { target.preflight(current.batch.totalBytes); target }
+                catch (error: Exception) { target.close(); throw error }
+            }
+            if (operation != epoch || activeChannel == null || state !is TransferState.IncomingOffer) {
+                withContext(NonCancellable + receiveDispatcher) { destination.close() }
+                if (operation == epoch) onLeaseChanged?.invoke(false)
+                return@launch
+            }
+            documentDestination = destination
+            destinationMessage = null
+            acceptIncomingOfferFlow(File(ctx.filesDir, "unused-document-destination"))
+        } catch (error: CancellationException) {
+            withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+            if (operation == epoch) onLeaseChanged?.invoke(false)
+            throw error
+        } catch (error: Exception) {
+            withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+            if (operation == epoch) {
+                destinationMessage = error.message ?: "Choose another folder or reset to Downloads/aniCe."
+                onLeaseChanged?.invoke(false)
+            }
+        }
+    }
+}
+
+internal fun TransferController.saveReceiveDestinationFlow(tree: Uri, modes: Int) {
+    val ctx = context ?: return
+    if (state is TransferState.Transferring || state is TransferState.Paused) {
+        destinationMessage = "Finish the current transfer before changing its destination."
+        return
+    }
+    val preferences = destinationPreferences ?: return
+    val flags = modes and (android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    if (flags != (android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)) {
+        destinationMessage = "The selected folder must grant read and write access."
+        return
+    }
+    destinationMessage = "Checking folder…"
+    destinationPreparation?.cancel()
+    destinationPreparation = scope.launch {
+        val resolver = ctx.contentResolver
+        val oldTree = runCatching { preferences.storedTree() }.getOrNull()
+        val oldModes = preferences.savedModes()
+        val previous = resolver.persistedUriPermissions.firstOrNull { it.uri == tree }?.let {
+            (if (it.isReadPermission) android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                (if (it.isWritePermission) android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+        } ?: 0
+        val newlyOwned = flags and previous.inv()
+        var retained = false
+        try {
+            resolver.takePersistableUriPermission(tree, flags)
+            withContext(receiveDispatcher) {
+                val target = TransferDestination(ctx, tree, flags, restoredOwnedModes = 0)
+                try { target.preflight(0) } finally { target.close() }
+            }
+            preferences.save(tree, flags)
+            retained = true
+            if (oldTree != null && oldTree != tree) {
+                runCatching { resolver.releasePersistableUriPermission(oldTree, oldModes) }
+            }
+            destinationMessage = "Incoming files will be saved to the selected folder."
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) {
+            destinationMessage = "Cannot use this folder: ${error.message ?: "choose another local folder."}"
+        } finally {
+            if (!retained && newlyOwned != 0) {
+                runCatching { resolver.releasePersistableUriPermission(tree, newlyOwned) }
+            }
+        }
+    }
+}
+
+internal fun TransferController.resetReceiveDestinationFlow() {
+    val ctx = context ?: return
+    if (state is TransferState.Transferring || state is TransferState.Paused) {
+        destinationMessage = "Finish the current transfer before changing its destination."
+        return
+    }
+    val preferences = destinationPreferences ?: return
+    val modes = preferences.savedModes()
+    val tree = preferences.reset()
+    if (tree != null && modes != 0) runCatching { ctx.contentResolver.releasePersistableUriPermission(tree, modes) }
+    destinationMessage = "Incoming files will be saved to Downloads/aniCe."
 }

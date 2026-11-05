@@ -25,7 +25,7 @@ extension MainWindowView {
             }
           }
           if transfer.pendingOffer != nil {
-            TransferView(model: transfer, open: { navigation.openFeature(.files) })
+            TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) })
           }
           if pairing.hasTrustedAndroid {
             HStack(spacing: 8) {
@@ -82,7 +82,7 @@ extension MainWindowView {
         }
         if transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
       }
-      if isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
+      if isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }
   }
 
@@ -97,7 +97,7 @@ extension MainWindowView {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           VStack(alignment: .leading, spacing: 6) {
             Text("Send files").font(.system(size: 14, weight: .medium))
-            Text(transfer.activeChannel.map { "Send to " + $0.descriptor.peer.deviceName } ?? "Connect your phone to send files")
+            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.deviceName } ?? "Connect a compatible Android phone to send files")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer(minLength: 12)
@@ -105,7 +105,11 @@ extension MainWindowView {
             .buttonStyle(AniCeButtonStyle()).disabled(!transfer.peerConnected || !transfer.peerCompatible)
         }.padding(24).frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
           .overlay { RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(colorScheme), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
-      } else if !isResult { TransferView(model: transfer, open: { navigation.openFeature(.files) }) }
+          .transferFileDropTarget(model: transfer, cornerRadius: 8)
+        if let dropStatus = transfer.dropStatus {
+          Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        }
+      } else if !isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }
   }
 
@@ -360,8 +364,16 @@ extension MainWindowView {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("File transfer", id: "file-transfer") {
-                  TransferNotificationControls(preferences: transfer.notificationPreferences)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                  VStack(alignment: .leading, spacing: 8) {
+                    TransferNotificationControls(preferences: transfer.notificationPreferences)
+                    Divider().overlay(AniCePalette.separator(colorScheme))
+                    TransferAutoReceiveSettings(preferences: transfer.autoReceivePreferences, peers: pairing.peers, compact: true)
+                    Divider().overlay(AniCePalette.separator(colorScheme))
+                    TransferReceiveDestinationControls(model: transfer)
+                    Divider().overlay(AniCePalette.separator(colorScheme))
+                    EdgeDropSettingsView(controller: edgeDrop)
+                  }
+                  .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))

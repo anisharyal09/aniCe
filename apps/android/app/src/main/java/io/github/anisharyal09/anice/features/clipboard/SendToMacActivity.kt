@@ -84,6 +84,26 @@ class SendToMacActivity : ComponentActivity() {
     private val app get() = application as AniCeApplication
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val fileShare = try {
+            intent.action == Intent.ACTION_SEND_MULTIPLE || intent.hasExtra(Intent.EXTRA_STREAM) ||
+                intent.clipData?.let { clip -> (0 until minOf(clip.itemCount, 129)).any { clip.getItemAt(it).uri != null } } == true
+        } catch (_: RuntimeException) { false }
+        if (fileShare) {
+            val forwarded = Intent(intent).setClass(this,
+                io.github.anisharyal09.anice.features.transfer.ShareFilesActivity::class.java)
+            forwarded.flags = intent.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            io.github.anisharyal09.anice.features.transfer.sharedFileUris(intent)?.let { files ->
+                // Carry every launch grant into the file activity, including EXTRA_STREAM-only shares.
+                forwarded.clipData = android.content.ClipData.newRawUri("Shared files", files.first()).apply {
+                    files.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
+                }
+                forwarded.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try { startActivity(forwarded) }
+            catch (_: SecurityException) { Toast.makeText(this, "Could not access the shared files. Share them again from their app.", Toast.LENGTH_LONG).show() }
+            finish()
+            return
+        }
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         val factory = viewModelFactory { initializer { SelectionSendState(app.clipboard) } }
         state = ViewModelProvider(this, factory)[SelectionSendState::class.java]
@@ -117,7 +137,15 @@ class SendToMacActivity : ComponentActivity() {
                     Toast.makeText(this@SendToMacActivity, if (state.openingLink) "Opened in Mac" else "Sent to Mac", Toast.LENGTH_SHORT).show(); finish()
                 }
             }
-            Surface { Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 1.dp,
+            ) { Column(
+                Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(if (state.openingLink) "Open Link in Mac" else "Send to Mac", style = MaterialTheme.typography.titleLarge)
                 if (state.sharedLink != null && operation == null) {
                     Text("Open this link in your Mac’s default browser, or send it to the Mac clipboard.")
@@ -173,7 +201,7 @@ class SendToMacActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         app.clipboard.focus(false, this, observe = false)
-        if (!isChangingConfigurations) state.cancel()
+        if (!isChangingConfigurations && ::state.isInitialized) state.cancel()
         app.sessionController.background(this, isChangingConfigurations)
         app.lanSessionController.background(this, isChangingConfigurations)
     }

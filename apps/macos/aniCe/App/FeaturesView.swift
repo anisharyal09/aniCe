@@ -12,6 +12,7 @@ struct FeaturesView: View {
   let smsPreferences: SmsPreferences
   let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
+  let edgeDrop: MacEdgeDropController
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
@@ -35,11 +36,15 @@ struct FeaturesView: View {
           Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
             .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
           Text(panel.title).font(.title2.weight(.semibold))
+          if panel == .keyboardTrackpad {
+            Text("Keyboard & Trackpad for your Android phone")
+              .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
           switch panel {
           case .playback:
             MediaView(model: playback, visible: playback.mainVisible)
             DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
-          case .files: TransferView(model: transfer)
+          case .files: TransferView(model: transfer, peers: peers, edgeDrop: edgeDrop)
           case .clipboard: ClipboardView(model: clipboard, peers: peers)
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
@@ -134,7 +139,7 @@ struct FeaturesView: View {
       if peers.contains(where: { sms.connected($0.peer) }) { return "SMS connected" }
       return peers.isEmpty ? "Pair a phone to relay messages" : "Connect your phone"
     case .keyboardTrackpad:
-      return keyboardTrackpad.featureSummary
+      return "Keyboard & Trackpad · \(keyboardTrackpad.featureSummary)"
     case .findDevice:
       if findDevice.busy { return "Request in progress" }
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }

@@ -130,6 +130,15 @@ fun SettingsScreen(
                     }
                 }
 
+                PreferenceSection("File transfer") {
+                    io.github.anisharyal09.anice.features.transfer.TransferAutoReceiveSettings(
+                        preferences = app.transfer.autoReceivePreferences,
+                        peers = peers,
+                        compact = true,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+
                 PreferenceSection("This device") {
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp)
