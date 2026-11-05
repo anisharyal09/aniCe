@@ -54,6 +54,16 @@ core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
 
 ## Development & Architecture Decisions
 
+Build, install and launch a development app from the repository root:
+
+```sh
+./scripts/dev.sh mac
+./scripts/dev.sh android
+./scripts/dev.sh android --serial DEVICE_SERIAL
+```
+
+See the platform setup guides below for prerequisites and local Mac signing settings.
+
 - **Architecture Overview:** [Identity, trust, sessions and transports](ARCHITECTURE.md)
 - **Architecture Decisions:** [Shared foundations and feature decisions](docs/decisions/README.md)
 - **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)

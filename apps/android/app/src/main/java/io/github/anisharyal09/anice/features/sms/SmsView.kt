@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,7 +46,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    var refused by remember { mutableStateOf(false) }
+    var refused by rememberSaveable { mutableStateOf(false) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         owner.refreshPermissions()
         refused = results.any { (permission, granted) ->
@@ -82,12 +83,14 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                     Text("SMS permissions", style = MaterialTheme.typography.titleSmall)
                     Text("Needed to ${missingLabels(state)}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedButton(onClick = { refused = false; request.launch(missing.toTypedArray()) },
-                        shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Allow SMS access") }
+                        shape = MaterialTheme.shapes.small,
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Allow SMS access") }
                     if (refused) {
                         Text("Android may also restrict SMS access for apps installed outside a store. Open App info, choose Allow restricted settings, then grant permission.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = {
+                        TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
                             context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
                         }) { Text("Open app settings") }
                     }
@@ -252,16 +255,45 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
 
 @Composable
 fun SmsSettings(owner: SmsController) {
+    val context = LocalContext.current
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, owner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) owner.refreshPermissions()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    var refused by rememberSaveable { mutableStateOf(false) }
+    val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        owner.refreshPermissions()
+        refused = results.any { (permission, granted) ->
+            !granted && context.findActivity()?.shouldShowRequestPermissionRationale(permission) != true
+        }
+    }
     LaunchedEffect(Unit) { owner.refreshPermissions() }
     val state = owner.permissionsState
-    // A full grant removes the Settings card entirely; the panel already reports **SMS access granted**.
-    if (state.receive && state.read && state.send) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "Still needed: ${missingLabels(state)}.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (owner.skippedRows > 0) Text("${owner.skippedRows} rows could not be read", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val missing = buildList {
+        if (!state.receive) add(Manifest.permission.RECEIVE_SMS)
+        if (!state.read) add(Manifest.permission.READ_SMS)
+        if (!state.send) add(Manifest.permission.SEND_SMS)
+    }
+    if (missing.isEmpty()) return
+    Column(Modifier.padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Needed to ${missingLabels(state)}.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = { refused = false; request.launch(missing.toTypedArray()) },
+            shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Allow SMS access") }
+        if (refused) {
+            Text("Android may restrict SMS access for apps installed outside a store. In App info, choose Allow restricted settings, then grant permission.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
+                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+            }) { Text("Open app settings") }
+        }
     }
 }
 

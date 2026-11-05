@@ -98,7 +98,8 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Background timeout", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            Text(timeoutOptions.first { it.first == timeoutMinutes }.second,
+                            Text(timeoutOptions.firstOrNull { it.first == timeoutMinutes }?.second
+                                    ?: if (timeoutMinutes > 0) "$timeoutMinutes min" else "Never",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
                                 modifier = Modifier.padding(start = 8.dp).size(16.dp).graphicsLayer(rotationZ = 90f),
@@ -135,7 +136,7 @@ fun SettingsScreen(
                         preferences = app.transfer.autoReceivePreferences,
                         peers = peers,
                         compact = true,
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier.padding(vertical = 10.dp),
                     )
                 }
 

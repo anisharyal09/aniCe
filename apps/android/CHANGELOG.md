@@ -8,6 +8,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Add actionable SMS permission recovery in Settings and retain it across rotation; use compact permission buttons in both Settings and Messages.
+- Align File transfer padding, keep large-text guidance visible, and handle older background timeout preferences without crashing Settings.
+
 - Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
 
 - Show a numeric percentage and the transfer icon in progress notifications.

@@ -14,6 +14,11 @@ struct MacPhoneInputView: View {
       ?? "aniCe"
   }
 
+  private var permissionPaneName: String {
+    if #available(macOS 27, *) { return "Device Control and Data Access" }
+    return "Accessibility"
+  }
+
   // Device selection stays in Devices; status follows the live authenticated phone.
   private var connectedPhone: DeviceIdentity? {
     guard let peer = model.connectedPeer, peer.platform == "android" else { return nil }
@@ -33,29 +38,37 @@ struct MacPhoneInputView: View {
           Label("Allow Mac input", systemImage: "exclamationmark.triangle")
             .font(.subheadline.weight(.medium))
             .foregroundStyle(AniCePalette.error(colorScheme))
-          Text("Allow Events access for \(appDisplayName) in System Settings → Privacy & Security → Device Control and Data Access.")
+          Text("Allow Events access for \(appDisplayName) in System Settings → Privacy & Security → \(permissionPaneName).")
             .font(.callout)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Request Events access") {
             if !model.requestEventAccess() { openSystemSettings() }
           }
           .buttonStyle(AniCeButtonStyle())
+#if DEBUG
           if !model.hasStableSigningIdentity {
-            Text("This ad hoc build may need permission again after a rebuild. Use the same Apple Development-signed app for repeat tests.")
+            Text("Development build: rebuilding may require permission again.")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
+#endif
           if model.permissionGrantMayBeStale {
             Text("Accessibility is allowed, but macOS still blocks Events for \(appDisplayName).")
               .font(.callout)
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
+          if model.hasStableSigningIdentity {
+            Text("Already allowed? Remove the old aniCe entry in System Settings and add this copy again.")
+              .font(.callout)
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            Button("Show this app in Finder") {
+              NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+            }
+            .buttonStyle(AniCeButtonStyle())
+          }
           if model.canOfferPermissionRestart {
             Button("Restart \(appDisplayName)") { restartAniCe() }
               .buttonStyle(AniCeButtonStyle())
-            Text("Restart the app to check access again.")
-              .font(.callout)
-              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
         }
         .padding(14)

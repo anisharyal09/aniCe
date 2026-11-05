@@ -8,6 +8,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Keep development-signing warnings out of Release permission UI and document archive naming, signing and distribution.
+
+- Reveal the running signed app from blocked input permission settings so stale macOS permission entries can be reauthorized against the correct copy.
+
 - Leave **Send files** available after a receive or terminal result.
 
 - Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.
