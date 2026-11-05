@@ -74,6 +74,7 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [Secure Sessions & Record Channel](protocol/session/README.md)
 - [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
 - [Now Playing DATA](protocol/media/README.md)
+- [Mac Desk Deck](protocol/desk-deck/README.md)
 - [Local File Transfer Protocol](protocol/transfer/README.md)
 
 ### Operational Guides & Implementation Roadmaps
@@ -119,6 +120,10 @@ The native Mac Keyboard & Trackpad panel publishes a system Classic Bluetooth HI
 Android's **Control Mac** feature lives in Features and uses the phone's normal keyboard and an in-app trackpad over authenticated BLE. Text commits remain separate from key transitions; pointer and scroll motion is coalesced. Leaving the feature stops input without directly disconnecting BLE.
 
 Mac Event Posting setup and receiver status live under Mac Settings → Permissions. After permission is available, the Mac accepts an explicit Start from the authenticated phone without a Mac-side Features page or receiver toggle. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
+
+## Mac Desk Deck
+
+Android's Mac Desk Deck subscribes to one trusted Mac while the feature panel is foreground. The Mac samples CPU, memory, OS thermal pressure and supported controls over the existing authenticated channel; explicit commands are scoped to the subscription and current hardware target. It does not add a transport or permission stack. Temperature readings and display brightness are not advertised, and microphone mute is capability-gated to devices with a writable CoreAudio mute property. See the [feature guide](docs/features/MAC_DESK_DECK.md) and [Desk Deck v1 contract](protocol/desk-deck/README.md).
 
 ## Clipboard
 

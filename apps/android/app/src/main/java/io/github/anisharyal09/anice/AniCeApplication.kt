@@ -134,6 +134,7 @@ class AniCeApplication : Application() {
     val sms get() = smsOwner.value
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
+    val deskDeck by lazy { io.github.anisharyal09.anice.features.deskdeck.DeskDeckController() }
     val findDeviceNotification by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceNotification(this) }
     val findDevice by lazy { io.github.anisharyal09.anice.features.finddevice.FindDeviceController(findDeviceNotification) }
     val nowPlaying = io.github.anisharyal09.anice.features.nowplaying.MediaController()
@@ -154,6 +155,7 @@ class AniCeApplication : Application() {
             it.register(clipboard)
             it.register(sms)
             it.register(phoneInput)
+            it.register(deskDeck)
         }
     }
     val sessionPeers = io.github.anisharyal09.anice.infrastructure.session.SessionPeerReservation()

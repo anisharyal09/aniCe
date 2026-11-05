@@ -27,6 +27,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add a responsive Android Mac Desk Deck with Mac hardware meters, trusted quick actions and a default-output volume slider.
+
 - Send files to a connected Mac from Android’s Share sheet.
 
 - Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.

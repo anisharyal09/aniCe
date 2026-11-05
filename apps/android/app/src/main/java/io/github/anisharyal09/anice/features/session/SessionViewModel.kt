@@ -19,6 +19,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     val clipboard = (application as AniCeApplication).clipboard
     val sms = (application as AniCeApplication).sms
     val phoneInput = (application as AniCeApplication).phoneInput
+    val deskDeck = (application as AniCeApplication).deskDeck
     val findDevice = (application as AniCeApplication).findDevice
     val media = (application as AniCeApplication).nowPlaying
     val transfer = (application as AniCeApplication).transfer

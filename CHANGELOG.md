@@ -30,6 +30,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add Android Mac Desk Deck with live Mac CPU, memory and thermal-pressure meters, capability-gated quick actions, and default-output volume control.
+
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
 
 - Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
