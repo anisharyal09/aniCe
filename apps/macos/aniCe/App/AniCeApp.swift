@@ -94,6 +94,7 @@ struct AniCeApp: App {
     _keyboardTrackpad = State(initialValue: keyboardTrackpad)
     let phoneInput = MacPhoneInputModel()
     _phoneInput = State(initialValue: phoneInput)
+    let deskDeck = MacDeskDeckModel()
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
@@ -118,6 +119,7 @@ struct AniCeApp: App {
     features.register(clipboard)
     features.register(sms)
     features.register(phoneInput)
+    features.register(deskDeck)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
         features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in

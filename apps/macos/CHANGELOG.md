@@ -24,6 +24,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Serve foreground Desk Deck samples and trusted-phone Mac lock, app-launch, screenshot, microphone-mute and output-volume commands over the existing authenticated session.
+
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
 - Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.
 
