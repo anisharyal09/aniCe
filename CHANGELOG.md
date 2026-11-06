@@ -12,6 +12,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Correct Desk Deck memory accounting, CPU sampling intervals and screenshot launch; compact the phone layout and add Events-access guidance.
+
 - Fence Desk Deck commands and samples to the active peer, channel, subscription and generation; bound opening and recovery, renew visible v2 leases, retain at most 60 history points and disable controls while readings are stale.
 
 - Keep opted-in Android receives active in the background and allow another send from terminal results.

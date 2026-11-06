@@ -5,6 +5,7 @@ package io.github.anisharyal09.anice.features.deskdeck
 import android.content.Context
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -154,215 +155,237 @@ private fun DeskDeckGrid(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
-    val actions = listOf(
-        DeckAction("Lock Mac", "Lock the current Mac session", 1, 1),
-        DeckAction("Take Screenshot", "Start the Mac area-capture tool", 5, 8),
-    )
     var volumeDrag by remember(sample?.outputTarget, sample?.outputRevision) { mutableStateOf<Float?>(null) }
     var cpuDetails by rememberSaveable { mutableStateOf(false) }
     var memoryDetails by rememberSaveable { mutableStateOf(false) }
-    var thermalDetails by rememberSaveable { mutableStateOf(false) }
-    var showConnectionDetails by rememberSaveable { mutableStateOf(false) }
-    var showAllShortcuts by rememberSaveable { mutableStateOf(false) }
+    var showDetails by rememberSaveable { mutableStateOf(false) }
+    var lockHelp by rememberSaveable { mutableStateOf(false) }
+    var managingApps by rememberSaveable { mutableStateOf(false) }
     var ageNow by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
     LaunchedEffect(sample?.sequence) {
-        while (true) {
-            delay(1_000)
-            ageNow = android.os.SystemClock.elapsedRealtime()
-        }
+        ageNow = android.os.SystemClock.elapsedRealtime()
+        while (true) { delay(1_000); ageNow = android.os.SystemClock.elapsedRealtime() }
     }
     val fresh = owner.readingsAreFresh && connected
-    val legacyShortcuts = target?.let(owner::usesLegacyShortcuts) == true
-    val memoryPercent = sample?.let { if (it.memoryTotal > 0) (it.memoryUsed.toDouble() / it.memoryTotal).toFloat().coerceIn(0f, 1f) else 0f } ?: 0f
-    val thermal = sample?.let { listOf("Nominal", "Fair", "Serious", "Critical").getOrElse(it.thermalState.toInt()) { "Unavailable" } } ?: "Collecting…"
+    val thermal = sample?.let { listOf("Nominal", "Fair", "Serious", "Critical").getOrElse(it.thermalState.toInt()) { "Unavailable" } } ?: "Waiting"
+    val memoryAvailable = sample != null && sample.memoryTotal > 0 && sample.memoryUsed >= 0
+    val memoryPercent = if (memoryAvailable) sample!!.memoryUsed.toFloat() / sample.memoryTotal else 0f
+    val memoryTitle = if (sample != null && sample.protocolVersion < 3L) "Memory (legacy)" else "Memory used"
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(156.dp),
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 8.dp, start = 2.dp, end = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text(target?.deviceName ?: "Mac Desk Deck", style = MaterialTheme.typography.titleMedium)
-                        Text(connectionSummary(owner, connected, sample, ageNow), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (connected && owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
-                        OutlinedButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
-                    } else if (!connected && target != null) {
-                        OutlinedButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Phone · ${phonePower.percent?.let { "$it% · " } ?: ""}${phonePower.label}",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Mac · ${macPowerSummary(sample)}", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                TextButton(onClick = { showConnectionDetails = !showConnectionDetails }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(if (showConnectionDetails) "Hide connection details" else "Connection details")
-                }
-                if (showConnectionDetails) {
-                    Text("Transport · ${owner.activeTransportLabel()} · Last sample · ${sample?.let { sampleAge(it, ageNow) } ?: "none yet"}",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(owner.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (owner.feedback.isNotEmpty()) Text(owner.feedback, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+    val microphone: @Composable () -> Unit = {
+        val supported = sample?.microphoneSupported == true
+        val mute = sample?.microphoneMuted != true
+        MacroCard(if (mute) "Mute mic" else "Unmute mic",
+            owner.actionFeedback(2).ifBlank { if (supported) "Default microphone" else "Input unavailable" },
+            fresh && supported && !owner.isBusy(2)) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            sample?.let { owner.command(2, if (mute) 1 else 0, it.microphoneTarget, it.microphoneRevision) }
         }
-        item { MeterCard("CPU", sample?.let { if (it.cpuPercent < 0) "Collecting…" else "${it.cpuPercent}%" } ?: "Waiting…", sample?.let { it.cpuPercent.coerceAtLeast(0).toFloat() / 100f } ?: 0f, cpuDetails, { cpuDetails = !cpuDetails }) {
-            HistoryChart(owner.history, memory = false)
-            Text("Whole-system CPU use. The first counter reading establishes a baseline.", style = MaterialTheme.typography.bodySmall)
-        } }
-        item { MeterCard("Memory", sample?.let { "${bytesAsGB(it.memoryUsed)} / ${bytesAsGB(it.memoryTotal)} GB" } ?: "Waiting…", memoryPercent, memoryDetails, { memoryDetails = !memoryDetails }) {
-            if (sample != null && sample.memoryActive >= 0) {
-                Text("Active · ${bytesAsGB(sample.memoryActive)} GB", style = MaterialTheme.typography.bodySmall)
-                Text("Wired · ${bytesAsGB(sample.memoryWired)} GB", style = MaterialTheme.typography.bodySmall)
-                Text("Compressed · ${bytesAsGB(sample.memoryCompressed)} GB", style = MaterialTheme.typography.bodySmall)
-                Text("Physical memory total · ${bytesAsGB(sample.memoryTotal)} GB", style = MaterialTheme.typography.bodySmall)
-            } else Text("Used memory combines active, wired and compressed pages. Breakdown requires an updated Mac.", style = MaterialTheme.typography.bodySmall)
-            HistoryChart(owner.history, memory = true)
-        } }
-        item { MeterCard("Thermal pressure", thermal, sample?.let { it.thermalState.toFloat() / 3f } ?: 0f, thermalDetails, { thermalDetails = !thermalDetails }) {
-            Text("Nominal: normal. Fair: pressure is rising. Serious or Critical: macOS may reduce performance to manage heat. These are states, not temperatures.", style = MaterialTheme.typography.bodySmall)
-        } }
-
-        item(span = { GridItemSpan(maxLineSpan) }) { Text("Quick actions", style = MaterialTheme.typography.titleSmall) }
-        if (sample == null) {
+    }
+    val lockControl: @Composable () -> Unit = {
+        val supported = sample != null && sample.actions and 1L != 0L
+        MacroCard("Lock Mac", owner.actionFeedback(1).ifBlank { if (supported) "Lock this session" else "Events access needed" },
+            fresh && !owner.isBusy(1)) {
+            if (supported) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); owner.command(1) }
+            else lockHelp = true
+        }
+    }
+    val screenshot: @Composable () -> Unit = {
+        val supported = sample != null && sample.actions and 8L != 0L
+        MacroCard("Screenshot", owner.actionFeedback(5).ifBlank { if (supported) "Open Mac capture controls" else "Capture controls unavailable" },
+            fresh && supported && !owner.isBusy(5)) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress); owner.command(5)
+        }
+    }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val wide = maxWidth >= 600.dp
+        val columns = if (wide) 4 else 2
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns), modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text("Actions appear when the Mac is connected and sending fresh readings.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            item {
-                val supported = sample.microphoneSupported
-                val shouldMute = !sample.microphoneMuted
-                MacroCard(
-                    title = if (shouldMute) "Mute mic" else "Unmute mic",
-                    detail = owner.actionFeedback(2L).ifBlank { if (supported) "Default input · ${if (sample.microphoneMuted) "muted" else "live"}" else "Unavailable for current input" },
-                    enabled = fresh && supported && !owner.isBusy(2L),
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        owner.command(2, if (shouldMute) 1 else 0, sample.microphoneTarget, sample.microphoneRevision)
-                    },
-                )
-            }
-            items(actions) { action ->
-                val supported = (sample.actions and action.bit) != 0L
-                MacroCard(
-                    action.title,
-                    owner.actionFeedback(action.action).ifBlank { if (supported) action.detail else "Unavailable on this Mac" },
-                    fresh && supported && !owner.isBusy(action.action),
-                ) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    owner.command(action.action, action.value)
-                }
-            }
-            if (legacyShortcuts) {
-                val legacyApps = listOf(
-                    DeckAction("Launch Blender", "Open Blender", 3, 2),
-                    DeckAction("Launch Terminal", "Open Terminal", 4, 4),
-                )
-                items(legacyApps) { action ->
-                    val supported = (sample.actions and action.bit) != 0L
-                    MacroCard(action.title, owner.actionFeedback(action.action).ifBlank { if (supported) action.detail else "Unavailable on this Mac" },
-                        fresh && supported && !owner.isBusy(action.action)) {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        owner.command(action.action)
-                    }
-                }
-            } else {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Approved apps", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showAllShortcuts = !showAllShortcuts }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(if (showAllShortcuts) "Done" else "Manage")
+                        Column(Modifier.weight(1f)) {
+                            Text(target?.deviceName ?: "Mac", style = MaterialTheme.typography.titleSmall)
+                            Text(connectionSummary(owner, connected, sample, ageNow), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        if (!connected && target != null) {
+                            TextButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
+                        } else if (owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
+                            TextButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                        }
+                        if (wide) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Mac · ${macPowerSummary(sample)}", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Phone · ${phonePower.percent?.let { "$it% · " } ?: ""}${phonePower.label} · Thermal · $thermal",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        TextButton(onClick = { showDetails = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") }
                     }
-                }
-                val listedShortcuts = owner.shortcuts.filter { showAllShortcuts || it.id in owner.pinnedShortcutIDs }
-                if (listedShortcuts.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text("Loading approved apps…", style = MaterialTheme.typography.bodySmall,
+                    if (!wide) {
+                        Text("Mac · ${macPowerSummary(sample)}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Phone · ${phonePower.percent?.let { "$it% · " } ?: ""}${phonePower.label}   ·   Thermal · $thermal",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } else items(listedShortcuts, key = { it.id }) { shortcut ->
-                    ShortcutCard(
-                        shortcut = shortcut,
-                        pinned = shortcut.id in owner.pinnedShortcutIDs,
-                        busy = owner.isShortcutBusy(shortcut.id),
-                        feedback = owner.shortcutFeedback(shortcut.id),
-                        enabled = fresh && !owner.isShortcutBusy(shortcut.id),
-                        managing = showAllShortcuts,
-                        onLaunch = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            owner.launchShortcut(shortcut.id)
-                        },
-                        onPin = { owner.setShortcutPinned(target?.fingerprint.orEmpty(), shortcut.id, shortcut.id !in owner.pinnedShortcutIDs) },
-                        onMove = { direction -> owner.moveShortcut(target?.fingerprint.orEmpty(), shortcut.id, direction) },
-                    )
                 }
             }
-        }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            item {
+                MeterCard("CPU", sample?.let { if (it.cpuPercent < 0) "Collecting…" else "${it.cpuPercent}%" } ?: "Waiting…",
+                    sample?.cpuPercent?.coerceAtLeast(0)?.toFloat()?.div(100f) ?: 0f, { cpuDetails = true }, "Across all cores")
+            }
+            item {
+                MeterCard(memoryTitle, if (memoryAvailable) "${bytesAsGB(sample!!.memoryUsed)} GiB" else "Unavailable",
+                    memoryPercent, { memoryDetails = true }, if (sample != null && sample.memoryTotal > 0) "of ${bytesAsGB(sample.memoryTotal)} GiB" else "Waiting for Mac")
+            }
+            if (wide) {
+                item { microphone() }
+                item { lockControl() }
+            }
+            item(span = { GridItemSpan(if (wide) 2 else maxLineSpan) }) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Mac output volume", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        Text("Output volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         Text(if (sample?.outputSupported == true) "${volumeDrag?.toInt() ?: owner.outputPreview?.toInt() ?: sample.outputLevel}%" else "Unavailable",
                             style = MaterialTheme.typography.bodySmall)
                     }
                     if (sample?.outputSupported == true) {
-                        Slider(
-                            value = volumeDrag ?: owner.outputPreview?.toFloat() ?: sample.outputLevel.toFloat(),
-                            onValueChange = { volumeDrag = it },
-                            valueRange = 0f..100f,
+                        Slider(value = volumeDrag ?: owner.outputPreview?.toFloat() ?: sample.outputLevel.toFloat(),
+                            onValueChange = { volumeDrag = it }, valueRange = 0f..100f,
                             onValueChangeFinished = {
-                                val value = volumeDrag?.toLong()
-                                volumeDrag = null
+                                val value = volumeDrag?.toLong(); volumeDrag = null
                                 if (value != null) owner.command(6, value, sample.outputTarget, sample.outputRevision)
-                            },
-                            enabled = fresh,
-                            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Mac output volume" },
-                        )
-                    } else {
-                        Text("This Mac's current output does not expose a writable volume control.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }, enabled = fresh,
+                            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Mac output volume" })
                     }
                     if (owner.actionFeedback(6L).isNotBlank()) Text(owner.actionFeedback(6L), style = MaterialTheme.typography.bodySmall)
                 }
             }
-        }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Keep screen awake while charging", style = MaterialTheme.typography.bodyMedium)
-                    Text("Only while Desk Deck is visible and the phone is plugged in.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!wide) {
+                item { microphone() }
+                item { lockControl() }
+            }
+            item(span = { GridItemSpan(if (wide) 2 else maxLineSpan) }) { screenshot() }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Apps", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    if (target?.let(owner::usesLegacyShortcuts) != true) {
+                        TextButton(onClick = { managingApps = !managingApps }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(if (managingApps) "Done" else "Arrange")
+                        }
+                    }
                 }
-                Switch(checked = keepAwake, onCheckedChange = onKeepAwakeChange)
+            }
+            if (target?.let(owner::usesLegacyShortcuts) == true) {
+                items(listOf(DeckAction("Terminal", "Open on Mac", 4, 4), DeckAction("Blender", "Open on Mac", 3, 2))) { action ->
+                    MacroCard(action.title, owner.actionFeedback(action.action).ifBlank { action.detail },
+                        fresh && sample != null && sample.actions and action.bit != 0L && !owner.isBusy(action.action)) { owner.command(action.action) }
+                }
+            } else {
+                val listed = owner.shortcuts.filter { managingApps || it.id in owner.pinnedShortcutIDs }
+                if (listed.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(when {
+                            !owner.shortcutCatalogLoaded -> "Waiting for approved apps…"
+                            owner.shortcuts.isEmpty() -> "Approve apps on your Mac in Settings → Desk Deck."
+                            else -> "No pinned apps. Tap Arrange to choose shortcuts."
+                        }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                items(listed, key = { it.id }) { shortcut ->
+                    if (managingApps) {
+                        ShortcutCard(shortcut, shortcut.id in owner.pinnedShortcutIDs, owner.isShortcutBusy(shortcut.id),
+                            owner.shortcutFeedback(shortcut.id), fresh && !owner.isShortcutBusy(shortcut.id), true,
+                            onLaunch = { owner.launchShortcut(shortcut.id) },
+                            onPin = { owner.setShortcutPinned(target?.fingerprint.orEmpty(), shortcut.id, shortcut.id !in owner.pinnedShortcutIDs) },
+                            onMove = { owner.moveShortcut(target?.fingerprint.orEmpty(), shortcut.id, it) })
+                    } else {
+                        MacroCard(shortcut.name, owner.shortcutFeedback(shortcut.id).ifBlank { if (owner.isShortcutBusy(shortcut.id)) "Launching…" else "Open on Mac" },
+                            fresh && !owner.isShortcutBusy(shortcut.id)) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress); owner.launchShortcut(shortcut.id)
+                        }
+                    }
+                }
             }
         }
+    }
+    if (cpuDetails) DeckDetailDialog("CPU", { cpuDetails = false }) {
+        HistoryChart(owner.history, memory = false)
+        Text("Whole-system use across all cores, from 0 to 100%. Compare with User + System at the bottom of Activity Monitor’s CPU tab.", style = MaterialTheme.typography.bodyMedium)
+        Text("Sampled about once per second. Different update intervals can produce short differences.", style = MaterialTheme.typography.bodySmall)
+    }
+    if (memoryDetails) DeckDetailDialog(memoryTitle, { memoryDetails = false }) {
+        HistoryChart(owner.history, memory = true)
+        if (sample != null) {
+            MemoryDetailRow("Physical", sample.memoryTotal)
+            if (sample.protocolVersion >= 3) {
+                MemoryDetailRow("Used", sample.memoryUsed)
+                MemoryDetailRow("App", sample.memoryApp)
+                MemoryDetailRow("Wired", sample.memoryWired)
+                MemoryDetailRow("Compressed", sample.memoryCompressed)
+                MemoryDetailRow("Other resident", if (sample.memoryUsed >= 0) sample.memoryUsed - sample.memoryApp - sample.memoryWired - sample.memoryCompressed else -1)
+                HorizontalDivider()
+                MemoryDetailRow("Cached files", sample.memoryCached)
+                MemoryDetailRow("Free", sample.memoryFree)
+                MemoryDetailRow("Swap used", sample.memorySwap)
+                Text("Used = physical − free − cached files. Other resident is the remainder outside the app, wired and compressed categories. Cached files are reclaimable; swap is disk usage.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                MemoryDetailRow("Active", sample.memoryActive)
+                MemoryDetailRow("Wired", sample.memoryWired)
+                MemoryDetailRow("Compressed", sample.memoryCompressed)
+                Text("This Mac uses an older sample format. Its category sum is not Activity Monitor’s Memory Used. Update aniCe on the Mac for app, cache and swap readings.", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Values use GiB (1,073,741,824 bytes).", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    if (showDetails) DeckDetailDialog("Desk Deck details", { showDetails = false }) {
+        Text(owner.status, style = MaterialTheme.typography.bodyMedium)
+        Text("${owner.activeTransportLabel()} · Sample ${sample?.sequence ?: 0} · ${sample?.let { sampleAge(it, ageNow) } ?: "No reading"}", style = MaterialTheme.typography.bodySmall)
+        Text("Thermal pressure: $thermal. Fair means rising pressure; Serious or Critical can reduce performance. This is not a temperature reading.", style = MaterialTheme.typography.bodySmall)
+        if (owner.feedback.isNotBlank()) Text(owner.feedback, style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Keep awake while charging", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = keepAwake, onCheckedChange = onKeepAwakeChange,
+                modifier = Modifier.semantics { contentDescription = "Keep screen awake while charging" })
+        }
+        Text("Only while this deck is visible and the phone has external power.", style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = owner::refresh, enabled = connected, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh readings") }
+    }
+    if (lockHelp) DeckDetailDialog("Enable Lock Mac", { lockHelp = false }) {
+        Text("On your Mac, open aniCe → Settings → Permissions → Request Events access. Enable access for the running aniCe build in System Settings, then return to aniCe.", style = MaterialTheme.typography.bodyMedium)
+        Text("A rebuilt ad hoc app may need access again. If access is enabled but still unavailable, restart aniCe on the Mac.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun MeterCard(title: String, value: String, progress: Float, expanded: Boolean, onToggle: () -> Unit, details: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onToggle).semantics { contentDescription = "$title details" }) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                Text(if (expanded) "⌄" else "›", style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.semantics { contentDescription = if (expanded) "Collapse $title details" else "Expand $title details" })
-            }
-            Text(value, style = MaterialTheme.typography.titleMedium)
-            LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-            if (expanded) Column(verticalArrangement = Arrangement.spacedBy(6.dp), content = details)
+private fun DeckDetailDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp), content = content) },
+        confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Done") } })
+}
+
+@Composable
+private fun MemoryDetailRow(label: String, bytes: Long) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(if (bytes < 0) "Unavailable" else "${String.format(Locale.getDefault(), "%.2f", bytes.toDouble() / 1_073_741_824.0)} GiB", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun MeterCard(title: String, value: String, progress: Float, onOpen: () -> Unit, subtitle: String) {
+    Card(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpen).semantics { contentDescription = "$title details" }) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.titleLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
         }
     }
 }
@@ -388,10 +411,10 @@ private fun HistoryChart(points: List<DeskDeckHistoryPoint>, memory: Boolean) {
 
 @Composable
 private fun MacroCard(title: String, detail: String, enabled: Boolean, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().heightIn(min = 76.dp)) {
+    OutlinedCard(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp)
+        .semantics { contentDescription = "$title. $detail" }) {
         Column(
-            Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-                .semantics { contentDescription = "$title. $detail" }.padding(12.dp),
+            Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleSmall,

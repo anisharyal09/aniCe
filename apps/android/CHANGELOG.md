@@ -8,6 +8,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Show v3 app, cache, free and swap readings; keep volume and actions near usage meters and move details into dialogs.
+
 - Keep Desk Deck shell responsive while subscriptions start; fence timeouts, acknowledgements and slider previews to the live channel generation, stop retry loops after one resubscription, and mark old readings stale before disabling actions.
 - Keep a first sample live when it cancels an in-flight subscription send instead of treating that cancellation as a failed connection.
 

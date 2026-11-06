@@ -2,6 +2,7 @@
 // Verifies shared Desk Deck and device-power fixtures against the Mac codecs.
 import Foundation
 import XCTest
+import Darwin
 @testable import aniCe
 
 @MainActor
@@ -20,12 +21,38 @@ final class DeskDeckWireTests: XCTestCase {
       XCTAssertEqual(try message.encode(), bytes)
       versions.insert(message.version)
     }
-    XCTAssertEqual(versions, Set([1, 2]))
+    XCTAssertEqual(versions, Set([1, 2, 3]))
 
     for row in invalid {
       let bytes = try SessionFixtures().b(row, "bytes")
       XCTAssertThrowsError(try MacDeskDeckMessage.decode(bytes), row["name"] as? String ?? "")
     }
+  }
+
+  func testMemoryAccountingSeparatesAnonymousAppsFromFileCache() {
+    var counters = vm_statistics64()
+    counters.active_count = 100
+    counters.internal_page_count = 200
+    counters.purgeable_count = 20
+    counters.external_page_count = 50
+    counters.wire_count = 30
+    counters.compressor_page_count = 40
+    counters.free_count = 10
+    let sample = DeskDeckMemory(statistics: counters, total: 400 * 4096, pageSize: 4096, swap: 8192)
+    XCTAssertEqual(sample.app, 180 * 4096)
+    XCTAssertEqual(sample.used, 320 * 4096)
+    XCTAssertEqual(sample.used - sample.app - sample.wired - sample.compressed, 70 * 4096)
+    XCTAssertEqual(sample.cached, 70 * 4096)
+    XCTAssertEqual(sample.free, 10 * 4096)
+    XCTAssertEqual(sample.swap, 8192)
+  }
+
+  func testCPUCounterRolloverUsesNativeWidthAndAllCores() {
+    XCTAssertEqual(DeskDeckCPU.percentage(previous: [0, 0, 0, 0, 0, 0, 0, 0],
+      current: [20, 30, 50, 0, 10, 0, 90, 0]), 30)
+    XCTAssertEqual(DeskDeckCPU.percentage(previous: [UInt32.max - 10, 0, 0, 0], current: [9, 0, 10, 0]), 67)
+    XCTAssertEqual(DeskDeckCPU.percentage(previous: [1, 2, 3, 4], current: [1, 2, 3, 4]), -1)
+    XCTAssertEqual(DeskDeckCPU.percentage(previous: [], current: [1, 2, 3, 4]), -1)
   }
 
   func testSharedDevicePowerFixturesPreserveUnknownPercentage() throws {

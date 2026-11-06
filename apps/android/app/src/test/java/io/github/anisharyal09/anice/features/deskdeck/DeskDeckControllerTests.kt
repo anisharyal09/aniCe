@@ -184,6 +184,26 @@ class DeskDeckControllerTests {
         assertEquals(DeskDeckConnectionState.STALE, owner.connectionState)
     }
 
+    @Test fun versionThreeNegotiationCarriesAccurateMemoryAndCatalogRequests() = runBlocking {
+        val peer = DeviceIdentity("mac-id", "Mac", "macos", "key", "fingerprint")
+        val channel = FakeChannel(ChannelDescriptor("v3-live", "lan", peer))
+        val owner = DeskDeckController(dispatcher = Dispatchers.Unconfined, clock = { 1000L })
+        owner.available(channel)
+        owner.handle(channel.descriptor, DeskDeckMessage(kind = 1, version = 3).encode())
+        owner.start(peer)
+        try {
+            val subscription = channel.messages().last { it.kind == 2L }
+            assertEquals(3L, subscription.version)
+            assertEquals(3L, channel.messages().last { it.kind == 8L }.version)
+            val memory = sample(subscription.subscription, 1).copy(version = 3,
+                memoryApp = 120, memoryCached = 30, memoryFree = 25, memorySwap = 40)
+            assertEquals(DataHandling.HANDLED, owner.handle(channel.descriptor, memory.encode()))
+            assertEquals(145L, owner.snapshot!!.memoryUsed)
+            assertEquals(30L, owner.snapshot!!.memoryCached)
+            assertEquals(72, owner.history.last().memoryPercent)
+        } finally { owner.stop() }
+    }
+
     private fun sample(subscription: String, sequence: Long) = DeskDeckMessage(
         kind = 3,
         version = 2,

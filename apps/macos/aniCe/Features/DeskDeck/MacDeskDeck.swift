@@ -40,7 +40,7 @@ struct MacDeskDeckMessage {
   static func decode(_ data: Data) throws -> Self? {
     guard data.count <= 4000 else { throw MacDeskDeckWireError.malformed }
     guard case .array(let row) = try SessionCbor.decode(data), case .text("aniCe desk deck")? = row.first else { return nil }
-    guard row.count == 4, case .integer(let version) = row[1], (1...2).contains(version),
+    guard row.count == 4, case .integer(let version) = row[1], (1...3).contains(version),
       data.count <= (version == 1 ? 512 : 3800), case .integer(let kind) = row[2], case .array(let fields) = row[3] else {
       throw MacDeskDeckWireError.malformed
     }
@@ -54,6 +54,7 @@ struct MacDeskDeckMessage {
   func bool(_ index: Int) -> Bool { if fields.indices.contains(index), case .bool(let value) = fields[index] { return value }; return false }
 
   private func validate() throws {
+    guard (1...3).contains(version) else { throw MacDeskDeckWireError.malformed }
     func text(_ i: Int) -> Bool { fields.indices.contains(i) && { if case .text = fields[i] { return true }; return false }() }
     func number(_ i: Int, _ range: ClosedRange<Int64>) -> Bool { fields.indices.contains(i) && { if case .integer(let n) = fields[i] { return range.contains(n) }; return false }() }
     func integer(_ i: Int) -> Int64 { self.number(i) }
@@ -72,11 +73,11 @@ struct MacDeskDeckMessage {
     let valid: Bool
     switch kind {
     case 1: valid = fields.count == 1 && number(0, 0...15)
-    case 2, 6, 7: valid = fields.count == 1 && uuid(0) && (kind != 7 || version == 2)
-    case 8: valid = version == 2 && fields.count == 2 && uuid(0) && number(1, 0...3)
-    case 10: valid = version == 2 && fields.count == 2 && uuid(0) && uuid(1)
+    case 2, 6, 7: valid = fields.count == 1 && uuid(0) && (kind != 7 || version >= 2)
+    case 8: valid = version >= 2 && fields.count == 2 && uuid(0) && number(1, 0...3)
+    case 10: valid = version >= 2 && fields.count == 2 && uuid(0) && uuid(1)
     case 9:
-      guard version == 2, fields.count == 5, uuid(0), number(1, 0...3), number(2, 1...4), integer(1) < integer(2), uuid(3),
+      guard version >= 2, fields.count == 5, uuid(0), number(1, 0...3), number(2, 1...4), integer(1) < integer(2), uuid(3),
         fields.indices.contains(4), case .array(let rows) = fields[4], rows.count <= 8 else { throw MacDeskDeckWireError.malformed }
       var ids = Set<String>()
       valid = rows.allSatisfy { item in
@@ -95,11 +96,20 @@ struct MacDeskDeckMessage {
           validControl(self.bool(7), self.string(8), self.string(9), self.number(10)) && validIdentity(self.bool(11), self.string(12), self.string(13)) &&
           validControl(self.bool(15), self.string(16), self.string(17), self.number(18))
       } else {
-        guard fields.count == 20, uuid(0) else { throw MacDeskDeckWireError.malformed }
+        guard fields.count == (version == 3 ? 24 : 20), uuid(0) else { throw MacDeskDeckWireError.malformed }
         let active = integer(3), wired = integer(4), compressed = integer(5), total = integer(6)
-        let sumValid = active <= total && wired <= total - active && compressed <= total - active - wired
+        let sumValid = active >= 0 && wired >= 0 && compressed >= 0 && total >= 0 && active <= total && wired <= total - active && compressed <= total - active - wired
+        let detailValid: Bool
+        if version == 3 {
+          let app = integer(20), cached = integer(21), free = integer(22), swap = integer(23)
+          detailValid = (20...23).allSatisfy { number($0, -1...Int64.max) } &&
+            ((app == -1 && cached == -1 && free == -1 && swap == -1) ||
+             (app >= 0 && app <= total && cached >= 0 && cached <= total && free >= 0 && free <= total &&
+              cached <= total - free && app <= total - free - cached &&
+              wired >= 0 && wired <= total - free - cached - app && compressed >= 0 && compressed <= total - free - cached - app - wired))
+        } else { detailValid = true }
         valid = number(3, 0...Int64.max) && number(4, 0...Int64.max) && number(5, 0...Int64.max) && number(6, 0...Int64.max) &&
-          number(1, 1...4294967295) && number(2, -1...100) && sumValid && number(7, 0...3) && number(8, 0...15) &&
+          number(1, 1...4294967295) && number(2, -1...100) && sumValid && detailValid && number(7, 0...3) && number(8, 0...15) &&
           bool(9) && text(10) && text(11) && number(12, -1...100) && bool(13) && text(14) && text(15) && bool(16) &&
           number(17, 0...5) && number(18, -1...100) && number(19, 0...3) &&
           (integer(17) >= 2 || integer(18) == -1) &&
@@ -116,7 +126,7 @@ struct MacDeskDeckMessage {
       case 2: valid = !target.isEmpty && !revision.isEmpty && (0...1).contains(value)
       case 6: valid = !target.isEmpty && !revision.isEmpty && (0...100).contains(value)
       case 7: valid = version == 1 && !target.isEmpty && !revision.isEmpty && (0...100).contains(value)
-      case 8: valid = version == 2 && uuid(3) && uuid(4) && value == -1
+      case 8: valid = version >= 2 && uuid(3) && uuid(4) && value == -1
       default: valid = false
       }
     case 5: valid = fields.count == 3 && uuid(0) && number(1, 1...4294967295) && number(2, 0...7)
@@ -167,15 +177,36 @@ private enum DeskDeckInputMute {
   }
 }
 
-private struct DeskDeckMemory {
+struct DeskDeckMemory {
   let active: Int64
   let wired: Int64
   let compressed: Int64
   let total: Int64
-  var used: Int64 { min(total, active + wired + compressed) }
+  let app: Int64
+  let cached: Int64
+  let free: Int64
+  let swap: Int64
+  var used: Int64 { app < 0 ? 0 : total - free - cached }
+
+  init(statistics: vm_statistics64, total: Int64, pageSize: Int64, swap: Int64) {
+    func bytes(_ pages: natural_t) -> Int64 { Int64(pages) * pageSize }
+    self.total = total
+    active = bytes(statistics.active_count)
+    wired = bytes(statistics.wire_count)
+    compressed = bytes(statistics.compressor_page_count)
+    // Active pages include file-backed data; app memory uses anonymous pages minus purgeable pages.
+    app = bytes(statistics.internal_page_count > statistics.purgeable_count ? statistics.internal_page_count - statistics.purgeable_count : 0)
+    cached = bytes(statistics.external_page_count) + bytes(statistics.purgeable_count)
+    free = bytes(statistics.free_count)
+    self.swap = swap
+  }
+
+  private init() {
+    active = 0; wired = 0; compressed = 0; total = 0
+    app = -1; cached = -1; free = -1; swap = -1
+  }
 
   static func read() -> Self {
-    let total = Int64(ProcessInfo.processInfo.physicalMemory)
     var statistics = vm_statistics64()
     var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
     let result = withUnsafeMutablePointer(to: &statistics) { pointer in
@@ -183,11 +214,31 @@ private struct DeskDeckMemory {
         host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
       }
     }
-    guard result == KERN_SUCCESS else { return Self(active: 0, wired: 0, compressed: 0, total: total) }
-    let pageSize = UInt64(getpagesize())
-    func bytes(_ pages: natural_t) -> Int64 { Int64(min(UInt64(pages) * pageSize, UInt64(total))) }
-    return Self(active: bytes(statistics.active_count), wired: bytes(statistics.wire_count),
-      compressed: bytes(statistics.compressor_page_count), total: total)
+    guard result == KERN_SUCCESS else { return Self() }
+    var swapUsage = xsw_usage()
+    var swapSize = MemoryLayout<xsw_usage>.size
+    let swapResult = sysctlbyname("vm.swapusage", &swapUsage, &swapSize, nil, 0)
+    let reading = Self(statistics: statistics, total: Int64(ProcessInfo.processInfo.physicalMemory),
+      pageSize: Int64(getpagesize()), swap: swapResult == 0 ? Int64(clamping: swapUsage.xsu_used) : -1)
+    // Inconsistent native counters should be unavailable, never clamped into a plausible reading.
+    guard reading.used >= 0, reading.used <= reading.total, reading.cached <= reading.total, reading.free <= reading.total,
+      reading.app + reading.wired + reading.compressed <= reading.used else { return Self() }
+    return reading
+  }
+}
+
+struct DeskDeckCPU {
+  static func percentage(previous: [UInt32], current: [UInt32]) -> Int64 {
+    guard !current.isEmpty, current.count == previous.count, current.count.isMultiple(of: Int(CPU_STATE_MAX)) else { return -1 }
+    var busy: UInt64 = 0, total: UInt64 = 0
+    for index in current.indices {
+      // Subtract at the native 32-bit width before widening, so counter rollover remains a small delta.
+      let delta = UInt64(current[index] &- previous[index])
+      total += delta
+      if index % Int(CPU_STATE_MAX) != Int(CPU_STATE_IDLE) { busy += delta }
+    }
+    guard total > 0 else { return -1 }
+    return Int64((Double(busy) * 100 / Double(total)).rounded()).clamped(to: 0...100)
   }
 }
 
@@ -396,7 +447,8 @@ struct MacPhonePowerReading: Equatable {
   private var pendingCatalogPages: [String: [PendingCatalogPage]] = [:]
   private var pendingCatalogUpdates: [String: PendingCatalogUpdate] = [:]
   private var sendingCatalogUpdates = Set<String>()
-  private var previousCPUTicks: [(UInt64, UInt64, UInt64, UInt64)]?
+  private var previousCPUTicks: [UInt32]?
+  private var lastCPUPercent: Int64 = -1
   private var inputIdentity = ""
   private var inputTarget = ""
   private var inputRevision = ""
@@ -436,11 +488,13 @@ struct MacPhonePowerReading: Equatable {
     guard var link = links[transport], !link.capabilitySent, !link.capabilitySending else { return }
     link.capabilitySending = true
     links[transport] = link
+    let capabilityV3 = MacDeskDeckMessage(version: 3, kind: 1, fields: [.integer(supportedActions)])
     let capabilityV2 = MacDeskDeckMessage(version: 2, kind: 1, fields: [.integer(supportedActions)])
     let capabilityV1 = MacDeskDeckMessage(kind: 1, fields: [.integer(supportedActions)])
     let descriptor = link.channel.descriptor
     Task { @MainActor [weak self] in
       var sent = true
+      do { try await link.channel.sendData(capabilityV3.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV2.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV1.encode()) } catch { sent = false }
       guard let self, self.links[transport]?.channel.descriptor == descriptor else { return }
@@ -484,7 +538,7 @@ struct MacPhonePowerReading: Equatable {
       let handlingStarted = ProcessInfo.processInfo.systemUptime
       let subscription = message.string(0)
       if link.subscription == subscription, link.protocolVersion == message.version {
-        if link.protocolVersion == 2 { link.lastRenewal = ProcessInfo.processInfo.systemUptime; links[descriptor.transport] = link }
+        if link.protocolVersion >= 2 { link.lastRenewal = ProcessInfo.processInfo.systemUptime; links[descriptor.transport] = link }
         await publish(descriptor.transport, descriptor: descriptor)
         return .handled
       }
@@ -516,7 +570,7 @@ struct MacPhonePowerReading: Equatable {
       links[descriptor.transport] = link
       return .handled
     }
-    if message.kind == 8, link.protocolVersion == 2 {
+    if message.kind == 8, link.protocolVersion >= 2 {
       let page = message.number(1)
       Task { @MainActor [weak self] in
         guard let self else { return }
@@ -575,7 +629,7 @@ struct MacPhonePowerReading: Equatable {
       return await Self.launch("com.apple.Terminal")
     case 5:
       guard supportedActions & 8 != 0 else { return 5 }
-      return Self.run("/usr/sbin/screencapture", arguments: ["-i"])
+      return await Self.launch("com.apple.screenshot.launcher")
     case 6:
       guard outputVolume.target == target, outputVolume.revision == revision else { return 1 }
       return outputVolume.command(target: target, revision: revision, value: value)
@@ -600,10 +654,10 @@ struct MacPhonePowerReading: Equatable {
     let power = DeskDeckPower.read()
     let thermal = Int64(ProcessInfo.processInfo.thermalState.rawValue)
     let outputSupported = outputVolume.level != nil && !outputVolume.target.isEmpty && !outputVolume.revision.isEmpty
-    let fields: [SessionCBOR]
+    var fields: [SessionCBOR]
     if link.protocolVersion == 1 {
       fields = [
-        .text(subscription), .integer(link.sequence), .integer(cpuPercentValue ?? cpuPercent()),
+        .text(subscription), .integer(link.sequence), .integer(cpuPercentValue ?? lastCPUPercent),
         .integer(memory.used), .integer(memory.total), .integer(thermal), .integer(supportedActions),
         .bool(outputSupported), .text(outputSupported ? outputVolume.target : ""), .text(outputSupported ? outputVolume.revision : ""),
         .integer(outputSupported ? outputVolume.level! : -1),
@@ -612,7 +666,7 @@ struct MacPhonePowerReading: Equatable {
       ]
     } else {
       fields = [
-        .text(subscription), .integer(link.sequence), .integer(cpuPercentValue ?? cpuPercent()),
+        .text(subscription), .integer(link.sequence), .integer(cpuPercentValue ?? lastCPUPercent),
         .integer(memory.active), .integer(memory.wired), .integer(memory.compressed), .integer(memory.total),
         .integer(thermal), .integer(supportedActions),
         .bool(outputSupported), .text(outputSupported ? outputVolume.target : ""), .text(outputSupported ? outputVolume.revision : ""),
@@ -620,6 +674,9 @@ struct MacPhonePowerReading: Equatable {
         .bool(input != nil), .text(input == nil ? "" : inputTarget), .text(input == nil ? "" : inputRevision), .bool(input?.muted ?? false),
         .integer(power.state), .integer(power.percent), .integer(power.source),
       ]
+    }
+    if link.protocolVersion == 3 {
+      fields += [.integer(memory.app), .integer(memory.cached), .integer(memory.free), .integer(memory.swap)]
     }
     let sample = MacDeskDeckMessage(version: link.protocolVersion, kind: 3, fields: fields)
     guard let bytes = try? sample.encode(), isCurrent(descriptor, subscription: subscription) else { return }
@@ -736,7 +793,7 @@ struct MacPhonePowerReading: Equatable {
   func refreshAppCatalog(for peer: DeviceIdentity) {
     ensureDefaultApps(for: peer)
     let revision = readCatalog(for: peer).revision
-    for (transport, link) in links where link.channel.descriptor.peer == peer && link.protocolVersion == 2 && !link.subscription.isEmpty {
+    for (transport, link) in links where link.channel.descriptor.peer == peer && link.protocolVersion >= 2 && !link.subscription.isEmpty {
       pendingCatalogPages.removeValue(forKey: transport)
       pendingCatalogUpdates[transport] = PendingCatalogUpdate(
         descriptor: link.channel.descriptor, subscription: link.subscription, revision: revision)
@@ -755,7 +812,7 @@ struct MacPhonePowerReading: Equatable {
           self.pendingCatalogUpdates.removeValue(forKey: transport)
           return
         }
-        let message = MacDeskDeckMessage(version: 2, kind: 10, fields: [
+        let message = MacDeskDeckMessage(version: self.links[transport]?.protocolVersion ?? 2, kind: 10, fields: [
           .text(update.subscription), .text(update.revision),
         ])
         do { try await self.links[transport]?.channel.sendData(message.encode()) }
@@ -768,7 +825,7 @@ struct MacPhonePowerReading: Equatable {
   }
 
   @discardableResult private func sendCatalogPage(_ page: Int64, link: Link, descriptor: ChannelDescriptor) async -> Bool {
-    guard page >= 0, link.protocolVersion == 2, isCurrent(descriptor, subscription: link.subscription) else { return false }
+    guard page >= 0, link.protocolVersion >= 2, isCurrent(descriptor, subscription: link.subscription) else { return false }
     let apps = validApps(for: descriptor.peer)
     let pageCount = max(1, (apps.count + 7) / 8)
     guard page < pageCount else { return false }
@@ -776,7 +833,7 @@ struct MacPhonePowerReading: Equatable {
       SessionCBOR.array([SessionCBOR.text($0.id), SessionCBOR.text($0.name)])
     }
     let catalog = readCatalog(for: descriptor.peer)
-    let message = MacDeskDeckMessage(version: 2, kind: 9, fields: [
+    let message = MacDeskDeckMessage(version: link.protocolVersion, kind: 9, fields: [
       .text(link.subscription), .integer(page), .integer(Int64(pageCount)), .text(catalog.revision), .array(entries),
     ])
     guard let bytes = try? message.encode() else { return false }
@@ -871,7 +928,7 @@ struct MacPhonePowerReading: Equatable {
   }
 
   private func updatePowerObservation() {
-    let needsPower = links.values.contains { $0.protocolVersion == 2 && !$0.subscription.isEmpty }
+    let needsPower = links.values.contains { $0.protocolVersion >= 2 && !$0.subscription.isEmpty }
     if needsPower, powerSource == nil {
       let context = Unmanaged.passUnretained(self).toOpaque()
       if let source = IOPSNotificationCreateRunLoopSource(Self.powerChangeCallback, context)?.takeRetainedValue() {
@@ -889,7 +946,7 @@ struct MacPhonePowerReading: Equatable {
   }
 
   private func powerSourceDidChange() {
-    for link in links.values where link.protocolVersion == 2 && !link.subscription.isEmpty {
+    for link in links.values where link.protocolVersion >= 2 && !link.subscription.isEmpty {
       Task { await publish(link.channel.descriptor.transport, descriptor: link.channel.descriptor) }
     }
   }
@@ -936,39 +993,27 @@ struct MacPhonePowerReading: Equatable {
     defer {
       _ = vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: info)), vm_size_t(infoCount) * vm_size_t(MemoryLayout<integer_t>.size))
     }
-    let stride = Int(CPU_STATE_MAX)
-    var current: [(UInt64, UInt64, UInt64, UInt64)] = []
-    for cpu in 0..<Int(processorCount) {
-      let offset = cpu * stride
-      func ticks(_ state: Int) -> UInt64 { UInt64(UInt32(bitPattern: info[offset + state])) }
-      current.append((ticks(Int(CPU_STATE_USER)), ticks(Int(CPU_STATE_SYSTEM)), ticks(Int(CPU_STATE_NICE)), ticks(Int(CPU_STATE_IDLE))))
-    }
+    let current = (0..<Int(processorCount) * Int(CPU_STATE_MAX)).map { UInt32(bitPattern: info[$0]) }
     defer { previousCPUTicks = current }
-    guard let previousCPUTicks, previousCPUTicks.count == current.count else { return -1 }
-    var busy: UInt64 = 0, total: UInt64 = 0
-    for index in current.indices {
-      let now = current[index], before = previousCPUTicks[index]
-      // Mach exposes 32-bit cumulative counters, so compute deltas with wrapping arithmetic.
-      let user = now.0 &- before.0, system = now.1 &- before.1, nice = now.2 &- before.2, idle = now.3 &- before.3
-      busy &+= user &+ system &+ nice
-      total &+= user &+ system &+ nice &+ idle
-    }
-    guard total > 0 else { return -1 }
-    return Int64((Double(busy) * 100 / Double(total)).rounded()).clamped(to: 0...100)
+    guard let previousCPUTicks else { return -1 }
+    return DeskDeckCPU.percentage(previous: previousCPUTicks, current: current)
   }
 
   private func updateTicker() {
     let active = links.values.contains { !$0.subscription.isEmpty }
     if active, ticker == nil {
+      // All visible subscriptions share one ticker; its generation fences obsolete task cleanup.
       tickerGeneration &+= 1
       let generation = tickerGeneration
+      // Only the ticker advances the CPU baseline; commands and power changes reuse its last interval.
+      lastCPUPercent = cpuPercent()
       ticker = Task { @MainActor [weak self] in
         while !Task.isCancelled {
           do { try await Task.sleep(for: .seconds(1)) } catch { break }
           guard !Task.isCancelled, let self, self.tickerGeneration == generation else { break }
           let now = ProcessInfo.processInfo.systemUptime
           for transport in Array(self.links.keys) {
-            guard var link = self.links[transport], link.protocolVersion == 2,
+            guard var link = self.links[transport], link.protocolVersion >= 2,
               !link.subscription.isEmpty, now - link.lastRenewal >= 15 else { continue }
             link.subscription = ""
             self.links[transport] = link
@@ -981,6 +1026,7 @@ struct MacPhonePowerReading: Equatable {
             break
           }
           let cpu = self.cpuPercent()
+          self.lastCPUPercent = cpu
           for link in Array(self.links.values) where !link.subscription.isEmpty {
             await self.publish(link.channel.descriptor.transport, descriptor: link.channel.descriptor, cpuPercentValue: cpu)
           }
@@ -996,6 +1042,7 @@ struct MacPhonePowerReading: Equatable {
       pendingSamples.removeAll()
       outputVolume.stop()
       previousCPUTicks = nil
+      lastCPUPercent = -1
     }
   }
 
@@ -1004,14 +1051,8 @@ struct MacPhonePowerReading: Equatable {
     if MacDeskDeckLock.hasEventPostingAccess { mask |= 1 }
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "org.blenderfoundation.blender") != nil { mask |= 2 }
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") != nil { mask |= 4 }
-    if FileManager.default.isExecutableFile(atPath: "/usr/sbin/screencapture") { mask |= 8 }
+    if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screenshot.launcher") != nil { mask |= 8 }
     return mask
-  }
-
-  private static func run(_ path: String, arguments: [String]) -> Int64 {
-    guard FileManager.default.isExecutableFile(atPath: path) else { return 5 }
-    let process = Process(); process.executableURL = URL(fileURLWithPath: path); process.arguments = arguments
-    do { try process.run(); return 0 } catch { return 7 }
   }
 
   private static func launch(_ bundleID: String) async -> Int64 {
@@ -1027,18 +1068,13 @@ private enum MacDeskDeckLock {
   static func request() -> Int64 {
     guard hasEventPostingAccess else { return 3 }
     guard let source = CGEventSource(stateID: .hidSystemState) else { return 7 }
-    let control: CGKeyCode = 0x3B
-    let command: CGKeyCode = 0x37
     let q: CGKeyCode = 0x0C
-    let modifiers: CGEventFlags = [.maskControl, .maskCommand]
-    func post(_ key: CGKeyCode, down: Bool, flags: CGEventFlags = []) -> Bool {
-      guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { return false }
-      event.flags = flags
-      event.post(tap: .cghidEventTap)
-      return true
-    }
-    guard post(control, down: true), post(command, down: true), post(q, down: true, flags: modifiers),
-      post(q, down: false, flags: modifiers), post(command, down: false), post(control, down: false) else { return 7 }
+    guard let down = CGEvent(keyboardEventSource: source, virtualKey: q, keyDown: true),
+      let up = CGEvent(keyboardEventSource: source, virtualKey: q, keyDown: false) else { return 7 }
+    down.flags = [.maskControl, .maskCommand]
+    up.flags = [.maskControl, .maskCommand]
+    down.post(tap: .cghidEventTap)
+    up.post(tap: .cghidEventTap)
     return 0
   }
 }

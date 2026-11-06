@@ -38,7 +38,7 @@ class DeskDeckWireTests {
             assertArrayEquals(row.getString("name"), bytes, message.encode())
             versions += message.version
         }
-        assertEquals(setOf(1L, 2L), versions)
+        assertEquals(setOf(1L, 2L, 3L), versions)
 
         for (index in 0 until invalid.length()) {
             val row = invalid.getJSONObject(index)
@@ -49,6 +49,18 @@ class DeskDeckWireTests {
             } catch (_: SessionException) {
             }
         }
+    }
+
+    @Test fun versionThreeMemorySeparatesCacheAndOtherResidentPages() {
+        val sample = DeskDeckMessage(kind = 3, version = 3,
+            subscription = "00000000-0000-0000-0000-000000000001", sequence = 1,
+            memoryActive = 100, memoryWired = 20, memoryCompressed = 5, memoryTotal = 200,
+            memoryApp = 100, memoryCached = 30, memoryFree = 25, memorySwap = 40)
+        val decoded = DeskDeckMessage.decode(sample.encode())!!
+        assertEquals(145L, decoded.memoryUsed)
+        assertEquals(20L, decoded.memoryUsed - decoded.memoryApp - decoded.memoryWired - decoded.memoryCompressed)
+        assertEquals(30L, decoded.memoryCached)
+        assertEquals(40L, decoded.memorySwap)
     }
 
     @Test fun sharedDevicePowerFixturesPreserveUnknownPercentage() {

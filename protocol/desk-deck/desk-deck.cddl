@@ -3,6 +3,9 @@
 desk-deck-v1 = ["aniCe desk deck", 1, kind: 1..6, fields: v1-fields]
 desk-deck-v2 = ["aniCe desk deck", 2, kind: 1..10, fields: v2-fields]
 
+desk-deck-v3 = ["aniCe desk deck", 3, kind: 1..10, fields: v3-fields]
+v3-fields = capability / subscribe / v3-sample / v2-command / result / stop / renew / catalog-request / catalog-page / catalog-changed
+
 v1-fields = capability / subscribe / v1-sample / v1-command / result / stop
 v2-fields = capability / subscribe / v2-sample / v2-command / result / stop / renew / catalog-request / catalog-page / catalog-changed
 
@@ -38,3 +41,14 @@ result = [subscription: uuid, command-id: 1..4294967295, result: 0..7]
 
 uuid = tstr .size 36
 ; Action-specific identity/value constraints and cross-field sums are normative in README.md.
+
+; V3 retains the v2 sample fields and appends app, cached, free and swap bytes.
+; The four added readings are -1 when native memory statistics are unavailable.
+v3-sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100,
+  active-bytes: 0..9223372036854775807, wired-bytes: 0..9223372036854775807, compressed-bytes: 0..9223372036854775807, physical-bytes: 0..9223372036854775807,
+  thermal-state: 0..3, action-mask: 0..15,
+  output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100,
+  microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool,
+  power-state: 0..5, power-percent: -1..100, power-source: 0..3,
+  app-bytes: -1..9223372036854775807, cached-bytes: -1..9223372036854775807,
+  free-bytes: -1..9223372036854775807, swap-bytes: -1..9223372036854775807]

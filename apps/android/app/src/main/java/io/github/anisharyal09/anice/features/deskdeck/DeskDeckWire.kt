@@ -22,6 +22,10 @@ data class DeskDeckMessage(
     val memoryActive: Long = -1,
     val memoryWired: Long = -1,
     val memoryCompressed: Long = -1,
+    val memoryApp: Long = -1,
+    val memoryCached: Long = -1,
+    val memoryFree: Long = -1,
+    val memorySwap: Long = -1,
     val thermalState: Long = 0,
     val outputSupported: Boolean = false,
     val outputTarget: String = "",
@@ -70,7 +74,7 @@ data class DeskDeckMessage(
                 Cbor.Bool(outputSupported), Cbor.Text(outputTarget), Cbor.Text(outputRevision), Cbor.Integer(outputLevel),
                 Cbor.Bool(microphoneSupported), Cbor.Text(microphoneTarget), Cbor.Text(microphoneRevision), Cbor.Bool(microphoneMuted),
                 Cbor.Integer(powerState), Cbor.Integer(powerPercent), Cbor.Integer(powerSource),
-            )
+            ) + if (version == 3L) listOf(Cbor.Integer(memoryApp), Cbor.Integer(memoryCached), Cbor.Integer(memoryFree), Cbor.Integer(memorySwap)) else emptyList()
             4L -> listOf(Cbor.Text(subscription), Cbor.Integer(commandId), Cbor.Integer(action),
                 Cbor.Text(target), Cbor.Text(revision), Cbor.Integer(value))
             5L -> listOf(Cbor.Text(subscription), Cbor.Integer(commandId), Cbor.Integer(result))
@@ -94,7 +98,7 @@ data class DeskDeckMessage(
             if ((row.firstOrNull() as? Cbor.Text)?.value != TAG) return null
             if (row.size != 4) throw DeskDeckWireException()
             val version = (row[1] as? Cbor.Integer)?.value ?: throw DeskDeckWireException()
-            if (version !in 1L..2L || bytes.size > if (version == 1L) V1_MAX_BYTES else MAX_BYTES) throw DeskDeckWireException()
+            if (version !in 1L..3L || bytes.size > if (version == 1L) V1_MAX_BYTES else MAX_BYTES) throw DeskDeckWireException()
             val kind = (row[2] as? Cbor.Integer)?.value ?: throw DeskDeckWireException()
             val f = (row[3] as? Cbor.Array)?.value ?: throw DeskDeckWireException()
             fun number(i: Int) = (f.getOrNull(i) as? Cbor.Integer)?.value ?: throw DeskDeckWireException()
@@ -106,14 +110,14 @@ data class DeskDeckMessage(
                 return DeskDeckMessage(kind, version = version, actions = number(0))
             }
             if (kind in setOf(2L, 6L, 7L)) {
-                if (kind == 7L && version != 2L || f.size != 1 || !uuid(string(0))) throw DeskDeckWireException()
+                if (kind == 7L && version < 2L || f.size != 1 || !uuid(string(0))) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, subscription = string(0))
             }
-            if (kind == 8L && version == 2L) {
+            if (kind == 8L && version >= 2L) {
                 if (f.size != 2 || !uuid(string(0)) || number(1) !in 0L..3L) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, subscription = string(0), page = number(1))
             }
-            if (kind == 9L && version == 2L) {
+            if (kind == 9L && version >= 2L) {
                 if (f.size != 5 || !uuid(string(0)) || number(1) !in 0L..3L || number(2) !in 1L..4L ||
                     number(1) >= number(2) || !uuid(string(3))) throw DeskDeckWireException()
                 val rows = (f[4] as? Cbor.Array)?.value ?: throw DeskDeckWireException()
@@ -129,7 +133,7 @@ data class DeskDeckMessage(
                 if (entries.map { it.id }.distinct().size != entries.size) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, subscription = string(0), page = number(1), pageCount = number(2), catalogRevision = string(3), shortcuts = entries)
             }
-            if (kind == 10L && version == 2L) {
+            if (kind == 10L && version >= 2L) {
                 if (f.size != 2 || !uuid(string(0)) || !uuid(string(1))) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, subscription = string(0), catalogRevision = string(1))
             }
@@ -150,8 +154,19 @@ data class DeskDeckMessage(
                             !validControl(it.brightnessSupported, it.brightnessTarget, it.brightnessRevision, it.brightnessLevel)) throw DeskDeckWireException()
                     }
                 } else {
-                    if (f.size != 20) throw DeskDeckWireException()
+                    if (f.size != if (version == 3L) 24 else 20) throw DeskDeckWireException()
                     val active = number(3); val wired = number(4); val compressed = number(5); val total = number(6)
+                    val app = if (version == 3L) number(20) else -1L
+                    val cached = if (version == 3L) number(21) else -1L
+                    val free = if (version == 3L) number(22) else -1L
+                    val swap = if (version == 3L) number(23) else -1L
+                    if (version == 3L) {
+                        val unavailable = app == -1L && cached == -1L && free == -1L && swap == -1L
+                        val available = app in 0..total && cached in 0..total && free in 0..total && swap >= -1L &&
+                            cached <= total - free && app <= total - free - cached &&
+                            wired <= total - free - cached - app && compressed <= total - free - cached - app - wired
+                        if (!unavailable && !available) throw DeskDeckWireException()
+                    }
                     val outputOK = validControl(bool(9), string(10), string(11), number(12))
                     val microphoneOK = validIdentity(bool(13), string(14), string(15))
                     if (active < 0 || wired < 0 || compressed < 0 || total < 0 || active > total || wired > total - active || compressed > total - active - wired ||
@@ -161,7 +176,8 @@ data class DeskDeckMessage(
                     DeskDeckMessage(
                         kind = kind, version = version, subscription = string(0), sequence = number(1), cpuPercent = number(2),
                         memoryActive = active, memoryWired = wired, memoryCompressed = compressed, memoryTotal = total,
-                        memoryUsed = active + wired + compressed, thermalState = number(7), actions = number(8),
+                        memoryUsed = if (version == 3L) { if (app < 0) -1 else total - cached - free } else active + wired + compressed,
+                        memoryApp = app, memoryCached = cached, memoryFree = free, memorySwap = swap, thermalState = number(7), actions = number(8),
                         outputSupported = bool(9), outputTarget = string(10), outputRevision = string(11), outputLevel = number(12),
                         microphoneSupported = bool(13), microphoneTarget = string(14), microphoneRevision = string(15), microphoneMuted = bool(16),
                         powerState = number(17), powerPercent = number(18), powerSource = number(19),
@@ -180,7 +196,7 @@ data class DeskDeckMessage(
                     2L -> message.target.isNotEmpty() && message.revision.isNotEmpty() && message.value in 0L..1L
                     6L -> message.target.isNotEmpty() && message.revision.isNotEmpty() && message.value in 0L..100L
                     7L -> version == 1L && message.target.isNotEmpty() && message.revision.isNotEmpty() && message.value in 0L..100L
-                    8L -> version == 2L && uuid(message.target) && uuid(message.revision) && message.value == -1L
+                    8L -> version >= 2L && uuid(message.target) && uuid(message.revision) && message.value == -1L
                     else -> false
                 }
                 if (message.commandId !in 1L..4_294_967_295L || !valid) throw DeskDeckWireException()

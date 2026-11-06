@@ -1,6 +1,6 @@
-# Mac Desk Deck v1 and v2
+# Mac Desk Deck v1, v2 and v3
 
-Mac Desk Deck carries a foreground Android control panel's hardware snapshot and explicit Mac actions in existing authenticated DATA. It adds no pairing, transport, or background connection lease. V1 remains supported for older peers. V2 adds richer memory and power readings, renewable foreground subscriptions, and a Mac-approved app catalog. Records stay within the session's 4,000-byte plaintext limit; v1 envelopes are at most 512 bytes and v2 envelopes at most 3,800 bytes.
+Mac Desk Deck carries a foreground Android control panel's hardware snapshot and explicit Mac actions in existing authenticated DATA. It adds no pairing, transport, or background connection lease. V1 and v2 remain supported for older peers. V3 adds app, cached, free and swap bytes without changing older sample shapes. V2 adds richer memory and power readings, renewable foreground subscriptions, and a Mac-approved app catalog. Records stay within the session's 4,000-byte plaintext limit; v1 envelopes are at most 512 bytes and v2/v3 envelopes at most 3,800 bytes.
 
 The Mac advertises capability when a secured channel becomes available. Android opens the panel immediately, then subscribes with a fresh random UUID. The Mac sends an immediate snapshot; CPU is `-1` until a second Mach counter reading establishes a baseline. Samples are produced at most once per second. Android renews a v2 subscription every five seconds; the Mac stops sampling after fifteen seconds without renewal. Stop, backgrounding, channel retirement, or trust change ends the local subscription. Commands are never replayed after a channel or subscription change.
 
@@ -10,23 +10,26 @@ The deterministic CBOR envelope is `["aniCe desk deck", version, kind, fields]`.
 
 | Kind | Direction | Version | Fields |
 | --- | --- | --- | --- |
-| 1 capability | Mac → Android | 1 or 2 | `[actionMask]` |
-| 2 subscribe | Android → Mac | 1 or 2 | `[subscription]` |
+| 1 capability | Mac → Android | 1, 2 or 3 | `[actionMask]` |
+| 2 subscribe | Android → Mac | 1, 2 or 3 | `[subscription]` |
 | 3 sample | Mac → Android | 1 | See `v1-sample` in CDDL |
 | 3 sample | Mac → Android | 2 | `[subscription, sequence, cpuPercent, activeBytes, wiredBytes, compressedBytes, physicalBytes, thermalState, actionMask, outputSupported, outputTarget, outputRevision, outputLevel, microphoneSupported, microphoneTarget, microphoneRevision, microphoneMuted, powerState, powerPercent, powerSource]` |
-| 4 command | Android → Mac | 1 or 2 | `[subscription, commandID, action, target, revision, value]` |
-| 5 result | Mac → Android | 1 or 2 | `[subscription, commandID, result]` |
-| 6 stop | Android → Mac | 1 or 2 | `[subscription]` |
-| 7 renew | Android → Mac | 2 | `[subscription]` |
-| 8 catalog request | Android → Mac | 2 | `[subscription, page]` |
-| 9 catalog page | Mac → Android | 2 | `[subscription, page, pageCount, catalogRevision, [[shortcutID, name]…]]` |
-| 10 catalog changed | Mac → Android | 2 | `[subscription, catalogRevision]` |
+| 3 sample | Mac → Android | 3 | V2 sample fields followed by `[appBytes, cachedBytes, freeBytes, swapBytes]` |
+| 4 command | Android → Mac | 1, 2 or 3 | `[subscription, commandID, action, target, revision, value]` |
+| 5 result | Mac → Android | 1, 2 or 3 | `[subscription, commandID, result]` |
+| 6 stop | Android → Mac | 1, 2 or 3 | `[subscription]` |
+| 7 renew | Android → Mac | 2 or 3 | `[subscription]` |
+| 8 catalog request | Android → Mac | 2 or 3 | `[subscription, page]` |
+| 9 catalog page | Mac → Android | 2 or 3 | `[subscription, page, pageCount, catalogRevision, [[shortcutID, name]…]]` |
+| 10 catalog changed | Mac → Android | 2 or 3 | `[subscription, catalogRevision]` |
+
+V3 uses the v2 sample fields followed by `[appBytes, cachedBytes, freeBytes, swapBytes]`. The Mac advertises v3, v2 and v1 capabilities; the phone subscribes at the highest mutually supported version. Results, renewal and catalogs use that subscription version. A v3 receiver never interprets a v2 category sum as a v3 used-memory reading.
 
 Each v2 catalog page has at most eight entries. A catalog has at most 32 apps and four pages. Names are nonempty, control-free UTF-8 text no longer than 80 UTF-16 code units. IDs and revisions are canonical lowercase UUIDs. After an approval changes, the Mac sends kind 10 with the new revision. Android discards partial pages and requests page zero for that revision; pages from a different revision are ignored. A command using a previous revision cannot launch a revoked entry.
 
 ## Samples and power values
 
-`cpuPercent` is `-1` when the first or native CPU sample is unavailable; otherwise it is `0..100`. V1 memory is used physical-memory bytes and total. V2 reports active, wired, compressed and total physical-memory bytes; the first three values cannot sum above total. `thermalState` is the macOS thermal-pressure state: nominal `0`, fair `1`, serious `2`, critical `3`. It is not a temperature reading.
+`cpuPercent` is `-1` when the first or native CPU sample is unavailable; otherwise it is `0..100`. V1 memory is used physical-memory bytes and total. V2 reports active, wired, compressed and total physical-memory bytes; its historical sum of the first three is not Activity Monitor’s Memory Used. V3 retains those raw categories and adds app memory (anonymous pages minus purgeable pages), cached files (file-backed plus purgeable pages), free pages, and swap usage. Used memory is physical − free − cached; cache is separate and swap is disk usage. App + wired + compressed may leave an additional resident remainder, which clients show separately rather than silently omitting it. Each resident category must fit physical memory; cached + free cannot exceed physical memory, and app + wired + compressed cannot exceed used memory. The four added fields are all `-1` if native memory statistics are unavailable; swap alone may be `-1` if its native query fails. Values are bytes; clients may display GiB. Native counters are sampled together, but tools with different intervals need not match at every instant. `thermalState` is the macOS thermal-pressure state: nominal `0`, fair `1`, serious `2`, critical `3`. It is not a temperature reading.
 
 V2 `powerState` values are unavailable `0`, no battery `1`, on battery `2`, charging `3`, fully charged `4`, and plugged in but not charging `5`. `powerPercent` is `-1` when unavailable or no battery is present; otherwise it is `0..100`. `powerSource` is unavailable `0`, battery `1`, AC `2`, or UPS `3`.
 
@@ -46,7 +49,7 @@ Microphone and volume commands require a current nonempty hardware target and re
 - Output volume reuses the existing native default-output implementation and is available only for a settable output device.
 - Microphone mute is available only when the current default input exposes a writable CoreAudio mute property. It is a system-device mute, not a hardware kill switch, and apps may use another input.
 - Lock uses the public Control–Command–Q event sequence and requires Mac Event Posting permission. The action is advertised only when permission is available; an acknowledgement reports that the lock was requested.
-- Area capture opens macOS's interactive screenshot selection. The user completes or cancels it on the Mac; the screenshot is not sent to the phone.
+- Screenshot opens the native macOS Screenshot application. Its toolbar lets the user choose an area, window or display and the local save destination. The result confirms the controls opened, not that an image was captured; the image is not sent to the phone.
 - App shortcuts are approved per trusted phone in Mac Settings → Desk Deck. Terminal and Blender are offered when installed. Replaced or removed apps fail identity checks and cannot be launched by stale catalog entries.
 - Brightness is not included in v2. aniCe does not use a private display API or helper tool for it.
 

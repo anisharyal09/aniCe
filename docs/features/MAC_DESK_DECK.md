@@ -12,7 +12,7 @@ The panel shows opening progress immediately. After five seconds it explains tha
 ## Meters and history
 
 - **CPU** shows whole-system processor use from Mach host counters. The first sample can say “Collecting…” until the next counter reading establishes a baseline.
-- **Memory** shows used physical memory and total. Its details show active, wired and compressed bytes when Desk Deck v2 is available.
+- **Memory used** shows physical memory minus free and cached memory against the physical total with Desk Deck v3. Details separate app, wired, compressed, other resident memory, cached files, free memory and swap. Cache is reclaimable and separate from used memory; swap uses disk space. Older Macs show **Memory (legacy)** with their category sum and an update explanation. Values are displayed in GiB.
 - **Thermal pressure** shows macOS's nominal, fair, serious or critical state. It does not report sensor temperatures in degrees. See Apple's [thermal-state documentation](https://developer.apple.com/documentation/foundation/processinfo/thermalstate-swift.enum).
 - CPU and memory history keeps the latest 60 points in memory. Disconnects create visible gaps; the app does not interpolate missing samples.
 - The header shows Mac battery percentage, source and charging state, alongside the phone's own percentage and charging state. Unavailable and no-battery states remain explicit.
@@ -22,8 +22,8 @@ Meters refresh about once per second while subscribed. History clears when the s
 ## Quick controls and app shortcuts
 
 - **Mute mic** sets mute on the current default input only when that CoreAudio device exposes a writable mute property. It is not a hardware kill switch and does not guarantee that every app uses that input.
-- **Lock Mac** requests the public Control–Command–Q session-lock shortcut when Mac Event Posting permission is available.
-- **Take Screenshot** opens macOS's interactive area-capture tool. The user selects or cancels on the Mac; the image is not sent to the phone.
+- **Lock Mac** requests the public Control–Command–Q session-lock shortcut when Mac Event Posting permission is available. If it is missing, tap the tile for setup guidance; access is granted on the Mac.
+- **Screenshot** opens the native macOS Screenshot controls. Choose an area, window or display, save locally, or cancel on the Mac. The phone confirms only that the controls opened; the image is not sent to the phone.
 - **Mac output volume** sets the current default output's absolute volume when macOS exposes a writable system control. A target change rejects stale writes; slider movement keeps only the latest queued value.
 - The **Approved apps** grid shows apps explicitly allowed for that trusted phone in Mac Settings → Desk Deck. Pin and order shortcuts on the phone; Terminal and Blender are offered when installed. The Mac announces catalog changes to an open panel; the phone reloads pages for the new revision. The Mac resolves each opaque shortcut ID against its current approved bundle before launch.
 - App approvals are tied to both the selected bundle and its executable file identity. Moving, replacing, or revoking the app invalidates the shortcut; reapprove a replacement in Settings → Desk Deck. Removing a phone's trust removes that phone's saved approvals.
@@ -39,6 +39,6 @@ Landscape presents meters and quick actions in an adaptive grid. Portrait stacks
 
 ## Implementation and protocol
 
-V1 remains available for older Macs. V2 adds richer memory and power samples, renewable subscriptions, and paged approved-app catalogs. Phone power is a separate authenticated shared capability, so Mac device status can show the phone's battery without opening Desk Deck. Neither capability opens a connection or extends another feature's lease.
+V1 and v2 remain available for older Macs. V3 adds app, cache, free and swap readings with explicit unavailable values. V2 supplies power samples, renewable subscriptions, and paged approved-app catalogs. Phone power is a separate authenticated shared capability, so Mac device status can show the phone's battery without opening Desk Deck. Neither capability opens a connection or extends another feature's lease.
 
-See the [Desk Deck v1/v2 contract](../../protocol/desk-deck/README.md) and [Device Power v1 contract](../../protocol/device-power/README.md).
+See the [Desk Deck v1/v2/v3 contract](../../protocol/desk-deck/README.md) and [Device Power v1 contract](../../protocol/device-power/README.md).

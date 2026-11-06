@@ -44,6 +44,11 @@ data class DeskDeckSnapshot(
     val powerPercent: Long = -1,
     val powerSource: Long = 0,
     val receivedAtMillis: Long = SystemClock.elapsedRealtime(),
+    val protocolVersion: Long = 1,
+    val memoryApp: Long = -1,
+    val memoryCached: Long = -1,
+    val memoryFree: Long = -1,
+    val memorySwap: Long = -1,
 )
 
 class DeskDeckController(
@@ -250,7 +255,7 @@ class DeskDeckController(
         val link = activeLink() ?: return false
         val current = snapshot ?: return false
         if (!readingsAreFresh || link.subscription.isEmpty() || current.sequence == 0L) return false
-        if (action !in 1L..8L || action == 7L || action == 8L && link.protocolVersion != 2L ||
+        if (action !in 1L..8L || action == 7L || action == 8L && link.protocolVersion < 2L ||
             action in 3L..4L && link.protocolVersion != 1L) return false
         if ((action == 1L || action == 3L || action == 4L || action == 5L) && value != -1L) return false
         if (action == 2L && (!current.microphoneSupported || current.microphoneTarget != target || current.microphoneRevision != revision)) return false
@@ -274,6 +279,10 @@ class DeskDeckController(
         }
         return sendIntent(link, intent)
     }
+
+    val shortcutCatalogLoaded: Boolean get() = activeLink()?.let {
+        it.catalogPageCount > 0 && it.catalogPages.size.toLong() == it.catalogPageCount
+    } == true
 
     private fun sendIntent(link: Link, intent: Intent): Boolean {
         val subscription = link.subscription
@@ -348,7 +357,7 @@ class DeskDeckController(
         if (link.channel.descriptor == descriptor && visible && peer == descriptor.peer && activeLink() == null) {
             subscribeBestChannel()
         } else if (link.channel.descriptor == descriptor && visible && activeTransport == descriptor.transport &&
-            link.protocolVersion == 2L && link.subscription.isNotEmpty()) {
+            link.protocolVersion >= 2L && link.subscription.isNotEmpty()) {
             link.pendingCatalogRetries.toList().forEach { page ->
                 link.pendingCatalogRetries.remove(page)
                 requestCatalogPage(link, page)
@@ -388,11 +397,12 @@ class DeskDeckController(
                 message.outputLevel, message.microphoneSupported, message.microphoneTarget, message.microphoneRevision,
                 message.microphoneMuted, message.brightnessSupported, message.brightnessTarget, message.brightnessRevision,
                 message.brightnessLevel, message.memoryActive, message.memoryWired, message.memoryCompressed,
-                message.powerState, message.powerPercent, message.powerSource, clock())
+                message.powerState, message.powerPercent, message.powerSource, clock(), message.version,
+                message.memoryApp, message.memoryCached, message.memoryFree, message.memorySwap)
             snapshotReceivedAtWallMillis = System.currentTimeMillis()
             persistCachedSnapshot()
             history = (history + DeskDeckHistoryPoint(clock(), message.cpuPercent.takeIf { it >= 0 }?.toInt(),
-                if (message.memoryTotal > 0) (message.memoryUsed * 100 / message.memoryTotal).toInt() else null)).takeLast(HISTORY_LIMIT)
+                if (message.memoryTotal > 0 && message.memoryUsed >= 0) (message.memoryUsed * 100 / message.memoryTotal).toInt() else null)).takeLast(HISTORY_LIMIT)
             if (!firstSampleLogged) {
                 firstSampleLogged = true
                 timing("event=first_sample total_ms=${clock() - deckOpenedAtMillis}")
@@ -406,7 +416,7 @@ class DeskDeckController(
             startFreshnessWatch(generation, descriptor, link.subscription)
             return DataHandling.HANDLED
         }
-        if (message.kind == 9L && link.protocolVersion == 2L) {
+        if (message.kind == 9L && link.protocolVersion >= 2L) {
             if (!link.requestedCatalogPages.contains(message.page) || message.pageCount !in 1L..4L) return DataHandling.DISCARDED
             if (link.catalogRevision.isNotEmpty() && link.catalogRevision != message.catalogRevision) return DataHandling.DISCARDED
             link.catalogRevision = message.catalogRevision
@@ -420,7 +430,7 @@ class DeskDeckController(
             if (activeTransport == descriptor.transport) applyShortcutLayout(link, descriptor.peer.fingerprint)
             return DataHandling.HANDLED
         }
-        if (message.kind == 10L && link.protocolVersion == 2L) {
+        if (message.kind == 10L && link.protocolVersion >= 2L) {
             link.catalogRevision = message.catalogRevision
             link.catalogPageCount = 0
             link.catalogPages.clear()
@@ -504,7 +514,7 @@ class DeskDeckController(
         feedback = ""
         freshnessJob?.cancel(); freshnessJob = null
         val version = link.protocolVersion
-        if (version == 2L) {
+        if (version >= 2L) {
             link.catalogRevision = ""
             link.shortcuts = emptyList()
             link.catalogPages.clear()
@@ -519,6 +529,7 @@ class DeskDeckController(
         val request = DeskDeckMessage(kind = 2, version = version, subscription = subscription).encode()
         openingJob?.cancel()
         openingTimeoutJob?.cancel()
+        // Arm before DATA submission, which can itself wait for channel capacity.
         val timeout = scope.launch(start = CoroutineStart.LAZY) {
             wait(OPENING_TIMEOUT_MILLIS)
             if (!isCurrent(link.channel.descriptor, subscription, ownedGeneration) || connectionState == DeskDeckConnectionState.LIVE) return@launch
@@ -537,14 +548,14 @@ class DeskDeckController(
                 link.channel.sendData(request)
                 if (!isCurrent(link.channel.descriptor, subscription, ownedGeneration)) return@launch
                 timing("event=subscription_submitted duration_ms=${clock() - submissionStarted}")
-                if (version == 2L) {
+                if (version >= 2L) {
                     requestCatalogPage(link, 0)
                     renewalJob?.cancel()
                     renewalJob = scope.launch {
                         while (isCurrent(link.channel.descriptor, subscription, ownedGeneration)) {
                             wait(RENEWAL_INTERVAL_MILLIS)
                             if (!isCurrent(link.channel.descriptor, subscription, ownedGeneration)) break
-                            try { link.channel.sendData(DeskDeckMessage(kind = 7, version = 2, subscription = subscription).encode()) }
+                            try { link.channel.sendData(DeskDeckMessage(kind = 7, version = version, subscription = subscription).encode()) }
                             catch (_: Exception) { }
                         }
                     }
@@ -624,6 +635,7 @@ class DeskDeckController(
     }
 
     private fun stopSubscription(sendStop: Boolean) {
+        // Invalidate first; cancelling a job cannot retract a send completion already in flight.
         generation += 1
         openingJob?.cancel(); openingJob = null
         openingTimeoutJob?.cancel(); openingTimeoutJob = null
@@ -688,6 +700,11 @@ class DeskDeckController(
                 powerPercent = value.getLong("power_percent"),
                 powerSource = value.getLong("power_source"),
                 receivedAtMillis = clock() - ageMillis,
+                protocolVersion = value.optLong("protocol_version", 1),
+                memoryApp = value.optLong("memory_app", -1),
+                memoryCached = value.optLong("memory_cached", -1),
+                memoryFree = value.optLong("memory_free", -1),
+                memorySwap = value.optLong("memory_swap", -1),
             )
             snapshotPeerFingerprint = fingerprint
             snapshotReceivedAtWallMillis = sampledAtWallMillis
@@ -731,6 +748,11 @@ class DeskDeckController(
             .put("memory_active", sample.memoryActive)
             .put("memory_wired", sample.memoryWired)
             .put("memory_compressed", sample.memoryCompressed)
+            .put("protocol_version", sample.protocolVersion)
+            .put("memory_app", sample.memoryApp)
+            .put("memory_cached", sample.memoryCached)
+            .put("memory_free", sample.memoryFree)
+            .put("memory_swap", sample.memorySwap)
             .put("power_state", sample.powerState)
             .put("power_percent", sample.powerPercent)
             .put("power_source", sample.powerSource)
@@ -755,7 +777,7 @@ class DeskDeckController(
 
     private fun requestCatalogPage(link: Link, page: Long) {
         val subscription = link.subscription
-        if (link.protocolVersion != 2L || subscription.isEmpty() || page in link.requestedCatalogPages || page in link.catalogPages) return
+        if (link.protocolVersion < 2L || subscription.isEmpty() || page in link.requestedCatalogPages || page in link.catalogPages) return
         val descriptor = link.channel.descriptor
         val ownedGeneration = generation
         link.requestedCatalogPages += page
@@ -764,7 +786,7 @@ class DeskDeckController(
                 if (link.subscription == subscription) link.requestedCatalogPages.remove(page)
                 return@launch
             }
-            try { link.channel.sendData(DeskDeckMessage(kind = 8, version = 2, subscription = subscription, page = page).encode()) }
+            try { link.channel.sendData(DeskDeckMessage(kind = 8, version = link.protocolVersion, subscription = subscription, page = page).encode()) }
             catch (_: Exception) {
                 if (isCurrent(descriptor, subscription, ownedGeneration)) {
                     link.requestedCatalogPages.remove(page)
@@ -802,7 +824,7 @@ class DeskDeckController(
         2L -> if (intent.value == 1L) "Default microphone muted." else "Default microphone unmuted."
         3L -> "Blender launched."
         4L -> "Terminal launched."
-        5L -> "Area capture opened on Mac."
+        5L -> "Screenshot controls opened on Mac."
         6L -> "Mac output volume updated."
         8L -> "App launch requested."
         else -> "Done"

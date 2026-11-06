@@ -77,13 +77,13 @@ fun FeaturesScreen(
             )
         }
     } else if (!favouritesOnly && panel == AppFeature.DeskDeck) {
-        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(onClick = navigation::closeFeature) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back to ${navigation.featureOrigin.label}")
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = navigation::closeFeature, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.ic_back), contentDescription = "Back to ${navigation.featureOrigin.label}", modifier = Modifier.size(20.dp))
+                }
+                Text(panel.label, style = MaterialTheme.typography.titleMedium)
             }
-            Text(panel.label, style = MaterialTheme.typography.titleMedium)
             io.github.anisharyal09.anice.features.deskdeck.DeskDeckView(
                 session.deskDeck,
                 session.devicePower,

@@ -8,6 +8,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Sample anonymous app memory separately from cache, handle native CPU counter rollover and open the native Screenshot controls.
+
 - Keep one Mac sampling task per active Deck session, fence cleanup by generation, coalesce pending telemetry to the latest sample and expire v2 subscriptions without renewal.
 - Revalidate approved app bundle identity immediately before launch; move legacy Blender/Terminal launch codes out of v2 requests.
 
