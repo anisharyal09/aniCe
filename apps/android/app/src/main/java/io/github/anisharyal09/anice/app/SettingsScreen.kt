@@ -131,6 +131,10 @@ fun SettingsScreen(
                     }
                 }
 
+                PreferenceSection("Notifications") {
+                    io.github.anisharyal09.anice.features.notifications.NotificationSettings(app.notificationMirror)
+                }
+
                 PreferenceSection("File transfer") {
                     io.github.anisharyal09.anice.features.transfer.TransferAutoReceiveSettings(
                         preferences = app.transfer.autoReceivePreferences,

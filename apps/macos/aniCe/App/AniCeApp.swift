@@ -17,11 +17,13 @@ struct AniCeApp: App {
   @State private var findDevice: MacFindDeviceModel
   private let findNotifier: MacFindDeviceNotifier
   @State private var sms: MacSmsModel
+  @State private var notificationMirror: MacNotificationMirrorModel
   @State private var keyboardTrackpad: MacKeyboardTrackpadModel
   @State private var phoneInput: MacPhoneInputModel
   @State private var floatingKeyboard: FloatingKeyboardController
   @State private var smsPreferences: SmsPreferences
   private let smsNotifier: MacSmsNotifier
+  private let notificationMirrorNotifier: MacNotificationMirrorNotifier
   @State private var transfer: MacTransferModel
   @State private var edgeDrop: MacEdgeDropController
   @State private var transferNotifier: MacTransferNotifier?
@@ -90,6 +92,10 @@ struct AniCeApp: App {
     self.smsNotifier = smsNotifier
     let sms = MacSmsModel(notifier: smsNotifier)
     _sms = State(initialValue: sms)
+    let notificationMirrorNotifier = MacNotificationMirrorNotifier()
+    self.notificationMirrorNotifier = notificationMirrorNotifier
+    let notificationMirror = MacNotificationMirrorModel(notifier: notificationMirrorNotifier)
+    _notificationMirror = State(initialValue: notificationMirror)
     let keyboardTrackpad = MacKeyboardTrackpadModel(preferences: .standard)
     _keyboardTrackpad = State(initialValue: keyboardTrackpad)
     let phoneInput = MacPhoneInputModel()
@@ -117,6 +123,7 @@ struct AniCeApp: App {
     features.register(findDevice)
     features.register(clipboard)
     features.register(sms)
+    features.register(notificationMirror)
     features.register(phoneInput)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
@@ -171,7 +178,8 @@ struct AniCeApp: App {
     }
     _pairing = State(initialValue: pairing)
     _session = State(initialValue: session)
-    delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier, sms: smsNotifier)
+    delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier, sms: smsNotifier,
+      notificationMirror: notificationMirrorNotifier)
     session.restoreAutomatic()
   }
 
@@ -209,7 +217,7 @@ struct AniCeApp: App {
         .onAppear {
           if !IdentityView.isTesting {
             delegate.onTerminate = {
-              findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll()
+              findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
               floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown()
               PasteTrayController.shared.hide()
             }
