@@ -13,11 +13,23 @@ private final class MirrorNotificationCenterSpy: MacMirrorNotificationCenter, @u
   var removedPending: [[String]] = []
   var removedDelivered: [[String]] = []
   var addError: Error?
+  var delayNextCategoryRead = false
+  var pendingCategoryRead: (@Sendable (MacMirrorCategorySnapshot) -> Void)?
 
   func mirrorPendingIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void) { completionHandler(pending.map(\.identifier)) }
   func mirrorDeliveredIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void) { completionHandler(delivered.map { $0.request.identifier }) }
   func mirrorCategories(completionHandler: @escaping @Sendable (MacMirrorCategorySnapshot) -> Void) {
-    completionHandler(MacMirrorCategorySnapshot(values: registered))
+    if delayNextCategoryRead {
+      delayNextCategoryRead = false
+      pendingCategoryRead = completionHandler
+    } else {
+      completionHandler(MacMirrorCategorySnapshot(values: registered))
+    }
+  }
+  func resumeCategoryRead() {
+    let completion = pendingCategoryRead
+    pendingCategoryRead = nil
+    completion?(MacMirrorCategorySnapshot(values: registered))
   }
   func setMirrorCategories(_ categories: Set<UNNotificationCategory>) { registered = categories }
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?) {
@@ -187,6 +199,39 @@ final class NotificationMirrorTests: XCTestCase {
       channel.sentData.compactMap { try? NotificationWireMessage.decode($0) }
         .last(where: { $0.kind == 6 }).flatMap { try? $0.number(4) } == -1
     }
+  }
+
+  func testQueuedActionCannotTargetANewerNotificationRevision() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(transport: "lan", peer: try androidPeer())
+    try await ready(model, channel)
+
+    let token = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(token), .text(epoch), .integer(1)]), on: channel.descriptor)
+    let firstAction: [[SessionCBOR]] = [[.integer(0), .text("Open"), .text("")]]
+    _ = await model.handle(try notification(sequence: 1, title: "First", token: token, actions: firstAction), on: channel.descriptor)
+    _ = await model.handle(try wire(5, [.text(token)]), on: channel.descriptor)
+    await waitFor("first revision") { center.added.count == 1 }
+    let first = try XCTUnwrap(center.added.first)
+
+    // Hold category registration so the newer model record exists while the old OS target is still live.
+    center.delayNextCategoryRead = true
+    let secondAction: [[SessionCBOR]] = [[.integer(0), .text("Reply"), .text("Message")]]
+    let update = try notification(sequence: 2, title: "Second", actions: secondAction)
+    let updateTask = Task { await model.handle(update, on: channel.descriptor) }
+    await waitFor("category registration pause") { center.pendingCategoryRead != nil }
+
+    XCTAssertTrue(notifier.handleAction(category: first.content.categoryIdentifier,
+      action: UNNotificationDefaultActionIdentifier, identifier: first.identifier, userText: "",
+      sourceEpoch: epoch, sourceSequence: 1))
+    XCTAssertFalse(channel.sentData.contains { (try? NotificationWireMessage.decode($0)?.kind) == 6 },
+      "a queued action from the old alert must not target the newer revision")
+
+    center.resumeCategoryRead()
+    await updateTask.value
+    await waitFor("second revision") { center.added.count == 2 }
   }
 
   func testProgrammaticCleanupDoesNotDismissAndDeniedSubmissionHasNoActionTarget() async throws {

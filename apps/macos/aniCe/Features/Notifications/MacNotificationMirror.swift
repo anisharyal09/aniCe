@@ -79,7 +79,7 @@ final class MacNotificationMirrorNotifier: NSObject {
     case dismiss
   }
 
-  var onAction: (String, String, String, UserAction) -> Void = { _, _, _, _ in }
+  var onAction: (String, String, String, Int64, UserAction) -> Void = { _, _, _, _, _ in }
   private let center: any MacMirrorNotificationCenter
   private var targets: [String: Target] = [:]
   private var knownCategories = Set<String>()
@@ -167,19 +167,19 @@ final class MacNotificationMirrorNotifier: NSObject {
     if action == UNNotificationDismissActionIdentifier {
       targets[identifier]?.consumed = true
       targets[identifier] = nil
-      onAction(target.peerKey, target.sourceId, target.epoch, .dismiss)
+      onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .dismiss)
       return true
     }
     if action == UNNotificationDefaultActionIdentifier {
       targets[identifier]?.consumed = true
-      onAction(target.peerKey, target.sourceId, target.epoch, .invoke(index: -1, text: ""))
+      onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .invoke(index: -1, text: ""))
       return true
     }
     guard action.hasPrefix("ANICE_MIRROR_ACTION_"),
           let index = Int(action.dropFirst("ANICE_MIRROR_ACTION_".count)), target.actions[index] != nil else { return false }
     let text = notificationText(userText, maxBytes: 1024)
     targets[identifier]?.consumed = true
-    onAction(target.peerKey, target.sourceId, target.epoch,
+    onAction(target.peerKey, target.sourceId, target.epoch, target.sequence,
       .invoke(index: index, text: target.actions[index]?.replyPlaceholder.isEmpty == false ? text : ""))
     return true
   }
@@ -236,8 +236,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
 
   init(notifier: MacNotificationMirrorNotifier) {
     self.notifier = notifier
-    notifier.onAction = { [weak self] peerKey, id, epoch, action in
-      self?.perform(peerKey: peerKey, id: id, epoch: epoch, action: action)
+    notifier.onAction = { [weak self] peerKey, id, epoch, sequence, action in
+      self?.perform(peerKey: peerKey, id: id, epoch: epoch, sequence: sequence, action: action)
     }
   }
 
@@ -346,8 +346,9 @@ final class MacNotificationMirrorModel: FeatureHandler {
     }
   }
 
-  private func perform(peerKey: String, id: String, epoch: String, action: MacNotificationMirrorNotifier.UserAction) {
-    guard let record = records[peerKey + ":" + id], record.value.epoch == epoch,
+  private func perform(peerKey: String, id: String, epoch: String, sequence: Int64,
+    action: MacNotificationMirrorNotifier.UserAction) {
+    guard let record = records[peerKey + ":" + id], record.value.epoch == epoch, record.value.sequence == sequence,
           let channel = links.values.map(\.channel).filter({ key($0.descriptor.peer) == peerKey })
             .sorted(by: { $0.descriptor.transport == "lan" && $1.descriptor.transport != "lan" }).first else { return }
     let requestId = UUID().uuidString.lowercased()
@@ -356,11 +357,11 @@ final class MacNotificationMirrorModel: FeatureHandler {
     case .invoke(let index, let text):
       let safeText = notificationText(text, maxBytes: 1024)
       message = NotificationWireMessage(kind: 6, fields: [
-        .text(requestId), .text(id), .text(epoch), .integer(record.value.sequence), .integer(Int64(index)), .text(safeText),
+        .text(requestId), .text(id), .text(epoch), .integer(sequence), .integer(Int64(index)), .text(safeText),
       ])
     case .dismiss:
       message = NotificationWireMessage(kind: 8, fields: [
-        .text(requestId), .text(id), .text(epoch), .integer(record.value.sequence),
+        .text(requestId), .text(id), .text(epoch), .integer(sequence),
       ])
       records[peerKey + ":" + id] = nil
     }
