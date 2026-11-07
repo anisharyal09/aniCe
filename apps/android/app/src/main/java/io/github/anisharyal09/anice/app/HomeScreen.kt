@@ -51,14 +51,14 @@ fun HomeScreen(
         }
       } else {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-          Text("No devices paired yet", style = MaterialTheme.typography.titleSmall)
+          Text("Connect your Mac", style = MaterialTheme.typography.titleSmall)
           Text(
-            "Scan your Mac’s QR code or enter its six-digit code.",
+            "On your Mac, choose Add device. Then scan its QR code or enter its six-digit code here.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
-            Text("Pair a device")
+            Text("Add device")
           }
         }
       }

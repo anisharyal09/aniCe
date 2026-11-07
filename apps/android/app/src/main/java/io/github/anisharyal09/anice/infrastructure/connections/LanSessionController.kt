@@ -622,6 +622,13 @@ class LanSessionController(private val app: AniCeApplication,
         }
     }
 
+    fun resumeAfterTimedPause() {
+        if (!automatic) return
+        automaticPaused = false
+        automaticGate.trigger()
+        scheduleAutomatic()
+    }
+
     fun cancel(message: String = "Allow local-network connections on your Mac to reconnect.") {
         automaticPaused = true
         end(message)

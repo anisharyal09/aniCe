@@ -10,6 +10,7 @@ plugins {
 android {
     namespace = "io.github.anisharyal09.anice"
     compileSdk = 36
+    ndkVersion = "27.3.13750724"
     defaultConfig {
         applicationId = "io.github.anisharyal09.anice"
         minSdk = 29

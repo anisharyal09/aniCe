@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.draw.clip
@@ -91,7 +92,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("Pair a device", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text("Add device", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             IconButton(onClick = onDismiss) {
                 Icon(painterResource(R.drawable.ic_close), contentDescription = "Close pairing")
             }
@@ -131,6 +132,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                         Box(
                             Modifier.weight(1f).clip(MaterialTheme.shapes.small)
                                 .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small) else Modifier)
                                 .selectable(selected = selected, role = Role.Tab) { enterCode = codeMode }
                                 .heightIn(min = 48.dp)
                                 .padding(horizontal = 8.dp),
@@ -141,12 +143,17 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                     }
                 }
             }
+            Text(
+                if (enterCode) "Enter the six-digit code shown on your Mac."
+                else "Scan the QR code shown on your Mac.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (enterCode) {
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { pin = it.filter { c -> c in '0'..'9' }.take(6) },
                     placeholder = { Text("090909", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
-                    supportingText = { Text("Enter the code shown on your Mac.") },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.headlineSmall.copy(
                         fontFamily = FontFamily.Monospace,
@@ -189,7 +196,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                             if (model.phase == "permission") start()
                         },
                         enabled = pin.length == 6,
-                    ) { Text("Pair using code") }
+                    ) { Text("Continue") }
                 } else {
                     OutlinedButton(shape = MaterialTheme.shapes.small,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -198,7 +205,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                                 PackageManager.PERMISSION_GRANTED
                             ) camera = true else cameraPermission.launch(Manifest.permission.CAMERA)
                         },
-                    ) { Text("Scan & continue") }
+                    ) { Text("Scan QR code") }
                 }
             }
         }

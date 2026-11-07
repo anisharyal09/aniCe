@@ -359,10 +359,10 @@ class SessionController(application: Application) {
     }
   }
 
-  fun disconnect() {
+  fun disconnect(skipAutomaticPause: Boolean = false) {
     recoveryPaused = true
     workRecovery?.cancel(); workRecovery = null
-    beforeDisconnect()
+    if (!skipAutomaticPause) beforeDisconnect()
     val engine = connection
     val op = operation
     state = ConnectionState.DISCONNECTED

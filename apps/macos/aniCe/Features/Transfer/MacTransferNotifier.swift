@@ -26,7 +26,9 @@ import UserNotifications
 
   init(storage: UserDefaults? = nil) {
     self.storage = storage
-    enabledKeys = Set(storage?.dictionaryRepresentation().keys.filter { $0.hasPrefix(Self.keyPrefix) } ?? [])
+    enabledKeys = Set(storage?.dictionaryRepresentation().compactMap { entry in
+      entry.key.hasPrefix(Self.keyPrefix) && (entry.value as? Bool == true) ? entry.key : nil
+    } ?? [])
   }
 
   func enabled(for peer: DeviceIdentity) -> Bool {
@@ -35,19 +37,26 @@ import UserNotifications
 
   func setEnabled(_ enabled: Bool, for peer: DeviceIdentity) {
     let key = key(peer)
-    if enabled { enabledKeys.insert(key); storage?.set(true, forKey: key) }
-    else { enabledKeys.remove(key); storage?.removeObject(forKey: key) }
+    if enabled { enabledKeys.insert(key) } else { enabledKeys.remove(key) }
+    // Keep opt-outs explicit so changing the default never affects an existing peer.
+    storage?.set(enabled, forKey: key)
   }
+
+  func enableForNewPeer(_ peer: DeviceIdentity) { setEnabled(true, for: peer) }
 
   func prune(_ peers: [DeviceIdentity]) {
     let keep = Set(peers.map(key))
-    for storedKey in enabledKeys.subtracting(keep) { storage?.removeObject(forKey: storedKey) }
+    for storedKey in storedKeys.subtracting(keep) { storage?.removeObject(forKey: storedKey) }
     enabledKeys.formIntersection(keep)
   }
 
   func clear() {
-    for storedKey in enabledKeys { storage?.removeObject(forKey: storedKey) }
+    for storedKey in storedKeys { storage?.removeObject(forKey: storedKey) }
     enabledKeys.removeAll()
+  }
+
+  private var storedKeys: Set<String> {
+    Set(storage?.dictionaryRepresentation().keys.filter { $0.hasPrefix(Self.keyPrefix) } ?? [])
   }
 
   private func key(_ peer: DeviceIdentity) -> String {

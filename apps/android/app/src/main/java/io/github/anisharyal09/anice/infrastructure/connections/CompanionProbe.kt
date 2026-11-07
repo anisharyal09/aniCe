@@ -28,6 +28,7 @@ import java.util.Locale
 @SuppressLint("UseKtx") // commit() success gates the probe; KTX edit(commit=true) discards that result.
 internal class CompanionProbe private constructor(private val app: AniCeApplication) {
   private val preferences = app.getSharedPreferences("companion_feasibility", Context.MODE_PRIVATE)
+  private val pauseUntilKey = "paused_until"
   private val manager get() = app.getSystemService(CompanionDeviceManager::class.java)
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   // Setup tokens are process-local; persisted association locators support a fresh attempt after restart.
@@ -38,9 +39,18 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   // Native binding/presence is independent of policy; pause releases work, not this OS fact.
   private var presentOwner: Any? = null
   private var monitor: Job? = null
+  private var timedPauseJob: Job? = null
   private var suspended = false
   private val retry = NearbyRetry()
   private val radioReady = MutableStateFlow(false)
+  var status by mutableStateOf("Automatic connection is off.")
+    private set
+  var connectionPaused by mutableStateOf(preferences.getBoolean("paused", false))
+    private set
+  var connectionPauseUntil by mutableStateOf(preferences.getLong(pauseUntilKey, 0L).takeIf { it > 0L })
+    private set
+  var events by mutableStateOf(preferences.getString("events", "") ?: "")
+    private set
   init {
     app.sessionController.beforeDisconnect = { pause() }
     app.sessionController.beforeRequest = { peer ->
@@ -56,16 +66,17 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     app.sessionController.radioChanged = { radioReady.value = it }
     app.sessionController.foregroundChanged = { reconcileForeground() }
     app.sessionController.automaticRecoveryReserved = { suspended || (monitor?.isActive == true && armed) }
+    restoreTimedPause()
   }
-  var status by mutableStateOf("Automatic connection is off.")
-    private set
-  var events by mutableStateOf(preferences.getString("events", "") ?: "")
-    private set
   val armed get() = available && armedPreference
   val associationId get() = preferences.getInt("association", -1)
   val address get() = preferences.getString("address", null)
   val peerId get() = preferences.getString("peer", null)
   val fingerprint get() = preferences.getString("fingerprint", null)
+  val automaticEnabled get() = preferences.getBoolean("automatic", false)
+  val pauseStatus: String? get() = if (!connectionPaused || !automaticEnabled) null else connectionPauseUntil?.let {
+    "Auto connect paused until ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}."
+  } ?: "Auto connect paused until you resume it."
   val available get() = Build.VERSION.SDK_INT >= 31 && app.resources.getBoolean(R.bool.companion_probe_supported) &&
     app.packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP)
   init { reconcileForeground() }
@@ -102,7 +113,11 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
       .putString("local", local.fingerprint).putString("address", locator).putInt("association", id)
       .putBoolean("verified", preferences.getBoolean("verified", false) && peerId == peer.deviceId &&
         preferences.getString("fingerprint", null) == peer.fingerprint && this.address == locator && associationId == id)
-      .putBoolean("automatic", true).putBoolean("paused", false).putBoolean("armed", true).commit())
+      .putBoolean("automatic", true).putBoolean("paused", false).putBoolean("armed", true)
+      .remove(pauseUntilKey).commit())
+    timedPauseJob?.cancel(); timedPauseJob = null
+    connectionPaused = false
+    connectionPauseUntil = null
     retry.reset()
     armedPreference = true
     try {
@@ -270,17 +285,71 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     setupGeneration++
     val foregroundOwned = owner == null && monitor?.isActive == true
     armedPreference = false
+    connectionPaused = true
     monitor?.cancel(); monitor = null
     owner?.let { app.sessionController.releaseCompanion(it, preserveForegroundSession = disable) }; owner = null
     if (foregroundOwned) app.sessionController.releaseForegroundAutomatic(disable)
     val edit = preferences.edit().putBoolean("paused", true).putBoolean("armed", false)
-    if (disable) edit.putBoolean("automatic", false)
+    if (disable) {
+      timedPauseJob?.cancel(); timedPauseJob = null
+      connectionPauseUntil = null
+      edit.putBoolean("automatic", false).remove(pauseUntilKey)
+    }
     val saved = edit.commit()
     // Pause cancels application work, retaining native facts for Resume. Disable stops observation too.
     if (disable) stopObservation()
     status = if (saved) message else "Stopped, but the setting could not be saved. Retry before enabling."
   }
   fun disable() = pause(disable = true)
+
+  fun pauseFor(durationMillis: Long?) {
+    require(durationMillis == null || durationMillis in 60_000L..2_592_000_000L)
+    timedPauseJob?.cancel(); timedPauseJob = null
+    val until = durationMillis?.let { System.currentTimeMillis() + it }
+    val edit = preferences.edit()
+    if (until == null) edit.remove(pauseUntilKey) else edit.putLong(pauseUntilKey, until)
+    if (!edit.commit()) {
+      status = "Could not save the connection pause. Try again."
+      return
+    }
+    connectionPauseUntil = until
+    val message = until?.let {
+      "Auto connect paused until ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}."
+    } ?: "Auto connect paused until you resume it."
+    pause(message)
+    app.sessionController.disconnect(skipAutomaticPause = true)
+    app.lanSessionController.disconnect()
+    scheduleTimedPauseResume()
+  }
+
+  suspend fun resumeNow() {
+    timedPauseJob?.cancel(); timedPauseJob = null
+    resume()
+    app.lanSessionController.resumeAfterTimedPause()
+  }
+
+  private fun restoreTimedPause() {
+    if (connectionPaused && automaticEnabled && connectionPauseUntil != null) scheduleTimedPauseResume()
+  }
+
+  private fun scheduleTimedPauseResume() {
+    val expectedUntil = connectionPauseUntil ?: return
+    timedPauseJob?.cancel()
+    timedPauseJob = scope.launch {
+      delay((expectedUntil - System.currentTimeMillis()).coerceAtLeast(0L))
+      if (preferences.getLong(pauseUntilKey, 0L) != expectedUntil || !connectionPaused || !automaticEnabled) return@launch
+      try {
+        resume()
+        app.lanSessionController.resumeAfterTimedPause()
+      } catch (error: CancellationException) {
+        throw error
+      } catch (_: Exception) {
+        preferences.edit().remove(pauseUntilKey).apply()
+        connectionPauseUntil = null
+        status = "Auto connect could not resume. Check device setup, then try again."
+      }
+    }
+  }
 
   suspend fun resume(resolve: suspend () -> DeviceIdentity = {
     checkAssociation()
@@ -315,6 +384,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   fun stop(message: String = "Stopped. The probe association has been removed.") {
     setupGeneration++
     suspended = false
+    timedPauseJob?.cancel(); timedPauseJob = null
     presentOwner = null
     val oldAddress = address
     val oldId = associationId
@@ -323,7 +393,10 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     monitor?.cancel(); monitor = null
     owner?.let { app.sessionController.releaseCompanion(it) }; owner = null
     val saved = preferences.edit().putBoolean("armed", false).remove("peer").remove("fingerprint")
-      .remove("local").remove("address").remove("association").remove("automatic").remove("paused").remove("verified").commit()
+      .remove("local").remove("address").remove("association").remove("automatic").remove("paused")
+      .remove(pauseUntilKey).remove("verified").commit()
+    connectionPaused = false
+    connectionPauseUntil = null
     if (oldAddress != null && available && Build.VERSION.SDK_INT >= 31) {
       try {
         if (Build.VERSION.SDK_INT >= 36 && oldId >= 0) manager.stopObservingDevicePresence(

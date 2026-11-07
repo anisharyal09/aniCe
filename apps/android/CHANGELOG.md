@@ -4,9 +4,27 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
+
+- Hide trust management on Devices until there are saved devices or trust recovery is needed.
+
+- Add a scrollable top category row to Settings so each preference group is one tap away.
+
+- Reorder Features and Favourites from a feature row’s long-press menu.
+
+- Scroll the This device identity sheet to its reset control when Advanced opens.
+
+- Enable automatic file receipt for new pairings and retain explicit off choices.
+
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed
+
+- Pin NDK r27d to match the native pairing build and import saveable settings state needed for compilation.
+
+- Show sent or received Bluetooth and LAN check feedback in Diagnostics while the transport is secured.
+
+- Keep connection details and diagnostics collapsed when Home opens a device in Devices.
 
 - Add actionable SMS permission recovery in Settings and retain it across rotation; use compact permission buttons in both Settings and Messages.
 - Align File transfer padding, keep large-text guidance visible, and handle older background timeout preferences without crashing Settings.
@@ -45,6 +63,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Keep full bottom-navigation labels accessible through horizontal scrolling at text sizes of 150% or above.
 
 ### Changed
+
+- Explain what to review before accepting files and confirm the saved folder after receipt.
+
+- Remove feature-level Back links that duplicate system navigation.
+
+- Highlight the selected QR or six-digit code method and clarify the next pairing action.
+
+- Guide first-launch users to add their Mac from Home with clear QR and six-digit code instructions.
 
 - Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
 

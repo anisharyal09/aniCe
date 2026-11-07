@@ -15,13 +15,14 @@ extension MainWindowView {
               details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
               focusedPeer: navigation.focusedPeer, discovery: discovery,
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-              onManageDevices: { navigation.show(.devices) })
+              onManageDevices: { navigation.show(.devices) },
+              onOpenDevice: { navigation.show(.devices, peer: $0) })
           } else {
             VStack(alignment: .leading, spacing: 12) {
-              Text("Pair your Android phone").font(.title3.weight(.semibold))
-              Text("Open aniCe on your phone, then scan a QR code or enter a six-digit code.")
+              Text("Connect your Android phone").font(.title3.weight(.semibold))
+              Text("Choose Add device on this Mac. Then choose Add device on your phone to scan the QR code or enter the six-digit code shown here.")
                 .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
+              Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
             }
           }
           if transfer.pendingOffer != nil {
@@ -57,30 +58,32 @@ extension MainWindowView {
     VStack(alignment: .leading, spacing: 24) {
       if availableWidth >= 720 {
         let showPlayback = playback.showOnMac && playback.compactVisible
-        let showFileTransfer = transfer.pendingOffer == nil
-        HStack(alignment: .top, spacing: 16) {
-          if showPlayback {
-            MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
-              visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-          if showPlayback && showFileTransfer {
-            Rectangle()
-              .fill(AniCePalette.separator(colorScheme))
-              .frame(width: 1)
-              .frame(maxHeight: .infinity)
-          }
-          if showFileTransfer {
-            homeFileTransferActivity(isResult: isResult)
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        let showFileTransfer = pairing.hasTrustedAndroid && transfer.pendingOffer == nil
+        if showPlayback || showFileTransfer {
+          HStack(alignment: .top, spacing: 16) {
+            if showPlayback {
+              MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
+                visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if showPlayback && showFileTransfer {
+              Rectangle()
+                .fill(AniCePalette.separator(colorScheme))
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
+            }
+            if showFileTransfer {
+              homeFileTransferActivity(isResult: isResult)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading)
+        }
       } else {
         if playback.showOnMac && playback.compactVisible {
           MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
             visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
         }
-        if transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
+        if pairing.hasTrustedAndroid && transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
       }
       if isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }
@@ -139,9 +142,11 @@ extension MainWindowView {
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
               onManageDevices: { navigation.show(.devices, route: .pairing) })
           }
-          DisclosureGroup("Trust and saved devices") {
-            MacPairingView(model: pairing, showPairingControls: false)
-          }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
+          if pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
+            DisclosureGroup("Trust and saved devices") {
+              MacPairingView(model: pairing, showPairingControls: false)
+            }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
+          }
 
         Divider()
         Button { showingLocalIdentity = true } label: {
@@ -463,32 +468,30 @@ extension MainWindowView {
 }
 
 
-// Eager layout creates offscreen section anchors so shortcuts can reach groups outside the viewport.
+// Eager, balanced columns keep section anchors available without leaving gaps beside tall groups.
 private struct SettingsSectionLayout: Layout {
   let columns: Int
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? 680
     let cellWidth = max(0, (width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var height: CGFloat = 0
-    for start in stride(from: 0, to: subviews.count, by: columns) {
-      height += (start..<min(start + columns, subviews.count)).map {
-        subviews[$0].sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
-      }.max() ?? 0
+    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
+    for subview in subviews {
+      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
+      columnHeights[column] += subview.sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
     }
-    return CGSize(width: width, height: height)
+    return CGSize(width: width, height: columnHeights.max() ?? 0)
   }
   func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
     let width = max(0, (bounds.width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var y = bounds.minY
-    for start in stride(from: 0, to: subviews.count, by: columns) {
-      var height: CGFloat = 0
-      for index in start..<min(start + columns, subviews.count) {
-        let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
-        subviews[index].place(at: CGPoint(x: bounds.minX + CGFloat(index - start) * (width + 24), y: y), anchor: .topLeading,
-          proposal: ProposedViewSize(width: width, height: size.height))
-        height = max(height, size.height)
-      }
-      y += height
+    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
+    for index in subviews.indices {
+      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
+      let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+      subviews[index].place(
+        at: CGPoint(x: bounds.minX + CGFloat(column) * (width + 24), y: bounds.minY + columnHeights[column]),
+        anchor: .topLeading,
+        proposal: ProposedViewSize(width: width, height: size.height))
+      columnHeights[column] += size.height
     }
   }
 }

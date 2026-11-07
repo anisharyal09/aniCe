@@ -4,6 +4,8 @@ Transfer batches of 1–128 files between trusted Mac and Android devices over t
 
 ## Sending
 
+Home shows file-send controls after at least one device is trusted. On a new installation, Home directs the user to add a device first.
+
 On Mac, Home and Features → File transfer accept file drops; **Choose files** remains available. Picker sends show the selected files and recipient for review. A drop sends to the current compatible Android phone and pins that recipient.
 
 **Edge Drop** is optional and off by default. It starts at the right edge and can be moved to the left or top. It appears only for a current Finder file drag on the display containing the drag. Drops accept regular local files already available to Mac, up to 128 per batch. Folders, symbolic links, promised files, unavailable cloud files and mixed unsupported selections are rejected without partial sending. Edge Drop uses native drag observation and requires no Accessibility permission.
@@ -16,7 +18,7 @@ Mac sends prefer a ready LAN channel and request bounded setup when needed. If s
 
 Receives default to `~/Downloads/aniCe` on Mac and `Downloads/aniCe` on Android. Each platform can remember a supported local folder and reset to its default. Android uses pending MediaStore entries for the default and a validated document-tree grant for a custom folder; cloud-only providers are unsupported.
 
-Both platforms offer **Automatically receive files** per trusted sender, off by default. Consent and the destination are captured when a complete offer is admitted. With consent off, the receiver asks for approval; with consent on, it validates the offer and destination before accepting. The user can cancel an active transfer. Trust removal clears that sender’s consent.
+Both platforms offer **Automatically receive files** per trusted sender. New pairings enable it on both sides; existing peers keep their saved choice, and a peer with no saved choice remains off. The receiver can change this at any time. Consent and the destination are captured when a complete offer is admitted. With consent off, the receiver shows the file list and save folder for review before approval; with consent on, it validates the offer and destination before accepting. Success identifies the received files and save folder. The user can cancel an active transfer. Trust removal clears that sender’s consent.
 
 Android can receive in the background when its existing connected-device/companion ownership permits it. Otherwise the offer stays pending until aniCe opens. Background connection also requires **Connect automatically**.
 

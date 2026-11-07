@@ -35,11 +35,6 @@ struct AniCeApp: App {
     // Guard tray setup and Carbon hotkey registration from running inside test harness processes.
     if !IdentityView.isTesting {
       PasteTrayController.shared.setup(model: clipboard)
-      let hotkey = GlobalHotkeyManager()
-      hotkey.onTrigger = {
-        PasteTrayController.shared.toggle()
-      }
-      _hotkeyManager = State(initialValue: hotkey)
     }
     let notifier = MacFindDeviceNotifier()
     findNotifier = notifier
@@ -96,6 +91,12 @@ struct AniCeApp: App {
     _phoneInput = State(initialValue: phoneInput)
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
+    if !IdentityView.isTesting {
+      let hotkey = GlobalHotkeyManager()
+      hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
+      hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
+      _hotkeyManager = State(initialValue: hotkey)
+    }
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     smsNotifier.onOpenMessages = { [weak navigation] in
       navigation?.openFeature(.messages)
@@ -109,6 +110,7 @@ struct AniCeApp: App {
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
+    session.automaticPauseEnded = { [weak lan] in lan?.resumeAfterTimedPause() }
     let features=FeatureDispatch()
     features.applicationActivity = { [weak lan] descriptor, bytes in lan?.onApplicationActivity(descriptor, bytes) }
     features.register(lan.rendezvous)
@@ -139,6 +141,9 @@ struct AniCeApp: App {
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
     lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    pairing.onNewPeerPaired = { peer in
+      transfer.autoReceivePreferences.enableForNewPeer(peer)
+    }
     pairing.onPaired = { [weak session, weak navigation, weak lan] peer in
       guard let session, let navigation else { return }
       lan?.setAutomatic(navigation.automaticLanAfterPairing)

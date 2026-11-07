@@ -28,7 +28,7 @@ struct CompanionView: View {
         }
         .buttonStyle(AniCeButtonStyle(quiet: true))
         .accessibilityLabel(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
-        .help(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
+        .help("Show or hide the floating keyboard anywhere with Option-Command-K")
         Menu {
           Button("Quick Paste Tray (⌥⌘V)") {
             PasteTrayController.shared.show()
@@ -43,7 +43,7 @@ struct CompanionView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           deviceContent
-          if clipboard.recent != nil {
+          if pairing.hasTrustedAndroid, clipboard.recent != nil {
             Divider()
             ClipboardActivityView(model: clipboard, compact: true, open: { navigation.openFeature(.clipboard); openMainWindow() })
           }
@@ -51,18 +51,20 @@ struct CompanionView: View {
             Divider()
             liveActivitySection
           }
-          Group {
-            Divider()
-            VStack(alignment: .leading, spacing: 8) {
-              ViewThatFits(in: .horizontal) {
-                HStack { sendActions }
-                VStack(alignment: .leading, spacing: 8) { sendActions }
-              }
-              if let peer = transfer.activeChannel?.descriptor.peer, sendFilesAction != nil {
-                Text("To " + peer.deviceName).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              }
-              if !["Ready to share text", "Clipboard received", "Clipboard delivered"].contains(clipboard.status) {
-                Text(clipboard.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          if pairing.hasTrustedAndroid {
+            Group {
+              Divider()
+              VStack(alignment: .leading, spacing: 8) {
+                ViewThatFits(in: .horizontal) {
+                  HStack { sendActions }
+                  VStack(alignment: .leading, spacing: 8) { sendActions }
+                }
+                if let peer = transfer.activeChannel?.descriptor.peer, sendFilesAction != nil {
+                  Text("To " + peer.deviceName).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                }
+                if !["Ready to share text", "Clipboard received", "Clipboard delivered"].contains(clipboard.status) {
+                  Text(clipboard.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                }
               }
             }
           }
@@ -129,10 +131,13 @@ struct CompanionView: View {
           onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })
       } else {
         VStack(alignment: .leading, spacing: 8) {
-          Text("No devices paired yet")
+          Text("Add your Android phone")
             .font(.headline)
-          Button("Pair a device") { navigation.open(.devices, route: .pairing, present: openMain) }
+          Text("Open aniCe to pair your phone.")
+            .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Add device") { navigation.open(.devices, route: .pairing, present: openMain) }
+            .buttonStyle(AniCeButtonStyle())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
@@ -240,7 +245,7 @@ struct CompanionView: View {
       menu.addItem(entry)
     }
 
-    let keyboard = NSMenuItem(title: floatingKeyboardVisible ? "Hide floating keyboard" : "Show floating keyboard",
+    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide floating keyboard" : "Show floating keyboard") + "  ⌥⌘K",
       action: #selector(toggleFloatingKeyboard), keyEquivalent: "")
     keyboard.target = target
     menu.addItem(keyboard)

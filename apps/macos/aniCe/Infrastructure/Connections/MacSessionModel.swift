@@ -24,6 +24,7 @@ struct SessionStartupRecovery {
 
 @Observable @MainActor final class MacSessionModel {
   private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "BLE lifecycle")
+  private static let pauseUntilKey = "session.pausedUntil"
   var state = "Disconnected" { didSet { channelStateChanged() } }
   var status = "Allow your trusted Android device to connect."
   var selectedPeer: DeviceIdentity?
@@ -35,6 +36,7 @@ struct SessionStartupRecovery {
   private var sleeping = false
   private var quitting = false
   private var restart: Task<Void, Never>?
+  private var pauseResumeTask: Task<Void, Never>?
   private var radioBlocked = false
   private var startupRecovery = SessionStartupRecovery()
   private var cooldownUntil: TimeInterval?
@@ -90,6 +92,8 @@ struct SessionStartupRecovery {
   private var inputCount = 0
   private var inputBytes = 0
   private var observers = [NSObjectProtocol]()
+  private(set) var connectionPauseStatus: String?
+  var automaticPauseEnded: () -> Void = {}
   init(
     identity: IdentityService, adapter: any SessionPeripheralAdapter,
     store: @escaping @MainActor () async throws -> PeerTrustStore,
@@ -133,16 +137,27 @@ struct SessionStartupRecovery {
       ) { [weak self] _ in MainActor.assumeIsolated { self?.quit() } })
   }
   func restoreAutomatic() {
-    guard preferences?.bool(forKey: "session.automatic") == true,
-      preferences?.bool(forKey: "session.paused") != true else { return }
+    guard preferences?.bool(forKey: "session.automatic") == true else { return }
     automatic = true
+    if preferences?.bool(forKey: "session.paused") == true {
+      guard preferences?.object(forKey: Self.pauseUntilKey) != nil else { return }
+      updateConnectionPauseStatus()
+      if let deadline = automaticPauseDeadline, deadline > Date() { schedulePauseResume() }
+      else if automaticPauseDeadline != nil { resumeAutomaticPause() }
+      return
+    }
+    updateConnectionPauseStatus()
     allow()
   }
   func setAutomatic(_ enabled: Bool) {
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
     cooldownUntil = nil
     automatic = enabled
     preferences?.set(enabled, forKey: "session.automatic")
     preferences?.set(false, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
+    automaticPauseEnded()
     preferences?.set(selectedPeer?.deviceId, forKey: "session.target")
     preferences?.set(selectedPeer?.fingerprint, forKey: "session.fingerprint")
     preferences?.removeObject(forKey: "session.local") // Explicit setup binds the current identity anew.
@@ -157,6 +172,12 @@ struct SessionStartupRecovery {
   func suspendAutomatic() { suspended = true; cancel() }
   func resumeAutomatic() {
     suspended = false
+    if automatic, preferences?.bool(forKey: "session.paused") == true,
+      let deadline = automaticPauseDeadline, deadline <= Date() {
+      resumeAutomaticPause()
+      return
+    }
+    if automatic && isAutomaticPauseActive { schedulePauseResume(); return }
     if automatic && !sleeping && !quitting && !allowing {
       if let until = cooldownUntil, now() < until { reopen(after: until - now()) }
       else { allow() }
@@ -166,14 +187,17 @@ struct SessionStartupRecovery {
   func wake() { sleeping = false; resumeAutomatic() }
   func quit() { quitting = true; cancel() }
   func retireTrust() {
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = false
     preferences?.set(true, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
     cancel()
   }
   private func reopen(after delay: TimeInterval = 0) {
     let old = connection
     cancel()
-    guard automatic, !suspended, !sleeping, !quitting else { return }
+    guard automatic, !isAutomaticPauseActive, !suspended, !sleeping, !quitting else { return }
     let op = generation
     let wait = wait
     status = delay > 0 ? "Waiting before allowing nearby connections." : "Waiting nearby."
@@ -187,7 +211,13 @@ struct SessionStartupRecovery {
     }
   }
   func allow() {
+    if automatic, preferences?.bool(forKey: "session.paused") == true,
+      let deadline = automaticPauseDeadline, deadline <= Date() {
+      resumeAutomaticPause()
+      return
+    }
     if automatic && (suspended || sleeping || quitting) { return }
+    if automatic && isAutomaticPauseActive { schedulePauseResume(); return }
     if automatic, let until = cooldownUntil, now() < until { return }
     cancel()
     beforeAllow()
@@ -606,8 +636,82 @@ struct SessionStartupRecovery {
   }
   func disconnect() {
     // Stop outranks renewal/recovery; persist the pause before any suspended close.
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = false
     preferences?.set(true, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
+    disconnectAndCancel()
+  }
+
+  func pauseAutomatic(for duration: TimeInterval?) {
+    guard automatic || preferences?.bool(forKey: "session.automatic") == true else { return }
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
+    automatic = true
+    preferences?.set(true, forKey: "session.automatic")
+    preferences?.set(true, forKey: "session.paused")
+    if let duration {
+      preferences?.set(Date().addingTimeInterval(duration).timeIntervalSince1970, forKey: Self.pauseUntilKey)
+    } else {
+      preferences?.set(0.0, forKey: Self.pauseUntilKey)
+    }
+    updateConnectionPauseStatus()
+    disconnectAndCancel()
+    if automaticPauseDeadline != nil { schedulePauseResume() }
+  }
+
+  func resumeAutomaticPause() {
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
+    guard preferences?.bool(forKey: "session.automatic") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil else { return }
+    automatic = true
+    preferences?.set(false, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
+    automaticPauseEnded()
+    if !suspended && !sleeping && !quitting { allow() }
+  }
+
+  private var automaticPauseDeadline: Date? {
+    guard let timestamp = preferences?.object(forKey: Self.pauseUntilKey) as? Double, timestamp > 0 else { return nil }
+    return Date(timeIntervalSince1970: timestamp)
+  }
+
+  private var isAutomaticPauseActive: Bool {
+    guard preferences?.bool(forKey: "session.paused") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil else { return false }
+    return automaticPauseDeadline.map { $0 > Date() } ?? true
+  }
+
+  private func updateConnectionPauseStatus() {
+    guard automatic, preferences?.bool(forKey: "session.paused") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil else {
+      connectionPauseStatus = nil
+      return
+    }
+    if let deadline = automaticPauseDeadline, deadline > Date() {
+      connectionPauseStatus = "Auto connect paused until \(deadline.formatted(date: .omitted, time: .shortened))"
+    } else {
+      connectionPauseStatus = "Auto connect paused until you resume it"
+    }
+  }
+
+  private func schedulePauseResume() {
+    guard let deadline = automaticPauseDeadline else { return }
+    pauseResumeTask?.cancel()
+    let expected = deadline.timeIntervalSince1970
+    pauseResumeTask = Task { [weak self] in
+      guard let self else { return }
+      try? await self.wait(max(0, deadline.timeIntervalSinceNow))
+      guard !Task.isCancelled,
+        self.preferences?.bool(forKey: "session.automatic") == true,
+        self.preferences?.bool(forKey: "session.paused") == true,
+        self.preferences?.double(forKey: Self.pauseUntilKey) == expected else { return }
+      self.resumeAutomaticPause()
+    }
+  }
+
+  private func disconnectAndCancel() {
     guard let connection else {
       cancel()
       return

@@ -4,9 +4,31 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
+
+- Simplify first-time Mac Bluetooth linking and show trust management only when there are devices to manage.
+
+- Balance two-column Settings sections to use the available space more consistently.
+
+- Add ⌥⌘K to show or hide the floating keyboard while aniCe is running.
+
+- Reorder Features and Favourites and add favourite actions to feature context menus.
+
+- Hide idle companion activity and send actions until a phone is trusted and clarify incoming-file review and completion.
+
+- Enable automatic file receipt for new pairings and retain explicit off choices.
+
+- Add keyboard input to the full-screen trackpad window.
+
 - Shorten Mac input permission and connection guidance.
 
 ### Fixed
+
+- Use Carbon-compatible event parameter types in the system-wide keyboard and clipboard shortcuts.
+
+- Show the latest Bluetooth and LAN connection-check feedback beside received counts.
+
+- Route Home device selection to Devices and keep connection details collapsed.
 
 - Keep development-signing warnings out of Release permission UI and document archive naming, signing and distribution.
 
@@ -44,6 +66,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
 
 ### Changed
+
+- Remove feature-level Back links that duplicate titlebar navigation.
+
+- Use consistent Add device language in the Mac pairing flow.
+
+- Guide first-launch users to add their Android phone and hide empty file-send shortcuts until a device is trusted.
 
 - Clarify File transfer settings and Edge Drop placement; enlarge send and result controls.
 - Pin each Mac send to its selected phone, prefer LAN, and require an explicit Bluetooth fallback choice.

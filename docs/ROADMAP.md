@@ -12,6 +12,8 @@
 
 Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current release: v0.3.0, build 3. New work is tracked under Unreleased.
 
+Product-facing setup and usability milestones are tracked in the [UX improvement plan](UX_IMPROVEMENTS.md).
+
 ---
 
 ## Technical Milestones

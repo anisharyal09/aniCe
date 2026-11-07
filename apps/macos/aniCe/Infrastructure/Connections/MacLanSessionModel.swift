@@ -36,6 +36,12 @@ import OSLog
     if !enabled, automaticAttempt, state != "Secured" { end() }
     scheduleAutomatic()
   }
+  func resumeAfterTimedPause() {
+    guard automatic else { return }
+    automaticPaused = false
+    automaticGate.trigger()
+    scheduleAutomatic()
+  }
   func onApplicationActivity(_ descriptor: ChannelDescriptor, _ bytes: Data) {
     guard automatic, !automaticPaused, !sleeping, !quitting,
       descriptor.transport == "ble", rendezvous.channel?.descriptor == descriptor,

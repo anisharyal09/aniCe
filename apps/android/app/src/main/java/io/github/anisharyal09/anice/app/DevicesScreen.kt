@@ -196,7 +196,9 @@ private fun DevicesOverviewContent(
                 onFocusConsumed = { navigation.focusedPeer = null },
             )
             Spacer(Modifier.height(8.dp))
-            TrustedDevicesSection(pairing)
+            if (pairing.peers.isNotEmpty() || pairing.recovery == "trustStore") {
+                TrustedDevicesSection(pairing)
+            }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     .clickable(role = Role.Button, onClickLabel = "Open this device details", onClick = { showingIdentity = true })

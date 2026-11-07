@@ -348,9 +348,15 @@ fun TransferView(
                     }
                 }
                 is TransferState.IncomingOffer -> {
+                    val destination = rememberReceiveDestinationSummary(controller)
                     Text(
                         "Incoming files from ${current.batch.peerName}",
                         style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Review the file list and save location before accepting.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         "${current.batch.files.size} file${if (current.batch.files.size == 1) "" else "s"} · ${Formatter.formatFileSize(context, current.batch.totalBytes)}",
@@ -384,8 +390,7 @@ fun TransferView(
                         }
                     }
                     Text(
-                        if (controller.hasCustomReceiveDestination) "Files will be saved to your selected folder."
-                        else "Files will be saved to Downloads/aniCe.",
+                        "Save to $destination.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -581,14 +586,15 @@ fun TransferView(
                     }
                 }
                 is TransferState.Completed -> {
+                    val destination = rememberReceiveDestinationSummary(controller)
                     val files = "${current.fileCount} file${if (current.fileCount == 1) "" else "s"} (${Formatter.formatFileSize(context, current.totalBytes)})"
                     Text(
-                        "Transfer completed",
+                        if (controller.receiving) "Files received" else "Files sent",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        if (controller.receiving) "$files saved to the folder you chose."
+                        if (controller.receiving) "$files saved to $destination."
                         else "$files sent to your Mac.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

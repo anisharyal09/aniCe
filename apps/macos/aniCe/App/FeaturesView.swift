@@ -16,13 +16,15 @@ struct FeaturesView: View {
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
+  @AppStorage("ui.featureOrder") private var featureOrder = ""
   @Environment(\.colorScheme) private var colorScheme
+  private var displayedFeatures: [AppFeature] {
+    favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.ordered(in: featureOrder)
+  }
   var body: some View {
     GeometryReader { geometry in
     if !favouritesOnly, navigation.featurePanel == .messages {
       VStack(alignment: .leading, spacing: 16) {
-        Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
-          .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
         Text(AppFeature.messages.title).font(.title2.weight(.semibold))
         SmsView(model: sms, peers: peers, preferences: smsPreferences)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -33,8 +35,6 @@ struct FeaturesView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
         if !favouritesOnly, let panel = navigation.featurePanel {
-          Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
-            .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
           Text(panel.title).font(.title2.weight(.semibold))
           if panel == .keyboardTrackpad {
             Text("Keyboard & Trackpad for your Android phone")
@@ -52,7 +52,7 @@ struct FeaturesView: View {
           }
         } else {
           Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20, weight: .medium))
-          Text(favouritesOnly ? "Your selected shortcuts. Edit them with the stars in Features." : "Open a feature, or star it for quick access.")
+          Text(favouritesOnly ? "Your selected shortcuts. Right-click to change their order." : "Open or star a feature. Right-click to reorder or change favourites.")
             .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           if favouritesOnly && AppFeature.favourites(in: favouriteFeatures).isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -64,8 +64,8 @@ struct FeaturesView: View {
             .padding(.top, 8)
           }
           LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 850 ? 2 : 1), alignment: .leading, spacing: 0) {
-            ForEach(favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.allCases) { item in
-              feature(item)
+            ForEach(displayedFeatures) { item in
+              feature(item, in: displayedFeatures)
             }
           }
         }
@@ -78,7 +78,7 @@ struct FeaturesView: View {
     }
   }
 
-  private func feature(_ feature: AppFeature) -> some View {
+  private func feature(_ feature: AppFeature, in rows: [AppFeature]) -> some View {
     let selected = AppFeature.favourites(in: favouriteFeatures).contains(feature)
     return HStack(spacing: 8) {
       Button { navigation.openFeature(feature) } label: {
@@ -111,6 +111,23 @@ struct FeaturesView: View {
     .padding(.vertical, 16)
     .frame(maxWidth: .infinity, alignment: .leading)
     .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+    .contextMenu {
+      if let index = rows.firstIndex(of: feature), index > 0 {
+        Button("Move Up") { updateOrder(feature, in: rows, offset: -1) }
+      }
+      if let index = rows.firstIndex(of: feature), index < rows.count - 1 {
+        Button("Move Down") { updateOrder(feature, in: rows, offset: 1) }
+      }
+      Divider()
+      Button(selected ? "Remove from Favourites" : "Add to Favourites") {
+        favouriteFeatures = feature.toggled(in: favouriteFeatures)
+      }
+    }
+  }
+
+  private func updateOrder(_ feature: AppFeature, in rows: [AppFeature], offset: Int) {
+    if favouritesOnly { favouriteFeatures = AppFeature.moved(feature, in: rows, offset: offset) }
+    else { featureOrder = AppFeature.moved(feature, in: rows, offset: offset) }
   }
 
   private func status(for feature: AppFeature) -> String {

@@ -4,12 +4,14 @@ package io.github.anisharyal09.anice.app
 
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -42,6 +44,19 @@ fun SettingsScreen(
     } else {
         val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
         val lan = app.lanSessionController
+        val sections = buildList {
+            add("Appearance")
+            add("Connection")
+            add("Clipboard")
+            if (!app.sms.granted) add("Messages")
+            add("File transfer")
+            add("This device")
+        }
+        var selectedSection by rememberSaveable { mutableStateOf("Appearance") }
+        val activeSection = selectedSection.takeIf { it in sections } ?: sections.first()
+        LaunchedEffect(sections) {
+            if (selectedSection !in sections) selectedSection = sections.first()
+        }
         val lanPrefs = remember { context.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE) }
         var timeoutMinutes by remember { mutableIntStateOf(lanPrefs.getInt("lan_background_timeout_minutes", 0)) }
         var timeoutExpanded by remember { mutableStateOf(false) }
@@ -51,13 +66,29 @@ fun SettingsScreen(
 
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 680.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                Modifier.widthIn(max = 680.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("Settings", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    sections.forEach { section ->
+                        FilterChip(
+                            selected = activeSection == section,
+                            onClick = { selectedSection = section },
+                            label = { Text(section) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                }
 
-                PreferenceSection("Appearance") {
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                if (activeSection == "Appearance") PreferenceSection("Appearance") {
                     Box {
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -82,7 +113,7 @@ fun SettingsScreen(
                     }
                 }
 
-                PreferenceSection("Connection") {
+                if (activeSection == "Connection") PreferenceSection("Connection") {
                     AutomaticConnectionToggle(
                         checked = lan.automatic,
                         enabled = true,
@@ -121,17 +152,17 @@ fun SettingsScreen(
                     }
                 }
 
-                PreferenceSection("Clipboard") {
+                if (activeSection == "Clipboard") PreferenceSection("Clipboard") {
                     io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
                 }
 
-                if (!app.sms.granted) {
+                if (activeSection == "Messages" && !app.sms.granted) {
                     PreferenceSection("Messages") {
                         io.github.anisharyal09.anice.features.sms.SmsSettings(app.sms)
                     }
                 }
 
-                PreferenceSection("File transfer") {
+                if (activeSection == "File transfer") PreferenceSection("File transfer") {
                     io.github.anisharyal09.anice.features.transfer.TransferAutoReceiveSettings(
                         preferences = app.transfer.autoReceivePreferences,
                         peers = peers,
@@ -140,7 +171,7 @@ fun SettingsScreen(
                     )
                 }
 
-                PreferenceSection("This device") {
+                if (activeSection == "This device") PreferenceSection("This device") {
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp)
                             .clickable(role = Role.Button, onClickLabel = "Open identity and security") {
@@ -157,6 +188,7 @@ fun SettingsScreen(
                         Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
                             modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
                 }
             }
         }

@@ -8,6 +8,36 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Fix Android and Mac debug compilation errors and align Android Gradle with the documented NDK r27d toolchain.
+
+- Add timed automatic connection pauses with clear resume status on Mac and Android.
+
+- Hide empty trusted-device controls and simplify the first Bluetooth link step for Mac input.
+
+- Add top category navigation to phone Settings and balance Mac preference sections to reduce gaps.
+
+- Add the system-wide ⌥⌘K shortcut for the existing Mac floating keyboard.
+
+- Allow Features and Favourites to be reordered on Mac and Android.
+
+- Hide idle Mac companion activity and send actions until a phone is trusted, and clarify file review and save-location results on both platforms.
+
+- Scroll the phone identity sheet to its reset control when Advanced opens.
+
+- Enable automatic file receipt for new pairings while preserving existing peers’ saved choices.
+
+- Add Mac keyboard capture to the full-screen trackpad window.
+
+- Record a phased UX improvement plan and architecture guardrails.
+
+- Show Bluetooth and LAN check feedback beside their received counts in Diagnostics.
+
+- Open Home device selection in Devices with details collapsed and remove duplicate feature navigation links.
+
+- Clarify QR and six-digit code selection during pairing on both platforms.
+
+- Clarify first-launch device setup and hide file-send shortcuts until a device is trusted.
+
 - Clarify Mac remote-control permission guidance and correct the transfer recovery description.
 
 ### Fixed
