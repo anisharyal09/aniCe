@@ -2,7 +2,7 @@
 <!-- Defines Android-to-Mac notification mirroring inside authenticated application DATA. -->
 # Notification Mirroring v1
 
-Notification mirroring sends selected Android app notifications to the connected trusted Mac over the existing authenticated DATA session. It adds no transport or durable store. The Android user explicitly grants Notification Access and selects apps; the picker starts empty and aniCe excludes its own package and the current default SMS app so the SMS relay remains the SMS path. Android OS redaction is preserved.
+Notification mirroring sends selected Android app notifications to the connected trusted Mac over the existing authenticated DATA session. It adds no transport or durable store. The Android user explicitly grants Notification Access and selects apps; the picker starts empty and aniCe excludes its own package and the current default SMS app so the SMS relay remains the SMS path. A separate, off-by-default preference can also include standard incoming CallStyle notifications from any source package. Android OS redaction is preserved.
 
 Every plaintext is deterministic CBOR `["aniCe notifications", 1, kind, fields]` and at most 4,000 bytes. Both peers advertise kind 1 on every channel generation; a peer without the capability receives no feature records. Unknown tags are unrecognized; malformed records are discarded. Decode then re-encode to reject noncanonical CBOR. The Kotlin and Swift decoders enforce the same field shapes and byte limits from `notifications.cddl`.
 
@@ -18,6 +18,8 @@ Every plaintext is deterministic CBOR `["aniCe notifications", 1, kind, fields]`
 | 8 dismiss | `[requestId, id, epoch, sequence]` | Mac → Android |
 
 `id` is the lowercase SHA-256 of Android's opaque notification key. `epoch` is a process-instance UUID; `sequence` increases for each observed update. Up to eight source actions with a live PendingIntent are included in order and assigned compact indices from zero. A free-form text RemoteInput is represented by a text-input action. Index `-1` invokes the notification's content intent. The phone resolves each request against the active id, epoch, sequence, the peer that received that revision and the action index. Request UUID results are retained in memory for ten minutes (at most 32 per peer), so duplicate requests return the prior outcome without firing the PendingIntent twice.
+
+For an opted-in incoming CallStyle notification, the phone uses Android's answer and decline PendingIntents directly and sends at most those two actions in Answer-then-Decline order, using platform-provided labels when present. This is a local action-selection rule; the wire record and action indices are unchanged. It does not grant aniCe call-control permission or route call audio.
 
 Snapshots are bracketed and carry an epoch and high-water sequence. Each snapshot item carries its snapshot token. At snapshot end the Mac removes only same-epoch notifications at or below the high-water sequence that were absent from that snapshot; later live updates survive. Interrupted snapshots do not remove anything. A new epoch replaces the previous epoch for that peer. Updates/removals are idempotent by `(epoch, id, sequence)`, and older events cannot replace newer state.
 

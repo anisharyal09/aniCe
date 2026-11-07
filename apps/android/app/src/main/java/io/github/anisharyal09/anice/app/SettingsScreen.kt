@@ -37,10 +37,13 @@ fun SettingsScreen(
 ) {
     var showingIdentity by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
+    val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
     if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
         AboutScreen(context)
+    } else if (navigation.destination == AppDestination.Settings &&
+        navigation.settingsRoute == SettingsRoute.NotificationApps) {
+        io.github.anisharyal09.anice.features.notifications.NotificationAppSelection(app.notificationMirror)
     } else {
-        val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
         val lan = app.lanSessionController
         val lanPrefs = remember { context.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE) }
         var timeoutMinutes by remember { mutableIntStateOf(lanPrefs.getInt("lan_background_timeout_minutes", 0)) }
@@ -133,6 +136,31 @@ fun SettingsScreen(
 
                 PreferenceSection("Notifications") {
                     io.github.anisharyal09.anice.features.notifications.NotificationSettings(app.notificationMirror)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    val selectedCount = app.notificationMirror.preferences.selectedPackages().size
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                            .clickable(role = Role.Button, onClickLabel = "Select apps") {
+                                navigation.settingsRoute = SettingsRoute.NotificationApps
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Select apps", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                when (selectedCount) {
+                                    0 -> "No apps selected"
+                                    1 -> "1 app selected"
+                                    else -> "$selectedCount apps selected"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                            modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
 
                 PreferenceSection("File transfer") {

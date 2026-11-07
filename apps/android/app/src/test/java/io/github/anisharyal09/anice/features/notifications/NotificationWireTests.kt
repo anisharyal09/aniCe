@@ -66,6 +66,50 @@ class NotificationWireTests {
         assertFalse(notificationPackageEligible("com.example.other", "io.anice", "com.example.sms", selected))
     }
 
+    @Test fun selectedAppsSortAboveUnselectedAppsWithAlphabeticalOrderWithinGroups() {
+        val choices = listOf(
+            NotificationAppChoice("com.zebra", "Zebra"),
+            NotificationAppChoice("com.beta", "Beta"),
+            NotificationAppChoice("com.charlie", "Charlie"),
+            NotificationAppChoice("com.alpha", "alpha"),
+        )
+        val ordered = sortNotificationAppChoices(choices, setOf("com.charlie", "com.alpha"))
+        assertEquals(listOf("com.alpha", "com.charlie", "com.beta", "com.zebra"), ordered.map { it.packageName })
+    }
+
+    @Test fun incomingCallOptInIncludesCallStyleFromUnselectedSystemSourcesOnly() {
+        val selected = setOf("com.example.chat")
+        assertTrue(notificationPackageEligible(
+            "com.android.server.telecom", "io.anice", "com.example.sms", selected,
+            incomingCall = true, mirrorIncomingCalls = true,
+        ))
+        assertFalse(notificationPackageEligible(
+            "com.android.server.telecom", "io.anice", "com.example.sms", selected,
+            incomingCall = true, mirrorIncomingCalls = false,
+        ))
+        assertFalse(notificationPackageEligible(
+            "com.android.server.telecom", "io.anice", "com.example.sms", selected,
+            incomingCall = false, mirrorIncomingCalls = true,
+        ))
+        assertFalse(notificationPackageEligible(
+            "io.anice", "io.anice", "com.example.sms", selected,
+            incomingCall = true, mirrorIncomingCalls = true,
+        ))
+        assertFalse(notificationPackageEligible(
+            "com.example.sms", "io.anice", "com.example.sms", selected,
+            incomingCall = true, mirrorIncomingCalls = true,
+        ))
+    }
+
+    @Test fun incomingCallRecognitionRequiresKnownCallStyleAndIncomingType() {
+        assertTrue(isIncomingCallStyle("android.app.Notification\$CallStyle", 1))
+        assertTrue(isIncomingCallStyle("androidx.core.app.NotificationCompat\$CallStyle", 1))
+        assertFalse(isIncomingCallStyle("android.app.Notification\$CallStyle", 2))
+        assertFalse(isIncomingCallStyle("android.app.Notification\$CallStyle", null))
+        assertFalse(isIncomingCallStyle("com.example.CustomCallNotification", 1))
+        assertFalse(isIncomingCallStyle(null, 1))
+    }
+
     @Test fun utf8TruncationDoesNotSplitCodePoints() {
         assertEquals("a😀", notificationText("a😀é", 5))
         assertEquals("", notificationText("😀", 3))

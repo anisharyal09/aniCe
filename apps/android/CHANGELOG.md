@@ -4,6 +4,16 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Keep notification app choices in the Settings page's existing scroll container to prevent a Compose nested-scroll crash.
+
+- Resolve and export the local Android SDK for Gradle when using the development launcher, and retain the ignored SDK path in new worktrees.
+
+- Skip queued notification snapshot entries after removal, replacement or Notification Access revocation.
+
+- Add a separate opt-in for incoming CallStyle alerts, pairing Android's answer/decline PendingIntents and prioritizing them in the Mac alert.
+
+- Match the Notifications card's inner spacing to Connection, keep one **Select apps** row and hide the compact permission action after access is granted.
+
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed

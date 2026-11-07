@@ -73,7 +73,7 @@ The script quits aniCe, builds Debug, verifies the signature/team and launches t
 
 - App: `build/dev-mac/<checkout>-<branch>/Build/Products/Debug/aniCe.app` under the checkout root.
 - Display name: `aniCe (<branch>)`; the window header stays aniCe.
-- Branch slashes are escaped as `%2F` in folder names, so `feat/input` and `feat-input` stay distinct. Detached checkouts use their commit ID.
+- Branch slashes are escaped as `_2F`, underscores as `_5F`, and percent signs as `_25` in folder names. This keeps branch copies distinct without percent escapes that break Xcode's SDK stat-cache paths. Detached checkouts use their commit ID.
 - Worktrees have separate build folders but share app identity, permissions and device state. Run one copy at a time; Mac hosted tests also use aniCe, so let those finish before running the launcher. Each worktree needs its own local signing file or exported environment settings.
 - Closing the window leaves the companion running. **Command-Q** quits.
 

@@ -8,7 +8,8 @@ branch="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
 if [[ -z "$branch" ]]; then
     branch="detached-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
-branch_slug="$(printf '%s' "$branch" | sed 's/%/%25/g; s|/|%2F|g')"
+# Xcode interprets percent escapes in some cache paths; keep these names percent-free.
+branch_slug="$(printf '%s' "$branch" | sed 's/_/_5F/g; s/%/_25/g; s|/|_2F|g')"
 checkout="${ROOT##*/}"
 usage() {
     echo "Usage: $0 mac | android [--serial DEVICE_SERIAL]"
@@ -64,15 +65,27 @@ if [[ "$platform" == mac ]]; then
     echo "Launched: $app"
 else
     echo "Building Android branch '$branch' from $ROOT"
+    sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
     adb="$(command -v adb || true)"
+    if [[ -z "$sdk_root" && "$adb" == */platform-tools/adb ]]; then
+        sdk_root="${adb%/platform-tools/adb}"
+    fi
     if [[ -z "$adb" ]]; then
-        for sdk in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
-            if [[ -n "$sdk" && -x "$sdk/platform-tools/adb" ]]; then
-                adb="$sdk/platform-tools/adb"; break
+        for candidate in "$sdk_root" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+            if [[ -n "$candidate" && -x "$candidate/platform-tools/adb" ]]; then
+                sdk_root="$candidate"
+                adb="$sdk_root/platform-tools/adb"; break
             fi
         done
     fi
     [[ -n "$adb" ]] || fail "adb not found; set ANDROID_HOME or add platform-tools to PATH."
+    if [[ -z "$sdk_root" ]]; then
+        for candidate in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+            if [[ -d "$candidate/platform-tools" ]]; then sdk_root="$candidate"; break; fi
+        done
+    fi
+    [[ -n "$sdk_root" ]] || fail "Android SDK not found; set ANDROID_HOME or ANDROID_SDK_ROOT."
+    export ANDROID_HOME="$sdk_root" ANDROID_SDK_ROOT="$sdk_root"
     devices="$("$adb" devices)"
     authorized=()
     while read -r candidate state rest; do

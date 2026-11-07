@@ -45,6 +45,19 @@ class AppNavigationTest {
         state.back()
         assertEquals(AppDestination.Home, state.destination)
     }
+    @Test fun notificationAppPickerBackReturnsToSettingsAndSurvivesRestoration() {
+        val state = AppNavigation()
+        state.select(AppDestination.Settings, false)
+        state.settingsRoute = SettingsRoute.NotificationApps
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(state) }!!
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals(AppDestination.Settings, restored.destination)
+        assertEquals(SettingsRoute.NotificationApps, restored.settingsRoute)
+        restored.back()
+        assertEquals(AppDestination.Settings, restored.destination)
+        assertEquals(SettingsRoute.Overview, restored.settingsRoute)
+    }
     @Test fun unknownAppearanceDoesNotForceLightOrDark() {
         assertEquals(Appearance.System, Appearance.stored(null))
         assertEquals(Appearance.System, Appearance.stored("unknown"))

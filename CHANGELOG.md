@@ -8,6 +8,16 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Fix an Android Settings crash caused by nesting the notification app picker scroll inside the page scroll.
+
+- Harden notification mirroring against disconnect and cross-transport delivery races, and repair notification Xcode navigation membership.
+
+- Add opt-in incoming Android CallStyle mirroring with stable Answer and Decline actions on Mac.
+
+- Match the Notifications card's inner spacing to Connection, keep one **Select apps** row, and hide its compact access action after permission is granted.
+
+- Keep branch-specific Mac build folders percent-free and export the detected Android SDK path to Gradle.
+
 - Clarify Mac remote-control permission guidance and correct the transfer recovery description.
 
 ### Fixed
@@ -30,7 +40,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Add selected-app Android notification mirroring to Mac over authenticated DATA, including native source actions and synchronized dismissal.
+- Add selected-app Android notification mirroring to Mac over authenticated DATA, including native source actions, replies, synchronized dismissal and separately opted-in incoming call controls.
 
 - Add `scripts/dev.sh` for branch-labelled, per-checkout signed Mac builds that stop the running copy before rebuilding and Android build/install/launch with automatic ADB discovery and explicit selection when multiple devices are connected.
 

@@ -8,6 +8,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Use percent-free branch build folders so the developer launcher avoids ClangStatCache failures on branch names containing slashes.
+
+- Cancel notification presentation still pending at disconnect, keep reconnect snapshots silent, preserve concurrently registered action categories and reject delayed copies of removed alerts across BLE/LAN.
+
 - Keep development-signing warnings out of Release permission UI and document archive naming, signing and distribution.
 
 - Reveal the running signed app from blocked input permission settings so stale macOS permission entries can be reauthorized against the correct copy.
@@ -29,6 +33,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Added
 
 - Present selected Android app notifications as native Mac alerts with source taps, available actions, text replies and synchronized dismissal.
+- Show opted-in Android incoming-call alerts with Answer and Decline actions in a predictable order.
 
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
 - Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.

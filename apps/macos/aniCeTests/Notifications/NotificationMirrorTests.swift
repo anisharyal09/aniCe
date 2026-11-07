@@ -130,6 +130,7 @@ final class NotificationMirrorTests: XCTestCase {
     try await incoming(model, channel: channel, id: id, sequence: 1, token: token, title: "First")
     _ = await model.handle(try wire(5, [.text(token)]), on: channel.descriptor)
     await waitFor("first notification") { center.added.count == 1 }
+    XCTAssertNil(center.added.first?.content.sound, "reconnect snapshots must be silent")
     XCTAssertTrue(center.registered.contains(existing), "mirror categories must preserve other feature categories")
 
     try await incoming(model, channel: channel, id: id, sequence: 1, token: "", title: "Duplicate")
@@ -174,6 +175,26 @@ final class NotificationMirrorTests: XCTestCase {
         return (try? message.number(3)) == 2
       }
     }
+  }
+
+  func testRemovalAndCompletedSnapshotRejectDelayedNotificationCopies() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let model = MacNotificationMirrorModel(notifier: MacNotificationMirrorNotifier(center: center))
+    let channel = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    try await ready(model, channel)
+    let original = try notification(sequence: 1, title: "Original")
+    _ = await model.handle(original, on: channel.descriptor)
+    _ = await model.handle(try wire(3, [.text(id), .text(epoch), .integer(1)]), on: channel.descriptor)
+    _ = await model.handle(original, on: channel.descriptor)
+    XCTAssertEqual(center.added.count, 1, "a removed revision must not be recreated by the other transport")
+
+    let token = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(token), .text(epoch), .integer(1)]), on: channel.descriptor)
+    _ = await model.handle(try wire(5, [.text(token)]), on: channel.descriptor)
+    _ = await model.handle(original, on: channel.descriptor)
+    XCTAssertEqual(center.added.count, 1, "snapshot compaction must preserve rejection of stale revisions")
+    _ = await model.handle(try notification(sequence: 2, title: "New revision"), on: channel.descriptor)
+    XCTAssertEqual(center.added.count, 2, "a newer revision must still be delivered")
   }
 
   func testReplyDismissalAndDuplicateResponseAreBoundToCurrentRevision() async throws {
@@ -259,6 +280,22 @@ final class NotificationMirrorTests: XCTestCase {
     center.resumeCategoryRead()
     await updateTask.value
     await waitFor("second revision") { center.added.count == 2 }
+  }
+
+  func testDisconnectCancelsPresentationWaitingForCategoryRegistration() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(transport: "lan", peer: try androidPeer())
+    try await ready(model, channel)
+    center.delayNextCategoryRead = true
+    let bytes = try notification(sequence: 1, title: "Pending")
+    let pending = Task { await model.handle(bytes, on: channel.descriptor) }
+    await waitFor("pending registration") { center.pendingCategoryRead != nil }
+    model.retired(channel.descriptor)
+    center.resumeCategoryRead()
+    await pending.value
+    XCTAssertTrue(center.added.isEmpty, "disconnect must invalidate posts that have not reached Notification Center")
   }
 
   func testProgrammaticCleanupDoesNotDismissAndDeniedSubmissionHasNoActionTarget() async throws {

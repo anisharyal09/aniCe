@@ -7,17 +7,20 @@ Notification mirroring sends alerts from apps chosen on Android to the connected
 ## Set up
 
 1. On Android, open **Settings → Notifications** in aniCe.
-2. Choose **Allow Notification Access** and enable aniCe in Android's system settings.
-3. Return to aniCe and turn on only the apps whose notifications should appear on the Mac. The list starts with no apps selected.
-4. Allow notifications for aniCe in macOS System Settings if macOS notification access is disabled.
+2. Choose **Enable notification access** and enable aniCe in Android's system notification-access settings. The button disappears when you return after granting access.
+3. Return to aniCe and turn on **Mirror incoming calls** if you want standard call controls from phone and calling apps. This is a separate opt-in and starts off.
+4. In the same Notifications card, open **Select apps** and turn on only the apps whose notifications should appear on the Mac. The list starts with no apps selected and keeps selected apps at the top.
+5. Allow notifications for aniCe in macOS System Settings if macOS notification access is disabled.
 
-aniCe and Android's current default SMS app are excluded from the app list. SMS continues through the existing Messages relay, avoiding a second alert for the same text.
+Android's system notification-access page grants aniCe permission to read posted notifications and lists aniCe with other listener apps. The in-app **Select apps** list is a separate source filter. aniCe and Android's current default SMS app are excluded from that list. SMS continues through the existing Messages relay, avoiding a second alert for the same text.
 
 ## What is mirrored
 
 The Mac shows the title and text that Android exposes, along with the source app name. Tapping the alert invokes the source notification's normal tap action. Available notification actions are shown by macOS; a free-form text reply becomes a native text-input action. Android notifications without usable actions remain informational. A Mac dismissal asks Android to dismiss the matching active notification. Android removals, including a dismissal in the source app, clear the Mac alert.
 
-The selected phone app may be redacted by Android, including protected content on newer Android releases. aniCe mirrors only the fields Android provides. The app truncates unusually long text to fit the bounded secure record.
+When **Mirror incoming calls** is enabled, standard incoming CallStyle notifications are mirrored even when the source is a system component or the app is not selected in the app list. The Mac alert shows the Android-provided Answer and Decline actions when available. Those actions invoke the source notification's PendingIntents; they do not use `ANSWER_PHONE_CALLS`, take audio control or route audio away from the phone. Other notifications from those apps still require app selection.
+
+Source-app content may be redacted by Android, including protected content on newer Android releases. aniCe mirrors only the fields Android provides. The app truncates unusually long text to fit the bounded secure record.
 
 ## Connection and privacy
 
@@ -31,6 +34,7 @@ Turning off an app stops new mirroring and clears its current mirrored alerts. R
 
 - Only the current default SMS app is excluded. SMS content should continue to use the Messages relay.
 - Up to eight available source actions are relayed. macOS decides how many fit in a banner; additional actions may appear when the notification is expanded.
+- The incoming-call toggle recognizes Android CallStyle call-type metadata. Legacy or app-specific call UIs that do not publish a standard incoming notification cannot be mirrored, and source apps may reject an action after Android dispatches it.
 - Android can hide sensitive content, and some source-app actions cannot be invoked outside Android.
 - Notifications that arrive while the phone and Mac are disconnected are not replayed unless they remain active when they reconnect.
 - Android listener behavior, redaction and source-app action compatibility vary by device and app and require real-device verification.

@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.features.notifications
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,7 @@ import android.provider.Telephony
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.os.BundleCompat
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
@@ -30,10 +32,14 @@ class NotificationMirrorPreferences(context: Context) {
     private val storage = context.getSharedPreferences("notification_mirror", Context.MODE_PRIVATE)
     fun selectedPackages(): Set<String> = storage.getStringSet("selected_packages", emptySet())?.toSet().orEmpty()
     fun isSelected(packageName: String) = packageName in selectedPackages()
+    fun mirrorIncomingCalls(): Boolean = storage.getBoolean("mirror_incoming_calls", false)
     fun setSelected(packageName: String, selected: Boolean) {
         val values = selectedPackages().toMutableSet()
         if (selected) values.add(packageName) else values.remove(packageName)
         storage.edit().putStringSet("selected_packages", values).apply()
+    }
+    fun setMirrorIncomingCalls(enabled: Boolean) {
+        storage.edit().putBoolean("mirror_incoming_calls", enabled).apply()
     }
 }
 
@@ -47,18 +53,74 @@ private data class NotificationEntry(
     val appName: String,
     val title: String,
     val body: String,
-    val actions: Map<Int, Notification.Action>,
+    val actions: Map<Int, NotificationActionTarget>,
     val wireActions: List<MirroredAction>,
 )
 
+internal data class NotificationActionTarget(
+    val pendingIntent: PendingIntent,
+    val remoteInput: RemoteInput?,
+)
+
 private data class DeliveredRevision(val epoch: String, val sequence: Long)
+
+// Public CallStyle extra keys, kept as strings so the Android 29–33 code path has no newer field references.
+private const val EXTRA_CALL_TYPE = "android.callType"
+private const val EXTRA_ANSWER_INTENT = "android.answerIntent"
+private const val EXTRA_DECLINE_INTENT = "android.declineIntent"
 
 internal fun notificationPackageEligible(
     packageName: String,
     ownPackage: String,
     defaultSmsPackage: String?,
     selectedPackages: Set<String>,
-): Boolean = packageName != ownPackage && packageName != defaultSmsPackage && packageName in selectedPackages
+    incomingCall: Boolean = false,
+    mirrorIncomingCalls: Boolean = false,
+): Boolean = packageName != ownPackage && packageName != defaultSmsPackage &&
+    (packageName in selectedPackages || (incomingCall && mirrorIncomingCalls))
+
+internal fun isIncomingCallStyle(template: String?, callType: Int?): Boolean =
+    callType == 1 && (template == "android.app.Notification\$CallStyle" ||
+        template == "androidx.core.app.NotificationCompat\$CallStyle")
+
+internal fun notificationActions(
+    notification: Notification,
+    incomingCall: Boolean,
+): Pair<Map<Int, NotificationActionTarget>, List<MirroredAction>> {
+    val sourceActions = notification.actions.orEmpty()
+    val extras = notification.extras
+    if (incomingCall && extras != null) {
+        val answer = BundleCompat.getParcelable(extras, EXTRA_ANSWER_INTENT, PendingIntent::class.java)
+        val decline = BundleCompat.getParcelable(extras, EXTRA_DECLINE_INTENT, PendingIntent::class.java)
+        if (answer != null && decline != null) {
+            val targets = linkedMapOf<Int, NotificationActionTarget>()
+            val mirrored = mutableListOf<MirroredAction>()
+            // CallStyle's extra intents are authoritative; order Answer then Decline for the Mac banner.
+            listOf(answer to "Answer", decline to "Decline").forEach { (pending, fallbackTitle) ->
+                val source = sourceActions.firstOrNull { it.actionIntent == pending }
+                val title = notificationText(source?.title?.toString().orEmpty(), 48).ifEmpty { fallbackTitle }
+                val index = mirrored.size
+                targets[index] = NotificationActionTarget(pending, null)
+                mirrored += MirroredAction(index.toLong(), title, "")
+            }
+            return targets to mirrored
+        }
+    }
+
+    val targets = linkedMapOf<Int, NotificationActionTarget>()
+    val mirrored = mutableListOf<MirroredAction>()
+    sourceActions.forEach { action ->
+        if (mirrored.size >= NotificationWireMessage.MAX_ACTIONS || action.actionIntent == null) return@forEach
+        val remote = action.remoteInputs.orEmpty().firstOrNull { it.allowFreeFormInput && !it.isDataOnly }
+        val title = notificationText(action.title?.toString().orEmpty(), 48)
+        if (title.isEmpty()) return@forEach
+        val index = mirrored.size
+        targets[index] = NotificationActionTarget(action.actionIntent, remote)
+        val placeholder = remote?.label?.toString()?.let { notificationText(it, 48) }.orEmpty()
+        mirrored += MirroredAction(index.toLong(), title, if (remote == null) "" else placeholder.ifEmpty { "Reply" })
+    }
+    return targets to mirrored
+}
 
 class NotificationMirrorController(context: Context) : FeatureHandler {
     private data class Link(val channel: SecuredChannel, var remoteCapability: Boolean = false)
@@ -159,12 +221,16 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         if (!accessEnabled) return
         val id = notificationId(sbn.key)
         val packageName = sbn.packageName
-        if (!eligible(packageName)) {
+        val notification = sbn.notification
+        val extras = notification.extras
+        val incomingCall = isIncomingCallStyle(
+            extras?.getString(Notification.EXTRA_TEMPLATE),
+            extras?.getInt(EXTRA_CALL_TYPE),
+        )
+        if (!eligible(packageName, incomingCall)) {
             active.remove(id)?.let { sendRemoval(it) }
             return
         }
-        val notification = sbn.notification
-        val extras = notification.extras
         val appName = runCatching {
             app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(packageName, 0)).toString()
         }.getOrDefault(packageName)
@@ -173,18 +239,7 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
             (extras?.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras?.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty(),
             1024,
         )
-        val actions = linkedMapOf<Int, Notification.Action>()
-        val wireActions = mutableListOf<MirroredAction>()
-        notification.actions.orEmpty().forEach { action ->
-            if (wireActions.size >= NotificationWireMessage.MAX_ACTIONS || action.actionIntent == null) return@forEach
-            val remote = action.remoteInputs.orEmpty().firstOrNull { it.allowFreeFormInput && !it.isDataOnly }
-            val titleText = notificationText(action.title?.toString().orEmpty(), 48)
-            if (titleText.isEmpty()) return@forEach
-            val mirrorIndex = wireActions.size
-            actions[mirrorIndex] = action
-            val placeholder = remote?.label?.toString()?.let { notificationText(it, 48) }.orEmpty()
-            wireActions += MirroredAction(mirrorIndex.toLong(), titleText, if (remote == null) "" else placeholder.ifEmpty { "Reply" })
-        }
+        val (actions, wireActions) = notificationActions(notification, incomingCall)
         val old = active[id]
         if (sequence >= NotificationWireMessage.MAX_SEQUENCE) {
             epoch = UUID.randomUUID().toString()
@@ -218,9 +273,12 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         links.values.filter { it.remoteCapability }.forEach(::sendSnapshot)
     }
 
-    private fun eligible(packageName: String): Boolean {
+    private fun eligible(packageName: String, incomingCall: Boolean): Boolean {
         val smsPackage = runCatching { Telephony.Sms.getDefaultSmsPackage(app) }.getOrNull()
-        return notificationPackageEligible(packageName, app.packageName, smsPackage, preferences.selectedPackages())
+        return notificationPackageEligible(
+            packageName, app.packageName, smsPackage, preferences.selectedPackages(),
+            incomingCall = incomingCall, mirrorIncomingCalls = preferences.mirrorIncomingCalls(),
+        )
     }
 
     private fun sendSnapshot(link: Link) {
@@ -257,6 +315,10 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
 
     private suspend fun sendNow(link: Link, message: NotificationWireMessage) {
         if (links[link.channel.descriptor.transport] !== link) return
+        // A queued snapshot must not replay an entry removed or replaced while waiting to send.
+        if (message.kind == 2L && active[message.text(1)]?.let {
+            it.epoch == message.text(2) && it.sequence == message.number(3)
+        } != true) return
         try {
             link.channel.sendData(message.encode())
             val peer = peerKey(link.channel.descriptor.peer)
@@ -296,13 +358,12 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
                 delivered != DeliveredRevision(entry.epoch, entry.sequence)) 1L
             else runCatching {
                 val index = message.number(4).toInt()
-                val pending = if (index == -1) entry.statusBar.notification.contentIntent else entry.actions[index]?.actionIntent
+                val target = entry.actions[index]
+                val pending = if (index == -1) entry.statusBar.notification.contentIntent else target?.pendingIntent
                 if (pending == null) 2L else {
                     val intent = Intent()
                     if (index >= 0 && message.text(5).isNotEmpty()) {
-                        val action = entry.actions[index] ?: return@runCatching 2L
-                        val remote = action.remoteInputs.orEmpty().firstOrNull { it.allowFreeFormInput && !it.isDataOnly }
-                            ?: return@runCatching 2L
+                        val remote = target?.remoteInput ?: return@runCatching 2L
                         RemoteInput.addResultsToIntent(arrayOf(remote), intent, Bundle().apply {
                             putCharSequence(remote.resultKey, message.text(5))
                         })

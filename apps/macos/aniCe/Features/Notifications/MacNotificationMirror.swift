@@ -82,8 +82,8 @@ final class MacNotificationMirrorNotifier: NSObject {
   var onAction: (String, String, String, Int64, UserAction) -> Void = { _, _, _, _, _ in }
   private let center: any MacMirrorNotificationCenter
   private var targets: [String: Target] = [:]
-  private var knownCategories = Set<String>()
-  private var generations: [String: String] = [:]
+  private var registeredCategories: [String: UNNotificationCategory] = [:]
+  private var generations: [String: (peerKey: String, token: String)] = [:]
   private let startupCleanup: Task<Void, Never>
 
   init(center: any MacMirrorNotificationCenter = UNUserNotificationCenter.current()) {
@@ -107,11 +107,11 @@ final class MacNotificationMirrorNotifier: NSObject {
   func post(peerKey: String, value: MirroredNotification) async {
     let identifier = Self.identifier(peerKey: peerKey, sourceId: value.id)
     let generation = UUID().uuidString.lowercased()
-    generations[identifier] = generation
+    generations[identifier] = (peerKey, generation)
     await startupCleanup.value
     let category = categoryFor(value.actions)
     await register(category: category, actions: value.actions)
-    guard generations[identifier] == generation else { return }
+    guard generations[identifier]?.token == generation else { return }
     targets[identifier] = Target(peerKey: peerKey, sourceId: value.id, epoch: value.epoch,
       sequence: value.sequence, category: category, actions: Dictionary(uniqueKeysWithValues: value.actions.map { ($0.index, $0) }))
     center.removeDeliveredNotifications(withIdentifiers: [identifier])
@@ -123,19 +123,19 @@ final class MacNotificationMirrorNotifier: NSObject {
     content.categoryIdentifier = category
     content.threadIdentifier = value.packageName
     content.userInfo = ["anice.mirror.epoch": value.epoch, "anice.mirror.sequence": value.sequence]
-    content.sound = .default
+    content.sound = value.snapshotToken.isEmpty ? .default : nil
     if !value.snapshotToken.isEmpty { content.interruptionLevel = .passive }
     center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { [weak self] error in
       guard error != nil else { return }
       Task { @MainActor in
-        guard let self, self.generations[identifier] == generation else { return }
+        guard let self, self.generations[identifier]?.token == generation else { return }
         self.targets[identifier] = nil
       }
     }
   }
 
   func clear(peerKey: String) {
-    for identifier in targets.filter({ $0.value.peerKey == peerKey }).map(\.key) { clear(identifier: identifier) }
+    for identifier in generations.filter({ $0.value.peerKey == peerKey }).map(\.key) { clear(identifier: identifier) }
   }
 
   func clear(peerKey: String, sourceId: String) {
@@ -143,7 +143,7 @@ final class MacNotificationMirrorNotifier: NSObject {
   }
 
   func clearAll() {
-    let known = Set(targets.keys)
+    let known = Set(generations.keys)
     for identifier in known { clear(identifier: identifier) }
     Task { @MainActor [center] in
       let pending = await withCheckedContinuation { continuation in
@@ -198,8 +198,7 @@ final class MacNotificationMirrorNotifier: NSObject {
   }
 
   private func register(category identifier: String, actions: [MirroredNotificationAction]) async {
-    guard !knownCategories.contains(identifier) else { return }
-    knownCategories.insert(identifier)
+    guard registeredCategories[identifier] == nil else { return }
     let nativeActions: [UNNotificationAction] = actions.map { item in
       let actionId = "ANICE_MIRROR_ACTION_\(item.index)"
       if !item.replyPlaceholder.isEmpty {
@@ -212,7 +211,8 @@ final class MacNotificationMirrorNotifier: NSObject {
     let existing = await withCheckedContinuation { continuation in
       center.mirrorCategories { continuation.resume(returning: $0) }
     }
-    center.setMirrorCategories(existing.values.union([next]))
+    registeredCategories[identifier] = next
+    center.setMirrorCategories(existing.values.union(registeredCategories.values))
   }
 
   private static let identifierPrefix = "anice-mirror-"
@@ -232,6 +232,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private var epochs: [String: String] = [:]
   private var snapshots: [String: NotificationSnapshot] = [:]
   private var records: [String: StoredNotification] = [:]
+  private var removals: [String: Int64] = [:]
+  private var snapshotFloors: [String: Int64] = [:]
   private let notifier: MacNotificationMirrorNotifier
 
   init(notifier: MacNotificationMirrorNotifier) {
@@ -255,6 +257,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
     let peerKey = key(descriptor.peer)
     guard !links.values.contains(where: { key($0.channel.descriptor.peer) == peerKey }) else { return }
     epochs[peerKey] = nil
+    snapshotFloors[peerKey] = nil
+    removals = removals.filter { !$0.key.hasPrefix(peerKey + ":") }
     snapshots = snapshots.filter { $0.value.peerKey != peerKey }
     for recordKey in records.filter({ $0.value.peerKey == peerKey }).map(\.key) { records[recordKey] = nil }
     notifier.clear(peerKey: peerKey)
@@ -281,7 +285,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
       case 2: try await receive(message, peerKey: peerKey)
       case 3: try remove(message, peerKey: peerKey)
       case 4: try beginSnapshot(message, peerKey: peerKey)
-      case 5: try await finishSnapshot(message)
+      case 5: try await finishSnapshot(message, peerKey: peerKey)
       case 7: break
       default: return .discarded
       }
@@ -293,6 +297,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
     let token = try message.text(0), epoch = try message.text(1), highWater = try message.number(2)
     if epochs[peerKey] != epoch {
       epochs[peerKey] = epoch
+      snapshotFloors[peerKey] = nil
+      removals = removals.filter { !$0.key.hasPrefix(peerKey + ":") }
       let oldKeys = records.filter { $0.value.peerKey == peerKey }.map(\.key)
       for recordKey in oldKeys {
         guard let record = records.removeValue(forKey: recordKey) else { continue }
@@ -319,6 +325,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
     if epochs[peerKey] == nil && token.isEmpty { epochs[peerKey] = value.epoch }
     guard epochs[peerKey] == value.epoch else { return }
     let recordKey = peerKey + ":" + value.id
+    guard value.sequence > (snapshotFloors[peerKey] ?? 0),
+          value.sequence > (removals[recordKey] ?? 0) else { return }
     if let old = records[recordKey], old.value.epoch == value.epoch, old.value.sequence >= value.sequence { return }
     records[recordKey] = StoredNotification(peerKey: peerKey, value: value)
     await notifier.post(peerKey: peerKey, value: value)
@@ -328,14 +336,19 @@ final class MacNotificationMirrorModel: FeatureHandler {
     let id = try message.text(0), epoch = try message.text(1), sequence = try message.number(2)
     guard epochs[peerKey] == epoch else { return }
     let recordKey = peerKey + ":" + id
+    if sequence > (snapshotFloors[peerKey] ?? 0) {
+      removals[recordKey] = max(removals[recordKey] ?? 0, sequence)
+    }
     guard let current = records[recordKey], current.value.epoch == epoch, sequence >= current.value.sequence else { return }
     records[recordKey] = nil
     notifier.clear(peerKey: peerKey, sourceId: id)
   }
 
-  private func finishSnapshot(_ message: NotificationWireMessage) async throws {
+  private func finishSnapshot(_ message: NotificationWireMessage, peerKey: String) async throws {
     let token = try message.text(0)
+    guard snapshots[token]?.peerKey == peerKey else { return }
     guard let snapshot = snapshots.removeValue(forKey: token) else { return }
+    guard epochs[snapshot.peerKey] == snapshot.epoch else { return }
     let staleKeys = records.compactMap { recordKey, record in
       record.peerKey == snapshot.peerKey && record.value.epoch == snapshot.epoch &&
         record.value.sequence <= snapshot.highWater && !snapshot.seen.contains(record.value.id) ? recordKey : nil
@@ -344,6 +357,10 @@ final class MacNotificationMirrorModel: FeatureHandler {
       guard let record = records.removeValue(forKey: recordKey) else { continue }
       notifier.clear(peerKey: snapshot.peerKey, sourceId: record.value.id)
     }
+    // A completed snapshot replaces older removal entries with one shared revision floor.
+    let floor = max(snapshotFloors[snapshot.peerKey] ?? 0, snapshot.highWater)
+    snapshotFloors[snapshot.peerKey] = floor
+    removals = removals.filter { !$0.key.hasPrefix(snapshot.peerKey + ":") || $0.value > floor }
   }
 
   private func perform(peerKey: String, id: String, epoch: String, sequence: Int64,
@@ -364,6 +381,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
         .text(requestId), .text(id), .text(epoch), .integer(sequence),
       ])
       records[peerKey + ":" + id] = nil
+      removals[peerKey + ":" + id] = sequence
     }
     send(message, on: channel)
   }
