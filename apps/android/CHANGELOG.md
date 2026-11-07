@@ -30,6 +30,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add Notification Access setup and an empty-by-default app picker; exclude aniCe and the current default SMS app from notification mirroring.
+
 - Send files to a connected Mac from Android’s Share sheet.
 
 - Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.

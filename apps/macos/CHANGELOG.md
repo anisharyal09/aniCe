@@ -28,6 +28,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Present selected Android app notifications as native Mac alerts with source taps, available actions, text replies and synchronized dismissal.
+
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
 - Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.
 

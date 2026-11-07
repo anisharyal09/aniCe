@@ -12,6 +12,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
+
 - Define Phone-to-Mac input v1 over authenticated BLE DATA, with phone-started sessions gated by Mac Event Posting, Unicode text separate from key transitions, bounded motion coalescing, fail-safe release and Mac-to-phone session-ended notices.
 
 - Define Classic HID keyboard, restricted Back/Home consumer and mouse reports; retain a neutral ninth keyboard byte for cached composite-descriptor compatibility and eight-byte boot keyboard payloads.

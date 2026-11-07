@@ -149,6 +149,33 @@ final class NotificationMirrorTests: XCTestCase {
     XCTAssertTrue(center.removedDelivered.flatMap { $0 }.contains(center.added[1].identifier))
   }
 
+  func testSnapshotFinishPreservesLiveUpdatesAboveItsHighWaterSequence() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    try await ready(model, channel)
+    try await incoming(model, channel: channel, id: id, sequence: 2, token: "", title: "Live update")
+    await waitFor("live update") { center.added.count == 1 }
+    let request = try XCTUnwrap(center.added.first)
+    let removalsBeforeSnapshot = center.removedDelivered.flatMap { $0 }.count
+
+    let token = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(token), .text(epoch), .integer(1)]), on: channel.descriptor)
+    _ = await model.handle(try wire(5, [.text(token)]), on: channel.descriptor)
+
+    XCTAssertEqual(center.removedDelivered.flatMap { $0 }.count, removalsBeforeSnapshot)
+    XCTAssertTrue(notifier.handleAction(category: request.content.categoryIdentifier,
+      action: UNNotificationDefaultActionIdentifier, identifier: request.identifier, userText: "",
+      sourceEpoch: epoch, sourceSequence: 2), "a live update newer than the snapshot high-water must remain active")
+    await waitFor("retained live tap") {
+      channel.sentData.contains {
+        guard let message = try? NotificationWireMessage.decode($0), message.kind == 6 else { return false }
+        return (try? message.number(3)) == 2
+      }
+    }
+  }
+
   func testReplyDismissalAndDuplicateResponseAreBoundToCurrentRevision() async throws {
     let center = MirrorNotificationCenterSpy()
     let notifier = MacNotificationMirrorNotifier(center: center)

@@ -30,6 +30,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add selected-app Android notification mirroring to Mac over authenticated DATA, including native source actions and synchronized dismissal.
+
 - Add `scripts/dev.sh` for branch-labelled, per-checkout signed Mac builds that stop the running copy before rebuilding and Android build/install/launch with automatic ADB discovery and explicit selection when multiple devices are connected.
 
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
