@@ -55,8 +55,7 @@ fun TransferAutoReceiveSettings(
             Text("For background receipt, turn on Connect automatically.",
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                 color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                modifier = Modifier.padding(bottom = 8.dp))
+                modifier = Modifier.padding(bottom = if (compact) 0.dp else 8.dp))
         }
     }
 }

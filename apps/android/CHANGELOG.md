@@ -15,6 +15,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Keep Desk Deck shell responsive while subscriptions start; fence timeouts, acknowledgements and slider previews to the live channel generation, stop retry loops after one resubscription, and mark old readings stale before disabling actions.
 - Keep a first sample live when it cancels an in-flight subscription send instead of treating that cancellation as a failed connection.
+- Add actionable SMS permission recovery in Settings and retain it across rotation; use compact permission buttons in both Settings and Messages.
+- Align File transfer padding, keep large-text guidance visible, and handle older background timeout preferences without crashing Settings.
 
 - Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
 

@@ -16,6 +16,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Keep one Mac sampling task per active Deck session, fence cleanup by generation, coalesce pending telemetry to the latest sample and expire v2 subscriptions without renewal.
 - Revalidate approved app bundle identity immediately before launch; move legacy Blender/Terminal launch codes out of v2 requests.
+- Keep development-signing warnings out of Release permission UI and document archive naming, signing and distribution.
+
+- Reveal the running signed app from blocked input permission settings so stale macOS permission entries can be reauthorized against the correct copy.
 
 - Leave **Send files** available after a receive or terminal result.
 

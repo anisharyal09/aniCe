@@ -49,6 +49,7 @@ Shared product changes, repository structure, documentation and development conv
 - Add a responsive Android Mac Desk Deck with live CPU, memory, thermal-pressure and reciprocal battery status, per-action feedback, Mac-approved app shortcuts, output volume and a charging-only keep-awake option.
 - Add Mac Settings approval for per-phone app shortcuts; keep launch authorization on Mac and transmit only catalog IDs and revisions.
 - Add authenticated phone power status to the Mac overview and menu-bar companion without creating a connection lease.
+- Add `scripts/dev.sh` for branch-labelled, per-checkout signed Mac builds that stop the running copy before rebuilding and Android build/install/launch with automatic ADB discovery and explicit selection when multiple devices are connected.
 
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
 

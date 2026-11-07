@@ -11,7 +11,7 @@
 4. Use one finger to move, tap to click, long-press and move to drag, and two fingers to scroll.
 5. Stop on either device to release remote input and clear the temporary phone editor.
 
-The Mac checks `CGPreflightPostEventAccess()` before accepting a start. Accessibility trust alone does not confirm Event Posting. The Mac Settings permission section refreshes status when you return from System Settings. If access remains blocked after granting it, restart aniCe once. macOS tracks privacy grants by code identity: a stable Apple Development signature survives rebuilds, while an ad-hoc signature identifies only that exact build. Input goes to the Mac app with keyboard focus.
+The Mac checks `CGPreflightPostEventAccess()` before accepting a start. Accessibility trust alone does not confirm Event Posting. The Mac Settings permission section refreshes status when you return from System Settings. If access remains blocked after granting it, restart aniCe once. macOS tracks privacy grants by code identity: consistent certificate signing helps preserve permission across rebuilds; an old ad-hoc grant may require reapproval after signing changes. Input goes to the Mac app with keyboard focus.
 
 Choose Live typing to send composing text immediately, or keyboard-committed typing to wait for the keyboard to commit it. Changing modes keeps the session active.
 
@@ -32,3 +32,21 @@ After the Mac accepts the session, the phone trackpad sends pointer movement, cl
 Only one accepted BLE session is active at a time. The phone sends `release-all` before `stop`, and the Mac receiver also releases held input locally on channel loss, capture loss or shutdown. Leaving the Mac remote-control page or pausing aniCe stops input but does not directly disconnect the shared Bluetooth link. The sender uses a bounded ordered queue, reserves room for terminal release messages and stops with visible status if discrete input cannot be queued; it never retries text automatically.
 
 See the [Phone-to-Mac v1 contract](../../protocol/phone-input/README.md) for message bounds and lifecycle details.
+
+## Permission recovery
+
+If access stays blocked after a restart:
+
+1. Use **Settings → Permissions → Show this app in Finder**, then quit aniCe with **Command-Q**.
+2. Remove the old aniCe entry from System Settings → Privacy & Security → Device Control and Data Access (Accessibility on older macOS).
+3. Add the revealed app, enable access and reopen it.
+
+Run one aniCe copy at a time. Branch folders share app identity and device state. Development and distribution signatures can need separate approval.
+
+For a developer-only reset of aniCe's Event Posting decision:
+
+```sh
+tccutil reset PostEvent io.github.anisharyal09.anice
+```
+
+Request access again afterward. This resets consent; it does not grant it. See [Apple's reset guide](https://developer.apple.com/documentation/xcode/resetting-access-to-protected-resources-in-macos).

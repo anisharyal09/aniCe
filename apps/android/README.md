@@ -62,7 +62,16 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradle
 JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew connectedDebugAndroidTest
 ```
 
-Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
+To build, update and launch on a phone, run from the repository root:
+
+```sh
+./scripts/dev.sh android
+./scripts/dev.sh android --serial DEVICE_SERIAL
+```
+
+Enable USB debugging and approve the computer first. One authorized device is selected automatically; with multiple devices, pass a serial from `adb devices`. ADB is found on PATH or in the Android SDK. On macOS, Android Studio's bundled JDK is used when `JAVA_HOME` is unset.
+
+APK: `apps/android/app/build/outputs/apk/debug/app-debug.apk`. Installation uses `adb install -r`, preserving data and pairing. Installing another branch replaces the phone's current build. A signing mismatch fails without uninstalling. Android permissions still require user approval.
 
 For the strict aggregate gate, run from the repository root:
 

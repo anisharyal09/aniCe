@@ -53,33 +53,52 @@ aniCe.xcodeproj/               Target membership, build inputs and shared scheme
 
 The window and companion share identity, connection state and the allowed-device selection. Connect freezes one selected Android credential or accepts any trusted Android, with only one admitted candidate at a time. The authenticated phone name is shown after readiness. The full nearby-discovery label toggles its content. When adding or moving Swift files, update Xcode target membership and any interchange compiler paths. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
 
-## Run and check
+## Build and run
 
-First run `python3 scripts/build-pairing-native.py macos` from the repository root using the [native prerequisites](../../core/rust/pairing/README.md). The shared aniCe target defaults to ad-hoc signing so a clone builds without an Apple account; choose **aniCe → My Mac** and press **Command-R**. For Event Posting checks, use local `xcodebuild` overrides for `CODE_SIGN_IDENTITY=Apple Development` and `DEVELOPMENT_TEAM`. Verify the app with `codesign --verify --deep --strict`; `codesign -dv --verbose=4` should show the expected Apple Development authority and TeamIdentifier. A TeamIdentifier alone does not confirm a trusted signature. Use the same signed app copy for setup and later runs; ad-hoc rebuilds can invalidate the saved permission. The checked-in target explicitly selects ad-hoc signing. Closing the window leaves the companion running; **Open aniCe** or the Dock icon reopens it. **Command-Q** quits.
-
-
-From `apps/macos/`, with Xcode installed at the path below:
+From the repository root:
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
-    -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
-    -derivedDataPath /tmp/aniCe-DerivedData ONLY_ACTIVE_ARCH=NO build
-
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
-    -project aniCe.xcodeproj -scheme aniCe -configuration Debug \
-    -derivedDataPath /tmp/aniCe-DerivedData -destination 'platform=macOS' \
-    CODE_SIGN_IDENTITY=- test
+./scripts/dev.sh mac
 ```
 
-App: `/tmp/aniCe-DerivedData/Build/Products/Debug/aniCe.app`. Prefix the test command with `TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS=1` to include isolated Keychain integration tests.
+Requires Xcode and the [native Rust prerequisites](../../core/rust/pairing/README.md). Install an Apple Development certificate in Xcode, then set your team in ignored `scripts/dev.local.sh`:
 
-For the strict aggregate gate, run from the repository root:
+```sh
+ANICE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+# Optional: certificate name or SHA-1 when multiple certificates are installed.
+# ANICE_CODE_SIGN_IDENTITY='Apple Development: Your Name (CERTIFICATE_ID)'
+```
+
+The script quits aniCe, builds Debug, verifies the signature/team and launches the exact output. If another copy remains open, it stops before building. It never resets permissions. Set `DEVELOPER_DIR` if Xcode is installed elsewhere.
+
+- App: `build/dev-mac/<checkout>-<branch>/Build/Products/Debug/aniCe.app` under the checkout root.
+- Display name: `aniCe (<branch>)`; the window header stays aniCe.
+- Branch slashes are escaped as `%2F` in folder names, so `feat/input` and `feat-input` stay distinct. Detached checkouts use their commit ID.
+- Worktrees have separate build folders but share app identity, permissions and device state. Run one copy at a time; Mac hosted tests also use aniCe, so let those finish before running the launcher. Each worktree needs its own local signing file or exported environment settings.
+- Closing the window leaves the companion running. **Command-Q** quits.
+
+Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery-during-development).
+
+Opening the project in Xcode and pressing Command-R uses its own DerivedData copy. The shared project defaults to ad-hoc signing; use the script for repeat permission testing.
+
+## Archive and distribution
+
+**Product → Archive** uses Release. The app is named **aniCe**, without a branch suffix. In the archive it lives at `Products/Applications/aniCe.app`.
+
+Release shows **Mac input allowed** when Event Posting is granted, or the permission action when blocked. Developer signing warnings appear only in Debug. Copying the app preserves its signature; it does not grant permissions on another Mac.
+
+**The checked-in Release configuration is ad-hoc signed too.** An archive copied directly from it is a local test build. For public distribution outside the Mac App Store, use Organizer → Distribute App with Developer ID signing and notarization. See [Apple's distribution workflow](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution). Development and distribution signatures may require separate privacy approval; see [Apple's signing requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
+
+## Checks
+
+From the repository root:
 
 ```sh
 python3 scripts/verify-suite.py fast --macos --vector-python .venv/bin/python
+python3 scripts/test_dev.py
 ```
 
-The gate enables the Keychain tests, cross-checks the result bundle against `xcodebuild`'s test-case lines, and fails on zero tests, failures, crashes and undocumented skips. The real-player/manual tests are printed by name when they cannot run.
+The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. It prints the real-player/manual checks that cannot run.
 
 ## Development storage
 
