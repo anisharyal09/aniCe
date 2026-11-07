@@ -34,11 +34,15 @@ class DeskDeckWireTests {
         for (index in 0 until valid.length()) {
             val row = valid.getJSONObject(index)
             val bytes = hex(row.getString("bytesHex"))
-            val message = DeskDeckMessage.decode(bytes) ?: error("${row.getString("name")} was not Desk Deck")
+            val message = try {
+                DeskDeckMessage.decode(bytes) ?: error("${row.getString("name")} was not Desk Deck")
+            } catch (error: Exception) {
+                throw AssertionError("${row.getString("name")} could not be decoded", error)
+            }
             assertArrayEquals(row.getString("name"), bytes, message.encode())
             versions += message.version
         }
-        assertEquals(setOf(1L, 2L, 3L), versions)
+        assertEquals(setOf(1L, 2L, 3L, 4L), versions)
 
         for (index in 0 until invalid.length()) {
             val row = invalid.getJSONObject(index)
@@ -61,6 +65,22 @@ class DeskDeckWireTests {
         assertEquals(20L, decoded.memoryUsed - decoded.memoryApp - decoded.memoryWired - decoded.memoryCompressed)
         assertEquals(30L, decoded.memoryCached)
         assertEquals(40L, decoded.memorySwap)
+    }
+
+    @Test fun versionFourShortcutActionsRequireOpaqueEmptyPayload() {
+        val subscription = "00000000-0000-0000-0000-000000000001"
+        val valid = DeskDeckMessage(kind = 4, version = 4, subscription = subscription,
+            commandId = 1, action = 9)
+        assertEquals(valid, DeskDeckMessage.decode(valid.encode()))
+        assertThrows(DeskDeckWireException::class.java) {
+            valid.copy(target = "/Applications/anything.app").encode()
+        }
+        assertThrows(DeskDeckWireException::class.java) {
+            valid.copy(version = 3).encode()
+        }
+        assertThrows(DeskDeckWireException::class.java) {
+            valid.copy(action = 10).encode()
+        }
     }
 
     @Test fun sharedDevicePowerFixturesPreserveUnknownPercentage() {

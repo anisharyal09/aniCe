@@ -4,6 +4,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Add outgoing DND sync and Android DND access setup in Settings, with incoming explicit state requests and native callback echo suppression.
+- Update the Desk Deck DND setup path and distinguish Shortcut command completion from verified Focus state.
+
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed
@@ -32,6 +35,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add Do Not Disturb control for Desk Deck v4, with explicit status checks after uncertain Shortcut results.
 - Add a responsive Android Mac Desk Deck with CPU and memory history, memory breakdown, Mac and phone power state, trusted quick actions, Mac-approved app shortcuts, output-volume control, a locally cached stale snapshot and a charging-only keep-awake option.
 - Add bounded v2 subscription renewal and approved-app catalog requests while retaining v1 Mac support; store the selected Mac and per-Mac shortcut pin/order locally.
 
@@ -51,6 +55,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Preserve the highest supported Desk Deck action mask while older compatibility capabilities arrive.
 - Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
 
 - Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.

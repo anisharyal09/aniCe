@@ -315,7 +315,7 @@ extension MainWindowView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
                 ("appearance", "Appearance"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
-                ("clipboard", "Clipboard"),
+                ("dnd-sync", "Do Not Disturb"), ("clipboard", "Clipboard"),
                 ("messages", "Messages"), ("file-transfer", "File transfer"),
                 ("now-playing", "Now Playing"), ("this-device", "This device")
               ]
@@ -359,6 +359,10 @@ extension MainWindowView {
                 }
                 preferenceSection("Desk Deck", id: "desk-deck") {
                   DeskDeckSettingsView(model: deskDeck, peers: pairing.peers)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                }
+                preferenceSection("Do Not Disturb", id: "dnd-sync") {
+                  DndSyncSettingsView(model: dndSync, deskDeck: deskDeck)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Clipboard", id: "clipboard") {

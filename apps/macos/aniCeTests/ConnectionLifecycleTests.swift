@@ -318,7 +318,7 @@ import AppKit
             clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
             sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
             phoneInput: MacPhoneInputModel(), smsPreferences: SmsPreferences(storage: nil),
-            deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
+            dndSync: MacDndSyncModel(defaults: preferences), deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: 800)

@@ -4,6 +4,9 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+- Define independent DND sync v1 capability, explicit state events and bounded results over existing secured DATA.
+- Specify that Desk Deck DND action success means the selected Shortcut command finished, not that Focus state was read back.
+
 ### Fixed
 
 - Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample formats.
@@ -16,6 +19,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define a Desk Deck v4 action for a locally selected Do Not Disturb Shortcut while preserving v1–v3 message shapes.
 - Add Desk Deck v2 catalog revision announcements so an open phone panel reloads approved apps after Mac-side edits.
 
 - Define Mac Desk Deck v2 with backward-compatible v1 support, richer memory and Mac power samples, five-second subscription renewal and fifteen-second expiry, bounded paged app catalogs and opaque approved-app launch IDs.

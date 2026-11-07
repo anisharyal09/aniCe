@@ -40,7 +40,7 @@ struct MacDeskDeckMessage {
   static func decode(_ data: Data) throws -> Self? {
     guard data.count <= 4000 else { throw MacDeskDeckWireError.malformed }
     guard case .array(let row) = try SessionCbor.decode(data), case .text("aniCe desk deck")? = row.first else { return nil }
-    guard row.count == 4, case .integer(let version) = row[1], (1...3).contains(version),
+    guard row.count == 4, case .integer(let version) = row[1], (1...4).contains(version),
       data.count <= (version == 1 ? 512 : 3800), case .integer(let kind) = row[2], case .array(let fields) = row[3] else {
       throw MacDeskDeckWireError.malformed
     }
@@ -54,7 +54,7 @@ struct MacDeskDeckMessage {
   func bool(_ index: Int) -> Bool { if fields.indices.contains(index), case .bool(let value) = fields[index] { return value }; return false }
 
   private func validate() throws {
-    guard (1...3).contains(version) else { throw MacDeskDeckWireError.malformed }
+    guard (1...4).contains(version) else { throw MacDeskDeckWireError.malformed }
     func text(_ i: Int) -> Bool { fields.indices.contains(i) && { if case .text = fields[i] { return true }; return false }() }
     func number(_ i: Int, _ range: ClosedRange<Int64>) -> Bool { fields.indices.contains(i) && { if case .integer(let n) = fields[i] { return range.contains(n) }; return false }() }
     func integer(_ i: Int) -> Int64 { self.number(i) }
@@ -71,8 +71,9 @@ struct MacDeskDeckMessage {
       return used >= 0 && total >= 0 && used <= total
     }()
     let valid: Bool
+    let capabilityMask: ClosedRange<Int64> = version >= 4 ? 0...31 : 0...15
     switch kind {
-    case 1: valid = fields.count == 1 && number(0, 0...15)
+    case 1: valid = fields.count == 1 && number(0, capabilityMask)
     case 2, 6, 7: valid = fields.count == 1 && uuid(0) && (kind != 7 || version >= 2)
     case 8: valid = version >= 2 && fields.count == 2 && uuid(0) && number(1, 0...3)
     case 10: valid = version >= 2 && fields.count == 2 && uuid(0) && uuid(1)
@@ -96,11 +97,11 @@ struct MacDeskDeckMessage {
           validControl(self.bool(7), self.string(8), self.string(9), self.number(10)) && validIdentity(self.bool(11), self.string(12), self.string(13)) &&
           validControl(self.bool(15), self.string(16), self.string(17), self.number(18))
       } else {
-        guard fields.count == (version == 3 ? 24 : 20), uuid(0) else { throw MacDeskDeckWireError.malformed }
+        guard fields.count == (version >= 3 ? 24 : 20), uuid(0) else { throw MacDeskDeckWireError.malformed }
         let active = integer(3), wired = integer(4), compressed = integer(5), total = integer(6)
         let sumValid = active >= 0 && wired >= 0 && compressed >= 0 && total >= 0 && active <= total && wired <= total - active && compressed <= total - active - wired
         let detailValid: Bool
-        if version == 3 {
+        if version >= 3 {
           let app = integer(20), cached = integer(21), free = integer(22), swap = integer(23)
           detailValid = (20...23).allSatisfy { number($0, -1...Int64.max) } &&
             ((app == -1 && cached == -1 && free == -1 && swap == -1) ||
@@ -109,14 +110,14 @@ struct MacDeskDeckMessage {
               wired >= 0 && wired <= total - free - cached - app && compressed >= 0 && compressed <= total - free - cached - app - wired))
         } else { detailValid = true }
         valid = number(3, 0...Int64.max) && number(4, 0...Int64.max) && number(5, 0...Int64.max) && number(6, 0...Int64.max) &&
-          number(1, 1...4294967295) && number(2, -1...100) && sumValid && detailValid && number(7, 0...3) && number(8, 0...15) &&
+          number(1, 1...4294967295) && number(2, -1...100) && sumValid && detailValid && number(7, 0...3) && number(8, capabilityMask) &&
           bool(9) && text(10) && text(11) && number(12, -1...100) && bool(13) && text(14) && text(15) && bool(16) &&
           number(17, 0...5) && number(18, -1...100) && number(19, 0...3) &&
           (integer(17) >= 2 || integer(18) == -1) &&
           validControl(self.bool(9), self.string(10), self.string(11), self.number(12)) && validIdentity(self.bool(13), self.string(14), self.string(15))
       }
     case 4:
-      guard fields.count == 6, uuid(0), number(1, 1...4294967295), number(2, 1...(version == 1 ? 7 : 8)), text(3), text(4), number(5, -1...100) else {
+      guard fields.count == 6, uuid(0), number(1, 1...4294967295), number(2, 1...(version == 1 ? 7 : version >= 4 ? 9 : 8)), text(3), text(4), number(5, -1...100) else {
         throw MacDeskDeckWireError.malformed
       }
       let action = self.number(2), target = self.string(3), revision = self.string(4), value = self.number(5)
@@ -127,6 +128,7 @@ struct MacDeskDeckMessage {
       case 6: valid = !target.isEmpty && !revision.isEmpty && (0...100).contains(value)
       case 7: valid = version == 1 && !target.isEmpty && !revision.isEmpty && (0...100).contains(value)
       case 8: valid = version >= 2 && uuid(3) && uuid(4) && value == -1
+      case 9: valid = version >= 4 && target.isEmpty && revision.isEmpty && value == -1
       default: valid = false
       }
     case 5: valid = fields.count == 3 && uuid(0) && number(1, 1...4294967295) && number(2, 0...7)
@@ -282,6 +284,167 @@ struct DeskDeckApprovedApp: Codable, Equatable, Identifiable {
   let executableResourceIdentifier: String?
 }
 
+struct MacDeskDeckSystemShortcut: Equatable, Identifiable {
+  let identifier: String
+  let name: String
+  var id: String { identifier }
+}
+
+private struct MacDeskDeckApprovedFocusShortcut: Codable {
+  let identifier: String
+  let name: String
+}
+
+private final class DeskDeckProcessState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var process: Process?
+  private var cancelled = false
+
+  func start(_ process: Process) throws -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !cancelled else { return false }
+    self.process = process
+    try process.run()
+    return true
+  }
+
+  func finish() {
+    lock.lock()
+    process = nil
+    lock.unlock()
+  }
+
+  func terminate() {
+    lock.lock()
+    cancelled = true
+    let process = self.process
+    lock.unlock()
+    guard let process, process.isRunning else { return }
+    process.terminate()
+    let processID = process.processIdentifier
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      self?.forceTerminate(processID)
+    }
+  }
+
+  private func forceTerminate(_ processID: Int32) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let process, process.processIdentifier == processID, process.isRunning else { return }
+    _ = kill(processID, SIGKILL)
+  }
+}
+
+private final class DeskDeckProcessOutput: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage = Data()
+
+  func append(_ data: Data) {
+    guard !data.isEmpty else { return }
+    lock.lock()
+    let remaining = max(0, 256 * 1024 - storage.count)
+    if remaining > 0 { storage.append(data.prefix(remaining)) }
+    lock.unlock()
+  }
+
+  var data: Data {
+    lock.lock()
+    defer { lock.unlock() }
+    return storage
+  }
+}
+
+enum MacDeskDeckShortcutRunner {
+  private static let executable = URL(fileURLWithPath: "/usr/bin/shortcuts")
+  private static let identifierPattern = try! NSRegularExpression(
+    pattern: "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+
+  static func parseList(_ output: String) -> [MacDeskDeckSystemShortcut] {
+    var seen = Set<String>()
+    let rows = output.split(whereSeparator: \.isNewline).compactMap { rawLine -> MacDeskDeckSystemShortcut? in
+      let line = String(rawLine)
+      let range = NSRange(line.startIndex..<line.endIndex, in: line)
+      guard let match = identifierPattern.firstMatch(in: line, range: range),
+        let idRange = Range(match.range, in: line) else { return nil }
+      let identifier = String(line[idRange])
+      guard UUID(uuidString: identifier) != nil, seen.insert(identifier.lowercased()).inserted else { return nil }
+      let before = String(line[..<idRange.lowerBound])
+      let after = String(line[idRange.upperBound...])
+      let rawName = [before, after].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " ")
+      let name = rawName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "()[]{}")))
+      guard !name.isEmpty, name.utf16.count <= 80,
+        !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return nil }
+      return MacDeskDeckSystemShortcut(identifier: identifier, name: name)
+    }
+    return rows.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+  }
+
+  static func list() async -> (shortcuts: [MacDeskDeckSystemShortcut], available: Bool) {
+    let result = await run(["list", "--show-identifiers"], timeout: 5, captureOutput: true)
+    guard result.status == 0 else { return ([], false) }
+    return (parseList(String(decoding: result.output, as: UTF8.self)), true)
+  }
+
+  static func run(identifier: String) async -> Int64 {
+    guard UUID(uuidString: identifier) != nil else { return 5 }
+    let result = await run(["run", identifier], timeout: 5, captureOutput: false)
+    return resultCode(result.status)
+  }
+
+  static func resultCode(_ processStatus: Int32) -> Int64 { processStatus == 0 ? 0 : 7 }
+
+  private static func run(_ arguments: [String], timeout: TimeInterval, captureOutput: Bool) async -> (status: Int32, output: Data) {
+    let state = DeskDeckProcessState()
+    let output = DeskDeckProcessOutput()
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        let pipe = Pipe()
+        if captureOutput {
+          process.standardOutput = pipe
+          pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil } else { output.append(chunk) }
+          }
+        } else {
+          process.standardOutput = FileHandle.nullDevice
+        }
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { child in
+          if captureOutput {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) {
+              pipe.fileHandleForReading.readabilityHandler = nil
+              output.append(pipe.fileHandleForReading.availableData)
+              state.finish()
+              continuation.resume(returning: (child.terminationStatus, output.data))
+            }
+          } else {
+            state.finish()
+            continuation.resume(returning: (child.terminationStatus, Data()))
+          }
+        }
+        do {
+          guard try state.start(process) else {
+            state.finish()
+            continuation.resume(returning: (-1, Data()))
+            return
+          }
+        } catch {
+          state.finish()
+          continuation.resume(returning: (-1, Data()))
+          return
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { state.terminate() }
+      }
+    } onCancel: {
+      state.terminate()
+    }
+  }
+}
+
 private struct DeskDeckAppCatalog: Codable {
   var revision: String
   var apps: [DeskDeckApprovedApp]
@@ -395,6 +558,7 @@ struct MacPhonePowerReading: Equatable {
 
 @Observable @MainActor final class MacDeskDeckModel: FeatureHandler {
   private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "aniCe", category: "DeskDeck")
+  private static let focusShortcutDefaultsKey = "desk-deck.focus-shortcut"
   private static let powerChangeCallback: IOPowerSourceCallbackType = { context in
     guard let context else { return }
     let model = Unmanaged<MacDeskDeckModel>.fromOpaque(context).takeUnretainedValue()
@@ -413,6 +577,11 @@ struct MacPhonePowerReading: Equatable {
   }
 
   private var supportedActions: Int64
+  private var approvedFocusShortcut: MacDeskDeckApprovedFocusShortcut?
+  private var approvedFocusShortcutIsAvailable = false
+  private(set) var availableFocusShortcuts: [MacDeskDeckSystemShortcut] = []
+  private(set) var focusShortcutStatus = ""
+  private(set) var isLoadingFocusShortcuts = false
   private var links: [String: Link] = [:]
   private let outputVolume = MacOutputVolume()
   private var ticker: Task<Void, Never>?
@@ -456,9 +625,63 @@ struct MacPhonePowerReading: Equatable {
   private(set) var catalogGeneration = 0
 
   init() {
-    supportedActions = Self.actionMask
+    if let data = UserDefaults.standard.data(forKey: Self.focusShortcutDefaultsKey) {
+      if let saved = try? JSONDecoder().decode(MacDeskDeckApprovedFocusShortcut.self, from: data),
+        UUID(uuidString: saved.identifier) != nil, !saved.name.isEmpty, saved.name.utf16.count <= 80 {
+        approvedFocusShortcut = saved
+      } else {
+        UserDefaults.standard.removeObject(forKey: Self.focusShortcutDefaultsKey)
+      }
+    }
+    supportedActions = Self.actionMask(focusShortcutConfigured: false)
     activationObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
       object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.refreshCapabilities() } }
+  }
+
+  var approvedFocusShortcutName: String? { approvedFocusShortcut?.name }
+
+  func refreshFocusShortcuts() async {
+    guard !isLoadingFocusShortcuts else { return }
+    isLoadingFocusShortcuts = true
+    focusShortcutStatus = "Checking Shortcuts…"
+    let result = await MacDeskDeckShortcutRunner.list()
+    availableFocusShortcuts = result.shortcuts
+    approvedFocusShortcutIsAvailable = result.available && approvedFocusShortcut.map { approved in
+      result.shortcuts.contains { $0.identifier.caseInsensitiveCompare(approved.identifier) == .orderedSame }
+    } == true
+    focusShortcutStatus = if !result.available {
+      "Shortcuts could not be read. Open Shortcuts on this Mac and try again."
+    } else if approvedFocusShortcut != nil && !approvedFocusShortcutIsAvailable {
+      "The saved Shortcut was not found. Choose a replacement or remove its selection."
+    } else if result.shortcuts.isEmpty {
+      "No shortcuts found. Create a Do Not Disturb toggle in Shortcuts, then refresh."
+    } else if approvedFocusShortcutIsAvailable {
+      "Selected. Test that this Shortcut changes Focus; a blank Shortcut can finish without changing anything. aniCe reports whether it ran, not the Focus state."
+    } else {
+      "Choose the shortcut to use for Do Not Disturb."
+    }
+    isLoadingFocusShortcuts = false
+    refreshCapabilities()
+  }
+
+  func approveFocusShortcut(_ shortcut: MacDeskDeckSystemShortcut) {
+    guard availableFocusShortcuts.contains(shortcut), UUID(uuidString: shortcut.identifier) != nil,
+      !shortcut.name.isEmpty, shortcut.name.utf16.count <= 80 else { return }
+    approvedFocusShortcut = MacDeskDeckApprovedFocusShortcut(identifier: shortcut.identifier, name: shortcut.name)
+    approvedFocusShortcutIsAvailable = true
+    if let data = try? JSONEncoder().encode(approvedFocusShortcut) {
+      defaults.set(data, forKey: Self.focusShortcutDefaultsKey)
+    }
+    focusShortcutStatus = "Selected. Test that this Shortcut changes Focus; a blank Shortcut can finish without changing anything. aniCe reports whether it ran, not the Focus state."
+    refreshCapabilities()
+  }
+
+  func removeFocusShortcut() {
+    approvedFocusShortcut = nil
+    approvedFocusShortcutIsAvailable = false
+    defaults.removeObject(forKey: Self.focusShortcutDefaultsKey)
+    focusShortcutStatus = "No Do Not Disturb Shortcut selected."
+    refreshCapabilities()
   }
 
   func shutdown() {
@@ -488,21 +711,30 @@ struct MacPhonePowerReading: Equatable {
     guard var link = links[transport], !link.capabilitySent, !link.capabilitySending else { return }
     link.capabilitySending = true
     links[transport] = link
-    let capabilityV3 = MacDeskDeckMessage(version: 3, kind: 1, fields: [.integer(supportedActions)])
-    let capabilityV2 = MacDeskDeckMessage(version: 2, kind: 1, fields: [.integer(supportedActions)])
-    let capabilityV1 = MacDeskDeckMessage(kind: 1, fields: [.integer(supportedActions)])
+    let currentActions = supportedActions
+    let legacyActions = currentActions & 15
+    let capabilityV4 = MacDeskDeckMessage(version: 4, kind: 1, fields: [.integer(currentActions)])
+    let capabilityV3 = MacDeskDeckMessage(version: 3, kind: 1, fields: [.integer(legacyActions)])
+    let capabilityV2 = MacDeskDeckMessage(version: 2, kind: 1, fields: [.integer(legacyActions)])
+    let capabilityV1 = MacDeskDeckMessage(kind: 1, fields: [.integer(legacyActions)])
     let descriptor = link.channel.descriptor
     Task { @MainActor [weak self] in
       var sent = true
+      do { try await link.channel.sendData(capabilityV4.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV3.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV2.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV1.encode()) } catch { sent = false }
       guard let self, self.links[transport]?.channel.descriptor == descriptor else { return }
       var current = self.links[transport]!
       current.capabilitySending = false
-      current.capabilitySent = sent
+      let actionsChanged = self.supportedActions != currentActions
+      current.capabilitySent = sent && !actionsChanged
       self.links[transport] = current
-      if sent, !current.subscription.isEmpty { await self.publish(transport, descriptor: descriptor) }
+      if actionsChanged {
+        self.sendCapability(on: transport)
+      } else if sent, !current.subscription.isEmpty {
+        await self.publish(transport, descriptor: descriptor)
+      }
     }
   }
 
@@ -560,6 +792,9 @@ struct MacPhonePowerReading: Equatable {
       outputVolume.start()
       updateTicker()
       updatePowerObservation()
+      if approvedFocusShortcut != nil, !isLoadingFocusShortcuts {
+        Task { @MainActor [weak self] in await self?.refreshFocusShortcuts() }
+      }
       await publish(descriptor.transport, descriptor: descriptor)
       Self.logger.info("event=subscription_handled protocol=\(message.version) duration_ms=\(Int((ProcessInfo.processInfo.systemUptime - handlingStarted) * 1000))")
       return .handled
@@ -637,6 +872,16 @@ struct MacPhonePowerReading: Equatable {
       return 2
     case 8:
       return await launchApprovedApp(id: target, revision: revision, peer: link.channel.descriptor.peer)
+    case 9:
+      guard link.protocolVersion >= 4, supportedActions & 16 != 0, approvedFocusShortcutIsAvailable,
+        let shortcut = approvedFocusShortcut else { return 5 }
+      let result = await MacDeskDeckShortcutRunner.run(identifier: shortcut.identifier)
+      if result == 0 {
+        focusShortcutStatus = "Shortcut command finished. Focus state was not checked."
+      } else {
+        focusShortcutStatus = "Shortcut failed or timed out. Check its actions and permissions, then retry."
+      }
+      return result
     default:
       return 2
     }
@@ -653,12 +898,13 @@ struct MacPhonePowerReading: Equatable {
     let memory = DeskDeckMemory.read()
     let power = DeskDeckPower.read()
     let thermal = Int64(ProcessInfo.processInfo.thermalState.rawValue)
+    let actionMask = link.protocolVersion >= 4 ? supportedActions : supportedActions & 15
     let outputSupported = outputVolume.level != nil && !outputVolume.target.isEmpty && !outputVolume.revision.isEmpty
     var fields: [SessionCBOR]
     if link.protocolVersion == 1 {
       fields = [
         .text(subscription), .integer(link.sequence), .integer(cpuPercentValue ?? lastCPUPercent),
-        .integer(memory.used), .integer(memory.total), .integer(thermal), .integer(supportedActions),
+        .integer(memory.used), .integer(memory.total), .integer(thermal), .integer(actionMask),
         .bool(outputSupported), .text(outputSupported ? outputVolume.target : ""), .text(outputSupported ? outputVolume.revision : ""),
         .integer(outputSupported ? outputVolume.level! : -1),
         .bool(input != nil), .text(input == nil ? "" : inputTarget), .text(input == nil ? "" : inputRevision), .bool(input?.muted ?? false),
@@ -668,14 +914,14 @@ struct MacPhonePowerReading: Equatable {
       fields = [
         .text(subscription), .integer(link.sequence), .integer(cpuPercentValue ?? lastCPUPercent),
         .integer(memory.active), .integer(memory.wired), .integer(memory.compressed), .integer(memory.total),
-        .integer(thermal), .integer(supportedActions),
+        .integer(thermal), .integer(actionMask),
         .bool(outputSupported), .text(outputSupported ? outputVolume.target : ""), .text(outputSupported ? outputVolume.revision : ""),
         .integer(outputSupported ? outputVolume.level! : -1),
         .bool(input != nil), .text(input == nil ? "" : inputTarget), .text(input == nil ? "" : inputRevision), .bool(input?.muted ?? false),
         .integer(power.state), .integer(power.percent), .integer(power.source),
       ]
     }
-    if link.protocolVersion == 3 {
+    if link.protocolVersion >= 3 {
       fields += [.integer(memory.app), .integer(memory.cached), .integer(memory.free), .integer(memory.swap)]
     }
     let sample = MacDeskDeckMessage(version: link.protocolVersion, kind: 3, fields: fields)
@@ -952,7 +1198,7 @@ struct MacPhonePowerReading: Equatable {
   }
 
   private func refreshCapabilities() {
-    let updated = Self.actionMask
+    let updated = Self.actionMask(focusShortcutConfigured: approvedFocusShortcutIsAvailable)
     guard updated != supportedActions else { return }
     supportedActions = updated
     for transport in Array(links.keys) {
@@ -1046,12 +1292,13 @@ struct MacPhonePowerReading: Equatable {
     }
   }
 
-  private static var actionMask: Int64 {
+  private static func actionMask(focusShortcutConfigured: Bool) -> Int64 {
     var mask: Int64 = 0
     if MacDeskDeckLock.hasEventPostingAccess { mask |= 1 }
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "org.blenderfoundation.blender") != nil { mask |= 2 }
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") != nil { mask |= 4 }
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screenshot.launcher") != nil { mask |= 8 }
+    if focusShortcutConfigured { mask |= 16 }
     return mask
   }
 

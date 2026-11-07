@@ -8,7 +8,19 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Add optional directional Do Not Disturb sync in Settings, using native Mac automations and Android DND events over connected trusted sessions.
+- Report Mac DND automation failure when sending is disabled, no receiving phone is connected, or channel submission fails.
+- Keep Desk Deck's DND Shortcut setup with Do Not Disturb settings, accept existing Shortcuts without a custom output marker, provide copyable toggle and explicit On/Off Apple Intelligence prompts with manual steps, and describe completion without claiming Focus changed.
+
 - Clarify Mac remote-control permission guidance and correct the transfer recovery description.
+
+### Added
+
+- Add a Do Not Disturb quick control backed by one Mac-selected Shortcut.
+
+### Changed
+
+- Negotiate Desk Deck v4 for the new control while preserving v1–v3 behavior and action masks.
 
 ### Fixed
 

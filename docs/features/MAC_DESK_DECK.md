@@ -24,10 +24,11 @@ Meters refresh about once per second while subscribed. History clears when the s
 - **Mute mic** sets mute on the current default input only when that CoreAudio device exposes a writable mute property. It is not a hardware kill switch and does not guarantee that every app uses that input.
 - **Lock Mac** requests the public Control–Command–Q session-lock shortcut when Mac Event Posting permission is available. If it is missing, tap the tile for setup guidance; access is granted on the Mac.
 - **Screenshot** opens the native macOS Screenshot controls. Choose an area, window or display, save locally, or cancel on the Mac. The phone confirms only that the controls opened; the image is not sent to the phone.
+- **Do Not Disturb** runs the existing Shortcut selected in Mac Settings → Do Not Disturb. The shortcut must contain a working Focus action; an empty shortcut can finish without changing anything. aniCe reports whether the Shortcuts command finished, but does not read the resulting Focus state; check Focus on the Mac if it did not change. The selection is available to trusted phones until removed. Shortcuts use their own granted permissions, and Focus may sync when Share Across Devices is enabled.
 - **Mac output volume** sets the current default output's absolute volume when macOS exposes a writable system control. A target change rejects stale writes; slider movement keeps only the latest queued value.
 - The **Approved apps** grid shows apps explicitly allowed for that trusted phone in Mac Settings → Desk Deck. Pin and order shortcuts on the phone; Terminal and Blender are offered when installed. The Mac announces catalog changes to an open panel; the phone reloads pages for the new revision. The Mac resolves each opaque shortcut ID against its current approved bundle before launch.
 - App approvals are tied to both the selected bundle and its executable file identity. Moving, replacing, or revoking the app invalidates the shortcut; reapprove a replacement in Settings → Desk Deck. Removing a phone's trust removes that phone's saved approvals.
-- Brightness is not part of this version.
+- Brightness remains unsupported because macOS has no documented general display-brightness setter for this app; aniCe does not use private APIs or helper tools.
 
 Every control has independent feedback. Actions require a fresh sample and are scoped to the current subscription. A request without a response is shown as unconfirmed and is never replayed automatically.
 
@@ -39,6 +40,6 @@ Landscape presents meters and quick actions in an adaptive grid. Portrait stacks
 
 ## Implementation and protocol
 
-V1 and v2 remain available for older Macs. V3 adds app, cache, free and swap readings with explicit unavailable values. V2 supplies power samples, renewable subscriptions, and paged approved-app catalogs. Phone power is a separate authenticated shared capability, so Mac device status can show the phone's battery without opening Desk Deck. Neither capability opens a connection or extends another feature's lease.
+V1 through v3 remain available for older Macs. V3 adds app, cache, free and swap readings with explicit unavailable values. V4 adds the selected Do Not Disturb Shortcut while retaining the v3 sample shape. V2 supplies power samples, renewable subscriptions, and paged approved-app catalogs. Phone power is a separate authenticated shared capability, so Mac device status can show the phone's battery without opening Desk Deck. Neither capability opens a connection or extends another feature's lease.
 
-See the [Desk Deck v1/v2/v3 contract](../../protocol/desk-deck/README.md) and [Device Power v1 contract](../../protocol/device-power/README.md).
+See the [Desk Deck v1–v4 contract](../../protocol/desk-deck/README.md) and [Device Power v1 contract](../../protocol/device-power/README.md).

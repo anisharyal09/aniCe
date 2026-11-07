@@ -1,0 +1,8 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; At most 128 encoded bytes; canonical lowercase UUIDs are checked by both codecs.
+dnd-sync = ["aniCe dnd sync", 1, 1, capability] /
+           ["aniCe dnd sync", 1, 2, state] /
+           ["aniCe dnd sync", 1, 3, result]
+capability = [send-enabled: bool, receive-enabled: bool]
+state = [event-id: tstr .size 36, enabled: bool]
+result = [event-id: tstr .size 36, result: 0..4]

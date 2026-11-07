@@ -255,14 +255,16 @@ class DeskDeckController(
         val link = activeLink() ?: return false
         val current = snapshot ?: return false
         if (!readingsAreFresh || link.subscription.isEmpty() || current.sequence == 0L) return false
-        if (action !in 1L..8L || action == 7L || action == 8L && link.protocolVersion < 2L ||
+        if (action !in 1L..9L || action == 7L || action == 8L && link.protocolVersion < 2L ||
+            action == 9L && link.protocolVersion < 4L ||
             action in 3L..4L && link.protocolVersion != 1L) return false
-        if ((action == 1L || action == 3L || action == 4L || action == 5L) && value != -1L) return false
+        if ((action == 1L || action in 3L..5L || action == 9L) && value != -1L) return false
         if (action == 2L && (!current.microphoneSupported || current.microphoneTarget != target || current.microphoneRevision != revision)) return false
         if (action == 2L && value !in 0L..1L) return false
         if (action == 6L && (!current.outputSupported || current.outputTarget != target || current.outputRevision != revision || value !in 0L..100L)) return false
         if (action == 8L && (value != -1L || revision != link.catalogRevision || link.shortcuts.none { it.id == target })) return false
-        if (action in setOf(1L, 3L, 4L, 5L) && (current.actions and actionBit(action)) == 0L) return false
+        if ((action in setOf(1L, 3L, 4L, 5L) || action == 9L) &&
+            (current.actions and actionBit(action)) == 0L) return false
 
         val intent = Intent(action, value, target, revision)
         if (pendingCommands.values.any { it.intent.action == action }) {
@@ -378,7 +380,7 @@ class DeskDeckController(
             val previousVersion = link.protocolVersion
             link.capable = true
             link.protocolVersion = maxOf(link.protocolVersion, message.version)
-            link.actions = message.actions
+            if (message.version >= previousVersion) link.actions = message.actions
             if (visible && peer == descriptor.peer) {
                 if (activeTransport == descriptor.transport && link.subscription.isEmpty()) beginSubscription(link)
                 else if (activeTransport == descriptor.transport && link.subscription.isNotEmpty() && link.protocolVersion > previousVersion) beginSubscription(link)
@@ -447,14 +449,15 @@ class DeskDeckController(
         if (message.kind == 5L) {
             val pending = pendingCommands[message.commandId] ?: return DataHandling.DISCARDED
             if (!isCurrent(descriptor, message.subscription, pending.generation) || pending.descriptor != descriptor || pending.subscription != message.subscription) return DataHandling.DISCARDED
-            val result = when (message.result) {
-                0L -> successText(pending.intent)
-                1L -> "Control target changed. Refresh the deck."
-                2L -> "Control is unsupported on this Mac."
-                3L -> "Mac permission is needed."
-                4L -> "Mac denied the action."
-                5L -> "Control is unavailable."
-                6L -> "Mac is busy."
+            val result = when {
+                message.result == 0L -> successText(pending.intent)
+                message.result == 1L -> "Control target changed. Refresh the deck."
+                message.result == 2L -> "Control is unsupported on this Mac."
+                message.result == 3L -> "Mac permission is needed."
+                message.result == 4L -> "Mac denied the action."
+                message.result == 5L -> "Control is unavailable."
+                message.result == 6L -> "Mac is busy."
+                pending.intent.action == 9L -> "Do Not Disturb status is unconfirmed. Check Focus before trying again."
                 else -> "Mac action failed."
             }
             finishCommand(message.commandId, pending, result, preserveQueuedSlider = message.result == 0L && pending.intent.action == 6L)
@@ -809,7 +812,14 @@ class DeskDeckController(
     private fun orderedShortcutIDs(fingerprint: String): List<String> =
         shortcutPreferences?.getString("order.$fingerprint", null)?.split(',')?.filter(String::isNotEmpty).orEmpty()
 
-    private fun actionBit(action: Long): Long = when (action) { 1L -> 1L; 3L -> 2L; 4L -> 4L; 5L -> 8L; else -> 0L }
+    private fun actionBit(action: Long): Long = when (action) {
+        1L -> 1L
+        3L -> 2L
+        4L -> 4L
+        5L -> 8L
+        9L -> 16L
+        else -> 0L
+    }
 
     private fun setActionFeedback(action: Long, message: String) {
         actionFeedbackValues = actionFeedbackValues + (action to message)
@@ -827,6 +837,7 @@ class DeskDeckController(
         5L -> "Screenshot controls opened on Mac."
         6L -> "Mac output volume updated."
         8L -> "App launch requested."
+        9L -> "Mac Shortcut finished. Check Focus to confirm the change."
         else -> "Done"
     }
 

@@ -160,6 +160,7 @@ private fun DeskDeckGrid(
     var memoryDetails by rememberSaveable { mutableStateOf(false) }
     var showDetails by rememberSaveable { mutableStateOf(false) }
     var lockHelp by rememberSaveable { mutableStateOf(false) }
+    var focusHelp by rememberSaveable { mutableStateOf(false) }
     var managingApps by rememberSaveable { mutableStateOf(false) }
     var ageNow by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
     LaunchedEffect(sample?.sequence) {
@@ -195,6 +196,23 @@ private fun DeskDeckGrid(
         MacroCard("Screenshot", owner.actionFeedback(5).ifBlank { if (supported) "Open Mac capture controls" else "Capture controls unavailable" },
             fresh && supported && !owner.isBusy(5)) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress); owner.command(5)
+        }
+    }
+    val focusToggle: @Composable () -> Unit = {
+        val supportsV4 = sample?.protocolVersion?.let { it >= 4L } == true
+        val available = sample?.let { supportsV4 && it.actions and 16L != 0L } == true
+        val detail = owner.actionFeedback(9).ifBlank {
+            when {
+                !supportsV4 -> "Update aniCe on Mac"
+                available -> "Toggle Do Not Disturb"
+                else -> "Set up in Mac Settings → Do Not Disturb"
+            }
+        }
+        MacroCard("Do Not Disturb", detail, fresh && supportsV4 && !owner.isBusy(9)) {
+            if (available) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                owner.command(9)
+            } else focusHelp = true
         }
     }
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -271,7 +289,8 @@ private fun DeskDeckGrid(
                 item { microphone() }
                 item { lockControl() }
             }
-            item(span = { GridItemSpan(if (wide) 2 else maxLineSpan) }) { screenshot() }
+            item(span = { GridItemSpan(if (wide) 1 else maxLineSpan) }) { screenshot() }
+            item(span = { GridItemSpan(if (wide) 1 else maxLineSpan) }) { focusToggle() }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Apps", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -360,6 +379,10 @@ private fun DeskDeckGrid(
     if (lockHelp) DeckDetailDialog("Enable Lock Mac", { lockHelp = false }) {
         Text("On your Mac, open aniCe → Settings → Permissions → Request Events access. Enable access for the running aniCe build in System Settings, then return to aniCe.", style = MaterialTheme.typography.bodyMedium)
         Text("A rebuilt ad hoc app may need access again. If access is enabled but still unavailable, restart aniCe on the Mac.", style = MaterialTheme.typography.bodySmall)
+    }
+    if (focusHelp) DeckDetailDialog("Set up Do Not Disturb", { focusHelp = false }) {
+        Text("Select your existing Do Not Disturb toggle Shortcut in Mac aniCe → Settings → Do Not Disturb → Desk Deck button. aniCe reports whether Shortcuts finished; it cannot read back Focus state. Check Focus on the Mac if it did not change.", style = MaterialTheme.typography.bodyMedium)
+        Text("Choose a shortcut that only changes Focus. Focus may sync to other Apple devices when Share Across Devices is enabled.", style = MaterialTheme.typography.bodySmall)
     }
 }
 

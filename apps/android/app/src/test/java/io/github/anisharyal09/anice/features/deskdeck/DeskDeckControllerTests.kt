@@ -204,6 +204,31 @@ class DeskDeckControllerTests {
         } finally { owner.stop() }
     }
 
+    @Test fun versionFourKeepsShortcutCapabilityWhenLegacyCapabilitiesFollow() = runBlocking {
+        val peer = DeviceIdentity("mac-id", "Mac", "macos", "key", "fingerprint")
+        val channel = FakeChannel(ChannelDescriptor("v4-live", "lan", peer))
+        val owner = DeskDeckController(dispatcher = Dispatchers.Unconfined, clock = { 1000L })
+        owner.available(channel)
+        owner.start(peer)
+        owner.handle(channel.descriptor, DeskDeckMessage(kind = 1, version = 4, actions = 31).encode())
+        owner.handle(channel.descriptor, DeskDeckMessage(kind = 1, version = 3, actions = 15).encode())
+
+        try {
+            val subscription = channel.messages().last { it.kind == 2L }
+            assertEquals(4L, subscription.version)
+            val sample = sample(subscription.subscription, 1).copy(version = 4, actions = 31)
+            assertEquals(DataHandling.HANDLED, owner.handle(channel.descriptor, sample.encode()))
+            assertTrue(owner.command(9))
+            val focusCommand = channel.messages().last { it.kind == 4L }
+            assertEquals(9L, focusCommand.action)
+            val uncertainResult = DeskDeckMessage(kind = 5, version = 4,
+                subscription = subscription.subscription, commandId = focusCommand.commandId, result = 7).encode()
+            assertEquals(DataHandling.HANDLED, owner.handle(channel.descriptor, uncertainResult))
+            assertTrue(owner.actionFeedback(9).contains("unconfirmed"))
+            assertFalse(owner.command(10))
+        } finally { owner.stop() }
+    }
+
     private fun sample(subscription: String, sequence: Long) = DeskDeckMessage(
         kind = 3,
         version = 2,

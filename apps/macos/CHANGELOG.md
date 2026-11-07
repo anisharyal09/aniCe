@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Add Do Not Disturb settings, a native automation reporting action and dedicated On/Off Shortcut selections for directional phone sync.
+- Fail Mac DND automations visibly when sending is disabled, no receiving phone is connected, or channel submission fails.
+- Move the Desk Deck DND Shortcut into Do Not Disturb settings, restore compatibility with existing Shortcuts, explain that empty shortcuts do nothing, and add copyable toggle and explicit On/Off prompts with manual setup steps.
+
 - Shorten Mac input permission and connection guidance.
 
 ### Fixed
@@ -29,6 +33,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add one Mac-side approval for a dedicated Do Not Disturb Shortcut shared with trusted phones.
 - Add Settings → Desk Deck with a native app picker and independent shortcut approval for each trusted phone; add phone battery and charging status beside connected-device state in Overview and the menu-bar companion.
 - Add Mac v2 memory and battery samples, paged catalogs for up to 32 approved apps, renewable foreground subscriptions and the public Control–Command–Q lock request.
 

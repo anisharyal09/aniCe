@@ -21,6 +21,7 @@ struct MainWindowView: View {
   let keyboardTrackpad: MacKeyboardTrackpadModel
   let phoneInput: MacPhoneInputModel
   let smsPreferences: SmsPreferences
+  @Bindable var dndSync: MacDndSyncModel
   @Bindable var deskDeck: MacDeskDeckModel
   @Bindable var phonePower: MacPhonePowerModel
   @Bindable var navigation: ConnectionNavigation

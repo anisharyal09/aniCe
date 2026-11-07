@@ -25,6 +25,7 @@ struct AniCeApp: App {
   private let smsNotifier: MacSmsNotifier
   @State private var transfer: MacTransferModel
   @State private var edgeDrop: MacEdgeDropController
+  @State private var dndSync: MacDndSyncModel
   @State private var deskDeck: MacDeskDeckModel
   @State private var phonePower: MacPhonePowerModel
   @State private var transferNotifier: MacTransferNotifier?
@@ -98,6 +99,9 @@ struct AniCeApp: App {
     _keyboardTrackpad = State(initialValue: keyboardTrackpad)
     let phoneInput = MacPhoneInputModel()
     _phoneInput = State(initialValue: phoneInput)
+    let dndSync = MacDndSyncModel()
+    MacDndSyncModel.shared = dndSync
+    _dndSync = State(initialValue: dndSync)
     let deskDeck = MacDeskDeckModel()
     _deskDeck = State(initialValue: deskDeck)
     let phonePower = MacPhonePowerModel()
@@ -126,6 +130,7 @@ struct AniCeApp: App {
     features.register(clipboard)
     features.register(sms)
     features.register(phoneInput)
+    features.register(dndSync)
     features.register(deskDeck)
     features.register(phonePower)
     session.channelStateChanged = { [weak session] in
@@ -171,6 +176,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      dndSync.setSending(false); dndSync.removeSelections()
       transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()
       sms.invalidate(); smsPreferences.clear()
@@ -220,12 +226,12 @@ struct AniCeApp: App {
         session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
-        deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
+        dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
         .onAppear {
           if !IdentityView.isTesting {
             delegate.onTerminate = {
               findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll()
-              floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown()
+              floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
               PasteTrayController.shared.hide()
             }
             delegate.installCompanion(

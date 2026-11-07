@@ -7,6 +7,11 @@ import Darwin
 
 @MainActor
 final class DeskDeckWireTests: XCTestCase {
+  func testFocusShortcutListParserExtractsOpaqueIdentifiers() {
+    let shortcut = MacDeskDeckShortcutRunner.parseList("Toggle Do Not Disturb (00000000-0000-0000-0000-000000000001)\ninvalid entry")
+    XCTAssertEqual(shortcut, [MacDeskDeckSystemShortcut(identifier: "00000000-0000-0000-0000-000000000001", name: "Toggle Do Not Disturb")])
+  }
+
   func testSharedDeskDeckFixturesRoundTripAndRejectMalformedRecords() throws {
     let root = try SessionFixtures().root("desk-deck-vectors")
     let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
@@ -21,7 +26,7 @@ final class DeskDeckWireTests: XCTestCase {
       XCTAssertEqual(try message.encode(), bytes)
       versions.insert(message.version)
     }
-    XCTAssertEqual(versions, Set([1, 2, 3]))
+    XCTAssertEqual(versions, Set([1, 2, 3, 4]))
 
     for row in invalid {
       let bytes = try SessionFixtures().b(row, "bytes")

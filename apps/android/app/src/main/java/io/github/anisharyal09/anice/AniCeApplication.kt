@@ -148,6 +148,8 @@ class AniCeApplication : Application() {
     val sms get() = smsOwner.value
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
+    private val dndSyncOwner = lazy { io.github.anisharyal09.anice.features.dndsync.DndSyncController(this) }
+    val dndSync get() = dndSyncOwner.value
     val devicePower by lazy { io.github.anisharyal09.anice.features.deskdeck.DevicePowerController(this) }
     val deskDeck by lazy {
         io.github.anisharyal09.anice.features.deskdeck.DeskDeckController(
@@ -175,6 +177,7 @@ class AniCeApplication : Application() {
             it.register(clipboard)
             it.register(sms)
             it.register(phoneInput)
+            it.register(dndSync)
             it.register(devicePower)
             it.register(deskDeck)
         }
@@ -229,6 +232,11 @@ class AniCeApplication : Application() {
     // Share one service across activity recreation so identity operations stay serialized.
     val identityService by lazy {
         IdentityService(AndroidIdentityMetadata(this), AndroidIdentityKeys(), { Build.MODEL })
-            .also { it.onInvalidated = ::invalidateSessions }
+            .also {
+                it.onInvalidated = {
+                    if (dndSyncOwner.isInitialized()) android.os.Handler(android.os.Looper.getMainLooper()).post { dndSync.setSendingEnabled(false) }
+                    invalidateSessions()
+                }
+            }
     }
 }
