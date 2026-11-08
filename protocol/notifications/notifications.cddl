@@ -2,8 +2,8 @@
 ; Android notification mirroring over authenticated application DATA.
 
 message = ["aniCe notifications", 1, kind, fields]
-kind = 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8
-fields = capability / notification / removal / snapshot-begin / snapshot-end / action / action-result / dismiss
+kind = 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9
+fields = capability / notification / removal / snapshot-begin / snapshot-end / action / action-result / dismiss / source-icon
 sequence = 1..9007199254740991
 high-water = 0..9007199254740991
 snapshot-token = "" / uuid
@@ -17,6 +17,7 @@ snapshot-end = [token: uuid]
 action = [request-id: uuid, id: hash, epoch: uuid, sequence, index: -1..7, reply-text: text]
 action-result = [request-id: uuid, result: 0..3]
 dismiss = [request-id: uuid, id: hash, epoch: uuid, sequence]
+source-icon = [package-name: text, png: bstr .size (33..3000)]
 
 hash = text .size 64
 uuid = text .size 36

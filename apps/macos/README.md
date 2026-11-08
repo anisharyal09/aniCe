@@ -18,6 +18,7 @@ Mac advertises only the public aniCe service UUID and generic name for 120 secon
 
 ```text
 aniCe/
+  Assets.xcassets/             aniCe development app icon, based on Android launcher artwork
   App/                         Assembly, navigation, window and companion
   Features/                    Identity, discovery, pairing and session presentation
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
@@ -26,6 +27,7 @@ aniCe/
     PhoneInput/                Secured BLE receiver, native input adapter and receiver controls
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
+    Notifications/             Mirrored notification model, source icon attachment, action notifier and wire codec
     Sms/                       SMS relay model, wire codec, notifier and views
     Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
   Infrastructure/
@@ -44,6 +46,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   KeyboardTrackpad/            Input ownership, focus, gestures and native HID protocol tests
   PhoneInput/                  Phone-to-Mac receiver, event translation and wire codec tests
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+  Notifications/               Notification wire, snapshot, native presentation and action suites
   Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
 IdentityInterchange/           Native test-only signature endpoint
@@ -149,6 +152,10 @@ Features → Find Device opens peer request actions and local notification setup
 ## Messages (SMS relay)
 
 Features → Messages relays incoming SMS to notifications with an inline reply, reads the phone's conversations and history on demand, searches matching messages in bounded pages without indexing them, and replies on the phone's default SIM unless another active subscription is chosen while the panel is open. The thread list paints 15 cards first, keeps filling from the cursor and shows **Load older conversations** whenever a page is available and none is loading; **Return** or **Command-Return** sends (Shift-Return keeps a newline), and the reply paints as a **Sending** row until the phone confirms it. A conversation that mixes two SIMs labels each row with the subscription it arrived on. Settings → Messages collapses each phone's **Notifications** and **Play sound** switches (both on by default) and the **Show message text in notifications** preview (off by default) behind its clickable name label, and the panel's gear expands the same switches under its row; a failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for paging limits, search behavior and the notification controls.
+
+## Notification Mirroring
+
+The Mac presents selected Android alerts as native notifications with source-app icons when available, system actions, replies and synchronized dismissals. macOS owns the fixed sender-app icon, so notifications identify aniCe there; the Android launcher icon is attached alongside the alert content. The Mac app currently uses the same simple development mark as Android until final brand artwork is defined. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
 
 ## Clipboard
 

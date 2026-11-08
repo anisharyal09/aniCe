@@ -18,6 +18,8 @@ Android's system notification-access page grants aniCe permission to read posted
 
 The Mac shows the title and text that Android exposes, along with the source app name. Tapping the alert invokes the source notification's normal tap action. Available notification actions are shown by macOS; a free-form text reply becomes a native text-input action. Android notifications without usable actions remain informational. A Mac dismissal asks Android to dismiss the matching active notification. Android removals, including a dismissal in the source app, clear the Mac alert.
 
+When Android can provide the app launcher icon, aniCe attaches it as an image alongside the native Mac alert. macOS keeps aniCe's own app icon in the sender position; the source icon is notification content and does not replace the sender icon. If no valid icon is available, the alert still uses aniCe's current development mark.
+
 When **Mirror incoming calls** is enabled, standard incoming CallStyle notifications are mirrored even when the source is a system component or the app is not selected in the app list. The Mac alert shows the Android-provided Answer and Decline actions when available. Those actions invoke the source notification's PendingIntents; they do not use `ANSWER_PHONE_CALLS`, take audio control or route audio away from the phone. Other notifications from those apps still require app selection.
 
 Source-app content may be redacted by Android, including protected content on newer Android releases. aniCe mirrors only the fields Android provides. The app truncates unusually long text to fit the bounded secure record.

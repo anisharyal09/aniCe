@@ -21,7 +21,7 @@ Contracts define required behavior.
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
-| **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts, native Mac actions and synchronized dismissal inside secured DATA |
+| **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 | **Phone-to-Mac input** | 1 | In progress | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
 

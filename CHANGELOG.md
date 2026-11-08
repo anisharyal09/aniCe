@@ -22,6 +22,8 @@ Shared product changes, repository structure, documentation and development conv
 
 - Show Android launcher icons in the notification app picker.
 
+- Include selected Android app icons alongside Mac mirrored alerts and replace the generic Mac bundle placeholder with aniCe's current development icon.
+
 - Allow authenticated Mac notification actions to launch their source app under current Android background-activity rules.
 
 - Allow each distinct action on a mirrored Mac notification once, instead of disabling every action after the first.

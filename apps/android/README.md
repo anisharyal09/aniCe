@@ -25,6 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
+        notifications/              Listener, app-icon capture, app selection, wire and action relay
         phoneinput/                 Remote Mac keyboard, text reconciliation and trackpad controls
         sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
@@ -125,6 +126,10 @@ Features → Find Device opens peer request actions and local notification setup
 ## Messages (SMS relay)
 
 Features → Messages relays incoming SMS to the Mac, serves its reads of conversations, history and search matches, and sends Mac replies over the secured session. RECEIVE_SMS covers live relay, READ_SMS conversations/history/search, and SEND_SMS replies; the permission block names each missing capability separately, permanent denial links to App info for Android 13+ restricted settings, and the block clears on the first full grant — the panel then confirms **SMS access granted** while Settings keeps one line naming what is still needed. READ_PHONE_STATE is optional: the composer reads the phone's subscriptions once per conversation and asks for it only when that read would offer a second active subscription, and the phone default, history and search all work without it. The conversation list loads 15 threads first and continues from the returned cursor; rows keep the subscription their message arrived on, a conversation that mixes two SIMs labels each such row with a SIM chip and groups messages under day headers, and the composer's keyboard send key shares the Send button's path so the chosen subscription always applies. SMS permissions remain Play-restricted in this sideloaded build. See [Messages](../../docs/features/SMS.md) for provider fallbacks, paging limits and permission handling.
+
+## Notification Mirroring
+
+Settings → Notifications grants Notification Access, enables incoming CallStyle alerts and opens **Select apps** to search and choose app notifications. Android sends active alerts and available source app icons to the connected Mac over the authenticated session. Call Answer/Decline and app-specific actions work only when Android and the source app expose usable notification actions. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
 
 ## Clipboard
 

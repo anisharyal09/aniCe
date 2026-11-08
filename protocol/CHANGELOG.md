@@ -6,6 +6,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
+- Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
+
 ### Fixed
 
 - Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.

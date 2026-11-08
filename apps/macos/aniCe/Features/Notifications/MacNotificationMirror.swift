@@ -3,6 +3,8 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct MirroredNotification: Equatable, Sendable {
@@ -14,6 +16,7 @@ struct MirroredNotification: Equatable, Sendable {
   let appName: String
   let title: String
   let body: String
+  let sourceIcon: Data?
   let actions: [MirroredNotificationAction]
 }
 
@@ -125,12 +128,34 @@ final class MacNotificationMirrorNotifier: NSObject {
     content.userInfo = ["anice.mirror.epoch": value.epoch, "anice.mirror.sequence": value.sequence]
     content.sound = value.snapshotToken.isEmpty ? .default : nil
     if !value.snapshotToken.isEmpty { content.interruptionLevel = .passive }
+    let iconAttachment = sourceIconAttachment(value.sourceIcon)
+    if let iconAttachment { content.attachments = [iconAttachment.value] }
+    let iconFileURL = iconAttachment?.url
     center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { [weak self] error in
+      if let iconFileURL { try? FileManager.default.removeItem(at: iconFileURL) }
       guard error != nil else { return }
       Task { @MainActor in
         guard let self, self.generations[identifier]?.token == generation else { return }
         self.targets[identifier] = nil
       }
+    }
+  }
+
+  private func sourceIconAttachment(_ data: Data?) -> (value: UNNotificationAttachment, url: URL)? {
+    guard let data,
+          let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil),
+          (1...128).contains(image.width), (1...128).contains(image.height) else { return nil }
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("anice-mirror-\(UUID().uuidString).png", isDirectory: false)
+    do {
+      try data.write(to: url, options: .atomic)
+      let value = try UNNotificationAttachment(identifier: "source-app-icon", url: url,
+        options: [UNNotificationAttachmentOptionsTypeHintKey: UTType.png.identifier])
+      return (value, url)
+    } catch {
+      try? FileManager.default.removeItem(at: url)
+      return nil
     }
   }
 
@@ -235,6 +260,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private var records: [String: StoredNotification] = [:]
   private var removals: [String: Int64] = [:]
   private var snapshotFloors: [String: Int64] = [:]
+  private var sourceIcons: [String: Data] = [:]
   private let notifier: MacNotificationMirrorNotifier
 
   init(notifier: MacNotificationMirrorNotifier) {
@@ -261,6 +287,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
     snapshotFloors[peerKey] = nil
     removals = removals.filter { !$0.key.hasPrefix(peerKey + ":") }
     snapshots = snapshots.filter { $0.value.peerKey != peerKey }
+    sourceIcons = sourceIcons.filter { !$0.key.hasPrefix(peerKey + ":") }
     for recordKey in records.filter({ $0.value.peerKey == peerKey }).map(\.key) { records[recordKey] = nil }
     notifier.clear(peerKey: peerKey)
   }
@@ -288,10 +315,20 @@ final class MacNotificationMirrorModel: FeatureHandler {
       case 4: try beginSnapshot(message, peerKey: peerKey)
       case 5: try await finishSnapshot(message, peerKey: peerKey)
       case 7: break
+      case 9: try cacheSourceIcon(message, peerKey: peerKey)
       default: return .discarded
       }
       return .handled
     } catch { return .discarded }
+  }
+
+  private func cacheSourceIcon(_ message: NotificationWireMessage, peerKey: String) throws {
+    let packageName = try message.text(0)
+    let key = peerKey + ":" + packageName
+    if sourceIcons[key] == nil, sourceIcons.count >= 128, let oldest = sourceIcons.keys.first {
+      sourceIcons[oldest] = nil
+    }
+    sourceIcons[key] = try message.bytes(1)
   }
 
   private func beginSnapshot(_ message: NotificationWireMessage, peerKey: String) throws {
@@ -312,9 +349,11 @@ final class MacNotificationMirrorModel: FeatureHandler {
 
   private func receive(_ message: NotificationWireMessage, peerKey: String) async throws {
     let token = try message.text(0)
+    let packageName = try message.text(4)
     let value = MirroredNotification(
       snapshotToken: token, id: try message.text(1), epoch: try message.text(2), sequence: try message.number(3),
-      packageName: try message.text(4), appName: try message.text(5), title: try message.text(6), body: try message.text(7),
+      packageName: packageName, appName: try message.text(5), title: try message.text(6), body: try message.text(7),
+      sourceIcon: sourceIcons[peerKey + ":" + packageName],
       actions: try message.actionRows(8).map { .init(index: $0.0, title: $0.1, replyPlaceholder: $0.2) },
     )
     if !token.isEmpty {

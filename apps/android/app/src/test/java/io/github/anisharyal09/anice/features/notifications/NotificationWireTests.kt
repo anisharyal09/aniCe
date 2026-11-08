@@ -27,7 +27,7 @@ class NotificationWireTests {
             assertArrayEquals(bytes, message.encode())
             if (row.has("kind")) kinds += row.getLong("kind")
         }
-        assertEquals((1L..8L).toSet(), kinds)
+        assertEquals((1L..9L).toSet(), kinds)
         for (index in 0 until invalid.length()) {
             val row = invalid.getJSONObject(index)
             val name = row.getString("name")

@@ -75,11 +75,13 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
 - [Now Playing DATA](protocol/media/README.md)
 - [Local File Transfer Protocol](protocol/transfer/README.md)
+- [Android Notification Mirroring Protocol](protocol/notifications/README.md)
 
 ### Operational Guides & Implementation Roadmaps
 - [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
 - [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
 - [Local File Transfer Feature Guide](docs/features/FILE_TRANSFER.md)
+- [Notification Mirroring Feature Guide](docs/features/NOTIFICATION_MIRRORING.md)
 - [Authenticated Record Performance & Cost Model](docs/PERFORMANCE.md)
 - [Design Guide & Palette](docs/design/DESIGN.md)
 - [Project Roadmap & Verification Gates](docs/ROADMAP.md)
@@ -112,7 +114,7 @@ Application-scoped SMS owners register with FeatureDispatch and share authentica
 
 ## Notification Mirroring
 
-Android's NotificationListenerService sends selected active alerts through FeatureDispatch over authenticated BLE/LAN DATA. Package selection is explicit and excludes aniCe and the current default SMS app. The Mac owns native notification presentation and revision-bound taps, text replies, action dispatch and user dismissal. Snapshots reconcile active notifications across transport changes; the Mac drops alerts when the final peer link retires. aniCe keeps no notification history or offline queue. See [feature behavior](docs/features/NOTIFICATION_MIRRORING.md) and [Notification Mirroring v1](protocol/notifications/README.md).
+Android's NotificationListenerService sends selected active alerts and bounded source-app icons through FeatureDispatch over authenticated BLE/LAN DATA. Package selection is explicit and excludes aniCe and the current default SMS app. The Mac owns native notification presentation and revision-bound taps, text replies, action dispatch and user dismissal. Snapshots reconcile active notifications across transport changes; the Mac drops alerts when the final peer link retires. aniCe keeps no notification history or offline queue. See [feature behavior](docs/features/NOTIFICATION_MIRRORING.md) and [Notification Mirroring v1](protocol/notifications/README.md).
 
 ## Mac Keyboard & Trackpad
 

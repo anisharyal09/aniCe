@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -17,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.os.BundleCompat
+import androidx.core.graphics.drawable.toBitmap
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
@@ -27,6 +29,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -55,6 +60,7 @@ private data class NotificationEntry(
     val appName: String,
     val title: String,
     val body: String,
+    val sourceIcon: ByteArray?,
     val actions: Map<Int, NotificationActionTarget>,
     val wireActions: List<MirroredAction>,
 )
@@ -125,7 +131,12 @@ internal fun notificationActions(
 }
 
 class NotificationMirrorController(context: Context) : FeatureHandler {
-    private data class Link(val channel: SecuredChannel, var remoteCapability: Boolean = false)
+    private data class Link(
+        val channel: SecuredChannel,
+        var remoteCapability: Boolean = false,
+        val sendLock: Mutex = Mutex(),
+        val sentIconPackages: LinkedHashSet<String> = linkedSetOf(),
+    )
     private data class Completed(val result: Long, val expiry: Long)
     private val app = context.applicationContext
     val preferences = NotificationMirrorPreferences(app)
@@ -135,6 +146,9 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     private val completed = LinkedHashMap<String, Completed>()
     private val inFlight = mutableSetOf<String>()
     private val deliveredRevisions = mutableMapOf<String, MutableMap<String, DeliveredRevision>>()
+    private val sourceIcons = object : LinkedHashMap<String, ByteArray>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?) = size > MAX_ICON_CACHE_ENTRIES
+    }
     private var listener: NotificationMirrorService? = null
     private var accessEnabled = false
     private var epoch = UUID.randomUUID().toString()
@@ -251,7 +265,8 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         }
         val entry = NotificationEntry(
             sbn.key, id, epoch, ++sequence, sbn, packageName,
-            notificationText(appName, 128).ifEmpty { packageName }, title, body, actions, wireActions,
+            notificationText(appName, 128).ifEmpty { packageName }, title, body,
+            sourceIconFor(packageName), actions, wireActions,
         )
         if (old == null && active.size >= MAX_ACTIVE) {
             val evicted = active.values.minByOrNull { it.sequence }
@@ -283,6 +298,25 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         )
     }
 
+    private fun sourceIconFor(packageName: String): ByteArray? {
+        sourceIcons[packageName]?.let { return it }
+        val drawable = runCatching { app.packageManager.getApplicationIcon(packageName) }.getOrNull() ?: return null
+        for (size in SOURCE_ICON_SIZES) {
+            val png = runCatching {
+                val bitmap = drawable.toBitmap(size, size, Bitmap.Config.ARGB_8888)
+                ByteArrayOutputStream().use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) return@runCatching null
+                    output.toByteArray()
+                }
+            }.getOrNull() ?: continue
+            if (png.size <= NotificationWireMessage.MAX_SOURCE_ICON_BYTES) {
+                sourceIcons[packageName] = png
+                return png
+            }
+        }
+        return null
+    }
+
     private fun sendSnapshot(link: Link) {
         val snapshotEpoch = epoch
         val highWater = sequence
@@ -291,15 +325,31 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         scope.launch {
             sendNow(link, NotificationWireMessage.of(4, text(token), text(snapshotEpoch), number(highWater)))
             for (entry in rows) {
-                sendNow(link, notificationRecord(entry, token))
+                sendEntry(link, entry, token)
             }
             sendNow(link, NotificationWireMessage.of(5, text(token)))
         }
     }
 
     private fun sendUpsert(entry: NotificationEntry) {
-        val message = notificationRecord(entry, "")
-        links.values.filter { it.remoteCapability }.forEach { send(it, message) }
+        links.values.filter { it.remoteCapability }.forEach { link -> scope.launch { sendEntry(link, entry, "") } }
+    }
+
+    private suspend fun sendEntry(link: Link, entry: NotificationEntry, snapshotToken: String) {
+        link.sendLock.withLock {
+            if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return
+            if (entry.sourceIcon != null && entry.appPackage !in link.sentIconPackages) {
+                val icon = NotificationWireMessage.of(9, text(entry.appPackage), Cbor.Bytes(entry.sourceIcon))
+                if (sendNow(link, icon)) {
+                    link.sentIconPackages += entry.appPackage
+                    if (link.sentIconPackages.size > MAX_ICON_CACHE_ENTRIES) {
+                        link.sentIconPackages.remove(link.sentIconPackages.first())
+                    }
+                }
+            }
+            if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return
+            sendNow(link, notificationRecord(entry, snapshotToken))
+        }
     }
 
     private fun notificationRecord(entry: NotificationEntry, snapshotToken: String) = NotificationWireMessage.of(
@@ -315,12 +365,12 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
 
     private fun send(link: Link, message: NotificationWireMessage) { scope.launch { sendNow(link, message) } }
 
-    private suspend fun sendNow(link: Link, message: NotificationWireMessage) {
-        if (links[link.channel.descriptor.transport] !== link) return
+    private suspend fun sendNow(link: Link, message: NotificationWireMessage): Boolean {
+        if (links[link.channel.descriptor.transport] !== link) return false
         // A queued snapshot must not replay an entry removed or replaced while waiting to send.
         if (message.kind == 2L && active[message.text(1)]?.let {
             it.epoch == message.text(2) && it.sequence == message.number(3)
-        } != true) return
+        } != true) return false
         try {
             link.channel.sendData(message.encode())
             val peer = peerKey(link.channel.descriptor.peer)
@@ -341,7 +391,9 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
                     }
                 }
             }
+            return true
         } catch (_: Exception) { /* Active state is sent again on the next secure connection. */ }
+        return false
     }
 
     private fun executeAction(link: Link, message: NotificationWireMessage) {
@@ -444,6 +496,8 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         private const val MAX_ACTIVE = 128
         private const val MAX_RESULTS_PER_PEER = 32
         private const val RESULT_TTL = 10 * 60_000L
+        private const val MAX_ICON_CACHE_ENTRIES = 128
+        private val SOURCE_ICON_SIZES = intArrayOf(96, 64, 48, 32)
         private fun text(value: String) = Cbor.Text(value)
         private fun number(value: Long) = Cbor.Integer(value)
     }

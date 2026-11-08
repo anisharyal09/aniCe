@@ -16,6 +16,7 @@ Every plaintext is deterministic CBOR `["aniCe notifications", 1, kind, fields]`
 | 6 action | `[requestId, id, epoch, sequence, index, replyText]` | Mac → Android |
 | 7 action result | `[requestId, result]` | Android → Mac |
 | 8 dismiss | `[requestId, id, epoch, sequence]` | Mac → Android |
+| 9 source app icon | `[packageName, pngBytes]` | Android → Mac |
 
 `id` is the lowercase SHA-256 of Android's opaque notification key. `epoch` is a process-instance UUID; `sequence` increases for each observed update. Up to eight source actions with a live PendingIntent are included in order and assigned compact indices from zero. A free-form text RemoteInput is represented by a text-input action. Index `-1` invokes the notification's content intent. The phone resolves each request against the active id, epoch, sequence, the peer that received that revision and the action index. Request UUID results are retained in memory for ten minutes (at most 32 per peer), so duplicate requests return the prior outcome without firing the PendingIntent twice.
 
@@ -27,6 +28,8 @@ Result codes are `0 submitted`, `1 stale`, `2 unsupported`, and `3 failed`. A su
 
 Text is sanitized and truncated on UTF-8 codepoint boundaries before encoding: package name 255 bytes, app name 128, title 512, body 1,024, action label 48, reply placeholder 48 and reply input 1,024. At most eight action items are sent. Notification records stay under the standard 4,000-byte DATA bound. Bodies and action text are not written to aniCe storage or logs. A secure connection sends an active-state snapshot; there is no offline queue or notification history. The Mac notification center receives the displayed content and nonsecret revision metadata so stale system responses can be rejected; aniCe's action target and request-result state stay in memory.
 
+Kind 9 carries a PNG launcher icon separately from the notification record, capped at 3,000 bytes and 128 × 128 pixels. Android sends it before the first alert from that package on each channel; it is transferred only in memory and held only for the active connection. The Mac attaches it to the native notification when macOS accepts the image. This record is an additive v1 extension: older Mac peers discard the unknown kind while continuing to receive kind 2 notification records. The native macOS sender icon remains aniCe's app icon; UserNotifications does not let an individual notification replace that sender identity. The Mac bundle therefore includes aniCe's current development mark as a fallback until final brand artwork is chosen.
+
 ## Verification
 
-Cross-platform fixtures live under `protocol/test-vectors/notifications/`. They cover all eight message kinds, maximum notification fields, malformed types, IDs, duplicate actions, byte bounds, noncanonical encodings and unknown versions. Tests in both platform suites decode the same fixture bytes. Android and Mac hardware permission, listener redaction, BLE/LAN handoff and source-app PendingIntent behavior require device-level verification.
+Cross-platform fixtures live under `protocol/test-vectors/notifications/`. They cover all nine message kinds, maximum notification fields, malformed types, IDs, duplicate actions, byte bounds, noncanonical encodings and unknown versions. Tests in both platform suites decode the same fixture bytes. Android and Mac hardware permission, listener redaction, BLE/LAN handoff and source-app PendingIntent behavior require device-level verification.

@@ -20,6 +20,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Show launcher icons alongside notification app choices.
 
+- Send bounded Android launcher icons with mirrored notifications so Mac can display them alongside alert content.
+
 - Opt in to Android's background-activity launch rules when forwarding a user-invoked notification PendingIntent from Mac.
 
 - Document the remote-control source layout and remove outdated blanket validation claims.
