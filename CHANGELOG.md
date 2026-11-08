@@ -8,6 +8,12 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Add an Android telephony-state fallback for live SIM call alerts when the dialer publishes no incoming notification; expose explicit phone-state and call-control permission setup for Mac Answer/Decline.
+
+- Stop excluding clearable incoming-call alerts with explicit Answer/Decline controls.
+
+- Recognize supported ongoing system call notifications, deliver live mirrors as active alerts, and send source-app icons only over LAN.
+
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
 - Fix an Android Settings crash caused by nesting the notification app picker scroll inside the page scroll.

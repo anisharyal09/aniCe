@@ -17,6 +17,7 @@ snapshot-end = [token: uuid]
 action = [request-id: uuid, id: hash, epoch: uuid, sequence, index: -1..7, reply-text: text]
 action-result = [request-id: uuid, result: 0..3]
 dismiss = [request-id: uuid, id: hash, epoch: uuid, sequence]
+; Kind 9 is carried only over the authenticated LAN channel, never BLE.
 source-icon = [package-name: text, png: bstr .size (33..3000)]
 
 hash = text .size 64

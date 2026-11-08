@@ -154,7 +154,7 @@ final class NotificationMirrorTests: XCTestCase {
     let center = MirrorNotificationCenterSpy()
     let notifier = MacNotificationMirrorNotifier(center: center)
     let model = MacNotificationMirrorModel(notifier: notifier)
-    let channel = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    let channel = MockSecuredChannel(transport: "lan", peer: try androidPeer())
     try await ready(model, channel)
 
     let root = try SessionFixtures().root("notification-vectors")
@@ -167,6 +167,58 @@ final class NotificationMirrorTests: XCTestCase {
     await waitFor("notification with source icon") { center.added.count == 1 }
     let request = try XCTUnwrap(center.added.first)
     XCTAssertEqual(request.content.attachments.map(\.identifier), ["source-app-icon"])
+  }
+
+  func testSourceAppIconsAreRejectedOverBluetooth() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    try await ready(model, channel)
+
+    let root = try SessionFixtures().root("notification-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let iconRow = try XCTUnwrap(valid.first { ($0["kind"] as? Int) == 9 })
+    let iconMessage = try XCTUnwrap(NotificationWireMessage.decode(SessionFixtures().b(iconRow, "bytes")))
+    let result = await model.handle(try wire(9, [.text("com.example.chat"), .bytes(iconMessage.bytes(1))]),
+      on: channel.descriptor)
+    if case .discarded = result {} else { XCTFail("source icons must be LAN-only") }
+  }
+
+  func testLanIconEnrichesBleNotificationWithoutAlertingAgain() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let peer = try androidPeer()
+    let bluetooth = MockSecuredChannel(transport: "ble", peer: peer)
+    let localNetwork = MockSecuredChannel(transport: "lan", peer: peer)
+    try await ready(model, bluetooth)
+    try await ready(model, localNetwork)
+    try await incoming(model, channel: bluetooth, id: id, sequence: 1, token: "", title: "Live call")
+    await waitFor("Bluetooth notification") { center.added.count == 1 }
+    XCTAssertEqual(center.added[0].content.interruptionLevel, .active)
+
+    let bluetoothSnapshot = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(bluetoothSnapshot), .text(epoch), .integer(1)]),
+      on: bluetooth.descriptor)
+    try await incoming(model, channel: bluetooth, id: id, sequence: 1, token: bluetoothSnapshot, title: "Live call")
+    _ = await model.handle(try wire(5, [.text(bluetoothSnapshot)]), on: bluetooth.descriptor)
+
+    let root = try SessionFixtures().root("notification-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let iconRow = try XCTUnwrap(valid.first { ($0["kind"] as? Int) == 9 })
+    let iconMessage = try XCTUnwrap(NotificationWireMessage.decode(SessionFixtures().b(iconRow, "bytes")))
+    let lanSnapshot = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(lanSnapshot), .text(epoch), .integer(1)]),
+      on: localNetwork.descriptor)
+    _ = await model.handle(try wire(9, [.text("com.example.chat"), .bytes(iconMessage.bytes(1))]),
+      on: localNetwork.descriptor)
+    try await incoming(model, channel: localNetwork, id: id, sequence: 1, token: lanSnapshot, title: "Live call")
+    _ = await model.handle(try wire(5, [.text(lanSnapshot)]), on: localNetwork.descriptor)
+
+    await waitFor("silently enriched notification") { center.added.count == 2 }
+    XCTAssertEqual(center.added[1].content.interruptionLevel, .passive)
+    XCTAssertEqual(center.added[1].content.attachments.map(\.identifier), ["source-app-icon"])
   }
 
   func testSnapshotFinishPreservesLiveUpdatesAboveItsHighWaterSequence() async throws {

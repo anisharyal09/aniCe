@@ -4,6 +4,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Clarify call permission status in Settings, retain accessible permission-button touch targets and ignore call callbacks after tracking stops.
+
+- Detect incoming SIM ringing through Android telephony when the dialer omits a live call alert, and provide revision-bound Answer/Decline through Telecom after the user grants phone-state and call-control permissions.
+
+- Detect incoming CallStyle alerts from Answer/Decline controls even when Samsung omits call-type metadata, while continuing to skip outgoing calls.
+
+- Detect persistent system call notifications that expose incoming Answer/Decline controls, and send source icons over LAN only.
+
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
 - Keep notification app choices in the Settings page's existing scroll container to prevent a Compose nested-scroll crash.
@@ -14,7 +22,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Add a separate opt-in for incoming CallStyle alerts, pairing Android's answer/decline PendingIntents and prioritizing them in the Mac alert.
 
-- Match the Notifications card's inner spacing to Connection, keep one **Select apps** row and hide the compact permission action after access is granted.
+- Match the **Notification sync** section's inner spacing to Connection, keep one **Select apps** row, and use compact permission buttons that disappear after access is granted.
 
 - Add case-insensitive app search, compact picker switches and use the standard checkbox-style row for incoming-call mirroring.
 

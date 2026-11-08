@@ -155,7 +155,9 @@ Features → Messages relays incoming SMS to notifications with an inline reply,
 
 ## Notification Mirroring
 
-The Mac presents selected Android alerts as native notifications with source-app icons when available, system actions, replies and synchronized dismissals. macOS owns the fixed sender-app icon, so notifications identify aniCe there; the Android launcher icon is attached alongside the alert content. The Mac app currently uses the same simple development mark as Android until final brand artwork is defined. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
+Live Android SIM calls appear as native Mac alerts with **Answer** and **Decline** after phone permission setup; answering keeps audio on the phone. Calling-app controls depend on their exposed notification actions. Stale call actions are rejected and ending or answering the call clears its live alert.
+
+The Mac presents selected Android alerts as native notifications with source-app icons available over LAN, system actions, replies and synchronized dismissals. macOS owns the fixed sender-app icon, so notifications identify aniCe there; the Android launcher icon is attached alongside the alert content. The Mac app currently uses the same simple development mark as Android until final brand artwork is defined. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
 
 ## Clipboard
 

@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Keep live mirrored alerts active, quietly enrich Bluetooth-first notifications with icons when LAN becomes available, and reject icon records over BLE.
+
 - Keep distinct actions on a mirrored Android notification available independently while rejecting duplicate callbacks for each action.
 
 - Attach the Android source app icon to mirrored Mac alerts and add aniCe's development mark as the macOS app/sender icon.

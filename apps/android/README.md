@@ -25,7 +25,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
-        notifications/              Listener, app-icon capture, app selection, wire and action relay
+        notifications/              Notification listener, SIM call state/control, app selection and wire relay
         phoneinput/                 Remote Mac keyboard, text reconciliation and trackpad controls
         sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
@@ -129,7 +129,7 @@ Features → Messages relays incoming SMS to the Mac, serves its reads of conver
 
 ## Notification Mirroring
 
-Settings → Notifications grants Notification Access, enables incoming CallStyle alerts and opens **Select apps** to search and choose app notifications. Android sends active alerts and available source app icons to the connected Mac over the authenticated session. Call Answer/Decline and app-specific actions work only when Android and the source app expose usable notification actions. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
+Settings → Notification sync provides Notification Access setup, the default-on **Mirror incoming calls** checkbox and a separate **Select apps** screen with search. **Allow phone access** requests the additional permissions for live SIM call relay: Android detects ringing on active SIM subscriptions and accepts revision-bound Mac Answer/Decline requests through Telecom, keeping audio on the phone. Calling-app actions use their exposed notification controls. Alerts use authenticated BLE or LAN; source icons travel over LAN only. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
 
 ## Clipboard
 

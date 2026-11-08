@@ -127,7 +127,7 @@ final class MacNotificationMirrorNotifier: NSObject {
     content.threadIdentifier = value.packageName
     content.userInfo = ["anice.mirror.epoch": value.epoch, "anice.mirror.sequence": value.sequence]
     content.sound = value.snapshotToken.isEmpty ? .default : nil
-    if !value.snapshotToken.isEmpty { content.interruptionLevel = .passive }
+    content.interruptionLevel = value.snapshotToken.isEmpty ? .active : .passive
     let iconAttachment = sourceIconAttachment(value.sourceIcon)
     if let iconAttachment { content.attachments = [iconAttachment.value] }
     let iconFileURL = iconAttachment?.url
@@ -315,7 +315,9 @@ final class MacNotificationMirrorModel: FeatureHandler {
       case 4: try beginSnapshot(message, peerKey: peerKey)
       case 5: try await finishSnapshot(message, peerKey: peerKey)
       case 7: break
-      case 9: try cacheSourceIcon(message, peerKey: peerKey)
+      case 9:
+        guard descriptor.transport == "lan" else { return .discarded }
+        try cacheSourceIcon(message, peerKey: peerKey)
       default: return .discarded
       }
       return .handled
@@ -365,9 +367,19 @@ final class MacNotificationMirrorModel: FeatureHandler {
     if epochs[peerKey] == nil && token.isEmpty { epochs[peerKey] = value.epoch }
     guard epochs[peerKey] == value.epoch else { return }
     let recordKey = peerKey + ":" + value.id
+    if let old = records[recordKey], old.value.epoch == value.epoch, old.value.sequence >= value.sequence {
+      guard old.value.sequence == value.sequence, old.value.sourceIcon == nil,
+            let icon = sourceIcons[peerKey + ":" + packageName] else { return }
+      // A matching LAN snapshot can enrich an alert first received over BLE without sounding again.
+      let enriched = MirroredNotification(snapshotToken: token.isEmpty ? "icon-refresh" : token,
+        id: value.id, epoch: value.epoch, sequence: value.sequence, packageName: value.packageName,
+        appName: value.appName, title: value.title, body: value.body, sourceIcon: icon, actions: value.actions)
+      records[recordKey] = StoredNotification(peerKey: peerKey, value: enriched)
+      await notifier.post(peerKey: peerKey, value: enriched)
+      return
+    }
     guard value.sequence > (snapshotFloors[peerKey] ?? 0),
           value.sequence > (removals[recordKey] ?? 0) else { return }
-    if let old = records[recordKey], old.value.epoch == value.epoch, old.value.sequence >= value.sequence { return }
     records[recordKey] = StoredNotification(peerKey: peerKey, value: value)
     await notifier.post(peerKey: peerKey, value: value)
   }

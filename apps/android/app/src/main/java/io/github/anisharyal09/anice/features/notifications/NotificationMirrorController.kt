@@ -2,21 +2,29 @@
 // Captures selected Android notifications and routes them over current secured Mac channels.
 package io.github.anisharyal09.anice.features.notifications
 
+import android.Manifest
 import android.app.ActivityOptions
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.RemoteInput
+import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
+import android.telecom.TelecomManager
+import android.telephony.PhoneStateListener
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.provider.Telephony
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.core.os.BundleCompat
 import androidx.core.graphics.drawable.toBitmap
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
@@ -33,6 +41,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.UUID
 
 class NotificationMirrorPreferences(context: Context) {
@@ -55,20 +64,22 @@ private data class NotificationEntry(
     val id: String,
     val epoch: String,
     val sequence: Long,
-    val statusBar: StatusBarNotification,
+    val statusBar: StatusBarNotification?,
     val appPackage: String,
     val appName: String,
     val title: String,
     val body: String,
-    val sourceIcon: ByteArray?,
     val actions: Map<Int, NotificationActionTarget>,
     val wireActions: List<MirroredAction>,
 )
 
 internal data class NotificationActionTarget(
-    val pendingIntent: PendingIntent,
-    val remoteInput: RemoteInput?,
+    val pendingIntent: PendingIntent? = null,
+    val remoteInput: RemoteInput? = null,
+    val phoneCallAction: PhoneCallAction? = null,
 )
+
+internal enum class PhoneCallAction { ANSWER, DECLINE }
 
 private data class DeliveredRevision(val epoch: String, val sequence: Long)
 
@@ -87,9 +98,40 @@ internal fun notificationPackageEligible(
 ): Boolean = packageName != ownPackage && packageName != defaultSmsPackage &&
     (packageName in selectedPackages || (incomingCall && mirrorIncomingCalls))
 
+internal fun hasRingingPhoneCall(states: Collection<Int>, ringingState: Int): Boolean = states.any { it == ringingState }
+
+private fun isCallStyleTemplate(template: String?): Boolean =
+    template == "android.app.Notification\$CallStyle" ||
+        template == "androidx.core.app.NotificationCompat\$CallStyle"
+
 internal fun isIncomingCallStyle(template: String?, callType: Int?): Boolean =
-    callType == 1 && (template == "android.app.Notification\$CallStyle" ||
-        template == "androidx.core.app.NotificationCompat\$CallStyle")
+    callType == 1 && isCallStyleTemplate(template)
+
+internal fun hasIncomingCallActionLabels(titles: List<String>): Boolean {
+    val labels = titles.map { it.trim().lowercase(Locale.ROOT) }
+    val hasAnswer = labels.any { label -> listOf("answer", "accept", "pick up", "pickup").any(label::contains) }
+    val hasDecline = labels.any { label -> listOf("decline", "reject", "ignore", "refuse").any(label::contains) }
+    return hasAnswer && hasDecline
+}
+
+internal fun isIncomingCallNotification(
+    template: String?,
+    callType: Int?,
+    category: String?,
+    hasAnswerAndDeclineIntents: Boolean,
+    actionTitles: List<String>,
+): Boolean {
+    if (callType == 2 || callType == 3) return false
+    val hasIncomingControls = hasAnswerAndDeclineIntents || hasIncomingCallActionLabels(actionTitles)
+    if (isIncomingCallStyle(template, callType) ||
+        (isCallStyleTemplate(template) && hasIncomingControls) ||
+        (callType == 1 && hasAnswerAndDeclineIntents)) return true
+    if (category != Notification.CATEGORY_CALL) return false
+    // Ringing notifications can be clearable; explicit Answer/Decline controls identify the call.
+    return hasIncomingControls
+}
+
+internal fun sendsSourceIcons(transport: String): Boolean = transport == "lan"
 
 internal fun notificationActions(
     notification: Notification,
@@ -151,6 +193,12 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     }
     private var listener: NotificationMirrorService? = null
     private var accessEnabled = false
+    private val callStates = mutableMapOf<Int, Int>()
+    private val callTelephonyManagers = mutableMapOf<Int, TelephonyManager>()
+    private val callTelephonyCallbacks = mutableMapOf<Int, Any>()
+    private val phoneStateListeners = mutableMapOf<Int, PhoneStateListener>()
+    private val dismissedPhoneCalls = mutableSetOf<String>()
+    private var phoneCallEntry: NotificationEntry? = null
     private var epoch = UUID.randomUUID().toString()
     private var sequence = 0L
     private val now get() = android.os.SystemClock.elapsedRealtime()
@@ -205,12 +253,15 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         if (accessEnabled == enabled) return
         accessEnabled = enabled
         if (!enabled) {
+            stopPhoneCallTracking()
+            clearPhoneCallEntry()
             listener = null
             active.values.toList().forEach(::sendRemoval)
             active.clear()
             deliveredRevisions.clear()
             completed.clear()
             inFlight.clear()
+            dismissedPhoneCalls.clear()
         }
     }
 
@@ -218,6 +269,7 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         listener = service
         accessEnabled = true
         refreshFromSystem()
+        updatePhoneCallTracking()
     }
 
     fun listenerDisconnected(service: NotificationMirrorService) {
@@ -226,11 +278,18 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         accessChanged(false)
     }
 
-    fun selectionChanged() { refreshFromSystem() }
+    fun selectionChanged() {
+        refreshFromSystem()
+        updatePhoneCallTracking()
+    }
+
+    fun phoneCallPermissionsChanged() { updatePhoneCallTracking() }
+
     fun securityInvalidated() {
         completed.clear()
         inFlight.clear()
         deliveredRevisions.clear()
+        dismissedPhoneCalls.clear()
     }
 
     fun notificationPosted(sbn: StatusBarNotification) {
@@ -239,9 +298,13 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         val packageName = sbn.packageName
         val notification = sbn.notification
         val extras = notification.extras
-        val incomingCall = isIncomingCallStyle(
+        val hasAnswerAndDeclineIntents = hasCallControlIntents(extras)
+        val incomingCall = isIncomingCallNotification(
             extras?.getString(Notification.EXTRA_TEMPLATE),
             extras?.getInt(EXTRA_CALL_TYPE),
+            notification.category,
+            hasAnswerAndDeclineIntents,
+            notification.actions.orEmpty().mapNotNull { it.title?.toString() },
         )
         if (!eligible(packageName, incomingCall)) {
             active.remove(id)?.let { sendRemoval(it) }
@@ -256,6 +319,7 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
             1024,
         )
         val (actions, wireActions) = notificationActions(notification, incomingCall)
+        if (incomingCall && phoneCallEntry != null) clearPhoneCallEntry()
         val old = active[id]
         if (sequence >= NotificationWireMessage.MAX_SEQUENCE) {
             epoch = UUID.randomUUID().toString()
@@ -266,10 +330,10 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         val entry = NotificationEntry(
             sbn.key, id, epoch, ++sequence, sbn, packageName,
             notificationText(appName, 128).ifEmpty { packageName }, title, body,
-            sourceIconFor(packageName), actions, wireActions,
+            actions, wireActions,
         )
         if (old == null && active.size >= MAX_ACTIVE) {
-            val evicted = active.values.minByOrNull { it.sequence }
+            val evicted = active.values.filter { it !== phoneCallEntry }.minByOrNull { it.sequence }
             if (evicted != null) { active.remove(evicted.id); sendRemoval(evicted) }
         }
         active[id] = entry
@@ -285,9 +349,130 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         if (!accessEnabled) return
         val service = listener ?: return
         val rows = runCatching { service.activeNotifications.orEmpty().toList() }.getOrDefault(emptyList())
+        val currentPhoneCall = phoneCallEntry
         active.clear()
         rows.forEach(::notificationPosted)
+        currentPhoneCall?.let { if (phoneCallEntry === it) active[it.id] = it }
         links.values.filter { it.remoteCapability }.forEach(::sendSnapshot)
+    }
+
+    private fun hasCallPermission(permission: String) = ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED
+
+    @Suppress("DEPRECATION", "NewApi")
+    private fun updatePhoneCallTracking() {
+        val shouldTrack = accessEnabled && listener != null && preferences.mirrorIncomingCalls() &&
+            hasCallPermission(Manifest.permission.READ_PHONE_STATE) &&
+            hasCallPermission(Manifest.permission.ANSWER_PHONE_CALLS)
+        if (!shouldTrack) {
+            stopPhoneCallTracking()
+            clearPhoneCallEntry()
+            return
+        }
+        val base = app.getSystemService(TelephonyManager::class.java) ?: return
+        val subscriptions = runCatching {
+            SubscriptionManager.from(app).activeSubscriptionInfoList.orEmpty().map { it.subscriptionId }
+        }.getOrDefault(emptyList())
+        val subscriptionIds = (subscriptions.ifEmpty { listOf(SubscriptionManager.getDefaultSubscriptionId()) }).distinct()
+        subscriptionIds.forEach { subscriptionId ->
+            if (subscriptionId in callTelephonyManagers) return@forEach
+            val telephony = runCatching {
+                if (subscriptionId >= 0) base.createForSubscriptionId(subscriptionId) else base
+            }.getOrElse { base }
+            callStates[subscriptionId] = runCatching { telephony.callState }.getOrDefault(TelephonyManager.CALL_STATE_IDLE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                    override fun onCallStateChanged(state: Int) = phoneCallStateChanged(subscriptionId, state)
+                }
+                runCatching { telephony.registerTelephonyCallback(app.mainExecutor, callback) }
+                    .onSuccess {
+                        callTelephonyManagers[subscriptionId] = telephony
+                        callTelephonyCallbacks[subscriptionId] = callback
+                    }
+            } else {
+                val callback = object : PhoneStateListener() {
+                    override fun onCallStateChanged(state: Int, incomingNumber: String?) {
+                        phoneCallStateChanged(subscriptionId, state)
+                    }
+                }
+                runCatching { telephony.listen(callback, PhoneStateListener.LISTEN_CALL_STATE) }
+                    .onSuccess {
+                        callTelephonyManagers[subscriptionId] = telephony
+                        phoneStateListeners[subscriptionId] = callback
+                    }
+            }
+        }
+        callStates.keys.retainAll(callTelephonyManagers.keys)
+        reconcilePhoneCallState()
+    }
+
+    @Suppress("DEPRECATION", "NewApi")
+    private fun stopPhoneCallTracking() {
+        callTelephonyCallbacks.forEach { (subscriptionId, callback) ->
+            val telephony = callTelephonyManagers[subscriptionId] ?: return@forEach
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (callback as? TelephonyCallback)?.let { runCatching { telephony.unregisterTelephonyCallback(it) } }
+            }
+        }
+        phoneStateListeners.forEach { (subscriptionId, callback) ->
+            callTelephonyManagers[subscriptionId]?.let { telephony ->
+                runCatching { telephony.listen(callback, PhoneStateListener.LISTEN_NONE) }
+            }
+        }
+        callStates.clear()
+        callTelephonyManagers.clear()
+        callTelephonyCallbacks.clear()
+        phoneStateListeners.clear()
+    }
+
+    private fun phoneCallStateChanged(subscriptionId: Int, state: Int) {
+        if (!accessEnabled || subscriptionId !in callTelephonyManagers) return
+        callStates[subscriptionId] = state
+        reconcilePhoneCallState()
+    }
+
+    private fun reconcilePhoneCallState() {
+        if (hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING)) showPhoneCallEntry()
+        else clearPhoneCallEntry()
+    }
+
+    private fun showPhoneCallEntry() {
+        if (phoneCallEntry != null || !preferences.mirrorIncomingCalls()) return
+        val packageName = runCatching { app.getSystemService(TelecomManager::class.java)?.defaultDialerPackage }
+            .getOrNull()?.takeIf(String::isNotBlank) ?: "com.android.phone"
+        val appName = runCatching {
+            app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(packageName, 0)).toString()
+        }.getOrDefault("Phone")
+        if (sequence >= NotificationWireMessage.MAX_SEQUENCE) {
+            epoch = UUID.randomUUID().toString()
+            sequence = 0
+            active.clear()
+            links.values.filter { it.remoteCapability }.forEach(::sendSnapshot)
+        }
+        val key = "sim-call:${UUID.randomUUID()}"
+        val targets = mapOf(
+            0 to NotificationActionTarget(phoneCallAction = PhoneCallAction.ANSWER),
+            1 to NotificationActionTarget(phoneCallAction = PhoneCallAction.DECLINE),
+        )
+        val entry = NotificationEntry(
+            key, notificationId(key), epoch, ++sequence, null, packageName,
+            notificationText(appName, 128).ifEmpty { "Phone" }, "Incoming call", "",
+            targets, listOf(MirroredAction(0L, "Answer", ""), MirroredAction(1L, "Decline", "")),
+        )
+        if (active.size >= MAX_ACTIVE) {
+            val evicted = active.values.filter { it !== phoneCallEntry }.minByOrNull { it.sequence }
+            if (evicted != null) { active.remove(evicted.id); sendRemoval(evicted) }
+        }
+        phoneCallEntry = entry
+        active[entry.id] = entry
+        sendUpsert(entry)
+    }
+
+    private fun clearPhoneCallEntry() {
+        val entry = phoneCallEntry ?: return
+        phoneCallEntry = null
+        active.remove(entry.id)
+        dismissedPhoneCalls.removeAll { it.endsWith(":${entry.id}") }
+        sendRemoval(entry)
     }
 
     private fun eligible(packageName: String, incomingCall: Boolean): Boolean {
@@ -317,10 +502,18 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         return null
     }
 
+    private fun hasCallControlIntents(extras: Bundle?): Boolean {
+        if (extras == null) return false
+        val answer = BundleCompat.getParcelable(extras, EXTRA_ANSWER_INTENT, PendingIntent::class.java)
+        val decline = BundleCompat.getParcelable(extras, EXTRA_DECLINE_INTENT, PendingIntent::class.java)
+        return answer != null && decline != null
+    }
+
     private fun sendSnapshot(link: Link) {
         val snapshotEpoch = epoch
         val highWater = sequence
-        val rows = active.values.filter { it.sequence <= highWater }.toList()
+        val peer = peerKey(link.channel.descriptor.peer)
+        val rows = active.values.filter { it.sequence <= highWater && !isDismissedPhoneCall(peer, it) }.toList()
         val token = UUID.randomUUID().toString()
         scope.launch {
             sendNow(link, NotificationWireMessage.of(4, text(token), text(snapshotEpoch), number(highWater)))
@@ -332,15 +525,21 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     }
 
     private fun sendUpsert(entry: NotificationEntry) {
-        links.values.filter { it.remoteCapability }.forEach { link -> scope.launch { sendEntry(link, entry, "") } }
+        links.values.filter { it.remoteCapability && !isDismissedPhoneCall(peerKey(it.channel.descriptor.peer), entry) }
+            .forEach { link -> scope.launch { sendEntry(link, entry, "") } }
     }
+
+    private fun isDismissedPhoneCall(peer: String, entry: NotificationEntry) =
+        entry.statusBar == null && "$peer:${entry.id}" in dismissedPhoneCalls
 
     private suspend fun sendEntry(link: Link, entry: NotificationEntry, snapshotToken: String) {
         link.sendLock.withLock {
             if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return
-            if (entry.sourceIcon != null && entry.appPackage !in link.sentIconPackages) {
-                val icon = NotificationWireMessage.of(9, text(entry.appPackage), Cbor.Bytes(entry.sourceIcon))
-                if (sendNow(link, icon)) {
+            if (isDismissedPhoneCall(peerKey(link.channel.descriptor.peer), entry)) return
+            if (sendsSourceIcons(link.channel.descriptor.transport) && entry.appPackage !in link.sentIconPackages) {
+                val sourceIcon = sourceIconFor(entry.appPackage)
+                val icon = sourceIcon?.let { NotificationWireMessage.of(9, text(entry.appPackage), Cbor.Bytes(it)) }
+                if (icon != null && sendNow(link, icon)) {
                     link.sentIconPackages += entry.appPackage
                     if (link.sentIconPackages.size > MAX_ICON_CACHE_ENTRIES) {
                         link.sentIconPackages.remove(link.sentIconPackages.first())
@@ -371,6 +570,9 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         if (message.kind == 2L && active[message.text(1)]?.let {
             it.epoch == message.text(2) && it.sequence == message.number(3)
         } != true) return false
+        if (message.kind == 2L && active[message.text(1)]?.let {
+            isDismissedPhoneCall(peerKey(link.channel.descriptor.peer), it)
+        } == true) return false
         try {
             link.channel.sendData(message.encode())
             val peer = peerKey(link.channel.descriptor.peer)
@@ -409,24 +611,43 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
             val delivered = deliveredRevisions[peer]?.get(id)
             val outcome = if (links[link.channel.descriptor.transport] !== link || entry == null ||
                 message.text(2) != entry.epoch || entry.sequence != message.number(3) ||
-                delivered != DeliveredRevision(entry.epoch, entry.sequence)) 1L
+                delivered != DeliveredRevision(entry.epoch, entry.sequence) || isDismissedPhoneCall(peer, entry)) 1L
             else runCatching {
                 val index = message.number(4).toInt()
                 val target = entry.actions[index]
-                val pending = if (index == -1) entry.statusBar.notification.contentIntent else target?.pendingIntent
-                if (pending == null) 2L else {
-                    val intent = Intent()
-                    if (index >= 0 && message.text(5).isNotEmpty()) {
-                        val remote = target?.remoteInput ?: return@runCatching 2L
-                        RemoteInput.addResultsToIntent(arrayOf(remote), intent, Bundle().apply {
-                            putCharSequence(remote.resultKey, message.text(5))
-                        })
+                when {
+                    target?.phoneCallAction != null -> {
+                        if (!hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING)) return@runCatching 1L
+                        if (!hasCallPermission(Manifest.permission.ANSWER_PHONE_CALLS)) return@runCatching 3L
+                        val telecom = app.getSystemService(TelecomManager::class.java) ?: return@runCatching 3L
+                        // shortcut: Telecom answer/end methods are deprecated; upgrade to companion InCallService if aniCe gains its required platform association.
+                        when (target.phoneCallAction) {
+                            PhoneCallAction.ANSWER -> telecom.acceptRingingCall()
+                            PhoneCallAction.DECLINE -> if (!telecom.endCall()) return@runCatching 1L
+                        }
+                        0L
                     }
-                    // Reached only after authenticating the peer and validating this active notification action.
-                    // A Mac click is the user's gesture; Android 14+ requires its sender to opt in for
-                    // a PendingIntent that needs to open the source app from the background.
-                    sendNotificationAction(pending, intent)
-                    0L
+                    index == -1 && entry.statusBar == null -> {
+                        val telecom = app.getSystemService(TelecomManager::class.java) ?: return@runCatching 3L
+                        telecom.showInCallScreen(false)
+                        0L
+                    }
+                    else -> {
+                        val pending = if (index == -1) entry.statusBar?.notification?.contentIntent else target?.pendingIntent
+                        if (pending == null) return@runCatching 2L
+                        val intent = Intent()
+                        if (index >= 0 && message.text(5).isNotEmpty()) {
+                            val remote = target?.remoteInput ?: return@runCatching 2L
+                            RemoteInput.addResultsToIntent(arrayOf(remote), intent, Bundle().apply {
+                                putCharSequence(remote.resultKey, message.text(5))
+                            })
+                        }
+                        // Reached only after authenticating the peer and validating this active notification action.
+                        // A Mac click is the user's gesture; Android 14+ requires its sender to opt in for
+                        // a PendingIntent that needs to open the source app from the background.
+                        sendNotificationAction(pending, intent)
+                        0L
+                    }
                 }
             }.getOrElse { 3L }
             finishAction(link, peer, requestId, requestKey, outcome)
@@ -445,6 +666,11 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         val outcome = if (links[link.channel.descriptor.transport] !== link || entry == null ||
             message.text(2) != entry.epoch || entry.sequence != message.number(3) ||
             delivered != DeliveredRevision(entry.epoch, entry.sequence)) 1L
+        else if (entry.statusBar == null) {
+            dismissedPhoneCalls += "$peer:${entry.id}"
+            deliveredRevisions[peer]?.remove(entry.id)
+            0L
+        }
         else if (listener == null) 2L
         else runCatching { listener?.cancelNotification(entry.key); 0L }.getOrElse { 3L }
         finishAction(link, peer, requestId, requestKey, outcome)
@@ -485,6 +711,7 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         completed.keys.filter { it.startsWith(prefix) }.forEach(completed::remove)
         inFlight.removeAll { it.startsWith(prefix) }
         deliveredRevisions.remove(peer)
+        dismissedPhoneCalls.removeAll { it.startsWith(prefix) }
     }
 
     private fun result(requestId: String, outcome: Long) = NotificationWireMessage.of(7, text(requestId), number(outcome))

@@ -4,6 +4,10 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+- Document synthetic SIM call records and revision-bound Telecom actions; the v1 wire shape is unchanged.
+
+- Document the LAN-only delivery rule for additive source-icon records and supported incoming call detection.
+
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.

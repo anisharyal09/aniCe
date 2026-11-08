@@ -134,7 +134,7 @@ fun SettingsScreen(
                     }
                 }
 
-                PreferenceSection("Notifications") {
+                PreferenceSection("Notification sync") {
                     io.github.anisharyal09.anice.features.notifications.NotificationSettings(app.notificationMirror)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     val selectedCount = app.notificationMirror.preferences.selectedPackages().size
