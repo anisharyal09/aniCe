@@ -751,7 +751,7 @@ private struct FullScreenTrackpadContent: View {
   }
 
   var body: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: 8) {
       HStack(spacing: 12) {
         VStack(alignment: .leading, spacing: 4) {
           Text(model.targetPeer?.deviceName ?? "Phone trackpad").font(.headline)
@@ -769,7 +769,7 @@ private struct FullScreenTrackpadContent: View {
       TrackpadPad(model: model, presentationID: presentationID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .padding(16)
+    .padding(12)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .foregroundStyle(AniCePalette.primaryText(scheme))
     .background(AniCePalette.background(scheme))
@@ -792,7 +792,7 @@ private struct FullScreenTrackpadContent: View {
         }
         .allowsHitTesting(false)
       }
-      .frame(height: 72)
+      .frame(height: 58)
       .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10))
       .overlay {
         RoundedRectangle(cornerRadius: 10)

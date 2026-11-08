@@ -27,15 +27,11 @@ struct AniCeApp: App {
   @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
+  @State private var servicesStarted = false
 
   init() {
     let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
-    clipboard.installLifecycle()
-    // Guard tray setup and Carbon hotkey registration from running inside test harness processes.
-    if !IdentityView.isTesting {
-      PasteTrayController.shared.setup(model: clipboard)
-    }
     let notifier = MacFindDeviceNotifier()
     findNotifier = notifier
     let findDevice = MacFindDeviceModel(notifier: notifier)
@@ -52,7 +48,6 @@ struct AniCeApp: App {
     _transfer = State(initialValue: transfer)
     let edgeDrop = MacEdgeDropController(model: transfer, preferences: EdgeDropPreferences(storage: .standard))
     _edgeDrop = State(initialValue: edgeDrop)
-    if !IdentityView.isTesting { edgeDrop.start() }
     let transferNotifier = MacTransferNotifier(
       model: transfer,
       openMainWindow: {
@@ -91,12 +86,6 @@ struct AniCeApp: App {
     _phoneInput = State(initialValue: phoneInput)
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
-    if !IdentityView.isTesting {
-      let hotkey = GlobalHotkeyManager()
-      hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
-      hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
-      _hotkeyManager = State(initialValue: hotkey)
-    }
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     smsNotifier.onOpenMessages = { [weak navigation] in
       navigation?.openFeature(.messages)
@@ -177,7 +166,32 @@ struct AniCeApp: App {
     _pairing = State(initialValue: pairing)
     _session = State(initialValue: session)
     delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier, sms: smsNotifier)
+  }
+
+  @MainActor private func startDeferredServices() {
+    guard !servicesStarted else { return }
+    servicesStarted = true
+    clipboard.installLifecycle()
     session.restoreAutomatic()
+    guard !IdentityView.isTesting else { return }
+    PasteTrayController.shared.setup(model: clipboard)
+    edgeDrop.start()
+    let hotkey = GlobalHotkeyManager()
+    hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
+    hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
+    hotkeyManager = hotkey
+    delegate.onTerminate = {
+      findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll()
+      floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown()
+      PasteTrayController.shared.hide()
+    }
+    delegate.installCompanion(
+      CompanionView(identity: identity, discovery: discovery, pairing: pairing,
+        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
+        keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, navigation: navigation,
+        openMainWindow: { delegate.openMainFromCompanion() }),
+      navigation: navigation, floatingKeyboard: floatingKeyboard)
+    floatingKeyboard.restoreIfNeeded()
   }
 
   /// One shared radio owner; completed cleanup must not take the radio from a newer exclusive mode.
@@ -210,23 +224,8 @@ struct AniCeApp: App {
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
         session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
-        keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences, navigation: navigation)
-        .onAppear {
-          if !IdentityView.isTesting {
-            delegate.onTerminate = {
-              findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll()
-              floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown()
-              PasteTrayController.shared.hide()
-            }
-            delegate.installCompanion(
-              CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
-                keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, navigation: navigation,
-                openMainWindow: { delegate.openMainFromCompanion() }),
-              navigation: navigation, floatingKeyboard: floatingKeyboard)
-            floatingKeyboard.restoreIfNeeded()
-          }
-        }
+        keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
+        onInitialRender: { startDeferredServices() }, navigation: navigation)
     }
     .defaultSize(width: 800, height: 560)
     .windowResizability(.contentMinSize)

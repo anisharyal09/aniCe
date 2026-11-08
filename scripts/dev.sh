@@ -8,7 +8,8 @@ branch="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
 if [[ -z "$branch" ]]; then
     branch="detached-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
-branch_slug="$(printf '%s' "$branch" | sed 's/%/%25/g; s|/|%2F|g')"
+# ClangStatCache rejects percent-escaped branch slashes in DerivedData paths.
+branch_key="$(printf '%s' "$branch" | base64 | tr '+/' '-_' | tr -d '=\n')"
 checkout="${ROOT##*/}"
 usage() {
     echo "Usage: $0 mac | android [--serial DEVICE_SERIAL]"
@@ -49,7 +50,7 @@ if [[ "$platform" == mac ]]; then
     fi
     python3 "$ROOT/scripts/build-pairing-native.py" macos
     # Each checkout/branch owns its build output; launch the exact selected copy.
-    derived="$ROOT/build/dev-mac/$checkout-$branch_slug"
+    derived="$ROOT/build/dev-mac/$checkout-$branch_key"
     echo "Building Mac branch '$branch' from $ROOT"
     xcodebuild -project "$ROOT/apps/macos/aniCe.xcodeproj" -scheme aniCe \
         -configuration Debug -destination 'platform=macOS' -derivedDataPath "$derived" \

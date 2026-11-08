@@ -21,6 +21,7 @@ struct MainWindowView: View {
   let keyboardTrackpad: MacKeyboardTrackpadModel
   let phoneInput: MacPhoneInputModel
   let smsPreferences: SmsPreferences
+  let onInitialRender: () -> Void
   @Bindable var navigation: ConnectionNavigation
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openWindow) private var openWindow
@@ -79,6 +80,9 @@ struct MainWindowView: View {
     .frame(minWidth: 620, minHeight: 420)
     .tint(AniCePalette.primaryText(colorScheme))
     .task {
+      // Let SwiftUI present the first window before loading saved identity or starting radios.
+      await Task.yield()
+      onInitialRender()
       if !IdentityView.isTesting {
         await identity.load()
         if identity.local != nil { await pairing.refresh() }
@@ -105,11 +109,6 @@ struct MainWindowView: View {
       let action = openWindow
       delegate.reopenMainWindow = {
         action(id: "main")
-        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
-          window.deminiaturize(nil)
-          window.makeKeyAndOrderFront(nil)
-        }
-        NSApp.activate()
         playback.presented("main",mediaSurfaceVisible)
       }
     }

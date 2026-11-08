@@ -4,6 +4,16 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Open Devices when the Home device name is clicked, and show secured Bluetooth/Wi-Fi links as icons beside one Connected status.
+
+- Restore the main Mac window from Dock, app activation and reopen events even when the companion or floating tools are visible.
+
+- Defer identity loading, automatic connection startup and system integrations until after the first main-window render.
+
+- Keep manual Disconnect effective across restart when an older automatic-connection preference remains saved.
+
+- Encode branch names in Mac Debug DerivedData paths to avoid ClangStatCache failures on slash-containing branches.
+
 - Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
 
 - Simplify first-time Mac Bluetooth linking and show trust management only when there are devices to manage.

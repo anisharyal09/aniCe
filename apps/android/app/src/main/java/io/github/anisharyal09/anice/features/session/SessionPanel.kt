@@ -101,24 +101,62 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     nearby.fingerprint == record.peer.fingerprint
                 val pauseStatus = nearby.pauseStatus.takeIf { automaticConfigured }
                 val summary = connectionSummary(bleState, lanState, waiting)
-                val summaryText = pauseStatus ?: summary.text
+                val summaryText = if (compact) {
+                    automaticNotice?.takeIf { it.first == record.peer.deviceId }?.second ?: pauseStatus ?: summary.text
+                } else pauseStatus ?: summary.text
                 val feedback = buildList {
                     if (bleSelected && bleState != ConnectionState.SECURED && model.status.isNotBlank())
                         add("Bluetooth: ${model.status}")
                     if (lanSelected && lanState != ConnectionState.SECURED && lan.status.isNotBlank())
                         add("Local network: ${lan.status}")
                     automaticNotice?.takeIf { it.first == record.peer.deviceId }?.let { add(it.second) }
-                    pauseStatus?.let { add(it) }
                     if (waiting && !bleSelected && nearby.status != "Waiting nearby.") add(nearby.status)
                     if (!canUsePeer) add("Disconnect your current Mac to connect to this one.")
                     if (!active && !waiting && pauseStatus == null && isEmpty()) add("Tap Connect on both devices.")
                 }.joinToString("\n")
+                val connectionOptions: (@Composable () -> Unit)? = if (automaticConfigured && nearby.available) {
+                    {
+                        ConnectionPauseMenu(
+                            peerName = record.peer.deviceName,
+                            paused = nearby.connectionPaused,
+                            enabled = !automaticChanging,
+                            expanded = expandedPauseMenu == record.peer.deviceId,
+                            onOpen = { expandedPauseMenu = record.peer.deviceId },
+                            onDismiss = { expandedPauseMenu = null },
+                            onPause = { duration ->
+                                expandedPauseMenu = null
+                                nearby.pauseFor(duration)
+                            },
+                            onCustomPause = {
+                                expandedPauseMenu = null
+                                customPausePeer = record
+                            },
+                            onResume = {
+                                expandedPauseMenu = null
+                                automaticNotice = null
+                                automaticChanging = true
+                                scope.launch {
+                                    try { nearby.resumeNow() }
+                                    catch (error: CancellationException) { throw error }
+                                    catch (_: Exception) {
+                                        automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
+                                    } finally { automaticChanging = false }
+                                }
+                            }
+                        )
+                    }
+                } else null
                 Column(Modifier.fillMaxWidth().padding(vertical = if (compact || flatDeviceLayout) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else if (flatDeviceLayout) 4.dp else 8.dp)) {
                 DeviceSessionCard(record.peer.deviceName, summary.state,
                     if (compact) "" else feedback, canUsePeer, { connect(record) }, model::disconnect,
                     onConnectionDetails = { if (compact) onOpenDevice(record.peer.deviceId) else { diagnostics = false; showEvents = false; details = if (details == record.peer.deviceId + ":" + record.peer.fingerprint) null else record.peer.deviceId + ":" + record.peer.fingerprint } },
                     summary = summaryText, action = summary.action,
-                    detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact, showDetailsAction = false, showConnectionAction = true)
+                        detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact,
+                        showDetailsAction = false,
+                        showConnectionAction = !(compact && automaticConfigured && nearby.connectionPaused),
+                        bluetoothConnected = bleState == ConnectionState.SECURED,
+                        localNetworkConnected = lanState == ConnectionState.SECURED,
+                        connectionOptions = connectionOptions)
                 if (!compact) {
                 val groupOutline = MaterialTheme.colorScheme.outlineVariant
                 Column(Modifier.fillMaxWidth()
@@ -163,48 +201,6 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                 "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
                                 .putExtra("peer", record.peer.deviceId).putExtra("enable", true))
                         })
-                    if (automaticConfigured) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.End) {
-                            if (paused) {
-                                TextButton(onClick = {
-                                    automaticChanging = true
-                                    scope.launch {
-                                        try { nearby.resumeNow() }
-                                        catch (error: CancellationException) { throw error }
-                                        catch (_: Exception) {
-                                            automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
-                                        } finally { automaticChanging = false }
-                                    }
-                                }, enabled = !automaticChanging) { Text("Resume now") }
-                            } else {
-                                Box {
-                                    TextButton(onClick = { expandedPauseMenu = record.peer.deviceId }) {
-                                        Text("Pause auto connect")
-                                    }
-                                    DropdownMenu(expanded = expandedPauseMenu == record.peer.deviceId,
-                                        onDismissRequest = { expandedPauseMenu = null }) {
-                                        DropdownMenuItem(text = { Text("1 hour") }, onClick = {
-                                            expandedPauseMenu = null; nearby.pauseFor(3_600_000L)
-                                        })
-                                        DropdownMenuItem(text = { Text("3 hours") }, onClick = {
-                                            expandedPauseMenu = null; nearby.pauseFor(10_800_000L)
-                                        })
-                                        DropdownMenuItem(text = { Text("6 hours") }, onClick = {
-                                            expandedPauseMenu = null; nearby.pauseFor(21_600_000L)
-                                        })
-                                        DropdownMenuItem(text = { Text("Custom…") }, onClick = {
-                                            expandedPauseMenu = null; customPausePeer = record
-                                        })
-                                        HorizontalDivider()
-                                        DropdownMenuItem(text = { Text("Until I resume") }, onClick = {
-                                            expandedPauseMenu = null; nearby.pauseFor(null)
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
                 if (!compact) {
                     HorizontalDivider()
@@ -321,7 +317,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
         val durationMillis = (hours * 60L + minutes) * 60_000L
         AlertDialog(
             onDismissRequest = { customPausePeer = null },
-            title = { Text("Pause auto connect") },
+            title = { Text("Pause connection") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Choose when aniCe should reconnect to ${record.peer.deviceName}.")
@@ -395,12 +391,54 @@ private fun TransportDetails(name: String, state: ConnectionState, status: Strin
 }
 
 @Composable
+private fun ConnectionPauseMenu(
+    peerName: String,
+    paused: Boolean,
+    enabled: Boolean,
+    expanded: Boolean,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+    onPause: (Long?) -> Unit,
+    onCustomPause: () -> Unit,
+    onResume: () -> Unit,
+) {
+    Box {
+        TextButton(
+            onClick = onOpen,
+            enabled = enabled,
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+            modifier = Modifier.defaultMinSize(minHeight = 32.dp).semantics {
+                contentDescription = "${if (paused) "Resume" else "Pause"} automatic connection to $peerName"
+            },
+        ) {
+            Icon(painterResource(R.drawable.ic_media_pause), contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(if (paused) "Resume" else "Pause")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+            DropdownMenuItem(text = { Text("1 hour") }, onClick = { onPause(3_600_000L) })
+            DropdownMenuItem(text = { Text("3 hours") }, onClick = { onPause(10_800_000L) })
+            DropdownMenuItem(text = { Text("6 hours") }, onClick = { onPause(21_600_000L) })
+            DropdownMenuItem(text = { Text("Custom…") }, onClick = onCustomPause)
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text("Until I resume") }, onClick = { onPause(null) })
+            if (paused) {
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Resume now") }, onClick = onResume)
+            }
+        }
+    }
+}
+
+@Composable
 fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
     canConnect: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit,
     onConnectionDetails: () -> Unit,
     summary: String = stateLabel(state),
     action: String = connectionSummary(state, ConnectionState.DISCONNECTED).action,
-    detailsExpanded: Boolean = false, compact: Boolean = false, showDetailsAction: Boolean = true, showConnectionAction: Boolean = true) {
+    detailsExpanded: Boolean = false, compact: Boolean = false, showDetailsAction: Boolean = true, showConnectionAction: Boolean = true,
+    bluetoothConnected: Boolean = false, localNetworkConnected: Boolean = false,
+    connectionOptions: (@Composable () -> Unit)? = null) {
     val statusColor = when (state) {
         ConnectionState.SECURED -> MaterialTheme.colorScheme.onSurfaceVariant
         ConnectionState.FAILED -> MaterialTheme.colorScheme.error
@@ -412,19 +450,21 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             Icon(painterResource(R.drawable.ic_laptop), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
             Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Open devices for $name", onClick = onConnectionDetails)
                 .heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                }
-                Text(if (state == ConnectionState.SECURED) "Connected" else summary,
-                    style = MaterialTheme.typography.bodySmall, color = statusColor)
+                Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleSmall)
+                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
+                if (state == ConnectionState.SECURED && summary != "Connected")
+                    Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
-            OutlinedButton(onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
-                enabled = action == "Disconnect" || action == "Cancel" || canConnect,
-                shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
+            connectionOptions?.invoke()
+            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            if (showConnectionAction && action != "Disconnect") {
+                OutlinedButton(onClick = if (action == "Cancel") onDisconnect else onConnect,
+                    enabled = action == "Cancel" || canConnect,
+                    shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
+            }
         }
         return
     }
@@ -435,9 +475,11 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
                 onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                Text(if (state == ConnectionState.SECURED) "Connected" else summary,
-                    style = MaterialTheme.typography.bodySmall, color = statusColor)
+                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
+                if (state == ConnectionState.SECURED && summary != "Connected")
+                    Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
+            connectionOptions?.invoke()
             if (showConnectionAction) OutlinedButton(shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
                 onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
@@ -457,6 +499,25 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             Icon(painterResource(R.drawable.ic_back), contentDescription = null,
                 modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = if (detailsExpanded) expandedAngle else 180f))
         }
+    }
+}
+
+@Composable
+private fun ConnectionStatusLine(
+    state: ConnectionState,
+    summary: String,
+    bluetoothConnected: Boolean,
+    localNetworkConnected: Boolean,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(if (state == ConnectionState.SECURED) "Connected" else summary,
+            style = MaterialTheme.typography.bodySmall, color = color)
+        if (bluetoothConnected) Icon(painterResource(R.drawable.ic_bluetooth), contentDescription = "Bluetooth connected",
+            tint = color, modifier = Modifier.size(14.dp))
+        if (localNetworkConnected) Icon(painterResource(R.drawable.ic_wifi), contentDescription = "Local network connected",
+            tint = color, modifier = Modifier.size(14.dp))
     }
 }
 

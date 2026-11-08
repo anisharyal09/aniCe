@@ -50,14 +50,14 @@ fun HomeScreen(
           sessions()
         }
       } else {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
           Text("Connect your Mac", style = MaterialTheme.typography.titleSmall)
           Text(
             "On your Mac, choose Add device. Then scan its QR code or enter its six-digit code here.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = onPair, modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
+          OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp), onClick = onPair, modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
             Text("Add device")
           }
         }

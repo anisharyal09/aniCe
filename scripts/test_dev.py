@@ -113,10 +113,10 @@ fi''')
         self.assertEqual([line.split()[0] for line in calls],
                          ['osascript', 'python3', 'xcodebuild', 'codesign', 'codesign', 'open'])
         self.assertIn('build/dev-mac/anice dev ', calls[2])
-        self.assertIn('-test%2Fdev-branch', calls[2])
+        self.assertIn('-dGVzdC9kZXYtYnJhbmNo', calls[2])
         self.assertIn('INFOPLIST_KEY_CFBundleDisplayName=aniCe (test/dev-branch)', calls[2])
         self.assertIn('open -n ', calls[-1])
-        self.assertIn('-test%2Fdev-branch', calls[-1])
+        self.assertIn('-dGVzdC9kZXYtYnJhbmNo', calls[-1])
         self.assertIn("Building Mac branch 'test/dev-branch'", result.stdout)
         first_app = calls[-1]
         subprocess.run(['git', '-C', str(self.root), 'symbolic-ref', 'HEAD',

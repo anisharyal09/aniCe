@@ -25,8 +25,7 @@ class ConnectionSummaryTests {
                 connected++
                 assertEquals(ConnectionState.SECURED, result.state)
                 assertEquals("Disconnect", result.action)
-                assertEquals(ble == ConnectionState.SECURED, result.text.contains("Bluetooth"))
-                assertEquals(lan == ConnectionState.SECURED, result.text.contains("Local network"))
+                assertEquals("Connected", result.text)
             } else {
                 unready++
                 assertFalse(result.text.startsWith("Connected"))
@@ -38,9 +37,9 @@ class ConnectionSummaryTests {
     }
 
     @Test fun secondaryFailureNeverReplacesReadyChannelOrCancelAction() {
-        assertEquals("Connected · Local network",
+        assertEquals("Connected",
             connectionSummary(ConnectionState.FAILED, ConnectionState.SECURED).text)
-        assertEquals("Connected · Bluetooth",
+        assertEquals("Connected",
             connectionSummary(ConnectionState.SECURED, ConnectionState.FAILED).text)
         assertEquals("Cancel", connectionSummary(ConnectionState.FAILED, ConnectionState.CONNECTING).action)
         assertEquals("Cancel", connectionSummary(ConnectionState.CONNECTING, ConnectionState.DISCONNECTED, true).action)

@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -19,7 +20,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -110,7 +110,7 @@ fun DeviceIdentityScreen(
             TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { confirmation = false }) { Text(stringResource(R.string.cancel)) }
         },
     )
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
             .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.isWorking) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -176,20 +176,22 @@ fun DeviceIdentityScreen(
             }
             // Keep destructive recovery separate from the everyday rename and copy actions.
             if (state.canReset) {
-                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .semantics { stateDescription = if (advanced) "Expanded" else "Collapsed" }) {
-                    Text(if (advanced) "Hide advanced" else "Advanced")
-                }
-                if (advanced) {
-                    Column(Modifier.fillMaxWidth().bringIntoViewRequester(advancedSection)) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp),
-                            onClick = { confirmation = true }, enabled = !state.isWorking) {
-                            Text(stringResource(R.string.reset_identity))
+                Column(Modifier.fillMaxWidth().animateContentSize()) {
+                    TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .semantics { stateDescription = if (advanced) "Expanded" else "Collapsed" }) {
+                        Text(if (advanced) "Hide advanced" else "Advanced")
+                    }
+                    if (advanced) {
+                        Column(Modifier.fillMaxWidth().bringIntoViewRequester(advancedSection)) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                                onClick = { confirmation = true }, enabled = !state.isWorking) {
+                                Text(stringResource(R.string.reset_identity))
+                            }
                         }
                     }
                 }

@@ -138,14 +138,21 @@ struct SessionStartupRecovery {
   }
   func restoreAutomatic() {
     guard preferences?.bool(forKey: "session.automatic") == true else { return }
-    automatic = true
     if preferences?.bool(forKey: "session.paused") == true {
-      guard preferences?.object(forKey: Self.pauseUntilKey) != nil else { return }
+      guard preferences?.object(forKey: Self.pauseUntilKey) != nil else {
+        // A missing resume marker means a manual Disconnect or retired trust, not a saved pause.
+        automatic = false
+        preferences?.set(false, forKey: "session.automatic")
+        updateConnectionPauseStatus()
+        return
+      }
+      automatic = true
       updateConnectionPauseStatus()
       if let deadline = automaticPauseDeadline, deadline > Date() { schedulePauseResume() }
       else if automaticPauseDeadline != nil { resumeAutomaticPause() }
       return
     }
+    automatic = true
     updateConnectionPauseStatus()
     allow()
   }

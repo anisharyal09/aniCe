@@ -26,6 +26,7 @@ class AppNavigationTest {
     @Test fun unpairedEntryAndPairingCompletionHaveExplicitDestinations() {
         val state = AppNavigation()
         state.select(AppDestination.Devices, true)
+        assertEquals(AppDestination.Devices, state.destination)
         assertEquals(DeviceRoute.Pairing, state.route)
         state.select(AppDestination.Settings, false)
         assertEquals(DeviceRoute.Pairing, state.route)
@@ -105,8 +106,8 @@ class AppNavigationTest {
         assertEquals("mac-a", restored.focusedPeer)
     }
 
-    @Test fun favouritesAreBoundedToKnownFeaturesAndToggleWithoutDuplicates() {
-        assertEquals(listOf(AppFeature.Playback, AppFeature.Files), AppFeature.favourites("Files,Files,unknown,Playback"))
+    @Test fun favouritesKeepSavedOrderIgnoreUnknownAndToggleWithoutDuplicates() {
+        assertEquals(listOf(AppFeature.Files, AppFeature.Playback), AppFeature.favourites("Files,Files,unknown,Playback"))
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
         assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))

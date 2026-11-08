@@ -4,15 +4,27 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Add a visible selected outline to the Settings shortcuts and briefly highlight the destination group after a tap, like Mac.
+
+- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
+
+- Use the same labeled Pause/Resume menu and Mac-matching duration choices on Home and Devices.
+
 - Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
 
 - Hide trust management on Devices until there are saved devices or trust recovery is needed.
 
 - Add a scrollable top category row to Settings so each preference group is one tap away.
 
+- Keep all phone Settings groups on one vertical page; top category shortcuts jump to a group and follow the current scroll position.
+
+- Tighten first-run Home spacing and Add device button padding while preserving standard touch targets.
+
+- Show one Connected status with icons for ready Bluetooth and local-network links; keep Home free of Disconnect and overflow controls.
+
 - Reorder Features and Favourites from a feature row’s long-press menu.
 
-- Scroll the This device identity sheet to its reset control when Advanced opens.
+- Keep the identity sheet content-sized while Advanced is closed, then expand and scroll the reset control into view.
 
 - Enable automatic file receipt for new pairings and retain explicit off choices.
 
@@ -21,6 +33,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 ### Fixed
 
 - Pin NDK r27d to match the native pairing build and import saveable settings state needed for compilation.
+
+- Compact the six-digit pairing field and align Find Device permission and peer actions with the standard outlined controls.
 
 - Show sent or received Bluetooth and LAN check feedback in Diagnostics while the transport is secured.
 

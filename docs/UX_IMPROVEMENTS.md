@@ -1,40 +1,48 @@
-# Product UX Improvements
+# UX request audit
 
-Goal: make first setup and everyday device use obvious on Mac and Android, with fewer detours and plain-language status.
+This records the original UX requests and the later phone-control and Mac-recovery fixes. “Implemented” means the code is present; it does not establish physical-device or visual acceptance. Commit history is owned by Git, not this document.
 
-## Guardrails
+## Connection constraints
 
-- Keep BLE as the owner of automatic reconnect. Continue using connection and device events; do not add a periodic polling loop.
-- Keep automatic LAN coordinated through authenticated BLE, with no independent LAN retry loop.
-- A timed pause gates the existing connection owners until its saved deadline; expiry resumes their existing event-driven policy.
-- Keep the Android background LAN timeout default at **Never** and preserve saved user choices.
-- Apply automatic file receipt to new pairings only. Preserve existing peers’ saved choices.
-- Keep Mac floating-keyboard behavior independent from full-screen trackpad controls.
-- Store list order as local presentation state; it does not affect feature support or connection behavior.
+BLE retains automatic reconnect ownership through native events and bounded backoff. Automatic LAN remains coordinated through authenticated BLE; it has no independent retry loop. Timed pauses close current sessions and gate those owners until a saved deadline or manual resume. Android background LAN defaults to **Never**; saved choices are preserved. See [background connections](BACKGROUND_CONNECTIONS.md) and [LAN policy](LAN_CONNECTIONS.md).
 
-## Phases
+## Original requests
 
-| Phase | Scope | Status | Commit subject |
-| :--- | :--- | :--- | :--- |
-| 1 | First launch: direct users to add a device and hide actions that cannot work yet. | Complete | `feat(onboarding): guide first device setup` |
-| 2 | Pairing: make QR and six-digit code choices visible and explain the next step. | Complete | `feat(pairing): clarify QR and code setup` |
-| 3 | Navigation: open selected peers in Devices, collapse details, and remove duplicate back links. | Complete | `fix(navigation): open selected peers in Devices` |
-| 4 | Connection checks: show sent and received results for Bluetooth and LAN. | Complete | `fix(connection): show transport check feedback` |
-| 5 | Transfer defaults: enable automatic receipt on new pairings while preserving existing choices. | Complete | `feat(transfer): enable auto receive for new pairings` |
-| 6 | Mac full-screen trackpad: add keyboard input without changing the floating keyboard. | Complete | `feat(macos): add keyboard input to full-screen trackpad` |
-| 7 | Connection pause: add 1, 3 and 6 hour, custom, and manual-resume choices with a saved deadline. | Complete | `feat(connection): add timed automatic reconnect pause` |
-| 8 | Device setup: shorten Bluetooth linking and show trust controls only when there are devices to manage. | Complete | `fix(devices): streamline first connection setup` |
-| 9 | Settings: tighten Mac spacing, use clear top-level navigation, and make the main connection defaults easy to find. | Complete | `feat(settings): simplify connection preferences` |
-| 10 | Mac quick access: add a global shortcut that toggles the existing floating keyboard. | Complete | `feat(macos): add floating keyboard shortcut` |
-| 11 | Lists: reorder Features and Favourites on both platforms; offer platform-native row actions. | Complete | `feat(navigation): reorder feature and favourite lists` |
-| 12 | Feedback: remove the unpaired companion's stray action, explain offer review, confirm receive folders and reveal identity recovery in view. | Complete | `fix(ux): clarify first-run and file-transfer feedback` |
+| Request | Implementation and remaining limits |
+| :--- | :--- |
+| Timed connection pause, custom duration and automatic resume | Implemented on both platforms: 1, 3, 6 hours, custom duration or manual resume. Home and Devices show a labeled Pause/Resume menu with the same choices; Android Home omits Disconnect and overflow, while Devices retains explicit transport controls. See Android `SessionPanel.kt` / `CompanionProbe.kt` and Mac `MacSessionView.swift` / `MacSessionModel.swift`. |
+| Start LAN by default without waiting for BLE | **Partial relative to the original wording.** Automatic LAN defaults on, but authenticated BLE coordination remains required, following the later instruction to preserve the current architecture. Manual LAN remains independent. |
+| Home device name opens Devices instead of a popup | Implemented in both navigation shells, including the Mac Home header. Phone focused-device navigation clears connection details, diagnostics and discovery events. |
+| One plain-language connection status | Implemented by Android `ConnectionSummary.kt` and Mac `ConnectionPresentation`; each secured Bluetooth or local-network link is shown as an accessible icon instead of repeating transport names in the status text. |
+| Background LAN timeout defaults to Never | Implemented in Android `LanSessionController.kt` and Settings; existing finite choices remain. |
+| Highlight QR/code selection and shorten phone code entry | Implemented in the pairing views; phone code input has a compact height. |
+| Bluetooth and LAN checks in both directions | Send/receive paths and diagnostic feedback exist on both platforms. Physical two-device delivery still needs acceptance testing. |
+| Phone Settings navigation like Mac, smaller controls | Implemented as a vertically scrolling page with horizontally scrollable top shortcuts that jump to groups, retain visible selected styling through the jump, briefly highlight the destination group, and reveal the active shortcut during manual scroll. Mac Settings uses balanced section columns. Phone visual acceptance remains pending. |
+| Phone identity sheet should expand only for Advanced | Implemented: collapsed content wraps its height; Advanced animates open and requests that Reset identity be brought into view. Visual phone acceptance remains pending. |
+| Enable automatic file acceptance in both directions | Enabled for new pairings on both platforms. Existing peers retain saved choices; no saved choice on an existing peer remains off. See [file transfer](features/FILE_TRANSFER.md). |
+| Mac global keyboard shortcut | Implemented: Option-Command-K toggles the existing floating keyboard. |
+| Favourites empty state teaches how to add items | Implemented on both platforms, with a Choose favourites action. |
+| Improve the first app opening | Both Home views show one Add device entry with instructions for the other device; Android opens pairing directly when Devices is selected with no trusted phone. Unavailable send actions and empty trust/activity controls are hidden. This is an implemented flow change, not a completed visual usability study. |
+| Reorder lists on phone and Mac | Features and Favourites have saved order with long-press/right-click Move actions. Trusted-device manual ordering is not implemented. |
+| Mac feature right-click Add to Favourites/Home | Favourites actions are implemented. Optional Add to Home is not implemented. |
+| Remove redundant Back to Features/Favourites links | Removed from feature panels; native history and conversation navigation remain. |
+| Keyboard entry in Mac full-screen trackpad | Implemented with a separate capture area; floating keyboard behavior remains separate. Full-screen spacing preserves the pointer area at small window sizes. |
+| Improve manual file review and receive results | Offers identify files and the save folder; successful receipt identifies its destination. See [file transfer](features/FILE_TRANSFER.md). Visual acceptance remains pending. |
+| Simplify Mac keyboard/trackpad Bluetooth linking | Setup exposes the link choices directly with short instructions. Native Bluetooth pairing and one explicit Link device confirmation remain required. |
+| Remove stray unpaired companion/file actions and empty trust toggle | Implemented in Home, Devices and the Mac companion. |
 
-The Favourites empty state explains how to choose favourites. Phase 12 keeps it, hides the Mac companion's idle send row until a phone is trusted, names the receive folder before approval and after success, and scrolls the phone identity sheet to its reset control when Advanced opens.
+## Later corrections
 
-## Review notes
+- Defer Mac identity loading, automatic connection startup and OS integrations until after the main window's first render. The freeze was not reproducible in the running app during this pass; this removes avoidable startup work from app construction while preserving the event-driven BLE/LAN owners.
+- Mac Dock reopen and activation restore the main workspace through one delegate-owned recovery path, including when other windows are visible. SwiftUI window creation has a bounded wait before focus/de-miniaturization. Physical Dock/Stage Manager acceptance remains pending.
+- Manual Mac Disconnect stays disabled after restart even if an old automatic preference is still saved.
+- Mac development build folders use URL-safe branch keys to avoid the percent-escaped slash stat-cache failure. See [Mac development setup](../apps/macos/README.md).
+- Android Find Device permission and peer actions use the compact outlined control style. Pairing code entry and Settings selectors were tightened while preserving touch targets.
 
-- Connection checks already use the existing authenticated data path. A tap sends one check; the receiving side confirms it in its count. The UI update did not change the protocol.
-- The current reconnect policy uses bounded backoff and native events. A timed pause should suspend that policy, not replace it with polling.
-- Saved feature ordering is presentation-only; it does not alter support, permission, trust or connection behavior.
-- Receive-folder names resolve through Android document providers off the UI thread.
-- Phase commit subjects use Conventional Commit type/scope and say what changed; use the listed subject, expanding the affected surface when a phase grows.
+## Verification and remaining work
+
+The full Mac suite previously passed with 521 tests and six skips; focused Dock and companion tests passed after the window-recovery consolidation. The latest Mac app build passed. Android Kotlin compilation and unit tests passed after the Settings highlight, connection-row and pause-menu corrections. Swift syntax parsing, structure checks and whitespace checks passed. Mac unit tests were not rerun in this pass.
+
+Remaining device acceptance: first pairing by QR and code, pause expiry/manual resume, Bluetooth/LAN checks in both directions, manual/automatic file receipt, phone Advanced-sheet expansion, and Mac Dock/Stage Manager reopening. Screen capture failed during the earlier interactive pass, so those flows are not marked visually verified.
+
+Product behavior belongs in the [design guide](design/DESIGN.md) and feature guides; wire contracts remain under [protocol](../protocol/README.md). Optional follow-ups are Add to Home and manual trusted-device ordering.

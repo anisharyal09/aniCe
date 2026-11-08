@@ -1,6 +1,6 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
+Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Feature-specific verification and limits are recorded in the linked guides; current UX acceptance gaps are tracked in the [UX audit](../../docs/UX_IMPROVEMENTS.md).
 
 Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Manual Connect retains its 120-second admission window.
 
@@ -71,11 +71,11 @@ ANICE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
 
 The script quits aniCe, builds Debug, verifies the signature/team and launches the exact output. If another copy remains open, it stops before building. It never resets permissions. Set `DEVELOPER_DIR` if Xcode is installed elsewhere.
 
-- App: `build/dev-mac/<checkout>-<branch>/Build/Products/Debug/aniCe.app` under the checkout root.
+- App: `build/dev-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCe.app` under the checkout root.
 - Display name: `aniCe (<branch>)`; the window header stays aniCe.
-- Branch slashes are escaped as `%2F` in folder names, so `feat/input` and `feat-input` stay distinct. Detached checkouts use their commit ID.
+- Branch names use a URL-safe encoded key in the folder name, so slash-containing branches work with Xcode's stat cache and stay distinct. Detached checkouts use their commit ID.
 - Worktrees have separate build folders but share app identity, permissions and device state. Run one copy at a time; Mac hosted tests also use aniCe, so let those finish before running the launcher. Each worktree needs its own local signing file or exported environment settings.
-- Closing the window leaves the companion running. **Command-Q** quits.
+- Closing the window leaves the companion running. Dock reopen restores the main window even when companion or floating panels are open; activation restores it whenever no main window is visible. **Command-Q** quits.
 
 Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery-during-development).
 
@@ -138,7 +138,7 @@ Settings → Permissions shows Event Posting status and setup for Mac input. ani
 
 ## Local File Transfer
 
-Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. New pairings enable automatic receiving; existing peers retain their saved choice. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 

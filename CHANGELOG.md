@@ -8,6 +8,28 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Make the selected phone Settings shortcut explicit and briefly highlight its destination group after a jump, matching Mac.
+
+- Route the Mac Home device name to Devices and show secured Bluetooth/Wi-Fi links as icons on both platforms.
+
+- Keep phone Settings on one vertically scrollable page with top section shortcuts, and start Mac identity, radio and system integrations after the first window render.
+
+- Keep phone Settings section selection visible through jumps and show Home connection status and pause controls in one aligned device row.
+
+- Replace duplicated roadmap specifications with current status and source links; correct LAN defaults and platform verification claims.
+
+- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
+
+- Reopen and focus the Mac workspace from Dock and app activation, and make the phone identity disclosure grow only when Advanced opens.
+
+- Preserve explicit Mac Disconnect across restart instead of restoring an obsolete automatic-connection flag.
+
+- Use the same labeled Pause/Resume menu and duration choices on Android Home and Devices.
+
+- Compact Android pairing, permission and Settings controls.
+
+- Use URL-safe branch keys for Mac Debug DerivedData paths so Xcode accepts slash-containing branch names.
+
 - Fix Android and Mac debug compilation errors and align Android Gradle with the documented NDK r27d toolchain.
 
 - Add timed automatic connection pauses with clear resume status on Mac and Android.
