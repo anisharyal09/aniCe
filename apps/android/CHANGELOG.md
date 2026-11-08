@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+
 - Keep notification app choices in the Settings page's existing scroll container to prevent a Compose nested-scroll crash.
 
 - Resolve and export the local Android SDK for Gradle when using the development launcher, and retain the ignored SDK path in new worktrees.

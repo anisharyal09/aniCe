@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+
 - Fix an Android Settings crash caused by nesting the notification app picker scroll inside the page scroll.
 
 - Harden notification mirroring against disconnect and cross-transport delivery races, and repair notification Xcode navigation membership.

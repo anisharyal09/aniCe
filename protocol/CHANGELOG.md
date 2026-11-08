@@ -4,6 +4,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+
 ### Fixed
 
 - Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.

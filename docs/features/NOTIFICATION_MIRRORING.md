@@ -8,7 +8,7 @@ Notification mirroring sends alerts from apps chosen on Android to the connected
 
 1. On Android, open **Settings → Notifications** in aniCe.
 2. Choose **Enable notification access** and enable aniCe in Android's system notification-access settings. The button disappears when you return after granting access.
-3. Return to aniCe and turn on **Mirror incoming calls** to include supported incoming CallStyle alerts from phone and calling apps. This is a separate opt-in and starts off.
+3. Return to aniCe and review **Mirror incoming calls**, which includes supported incoming CallStyle alerts from phone and calling apps. It defaults to on; an existing explicit off choice is preserved. Notification Access is still required.
 4. In the same Notifications card, open **Select apps** and turn on only the apps whose notifications should appear on the Mac. Search by app name or package name. App icons help identify entries; the list starts with no apps selected and keeps selected apps at the top.
 5. Allow notifications for aniCe in macOS System Settings if macOS notification access is disabled.
 
@@ -29,6 +29,8 @@ Notifications are sent only after both connected peers advertise Notification Mi
 aniCe stores no notification content, reply text, or action token on disk and creates no history. Current source notifications and action handles stay in process memory. The Mac notification center displays the alert and may retain its rendered content according to macOS behavior. aniCe clears mirrored alerts and their in-memory action targets when the final connection to that phone ends, and programmatic cleanup does not dismiss anything on Android.
 
 Turning off an app stops new mirroring and clears its current mirrored alerts. Revoking Android Notification Access also clears current mirrored alerts. Removing a phone's trust or quitting aniCe clears Mac-side mirrored alerts. Each distinct Mac action can be submitted once per notification revision; duplicate callbacks for that action are ignored. Android opts in to background activity launches for these authenticated user actions on supported OS versions, but the source app and Android still control execution. Source app action delivery reports that Android accepted the action dispatch; aniCe does not retry an action whose outcome is uncertain.
+
+WhatsApp notification mirroring has been reported working in device testing. This does not establish compatibility for every WhatsApp action or version.
 
 ## Limits
 

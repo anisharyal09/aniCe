@@ -34,7 +34,7 @@ class NotificationMirrorPreferences(context: Context) {
     private val storage = context.getSharedPreferences("notification_mirror", Context.MODE_PRIVATE)
     fun selectedPackages(): Set<String> = storage.getStringSet("selected_packages", emptySet())?.toSet().orEmpty()
     fun isSelected(packageName: String) = packageName in selectedPackages()
-    fun mirrorIncomingCalls(): Boolean = storage.getBoolean("mirror_incoming_calls", false)
+    fun mirrorIncomingCalls(): Boolean = storage.getBoolean("mirror_incoming_calls", true)
     fun setSelected(packageName: String, selected: Boolean) {
         val values = selectedPackages().toMutableSet()
         if (selected) values.add(packageName) else values.remove(packageName)
