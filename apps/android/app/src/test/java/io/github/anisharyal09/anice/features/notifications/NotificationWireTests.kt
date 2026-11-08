@@ -77,6 +77,16 @@ class NotificationWireTests {
         assertEquals(listOf("com.alpha", "com.charlie", "com.beta", "com.zebra"), ordered.map { it.packageName })
     }
 
+    @Test fun appSearchMatchesLabelsAndPackageNamesWithoutCaseOrWhitespaceSensitivity() {
+        val apps = listOf(
+            NotificationAppChoice("com.example.chat", "Chat App"),
+            NotificationAppChoice("com.example.music", "Music"),
+        )
+        assertEquals(listOf("com.example.chat"), filterNotificationAppChoices(apps, "  CHAT ").map { it.packageName })
+        assertEquals(listOf("com.example.music"), filterNotificationAppChoices(apps, "EXAMPLE.MUSIC").map { it.packageName })
+        assertEquals(apps, filterNotificationAppChoices(apps, "  "))
+    }
+
     @Test fun incomingCallOptInIncludesCallStyleFromUnselectedSystemSourcesOnly() {
         val selected = setOf("com.example.chat")
         assertTrue(notificationPackageEligible(

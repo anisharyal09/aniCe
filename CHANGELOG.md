@@ -16,6 +16,14 @@ Shared product changes, repository structure, documentation and development conv
 
 - Match the Notifications card's inner spacing to Connection, keep one **Select apps** row, and hide its compact access action after permission is granted.
 
+- Add app search and compact picker switches; use the standard checkbox row for incoming-call mirroring.
+
+- Show Android launcher icons in the notification app picker.
+
+- Allow authenticated Mac notification actions to launch their source app under current Android background-activity rules.
+
+- Allow each distinct action on a mirrored Mac notification once, instead of disabling every action after the first.
+
 - Keep branch-specific Mac build folders percent-free and export the detected Android SDK path to Gradle.
 
 - Clarify Mac remote-control permission guidance and correct the transfer recovery description.

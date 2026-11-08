@@ -2,11 +2,13 @@
 // Captures selected Android notifications and routes them over current secured Mac channels.
 package io.github.anisharyal09.anice.features.notifications
 
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -368,7 +370,10 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
                             putCharSequence(remote.resultKey, message.text(5))
                         })
                     }
-                    pending.send(app, 0, intent)
+                    // Reached only after authenticating the peer and validating this active notification action.
+                    // A Mac click is the user's gesture; Android 14+ requires its sender to opt in for
+                    // a PendingIntent that needs to open the source app from the background.
+                    sendNotificationAction(pending, intent)
                     0L
                 }
             }.getOrElse { 3L }
@@ -391,6 +396,26 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         else if (listener == null) 2L
         else runCatching { listener?.cancelNotification(entry.key); 0L }.getOrElse { 3L }
         finishAction(link, peer, requestId, requestKey, outcome)
+    }
+
+    @Suppress("DEPRECATION", "NewApi")
+    private fun sendNotificationAction(pending: PendingIntent, fillInIntent: Intent) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            pending.send(app, 0, fillInIntent)
+            return
+        }
+
+        val options = ActivityOptions.makeBasic()
+        when {
+            Build.VERSION.SDK_INT >= 36 -> options.setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
+            )
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> options.setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+            )
+            else -> options.setPendingIntentBackgroundActivityLaunchAllowed(true)
+        }
+        pending.send(app, 0, fillInIntent, null, null, null, options.toBundle())
     }
 
     private fun finishAction(link: Link, peer: String, requestId: String, requestKey: String, outcome: Long) {

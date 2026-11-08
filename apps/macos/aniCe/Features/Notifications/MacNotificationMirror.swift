@@ -72,7 +72,7 @@ final class MacNotificationMirrorNotifier: NSObject {
     let sequence: Int64
     let category: String
     let actions: [Int: MirroredNotificationAction]
-    var consumed = false
+    var consumedActions: Set<String> = []
   }
   enum UserAction {
     case invoke(index: Int, text: String)
@@ -162,23 +162,24 @@ final class MacNotificationMirrorNotifier: NSObject {
   @discardableResult
   func handleAction(category: String, action: String, identifier: String, userText: String,
     sourceEpoch: String?, sourceSequence: Int64?) -> Bool {
-    guard category.hasPrefix(Self.categoryPrefix), let target = targets[identifier], target.category == category,
-          target.epoch == sourceEpoch, target.sequence == sourceSequence, !target.consumed else { return false }
+    guard category.hasPrefix(Self.categoryPrefix), var target = targets[identifier], target.category == category,
+          target.epoch == sourceEpoch, target.sequence == sourceSequence else { return false }
     if action == UNNotificationDismissActionIdentifier {
-      targets[identifier]?.consumed = true
       targets[identifier] = nil
       onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .dismiss)
       return true
     }
     if action == UNNotificationDefaultActionIdentifier {
-      targets[identifier]?.consumed = true
+      guard target.consumedActions.insert(action).inserted else { return false }
+      targets[identifier] = target
       onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .invoke(index: -1, text: ""))
       return true
     }
     guard action.hasPrefix("ANICE_MIRROR_ACTION_"),
           let index = Int(action.dropFirst("ANICE_MIRROR_ACTION_".count)), target.actions[index] != nil else { return false }
+    guard target.consumedActions.insert(action).inserted else { return false }
+    targets[identifier] = target
     let text = notificationText(userText, maxBytes: 1024)
-    targets[identifier]?.consumed = true
     onAction(target.peerKey, target.sourceId, target.epoch, target.sequence,
       .invoke(index: index, text: target.actions[index]?.replyPlaceholder.isEmpty == false ? text : ""))
     return true

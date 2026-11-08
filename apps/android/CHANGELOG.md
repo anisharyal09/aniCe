@@ -14,6 +14,12 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Match the Notifications card's inner spacing to Connection, keep one **Select apps** row and hide the compact permission action after access is granted.
 
+- Add case-insensitive app search, compact picker switches and use the standard checkbox-style row for incoming-call mirroring.
+
+- Show launcher icons alongside notification app choices.
+
+- Opt in to Android's background-activity launch rules when forwarding a user-invoked notification PendingIntent from Mac.
+
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed

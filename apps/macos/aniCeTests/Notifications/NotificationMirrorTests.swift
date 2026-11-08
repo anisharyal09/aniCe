@@ -249,6 +249,33 @@ final class NotificationMirrorTests: XCTestCase {
     }
   }
 
+  func testDistinctActionsRemainAvailableAfterAnotherAction() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let value = MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: 1,
+      packageName: "com.example.phone", appName: "Phone", title: "Missed call", body: "",
+      actions: [.init(index: 0, title: "Reminder", replyPlaceholder: ""),
+        .init(index: 1, title: "Call back", replyPlaceholder: "")])
+    var invoked: [Int] = []
+    notifier.onAction = { _, _, _, _, action in
+      if case .invoke(let index, _) = action { invoked.append(index) }
+    }
+    await notifier.post(peerKey: "phone", value: value)
+    let request = try XCTUnwrap(center.added.last)
+    for index in [0, 1] {
+      XCTAssertTrue(notifier.handleAction(category: request.content.categoryIdentifier,
+        action: "ANICE_MIRROR_ACTION_\(index)", identifier: request.identifier, userText: "",
+        sourceEpoch: epoch, sourceSequence: 1))
+      XCTAssertFalse(notifier.handleAction(category: request.content.categoryIdentifier,
+        action: "ANICE_MIRROR_ACTION_\(index)", identifier: request.identifier, userText: "",
+        sourceEpoch: epoch, sourceSequence: 1))
+    }
+    XCTAssertEqual(invoked, [0, 1])
+    XCTAssertTrue(notifier.handleAction(category: request.content.categoryIdentifier,
+      action: UNNotificationDismissActionIdentifier, identifier: request.identifier, userText: "",
+      sourceEpoch: epoch, sourceSequence: 1))
+  }
+
   func testQueuedActionCannotTargetANewerNotificationRevision() async throws {
     let center = MirrorNotificationCenterSpy()
     let notifier = MacNotificationMirrorNotifier(center: center)

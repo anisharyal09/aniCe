@@ -8,8 +8,8 @@ Notification mirroring sends alerts from apps chosen on Android to the connected
 
 1. On Android, open **Settings → Notifications** in aniCe.
 2. Choose **Enable notification access** and enable aniCe in Android's system notification-access settings. The button disappears when you return after granting access.
-3. Return to aniCe and turn on **Mirror incoming calls** if you want standard call controls from phone and calling apps. This is a separate opt-in and starts off.
-4. In the same Notifications card, open **Select apps** and turn on only the apps whose notifications should appear on the Mac. The list starts with no apps selected and keeps selected apps at the top.
+3. Return to aniCe and turn on **Mirror incoming calls** to include supported incoming CallStyle alerts from phone and calling apps. This is a separate opt-in and starts off.
+4. In the same Notifications card, open **Select apps** and turn on only the apps whose notifications should appear on the Mac. Search by app name or package name. App icons help identify entries; the list starts with no apps selected and keeps selected apps at the top.
 5. Allow notifications for aniCe in macOS System Settings if macOS notification access is disabled.
 
 Android's system notification-access page grants aniCe permission to read posted notifications and lists aniCe with other listener apps. The in-app **Select apps** list is a separate source filter. aniCe and Android's current default SMS app are excluded from that list. SMS continues through the existing Messages relay, avoiding a second alert for the same text.
@@ -28,7 +28,7 @@ Notifications are sent only after both connected peers advertise Notification Mi
 
 aniCe stores no notification content, reply text, or action token on disk and creates no history. Current source notifications and action handles stay in process memory. The Mac notification center displays the alert and may retain its rendered content according to macOS behavior. aniCe clears mirrored alerts and their in-memory action targets when the final connection to that phone ends, and programmatic cleanup does not dismiss anything on Android.
 
-Turning off an app stops new mirroring and clears its current mirrored alerts. Revoking Android Notification Access also clears current mirrored alerts. Removing a phone's trust or quitting aniCe clears Mac-side mirrored alerts. Source app action delivery reports that Android accepted the action dispatch; aniCe does not retry an action whose outcome is uncertain.
+Turning off an app stops new mirroring and clears its current mirrored alerts. Revoking Android Notification Access also clears current mirrored alerts. Removing a phone's trust or quitting aniCe clears Mac-side mirrored alerts. Each distinct Mac action can be submitted once per notification revision; duplicate callbacks for that action are ignored. Android opts in to background activity launches for these authenticated user actions on supported OS versions, but the source app and Android still control execution. Source app action delivery reports that Android accepted the action dispatch; aniCe does not retry an action whose outcome is uncertain.
 
 ## Limits
 
@@ -37,6 +37,6 @@ Turning off an app stops new mirroring and clears its current mirrored alerts. R
 - The incoming-call toggle recognizes Android CallStyle call-type metadata. Legacy or app-specific call UIs that do not publish a standard incoming notification cannot be mirrored, and source apps may reject an action after Android dispatches it.
 - Android can hide sensitive content, and some source-app actions cannot be invoked outside Android.
 - Notifications that arrive while the phone and Mac are disconnected are not replayed unless they remain active when they reconnect.
-- Android listener behavior, redaction and source-app action compatibility vary by device and app and require real-device verification.
+- Android listener behavior, redaction and source-app action compatibility vary by device and app and require real-device verification. Discord call joining and SIM call Answer/Decline/Call back have not been verified end to end; do not treat them as confirmed compatibility.
 
 See the [Notification Mirroring v1 contract](../../protocol/notifications/README.md) for message bounds and lifecycle details.

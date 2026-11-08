@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Keep distinct actions on a mirrored Android notification available independently while rejecting duplicate callbacks for each action.
+
 - Shorten Mac input permission and connection guidance.
 
 ### Fixed
