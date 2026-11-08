@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Add **Allow caller ID** for incoming-number access and local contact lookup; discard caller details when ringing ends.
+
+- Fold parallel dialer alerts into the active SIM ringing alert while preserving missed-call notifications.
+
 - Clarify call permission status in Settings, retain accessible permission-button touch targets and ignore call callbacks after tracking stops.
 
 - Detect incoming SIM ringing through Android telephony when the dialer omits a live call alert, and provide revision-bound Answer/Decline through Telecom after the user grants phone-state and call-control permissions.

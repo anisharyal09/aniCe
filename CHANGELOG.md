@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Show caller names or numbers in mirrored SIM call alerts with optional caller-ID permission; keep live Answer/Decline available independently.
+
 - Add an Android telephony-state fallback for live SIM call alerts when the dialer publishes no incoming notification; expose explicit phone-state and call-control permission setup for Mac Answer/Decline.
 
 - Stop excluding clearable incoming-call alerts with explicit Answer/Decline controls.

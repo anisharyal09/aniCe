@@ -117,6 +117,17 @@ class NotificationWireTests {
         assertFalse(hasRingingPhoneCall(emptyList(), 1))
     }
 
+    @Test fun callerTextSkipsDialerAndGenericLabelsButKeepsExposedName() {
+        assertEquals("Supri", visibleCallerLabel("Phone", listOf("Phone", "Incoming call", "Supri")))
+        assertNull(visibleCallerLabel("Phone", listOf("Phone", "Incoming call", "Unknown caller")))
+    }
+
+    @Test fun missedCallNotificationsAreNotFoldedIntoTheLiveCallAlert() {
+        assertTrue(isMissedCallNotification("missed_call", "Phone", "Supri"))
+        assertTrue(isMissedCallNotification("call", "Missed call", "Supri"))
+        assertFalse(isMissedCallNotification("call", "Incoming call", "Supri"))
+    }
+
     @Test fun incomingCallRecognitionRequiresKnownCallStyleAndIncomingType() {
         assertTrue(isIncomingCallStyle("android.app.Notification\$CallStyle", 1))
         assertTrue(isIncomingCallStyle("androidx.core.app.NotificationCompat\$CallStyle", 1))
@@ -127,6 +138,7 @@ class NotificationWireTests {
     }
 
     @Test fun incomingCallRecognitionCoversActionableSystemCallsWithoutMirroringMissedCalls() {
+        assertTrue(isIncomingCallNotification(null, 1, null, false, emptyList()))
         assertTrue(isIncomingCallNotification(
             null, null, "call", false, listOf("Answer", "Decline"),
         ))

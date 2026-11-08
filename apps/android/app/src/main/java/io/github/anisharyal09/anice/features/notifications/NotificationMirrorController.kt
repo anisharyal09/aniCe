@@ -7,8 +7,12 @@ import android.app.ActivityOptions
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.RemoteInput
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.net.Uri
+import android.provider.ContactsContract
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
@@ -37,6 +41,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
@@ -122,6 +127,7 @@ internal fun isIncomingCallNotification(
     actionTitles: List<String>,
 ): Boolean {
     if (callType == 2 || callType == 3) return false
+    if (callType == 1) return true
     val hasIncomingControls = hasAnswerAndDeclineIntents || hasIncomingCallActionLabels(actionTitles)
     if (isIncomingCallStyle(template, callType) ||
         (isCallStyleTemplate(template) && hasIncomingControls) ||
@@ -130,6 +136,23 @@ internal fun isIncomingCallNotification(
     // Ringing notifications can be clearable; explicit Answer/Decline controls identify the call.
     return hasIncomingControls
 }
+
+internal fun visibleCallerLabel(dialerName: String, values: List<String>): String? {
+    val dialer = dialerName.trim().lowercase(Locale.ROOT)
+    val generic = setOf(
+        "phone", "call", "incoming call", "ongoing call", "call in progress", "in call",
+        "calling", "mobile", "unknown", "unknown caller", "unknown number",
+    )
+    return values.asSequence()
+        .map { notificationText(it, 256).trim() }
+        .firstOrNull { value ->
+            val normalized = value.lowercase(Locale.ROOT)
+            value.isNotEmpty() && normalized != dialer && normalized !in generic
+        }
+}
+
+internal fun isMissedCallNotification(category: String?, title: String?, body: String?): Boolean =
+    category == "missed_call" || listOf(title, body).any { it?.contains("missed call", ignoreCase = true) == true }
 
 internal fun sendsSourceIcons(transport: String): Boolean = transport == "lan"
 
@@ -199,6 +222,9 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     private val phoneStateListeners = mutableMapOf<Int, PhoneStateListener>()
     private val dismissedPhoneCalls = mutableSetOf<String>()
     private var phoneCallEntry: NotificationEntry? = null
+    private var callerIdentityGeneration = 0L
+    private var incomingCallerLabel: String? = null
+    private var incomingCallerAt = 0L
     private var epoch = UUID.randomUUID().toString()
     private var sequence = 0L
     private val now get() = android.os.SystemClock.elapsedRealtime()
@@ -254,6 +280,7 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         accessEnabled = enabled
         if (!enabled) {
             stopPhoneCallTracking()
+            clearCallerIdentity()
             clearPhoneCallEntry()
             listener = null
             active.values.toList().forEach(::sendRemoval)
@@ -306,6 +333,17 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
             hasAnswerAndDeclineIntents,
             notification.actions.orEmpty().mapNotNull { it.title?.toString() },
         )
+        if (shouldUseSimCallFallback(sbn)) {
+            if (hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING)) {
+                if (phoneCallEntry == null) showPhoneCallEntry()
+                callerLabelFromNotification(sbn)?.let(::updatePhoneCallEntry)
+            }
+            // Fold the system dialer's parallel SIM-call alert into our Telecom Answer/Decline alert.
+            return
+        }
+        val simCaller = callerLabelFromSimCallNotification(sbn)
+        simCaller?.let(::updatePhoneCallEntry)
+        val caller = if (incomingCall) callerLabelFromNotification(sbn) ?: simCaller else simCaller
         if (!eligible(packageName, incomingCall)) {
             active.remove(id)?.let { sendRemoval(it) }
             return
@@ -318,8 +356,10 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
             (extras?.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras?.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty(),
             1024,
         )
+        val callerNotShown = caller != null && visibleCallerLabel(appName, listOf(title, body)) == null
+        val displayTitle = if (title.isEmpty() && callerNotShown) "Incoming call" else title
+        val displayBody = if (callerNotShown) caller.orEmpty() else body
         val (actions, wireActions) = notificationActions(notification, incomingCall)
-        if (incomingCall && phoneCallEntry != null) clearPhoneCallEntry()
         val old = active[id]
         if (sequence >= NotificationWireMessage.MAX_SEQUENCE) {
             epoch = UUID.randomUUID().toString()
@@ -329,7 +369,7 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         }
         val entry = NotificationEntry(
             sbn.key, id, epoch, ++sequence, sbn, packageName,
-            notificationText(appName, 128).ifEmpty { packageName }, title, body,
+            notificationText(appName, 128).ifEmpty { packageName }, displayTitle, displayBody,
             actions, wireActions,
         )
         if (old == null && active.size >= MAX_ACTIVE) {
@@ -357,6 +397,47 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     }
 
     private fun hasCallPermission(permission: String) = ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun hasPhoneCallControlPermissions() =
+        hasCallPermission(Manifest.permission.READ_PHONE_STATE) &&
+            hasCallPermission(Manifest.permission.ANSWER_PHONE_CALLS)
+
+    private fun isSystemPhoneCallNotification(sbn: StatusBarNotification): Boolean {
+        val notification = sbn.notification
+        val extras = notification.extras ?: return false
+        if (isMissedCallNotification(
+                notification.category,
+                extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+                (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString(),
+            )) return false
+        val callType = extras.getInt(EXTRA_CALL_TYPE, -1)
+        if (callType == 2 || callType == 3) return false
+        val isDefaultDialer = sbn.packageName == runCatching {
+            app.getSystemService(TelecomManager::class.java)?.defaultDialerPackage
+        }.getOrNull()
+        val callMarked = isCallStyleTemplate(extras.getString(Notification.EXTRA_TEMPLATE)) ||
+            notification.category == Notification.CATEGORY_CALL || hasCallControlIntents(extras)
+        val genericDialerAlert = isDefaultDialer && visibleCallerLabel(
+            runCatching {
+                app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
+            }.getOrDefault(""),
+            listOfNotNull(
+                extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+                extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
+                extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            ),
+        ) == null
+        if (!callMarked && !genericDialerAlert) return false
+        val isSystemApp = runCatching {
+            app.packageManager.getApplicationInfo(sbn.packageName, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
+        }.getOrDefault(false)
+        return isDefaultDialer || isSystemApp
+    }
+
+    private fun shouldUseSimCallFallback(sbn: StatusBarNotification): Boolean =
+        phoneCallEntry != null &&
+            hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING) &&
+            isSystemPhoneCallNotification(sbn)
 
     @Suppress("DEPRECATION", "NewApi")
     private fun updatePhoneCallTracking() {
@@ -437,6 +518,11 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
 
     private fun showPhoneCallEntry() {
         if (phoneCallEntry != null || !preferences.mirrorIncomingCalls()) return
+        val caller = runCatching {
+            listener?.activeNotifications.orEmpty().asSequence()
+                .mapNotNull(::callerLabelFromSimCallNotification)
+                .firstOrNull()
+        }.getOrNull() ?: incomingCallerLabel?.takeIf { now - incomingCallerAt < 30_000L }.orEmpty()
         val packageName = runCatching { app.getSystemService(TelecomManager::class.java)?.defaultDialerPackage }
             .getOrNull()?.takeIf(String::isNotBlank) ?: "com.android.phone"
         val appName = runCatching {
@@ -455,9 +541,15 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         )
         val entry = NotificationEntry(
             key, notificationId(key), epoch, ++sequence, null, packageName,
-            notificationText(appName, 128).ifEmpty { "Phone" }, "Incoming call", "",
+            notificationText(appName, 128).ifEmpty { "Phone" }, "Incoming call", caller,
             targets, listOf(MirroredAction(0L, "Answer", ""), MirroredAction(1L, "Decline", "")),
         )
+        active.values.filter { existing ->
+            existing.statusBar?.let(::isSystemPhoneCallNotification) == true
+        }.toList().forEach { existing ->
+            active.remove(existing.id)
+            sendRemoval(existing)
+        }
         if (active.size >= MAX_ACTIVE) {
             val evicted = active.values.filter { it !== phoneCallEntry }.minByOrNull { it.sequence }
             if (evicted != null) { active.remove(evicted.id); sendRemoval(evicted) }
@@ -467,9 +559,94 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         sendUpsert(entry)
     }
 
+    private fun callerLabelFromNotification(sbn: StatusBarNotification): String? {
+        val notification = sbn.notification
+        val extras = notification.extras ?: return null
+        val callType = extras.getInt(EXTRA_CALL_TYPE, -1)
+        if (callType == 2 || callType == 3) return null
+        val callMarked = isCallStyleTemplate(extras.getString(Notification.EXTRA_TEMPLATE)) ||
+            notification.category == Notification.CATEGORY_CALL || hasCallControlIntents(extras)
+        if (!callMarked) return null
+
+        val frameworkPerson = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                BundleCompat.getParcelable(extras, "android.callPerson", android.app.Person::class.java)?.name?.toString()
+            }.getOrNull()
+        } else null
+        val compatPerson = runCatching {
+            extras.getBundle("android.callPersonCompat")?.let { androidx.core.app.Person.fromBundle(it).name?.toString() }
+        }.getOrNull()
+        val dialerName = runCatching {
+            app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
+        }.getOrDefault("")
+        val values = listOfNotNull(
+            frameworkPerson,
+            compatPerson,
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            extras.getCharSequence("android.subText")?.toString(),
+            extras.getCharSequence("android.infoText")?.toString(),
+            extras.getCharSequence("android.summaryText")?.toString(),
+            notification.tickerText?.toString(),
+        )
+        return visibleCallerLabel(dialerName, values)
+    }
+
+    private fun callerLabelFromSimCallNotification(sbn: StatusBarNotification): String? {
+        if (!hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING)) return null
+        if (!isSystemPhoneCallNotification(sbn)) return null
+        return callerLabelFromNotification(sbn)
+    }
+
+    fun clearCallerIdentity() {
+        callerIdentityGeneration++
+        incomingCallerLabel = null
+    }
+
+    fun incomingCallerNumber(number: String) {
+        if (!accessEnabled || !preferences.mirrorIncomingCalls() ||
+            !hasCallPermission(Manifest.permission.READ_CALL_LOG)) return
+        val safeNumber = notificationText(number, 128).trim()
+        if (safeNumber.isEmpty()) return
+        val generation = ++callerIdentityGeneration
+        incomingCallerAt = now
+        scope.launch {
+            val label = withContext(Dispatchers.IO) {
+                if (!hasCallPermission(Manifest.permission.READ_CONTACTS)) safeNumber
+                else runCatching {
+                    val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(safeNumber))
+                    app.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) notificationText(it.getString(0).orEmpty(), 128).takeIf(String::isNotBlank) else null
+                    }
+                }.getOrNull() ?: safeNumber
+            }
+            if (generation != callerIdentityGeneration || now - incomingCallerAt >= 30_000L ||
+                !accessEnabled || !preferences.mirrorIncomingCalls()) return@launch
+            incomingCallerLabel = label
+            updatePhoneCallEntry(label)
+        }
+    }
+
+    private fun updatePhoneCallEntry(caller: String) {
+        val current = phoneCallEntry ?: return
+        if (current.body == caller || !hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING)) return
+        if (sequence >= NotificationWireMessage.MAX_SEQUENCE) {
+            epoch = UUID.randomUUID().toString()
+            sequence = 0
+            active.clear()
+            links.values.filter { it.remoteCapability }.forEach(::sendSnapshot)
+        }
+        val updated = current.copy(epoch = epoch, sequence = ++sequence, body = caller)
+        phoneCallEntry = updated
+        active[updated.id] = updated
+        sendUpsert(updated)
+    }
+
     private fun clearPhoneCallEntry() {
         val entry = phoneCallEntry ?: return
         phoneCallEntry = null
+        clearCallerIdentity()
         active.remove(entry.id)
         dismissedPhoneCalls.removeAll { it.endsWith(":${entry.id}") }
         sendRemoval(entry)
@@ -737,5 +914,20 @@ class NotificationMirrorService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) { owner.notificationPosted(sbn) }
     override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap, reason: Int) {
         owner.notificationRemoved(sbn)
+    }
+}
+
+// This broadcast enriches caller identity only; it never changes ringing or call controls.
+class CallIdentityReceiver : BroadcastReceiver() {
+    @Suppress("DEPRECATION")
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
+        val owner = (context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).notificationMirror
+        if (intent.getStringExtra(TelephonyManager.EXTRA_STATE) != TelephonyManager.EXTRA_STATE_RINGING) {
+            owner.clearCallerIdentity()
+            return
+        }
+        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)?.takeIf(String::isNotBlank) ?: return
+        owner.incomingCallerNumber(number)
     }
 }

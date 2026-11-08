@@ -131,6 +131,8 @@ Features → Messages relays incoming SMS to the Mac, serves its reads of conver
 
 Settings → Notification sync provides Notification Access setup, the default-on **Mirror incoming calls** checkbox and a separate **Select apps** screen with search. **Allow phone access** requests the additional permissions for live SIM call relay: Android detects ringing on active SIM subscriptions and accepts revision-bound Mac Answer/Decline requests through Telecom, keeping audio on the phone. Calling-app actions use their exposed notification controls. Alerts use authenticated BLE or LAN; source icons travel over LAN only. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
 
+**Allow caller ID** in Notification sync requests incoming-number and Contacts access to show a saved name or phone number. Lookup stays on the phone and creates no call history. See the feature guide for Android permission restrictions.
+
 ## Clipboard
 
 Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior](../../docs/features/CLIPBOARD.md) describes permissions, focus rules and the background-overwrite limitation.

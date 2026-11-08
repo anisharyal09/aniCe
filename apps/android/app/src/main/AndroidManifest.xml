@@ -24,6 +24,8 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
@@ -60,6 +62,9 @@
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
+        <receiver android:name=".features.notifications.CallIdentityReceiver" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.PHONE_STATE" /></intent-filter>
+        </receiver>
         <receiver android:name=".features.media.MediaActionReceiver" android:exported="false" />
         <receiver android:name=".features.sms.SmsReceiver" android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">

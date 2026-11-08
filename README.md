@@ -15,7 +15,7 @@ Physical testing includes authenticated connections, real transfers in both dire
 - **[Seamless file sharing](docs/features/FILE_TRANSFER.md):** Send files between Mac and Android using Mac drop targets, the optional Edge Drop shelf, or Android’s Share sheet. Choose receive folders and per-sender automatic receiving.
 - **[Control Android (Keyboard & Trackpad)](docs/features/KEYBOARD_TRACKPAD.md):** Use the Mac’s keyboard and trackpad to type, move the pointer, scroll, and navigate on a trusted Android phone over separately paired Classic Bluetooth HID. In the Mac app, open **Features → Control Android**.
 - **[Control Mac](docs/features/PHONE_TO_MAC.md):** Use Android’s keyboard and trackpad to control the Mac over aniCe’s authenticated Bluetooth session. macOS Event Posting access is configured in **Settings → Permissions**.
-- **[Notification mirroring](docs/features/NOTIFICATION_MIRRORING.md):** Select Android apps and mirror their active alerts to Mac, including source icons and supported actions. Includes live SIM call relay with Answer and Decline from Mac while audio stays on the phone. Calling-app controls use the actions Android exposes.
+- **[Notification mirroring](docs/features/NOTIFICATION_MIRRORING.md):** Select Android apps and mirror their active alerts to Mac, including source icons and supported actions. Includes live SIM call relay with optional caller identification and Answer/Decline from Mac while audio stays on the phone. Calling-app controls use the actions Android exposes.
 
 ---
 

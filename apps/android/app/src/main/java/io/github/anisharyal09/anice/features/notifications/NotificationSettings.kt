@@ -91,12 +91,16 @@ fun NotificationSettings(owner: NotificationMirrorController) {
     var access by remember { mutableStateOf(false) }
     var mirrorIncomingCalls by remember { mutableStateOf(owner.preferences.mirrorIncomingCalls()) }
     var callPermissions by remember { mutableStateOf(false) }
+    var callerIdPermissions by remember { mutableStateOf(false) }
     fun refresh() {
         access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
         owner.accessChanged(access)
         mirrorIncomingCalls = owner.preferences.mirrorIncomingCalls()
         callPermissions = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
+        callerIdPermissions = listOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS).all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
         owner.phoneCallPermissionsChanged()
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
@@ -163,6 +167,18 @@ fun NotificationSettings(owner: NotificationMirrorController) {
                 Text("Allow phone access")
             }
         }
+        if (mirrorIncomingCalls && !callerIdPermissions) {
+            Text("Show caller names by matching the incoming number to Contacts. Call details stay in memory. Android may restrict number access on this installation.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(
+                onClick = { callPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS)) },
+                modifier = permissionButtonModifier,
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            ) { Text("Allow caller ID") }
+        }
+
     }
 }
 
