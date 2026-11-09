@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master. Preserve launcher foreground size and monochrome artwork; use a near-black graphite glow with a subtle edge highlight for the Night launcher background and a softly warm Light background.
+
 - Document Mac Desk Deck and DND setup in the README feature guides.
 
 - Add **Allow caller ID** for incoming-number access and local contact lookup; discard caller details when ringing ends.

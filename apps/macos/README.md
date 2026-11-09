@@ -2,6 +2,8 @@
 
 Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
 
+The [path-only ringless silver ribbon](../../assets/logo/anice-mark-final.svg) supplies the app icon, sidebar, About and menu-bar art. The app icon uses a full rounded Light tile. The Dock switches between Light and Dark appearance-aware tiles with extra transparent inset around the tile, keeping the mark at its selected size alongside neighboring icons. The Dark Dock tile stays near-black with a subtle inner glow and fine top/bottom rim highlights. The menu-bar companion uses a 21.5 pt shaded template.
+
 Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Manual Connect retains its 120-second admission window.
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.

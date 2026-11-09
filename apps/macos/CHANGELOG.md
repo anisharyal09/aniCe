@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar artwork, and inset the appearance-aware Dock tile while preserving the silver mark's size. Give the Dark Dock tile a near-black graphite glow with fine rim and top/bottom highlights.
+
 - Document Mac Desk Deck and DND setup in the README feature guides.
 
 - Keep live mirrored alerts active, quietly enrich Bluetooth-first notifications with icons when LAN becomes available, and reject icon records over BLE.

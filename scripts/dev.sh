@@ -40,7 +40,16 @@ if [[ "$platform" == mac ]]; then
     export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
     command -v xcodebuild >/dev/null || fail "Install Xcode."
     # Branch copies share one bundle identity and persisted device state.
-    osascript -e 'if application id "io.github.anisharyal09.anice" is running then tell application id "io.github.anisharyal09.anice" to quit'
+    osascript <<'APPLESCRIPT'
+tell application "System Events"
+    if exists (first application process whose bundle identifier is "io.github.anisharyal09.anice") then
+        set aniCeProcess to first application process whose bundle identifier is "io.github.anisharyal09.anice"
+        set frontmost of aniCeProcess to true
+        delay 0.2
+        keystroke "q" using {command down}
+    end if
+end tell
+APPLESCRIPT
     for attempt in {1..25}; do
         pgrep -x aniCe >/dev/null || break
         sleep 0.2

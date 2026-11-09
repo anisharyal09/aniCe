@@ -49,8 +49,12 @@ struct MainWindowView: View {
   var body: some View {
     NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
-        Text("aniCe").font(.system(size: 21, weight: .semibold))
-          .foregroundStyle(AniCePalette.primaryText(colorScheme))
+        HStack(spacing: 8) {
+          Image("BrandMark")
+            .resizable().scaledToFit().frame(width: 22, height: 22)
+            .accessibilityHidden(true)
+          Text("aniCe").font(.system(size: 21, weight: .semibold))
+        }.foregroundStyle(AniCePalette.primaryText(colorScheme))
           .padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 24)
         Text("Workspace").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           .padding(.horizontal, 14).padding(.bottom, 12)

@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
+
 - Document Mac Desk Deck and DND setup in the README feature guides.
 
 - Show caller names or numbers in mirrored SIM call alerts with optional caller-ID permission; keep live Answer/Decline available independently.

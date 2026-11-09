@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.app
 
 import android.content.Context
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -233,8 +234,8 @@ private fun AboutScreen(context: Context) {
                 if (compact) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(painterResource(R.drawable.ic_link), contentDescription = null,
-                                modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
+                                modifier = Modifier.size(20.dp))
                             Text("aniCe", style = MaterialTheme.typography.titleMedium)
                         }
                         Column(Modifier.padding(start = 32.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -244,8 +245,8 @@ private fun AboutScreen(context: Context) {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.ic_link), contentDescription = null,
-                            modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
+                            modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
                         Text("aniCe", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.weight(1f))

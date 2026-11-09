@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.app
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -104,7 +105,13 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(title = { Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp)) }, navigationIcon = {
+            TopAppBar(title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
+                        modifier = Modifier.size(22.dp))
+                    Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
+                }
+            }, navigationIcon = {
                 if ((navigation.destination == AppDestination.Devices &&
                         navigation.route != DeviceRoute.Overview && navigation.route != DeviceRoute.Pairing) ||
                     (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
