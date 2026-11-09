@@ -1,5 +1,5 @@
 <h2 align="center">
-  <img src="assets/logo/anice-mark-final.svg" width="126" alt="aniCe silver interlocking ribbon mark"><br>
+  <img src="assets/logo/anice-mark-final.svg" width="168" alt="aniCe silver interlocking ribbon mark"><br>
   aniCe
 </h2>
 
