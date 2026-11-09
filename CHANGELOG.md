@@ -8,9 +8,26 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Keep DND sync phone-to-Mac only, simplify one-time setup, and label the Desk Deck toggle as Mac-local.
+- Keep Desk Deck in the regular Android app shell and simplify trusted-phone app approvals in Mac Settings.
+- Distinguish Control Mac from Mac Desk Deck in the Android feature list and label the deck control **DND mode**.
+- Remove duplicate in-content Back controls while retaining platform navigation.
+
 - Clarify Mac remote-control permission guidance and correct the transfer recovery description.
 
+### Added
+
+- Add phone-side selection of the Mac's default audio output in Desk Deck.
+
+### Changed
+
+- Negotiate Desk Deck v4 for the new control while preserving v1–v3 behavior and action masks.
+
 ### Fixed
+
+- Correct Desk Deck memory accounting, CPU sampling intervals and screenshot launch; compact the phone layout and add Events-access guidance.
+
+- Fence Desk Deck commands and samples to the active peer, channel, subscription and generation; bound opening and recovery, renew visible v2 leases, retain at most 60 history points and disable controls while readings are stale.
 
 - Keep opted-in Android receives active in the background and allow another send from terminal results.
 
@@ -30,6 +47,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add a responsive Android Mac Desk Deck with live CPU, memory, thermal-pressure and reciprocal battery status, per-action feedback, Mac-approved app shortcuts, output volume and a charging-only keep-awake option.
+- Add Mac Settings approval for per-phone app shortcuts; keep launch authorization on Mac and transmit only catalog IDs and revisions.
+- Add authenticated phone power status to the Mac overview and menu-bar companion without creating a connection lease.
 - Add `scripts/dev.sh` for branch-labelled, per-checkout signed Mac builds that stop the running copy before rebuilding and Android build/install/launch with automatic ADB discovery and explicit selection when multiple devices are connected.
 
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
@@ -40,6 +60,8 @@ Shared product changes, repository structure, documentation and development conv
 - Add per-peer automatic receiving and saved default/custom destinations on both platforms.
 
 ### Changed
+
+- Extend Desk Deck with backward-compatible v2 memory and power details, subscription renewal, paged approved-app catalogs, clear stale/failure recovery and responsive landscape/portrait layouts; keep the shell available before telemetry.
 
 - Let Android file sends continue when the share panel is hidden and show progress for active sends and receives in notifications.
 

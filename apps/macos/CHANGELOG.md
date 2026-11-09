@@ -4,10 +4,19 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Keep phone-to-Mac DND sync, remove Mac-to-phone automation, and tuck one-time Shortcut setup under a disclosure.
+- Label the Desk Deck DND toggle as Mac-only with no phone sync.
+- Simplify trusted-phone app approvals and remove internal bundle identifiers from the Desk Deck settings list.
+- Remove duplicate Back buttons from feature panels; retain the sidebar and toolbar history controls.
+
 - Shorten Mac input permission and connection guidance.
 
 ### Fixed
 
+- Sample anonymous app memory separately from cache, handle native CPU counter rollover and open the native Screenshot controls.
+
+- Keep one Mac sampling task per active Deck session, fence cleanup by generation, coalesce pending telemetry to the latest sample and expire v2 subscriptions without renewal.
+- Revalidate approved app bundle identity immediately before launch; move legacy Blender/Terminal launch codes out of v2 requests.
 - Keep development-signing warnings out of Release permission UI and document archive naming, signing and distribution.
 
 - Reveal the running signed app from blocked input permission settings so stale macOS permission entries can be reauthorized against the correct copy.
@@ -27,6 +36,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
 
 ### Added
+
+- Advertise available Core Audio outputs to Desk Deck and switch the Mac's default output after revalidating the selected device.
+- Add Settings → Desk Deck with a native app picker and independent shortcut approval for each trusted phone; add phone battery and charging status beside connected-device state in Overview and the menu-bar companion.
+- Add Mac v2 memory and battery samples, paged catalogs for up to 32 approved apps, renewable foreground subscriptions and the public Control–Command–Q lock request.
+
+- Serve foreground Desk Deck samples and trusted-phone Mac lock, app-launch, screenshot, microphone-mute and output-volume commands over the existing authenticated session.
 
 - Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
 - Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.

@@ -8,7 +8,6 @@ branch="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
 if [[ -z "$branch" ]]; then
     branch="detached-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
-branch_slug="$(printf '%s' "$branch" | sed 's/%/%25/g; s|/|%2F|g')"
 checkout="${ROOT##*/}"
 usage() {
     echo "Usage: $0 mac | android [--serial DEVICE_SERIAL]"
@@ -48,8 +47,8 @@ if [[ "$platform" == mac ]]; then
         fail "Quit the remaining aniCe copies with Command-Q, then retry. Branch builds share permissions and device state."
     fi
     python3 "$ROOT/scripts/build-pairing-native.py" macos
-    # Each checkout/branch owns its build output; launch the exact selected copy.
-    derived="$ROOT/build/dev-mac/$checkout-$branch_slug"
+    # Keep branch separators as directories; Xcode's SDK cache rejects encoded slashes.
+    derived="$ROOT/build/dev-mac/$checkout-$branch"
     echo "Building Mac branch '$branch' from $ROOT"
     xcodebuild -project "$ROOT/apps/macos/aniCe.xcodeproj" -scheme aniCe \
         -configuration Debug -destination 'platform=macOS' -derivedDataPath "$derived" \

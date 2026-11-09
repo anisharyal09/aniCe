@@ -66,7 +66,7 @@ On Mac, the window titlebar is split at the sidebar boundary. Keep macOS traffic
 
 Android uses a native app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About is reached from the app bar. Preserve system Back and RTL-aware in-app Back. Keep aniCe in the app bar and use restrained destination headings in the body, as in the approved reference.
 
-Opening or leaving a section never retires a transport, playback session, draft or transfer. A feature panel's Back returns to its entry destination: Home/Overview, Features or Favourites. Feature settings open inline from that feature's gear; they edit the same preference and do not send the user to the global Settings page. Main Settings remains available for app-wide discovery and management.
+Opening or leaving a section never retires a transport, playback session, draft or transfer. Use the platform navigation to leave a feature: Android system/app-bar Back and destination tabs, or the Mac sidebar and toolbar history. Do not add a second in-content Back button. Desk Deck uses the same Android app bar and destination tabs as other feature panels. Feature settings open inline from that feature's gear; they edit the same preference and do not send the user to the global Settings page. Main Settings remains available for app-wide discovery and management.
 
 ## Screen specifications
 
@@ -104,7 +104,7 @@ Connection state must distinguish trusted, connecting, secured, offline, permiss
 
 Show one device row with its name, readiness state, Auto connect where appropriate and a compact Disconnect/Connect action. Keep connection management and device lists in Devices.
 
-Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Do not invent battery, storage or charging values.
+Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Show battery and charging only from actual device-power readings beside a connected peer; keep unavailable values explicit, never estimate them, and do not add a Mac battery page.
 
 ### Devices and device details
 
@@ -113,6 +113,12 @@ Show a flat peer group with device name, secured readiness, automatic preference
 ### Features and Favourites
 
 Present a compact launcher as clear flat rows, not a wall of equal large tiles. Each row has a neutral icon, feature name, concise current availability or state, separate favourite control and trailing chevron. Entire row opens the feature except for independent star or overflow controls. On Mac use two columns only when the detail width supports readable rows; on phones use full-width rows. Favourites use the same feature destination and permission rules as Features.
+
+### Mac Desk Deck
+
+Desk Deck stays in the standard Android app shell, with app-bar Back and bottom tabs visible. Retain system insets once. In landscape, place CPU and memory cards beside quick actions, with output selection and volume nearby; stack the same content in portrait. Use a compact top card with the Mac name, connection state and sample age above two clearly labeled Mac/phone power summaries. Put transport details, thermal state, usage breakdowns, graphs, diagnostics and keep-awake preferences in the Details dialog.
+
+Open the shell before connection or telemetry is ready. Retain stale readings with their age, disable actions until fresh telemetry returns, and offer one recovery action. Refresh never replays a command. Explain missing Events access through the Lock tile. Preserve 48-dp touch targets and native text scaling; keep sliders outside horizontal navigation gestures. History contains at most 60 samples with visible gaps across disconnects. Keep awake is off by default and applies only while the deck is visible and the phone is charging.
 
 **Android Control Mac** is a feature in Features and can be added to Favourites. It uses the phone's normal IME in aniCe. Keep composition local in committed mode, send it in Live typing, reconcile corrections on grapheme boundaries and send Unicode separately from key transitions. The trackpad supports pointer movement, tap-to-click, long-press dragging and two-finger scrolling; an inactive pad passes gestures to the page. Start control does not open the keyboard; tapping a text field does. Changing Live typing preserves the session. Leaving this page or backgrounding stops input but does not directly disconnect BLE. Do not log or persist text, install a cross-app keyboard or add another transport.
 
@@ -438,3 +444,7 @@ Conversations keep the phone's provider order (newest first) with address, one-l
 Keep request, permission and unsupported states separate and truthful: an empty result, a disabled permission, an unavailable provider and a connected-but-capable-pending phone never share one message. Report skipped unreadable rows as a count instead of silently dropping them, and do not describe the Mac view as a message store: history, unread counts and read state live on the phone, and the Mac clears its copy when the last channel retires.
 
 Mac Messages keeps routine loading/history status out of the conversation header; permission, failure and uncertain-send feedback stays visible. Connection counters live under the feature settings disclosure. Date separators carry the day; bubble metadata keeps time, pending state and mixed-SIM context. The composer shows byte capacity only near its limit. Settings section shortcuts include File transfer, Now Playing and This device; all targets participate in layout before scrolling.
+
+## Do Not Disturb sync
+
+Keep DND sync phone-to-Mac only. Put one-time Mac Shortcut setup behind a disclosure and keep the On/Off selectors visible. Label the Desk Deck action as a Mac-local toggle with no phone sync. Report command results without claiming Focus state was verified; changes require an existing connection and are not replayed after reconnecting.

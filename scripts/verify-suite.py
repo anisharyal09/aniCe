@@ -659,12 +659,16 @@ def build_session_helper(env, artifacts):
     ]
     sources += [
         MACOS / "aniCe/Infrastructure/Session" / name
-        for name in ("SessionCbor.swift", "SessionCrypto.swift",
-                     "SessionHandshakeEngine.swift", "SecureSession.swift")
+        for name in ("SessionCbor.swift", "SessionControl.swift", "SessionCrypto.swift",
+                     "SessionEnvelope.swift", "SessionHandshakeEngine.swift", "SessionConnection.swift",
+                     "SecureSession.swift")
     ]
     sources += [
         MACOS / "aniCe/Infrastructure/Bluetooth/GattFraming.swift",
+        MACOS / "aniCe/Infrastructure/LAN/LanFraming.swift",
+        MACOS / "aniCe/Infrastructure/LAN/LanTcpTransport.swift",
         MACOS / "SessionInterchange/main.swift",
+        MACOS / "SessionInterchange/TcpInterchange.swift",
     ]
     run_step(
         "Build session interchange helper",

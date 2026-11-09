@@ -16,6 +16,7 @@ struct SessionFixtures {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
+      .deletingLastPathComponent()
       .appendingPathComponent("protocol/test-vectors")
     let candidates = [
       bundleUrl,

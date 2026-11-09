@@ -4,10 +4,19 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Explain that Desk Deck can mute only a controllable Mac default input and that its DND action does not sync to the phone.
+- Keep DND sync phone-to-Mac only and remove the Mac-originated phone DND control path.
+- Label the Desk Deck DND macro **DND mode** and use a keyboard icon for Control Mac.
+- Keep Desk Deck inside the regular app bar and bottom navigation like other feature panels.
+
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed
 
+- Show v3 app, cache, free and swap readings; keep volume and actions near usage meters and move details into dialogs.
+
+- Keep Desk Deck shell responsive while subscriptions start; fence timeouts, acknowledgements and slider previews to the live channel generation, stop retry loops after one resubscription, and mark old readings stale before disabling actions.
+- Keep a first sample live when it cancels an in-flight subscription send instead of treating that cancellation as a failed connection.
 - Add actionable SMS permission recovery in Settings and retain it across rotation; use compact permission buttons in both Settings and Messages.
 - Align File transfer padding, keep large-text guidance visible, and handle older background timeout preferences without crashing Settings.
 
@@ -30,6 +39,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add a revisioned Mac output-device picker beside Desk Deck's output-volume control.
+- Add Do Not Disturb control for Desk Deck v4, with explicit status checks after uncertain Shortcut results.
+- Add a responsive Android Mac Desk Deck with CPU and memory history, memory breakdown, Mac and phone power state, trusted quick actions, Mac-approved app shortcuts, output-volume control, a locally cached stale snapshot and a charging-only keep-awake option.
+- Add bounded v2 subscription renewal and approved-app catalog requests while retaining v1 Mac support; store the selected Mac and per-Mac shortcut pin/order locally.
+
 - Send files to a connected Mac from Android’s Share sheet.
 
 - Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
@@ -46,6 +60,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Preserve the highest supported Desk Deck action mask while older compatibility capabilities arrive.
 - Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
 
 - Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.
