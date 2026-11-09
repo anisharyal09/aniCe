@@ -450,9 +450,13 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
             return
         }
         val base = app.getSystemService(TelephonyManager::class.java) ?: return
-        val subscriptions = runCatching {
-            SubscriptionManager.from(app).activeSubscriptionInfoList.orEmpty().map { it.subscriptionId }
-        }.getOrDefault(emptyList())
+        val subscriptions = if (
+            ContextCompat.checkSelfPermission(app, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        ) {
+            runCatching {
+                SubscriptionManager.from(app).activeSubscriptionInfoList.orEmpty().map { it.subscriptionId }
+            }.getOrDefault(emptyList())
+        } else emptyList()
         val subscriptionIds = (subscriptions.ifEmpty { listOf(SubscriptionManager.getDefaultSubscriptionId()) }).distinct()
         subscriptionIds.forEach { subscriptionId ->
             if (subscriptionId in callTelephonyManagers) return@forEach
@@ -795,7 +799,8 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
                 when {
                     target?.phoneCallAction != null -> {
                         if (!hasRingingPhoneCall(callStates.values, TelephonyManager.CALL_STATE_RINGING)) return@runCatching 1L
-                        if (!hasCallPermission(Manifest.permission.ANSWER_PHONE_CALLS)) return@runCatching 3L
+                        if (ContextCompat.checkSelfPermission(app, Manifest.permission.ANSWER_PHONE_CALLS) !=
+                            PackageManager.PERMISSION_GRANTED) return@runCatching 3L
                         val telecom = app.getSystemService(TelecomManager::class.java) ?: return@runCatching 3L
                         // shortcut: Telecom answer/end methods are deprecated; upgrade to companion InCallService if aniCe gains its required platform association.
                         when (target.phoneCallAction) {
@@ -805,6 +810,8 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
                         0L
                     }
                     index == -1 && entry.statusBar == null -> {
+                        if (ContextCompat.checkSelfPermission(app, Manifest.permission.READ_PHONE_STATE) !=
+                            PackageManager.PERMISSION_GRANTED) return@runCatching 3L
                         val telecom = app.getSystemService(TelecomManager::class.java) ?: return@runCatching 3L
                         telecom.showInCallScreen(false)
                         0L

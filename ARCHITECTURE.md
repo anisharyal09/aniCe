@@ -74,6 +74,7 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [Secure Sessions & Record Channel](protocol/session/README.md)
 - [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
 - [Now Playing DATA](protocol/media/README.md)
+- [Mac Desk Deck](protocol/desk-deck/README.md)
 - [Local File Transfer Protocol](protocol/transfer/README.md)
 - [Android Notification Mirroring Protocol](protocol/notifications/README.md)
 
@@ -126,8 +127,16 @@ Android's **Control Mac** feature lives in Features and uses the phone's normal 
 
 Mac Event Posting setup and receiver status live under Mac Settings → Permissions. After permission is available, the Mac accepts an explicit Start from the authenticated phone without a Mac-side Features page or receiver toggle. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
 
+## Mac Desk Deck
+
+Android's Mac Desk Deck subscribes to one trusted Mac while the feature panel is foreground. The Mac samples CPU, memory, OS thermal pressure and supported controls over the existing authenticated channel; v2 adds memory breakdown, Mac power state, renewable subscription leases and paged, per-phone approved app shortcuts while v1 remains supported. V3 refines memory readings, v4 adds a Mac-local DND Shortcut, and v5 adds a revisioned audio-output catalog. Commands are scoped to the subscription and current hardware target. A separate Device Power v1 capability carries phone battery state to existing Mac device-status surfaces only while an authenticated channel is already open; it creates no connection lease. Temperature readings and display brightness are not advertised, and microphone mute is capability-gated to devices with a writable CoreAudio mute property. See the [feature guide](docs/features/MAC_DESK_DECK.md), [Desk Deck v1–v5 contract](protocol/desk-deck/README.md) and [Device Power contract](protocol/device-power/README.md).
+
 ## Clipboard
 
 Application-scoped native clipboard owners register with FeatureDispatch and share authenticated LAN/BLE channels. Clipboard v1 bounds text to 64 KiB, applies complete items to native clipboards, and shares in-memory deduplication/revision floors across transports. Automatic consent is credential-scoped and off by default; Android reads require actual input focus, while Mac observation respects native pasteboard access behavior. A separate device-local, default-off history owner persists eligible items with a local 20/50/100-item capacity through bounded atomic file operations off the presentation thread. Its saved collection preference is independent of its retained entries; pausing collection, restarting, identity reset and trust removal preserve history. Android text-selection and text Share-sheet actions pass literal text or URLs directly into manual delivery without clipboard reads. A system-bound Quick Settings tile opens a focused manual-read panel without activating observers. One process-local successful activity retains eligible text for five minutes, independently of saved history, with a bounded preview and full-item local Copy on Android Home and the Mac overview/companion. See [feature behavior](docs/features/CLIPBOARD.md) and the [wire contract](protocol/clipboard/README.md).
 
 Current LAN revision 3 uses [record profile 4](protocol/lan/TRANSFER_PROFILE.md) and capability 4 for 512-KiB chunks, with eight-chunk maximum credit. Larger chunks increase per-record buffering and control head-of-line delay; sustained fallback retains its existing 128-KiB cap.
+
+## Do Not Disturb sync
+
+Application-scoped DND owners register with FeatureDispatch independently of Desk Deck. Android sends local interruption-filter changes over an existing secured channel; Mac applies them through locally selected On and Off Shortcuts. Mac-to-phone DND sync is not supported. aniCe does not poll or replay disconnected changes. See [feature behavior](docs/features/DND_SYNC.md) and [DND sync v1](protocol/dnd-sync/README.md).

@@ -6,6 +6,10 @@ Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, n
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
+## Mac Desk Deck and Do Not Disturb
+
+Approve app shortcuts separately for each trusted phone in **Settings → Desk Deck**. Android’s **Features → Mac Desk Deck** shows Mac telemetry and available controls, including output volume and audio-device selection. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.

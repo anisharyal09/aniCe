@@ -6,6 +6,10 @@ Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, n
 
 Automatic nearby recovery uses an OS-bound companion lease and one device setting. The shared API 31+ resource enables notification-free ownership in Debug and Release. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
+## Mac Desk Deck and Do Not Disturb
+
+Open **Features → Mac Desk Deck** to view a trusted Mac’s live system readings and use its available controls, including output volume and audio-device selection. Approve app shortcuts on the Mac in **Settings → Desk Deck**. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.

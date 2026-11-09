@@ -1,0 +1,94 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Versioned Mac telemetry and trusted-phone controls in authenticated DATA.
+desk-deck-v1 = ["aniCe desk deck", 1, kind: 1..6, fields: v1-fields]
+desk-deck-v2 = ["aniCe desk deck", 2, kind: 1..10, fields: v2-fields]
+
+desk-deck-v3 = ["aniCe desk deck", 3, kind: 1..10, fields: v3-fields]
+v3-fields = capability / subscribe / v3-sample / v2-command / result / stop / renew / catalog-request / catalog-page / catalog-changed
+
+desk-deck-v4 = ["aniCe desk deck", 4, kind: 1..10, fields: v4-fields]
+v4-fields = capability-v4 / subscribe / v4-sample / v4-command / result / stop / renew / catalog-request / catalog-page / catalog-changed
+
+desk-deck-v5 = ["aniCe desk deck", 5, kind: 1..13, fields: v5-fields]
+v5-fields = capability-v5 / subscribe / v5-sample / v5-command / result / stop / renew / catalog-request / catalog-page / catalog-changed /
+  output-catalog-request / output-catalog-page / output-catalog-changed
+
+v1-fields = capability / subscribe / v1-sample / v1-command / result / stop
+v2-fields = capability / subscribe / v2-sample / v2-command / result / stop / renew / catalog-request / catalog-page / catalog-changed
+
+capability = [action-mask: 0..15]
+capability-v4 = [action-mask: 0..31]
+capability-v5 = [action-mask: 0..63]
+subscribe = [subscription: uuid]
+stop = [subscription: uuid]
+renew = [subscription: uuid]
+catalog-request = [subscription: uuid, page: 0..3]
+catalog-page = [subscription: uuid, page: 0..3, page-count: 1..4, catalog-revision: uuid, entries: [* shortcut]]
+catalog-changed = [subscription: uuid, catalog-revision: uuid]
+shortcut = [shortcut-id: uuid, name: tstr .size (1..320)] ; at most 80 UTF-16 code units, no control characters
+output-catalog-request = [subscription: uuid, page: 0..3]
+output-catalog-page = [subscription: uuid, page: 0..3, page-count: 1..4, catalog-revision: uuid, entries: [* output-route]]
+output-catalog-changed = [subscription: uuid, catalog-revision: uuid]
+output-route = [output-id: uuid, name: tstr .size (1..320)] ; opaque process-scoped ID; at most 80 UTF-16 code units, no control characters
+selected-output-id = "" / uuid
+
+v1-sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100,
+  memory-used: 0..9223372036854775807, memory-total: 0..9223372036854775807,
+  thermal-state: 0..3, action-mask: 0..15,
+  output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100,
+  microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool,
+  brightness-supported: bool, brightness-target: tstr, brightness-revision: tstr, brightness-level: -1..100]
+
+v2-sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100,
+  active-bytes: 0..9223372036854775807, wired-bytes: 0..9223372036854775807,
+  compressed-bytes: 0..9223372036854775807, physical-bytes: 0..9223372036854775807,
+  thermal-state: 0..3, action-mask: 0..15,
+  output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100,
+  microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool,
+  power-state: 0..5, power-percent: -1..100, power-source: 0..3]
+
+v1-command = [subscription: uuid, command-id: 1..4294967295, action: 1..7,
+  target: tstr, revision: tstr, value: -1..100]
+v2-command = [subscription: uuid, command-id: 1..4294967295, action: 1 / 2 / 5 / 6 / 8,
+  target: tstr, revision: tstr, value: -1..100]
+v4-command = [subscription: uuid, command-id: 1..4294967295, action: 1 / 2 / 5 / 6 / 8 / 9,
+  target: tstr, revision: tstr, value: -1..100]
+result = [subscription: uuid, command-id: 1..4294967295, result: 0..7]
+
+uuid = tstr .size 36
+; Action-specific identity/value constraints and cross-field sums are normative in README.md.
+
+; V3 retains the v2 sample fields and appends app, cached, free and swap bytes.
+; The four added readings are -1 when native memory statistics are unavailable.
+v3-sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100,
+  active-bytes: 0..9223372036854775807, wired-bytes: 0..9223372036854775807, compressed-bytes: 0..9223372036854775807, physical-bytes: 0..9223372036854775807,
+  thermal-state: 0..3, action-mask: 0..15,
+  output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100,
+  microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool,
+  power-state: 0..5, power-percent: -1..100, power-source: 0..3,
+  app-bytes: -1..9223372036854775807, cached-bytes: -1..9223372036854775807,
+  free-bytes: -1..9223372036854775807, swap-bytes: -1..9223372036854775807]
+
+; V4 retains the v3 sample shape and adds an action-mask bit for Do Not Disturb.
+v4-sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100,
+  active-bytes: 0..9223372036854775807, wired-bytes: 0..9223372036854775807, compressed-bytes: 0..9223372036854775807, physical-bytes: 0..9223372036854775807,
+  thermal-state: 0..3, action-mask: 0..31,
+  output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100,
+  microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool,
+  power-state: 0..5, power-percent: -1..100, power-source: 0..3,
+  app-bytes: -1..9223372036854775807, cached-bytes: -1..9223372036854775807,
+  free-bytes: -1..9223372036854775807, swap-bytes: -1..9223372036854775807]
+
+; V5 appends the currently selected default output ID; an empty value means no route is available.
+v5-sample = [subscription: uuid, sequence: 1..4294967295, cpu-percent: -1..100,
+  active-bytes: 0..9223372036854775807, wired-bytes: 0..9223372036854775807, compressed-bytes: 0..9223372036854775807, physical-bytes: 0..9223372036854775807,
+  thermal-state: 0..3, action-mask: 0..63,
+  output-supported: bool, output-target: tstr, output-revision: tstr, output-level: -1..100,
+  microphone-supported: bool, microphone-target: tstr, microphone-revision: tstr, microphone-muted: bool,
+  power-state: 0..5, power-percent: -1..100, power-source: 0..3,
+  app-bytes: -1..9223372036854775807, cached-bytes: -1..9223372036854775807,
+  free-bytes: -1..9223372036854775807, swap-bytes: -1..9223372036854775807,
+  selected-output-id: selected-output-id]
+
+v5-command = [subscription: uuid, command-id: 1..4294967295, action: 1 / 2 / 5 / 6 / 8 / 9 / 10,
+  target: tstr, revision: tstr, value: -1..100]

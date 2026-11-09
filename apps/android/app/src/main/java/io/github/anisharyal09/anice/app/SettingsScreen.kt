@@ -124,6 +124,10 @@ fun SettingsScreen(
                     }
                 }
 
+                PreferenceSection("Do Not Disturb") {
+                    io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(app.dndSync)
+                }
+
                 PreferenceSection("Clipboard") {
                     io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
                 }

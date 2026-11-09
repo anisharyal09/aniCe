@@ -4,6 +4,7 @@ package io.github.anisharyal09.anice
 
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.ViewTreeObserver
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,22 +25,32 @@ class MainActivity : ComponentActivity() {
     private lateinit var discovery: DiscoveryViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupApp = application as AniCeApplication
+        startupApp.startupMark("activity_on_create")
         super.onCreate(savedInstanceState)
+        startupApp.startupMark("activity_super")
         mediaNavigation(intent)
+        startupApp.startupMark("media_navigation")
         enableEdgeToEdge()
-        val service = (application as AniCeApplication).identityService
+        startupApp.startupMark("edge_to_edge")
+        val service = startupApp.identityService
+        startupApp.startupMark("identity_service")
         // The activity hosts UI; its lifecycle ViewModel retains identity state during recreation.
         val factory = viewModelFactory { initializer { DeviceIdentityViewModel(service) } }
         val identity = ViewModelProvider(this, factory)[DeviceIdentityViewModel::class.java]
+        startupApp.startupMark("identity_view_model")
         val discoveryFactory = viewModelFactory { initializer { DiscoveryViewModel(application) } }
         discovery = ViewModelProvider(this, discoveryFactory)[DiscoveryViewModel::class.java]
+        startupApp.startupMark("discovery_view_model")
         val pairingFactory = viewModelFactory { initializer { PairingViewModel(application) } }
         pairing = ViewModelProvider(this, pairingFactory)[PairingViewModel::class.java]
+        startupApp.startupMark("pairing_view_model")
         pairing.onPeersChanged = { records ->
             (application as AniCeApplication).transfer.autoReceivePreferences.prune(records.map { it.peer })
         }
         val sessionFactory = viewModelFactory { initializer { SessionViewModel(application) } }
         session = ViewModelProvider(this, sessionFactory)[SessionViewModel::class.java]
+        startupApp.startupMark("session_view_model")
         session.beforeConnect = {
             pairing.cancel()
             discovery.cancel()
@@ -63,6 +74,7 @@ class MainActivity : ComponentActivity() {
             session.cancelBluetooth()
             pairing.cancel()
         }
+        startupApp.startupMark("lifecycle_callbacks")
         identity.onIdentityReset = {
             val app = application as AniCeApplication
             app.transfer.autoReceivePreferences.clear()
@@ -74,7 +86,21 @@ class MainActivity : ComponentActivity() {
             session.cancel()
             pairing.cancel()
         }
+        var firstDrawLogged = false
+        val rootView = window.decorView
+        val firstDrawListener = object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (!firstDrawLogged) {
+                    firstDrawLogged = true
+                    startupApp.startupMark("first_draw")
+                    rootView.viewTreeObserver.removeOnPreDrawListener(this)
+                }
+                return true
+            }
+        }
+        rootView.viewTreeObserver.addOnPreDrawListener(firstDrawListener)
         setContent { AniCeTheme { AppRoot(identity, discovery, pairing, session) } }
+        startupApp.startupMark("set_content_returned")
     }
 
     private fun mediaNavigation(intent: Intent?) {

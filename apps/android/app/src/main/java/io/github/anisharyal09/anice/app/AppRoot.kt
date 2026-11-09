@@ -207,8 +207,10 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
                             DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity)
                         }
-                        AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
-                        AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)
+                        AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation,
+                            trustedPeersLoaded = pairing.trustedPeersLoaded)
+                        AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation,
+                            favouritesOnly = true, trustedPeersLoaded = pairing.trustedPeersLoaded)
                         AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
                     }
                 }
