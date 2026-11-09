@@ -14,6 +14,8 @@ struct TransferNotificationControls: View {
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
+      Text("Incoming offers in the background only. macOS notification permission is also required; progress and results stay in the app.")
+        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
   }

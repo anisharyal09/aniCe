@@ -4,6 +4,12 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Simplify the Home shortcuts prompt, compact Home send controls, and soften the selected Settings section.
+
+- Add Home shortcuts for starred features, update the Messages send button, and confirm Bluetooth/LAN checks with a reply from the other device.
+
+- Explain when Bluetooth and local-network checks are available in Diagnostics.
+
 - Add a visible selected outline to the Settings shortcuts and briefly highlight the destination group after a tap, like Mac.
 
 - Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.

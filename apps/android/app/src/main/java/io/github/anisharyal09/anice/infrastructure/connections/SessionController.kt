@@ -58,6 +58,7 @@ class SessionController(application: Application) {
 
   var receivedChecks by mutableIntStateOf(0)
     private set
+  private var checkPending = false
   var controlSupport by mutableStateOf<Boolean?>(null)
     private set
   var renewalReason by mutableStateOf<Long?>(null)
@@ -250,10 +251,32 @@ class SessionController(application: Application) {
               },
               { bytes ->
                 withContext(Dispatchers.Main.immediate) {
-                  if (op == operation && app.features.handle("ble", channelToken, bytes) == DataHandling.UNRECOGNIZED && bytes.contentEquals(CHECK)) {
-                    receivedChecks++
-                    status = "Connection check received."
-                    publishProgress()
+                  if (op == operation && app.features.handle("ble", channelToken, bytes) == DataHandling.UNRECOGNIZED) {
+                    when {
+                      bytes.contentEquals(CHECK) -> {
+                        receivedChecks++
+                        status = "Bluetooth check received."
+                        publishProgress()
+                        scope.launch {
+                          val active = connection ?: return@launch
+                          if (op != operation || state != ConnectionState.SECURED) return@launch
+                          try { active.sendData(CHECK_REPLY) }
+                          catch (_: SessionBackpressure) {
+                            if (op == operation && status == "Bluetooth check received.") {
+                              status = "Bluetooth check received, but its reply could not be sent."
+                            }
+                          } catch (error: CancellationException) {
+                            throw error
+                          } catch (error: Exception) {
+                            if (op == operation) finish(error, active)
+                          }
+                        }
+                      }
+                      bytes.contentEquals(CHECK_REPLY) && checkPending -> {
+                        checkPending = false
+                        status = "Bluetooth check confirmed."
+                      }
+                    }
                   }
                 }
               },
@@ -263,6 +286,7 @@ class SessionController(application: Application) {
                     android.util.Log.i("aniCe-ble", "secured operation=$op token=$channelToken")
                     state = ConnectionState.SECURED
                     publishChannel()
+                    checkPending = false
                     status = ""
                     publishProgress()
                   }
@@ -344,17 +368,28 @@ class SessionController(application: Application) {
   }
 
   fun checkConnection() {
-    if (state != ConnectionState.SECURED || renewalReason != null) return
+    if (state != ConnectionState.SECURED || renewalReason != null || checkPending) return
     val op = operation
     val engine = connection ?: return
+    checkPending = true
+    status = "Checking the Bluetooth connection…"
     scope.launch {
       try {
         engine.sendData(CHECK)
-        if (op == operation) status = "Connection check sent."
+        if (op == operation && checkPending) {
+          status = "Bluetooth check sent. Waiting for a reply."
+          delay(5000)
+          if (op == operation && checkPending) {
+            checkPending = false
+            status = "No reply to the Bluetooth check. Check your Mac connection."
+          }
+        }
       } catch (_: SessionBackpressure) {
-        if (op == operation) status = "Connection is busy. Try again."
+        if (op == operation) { checkPending = false; status = "Bluetooth check could not be sent. Try again." }
+      } catch (e: CancellationException) {
+        throw e
       } catch (e: Exception) {
-        if (op == operation) finish(e, engine)
+        if (op == operation) { checkPending = false; finish(e, engine) }
       }
     }
   }
@@ -567,5 +602,6 @@ class SessionController(application: Application) {
     }
   companion object {
     val CHECK = "aniCe connection check".toByteArray(Charsets.UTF_8)
+    val CHECK_REPLY = "aniCe connection check reply".toByteArray(Charsets.UTF_8)
   }
 }

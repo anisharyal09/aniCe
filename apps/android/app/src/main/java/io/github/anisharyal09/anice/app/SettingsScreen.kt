@@ -126,8 +126,8 @@ fun SettingsScreen(
                         Box(
                             Modifier.bringIntoViewRequester(tabRequester)
                                 .clip(tabShape)
-                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, tabShape)
-                                .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, tabShape) else Modifier)
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else Color.Transparent, tabShape)
+                                .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), tabShape) else Modifier)
                                 .selectable(selected = selected, role = Role.Tab) {
                                     val generation = ++sectionJumpGeneration
                                     selectedSection = section
@@ -159,7 +159,7 @@ fun SettingsScreen(
                             Text(section,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

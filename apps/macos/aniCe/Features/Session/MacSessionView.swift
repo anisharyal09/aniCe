@@ -52,14 +52,45 @@ private struct ConnectionStatusLine: View {
     HStack(spacing: 7) {
       Text(text)
       if bluetoothConnected {
-        Image(systemName: "antenna.radiowaves.left.and.right").accessibilityLabel("Bluetooth connected")
+        BluetoothGlyph()
+          .stroke(color, style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round))
+          .frame(width: 14, height: 14)
+          .offset(y: -0.5)
+          .accessibilityLabel("Bluetooth connected")
       }
       if localNetworkConnected {
-        Image(systemName: "wifi").accessibilityLabel("Local network connected")
+        Text(Image(systemName: "wifi"))
+          .baselineOffset(1)
+          .accessibilityLabel("Local network connected")
       }
     }
     .foregroundStyle(color)
     .accessibilityElement(children: .combine)
+    .accessibilityLabel(connectionAccessibilityValue(text,
+      bluetoothConnected: bluetoothConnected,
+      localNetworkConnected: localNetworkConnected))
+  }
+}
+
+private struct BluetoothGlyph: Shape {
+  func path(in rect: CGRect) -> Path {
+    let scale = min(rect.width, rect.height) / 24
+    let xOffset = (rect.width - 24 * scale) / 2
+    let yOffset = (rect.height - 24 * scale) / 2
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      CGPoint(x: xOffset + x * scale, y: yOffset + y * scale)
+    }
+
+    var path = Path()
+    path.move(to: point(12, 3))
+    path.addLine(to: point(12, 21))
+    path.move(to: point(12, 3))
+    path.addLine(to: point(18, 8))
+    path.addLine(to: point(6, 18))
+    path.move(to: point(6, 6))
+    path.addLine(to: point(18, 16))
+    path.addLine(to: point(12, 21))
+    return path
   }
 }
 
@@ -534,16 +565,20 @@ struct MacSessionView: View {
         .accessibilityValue(diagnostics ? "Expanded" : "Collapsed")
         if diagnostics {
           VStack(alignment: .leading, spacing: 12) {
+            Text("A check appears as received on the other device. The sender confirms when its reply arrives.")
+              .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
             Text("Bluetooth checks received: \(ownsBluetooth ? model.receivedChecks : 0)")
-            if ownsBluetooth && model.status.localizedCaseInsensitiveContains("connection check") {
+            if ownsBluetooth && model.status.localizedCaseInsensitiveContains("check") {
               Text(model.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
             }
             if ownsBluetooth && model.state == "Secured" { Button("Send Bluetooth check", action: model.checkConnection) }
+            else { Text("Connect over Bluetooth to send a check.").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
             Text("Local-network checks received: \(ownsLan ? lan.receivedChecks : 0)")
-            if ownsLan && lan.status.localizedCaseInsensitiveContains("connection check") {
+            if ownsLan && lan.status.localizedCaseInsensitiveContains("check") {
               Text(lan.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
             }
             if ownsLan && lan.state == "Secured" { Button("Send local-network check", action: lan.checkConnection) }
+            else { Text("Connect over the local network to send a check.").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
             if let discovery {
               Text("Nearby discovery compatibility check").font(.subheadline.weight(.medium))
               if !canDiscover { Text("Stop Bluetooth admission or pairing before checking discovery.").font(.caption) }

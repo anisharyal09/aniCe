@@ -8,10 +8,17 @@ import OSLog
 
 @Observable @MainActor final class MacLanSessionModel {
   private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "LAN lifecycle")
-  private(set) var state = "Disconnected" { didSet { channelStateChanged(); scheduleAutomatic() } }
+  private(set) var state = "Disconnected" {
+    didSet {
+      if state != "Secured" { checkPending = false }
+      channelStateChanged()
+      scheduleAutomatic()
+    }
+  }
   private(set) var status = "Allow your trusted Android to connect over the local network."
   private(set) var allowing = false
   private(set) var receivedChecks = 0
+  private var checkPending = false
   private(set) var authenticatedPeer: DeviceIdentity?
   private(set) var automatic: Bool
   private let preferences: UserDefaults?
@@ -389,9 +396,22 @@ import OSLog
   private func received(_ bytes: Data, _ op: Int, _ attempt: Int) async {
     guard op == generation, attempt == candidate else { return }
     if await applicationDataReceived(bytes) { return }
-    guard bytes == Data("aniCe connection check".utf8) else { return }
-    receivedChecks += 1
-    status = "Secured. Local-network connection check received."
+    if bytes == SessionConnectionCheck.request {
+      receivedChecks += 1
+      status = "Local-network check received."
+      Task { [weak self] in
+        guard let self, op == self.generation, attempt == self.candidate else { return }
+        do { try await self.sendData(SessionConnectionCheck.reply) }
+        catch {
+          if op == self.generation, attempt == self.candidate, self.status == "Local-network check received." {
+            self.status = "Local-network check received, but its reply could not be sent."
+          }
+        }
+      }
+    } else if bytes == SessionConnectionCheck.reply, checkPending {
+      checkPending = false
+      status = "Local-network check confirmed."
+    }
   }
   private func maintain() {
     guard allowing else { return }
@@ -501,15 +521,27 @@ import OSLog
     scheduleAutomatic()
   }
   func checkConnection() {
-    guard state == "Secured", let connection else { return }
+    guard state == "Secured", let connection, !checkPending else { return }
     let op = generation
+    let attempt = candidate
+    checkPending = true
+    status = "Checking the local-network connection…"
     Task {
       do {
-        try await connection.sendData(Data("aniCe connection check".utf8))
-        if op == generation { status = "Secured. Local-network connection check sent." }
+        try await connection.sendData(SessionConnectionCheck.request)
+        guard op == generation, attempt == candidate, checkPending else { return }
+        status = "Local-network check sent. Waiting for a reply."
+        try await Task.sleep(for: .seconds(5))
+        guard op == generation, attempt == candidate, checkPending else { return }
+        checkPending = false
+        status = "No reply to the local-network check. Check the Android connection."
       } catch is SessionBackpressure {
-        if op == generation { status = "Local-network connection is busy. Try again." }
-      } catch { if op == generation { failCandidate(error) } }
+        if op == generation, attempt == candidate { checkPending = false; status = "Local-network check could not be sent. Try again." }
+      } catch is CancellationError {
+        return
+      } catch {
+        if op == generation, attempt == candidate { checkPending = false; failCandidate(error) }
+      }
     }
   }
   func disconnect() {

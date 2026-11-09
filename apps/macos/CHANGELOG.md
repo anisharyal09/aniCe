@@ -4,6 +4,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Remove redundant input-focus copy from the Permissions card.
+
+- Add one-tap Overview shortcuts for starred features and confirm Bluetooth/LAN checks with a reply from Android.
+
+- Align the Bluetooth and Wi-Fi status icons and clarify that file-offer notifications appear only in the background.
+
 - Open Devices when the Home device name is clicked, and show secured Bluetooth/Wi-Fi links as icons beside one Connected status.
 
 - Restore the main Mac window from Dock, app activation and reopen events even when the companion or floating tools are visible.

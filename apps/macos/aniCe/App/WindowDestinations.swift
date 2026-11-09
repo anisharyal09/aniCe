@@ -17,6 +17,9 @@ extension MainWindowView {
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
               onManageDevices: { navigation.show(.devices) },
               onOpenDevice: { navigation.show(.devices, peer: $0) })
+            HomeFeatureAccess(
+              onOpen: { navigation.openFeature($0) },
+              onBrowse: { navigation.show(.features) })
           } else {
             VStack(alignment: .leading, spacing: 12) {
               Text("Connect your Android phone").font(.title3.weight(.semibold))

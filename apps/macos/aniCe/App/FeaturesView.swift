@@ -2,6 +2,41 @@
 // Presents feature-specific panels and locally saved launcher shortcuts through shared owners.
 import SwiftUI
 
+struct HomeFeatureAccess: View {
+  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
+  @Environment(\.colorScheme) private var colorScheme
+  let onOpen: (AppFeature) -> Void
+  let onBrowse: () -> Void
+
+  private var favourites: [AppFeature] { AppFeature.favourites(in: favouriteFeatures) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Quick access").font(.system(size: 14, weight: .medium))
+      if favourites.isEmpty {
+        HStack(spacing: 12) {
+          Text("Star features to open them from Overview.")
+            .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Explore features", action: onBrowse).buttonStyle(AniCeButtonStyle()).controlSize(.small)
+        }
+      } else {
+        ScrollView(.horizontal) {
+          HStack(spacing: 8) {
+            ForEach(favourites) { feature in
+              Button { onOpen(feature) } label: {
+                Label(feature.title, systemImage: feature.symbol)
+              }
+              .buttonStyle(.bordered).controlSize(.small)
+            }
+          }
+        }
+        .scrollIndicators(.hidden)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
 struct FeaturesView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel

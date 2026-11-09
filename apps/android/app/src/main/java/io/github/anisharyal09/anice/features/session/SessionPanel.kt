@@ -281,22 +281,28 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                 }
                                 if (showEvents) Text(nearby.events.ifBlank { "No events yet." }, style = MaterialTheme.typography.bodySmall)
                             }
+                            Text("A check appears as received on the other device. The sender confirms when its reply arrives.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Bluetooth checks received: ${if (bleSelected) model.receivedChecks else 0}")
-                            if (bleSelected && model.status.contains("connection check", ignoreCase = true))
+                            if (bleSelected && model.status.contains("check", ignoreCase = true))
                                 Text(model.status, style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (bleState == ConnectionState.SECURED)
                                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::checkConnection, modifier = Modifier.heightIn(min = 48.dp)) {
                                     Text("Send Bluetooth check")
                                 }
+                            else Text("Connect over Bluetooth to send a check.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Local-network checks received: ${if (lanSelected) lan.receivedChecks else 0}")
-                            if (lanSelected && lan.status.contains("connection check", ignoreCase = true))
+                            if (lanSelected && lan.status.contains("check", ignoreCase = true))
                                 Text(lan.status, style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (lanState == ConnectionState.SECURED)
                                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = lan::checkConnection, modifier = Modifier.heightIn(min = 48.dp)) {
                                     Text("Send local-network check")
                                 }
+                            else Text("Connect over the local network to send a check.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Starting a scan closes Bluetooth connections. Opening the page keeps both connections. Local network stays connected during scanning.",
                                 style = MaterialTheme.typography.bodySmall)
                             TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { details = null; onDiscoveryCheck() },

@@ -4,6 +4,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+- Document the optional connection-check reply and compatibility with older peers.
+
 ### Fixed
 
 - Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.

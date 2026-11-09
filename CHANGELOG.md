@@ -8,6 +8,12 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Simplify phone Home shortcuts and compact its send controls, soften the Settings selection, and remove redundant Mac input guidance.
+
+- Add one-tap Home shortcuts for starred features, use a clear send-arrow control for phone messages, and confirm Bluetooth/LAN checks on both devices.
+
+- Align the Mac Bluetooth/Wi-Fi status icons and clarify that file-offer notifications appear only for background offers.
+
 - Make the selected phone Settings shortcut explicit and briefly highlight its destination group after a jump, matching Mac.
 
 - Route the Mac Home device name to Devices and show secured Bluetooth/Wi-Fi links as icons on both platforms.

@@ -32,7 +32,7 @@ Back or **Continue in background** hides Android’s Share-to-Mac panel without 
 
 On either platform, connection loss pauses an active batch and retains verified partial data and a private checkpoint for up to 15 minutes. Reconnecting to the same trusted peer over LAN resumes after prefix verification. After LAN loss, either device can explicitly continue over BLE. Cancel removes the partial; already-published files remain untouched.
 
-Mac background offer notifications are optional. When enabled, their actions stay bound to the original batch. Dismissing a window or the Edge Drop shelf does not cancel an admitted transfer.
+Mac background offer notifications are off by default and optional; their controls are in Settings → File transfer. They appear for incoming offers only while aniCe is in the background and require macOS notification permission. Progress and completion remain in the app, where success identifies the files and save folder. Notification actions stay bound to the original batch. Dismissing a window or the Edge Drop shelf does not cancel an admitted transfer.
 
 ## Limits and references
 

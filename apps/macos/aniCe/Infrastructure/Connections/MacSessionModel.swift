@@ -5,6 +5,11 @@ import Foundation
 import Observation
 import OSLog
 
+enum SessionConnectionCheck {
+  static let request = Data("aniCe connection check".utf8)
+  static let reply = Data("aniCe connection check reply".utf8)
+}
+
 struct SessionStartupRecovery {
   private var failures = 0
   private(set) var stableDeadline: TimeInterval?
@@ -25,12 +30,18 @@ struct SessionStartupRecovery {
 @Observable @MainActor final class MacSessionModel {
   private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "BLE lifecycle")
   private static let pauseUntilKey = "session.pausedUntil"
-  var state = "Disconnected" { didSet { channelStateChanged() } }
+  var state = "Disconnected" {
+    didSet {
+      if state != "Secured" { checkPending = false }
+      channelStateChanged()
+    }
+  }
   var status = "Allow your trusted Android device to connect."
   var selectedPeer: DeviceIdentity?
   var allowing = false
   var remaining: Int { allowing ? Int(ceil(max(0, (windowDeadline ?? now()) - now()))) : 0 }
   var receivedChecks = 0
+  private var checkPending = false
   private(set) var automatic = false
   private var suspended = false
   private var sleeping = false
@@ -454,9 +465,22 @@ struct SessionStartupRecovery {
   private func received(_ bytes: Data, _ op: Int, _ candidate: Int) async {
     guard op == generation, candidate == attempt else { return }
     if await applicationDataReceived(bytes) { return }
-    guard bytes == Data("aniCe connection check".utf8) else { return }
-    receivedChecks += 1
-    status = "Secured. Connection check received."
+    if bytes == SessionConnectionCheck.request {
+      receivedChecks += 1
+      status = "Bluetooth check received."
+      Task { [weak self] in
+        guard let self, op == self.generation, candidate == self.attempt else { return }
+        do { try await self.sendData(SessionConnectionCheck.reply) }
+        catch {
+          if op == self.generation, candidate == self.attempt, self.status == "Bluetooth check received." {
+            self.status = "Bluetooth check received, but its reply could not be sent."
+          }
+        }
+      }
+    } else if bytes == SessionConnectionCheck.reply, checkPending {
+      checkPending = false
+      status = "Bluetooth check confirmed."
+    }
   }
   private func startMaintenance() {
     guard allowing else { return }
@@ -626,16 +650,27 @@ struct SessionStartupRecovery {
     Task { await old?.close() }
   }
   func checkConnection() {
-    guard state == "Secured", let connection else { return }
+    guard state == "Secured", let connection, !checkPending else { return }
     let op = generation
+    let candidate = attempt
+    checkPending = true
+    status = "Checking Bluetooth connection…"
     Task {
       do {
-        try await connection.sendData(Data("aniCe connection check".utf8))
-        if op == generation { status = "Secured. Connection check sent." }
+        try await connection.sendData(SessionConnectionCheck.request)
+        guard op == generation, candidate == attempt, checkPending else { return }
+        status = "Bluetooth check sent. Waiting for a reply."
+        try await Task.sleep(for: .seconds(5))
+        guard op == generation, candidate == attempt, checkPending else { return }
+        checkPending = false
+        status = "No reply to the Bluetooth check. Check the Android connection."
       } catch is SessionBackpressure {
-        if op == generation { status = "Connection is busy. Try again." }
+        if op == generation, candidate == attempt { checkPending = false; status = "Bluetooth check could not be sent. Try again." }
+      } catch is CancellationError {
+        return
       } catch {
-        if op == generation {
+        if op == generation, candidate == attempt {
+          checkPending = false
           failWindow("Connection check could not be sent. Allow connections and retry.")
         }
       }
