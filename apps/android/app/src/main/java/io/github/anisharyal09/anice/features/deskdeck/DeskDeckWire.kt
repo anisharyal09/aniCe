@@ -9,6 +9,7 @@ import java.util.UUID
 class DeskDeckWireException : Exception()
 
 data class DeskDeckShortcut(val id: String, val name: String)
+data class DeskDeckOutputRoute(val id: String, val name: String)
 
 data class DeskDeckMessage(
     val kind: Long,
@@ -26,6 +27,7 @@ data class DeskDeckMessage(
     val memoryCached: Long = -1,
     val memoryFree: Long = -1,
     val memorySwap: Long = -1,
+    val outputRouteID: String = "",
     val thermalState: Long = 0,
     val outputSupported: Boolean = false,
     val outputTarget: String = "",
@@ -46,6 +48,7 @@ data class DeskDeckMessage(
     val pageCount: Long = 0,
     val catalogRevision: String = "",
     val shortcuts: List<DeskDeckShortcut> = emptyList(),
+    val outputRoutes: List<DeskDeckOutputRoute> = emptyList(),
     val commandId: Long = 0,
     val action: Long = 0,
     val target: String = "",
@@ -61,6 +64,10 @@ data class DeskDeckMessage(
             9L -> listOf(Cbor.Text(subscription), Cbor.Integer(page), Cbor.Integer(pageCount), Cbor.Text(catalogRevision),
                 Cbor.Array(shortcuts.map { Cbor.Array(listOf(Cbor.Text(it.id), Cbor.Text(it.name))) }))
             10L -> listOf(Cbor.Text(subscription), Cbor.Text(catalogRevision))
+            11L -> listOf(Cbor.Text(subscription), Cbor.Integer(page))
+            12L -> listOf(Cbor.Text(subscription), Cbor.Integer(page), Cbor.Integer(pageCount), Cbor.Text(catalogRevision),
+                Cbor.Array(outputRoutes.map { Cbor.Array(listOf(Cbor.Text(it.id), Cbor.Text(it.name))) }))
+            13L -> listOf(Cbor.Text(subscription), Cbor.Text(catalogRevision))
             3L -> if (version == 1L) listOf(
                 Cbor.Text(subscription), Cbor.Integer(sequence), Cbor.Integer(cpuPercent),
                 Cbor.Integer(memoryUsed), Cbor.Integer(memoryTotal), Cbor.Integer(thermalState), Cbor.Integer(actions),
@@ -74,7 +81,8 @@ data class DeskDeckMessage(
                 Cbor.Bool(outputSupported), Cbor.Text(outputTarget), Cbor.Text(outputRevision), Cbor.Integer(outputLevel),
                 Cbor.Bool(microphoneSupported), Cbor.Text(microphoneTarget), Cbor.Text(microphoneRevision), Cbor.Bool(microphoneMuted),
                 Cbor.Integer(powerState), Cbor.Integer(powerPercent), Cbor.Integer(powerSource),
-            ) + if (version >= 3L) listOf(Cbor.Integer(memoryApp), Cbor.Integer(memoryCached), Cbor.Integer(memoryFree), Cbor.Integer(memorySwap)) else emptyList()
+            ) + (if (version >= 3L) listOf(Cbor.Integer(memoryApp), Cbor.Integer(memoryCached), Cbor.Integer(memoryFree), Cbor.Integer(memorySwap)) else emptyList()) +
+                (if (version >= 5L) listOf(Cbor.Text(outputRouteID)) else emptyList())
             4L -> listOf(Cbor.Text(subscription), Cbor.Integer(commandId), Cbor.Integer(action),
                 Cbor.Text(target), Cbor.Text(revision), Cbor.Integer(value))
             5L -> listOf(Cbor.Text(subscription), Cbor.Integer(commandId), Cbor.Integer(result))
@@ -98,7 +106,7 @@ data class DeskDeckMessage(
             if ((row.firstOrNull() as? Cbor.Text)?.value != TAG) return null
             if (row.size != 4) throw DeskDeckWireException()
             val version = (row[1] as? Cbor.Integer)?.value ?: throw DeskDeckWireException()
-            if (version !in 1L..4L || bytes.size > if (version == 1L) V1_MAX_BYTES else MAX_BYTES) throw DeskDeckWireException()
+            if (version !in 1L..5L || bytes.size > if (version == 1L) V1_MAX_BYTES else MAX_BYTES) throw DeskDeckWireException()
             val kind = (row[2] as? Cbor.Integer)?.value ?: throw DeskDeckWireException()
             val f = (row[3] as? Cbor.Array)?.value ?: throw DeskDeckWireException()
             fun number(i: Int) = (f.getOrNull(i) as? Cbor.Integer)?.value ?: throw DeskDeckWireException()
@@ -106,7 +114,7 @@ data class DeskDeckMessage(
             fun bool(i: Int) = (f.getOrNull(i) as? Cbor.Bool)?.value ?: throw DeskDeckWireException()
             fun uuid(value: String) = try { UUID.fromString(value).toString() == value } catch (_: IllegalArgumentException) { false }
             if (kind == 1L) {
-                if (f.size != 1 || number(0) !in 0L..(if (version >= 4L) 31L else 15L)) throw DeskDeckWireException()
+                if (f.size != 1 || number(0) !in 0L..(if (version >= 5L) 63L else if (version >= 4L) 31L else 15L)) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, actions = number(0))
             }
             if (kind in setOf(2L, 6L, 7L)) {
@@ -117,7 +125,7 @@ data class DeskDeckMessage(
                 if (f.size != 2 || !uuid(string(0)) || number(1) !in 0L..3L) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, subscription = string(0), page = number(1))
             }
-            if (kind == 9L && version >= 2L) {
+            if (kind == 9L && version >= 2L || kind == 12L && version >= 5L) {
                 if (f.size != 5 || !uuid(string(0)) || number(1) !in 0L..3L || number(2) !in 1L..4L ||
                     number(1) >= number(2) || !uuid(string(3))) throw DeskDeckWireException()
                 val rows = (f[4] as? Cbor.Array)?.value ?: throw DeskDeckWireException()
@@ -131,9 +139,19 @@ data class DeskDeckMessage(
                     DeskDeckShortcut(id, name)
                 }
                 if (entries.map { it.id }.distinct().size != entries.size) throw DeskDeckWireException()
-                return DeskDeckMessage(kind, version = version, subscription = string(0), page = number(1), pageCount = number(2), catalogRevision = string(3), shortcuts = entries)
+                return DeskDeckMessage(kind, version = version, subscription = string(0), page = number(1), pageCount = number(2), catalogRevision = string(3),
+                    shortcuts = if (kind == 9L) entries else emptyList(),
+                    outputRoutes = if (kind == 12L) entries.map { DeskDeckOutputRoute(it.id, it.name) } else emptyList())
             }
             if (kind == 10L && version >= 2L) {
+                if (f.size != 2 || !uuid(string(0)) || !uuid(string(1))) throw DeskDeckWireException()
+                return DeskDeckMessage(kind, version = version, subscription = string(0), catalogRevision = string(1))
+            }
+            if (kind == 11L && version >= 5L) {
+                if (f.size != 2 || !uuid(string(0)) || number(1) !in 0L..3L) throw DeskDeckWireException()
+                return DeskDeckMessage(kind, version = version, subscription = string(0), page = number(1))
+            }
+            if (kind == 13L && version >= 5L) {
                 if (f.size != 2 || !uuid(string(0)) || !uuid(string(1))) throw DeskDeckWireException()
                 return DeskDeckMessage(kind, version = version, subscription = string(0), catalogRevision = string(1))
             }
@@ -154,12 +172,14 @@ data class DeskDeckMessage(
                             !validControl(it.brightnessSupported, it.brightnessTarget, it.brightnessRevision, it.brightnessLevel)) throw DeskDeckWireException()
                     }
                 } else {
-                    if (f.size != if (version >= 3L) 24 else 20) throw DeskDeckWireException()
+                    if (f.size != if (version >= 5L) 25 else if (version >= 3L) 24 else 20) throw DeskDeckWireException()
                     val active = number(3); val wired = number(4); val compressed = number(5); val total = number(6)
                     val app = if (version >= 3L) number(20) else -1L
                     val cached = if (version >= 3L) number(21) else -1L
                     val free = if (version >= 3L) number(22) else -1L
                     val swap = if (version >= 3L) number(23) else -1L
+                    val outputRouteID = if (version >= 5L) string(24) else ""
+                    if (version >= 5L && outputRouteID.isNotEmpty() && !uuid(outputRouteID)) throw DeskDeckWireException()
                     if (version >= 3L) {
                         val unavailable = app == -1L && cached == -1L && free == -1L && swap == -1L
                         val available = app in 0..total && cached in 0..total && free in 0..total && swap >= -1L &&
@@ -170,7 +190,7 @@ data class DeskDeckMessage(
                     val outputOK = validControl(bool(9), string(10), string(11), number(12))
                     val microphoneOK = validIdentity(bool(13), string(14), string(15))
                     if (active < 0 || wired < 0 || compressed < 0 || total < 0 || active > total || wired > total - active || compressed > total - active - wired ||
-                        number(7) !in 0L..3L || number(8) !in 0L..(if (version >= 4L) 31L else 15L) || !outputOK || !microphoneOK ||
+                        number(7) !in 0L..3L || number(8) !in 0L..(if (version >= 5L) 63L else if (version >= 4L) 31L else 15L) || !outputOK || !microphoneOK ||
                         number(17) !in 0L..5L || number(18) !in -1L..100L || number(19) !in 0L..3L ||
                         number(17) < 2L && number(18) != -1L) throw DeskDeckWireException()
                     DeskDeckMessage(
@@ -181,6 +201,7 @@ data class DeskDeckMessage(
                         outputSupported = bool(9), outputTarget = string(10), outputRevision = string(11), outputLevel = number(12),
                         microphoneSupported = bool(13), microphoneTarget = string(14), microphoneRevision = string(15), microphoneMuted = bool(16),
                         powerState = number(17), powerPercent = number(18), powerSource = number(19),
+                        outputRouteID = outputRouteID,
                     )
                 }
                 if (message.sequence !in 1L..4_294_967_295L || message.cpuPercent !in -1L..100L) throw DeskDeckWireException()
@@ -198,6 +219,7 @@ data class DeskDeckMessage(
                     7L -> version == 1L && message.target.isNotEmpty() && message.revision.isNotEmpty() && message.value in 0L..100L
                     8L -> version >= 2L && uuid(message.target) && uuid(message.revision) && message.value == -1L
                     9L -> version >= 4L && message.target.isEmpty() && message.revision.isEmpty() && message.value == -1L
+                    10L -> version >= 5L && uuid(message.target) && uuid(message.revision) && message.value == -1L
                     else -> false
                 }
                 if (message.commandId !in 1L..4_294_967_295L || !valid) throw DeskDeckWireException()

@@ -42,7 +42,7 @@ class DeskDeckWireTests {
             assertArrayEquals(row.getString("name"), bytes, message.encode())
             versions += message.version
         }
-        assertEquals(setOf(1L, 2L, 3L, 4L), versions)
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L), versions)
 
         for (index in 0 until invalid.length()) {
             val row = invalid.getJSONObject(index)

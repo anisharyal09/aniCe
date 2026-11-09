@@ -100,7 +100,6 @@ struct AniCeApp: App {
     let phoneInput = MacPhoneInputModel()
     _phoneInput = State(initialValue: phoneInput)
     let dndSync = MacDndSyncModel()
-    MacDndSyncModel.shared = dndSync
     _dndSync = State(initialValue: dndSync)
     let deskDeck = MacDeskDeckModel()
     _deskDeck = State(initialValue: deskDeck)
@@ -176,7 +175,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
-      dndSync.setSending(false); dndSync.removeSelections()
+      dndSync.removeSelections()
       transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()
       sms.invalidate(); smsPreferences.clear()

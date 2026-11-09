@@ -34,21 +34,11 @@ fun FeaturesScreen(
     val panel = navigation.featurePanel
     if (!favouritesOnly && panel == AppFeature.Sms) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = navigation::closeFeature) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back to ${navigation.featureOrigin.label}")
-            }
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             io.github.anisharyal09.anice.features.sms.SmsView(session.sms, peers, Modifier.weight(1f))
         }
     } else if (!favouritesOnly && (panel == AppFeature.Playback || panel == AppFeature.Files || panel == AppFeature.Clipboard)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TextButton(onClick = navigation::closeFeature) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back to ${navigation.featureOrigin.label}")
-            }
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             if (panel == AppFeature.Playback) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media)
             else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(session.clipboard, peers)
@@ -57,11 +47,6 @@ fun FeaturesScreen(
         }
     } else if (!favouritesOnly && panel == AppFeature.PhoneInput) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = navigation::closeFeature) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back to " + navigation.featureOrigin.label)
-            }
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             io.github.anisharyal09.anice.features.phoneinput.PhoneInputView(
                 session.phoneInput,
@@ -78,12 +63,7 @@ fun FeaturesScreen(
         }
     } else if (!favouritesOnly && panel == AppFeature.DeskDeck) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = navigation::closeFeature, modifier = Modifier.size(48.dp)) {
-                    Icon(painterResource(R.drawable.ic_back), contentDescription = "Back to ${navigation.featureOrigin.label}", modifier = Modifier.size(20.dp))
-                }
-                Text(panel.label, style = MaterialTheme.typography.titleMedium)
-            }
+            Text(panel.label, style = MaterialTheme.typography.titleMedium)
             io.github.anisharyal09.anice.features.deskdeck.DeskDeckView(
                 session.deskDeck,
                 session.devicePower,
@@ -96,11 +76,6 @@ fun FeaturesScreen(
         }
     } else if (!favouritesOnly && navigation.findDetails) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            TextButton(onClick = navigation::closeFeature) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back to ${navigation.featureOrigin.label}")
-            }
             Text(AppFeature.FindDevice.label, style = MaterialTheme.typography.titleMedium)
             io.github.anisharyal09.anice.features.finddevice.FindDeviceView(findDevice, peers)
         }
@@ -136,7 +111,7 @@ fun FeaturesScreen(
 
 @Composable
 internal fun FeatureEntry(feature: AppFeature, favourite: Boolean, status: String, onFavourite: () -> Unit, onClick: () -> Unit) {
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_laptop; AppFeature.Sms -> R.drawable.ic_sms }
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms }
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 72.dp)
@@ -176,7 +151,7 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         if (current.source.isEmpty()) "No active playback" else
             (if (current.state == 1L) "Playing" else "Paused") + current.title.takeIf(String::isNotEmpty)?.let { " · $it" }.orEmpty()
     } ?: "No active playback"
-    AppFeature.DeskDeck -> "Mac hardware and quick controls"
+    AppFeature.DeskDeck -> "Mac meters and quick controls"
     AppFeature.Files -> when (val state = session.transfer.state) {
         is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting -> "Connecting"
         is io.github.anisharyal09.anice.features.transfer.TransferState.WaitingForPeerApproval -> "Waiting for approval"

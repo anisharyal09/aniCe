@@ -564,33 +564,33 @@ private struct DeskDeckSettingsView: View {
 
   var body: some View {
     let catalogGeneration = model.catalogGeneration
-    return VStack(alignment: .leading, spacing: 12) {
-      Text("Choose which Mac apps each trusted phone can launch from Desk Deck.")
+    return VStack(alignment: .leading, spacing: 10) {
+      Text("Choose which apps each phone can launch from Desk Deck.")
         .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       if androidPeers.isEmpty {
-        Text("Pair an Android phone before approving app shortcuts.").font(.callout)
+        Text("Pair a phone to add approved apps.").font(.callout)
       } else {
         ForEach(androidPeers, id: \.peer.fingerprint) { record in
           let peer = record.peer
-          VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading, spacing: 6) {
             HStack {
               Text(peer.deviceName).font(.system(size: 13, weight: .medium)).lineLimit(1)
               Spacer()
-              Button("Approve app…") { chooseApplication(for: peer) }
+              Button("Add app…") { chooseApplication(for: peer) }
                 .controlSize(.small).disabled(model.availableApprovalCount(for: peer) >= 32)
             }.frame(minHeight: 48)
             let apps = model.approvedApps(for: peer)
             if apps.isEmpty {
-              Text("No apps approved").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              Text("No apps added").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
             }
             ForEach(apps) { app in
               HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(app.name).lineLimit(1)
-                  Text(model.applicationIsAvailable(app) ? app.bundleIdentifier : "Unavailable or replaced")
-                    .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
-                }
+                Text(app.name).lineLimit(1)
                 Spacer(minLength: 8)
+                if !model.applicationIsAvailable(app) {
+                  Text("Unavailable").font(.caption)
+                    .foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
+                }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
                   .controlSize(.small).accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
               }.frame(minHeight: 44)
@@ -599,8 +599,10 @@ private struct DeskDeckSettingsView: View {
               Text("This phone has reached the 32-app limit.").font(.caption)
                 .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             }
-          }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(AniCePalette.secondarySurface(colorScheme), in: RoundedRectangle(cornerRadius: 8))
+          }.frame(maxWidth: .infinity, alignment: .leading)
+          if peer.fingerprint != androidPeers.last?.peer.fingerprint {
+            Divider().overlay(AniCePalette.separator(colorScheme)).padding(.vertical, 4)
+          }
         }
       }
       if !notice.isEmpty { Text(notice).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)) }
@@ -614,10 +616,12 @@ private struct DeskDeckSettingsView: View {
     panel.canChooseFiles = true
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
-    panel.prompt = "Approve App"
+    panel.prompt = "Add App"
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    notice = model.addApprovedApp(at: url, for: peer)
-      ? "\(url.deletingPathExtension().lastPathComponent) is available to \(peer.deviceName)."
-      : "App could not be approved. It may already be listed or the 32-app limit has been reached."
+    if model.addApprovedApp(at: url, for: peer) {
+      notice = ""
+    } else {
+      notice = "App could not be approved."
+    }
   }
 }

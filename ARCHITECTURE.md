@@ -133,4 +133,4 @@ Current LAN revision 3 uses [record profile 4](protocol/lan/TRANSFER_PROFILE.md)
 
 ## Do Not Disturb sync
 
-Application-scoped DND owners register with FeatureDispatch independently of Desk Deck. Local Settings switches authorize outgoing changes; Android Notification Policy access and Mac-approved explicit On/Off Shortcuts authorize reception. Mac native DND automations invoke an App Intent; Android observes native interruption-filter broadcasts only while secured channels exist. Remote effects are suppressed from outgoing reports. Sync adds no connection owner, polling task, background lease or offline replay. See [feature behavior](docs/features/DND_SYNC.md) and [DND sync v1](protocol/dnd-sync/README.md).
+Application-scoped DND owners register with FeatureDispatch independently of Desk Deck. Android sends local interruption-filter changes over an existing secured channel; Mac applies them through locally selected On and Off Shortcuts. Mac-to-phone DND sync is not supported. aniCe does not poll or replay disconnected changes. See [feature behavior](docs/features/DND_SYNC.md) and [DND sync v1](protocol/dnd-sync/README.md).

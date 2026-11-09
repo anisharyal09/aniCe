@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -156,9 +157,11 @@ private fun DeskDeckGrid(
 ) {
     val haptic = LocalHapticFeedback.current
     var volumeDrag by remember(sample?.outputTarget, sample?.outputRevision) { mutableStateOf<Float?>(null) }
+    var outputMenuExpanded by remember(sample?.protocolVersion) { mutableStateOf(false) }
     var cpuDetails by rememberSaveable { mutableStateOf(false) }
     var memoryDetails by rememberSaveable { mutableStateOf(false) }
     var showDetails by rememberSaveable { mutableStateOf(false) }
+    var microphoneHelp by rememberSaveable { mutableStateOf(false) }
     var lockHelp by rememberSaveable { mutableStateOf(false) }
     var focusHelp by rememberSaveable { mutableStateOf(false) }
     var managingApps by rememberSaveable { mutableStateOf(false) }
@@ -176,11 +179,13 @@ private fun DeskDeckGrid(
     val microphone: @Composable () -> Unit = {
         val supported = sample?.microphoneSupported == true
         val mute = sample?.microphoneMuted != true
-        MacroCard(if (mute) "Mute mic" else "Unmute mic",
-            owner.actionFeedback(2).ifBlank { if (supported) "Default microphone" else "Input unavailable" },
-            fresh && supported && !owner.isBusy(2)) {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            sample?.let { owner.command(2, if (mute) 1 else 0, it.microphoneTarget, it.microphoneRevision) }
+        MacroCard(if (supported) { if (mute) "Mute input" else "Unmute input" } else "Mic mute",
+            owner.actionFeedback(2).ifBlank { if (supported) "Mac default input" else "No controllable default input" },
+            fresh && !owner.isBusy(2)) {
+            if (supported) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                sample?.let { owner.command(2, if (mute) 1 else 0, it.microphoneTarget, it.microphoneRevision) }
+            } else microphoneHelp = true
         }
     }
     val lockControl: @Composable () -> Unit = {
@@ -204,11 +209,11 @@ private fun DeskDeckGrid(
         val detail = owner.actionFeedback(9).ifBlank {
             when {
                 !supportsV4 -> "Update aniCe on Mac"
-                available -> "Toggle Do Not Disturb"
-                else -> "Set up in Mac Settings → Do Not Disturb"
+                available -> "Mac-local toggle · no phone sync"
+                else -> "Set up on Mac · no phone sync"
             }
         }
-        MacroCard("Do Not Disturb", detail, fresh && supportsV4 && !owner.isBusy(9)) {
+        MacroCard("DND mode", detail, fresh && supportsV4 && !owner.isBusy(9)) {
             if (available) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 owner.command(9)
@@ -224,33 +229,28 @@ private fun DeskDeckGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(target?.deviceName ?: "Mac", style = MaterialTheme.typography.titleSmall)
-                            Text(connectionSummary(owner, connected, sample, ageNow), style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (!connected && target != null) {
-                            TextButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
-                        } else if (owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
-                            TextButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
-                        }
-                        if (wide) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("Mac · ${macPowerSummary(sample)}", style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Phone · ${phonePower.percent?.let { "$it% · " } ?: ""}${phonePower.label} · Thermal · $thermal",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(target?.deviceName ?: "Mac", style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(connectionSummary(owner, connected, sample, ageNow), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
+                            if (!connected && target != null) {
+                                TextButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
+                            } else if (owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
+                                TextButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                            }
+                            TextButton(onClick = { showDetails = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") }
                         }
-                        TextButton(onClick = { showDetails = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") }
-                    }
-                    if (!wide) {
-                        Text("Mac · ${macPowerSummary(sample)}", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Phone · ${phonePower.percent?.let { "$it% · " } ?: ""}${phonePower.label}   ·   Thermal · $thermal",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider()
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            PowerSummary("Mac", macPowerSummary(sample), Modifier.weight(1f))
+                            PowerSummary("Phone", phonePowerSummary(phonePower), Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -268,6 +268,57 @@ private fun DeskDeckGrid(
             }
             item(span = { GridItemSpan(if (wide) 2 else maxLineSpan) }) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                    val routeSample = sample?.takeIf { it.protocolVersion >= 5L }
+                    if (routeSample != null) {
+                        val routeSwitchAvailable = routeSample.actions and 32L != 0L
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Output device", style = MaterialTheme.typography.labelLarge)
+                                Text(if (owner.outputCatalogLoaded) owner.selectedOutputName(routeSample) else "Loading Mac outputs…",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Box {
+                                TextButton(onClick = {
+                                    if (owner.outputCatalogLoaded && owner.outputRoutes.isNotEmpty()) outputMenuExpanded = true
+                                    else owner.refreshOutputRoutes()
+                                }, enabled = fresh && routeSwitchAvailable && !owner.isBusy(10L) &&
+                                    (owner.outputCatalogLoaded || !owner.outputCatalogLoading), modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text(if (owner.outputCatalogLoaded) "Choose" else if (owner.outputCatalogLoading) "Loading…" else "Load")
+                                }
+                                DropdownMenu(expanded = outputMenuExpanded, onDismissRequest = { outputMenuExpanded = false }) {
+                                    owner.outputRoutes.forEach { route ->
+                                        DropdownMenuItem(
+                                            text = { Text(if (route.id == routeSample.outputRouteID) "${route.name} · Current" else route.name) },
+                                            onClick = {
+                                                outputMenuExpanded = false
+                                                if (route.id != routeSample.outputRouteID) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    owner.selectOutputRoute(route.id)
+                                                }
+                                            },
+                                            enabled = fresh && !owner.isBusy(10L),
+                                        )
+                                    }
+                                }
+                            }
+                            TextButton(onClick = owner::refreshOutputRoutes, enabled = fresh && routeSwitchAvailable && !owner.isBusy(10L),
+                                modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                        }
+                        if (owner.outputCatalogLoaded && owner.outputRoutes.isEmpty()) {
+                            Text("No available Mac output devices.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else if (!routeSwitchAvailable) {
+                            Text("Output switching is unavailable on this Mac.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (owner.actionFeedback(10L).isNotBlank()) {
+                            Text(owner.actionFeedback(10L), style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else if (sample != null) {
+                        Text("Update aniCe on Mac to choose its output device.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Output volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         Text(if (sample?.outputSupported == true) "${volumeDrag?.toInt() ?: owner.outputPreview?.toInt() ?: sample.outputLevel}%" else "Unavailable",
@@ -376,13 +427,17 @@ private fun DeskDeckGrid(
         Text("Only while this deck is visible and the phone has external power.", style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = owner::refresh, enabled = connected, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh readings") }
     }
+    if (microphoneHelp) DeckDetailDialog("Mac input mute unavailable", { microphoneHelp = false }) {
+        Text("Desk Deck can mute only the Mac’s current default input when Core Audio exposes a writable mute control. This Mac reports no controllable default input.", style = MaterialTheme.typography.bodyMedium)
+        Text("Choose a microphone in Mac System Settings → Sound → Input, then refresh Desk Deck. Some inputs do not provide a software mute switch. This is not a hardware kill switch and does not affect apps using another input.", style = MaterialTheme.typography.bodySmall)
+    }
     if (lockHelp) DeckDetailDialog("Enable Lock Mac", { lockHelp = false }) {
         Text("On your Mac, open aniCe → Settings → Permissions → Request Events access. Enable access for the running aniCe build in System Settings, then return to aniCe.", style = MaterialTheme.typography.bodyMedium)
         Text("A rebuilt ad hoc app may need access again. If access is enabled but still unavailable, restart aniCe on the Mac.", style = MaterialTheme.typography.bodySmall)
     }
-    if (focusHelp) DeckDetailDialog("Set up Do Not Disturb", { focusHelp = false }) {
-        Text("Select your existing Do Not Disturb toggle Shortcut in Mac aniCe → Settings → Do Not Disturb → Desk Deck button. aniCe reports whether Shortcuts finished; it cannot read back Focus state. Check Focus on the Mac if it did not change.", style = MaterialTheme.typography.bodyMedium)
-        Text("Choose a shortcut that only changes Focus. Focus may sync to other Apple devices when Share Across Devices is enabled.", style = MaterialTheme.typography.bodySmall)
+    if (focusHelp) DeckDetailDialog("Set up DND mode", { focusHelp = false }) {
+        Text("This control runs the selected toggle Shortcut on the Mac only. It does not sync DND to the phone. Select a tested shortcut in Mac aniCe → Settings → Do Not Disturb → Desk Deck button.", style = MaterialTheme.typography.bodyMedium)
+        Text("aniCe confirms whether Shortcuts ran, not the resulting Focus state. Focus may sync to other Apple devices when Share Across Devices is enabled.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -481,14 +536,22 @@ private fun ShortcutCard(
     }
 }
 
+@Composable
+private fun PowerSummary(title: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 private fun connectionSummary(owner: DeskDeckController, connected: Boolean, sample: DeskDeckSnapshot?, now: Long): String = when {
     !connected && sample != null -> "Cached · stale · ${sampleAge(sample, now)}"
-    !connected -> "Disconnected · Connect to see live hardware readings"
-    owner.connectionState == DeskDeckConnectionState.OPENING -> owner.status
-    owner.connectionState == DeskDeckConnectionState.FAILED -> owner.status
-    owner.connectionState == DeskDeckConnectionState.STALE -> owner.status
+    !connected -> "Disconnected"
+    owner.connectionState == DeskDeckConnectionState.OPENING -> "Connecting…"
+    owner.connectionState == DeskDeckConnectionState.FAILED -> "Connection failed"
+    owner.connectionState == DeskDeckConnectionState.STALE -> "Mac isn’t responding${sample?.let { " · ${sampleAge(it, now)}" }.orEmpty()}"
     sample != null -> "Live · ${owner.activeTransportLabel()} · ${sampleAge(sample, now)}"
-    else -> owner.status
+    else -> "Opening Desk Deck…"
 }
 
 private fun sampleAge(sample: DeskDeckSnapshot, now: Long = android.os.SystemClock.elapsedRealtime()): String =
@@ -509,4 +572,19 @@ private fun macPowerSummary(sample: DeskDeckSnapshot?): String {
     val powerSource = source.takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
     return state + percent + powerSource
 }
+
+private fun phonePowerSummary(power: DevicePowerReading): String {
+    val source = when (power.source) {
+        1L -> "Battery"
+        2L -> "AC"
+        3L -> "USB"
+        4L -> "Wireless"
+        5L -> "Dock"
+        else -> ""
+    }
+    return listOfNotNull(power.percent?.let { "$it%" }, power.label,
+        source.takeIf { it.isNotEmpty() && power.state !in setOf(1L, 2L) })
+        .joinToString(" · ")
+}
+
 private fun bytesAsGB(value: Long): String = String.format(Locale.getDefault(), "%.1f", value.toDouble() / 1_073_741_824.0)

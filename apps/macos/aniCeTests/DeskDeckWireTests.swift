@@ -26,7 +26,7 @@ final class DeskDeckWireTests: XCTestCase {
       XCTAssertEqual(try message.encode(), bytes)
       versions.insert(message.version)
     }
-    XCTAssertEqual(versions, Set([1, 2, 3, 4]))
+    XCTAssertEqual(versions, Set([1, 2, 3, 4, 5]))
 
     for row in invalid {
       let bytes = try SessionFixtures().b(row, "bytes")

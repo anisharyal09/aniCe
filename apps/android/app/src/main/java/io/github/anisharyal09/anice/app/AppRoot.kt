@@ -101,11 +101,10 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val pageState = rememberSaveableStateHolder()
     fun back() { navigation.back() }
     BackHandler(navigation.destination != AppDestination.Home || navigation.mediaDetails) { back() }
-    val deckOpen = navigation.destination == AppDestination.Features && navigation.featurePanel == AppFeature.DeskDeck
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            if (!deckOpen) TopAppBar(title = { Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp)) }, navigationIcon = {
+            TopAppBar(title = { Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp)) }, navigationIcon = {
                 if ((navigation.destination == AppDestination.Devices &&
                         navigation.route != DeviceRoute.Overview && navigation.route != DeviceRoute.Pairing) ||
                     (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
@@ -124,7 +123,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             }, expandedHeight = maxOf(48.dp, (24 * LocalDensity.current.fontScale + 16).dp),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background))
         }, bottomBar = {
-            if (!deckOpen) NavigationBar(modifier = Modifier.heightIn(
+            NavigationBar(modifier = Modifier.heightIn(
                 min = if (largeText) maxOf(80.dp, (48f + 20f * fontScale).dp) else 80.dp
             )) {
                 if (largeText) {

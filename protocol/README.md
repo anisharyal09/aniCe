@@ -178,7 +178,7 @@ protocol/
 
 ## Mac Desk Deck and Device Power
 
-[Mac Desk Deck v1–v4](desk-deck/README.md) defines subscription-bound Mac telemetry and controls. V2 adds renewable leases, richer memory and Mac power readings, and paged launches for Mac-approved app bundles; v4 adds one locally selected Do Not Disturb Shortcut. Older v1–v3 peers remain supported. [Device Power v1](device-power/README.md) sends the phone's battery state to existing Mac device surfaces over a secured channel that is already open. Both contracts have shared Kotlin/Swift fixtures under [test-vectors](test-vectors/desk-deck-vectors.json).
+[Mac Desk Deck v1–v5](desk-deck/README.md) defines subscription-bound Mac telemetry and controls. V2 adds renewable leases, richer memory and Mac power readings, and paged launches for Mac-approved app bundles; v4 adds one locally selected Do Not Disturb Shortcut; v5 adds default-output selection. Older peers remain supported. [Device Power v1](device-power/README.md) sends the phone's battery state to existing Mac device surfaces over a secured channel that is already open. Both contracts have shared Kotlin/Swift fixtures under [test-vectors](test-vectors/desk-deck-vectors.json).
 
 ## Media
 
@@ -208,4 +208,4 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 
 ## Do Not Disturb sync
 
-[DND sync v1](dnd-sync/README.md) carries directional native DND events independently of Desk Deck, with local consent, explicit On/Off states and no feature connection lease. [Shared fixtures](test-vectors/dnd-sync-vectors.json) cover both codecs.
+[DND sync v1](dnd-sync/README.md) carries explicit phone-to-Mac DND state changes independently of Desk Deck. Android requires Notification Policy access to observe phone changes, and Mac applies them through selected On/Off Shortcuts. Mac-to-phone state changes are unsupported. It uses only existing secured connections and opens no feature lease. [Shared fixtures](test-vectors/dnd-sync-vectors.json) cover both codecs.

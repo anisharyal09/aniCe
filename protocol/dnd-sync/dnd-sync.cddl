@@ -1,5 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; At most 128 encoded bytes; canonical lowercase UUIDs are checked by both codecs.
+; Kind 2 carries an Android-to-Mac state; kind 3 returns the Mac result.
 dnd-sync = ["aniCe dnd sync", 1, 1, capability] /
            ["aniCe dnd sync", 1, 2, state] /
            ["aniCe dnd sync", 1, 3, result]

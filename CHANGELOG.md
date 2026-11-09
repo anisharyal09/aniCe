@@ -8,15 +8,16 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
-- Add optional directional Do Not Disturb sync in Settings, using native Mac automations and Android DND events over connected trusted sessions.
-- Report Mac DND automation failure when sending is disabled, no receiving phone is connected, or channel submission fails.
-- Keep Desk Deck's DND Shortcut setup with Do Not Disturb settings, accept existing Shortcuts without a custom output marker, provide copyable toggle and explicit On/Off Apple Intelligence prompts with manual steps, and describe completion without claiming Focus changed.
+- Keep DND sync phone-to-Mac only, simplify one-time setup, and label the Desk Deck toggle as Mac-local.
+- Keep Desk Deck in the regular Android app shell and simplify trusted-phone app approvals in Mac Settings.
+- Distinguish Control Mac from Mac Desk Deck in the Android feature list and label the deck control **DND mode**.
+- Remove duplicate in-content Back controls while retaining platform navigation.
 
 - Clarify Mac remote-control permission guidance and correct the transfer recovery description.
 
 ### Added
 
-- Add a Do Not Disturb quick control backed by one Mac-selected Shortcut.
+- Add phone-side selection of the Mac's default audio output in Desk Deck.
 
 ### Changed
 

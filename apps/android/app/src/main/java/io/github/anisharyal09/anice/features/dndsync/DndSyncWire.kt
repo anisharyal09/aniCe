@@ -39,18 +39,13 @@ data class DndSyncMessage(val kind: Long, val sending: Boolean = false, val rece
     }
 }
 
-// Suppress the asynchronous native callback caused by a remote change; callbacks carry no request ID.
-class DndEchoGuard {
+// Ignore duplicate broadcasts while still forwarding real phone-side state changes.
+class DndChangeDeduplicator {
     private var observed: Boolean? = null
-    private var expected: Boolean? = null
-    private var expires = 0L
-    fun baseline(value: Boolean?) { observed = value; expected = null }
-    fun applying(value: Boolean, now: Long) { expected = value; expires = now + 15_000 }
-    fun changed(value: Boolean, now: Long): Boolean {
+    fun baseline(value: Boolean?) { observed = value }
+    fun changed(value: Boolean): Boolean {
         val duplicate = observed == value
         observed = value
-        val echo = expected == value && now <= expires
-        if (echo || !duplicate || now > expires) expected = null
-        return !duplicate && !echo
+        return !duplicate
     }
 }

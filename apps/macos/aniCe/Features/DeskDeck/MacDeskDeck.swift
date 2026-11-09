@@ -40,7 +40,7 @@ struct MacDeskDeckMessage {
   static func decode(_ data: Data) throws -> Self? {
     guard data.count <= 4000 else { throw MacDeskDeckWireError.malformed }
     guard case .array(let row) = try SessionCbor.decode(data), case .text("aniCe desk deck")? = row.first else { return nil }
-    guard row.count == 4, case .integer(let version) = row[1], (1...4).contains(version),
+    guard row.count == 4, case .integer(let version) = row[1], (1...5).contains(version),
       data.count <= (version == 1 ? 512 : 3800), case .integer(let kind) = row[2], case .array(let fields) = row[3] else {
       throw MacDeskDeckWireError.malformed
     }
@@ -54,7 +54,7 @@ struct MacDeskDeckMessage {
   func bool(_ index: Int) -> Bool { if fields.indices.contains(index), case .bool(let value) = fields[index] { return value }; return false }
 
   private func validate() throws {
-    guard (1...4).contains(version) else { throw MacDeskDeckWireError.malformed }
+    guard (1...5).contains(version) else { throw MacDeskDeckWireError.malformed }
     func text(_ i: Int) -> Bool { fields.indices.contains(i) && { if case .text = fields[i] { return true }; return false }() }
     func number(_ i: Int, _ range: ClosedRange<Int64>) -> Bool { fields.indices.contains(i) && { if case .integer(let n) = fields[i] { return range.contains(n) }; return false }() }
     func integer(_ i: Int) -> Int64 { self.number(i) }
@@ -71,14 +71,16 @@ struct MacDeskDeckMessage {
       return used >= 0 && total >= 0 && used <= total
     }()
     let valid: Bool
-    let capabilityMask: ClosedRange<Int64> = version >= 4 ? 0...31 : 0...15
+    let capabilityMask: ClosedRange<Int64> = version >= 5 ? 0...63 : version >= 4 ? 0...31 : 0...15
     switch kind {
     case 1: valid = fields.count == 1 && number(0, capabilityMask)
     case 2, 6, 7: valid = fields.count == 1 && uuid(0) && (kind != 7 || version >= 2)
     case 8: valid = version >= 2 && fields.count == 2 && uuid(0) && number(1, 0...3)
     case 10: valid = version >= 2 && fields.count == 2 && uuid(0) && uuid(1)
-    case 9:
-      guard version >= 2, fields.count == 5, uuid(0), number(1, 0...3), number(2, 1...4), integer(1) < integer(2), uuid(3),
+    case 11: valid = version >= 5 && fields.count == 2 && uuid(0) && number(1, 0...3)
+    case 13: valid = version >= 5 && fields.count == 2 && uuid(0) && uuid(1)
+    case 9, 12:
+      guard version >= (kind == 12 ? 5 : 2), fields.count == 5, uuid(0), number(1, 0...3), number(2, 1...4), integer(1) < integer(2), uuid(3),
         fields.indices.contains(4), case .array(let rows) = fields[4], rows.count <= 8 else { throw MacDeskDeckWireError.malformed }
       var ids = Set<String>()
       valid = rows.allSatisfy { item in
@@ -97,7 +99,7 @@ struct MacDeskDeckMessage {
           validControl(self.bool(7), self.string(8), self.string(9), self.number(10)) && validIdentity(self.bool(11), self.string(12), self.string(13)) &&
           validControl(self.bool(15), self.string(16), self.string(17), self.number(18))
       } else {
-        guard fields.count == (version >= 3 ? 24 : 20), uuid(0) else { throw MacDeskDeckWireError.malformed }
+        guard fields.count == (version >= 5 ? 25 : version >= 3 ? 24 : 20), uuid(0) else { throw MacDeskDeckWireError.malformed }
         let active = integer(3), wired = integer(4), compressed = integer(5), total = integer(6)
         let sumValid = active >= 0 && wired >= 0 && compressed >= 0 && total >= 0 && active <= total && wired <= total - active && compressed <= total - active - wired
         let detailValid: Bool
@@ -109,15 +111,16 @@ struct MacDeskDeckMessage {
               cached <= total - free && app <= total - free - cached &&
               wired >= 0 && wired <= total - free - cached - app && compressed >= 0 && compressed <= total - free - cached - app - wired))
         } else { detailValid = true }
+        let selectedOutputValid = version < 5 || (text(24) && (string(24).isEmpty || uuid(24)))
         valid = number(3, 0...Int64.max) && number(4, 0...Int64.max) && number(5, 0...Int64.max) && number(6, 0...Int64.max) &&
           number(1, 1...4294967295) && number(2, -1...100) && sumValid && detailValid && number(7, 0...3) && number(8, capabilityMask) &&
           bool(9) && text(10) && text(11) && number(12, -1...100) && bool(13) && text(14) && text(15) && bool(16) &&
           number(17, 0...5) && number(18, -1...100) && number(19, 0...3) &&
-          (integer(17) >= 2 || integer(18) == -1) &&
+          (integer(17) >= 2 || integer(18) == -1) && selectedOutputValid &&
           validControl(self.bool(9), self.string(10), self.string(11), self.number(12)) && validIdentity(self.bool(13), self.string(14), self.string(15))
       }
     case 4:
-      guard fields.count == 6, uuid(0), number(1, 1...4294967295), number(2, 1...(version == 1 ? 7 : version >= 4 ? 9 : 8)), text(3), text(4), number(5, -1...100) else {
+      guard fields.count == 6, uuid(0), number(1, 1...4294967295), number(2, 1...(version == 1 ? 7 : version >= 5 ? 10 : version >= 4 ? 9 : 8)), text(3), text(4), number(5, -1...100) else {
         throw MacDeskDeckWireError.malformed
       }
       let action = self.number(2), target = self.string(3), revision = self.string(4), value = self.number(5)
@@ -129,6 +132,7 @@ struct MacDeskDeckMessage {
       case 7: valid = version == 1 && !target.isEmpty && !revision.isEmpty && (0...100).contains(value)
       case 8: valid = version >= 2 && uuid(3) && uuid(4) && value == -1
       case 9: valid = version >= 4 && target.isEmpty && revision.isEmpty && value == -1
+      case 10: valid = version >= 5 && uuid(3) && uuid(4) && value == -1
       default: valid = false
       }
     case 5: valid = fields.count == 3 && uuid(0) && number(1, 1...4294967295) && number(2, 0...7)
@@ -176,6 +180,113 @@ private enum DeskDeckInputMute {
     var value: UInt32 = muted ? 1 : 0
     let result = AudioObjectSetPropertyData(target.id, &muteAddress, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value)
     return result == noErr ? 0 : 7
+  }
+}
+
+private struct DeskDeckNativeOutput {
+  let device: AudioDeviceID
+  let uid: String
+  let name: String
+}
+
+private enum DeskDeckOutputDevices {
+  private static func address(_ selector: AudioObjectPropertySelector,
+    scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
+    .init(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+  }
+
+  static func available() -> [DeskDeckNativeOutput] {
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    var devicesAddress = address(kAudioHardwarePropertyDevices)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(system, &devicesAddress, 0, nil, &size) == noErr,
+      size >= MemoryLayout<AudioDeviceID>.size else { return [] }
+    var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+    let status = devices.withUnsafeMutableBytes { bytes in
+      guard let baseAddress = bytes.baseAddress else { return OSStatus(-1) }
+      return AudioObjectGetPropertyData(system, &devicesAddress, 0, nil, &size, baseAddress)
+    }
+    guard status == noErr else { return [] }
+    return devices.compactMap { device in
+      var streamAddress = address(kAudioDevicePropertyStreams, scope: kAudioDevicePropertyScopeOutput)
+      var streamBytes: UInt32 = 0
+      guard AudioObjectGetPropertyDataSize(device, &streamAddress, 0, nil, &streamBytes) == noErr, streamBytes > 0 else { return nil }
+      var aliveAddress = address(kAudioDevicePropertyDeviceIsAlive)
+      var alive: UInt32 = 0
+      var aliveSize = UInt32(MemoryLayout<UInt32>.size)
+      guard AudioObjectGetPropertyData(device, &aliveAddress, 0, nil, &aliveSize, &alive) == noErr, alive == 1 else { return nil }
+      guard let uid = string(device, selector: kAudioDevicePropertyDeviceUID), !uid.isEmpty,
+        let rawName = string(device, selector: kAudioObjectPropertyName) else { return nil }
+      let name = safeName(rawName)
+      return DeskDeckNativeOutput(device: device, uid: uid, name: name)
+    }
+  }
+
+  static func defaultUID() -> String? {
+    var defaultAddress = address(kAudioHardwarePropertyDefaultOutputDevice)
+    var device = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &size, &device) == noErr,
+      device != 0 else { return nil }
+    return string(device, selector: kAudioDevicePropertyDeviceUID)
+  }
+
+  static var canSelectDefault: Bool {
+    var property = address(kAudioHardwarePropertyDefaultOutputDevice)
+    var settable = DarwinBoolean(false)
+    return AudioObjectIsPropertySettable(AudioObjectID(kAudioObjectSystemObject), &property, &settable) == noErr && settable.boolValue
+  }
+
+  static func selectDefault(uid: String) -> Int64 {
+    guard canSelectDefault else { return 2 }
+    guard let device = available().first(where: { $0.uid == uid }) else { return 5 }
+    var property = address(kAudioHardwarePropertyDefaultOutputDevice)
+    var selected = device.device
+    guard AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &property, 0, nil,
+      UInt32(MemoryLayout<AudioDeviceID>.size), &selected) == noErr else { return 7 }
+    return 0
+  }
+
+  private static func string(_ object: AudioObjectID, selector: AudioObjectPropertySelector) -> String? {
+    var property = address(selector)
+    var value = "" as CFString
+    var size = UInt32(MemoryLayout<CFString>.size)
+    let status = withUnsafeMutablePointer(to: &value) { pointer in
+      AudioObjectGetPropertyData(object, &property, 0, nil, &size, pointer)
+    }
+    return status == noErr ? value as String : nil
+  }
+
+  private static func safeName(_ rawName: String) -> String {
+    let cleaned = rawName.unicodeScalars.map { CharacterSet.controlCharacters.contains($0) ? " " : String($0) }
+      .joined().trimmingCharacters(in: .whitespacesAndNewlines)
+    var name = ""
+    for character in cleaned {
+      guard (name + String(character)).utf16.count <= 80 else { break }
+      name.append(character)
+    }
+    return name.isEmpty ? "Audio output" : name
+  }
+}
+
+private final class DeskDeckOutputObservation: @unchecked Sendable {
+  private let block: AudioObjectPropertyListenerBlock
+  private var addresses: [AudioObjectPropertyAddress] = []
+
+  init(changed: @escaping @Sendable () -> Void) {
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    block = { _, _ in changed() }
+    for selector in [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultOutputDevice] {
+      var property = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+      if AudioObjectHasProperty(system, &property), AudioObjectAddPropertyListenerBlock(system, &property, .main, block) == noErr {
+        addresses.append(property)
+      }
+    }
+  }
+
+  deinit {
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    for var property in addresses { AudioObjectRemovePropertyListenerBlock(system, &property, .main, block) }
   }
 }
 
@@ -227,6 +338,12 @@ struct DeskDeckMemory {
       reading.app + reading.wired + reading.compressed <= reading.used else { return Self() }
     return reading
   }
+}
+
+private struct MacDeskDeckOutputRoute: Equatable {
+  let id: String
+  let uid: String
+  let name: String
 }
 
 struct DeskDeckCPU {
@@ -613,9 +730,26 @@ struct MacPhonePowerReading: Equatable {
     let subscription: String
     let revision: String
   }
+  private struct PendingOutputCatalogPage {
+    let descriptor: ChannelDescriptor
+    let subscription: String
+    let page: Int64
+  }
+  private struct PendingOutputCatalogUpdate: Equatable {
+    let descriptor: ChannelDescriptor
+    let subscription: String
+    let revision: String
+  }
   private var pendingCatalogPages: [String: [PendingCatalogPage]] = [:]
   private var pendingCatalogUpdates: [String: PendingCatalogUpdate] = [:]
   private var sendingCatalogUpdates = Set<String>()
+  private var pendingOutputCatalogPages: [String: [PendingOutputCatalogPage]] = [:]
+  private var pendingOutputCatalogUpdates: [String: PendingOutputCatalogUpdate] = [:]
+  private var sendingOutputCatalogUpdates = Set<String>()
+  private var outputObservation: DeskDeckOutputObservation?
+  private var outputRouteIDs: [String: String] = [:]
+  private var outputRoutes: [MacDeskDeckOutputRoute] = []
+  private var outputCatalogRevision = UUID().uuidString.lowercased()
   private var previousCPUTicks: [UInt32]?
   private var lastCPUPercent: Int64 = -1
   private var inputIdentity = ""
@@ -654,9 +788,9 @@ struct MacPhonePowerReading: Equatable {
     } else if approvedFocusShortcut != nil && !approvedFocusShortcutIsAvailable {
       "The saved Shortcut was not found. Choose a replacement or remove its selection."
     } else if result.shortcuts.isEmpty {
-      "No shortcuts found. Create a Do Not Disturb toggle in Shortcuts, then refresh."
+      "No Shortcuts found. Create the Mac-local DND toggle, then refresh."
     } else if approvedFocusShortcutIsAvailable {
-      "Selected. Test that this Shortcut changes Focus; a blank Shortcut can finish without changing anything. aniCe reports whether it ran, not the Focus state."
+      "Selected. Test that Focus changes; aniCe confirms only that the Shortcut ran."
     } else {
       "Choose the shortcut to use for Do Not Disturb."
     }
@@ -672,7 +806,7 @@ struct MacPhonePowerReading: Equatable {
     if let data = try? JSONEncoder().encode(approvedFocusShortcut) {
       defaults.set(data, forKey: Self.focusShortcutDefaultsKey)
     }
-    focusShortcutStatus = "Selected. Test that this Shortcut changes Focus; a blank Shortcut can finish without changing anything. aniCe reports whether it ran, not the Focus state."
+    focusShortcutStatus = "Selected. Test that Focus changes; aniCe confirms only that the Shortcut ran."
     refreshCapabilities()
   }
 
@@ -688,6 +822,7 @@ struct MacPhonePowerReading: Equatable {
     if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
     activationObserver = nil
     stopPowerObservation()
+    outputObservation = nil
     tickerGeneration &+= 1
     ticker?.cancel(); ticker = nil
     for jobs in commandJobs.values { jobs.values.forEach { $0.task.cancel() } }
@@ -696,6 +831,9 @@ struct MacPhonePowerReading: Equatable {
     pendingCatalogPages.removeAll()
     pendingCatalogUpdates.removeAll()
     sendingCatalogUpdates.removeAll()
+    pendingOutputCatalogPages.removeAll()
+    pendingOutputCatalogUpdates.removeAll()
+    sendingOutputCatalogUpdates.removeAll()
     outputVolume.stop()
     previousCPUTicks = nil
   }
@@ -703,6 +841,7 @@ struct MacPhonePowerReading: Equatable {
   func available(_ channel: any SecuredChannel) {
     let descriptor = channel.descriptor
     pendingCatalogUpdates.removeValue(forKey: descriptor.transport)
+    pendingOutputCatalogUpdates.removeValue(forKey: descriptor.transport)
     links[descriptor.transport] = Link(channel: channel)
     sendCapability(on: descriptor.transport)
   }
@@ -713,13 +852,15 @@ struct MacPhonePowerReading: Equatable {
     links[transport] = link
     let currentActions = supportedActions
     let legacyActions = currentActions & 15
-    let capabilityV4 = MacDeskDeckMessage(version: 4, kind: 1, fields: [.integer(currentActions)])
+    let capabilityV5 = MacDeskDeckMessage(version: 5, kind: 1, fields: [.integer(currentActions)])
+    let capabilityV4 = MacDeskDeckMessage(version: 4, kind: 1, fields: [.integer(currentActions & 31)])
     let capabilityV3 = MacDeskDeckMessage(version: 3, kind: 1, fields: [.integer(legacyActions)])
     let capabilityV2 = MacDeskDeckMessage(version: 2, kind: 1, fields: [.integer(legacyActions)])
     let capabilityV1 = MacDeskDeckMessage(kind: 1, fields: [.integer(legacyActions)])
     let descriptor = link.channel.descriptor
     Task { @MainActor [weak self] in
       var sent = true
+      do { try await link.channel.sendData(capabilityV5.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV4.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV3.encode()) } catch { sent = false }
       do { try await link.channel.sendData(capabilityV2.encode()) } catch { sent = false }
@@ -744,10 +885,14 @@ struct MacPhonePowerReading: Equatable {
     links.removeValue(forKey: descriptor.transport)
     pendingSamples.removeValue(forKey: descriptor.transport)
     pendingCatalogUpdates.removeValue(forKey: descriptor.transport)
+    pendingOutputCatalogUpdates.removeValue(forKey: descriptor.transport)
+    pendingOutputCatalogPages.removeValue(forKey: descriptor.transport)
     sendingCatalogUpdates.remove("\(descriptor.transport):\(descriptor.instance)")
+    sendingOutputCatalogUpdates.remove("\(descriptor.transport):\(descriptor.instance)")
     drainingSamples = drainingSamples.filter { !$0.hasPrefix("\(descriptor.transport):\(descriptor.instance):") }
     updateTicker()
     updatePowerObservation()
+    updateOutputObservation()
   }
 
   func capacityAvailable(_ descriptor: ChannelDescriptor) {
@@ -757,6 +902,8 @@ struct MacPhonePowerReading: Equatable {
       drainPendingSamples(on: descriptor.transport, descriptor: descriptor)
       drainPendingCatalogUpdate(on: descriptor.transport, descriptor: descriptor)
       drainPendingCatalogPages(on: descriptor.transport, descriptor: descriptor)
+      drainPendingOutputCatalogUpdate(on: descriptor.transport, descriptor: descriptor)
+      drainPendingOutputCatalogPages(on: descriptor.transport, descriptor: descriptor)
     }
   }
 
@@ -789,9 +936,13 @@ struct MacPhonePowerReading: Equatable {
       pendingSamples.removeValue(forKey: descriptor.transport)
       pendingCatalogPages.removeValue(forKey: descriptor.transport)
       pendingCatalogUpdates.removeValue(forKey: descriptor.transport)
+      pendingOutputCatalogPages.removeValue(forKey: descriptor.transport)
+      pendingOutputCatalogUpdates.removeValue(forKey: descriptor.transport)
+      if link.protocolVersion >= 5 { refreshOutputCatalog(notify: false) }
       outputVolume.start()
       updateTicker()
       updatePowerObservation()
+      updateOutputObservation()
       if approvedFocusShortcut != nil, !isLoadingFocusShortcuts {
         Task { @MainActor [weak self] in await self?.refreshFocusShortcuts() }
       }
@@ -813,14 +964,25 @@ struct MacPhonePowerReading: Equatable {
       }
       return .handled
     }
+    if message.kind == 11, link.protocolVersion >= 5 {
+      let page = message.number(1)
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        _ = await self.sendOutputCatalogPage(page, link: link, descriptor: descriptor)
+      }
+      return .handled
+    }
     if message.kind == 6 {
       cancelCommands(on: descriptor.transport, subscription: message.string(0))
       link.subscription = ""
       links[descriptor.transport] = link
       pendingSamples.removeValue(forKey: descriptor.transport)
       pendingCatalogPages.removeValue(forKey: descriptor.transport)
+      pendingOutputCatalogPages.removeValue(forKey: descriptor.transport)
+      pendingOutputCatalogUpdates.removeValue(forKey: descriptor.transport)
       updateTicker()
       updatePowerObservation()
+      updateOutputObservation()
       return .handled
     }
     guard message.kind == 4 else { return .unrecognized }
@@ -877,11 +1039,25 @@ struct MacPhonePowerReading: Equatable {
         let shortcut = approvedFocusShortcut else { return 5 }
       let result = await MacDeskDeckShortcutRunner.run(identifier: shortcut.identifier)
       if result == 0 {
-        focusShortcutStatus = "Shortcut command finished. Focus state was not checked."
+        focusShortcutStatus = "Shortcut ran. Focus state was not checked."
       } else {
         focusShortcutStatus = "Shortcut failed or timed out. Check its actions and permissions, then retry."
       }
       return result
+    case 10:
+      guard link.protocolVersion >= 5, supportedActions & 32 != 0 else { return 2 }
+      refreshOutputCatalog(notify: true)
+      guard revision == outputCatalogRevision,
+        let route = outputRoutes.first(where: { $0.id == target }) else { return 1 }
+      let requested = DeskDeckOutputDevices.selectDefault(uid: route.uid)
+      guard requested == 0 else { return requested }
+      // Core Audio may apply a default-device change asynchronously; wait for its reported state before acknowledging it.
+      for _ in 0..<10 {
+        if DeskDeckOutputDevices.defaultUID() == route.uid { return 0 }
+        if Task.isCancelled { return 6 }
+        try? await Task.sleep(for: .milliseconds(100))
+      }
+      return DeskDeckOutputDevices.defaultUID() == route.uid ? 0 : 7
     default:
       return 2
     }
@@ -898,7 +1074,8 @@ struct MacPhonePowerReading: Equatable {
     let memory = DeskDeckMemory.read()
     let power = DeskDeckPower.read()
     let thermal = Int64(ProcessInfo.processInfo.thermalState.rawValue)
-    let actionMask = link.protocolVersion >= 4 ? supportedActions : supportedActions & 15
+    let actionMask = link.protocolVersion >= 5 ? supportedActions : link.protocolVersion >= 4 ? supportedActions & 31 : supportedActions & 15
+    let selectedOutputRoute = link.protocolVersion >= 5 ? DeskDeckOutputDevices.defaultUID().flatMap { uid in outputRoutes.first(where: { $0.uid == uid })?.id } ?? "" : ""
     let outputSupported = outputVolume.level != nil && !outputVolume.target.isEmpty && !outputVolume.revision.isEmpty
     var fields: [SessionCBOR]
     if link.protocolVersion == 1 {
@@ -924,6 +1101,7 @@ struct MacPhonePowerReading: Equatable {
     if link.protocolVersion >= 3 {
       fields += [.integer(memory.app), .integer(memory.cached), .integer(memory.free), .integer(memory.swap)]
     }
+    if link.protocolVersion >= 5 { fields.append(.text(selectedOutputRoute)) }
     let sample = MacDeskDeckMessage(version: link.protocolVersion, kind: 3, fields: fields)
     guard let bytes = try? sample.encode(), isCurrent(descriptor, subscription: subscription) else { return }
     pendingSamples[transport] = PendingSample(descriptor: descriptor, subscription: subscription, bytes: bytes,
@@ -1105,6 +1283,117 @@ struct MacPhonePowerReading: Equatable {
     }
   }
 
+  private func refreshOutputCatalog(notify: Bool) {
+    var ids: [String: String] = [:]
+    let available = DeskDeckOutputDevices.available().sorted {
+      let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+      return order == .orderedSame ? $0.uid < $1.uid : order == .orderedAscending
+    }
+    let defaultUID = DeskDeckOutputDevices.defaultUID()
+    var boundedRoutes = Array(available.prefix(32))
+    if let current = available.first(where: { $0.uid == defaultUID }),
+      !boundedRoutes.contains(where: { $0.uid == current.uid }) {
+      boundedRoutes[boundedRoutes.count - 1] = current
+    }
+    let next = boundedRoutes.sorted {
+      let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+      return order == .orderedSame ? $0.uid < $1.uid : order == .orderedAscending
+    }.map { native in
+      // Keep Core Audio UIDs local; only random catalog IDs cross the trusted DATA channel.
+      let id = outputRouteIDs[native.uid] ?? UUID().uuidString.lowercased()
+      ids[native.uid] = id
+      return MacDeskDeckOutputRoute(id: id, uid: native.uid, name: native.name)
+    }
+    guard next != outputRoutes else { return }
+    outputRoutes = next
+    outputRouteIDs = ids
+    outputCatalogRevision = UUID().uuidString.lowercased()
+    guard notify else { return }
+    for (transport, link) in links where link.protocolVersion >= 5 && !link.subscription.isEmpty {
+      pendingOutputCatalogPages.removeValue(forKey: transport)
+      pendingOutputCatalogUpdates[transport] = PendingOutputCatalogUpdate(
+        descriptor: link.channel.descriptor, subscription: link.subscription, revision: outputCatalogRevision)
+      drainPendingOutputCatalogUpdate(on: transport, descriptor: link.channel.descriptor)
+    }
+  }
+
+  private func updateOutputObservation() {
+    let needed = links.values.contains { $0.protocolVersion >= 5 && !$0.subscription.isEmpty }
+    if needed, outputObservation == nil {
+      outputObservation = DeskDeckOutputObservation { [weak self] in
+        Task { @MainActor [weak self] in
+          guard let self, self.outputObservation != nil,
+            self.links.values.contains(where: { $0.protocolVersion >= 5 && !$0.subscription.isEmpty }) else { return }
+          self.refreshOutputCatalog(notify: true)
+          for transport in Array(self.links.keys) {
+            guard let link = self.links[transport], link.protocolVersion >= 5, !link.subscription.isEmpty else { continue }
+            await self.publish(transport, descriptor: link.channel.descriptor)
+          }
+        }
+      }
+      refreshOutputCatalog(notify: false)
+    } else if !needed {
+      outputObservation = nil
+    }
+  }
+
+  @discardableResult private func sendOutputCatalogPage(_ page: Int64, link: Link, descriptor: ChannelDescriptor) async -> Bool {
+    guard page >= 0, link.protocolVersion >= 5, isCurrent(descriptor, subscription: link.subscription) else { return false }
+    if page == 0 { refreshOutputCatalog(notify: true) }
+    let pageCount = max(1, (outputRoutes.count + 7) / 8)
+    guard page < pageCount else { return false }
+    let entries: [SessionCBOR] = outputRoutes.dropFirst(Int(page) * 8).prefix(8).map {
+      SessionCBOR.array([.text($0.id), .text($0.name)])
+    }
+    let message = MacDeskDeckMessage(version: 5, kind: 12, fields: [
+      .text(link.subscription), .integer(page), .integer(Int64(pageCount)), .text(outputCatalogRevision), .array(entries),
+    ])
+    guard let bytes = try? message.encode() else { return false }
+    do { try await link.channel.sendData(bytes); return true }
+    catch {
+      let pending = PendingOutputCatalogPage(descriptor: descriptor, subscription: link.subscription, page: page)
+      if pendingOutputCatalogPages[descriptor.transport]?.contains(where: { $0.page == page && $0.subscription == link.subscription }) != true {
+        pendingOutputCatalogPages[descriptor.transport, default: []].append(pending)
+      }
+      return false
+    }
+  }
+
+  private func drainPendingOutputCatalogUpdate(on transport: String, descriptor: ChannelDescriptor) {
+    let drainKey = "\(transport):\(descriptor.instance)"
+    guard sendingOutputCatalogUpdates.insert(drainKey).inserted else { return }
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      defer { self.sendingOutputCatalogUpdates.remove(drainKey) }
+      while let update = self.pendingOutputCatalogUpdates[transport], update.descriptor == descriptor {
+        guard self.isCurrent(descriptor, subscription: update.subscription) else {
+          self.pendingOutputCatalogUpdates.removeValue(forKey: transport)
+          return
+        }
+        let message = MacDeskDeckMessage(version: 5, kind: 13, fields: [
+          .text(update.subscription), .text(update.revision),
+        ])
+        do { try await self.links[transport]?.channel.sendData(message.encode()) }
+        catch { return }
+        if self.pendingOutputCatalogUpdates[transport] == update {
+          self.pendingOutputCatalogUpdates.removeValue(forKey: transport)
+        }
+      }
+    }
+  }
+
+  private func drainPendingOutputCatalogPages(on transport: String, descriptor: ChannelDescriptor) {
+    guard let pending = pendingOutputCatalogPages[transport]?.first, pending.descriptor == descriptor,
+      let link = links[transport], link.subscription == pending.subscription else { return }
+    pendingOutputCatalogPages[transport]?.removeFirst()
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      if await self.sendOutputCatalogPage(pending.page, link: link, descriptor: descriptor) {
+        self.drainPendingOutputCatalogPages(on: transport, descriptor: descriptor)
+      }
+    }
+  }
+
   private func ensureDefaultApps(for peer: DeviceIdentity) {
     guard defaults.data(forKey: catalogKey(peer)) == nil else { return }
     let defaultsToOffer = ["com.apple.Terminal", "org.blenderfoundation.blender"].compactMap { bundleID -> DeskDeckApprovedApp? in
@@ -1265,8 +1554,11 @@ struct MacPhonePowerReading: Equatable {
             self.links[transport] = link
             self.pendingSamples.removeValue(forKey: transport)
             self.pendingCatalogPages.removeValue(forKey: transport)
+            self.pendingOutputCatalogPages.removeValue(forKey: transport)
+            self.pendingOutputCatalogUpdates.removeValue(forKey: transport)
           }
           self.updatePowerObservation()
+          self.updateOutputObservation()
           if !self.links.values.contains(where: { !$0.subscription.isEmpty }) {
             self.updateTicker()
             break
@@ -1299,6 +1591,7 @@ struct MacPhonePowerReading: Equatable {
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") != nil { mask |= 4 }
     if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screenshot.launcher") != nil { mask |= 8 }
     if focusShortcutConfigured { mask |= 16 }
+    if DeskDeckOutputDevices.canSelectDefault { mask |= 32 }
     return mask
   }
 

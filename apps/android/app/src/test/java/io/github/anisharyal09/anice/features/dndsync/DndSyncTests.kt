@@ -19,22 +19,12 @@ class DndSyncTests {
             assertThrows(Exception::class.java) { DndSyncMessage.decode(hex(invalid.getJSONObject(i).getString("bytesHex"))) }
         }
     }
-    @Test fun remoteEchoDuplicateAndOppositeUserChangeAreDistinct() {
-        val guard = DndEchoGuard()
-        guard.baseline(false)
-        guard.applying(true, 100)
-        assertFalse(guard.changed(false, 101)) // A redundant callback must not consume the expected effect.
-        assertFalse(guard.changed(true, 102))
-        assertFalse(guard.changed(true, 103))
-        assertTrue(guard.changed(false, 104))
-        guard.applying(true, 105)
-        assertTrue(guard.changed(true, 15_106)) // Expired markers cannot swallow later user changes.
-    }
-    @Test fun unexpectedNativeTransitionClearsTheExpectedRemoteEffect() {
-        val guard = DndEchoGuard()
-        guard.baseline(true)
-        guard.applying(true, 0)
-        assertTrue(guard.changed(false, 1))
-        assertTrue(guard.changed(true, 2))
+    @Test fun duplicateSystemBroadcastsDoNotBecomeNewChanges() {
+        val deduplicator = DndChangeDeduplicator()
+        deduplicator.baseline(false)
+        assertFalse(deduplicator.changed(false))
+        assertTrue(deduplicator.changed(true))
+        assertFalse(deduplicator.changed(true))
+        assertTrue(deduplicator.changed(false))
     }
 }

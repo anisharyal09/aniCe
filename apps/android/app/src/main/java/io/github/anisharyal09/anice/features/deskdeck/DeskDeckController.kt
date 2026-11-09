@@ -49,6 +49,7 @@ data class DeskDeckSnapshot(
     val memoryCached: Long = -1,
     val memoryFree: Long = -1,
     val memorySwap: Long = -1,
+    val outputRouteID: String = "",
 )
 
 class DeskDeckController(
@@ -80,6 +81,12 @@ class DeskDeckController(
         val requestedCatalogPages = mutableSetOf<Long>()
         val pendingCatalogRetries = mutableSetOf<Long>()
         var shortcuts = emptyList<DeskDeckShortcut>()
+        var outputCatalogRevision = ""
+        var outputCatalogPageCount = 0L
+        val outputCatalogPages = mutableMapOf<Long, List<DeskDeckOutputRoute>>()
+        val requestedOutputCatalogPages = mutableSetOf<Long>()
+        val pendingOutputCatalogRetries = mutableSetOf<Long>()
+        var outputRoutes = emptyList<DeskDeckOutputRoute>()
     }
 
     private val links = mutableMapOf<String, Link>()
@@ -123,6 +130,9 @@ class DeskDeckController(
     var brightnessPreview by mutableStateOf<Long?>(null); private set
     var history by mutableStateOf<List<DeskDeckHistoryPoint>>(emptyList()); private set
     var shortcuts by mutableStateOf<List<DeskDeckShortcut>>(emptyList()); private set
+    var outputRoutes by mutableStateOf<List<DeskDeckOutputRoute>>(emptyList()); private set
+    var outputCatalogLoaded by mutableStateOf(false); private set
+    var outputCatalogLoading by mutableStateOf(false); private set
     var pinnedShortcutIDs by mutableStateOf<Set<String>>(emptySet()); private set
 
     init { restoreCachedSnapshot() }
@@ -166,6 +176,27 @@ class DeskDeckController(
         val link = activeLink() ?: return false
         return command(8, target = id, revision = link.catalogRevision)
     }
+    fun selectOutputRoute(id: String): Boolean {
+        val link = activeLink() ?: return false
+        return command(10, target = id, revision = link.outputCatalogRevision)
+    }
+    fun refreshOutputRoutes(): Boolean {
+        val link = activeLink() ?: return false
+        if (link.protocolVersion < 5L || link.subscription.isEmpty()) return false
+        link.outputCatalogRevision = ""
+        link.outputCatalogPageCount = 0
+        link.outputCatalogPages.clear()
+        link.requestedOutputCatalogPages.clear()
+        link.pendingOutputCatalogRetries.clear()
+        link.outputRoutes = emptyList()
+        outputRoutes = emptyList()
+        outputCatalogLoaded = false
+        outputCatalogLoading = true
+        requestOutputCatalogPage(link, 0)
+        return true
+    }
+    fun selectedOutputName(sample: DeskDeckSnapshot?): String =
+        outputRoutes.firstOrNull { it.id == sample?.outputRouteID }?.name ?: "Unavailable"
     val readingsAreFresh: Boolean
         get() = connectionState == DeskDeckConnectionState.LIVE &&
             snapshot?.let { clock() - it.receivedAtMillis < STALE_AFTER_MILLIS } == true
@@ -187,6 +218,9 @@ class DeskDeckController(
             snapshotReceivedAtWallMillis = 0L
             history = emptyList()
             shortcuts = emptyList()
+            outputRoutes = emptyList()
+            outputCatalogLoaded = false
+            outputCatalogLoading = false
             pinnedShortcutIDs = emptySet()
             snapshotPeerFingerprint = target.fingerprint
             actionFeedbackValues = emptyMap()
@@ -221,6 +255,9 @@ class DeskDeckController(
         clearCachedSnapshot()
         history = emptyList()
         shortcuts = emptyList()
+        outputRoutes = emptyList()
+        outputCatalogLoaded = false
+        outputCatalogLoading = false
         pinnedShortcutIDs = emptySet()
         actionFeedbackValues = emptyMap()
         shortcutFeedbackValues = emptyMap()
@@ -255,14 +292,17 @@ class DeskDeckController(
         val link = activeLink() ?: return false
         val current = snapshot ?: return false
         if (!readingsAreFresh || link.subscription.isEmpty() || current.sequence == 0L) return false
-        if (action !in 1L..9L || action == 7L || action == 8L && link.protocolVersion < 2L ||
+        if (action !in 1L..10L || action == 7L || action == 8L && link.protocolVersion < 2L ||
             action == 9L && link.protocolVersion < 4L ||
+            action == 10L && link.protocolVersion < 5L ||
             action in 3L..4L && link.protocolVersion != 1L) return false
-        if ((action == 1L || action in 3L..5L || action == 9L) && value != -1L) return false
+        if ((action == 1L || action in 3L..5L || action == 9L || action == 10L) && value != -1L) return false
         if (action == 2L && (!current.microphoneSupported || current.microphoneTarget != target || current.microphoneRevision != revision)) return false
         if (action == 2L && value !in 0L..1L) return false
         if (action == 6L && (!current.outputSupported || current.outputTarget != target || current.outputRevision != revision || value !in 0L..100L)) return false
         if (action == 8L && (value != -1L || revision != link.catalogRevision || link.shortcuts.none { it.id == target })) return false
+        if (action == 10L && (current.protocolVersion < 5L || current.actions and 32L == 0L ||
+                revision != link.outputCatalogRevision || link.outputRoutes.none { it.id == target })) return false
         if ((action in setOf(1L, 3L, 4L, 5L) || action == 9L) &&
             (current.actions and actionBit(action)) == 0L) return false
 
@@ -368,6 +408,16 @@ class DeskDeckController(
             for (page in 0 until pageCount) {
                 if (page !in link.catalogPages && page !in link.requestedCatalogPages) requestCatalogPage(link, page)
             }
+            link.pendingOutputCatalogRetries.toList().forEach { page ->
+                link.pendingOutputCatalogRetries.remove(page)
+                requestOutputCatalogPage(link, page)
+            }
+            if (link.protocolVersion >= 5L) {
+                val outputPageCount = link.outputCatalogPageCount.coerceAtLeast(1L)
+                for (page in 0 until outputPageCount) {
+                    if (page !in link.outputCatalogPages && page !in link.requestedOutputCatalogPages) requestOutputCatalogPage(link, page)
+                }
+            }
         }
     }
 
@@ -400,7 +450,7 @@ class DeskDeckController(
                 message.microphoneMuted, message.brightnessSupported, message.brightnessTarget, message.brightnessRevision,
                 message.brightnessLevel, message.memoryActive, message.memoryWired, message.memoryCompressed,
                 message.powerState, message.powerPercent, message.powerSource, clock(), message.version,
-                message.memoryApp, message.memoryCached, message.memoryFree, message.memorySwap)
+                message.memoryApp, message.memoryCached, message.memoryFree, message.memorySwap, message.outputRouteID)
             snapshotReceivedAtWallMillis = System.currentTimeMillis()
             persistCachedSnapshot()
             history = (history + DeskDeckHistoryPoint(clock(), message.cpuPercent.takeIf { it >= 0 }?.toInt(),
@@ -444,6 +494,40 @@ class DeskDeckController(
                 pinnedShortcutIDs = emptySet()
             }
             requestCatalogPage(link, 0)
+            return DataHandling.HANDLED
+        }
+        if (message.kind == 12L && link.protocolVersion >= 5L) {
+            if (!link.requestedOutputCatalogPages.contains(message.page) || message.pageCount !in 1L..4L) return DataHandling.DISCARDED
+            if (link.outputCatalogRevision.isNotEmpty() && link.outputCatalogRevision != message.catalogRevision) return DataHandling.DISCARDED
+            link.outputCatalogRevision = message.catalogRevision
+            link.outputCatalogPageCount = message.pageCount
+            link.outputCatalogPages[message.page] = message.outputRoutes
+            link.requestedOutputCatalogPages.remove(message.page)
+            link.pendingOutputCatalogRetries.remove(message.page)
+            val nextPage = (0L until link.outputCatalogPageCount).firstOrNull { it !in link.outputCatalogPages }
+            if (nextPage != null) requestOutputCatalogPage(link, nextPage)
+            link.outputRoutes = link.outputCatalogPages.toSortedMap().values.flatten().take(32)
+            val loaded = link.outputCatalogPages.size.toLong() == link.outputCatalogPageCount
+            if (activeTransport == descriptor.transport) {
+                outputRoutes = link.outputRoutes
+                outputCatalogLoaded = loaded
+                outputCatalogLoading = !loaded
+            }
+            return DataHandling.HANDLED
+        }
+        if (message.kind == 13L && link.protocolVersion >= 5L) {
+            link.outputCatalogRevision = message.catalogRevision
+            link.outputCatalogPageCount = 0
+            link.outputCatalogPages.clear()
+            link.requestedOutputCatalogPages.clear()
+            link.pendingOutputCatalogRetries.clear()
+            link.outputRoutes = emptyList()
+            if (activeTransport == descriptor.transport) {
+                outputRoutes = emptyList()
+                outputCatalogLoaded = false
+                outputCatalogLoading = true
+            }
+            requestOutputCatalogPage(link, 0)
             return DataHandling.HANDLED
         }
         if (message.kind == 5L) {
@@ -529,6 +613,21 @@ class DeskDeckController(
                 pinnedShortcutIDs = emptySet()
             }
         }
+        if (version >= 5L) {
+            link.outputCatalogRevision = ""
+            link.outputCatalogPageCount = 0
+            link.outputCatalogPages.clear()
+            link.requestedOutputCatalogPages.clear()
+            link.pendingOutputCatalogRetries.clear()
+            link.outputRoutes = emptyList()
+            outputRoutes = emptyList()
+            outputCatalogLoaded = false
+            outputCatalogLoading = true
+        } else {
+            outputRoutes = emptyList()
+            outputCatalogLoaded = false
+            outputCatalogLoading = false
+        }
         val request = DeskDeckMessage(kind = 2, version = version, subscription = subscription).encode()
         openingJob?.cancel()
         openingTimeoutJob?.cancel()
@@ -553,6 +652,7 @@ class DeskDeckController(
                 timing("event=subscription_submitted duration_ms=${clock() - submissionStarted}")
                 if (version >= 2L) {
                     requestCatalogPage(link, 0)
+                    if (version >= 5L) requestOutputCatalogPage(link, 0)
                     renewalJob?.cancel()
                     renewalJob = scope.launch {
                         while (isCurrent(link.channel.descriptor, subscription, ownedGeneration)) {
@@ -799,6 +899,30 @@ class DeskDeckController(
         }
     }
 
+    private fun requestOutputCatalogPage(link: Link, page: Long) {
+        val subscription = link.subscription
+        if (link.protocolVersion < 5L || subscription.isEmpty() || page !in 0L..3L ||
+            page in link.requestedOutputCatalogPages || page in link.outputCatalogPages) return
+        val descriptor = link.channel.descriptor
+        val ownedGeneration = generation
+        link.requestedOutputCatalogPages += page
+        scope.launch {
+            if (!isCurrent(descriptor, subscription, ownedGeneration)) {
+                if (link.subscription == subscription) link.requestedOutputCatalogPages.remove(page)
+                return@launch
+            }
+            try {
+                link.channel.sendData(DeskDeckMessage(kind = 11, version = link.protocolVersion,
+                    subscription = subscription, page = page).encode())
+            } catch (_: Exception) {
+                if (isCurrent(descriptor, subscription, ownedGeneration)) {
+                    link.requestedOutputCatalogPages.remove(page)
+                    link.pendingOutputCatalogRetries += page
+                }
+            }
+        }
+    }
+
     private fun applyShortcutLayout(link: Link, fingerprint: String) {
         val order = orderedShortcutIDs(fingerprint)
         val byId = link.shortcuts.associateBy { it.id }
@@ -836,6 +960,7 @@ class DeskDeckController(
         4L -> "Terminal launched."
         5L -> "Screenshot controls opened on Mac."
         6L -> "Mac output volume updated."
+        10L -> "Mac default output changed."
         8L -> "App launch requested."
         9L -> "Mac Shortcut finished. Check Focus to confirm the change."
         else -> "Done"
