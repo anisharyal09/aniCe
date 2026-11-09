@@ -27,7 +27,7 @@ class NotificationWireTests {
             assertArrayEquals(bytes, message.encode())
             if (row.has("kind")) kinds += row.getLong("kind")
         }
-        assertEquals((1L..8L).toSet(), kinds)
+        assertEquals((1L..9L).toSet(), kinds)
         for (index in 0 until invalid.length()) {
             val row = invalid.getJSONObject(index)
             val name = row.getString("name")
@@ -111,6 +111,23 @@ class NotificationWireTests {
         ))
     }
 
+    @Test fun simCallRingsAggregateAcrossActiveSubscriptions() {
+        assertTrue(hasRingingPhoneCall(listOf(0, 1, 2), 1))
+        assertFalse(hasRingingPhoneCall(listOf(0, 2), 1))
+        assertFalse(hasRingingPhoneCall(emptyList(), 1))
+    }
+
+    @Test fun callerTextSkipsDialerAndGenericLabelsButKeepsExposedName() {
+        assertEquals("Supri", visibleCallerLabel("Phone", listOf("Phone", "Incoming call", "Supri")))
+        assertNull(visibleCallerLabel("Phone", listOf("Phone", "Incoming call", "Unknown caller")))
+    }
+
+    @Test fun missedCallNotificationsAreNotFoldedIntoTheLiveCallAlert() {
+        assertTrue(isMissedCallNotification("missed_call", "Phone", "Supri"))
+        assertTrue(isMissedCallNotification("call", "Missed call", "Supri"))
+        assertFalse(isMissedCallNotification("call", "Incoming call", "Supri"))
+    }
+
     @Test fun incomingCallRecognitionRequiresKnownCallStyleAndIncomingType() {
         assertTrue(isIncomingCallStyle("android.app.Notification\$CallStyle", 1))
         assertTrue(isIncomingCallStyle("androidx.core.app.NotificationCompat\$CallStyle", 1))
@@ -118,6 +135,49 @@ class NotificationWireTests {
         assertFalse(isIncomingCallStyle("android.app.Notification\$CallStyle", null))
         assertFalse(isIncomingCallStyle("com.example.CustomCallNotification", 1))
         assertFalse(isIncomingCallStyle(null, 1))
+    }
+
+    @Test fun incomingCallRecognitionCoversActionableSystemCallsWithoutMirroringMissedCalls() {
+        assertTrue(isIncomingCallNotification(null, 1, null, false, emptyList()))
+        assertTrue(isIncomingCallNotification(
+            null, null, "call", false, listOf("Answer", "Decline"),
+        ))
+        assertTrue(isIncomingCallNotification(
+            null, 1, null, true, emptyList(),
+        ))
+        assertTrue(isIncomingCallNotification(
+            "android.app.Notification\$CallStyle", 1, null, false, emptyList(),
+        ))
+        assertTrue(isIncomingCallNotification(
+            "android.app.Notification\$CallStyle", null, null, true, emptyList(),
+        ))
+        assertTrue(isIncomingCallNotification(
+            "android.app.Notification\$CallStyle", null, null, false, listOf("Answer", "Decline"),
+        ))
+        assertFalse(isIncomingCallNotification(
+            "android.app.Notification\$CallStyle", null, null, false, emptyList(),
+        ))
+        assertTrue(isIncomingCallNotification(
+            null, null, "call", true, emptyList(),
+        ))
+        assertFalse(isIncomingCallNotification(
+            null, null, "call", false, listOf("Call back", "Message"),
+        ))
+        assertFalse(isIncomingCallNotification(
+            null, null, "call", false, listOf("Mute", "Hang up"),
+        ))
+        assertFalse(isIncomingCallNotification(
+            null, null, "msg", true, listOf("Answer", "Decline"),
+        ))
+        assertFalse(isIncomingCallNotification(
+            "android.app.Notification\$CallStyle", 2, "call", true, listOf("Answer", "Decline"),
+        ))
+    }
+
+    @Test fun sourceAppIconsTravelOverLanOnly() {
+        assertTrue(sendsSourceIcons("lan"))
+        assertFalse(sendsSourceIcons("ble"))
+        assertFalse(sendsSourceIcons("unknown"))
     }
 
     @Test fun utf8TruncationDoesNotSplitCodePoints() {

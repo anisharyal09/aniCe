@@ -4,6 +4,8 @@
 import hashlib
 import json
 from pathlib import Path
+import struct
+import zlib
 
 
 def encode(value):
@@ -17,6 +19,8 @@ def encode(value):
     if isinstance(value, str):
         data = value.encode("utf8")
         return head(3, len(data)) + data
+    if isinstance(value, bytes):
+        return head(2, len(value)) + value
     if isinstance(value, list):
         return head(4, len(value)) + b"".join(map(encode, value))
     raise TypeError(value)
@@ -28,6 +32,13 @@ def generate():
     token = "11234567-89ab-4cde-8fab-0123456789ab"
     request = "21234567-89ab-4cde-8fab-0123456789ab"
     notification_id = hashlib.sha256(b"notification-1").hexdigest()
+
+    def png_icon(width=1, height=1):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+        header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+        pixel = zlib.compress(b"".join(b"\x00" + bytes(width * 4) for _ in range(height)))
+        return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", pixel) + chunk(b"IEND", b"")
 
     def message(kind, fields, version=1, message_tag=tag):
         return [message_tag, version, kind, fields]
@@ -51,12 +62,16 @@ def generate():
         row("reply-action", message(6, [request, notification_id, epoch, 1, 0, "Hi"])),
         *[row(f"action-result-{result}", message(7, [request, result])) for result in range(4)],
         row("dismiss", message(8, [request, notification_id, epoch, 1])),
+        row("source-app-icon", message(9, ["com.example.chat", png_icon()])),
     ]
 
     invalid = [
         row("wrong-tag", message(1, [8], message_tag="aniCe other")),
         row("wrong-version", message(1, [8], version=2)),
-        row("unknown-kind", message(9, [])),
+        row("unknown-kind", message(10, [])),
+        row("source-icon-bad-signature", message(9, ["com.example.chat", b"not-a-png-image"])),
+        row("source-icon-over-limit", message(9, ["com.example.chat", b"\x89PNG\r\n\x1a\n" + b"x" * 3000])),
+        row("source-icon-over-dimension-limit", message(9, ["com.example.chat", png_icon(width=129)])),
         row("bad-id", message(3, ["x" * 64, epoch, 1])),
         row("action-index", message(6, [request, notification_id, epoch, 1, 8, ""])),
         row("snapshot-watermark", message(4, [token, epoch, -1])),

@@ -125,6 +125,10 @@ fun SettingsScreen(
                     }
                 }
 
+                PreferenceSection("Do Not Disturb") {
+                    io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(app.dndSync)
+                }
+
                 PreferenceSection("Clipboard") {
                     io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
                 }
@@ -135,7 +139,7 @@ fun SettingsScreen(
                     }
                 }
 
-                PreferenceSection("Notifications") {
+                PreferenceSection("Notification sync") {
                     io.github.anisharyal09.anice.features.notifications.NotificationSettings(app.notificationMirror)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     val selectedCount = app.notificationMirror.preferences.selectedPackages().size

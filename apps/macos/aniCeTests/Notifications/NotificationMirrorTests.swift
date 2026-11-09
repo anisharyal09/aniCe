@@ -104,7 +104,7 @@ final class NotificationMirrorTests: XCTestCase {
       XCTAssertEqual(try message.encode(), bytes)
       if let kind = row["kind"] as? Int64 { kinds.insert(kind) }
     }
-    XCTAssertEqual(kinds, Set<Int64>(1...8))
+    XCTAssertEqual(kinds, Set<Int64>(1...9))
     for row in invalid {
       let bytes = try SessionFixtures().b(row, "bytes")
       let name = row["name"] as? String ?? ""
@@ -148,6 +148,77 @@ final class NotificationMirrorTests: XCTestCase {
     _ = await model.handle(try wire(4, [.text(nextToken), .text(epoch), .integer(3)]), on: channel.descriptor)
     _ = await model.handle(try wire(5, [.text(nextToken)]), on: channel.descriptor)
     XCTAssertTrue(center.removedDelivered.flatMap { $0 }.contains(center.added[1].identifier))
+  }
+
+  func testSourceAppIconIsAttachedToMirroredNotification() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(transport: "lan", peer: try androidPeer())
+    try await ready(model, channel)
+
+    let root = try SessionFixtures().root("notification-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let iconRow = try XCTUnwrap(valid.first { ($0["kind"] as? Int) == 9 })
+    let iconMessage = try XCTUnwrap(NotificationWireMessage.decode(SessionFixtures().b(iconRow, "bytes")))
+    _ = await model.handle(try wire(9, [.text("com.example.chat"), .bytes(iconMessage.bytes(1))]), on: channel.descriptor)
+    try await incoming(model, channel: channel, id: id, sequence: 1, token: "", title: "With source icon")
+
+    await waitFor("notification with source icon") { center.added.count == 1 }
+    let request = try XCTUnwrap(center.added.first)
+    XCTAssertEqual(request.content.attachments.map(\.identifier), ["source-app-icon"])
+  }
+
+  func testSourceAppIconsAreRejectedOverBluetooth() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    try await ready(model, channel)
+
+    let root = try SessionFixtures().root("notification-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let iconRow = try XCTUnwrap(valid.first { ($0["kind"] as? Int) == 9 })
+    let iconMessage = try XCTUnwrap(NotificationWireMessage.decode(SessionFixtures().b(iconRow, "bytes")))
+    let result = await model.handle(try wire(9, [.text("com.example.chat"), .bytes(iconMessage.bytes(1))]),
+      on: channel.descriptor)
+    if case .discarded = result {} else { XCTFail("source icons must be LAN-only") }
+  }
+
+  func testLanIconEnrichesBleNotificationWithoutAlertingAgain() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let peer = try androidPeer()
+    let bluetooth = MockSecuredChannel(transport: "ble", peer: peer)
+    let localNetwork = MockSecuredChannel(transport: "lan", peer: peer)
+    try await ready(model, bluetooth)
+    try await ready(model, localNetwork)
+    try await incoming(model, channel: bluetooth, id: id, sequence: 1, token: "", title: "Live call")
+    await waitFor("Bluetooth notification") { center.added.count == 1 }
+    XCTAssertEqual(center.added[0].content.interruptionLevel, .active)
+
+    let bluetoothSnapshot = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(bluetoothSnapshot), .text(epoch), .integer(1)]),
+      on: bluetooth.descriptor)
+    try await incoming(model, channel: bluetooth, id: id, sequence: 1, token: bluetoothSnapshot, title: "Live call")
+    _ = await model.handle(try wire(5, [.text(bluetoothSnapshot)]), on: bluetooth.descriptor)
+
+    let root = try SessionFixtures().root("notification-vectors")
+    let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
+    let iconRow = try XCTUnwrap(valid.first { ($0["kind"] as? Int) == 9 })
+    let iconMessage = try XCTUnwrap(NotificationWireMessage.decode(SessionFixtures().b(iconRow, "bytes")))
+    let lanSnapshot = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(lanSnapshot), .text(epoch), .integer(1)]),
+      on: localNetwork.descriptor)
+    _ = await model.handle(try wire(9, [.text("com.example.chat"), .bytes(iconMessage.bytes(1))]),
+      on: localNetwork.descriptor)
+    try await incoming(model, channel: localNetwork, id: id, sequence: 1, token: lanSnapshot, title: "Live call")
+    _ = await model.handle(try wire(5, [.text(lanSnapshot)]), on: localNetwork.descriptor)
+
+    await waitFor("silently enriched notification") { center.added.count == 2 }
+    XCTAssertEqual(center.added[1].content.interruptionLevel, .passive)
+    XCTAssertEqual(center.added[1].content.attachments.map(\.identifier), ["source-app-icon"])
   }
 
   func testSnapshotFinishPreservesLiveUpdatesAboveItsHighWaterSequence() async throws {
@@ -254,6 +325,7 @@ final class NotificationMirrorTests: XCTestCase {
     let notifier = MacNotificationMirrorNotifier(center: center)
     let value = MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: 1,
       packageName: "com.example.phone", appName: "Phone", title: "Missed call", body: "",
+      sourceIcon: nil,
       actions: [.init(index: 0, title: "Reminder", replyPlaceholder: ""),
         .init(index: 1, title: "Call back", replyPlaceholder: "")])
     var invoked: [Int] = []
@@ -347,6 +419,7 @@ final class NotificationMirrorTests: XCTestCase {
     let deniedNotifier = MacNotificationMirrorNotifier(center: deniedCenter)
     let deniedValue = MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: 1,
       packageName: "com.example.chat", appName: "Chat", title: "Secret", body: "private",
+      sourceIcon: nil,
       actions: [.init(index: 0, title: "Reply", replyPlaceholder: "Message")])
     await deniedNotifier.post(peerKey: peerKey, value: deniedValue)
     let deniedRequest = try XCTUnwrap(deniedCenter.added.first)

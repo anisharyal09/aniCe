@@ -74,12 +74,15 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [Secure Sessions & Record Channel](protocol/session/README.md)
 - [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
 - [Now Playing DATA](protocol/media/README.md)
+- [Mac Desk Deck](protocol/desk-deck/README.md)
 - [Local File Transfer Protocol](protocol/transfer/README.md)
+- [Android Notification Mirroring Protocol](protocol/notifications/README.md)
 
 ### Operational Guides & Implementation Roadmaps
 - [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
 - [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
 - [Local File Transfer Feature Guide](docs/features/FILE_TRANSFER.md)
+- [Notification Mirroring Feature Guide](docs/features/NOTIFICATION_MIRRORING.md)
 - [Authenticated Record Performance & Cost Model](docs/PERFORMANCE.md)
 - [Design Guide & Palette](docs/design/DESIGN.md)
 - [Project Roadmap & Verification Gates](docs/ROADMAP.md)
@@ -112,7 +115,7 @@ Application-scoped SMS owners register with FeatureDispatch and share authentica
 
 ## Notification Mirroring
 
-Android's NotificationListenerService sends selected active alerts through FeatureDispatch over authenticated BLE/LAN DATA. Package selection is explicit and excludes aniCe and the current default SMS app. The Mac owns native notification presentation and revision-bound taps, text replies, action dispatch and user dismissal. Snapshots reconcile active notifications across transport changes; the Mac drops alerts when the final peer link retires. aniCe keeps no notification history or offline queue. See [feature behavior](docs/features/NOTIFICATION_MIRRORING.md) and [Notification Mirroring v1](protocol/notifications/README.md).
+Android's NotificationListenerService sends selected active alerts over authenticated BLE/LAN DATA, with bounded source-app icons carried only over LAN. A default-on call preference mirrors incoming CallStyle and supported system call notifications when their Answer/Decline actions are exposed. For SIM calls whose dialer does not publish a live actionable notification, an opt-in phone-state listener synthesizes an incoming-call alert after the user grants Android's `READ_PHONE_STATE` and `ANSWER_PHONE_CALLS` runtime permissions; revision-bound Mac actions call Telecom only while a SIM call is ringing and leave audio on the phone. A separate protected phone-state broadcast supplies optional caller identity: `READ_CALL_LOG` exposes the incoming number and `READ_CONTACTS` resolves it locally. Lookup runs off the main thread, remains in memory and cannot change call state. Package selection is explicit and excludes aniCe and the current default SMS app. The Mac owns native notification presentation and revision-bound taps, text replies, action dispatch and user dismissal. Snapshots reconcile active notifications across transport changes; live alerts use active interruption while reconnect snapshots stay passive, subject to macOS notification settings. The Mac drops alerts when the final peer link retires. aniCe keeps no notification history or offline queue. See [feature behavior](docs/features/NOTIFICATION_MIRRORING.md) and [Notification Mirroring v1](protocol/notifications/README.md).
 
 ## Mac Keyboard & Trackpad
 
@@ -124,8 +127,16 @@ Android's **Control Mac** feature lives in Features and uses the phone's normal 
 
 Mac Event Posting setup and receiver status live under Mac Settings → Permissions. After permission is available, the Mac accepts an explicit Start from the authenticated phone without a Mac-side Features page or receiver toggle. See the [feature guide](docs/features/PHONE_TO_MAC.md) and [input v1 contract](protocol/phone-input/README.md).
 
+## Mac Desk Deck
+
+Android's Mac Desk Deck subscribes to one trusted Mac while the feature panel is foreground. The Mac samples CPU, memory, OS thermal pressure and supported controls over the existing authenticated channel; v2 adds memory breakdown, Mac power state, renewable subscription leases and paged, per-phone approved app shortcuts while v1 remains supported. V3 refines memory readings, v4 adds a Mac-local DND Shortcut, and v5 adds a revisioned audio-output catalog. Commands are scoped to the subscription and current hardware target. A separate Device Power v1 capability carries phone battery state to existing Mac device-status surfaces only while an authenticated channel is already open; it creates no connection lease. Temperature readings and display brightness are not advertised, and microphone mute is capability-gated to devices with a writable CoreAudio mute property. See the [feature guide](docs/features/MAC_DESK_DECK.md), [Desk Deck v1–v5 contract](protocol/desk-deck/README.md) and [Device Power contract](protocol/device-power/README.md).
+
 ## Clipboard
 
 Application-scoped native clipboard owners register with FeatureDispatch and share authenticated LAN/BLE channels. Clipboard v1 bounds text to 64 KiB, applies complete items to native clipboards, and shares in-memory deduplication/revision floors across transports. Automatic consent is credential-scoped and off by default; Android reads require actual input focus, while Mac observation respects native pasteboard access behavior. A separate device-local, default-off history owner persists eligible items with a local 20/50/100-item capacity through bounded atomic file operations off the presentation thread. Its saved collection preference is independent of its retained entries; pausing collection, restarting, identity reset and trust removal preserve history. Android text-selection and text Share-sheet actions pass literal text or URLs directly into manual delivery without clipboard reads. A system-bound Quick Settings tile opens a focused manual-read panel without activating observers. One process-local successful activity retains eligible text for five minutes, independently of saved history, with a bounded preview and full-item local Copy on Android Home and the Mac overview/companion. See [feature behavior](docs/features/CLIPBOARD.md) and the [wire contract](protocol/clipboard/README.md).
 
 Current LAN revision 3 uses [record profile 4](protocol/lan/TRANSFER_PROFILE.md) and capability 4 for 512-KiB chunks, with eight-chunk maximum credit. Larger chunks increase per-record buffering and control head-of-line delay; sustained fallback retains its existing 128-KiB cap.
+
+## Do Not Disturb sync
+
+Application-scoped DND owners register with FeatureDispatch independently of Desk Deck. Android sends local interruption-filter changes over an existing secured channel; Mac applies them through locally selected On and Off Shortcuts. Mac-to-phone DND sync is not supported. aniCe does not poll or replay disconnected changes. See [feature behavior](docs/features/DND_SYNC.md) and [DND sync v1](protocol/dnd-sync/README.md).

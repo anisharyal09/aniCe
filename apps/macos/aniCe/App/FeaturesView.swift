@@ -21,8 +21,6 @@ struct FeaturesView: View {
     GeometryReader { geometry in
     if !favouritesOnly, navigation.featurePanel == .messages {
       VStack(alignment: .leading, spacing: 16) {
-        Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
-          .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
         Text(AppFeature.messages.title).font(.title2.weight(.semibold))
         SmsView(model: sms, peers: peers, preferences: smsPreferences)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -33,8 +31,6 @@ struct FeaturesView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
         if !favouritesOnly, let panel = navigation.featurePanel {
-          Button { navigation.closeFeature() } label: { Label(navigation.featureOrigin.rawValue, systemImage: "chevron.backward") }
-            .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
           Text(panel.title).font(.title2.weight(.semibold))
           if panel == .keyboardTrackpad {
             Text("Keyboard & Trackpad for your Android phone")

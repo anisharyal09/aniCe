@@ -20,6 +20,10 @@ struct NotificationWireMessage: Equatable, Sendable {
     guard case .integer(let value) = fields[index] else { throw NotificationWireError.malformed }
     return value
   }
+  func bytes(_ index: Int) throws -> Data {
+    guard case .bytes(let value) = fields[index] else { throw NotificationWireError.malformed }
+    return value
+  }
   func actionRows(_ index: Int) throws -> [(Int, String, String)] {
     guard case .array(let rows) = fields[index] else { throw NotificationWireError.malformed }
     return try rows.map { row in
@@ -80,8 +84,24 @@ struct NotificationWireMessage: Equatable, Sendable {
       try check(fields.count == 2); try uuid(0); try check((0...3).contains(try number(1)))
     case 8:
       try check(fields.count == 4); try uuid(0); try identifier(1); try uuid(2); try sequence(3)
+    case 9:
+      try check(fields.count == 2); try string(0, 255, allowEmpty: false)
+      let icon = try bytes(1)
+      try check(Self.validSourceIcon(icon))
     default: throw NotificationWireError.malformed
     }
+  }
+  static let maxSourceIconBytes = 3000
+  private static let pngSignature = Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  private static let pngHeaderLength = Data([0, 0, 0, 13])
+  private static let pngHeaderType = Data("IHDR".utf8)
+  private static func validSourceIcon(_ data: Data) -> Bool {
+    guard (33...maxSourceIconBytes).contains(data.count), data.prefix(8).elementsEqual(pngSignature),
+          data.subdata(in: 8..<12) == pngHeaderLength, data.subdata(in: 12..<16) == pngHeaderType else { return false }
+    func dimension(_ offset: Int) -> UInt32 {
+      data[offset..<offset + 4].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+    }
+    return (1...128).contains(dimension(16)) && (1...128).contains(dimension(20))
   }
   static func decode(_ bytes: Data) throws -> Self? {
     guard bytes.count <= 4000 else { return nil }

@@ -58,7 +58,7 @@ APPLESCRIPT
         fail "Quit the remaining aniCe copies with Command-Q, then retry. Branch builds share permissions and device state."
     fi
     python3 "$ROOT/scripts/build-pairing-native.py" macos
-    # Each checkout/branch owns its build output; launch the exact selected copy.
+    # Use a unique percent-free cache path for each branch.
     derived="$ROOT/build/dev-mac/$checkout-$branch_slug"
     echo "Building Mac branch '$branch' from $ROOT"
     xcodebuild -project "$ROOT/apps/macos/aniCe.xcodeproj" -scheme aniCe \

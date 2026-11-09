@@ -6,6 +6,20 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master. Preserve launcher foreground size and monochrome artwork; use a near-black graphite glow with a subtle edge highlight for the Night launcher background and a softly warm Light background.
 
+- Document Mac Desk Deck and DND setup in the README feature guides.
+
+- Add **Allow caller ID** for incoming-number access and local contact lookup; discard caller details when ringing ends.
+
+- Fold parallel dialer alerts into the active SIM ringing alert while preserving missed-call notifications.
+
+- Clarify call permission status in Settings, retain accessible permission-button touch targets and ignore call callbacks after tracking stops.
+
+- Detect incoming SIM ringing through Android telephony when the dialer omits a live call alert, and provide revision-bound Answer/Decline through Telecom after the user grants phone-state and call-control permissions.
+
+- Detect incoming CallStyle alerts from Answer/Decline controls even when Samsung omits call-type metadata, while continuing to skip outgoing calls.
+
+- Detect persistent system call notifications that expose incoming Answer/Decline controls, and send source icons over LAN only.
+
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
 - Keep notification app choices in the Settings page's existing scroll container to prevent a Compose nested-scroll crash.
@@ -16,18 +30,29 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Add a separate opt-in for incoming CallStyle alerts, pairing Android's answer/decline PendingIntents and prioritizing them in the Mac alert.
 
-- Match the Notifications card's inner spacing to Connection, keep one **Select apps** row and hide the compact permission action after access is granted.
+- Match the **Notification sync** section's inner spacing to Connection, keep one **Select apps** row, and use compact permission buttons that disappear after access is granted.
 
 - Add case-insensitive app search, compact picker switches and use the standard checkbox-style row for incoming-call mirroring.
 
 - Show launcher icons alongside notification app choices.
 
+- Send bounded Android launcher icons with mirrored notifications so Mac can display them alongside alert content.
+
 - Opt in to Android's background-activity launch rules when forwarding a user-invoked notification PendingIntent from Mac.
+
+- Explain that Desk Deck can mute only a controllable Mac default input and that its DND action does not sync to the phone.
+- Keep DND sync phone-to-Mac only and remove the Mac-originated phone DND control path.
+- Label the Desk Deck DND macro **DND mode** and use a keyboard icon for Control Mac.
+- Keep Desk Deck inside the regular app bar and bottom navigation like other feature panels.
 
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed
 
+- Show v3 app, cache, free and swap readings; keep volume and actions near usage meters and move details into dialogs.
+
+- Keep Desk Deck shell responsive while subscriptions start; fence timeouts, acknowledgements and slider previews to the live channel generation, stop retry loops after one resubscription, and mark old readings stale before disabling actions.
+- Keep a first sample live when it cancels an in-flight subscription send instead of treating that cancellation as a failed connection.
 - Add actionable SMS permission recovery in Settings and retain it across rotation; use compact permission buttons in both Settings and Messages.
 - Align File transfer padding, keep large-text guidance visible, and handle older background timeout preferences without crashing Settings.
 
@@ -52,6 +77,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Add Notification Access setup and an empty-by-default app picker; exclude aniCe and the current default SMS app from notification mirroring.
 
+- Add a revisioned Mac output-device picker beside Desk Deck's output-volume control.
+- Add Do Not Disturb control for Desk Deck v4, with explicit status checks after uncertain Shortcut results.
+- Add a responsive Android Mac Desk Deck with CPU and memory history, memory breakdown, Mac and phone power state, trusted quick actions, Mac-approved app shortcuts, output-volume control, a locally cached stale snapshot and a charging-only keep-awake option.
+- Add bounded v2 subscription renewal and approved-app catalog requests while retaining v1 Mac support; store the selected Mac and per-Mac shortcut pin/order locally.
+
 - Send files to a connected Mac from Android’s Share sheet.
 
 - Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
@@ -68,6 +98,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Preserve the highest supported Desk Deck action mask while older compatibility capabilities arrive.
 - Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
 
 - Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.

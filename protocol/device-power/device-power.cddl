@@ -1,0 +1,6 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Android power-state publication over an already-secured DATA channel.
+device-power = ["aniCe device power", 1, kind: 1..2, fields: capability / report]
+capability = [1]
+report = [state: 0..5, percent: -1..100, source: 0..5]
+; State 0/1 requires percent -1; state 2..5 may also have an unknown percent (-1).

@@ -1,0 +1,18 @@
+{
+  "valid": [
+    {
+      "name": "charging-percent",
+      "bytesHex": "8472616e6943652064657669636520706f77657201028303184c02"
+    },
+    {
+      "name": "battery-percent-unknown",
+      "bytesHex": "8472616e6943652064657669636520706f776572010283022001"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "state-out-of-range",
+      "bytesHex": "8472616e6943652064657669636520706f77657201028306185002"
+    }
+  ]
+}

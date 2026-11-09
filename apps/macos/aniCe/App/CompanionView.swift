@@ -14,6 +14,7 @@ struct CompanionView: View {
   let clipboard: MacClipboardModel
   let keyboardTrackpad: MacKeyboardTrackpadModel
   @Bindable var floatingKeyboard: FloatingKeyboardController
+  @Bindable var phonePower: MacPhonePowerModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
   @Environment(\.colorScheme) private var colorScheme
@@ -123,7 +124,7 @@ struct CompanionView: View {
         Button("Review pairing") { navigation.open(.devices, route: .pairing, present: openMain) }
         Button("Stop pairing") { pairing.cancel() }
       } else if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
-        MacSessionView(peers: pairing.peers, model: session, lan: lan,
+        MacSessionView(peers: pairing.peers, model: session, lan: lan, phonePower: phonePower,
           details: .constant(false), diagnostics: .constant(false), compact: true, keyboardTrackpad: keyboardTrackpad,
           onManageDevices: { navigation.open(.devices, present: openMain) },
           onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })
