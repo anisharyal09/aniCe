@@ -12,7 +12,7 @@ Feature panels demonstrate layout and interaction, not capability availability o
 
 ## Brand mark
 
-Use the transparent path-only ringless silver interlocking ribbon ([final SVG](../../branding/anice-mark-final.svg)) on app brand surfaces. Full-color artwork carries the metallic lighting; the Mac menu-bar template uses shaded alpha to preserve the folded form at 21.5 pt. The Mac app icon uses a full rounded warm-light tile; its appearance-aware Dock tile is inset around the same-sized mark so it sits with neighboring Dock icons. Android's adaptive icon keeps its foreground size and uses a softly toned Light background with a darker charcoal Dark background. Keep the mark's proportions and use the platform's native feature symbols for controls.
+Use the transparent path-only ringless silver interlocking ribbon ([final SVG](../../assets/logo/anice-mark-final.svg)) on app brand surfaces. Full-color artwork carries the metallic lighting; the Mac menu-bar template uses shaded alpha to preserve the folded form at 21.5 pt. The Mac app icon uses a full rounded warm-light tile; its appearance-aware Dock tile is inset around the same-sized mark so it sits with neighboring Dock icons, with a near-black graphite tile, subtle inner glow and fine top/bottom rim highlights in Dark appearance. Android's adaptive icon keeps its foreground size and uses a softly toned Light background with the same near-black graphite glow and a fine adaptive edge highlight in Dark appearance. Keep the mark's proportions and use the platform's native feature symbols for controls.
 
 ## Reference fidelity
 

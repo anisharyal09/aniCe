@@ -4,7 +4,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
-- Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master; preserve launcher foreground size and darken the night tile slightly.
+- Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master. Preserve launcher foreground size and monochrome artwork; use a near-black graphite glow with a subtle edge highlight for the Night launcher background and a softly warm Light background.
 
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 

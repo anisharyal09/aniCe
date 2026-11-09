@@ -8,7 +8,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
-- Replace the embedded-raster logo wrapper with a transparent, path-only SVG master; inset the Mac Dock tile around the unchanged mark and darken Android's night launcher tile slightly.
+- Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
 
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 

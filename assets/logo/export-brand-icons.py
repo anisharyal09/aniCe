@@ -7,12 +7,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-BRAND = ROOT / "branding"
-FINAL = BRAND / "anice-mark-final.svg"
+ROOT = Path(__file__).resolve().parents[2]
+LOGO_ASSETS = ROOT / "assets" / "logo"
+FINAL = LOGO_ASSETS / "anice-mark-final.svg"
 MAC = ROOT / "apps/macos/aniCe/Assets.xcassets"
 ANDROID = ROOT / "apps/android/app/src/main/res/drawable-nodpi"
-REVIEW = BRAND / "review"
+ANDROID_DARK_BACKGROUND = ANDROID / "ic_launcher_background_dark.png"
+REVIEW = LOGO_ASSETS / "review"
 
 
 def magick(*args):
@@ -72,9 +73,28 @@ def export():
         android_mask = temp / "android-launcher-mask.png"
         magick("-size", "1024x1024", "xc:black", "-fill", "white",
                "-draw", "roundrectangle 0,0 1023,1023 160,160", "-alpha", "off", android_mask)
+        android_preview_rim = temp / "android-dark-preview-rim.png"
+        magick("-size", "1024x1024", "xc:none",
+               "-fill", "none", "-stroke", "rgba(245,247,248,0.22)",
+               "-strokewidth", "10",
+               "-draw", "roundrectangle 9,9 1014,1014 151,151",
+               android_preview_rim)
         mac_mark = temp / "mac-mark-standard-size.png"
         magick(master, "-resize", "78%", "-gravity", "center", "-background", "none",
                "-extent", "1024x1024", mac_mark)
+        dark_dock_gradient = temp / "mac-dock-dark-gradient.png"
+        magick("-size", "1024x1024", "radial-gradient:#2C3133-#171A1C",
+               dark_dock_gradient)
+        # Keep the Dark tile near-black; a faint rim and top/bottom glints define its edge.
+        dark_dock_rim = temp / "mac-dock-dark-edge-highlight.png"
+        magick("-size", "1024x1024", "xc:none",
+               "-fill", "none", "-stroke", "rgba(220,224,228,0.12)",
+               "-strokewidth", "8",
+               "-draw", "roundrectangle 76,76 947,947 136,136",
+               "-stroke", "none", "-fill", "rgba(245,247,248,0.22)",
+               "-draw", "roundrectangle 220,76 803,84 4,4 roundrectangle 220,939 803,947 4,4",
+               dark_dock_rim)
+        magick(dark_dock_gradient, "-depth", "8", ANDROID_DARK_BACKGROUND)
         for appearance, color in (("light", "#F1F0EC"), ("dark", "#454C4F")):
             tile = temp / f"mac-app-icon-{appearance}.png"
             app_icon = temp / f"mac-app-icon-{appearance}-rounded.png"
@@ -90,33 +110,59 @@ def export():
 
             dock_background = temp / f"mac-dock-background-{appearance}.png"
             dock_icon = temp / f"mac-dock-icon-{appearance}.png"
-            magick("-size", "1024x1024", f"xc:{color}", dock_mask,
-                   "-compose", "CopyOpacity", "-composite", dock_background)
+            if appearance == "dark":
+                magick(dark_dock_gradient, dock_mask,
+                       "-compose", "CopyOpacity", "-composite", dock_background)
+                highlighted_background = temp / "mac-dock-dark-highlighted-background.png"
+                magick(dock_background, dark_dock_rim,
+                       "-compose", "Over", "-composite", highlighted_background)
+                dock_background = highlighted_background
+            else:
+                magick("-size", "1024x1024", f"xc:{color}", dock_mask,
+                       "-compose", "CopyOpacity", "-composite", dock_background)
             magick(dock_background, mac_mark, "-compose", "Over", "-composite", dock_icon)
             dock_set = MAC / "DockIcon.imageset"
             name = f"DockIcon-{appearance}.png"
-            magick(dock_icon, dock_set / name)
+            if appearance == "dark":
+                magick(dock_icon, "-depth", "8", dock_set / name)
+            else:
+                magick(dock_icon, dock_set / name)
 
             # Gray surround reveals the transparent padding around each rounded tile.
             magick("-size", "1224x1224", "xc:#858B92", app_icon,
                    "-gravity", "center", "-compose", "Over", "-composite",
                    REVIEW / f"mac-app-icon-{appearance}-review.png")
-            magick("-size", "1224x1224", "xc:#858B92", dock_icon,
-                   "-gravity", "center", "-compose", "Over", "-composite",
-                   REVIEW / f"mac-dock-icon-{appearance}-review.png")
+            dock_review = REVIEW / f"mac-dock-icon-{appearance}-review.png"
+            if appearance == "dark":
+                magick("-size", "1224x1224", "xc:#858B92", dock_icon,
+                       "-gravity", "center", "-compose", "Over", "-composite",
+                       "-depth", "8", dock_review)
+            else:
+                magick("-size", "1224x1224", "xc:#858B92", dock_icon,
+                       "-gravity", "center", "-compose", "Over", "-composite",
+                       dock_review)
 
         # Android color artwork, adaptive foreground, monochrome layer and notification glyph.
         magick(master, "-resize", "256x256", ANDROID / "ic_brand_mark.png")
         foreground = ANDROID / "ic_launcher_foreground.png"
         magick(master, "-resize", "700x700", "-gravity", "center", "-background", "none",
                "-extent", "1024x1024", foreground)
-        for appearance, color in (("light", "#F1F0EC"), ("dark", "#3D4345")):
+        for appearance in ("light", "dark"):
             adaptive = temp / f"android-icon-{appearance}-adaptive.png"
             rounded = temp / f"android-icon-{appearance}-rounded.png"
-            magick("-size", "1024x1024", f"xc:{color}", foreground,
-                   "-compose", "Over", "-composite", adaptive)
+            if appearance == "dark":
+                magick(ANDROID_DARK_BACKGROUND, foreground,
+                       "-compose", "Over", "-composite", adaptive)
+            else:
+                magick("-size", "1024x1024", "xc:#F1F0EC", foreground,
+                       "-compose", "Over", "-composite", adaptive)
             # Preview with the same restrained mask; Android itself chooses the device mask.
             magick(adaptive, android_mask, "-compose", "CopyOpacity", "-composite", rounded)
+            if appearance == "dark":
+                rounded_with_rim = temp / "android-icon-dark-with-rim.png"
+                magick(rounded, android_preview_rim,
+                       "-compose", "Over", "-composite", rounded_with_rim)
+                rounded = rounded_with_rim
             magick("-size", "1224x1224", "xc:#858B92", rounded,
                    "-gravity", "center", "-compose", "Over", "-composite",
                    REVIEW / f"android-app-icon-{appearance}-review.png")

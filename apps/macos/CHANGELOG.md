@@ -4,7 +4,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
-- Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar artwork, and inset the appearance-aware Dock tile while preserving the silver mark's size.
+- Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar artwork, and inset the appearance-aware Dock tile while preserving the silver mark's size. Give the Dark Dock tile a near-black graphite glow with fine rim and top/bottom highlights.
 
 - Keep distinct actions on a mirrored Android notification available independently while rejecting duplicate callbacks for each action.
 
