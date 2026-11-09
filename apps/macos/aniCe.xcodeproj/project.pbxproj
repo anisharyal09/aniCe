@@ -123,6 +123,11 @@
 		B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */; };
 		B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */; };
 		B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */; };
+		B40100000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift */; };
+		B40100000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift */; };
+		B40100000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift */; };
+		B40100000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json */; };
+		AC0100000000000000000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000011 /* Assets.xcassets */; };
 		D10000000000000000000001 /* MacKeyboardTrackpadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002; };
 		D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000004; };
 		D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002; };
@@ -278,6 +283,11 @@
 		B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sms/sms-vectors.json"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Notifications/NotificationWire.swift"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Notifications/MacNotificationMirror.swift"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Notifications/NotificationMirrorTests.swift"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/notifications/notification-vectors.json"; sourceTree = SOURCE_ROOT; };
+		AC0100000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = aniCe/Assets.xcassets; sourceTree = SOURCE_ROOT; };
 		D10000000000000000000002 /* MacKeyboardTrackpadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/MacKeyboardTrackpadModel.swift"; sourceTree = SOURCE_ROOT; };
 		D10000000000000000000004 /* MacKeyboardTrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/MacKeyboardTrackpadView.swift"; sourceTree = SOURCE_ROOT; };
 		D20000000000000000000002 /* FloatingKeyboardWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/FloatingKeyboardWindow.swift"; sourceTree = SOURCE_ROOT; };
@@ -333,6 +343,11 @@
 		00000000000000000000000B = {
 			isa = PBXGroup;
 			children = (
+				AC0100000000000000000011 /* Assets.xcassets */,
+				B40200000000000000000001,
+				B40200000000000000000002,
+				B40200000000000000000003,
+				B40200000000000000000004,
 				76FCD82333FFE32A403584EC,
 				7886F9180923AA3BA021362F,
 				D7F2A1210EAF55185006B8AA,
@@ -673,6 +688,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C7F01D6B909E13E9D6AF2780,
+				AC0100000000000000000010 /* Assets.xcassets in Resources */,
 				AB0000000000000000000012 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -699,6 +715,7 @@
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 				B10100000000000000000003 /* ../../protocol/test-vectors/transfer/transfer-vectors.json in Resources */,
 				B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */,
+				B40100000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json in Resources */,
 				D1000000000000000000000E /* hid-vectors.json in Resources */,
 				D30000000000000000000005 /* phone-input-vectors.json in Resources */,
 			);
@@ -803,6 +820,8 @@
 				B30100000000000000000002 /* aniCe/Features/Sms/MacSmsModel.swift in Sources */,
 				B30100000000000000000003 /* aniCe/Features/Sms/MacSmsNotifier.swift in Sources */,
 				B30100000000000000000004 /* aniCe/Features/Sms/SmsView.swift in Sources */,
+				B40100000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift in Sources */,
+				B40100000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift in Sources */,
 				D10000000000000000000001 /* MacKeyboardTrackpadModel.swift in Sources */,
 				D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */,
 				D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */,
@@ -841,6 +860,7 @@
 				B30100000000000000000005 /* aniCeTests/Sms/SmsWireTests.swift in Sources */,
 				B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */,
 				B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */,
+				B40100000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift in Sources */,
 				D1000000000000000000000C /* KeyboardTrackpadTests.swift in Sources */,
 				D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */,
 				D30000000000000000000003 /* PhoneInputTests.swift in Sources */,
@@ -977,6 +997,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = aniCe/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -1004,6 +1025,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = aniCe/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";

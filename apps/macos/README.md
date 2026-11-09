@@ -6,6 +6,10 @@ Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, n
 
 Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
+## Mac Desk Deck and Do Not Disturb
+
+Approve app shortcuts separately for each trusted phone in **Settings → Desk Deck**. Android’s **Features → Mac Desk Deck** shows Mac telemetry and available controls, including output volume and audio-device selection. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
@@ -18,6 +22,7 @@ Mac advertises only the public aniCe service UUID and generic name for 120 secon
 
 ```text
 aniCe/
+  Assets.xcassets/             aniCe development app icon, based on Android launcher artwork
   App/                         Assembly, navigation, window and companion
   Features/                    Identity, discovery, pairing and session presentation
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
@@ -26,6 +31,7 @@ aniCe/
     PhoneInput/                Secured BLE receiver, native input adapter and receiver controls
     NowPlaying/                Playback model, native bridge, session link, codecs and views
       Adapter/                 Attributed helper sources, Perl loader and packaging
+    Notifications/             Mirrored notification model, source icon attachment, action notifier and wire codec
     Sms/                       SMS relay model, wire codec, notifier and views
     Transfer/                  Transfer model, destination publisher, rolling rate, views and codecs
   Infrastructure/
@@ -44,6 +50,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   KeyboardTrackpad/            Input ownership, focus, gestures and native HID protocol tests
   PhoneInput/                  Phone-to-Mac receiver, event translation and wire codec tests
   NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+  Notifications/               Notification wire, snapshot, native presentation and action suites
   Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites
 IdentityInterchange/           Native test-only signature endpoint
@@ -73,7 +80,7 @@ The script quits aniCe, builds Debug, verifies the signature/team and launches t
 
 - App: `build/dev-mac/<checkout>-<branch>/Build/Products/Debug/aniCe.app` under the checkout root.
 - Display name: `aniCe (<branch>)`; the window header stays aniCe.
-- Branch slashes are escaped as `%2F` in folder names, so `feat/input` and `feat-input` stay distinct. Detached checkouts use their commit ID.
+- Branch slashes are escaped as `_2F`, underscores as `_5F`, and percent signs as `_25` in folder names. This keeps branch copies distinct without percent escapes that break Xcode's SDK stat-cache paths. Detached checkouts use their commit ID.
 - Worktrees have separate build folders but share app identity, permissions and device state. Run one copy at a time; Mac hosted tests also use aniCe, so let those finish before running the launcher. Each worktree needs its own local signing file or exported environment settings.
 - Closing the window leaves the companion running. **Command-Q** quits.
 
@@ -149,6 +156,12 @@ Features → Find Device opens peer request actions and local notification setup
 ## Messages (SMS relay)
 
 Features → Messages relays incoming SMS to notifications with an inline reply, reads the phone's conversations and history on demand, searches matching messages in bounded pages without indexing them, and replies on the phone's default SIM unless another active subscription is chosen while the panel is open. The thread list paints 15 cards first, keeps filling from the cursor and shows **Load older conversations** whenever a page is available and none is loading; **Return** or **Command-Return** sends (Shift-Return keeps a newline), and the reply paints as a **Sending** row until the phone confirms it. A conversation that mixes two SIMs labels each row with the subscription it arrived on. Settings → Messages collapses each phone's **Notifications** and **Play sound** switches (both on by default) and the **Show message text in notifications** preview (off by default) behind its clickable name label, and the panel's gear expands the same switches under its row; a failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for paging limits, search behavior and the notification controls.
+
+## Notification Mirroring
+
+Live Android SIM calls appear as native Mac alerts with **Answer** and **Decline** after phone permission setup; answering keeps audio on the phone. Calling-app controls depend on their exposed notification actions. Stale call actions are rejected and ending or answering the call clears its live alert.
+
+The Mac presents selected Android alerts as native notifications with source-app icons available over LAN, system actions, replies and synchronized dismissals. macOS owns the fixed sender-app icon, so notifications identify aniCe there; the Android launcher icon is attached alongside the alert content. The Mac app currently uses the same simple development mark as Android until final brand artwork is defined. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
 
 ## Clipboard
 

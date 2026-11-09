@@ -146,6 +146,8 @@ class AniCeApplication : Application() {
         ).also { it.onLanRequired = { lanSessionController.requestAutomaticConnection() } }
     }
     val sms get() = smsOwner.value
+    private val notificationMirrorOwner = lazy { io.github.anisharyal09.anice.features.notifications.NotificationMirrorController(this) }
+    val notificationMirror get() = notificationMirrorOwner.value
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
     private val dndSyncOwner = lazy { io.github.anisharyal09.anice.features.dndsync.DndSyncController(this) }
@@ -176,6 +178,7 @@ class AniCeApplication : Application() {
             it.register(findDevice)
             it.register(clipboard)
             it.register(sms)
+            it.register(notificationMirror)
             it.register(phoneInput)
             it.register(dndSync)
             it.register(devicePower)
@@ -197,6 +200,7 @@ class AniCeApplication : Application() {
         if (smsOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post { sms.invalidate() }
         }
+        if (notificationMirrorOwner.isInitialized()) notificationMirror.securityInvalidated()
         if (clipboardOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 clipboard.invalidate()

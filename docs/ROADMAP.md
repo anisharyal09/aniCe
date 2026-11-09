@@ -8,7 +8,7 @@
 | **Independent Local Network (LAN)** | Anonymous DNS-SD discovery, bounded TCP framing, shared peer reservation | Implemented |
 | **Connected-idle performance optimization** | Event-driven monotonic deadline scheduling, zero idle storage reads | Implemented |
 | **Local File Transfer** | Approved batch streaming, bounded checkpoints and restart recovery | Implemented; coordinated LAN renewal deferred |
-| **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard and Android→Mac SMS relay implemented. | In progress |
+| **Application continuity** | Now Playing, File Transfer, Find Device, text Clipboard, Android→Mac SMS relay and selected-app notification mirroring with configurable incoming call controls implemented. | In progress |
 
 Physical feature/UI exercises, transfer measurements, ringing/lifecycle checks and automated protocol/interchange suites provide complementary coverage. Current release: v0.3.0, build 3. New work is tracked under Unreleased.
 
@@ -43,6 +43,8 @@ Maintenance waits for absolute monotonic deadlines and transport events. Idle wa
 - **Find Device:** Native peer alerts, Android alarm playback with Stop and sixty-second expiry, Mac notifications and explicit notification setup. See [Find Device](features/FIND_DEVICE.md).
 
 - **Messages (SMS relay):** Incoming SMS becomes a Mac notification with an inline reply, and the Mac reads the phone's conversations and history on demand over the secured session without storing content. See [Messages](features/SMS.md) and the [SMS Contract](../protocol/sms/README.md).
+
+- **Notification mirroring:** Android users grant Notification Access and choose apps in a dedicated, selected-first app screen; active alerts and bounded LAN-only source icons use the authenticated session to reach native Mac notifications with source taps, available actions, replies and synchronized dismissals. A default-on call option mirrors CallStyle alerts and adds a SIM telephony-state fallback for dialers that omit live call notifications; remote Answer/Decline requires explicit Android phone-state and call-control grants. aniCe excludes the default SMS app and keeps no notification history. Real-device call and permission behavior remains part of acceptance. See [Notification mirroring](features/NOTIFICATION_MIRRORING.md) and the [Notification Mirroring Contract](../protocol/notifications/README.md).
 
 - **Native UI:** Dedicated feature panels, Favourites and About, compact phone Home, direct transport controls in Devices, accessible disclosure labels and responsive Mac activity panels.
 

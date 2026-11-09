@@ -23,6 +23,7 @@ Contracts define required behavior.
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
+| **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 | **Phone-to-Mac input** | 1 | In progress | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
 
@@ -139,6 +140,9 @@ protocol/
 ├── phone-input/
 │   ├── README.md                  # Phone-to-Mac input v1 contract and lifecycle rules
 │   └── phone-input.cddl           # Phone-to-Mac input message shapes
+├── notifications/
+│   ├── README.md                  # Android-to-Mac alert mirroring behavior and lifecycle
+│   └── notifications.cddl         # Notification message shapes
 ├── schemas/
 │   └── identity.schema.json       # Canonical JSON Schema for public identity
 ├── session/
@@ -164,6 +168,9 @@ protocol/
     ├── phone-input/
     │   ├── phone-input-vectors.json # Positive & negative Phone-to-Mac input fixtures
     │   └── generate.py              # Independent Phone-to-Mac input fixture generator
+    ├── notifications/
+    │   ├── notification-vectors.json # Positive & negative notification mirroring fixtures
+    │   └── generate_notification_vectors.py # Independent CBOR fixture generator
     ├── session/
     │   ├── session-vectors.json  # Complete method-0/suite-5 traces and invalid handshakes
     │   ├── record-vectors.json   # AES-GCM records, nonce/counter boundaries and tampering cases
@@ -205,6 +212,10 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## SMS Relay
 
 [SMS relay v3](sms/README.md) defines provider thread, paged history and search reads, live `SMS_RECEIVED` events with capability gating and `messageResult` acknowledgement, an optional SIM listing for per-reply subscription choice, and Mac-composed replies reassembled by Android before SMS submission. [CDDL](sms/sms.cddl) and [independent fixtures](test-vectors/sms/sms-vectors.json) specify canonical DATA messages; the thread list and history/search pages are ordered with byte-wise lexical id ties, each message carries the subscription it arrived on, and live/provider copies merge by content key. Version 3 requires both applications to update together.
+
+## Notification Mirroring
+
+[Notification Mirroring v1](notifications/README.md) carries selected Android app alerts over authenticated DATA to native Mac notifications, with revision- and peer-bound source taps, available actions, simple text replies and synchronized dismissal. Android excludes aniCe and the current default SMS app; snapshot reconciliation keeps BLE/LAN handoffs idempotent. [CDDL](notifications/notifications.cddl) and [independent fixtures](test-vectors/notifications/notification-vectors.json) define the bounded canonical records.
 
 ## Do Not Disturb sync
 

@@ -4,6 +4,14 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+- Document synthetic SIM call records and revision-bound Telecom actions; the v1 wire shape is unchanged.
+
+- Document the LAN-only delivery rule for additive source-icon records and supported incoming call detection.
+
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+
+- Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
+
 - Limit DND state events to phone-to-Mac over existing secured DATA; keep the v1 envelope unchanged.
 - Specify that Desk Deck DND action success means the selected Shortcut command finished, not that Focus state was read back.
 
@@ -18,6 +26,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 - Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
 
 ### Added
+
+- Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
 
 - Define Desk Deck v5 output selection, with a bounded revisioned catalog and opaque device IDs.
 - Define a Desk Deck v4 action for a locally selected Do Not Disturb Shortcut while preserving v1–v3 message shapes.

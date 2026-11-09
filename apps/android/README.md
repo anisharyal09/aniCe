@@ -6,6 +6,10 @@ Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, n
 
 Automatic nearby recovery uses an OS-bound companion lease and one device setting. The shared API 31+ resource enables notification-free ownership in Debug and Release. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
 
+## Mac Desk Deck and Do Not Disturb
+
+Open **Features → Mac Desk Deck** to view a trusted Mac’s live system readings and use its available controls, including output volume and audio-device selection. Approve app shortcuts on the Mac in **Settings → Desk Deck**. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
@@ -25,6 +29,7 @@ app/
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
         finddevice/                 Peer ring request actions, sound player and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
+        notifications/              Notification listener, SIM call state/control, app selection and wire relay
         phoneinput/                 Remote Mac keyboard, text reconciliation and trackpad controls
         sms/                        SMS store, event assembler, sender, controller, receiver and panel
         transfer/                   Transfer controller, destination naming, storage worker, rate metrics, UI and service
@@ -125,6 +130,12 @@ Features → Find Device opens peer request actions and local notification setup
 ## Messages (SMS relay)
 
 Features → Messages relays incoming SMS to the Mac, serves its reads of conversations, history and search matches, and sends Mac replies over the secured session. RECEIVE_SMS covers live relay, READ_SMS conversations/history/search, and SEND_SMS replies; the permission block names each missing capability separately, permanent denial links to App info for Android 13+ restricted settings, and the block clears on the first full grant — the panel then confirms **SMS access granted** while Settings keeps one line naming what is still needed. READ_PHONE_STATE is optional: the composer reads the phone's subscriptions once per conversation and asks for it only when that read would offer a second active subscription, and the phone default, history and search all work without it. The conversation list loads 15 threads first and continues from the returned cursor; rows keep the subscription their message arrived on, a conversation that mixes two SIMs labels each such row with a SIM chip and groups messages under day headers, and the composer's keyboard send key shares the Send button's path so the chosen subscription always applies. SMS permissions remain Play-restricted in this sideloaded build. See [Messages](../../docs/features/SMS.md) for provider fallbacks, paging limits and permission handling.
+
+## Notification Mirroring
+
+Settings → Notification sync provides Notification Access setup, the default-on **Mirror incoming calls** checkbox and a separate **Select apps** screen with search. **Allow phone access** requests the additional permissions for live SIM call relay: Android detects ringing on active SIM subscriptions and accepts revision-bound Mac Answer/Decline requests through Telecom, keeping audio on the phone. Calling-app actions use their exposed notification controls. Alerts use authenticated BLE or LAN; source icons travel over LAN only. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
+
+**Allow caller ID** in Notification sync requests incoming-number and Contacts access to show a saved name or phone number. Lookup stays on the phone and creates no call history. See the feature guide for Android permission restrictions.
 
 ## Clipboard
 

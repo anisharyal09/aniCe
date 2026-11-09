@@ -4,6 +4,14 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Document Mac Desk Deck and DND setup in the README feature guides.
+
+- Keep live mirrored alerts active, quietly enrich Bluetooth-first notifications with icons when LAN becomes available, and reject icon records over BLE.
+
+- Keep distinct actions on a mirrored Android notification available independently while rejecting duplicate callbacks for each action.
+
+- Attach the Android source app icon to mirrored Mac alerts and add aniCe's development mark as the macOS app/sender icon.
+
 - Keep phone-to-Mac DND sync, remove Mac-to-phone automation, and tuck one-time Shortcut setup under a disclosure.
 - Label the Desk Deck DND toggle as Mac-only with no phone sync.
 - Simplify trusted-phone app approvals and remove internal bundle identifiers from the Desk Deck settings list.
@@ -12,6 +20,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Shorten Mac input permission and connection guidance.
 
 ### Fixed
+
+- Use percent-free branch build folders so the developer launcher avoids ClangStatCache failures on branch names containing slashes.
+
+- Cancel notification presentation still pending at disconnect, keep reconnect snapshots silent, preserve concurrently registered action categories and reject delayed copies of removed alerts across BLE/LAN.
+
 
 - Sample anonymous app memory separately from cache, handle native CPU counter rollover and open the native Screenshot controls.
 
@@ -35,7 +48,15 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
 
+
+- Confine pointer movement and scrolling to the visible pad, releasing sideways drags that end outside.
+
+- Preserve fractional pointer and wheel movement, and prevent delayed focus-loss or connection completion callbacks from disarming newly started input.
+
 ### Added
+
+- Present selected Android app notifications as native Mac alerts with source taps, available actions, text replies and synchronized dismissal.
+- Show opted-in Android incoming-call alerts with Answer and Decline actions in a predictable order.
 
 - Advertise available Core Audio outputs to Desk Deck and switch the Mac's default output after revalidating the selected device.
 - Add Settings → Desk Deck with a native app picker and independent shortcut approval for each trusted phone; add phone battery and charging status beside connected-device state in Overview and the menu-bar companion.
@@ -88,12 +109,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Replace feature launcher tiles with compact rows; group Settings with section shortcuts and center About content at wide sizes.
 - Reorganize playback, file transfer, Messages and Clipboard, including split conversations, a bottom SMS composer and separate Share/History tabs.
 - Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
-
-### Fixed
-
-- Confine pointer movement and scrolling to the visible pad, releasing sideways drags that end outside.
-
-- Preserve fractional pointer and wheel movement, and prevent delayed focus-loss or connection completion callbacks from disarming newly started input.
 
 ## [v0.3.0]
 
