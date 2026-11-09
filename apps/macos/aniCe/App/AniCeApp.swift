@@ -209,7 +209,7 @@ struct AniCeApp: App {
     hotkeyManager = hotkey
     delegate.onTerminate = {
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
-      floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
+      floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
       PasteTrayController.shared.hide()
     }
     delegate.installCompanion(

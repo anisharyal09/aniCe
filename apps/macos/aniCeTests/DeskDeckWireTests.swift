@@ -7,6 +7,38 @@ import Darwin
 
 @MainActor
 final class DeskDeckWireTests: XCTestCase {
+  func testFullBatteryStillReportsBatteryPowerWhenUnplugged() {
+    XCTAssertEqual(DeskDeckPower.chargeState(charging: false, percent: 100, external: false), 2)
+    XCTAssertEqual(DeskDeckPower.chargeState(charging: false, percent: 100, external: true), 4)
+    XCTAssertEqual(DeskDeckPower.chargeState(charging: false, percent: 80, external: true), 5)
+    XCTAssertEqual(DeskDeckPower.chargeState(charging: true, percent: 80, external: true), 3)
+  }
+
+  func testMacPowerPublishesCapabilityAndCurrentReportOnSecuredChannel() async throws {
+    let model = MacPhonePowerModel()
+    let channel = MockSecuredChannel()
+    defer { model.retired(channel.descriptor); model.shutdown() }
+    model.available(channel)
+    for _ in 0..<50 where channel.sentData.count < 2 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(channel.sentData.count, 2)
+    XCTAssertEqual(try MacDevicePowerMessage.decode(channel.sentData[0])?.kind, 1)
+    XCTAssertEqual(try MacDevicePowerMessage.decode(channel.sentData[1])?.kind, 2)
+    let capability = try MacDevicePowerMessage(kind: 1, state: 0, percent: -1, source: 0).encode()
+    let report = try MacDevicePowerMessage(kind: 2, state: 3, percent: 80, source: 2).encode()
+    if case .discarded = await model.handle(report, on: channel.descriptor) {} else { XCTFail("Report accepted before capability") }
+    if case .handled = await model.handle(capability, on: channel.descriptor) {} else { XCTFail("Capability rejected") }
+    if case .handled = await model.handle(report, on: channel.descriptor) {} else { XCTFail("Report rejected") }
+    XCTAssertEqual(model.summary(for: channel.descriptor.peer), "Charging · 80% · AC power")
+    model.retired(channel.descriptor)
+    XCTAssertEqual(model.summary(for: channel.descriptor.peer), "Phone power unavailable")
+    let sent = channel.sentData.count
+    model.capacityAvailable(channel.descriptor)
+    await Task.yield()
+    XCTAssertEqual(channel.sentData.count, sent)
+  }
+
   func testFocusShortcutListParserExtractsOpaqueIdentifiers() {
     let shortcut = MacDeskDeckShortcutRunner.parseList("Toggle Do Not Disturb (00000000-0000-0000-0000-000000000001)\ninvalid entry")
     XCTAssertEqual(shortcut, [MacDeskDeckSystemShortcut(identifier: "00000000-0000-0000-0000-000000000001", name: "Toggle Do Not Disturb")])

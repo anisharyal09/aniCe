@@ -12,6 +12,8 @@ Opt-in Connect automatically shares nearby admission, allowed-phone selection an
 
 Approve app shortcuts separately for each trusted phone in **Settings → Desk Deck**. Android’s **Features → Mac Desk Deck** shows Mac telemetry and available controls, including output volume and audio-device selection. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
 
+Peer battery and charging status appears on Android Home and Devices and Mac device summaries while an existing secured connection is open. Power changes use native observations without opening a connection or extending its background lifetime. Android summaries omit power-source details.
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.

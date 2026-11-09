@@ -570,7 +570,7 @@ private struct DeskDeckSettingsView: View {
 
   var body: some View {
     let catalogGeneration = model.catalogGeneration
-    return VStack(alignment: .leading, spacing: 10) {
+    return VStack(alignment: .leading, spacing: 8) {
       Text("Choose which apps each phone can launch from Desk Deck.")
         .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       if androidPeers.isEmpty {
@@ -578,13 +578,13 @@ private struct DeskDeckSettingsView: View {
       } else {
         ForEach(androidPeers, id: \.peer.fingerprint) { record in
           let peer = record.peer
-          VStack(alignment: .leading, spacing: 6) {
+          VStack(alignment: .leading, spacing: 4) {
             HStack {
               Text(peer.deviceName).font(.system(size: 13, weight: .medium)).lineLimit(1)
               Spacer()
               Button("Add app…") { chooseApplication(for: peer) }
                 .controlSize(.small).disabled(model.availableApprovalCount(for: peer) >= 32)
-            }.frame(minHeight: 48)
+            }.frame(minHeight: 32)
             let apps = model.approvedApps(for: peer)
             if apps.isEmpty {
               Text("No apps added").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -599,7 +599,7 @@ private struct DeskDeckSettingsView: View {
                 }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
                   .controlSize(.small).accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
-              }.frame(minHeight: 44)
+              }.frame(minHeight: 32)
             }
             if model.availableApprovalCount(for: peer) >= 32 {
               Text("This phone has reached the 32-app limit.").font(.caption)
@@ -607,7 +607,7 @@ private struct DeskDeckSettingsView: View {
             }
           }.frame(maxWidth: .infinity, alignment: .leading)
           if peer.fingerprint != androidPeers.last?.peer.fingerprint {
-            Divider().overlay(AniCePalette.separator(colorScheme)).padding(.vertical, 4)
+            Divider().overlay(AniCePalette.separator(colorScheme)).padding(.vertical, 2)
           }
         }
       }

@@ -4,6 +4,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ## [Unreleased]
 
+- Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.
+
 - Document the optional connection-check reply and compatibility with older peers.
 - Document synthetic SIM call records and revision-bound Telecom actions; the v1 wire shape is unchanged.
 

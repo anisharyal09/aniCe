@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Publishes the phone's battery state only while an existing secured Mac channel is active.
+// Exchanges peer battery state over existing secured channels, observing local changes only while connected.
 package io.github.anisharyal09.anice.features.deskdeck
 
 import android.content.BroadcastReceiver
@@ -9,9 +9,12 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import io.github.anisharyal09.anice.infrastructure.connections.*
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import io.github.anisharyal09.anice.infrastructure.session.SessionException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +31,10 @@ data class DevicePowerReading(val state: Long, val percent: Int?, val source: Lo
         4L -> "Fully charged"
         5L -> "Plugged in · not charging"
         else -> "Unavailable"
+    }
+    val macSummary: String get() {
+        val stateText = if (state == 0L) "Mac power unavailable" else label
+        return listOfNotNull(stateText, percent?.let { "$it%" }).joinToString(" · ")
     }
 
     companion object {
@@ -68,6 +75,7 @@ data class DevicePowerReading(val state: Long, val percent: Int?, val source: Lo
 class DevicePowerController(context: Context) : FeatureHandler {
     private class Link(val channel: SecuredChannel) {
         var capabilitySent = false
+        var remoteCapable = false
         var sending = false
         var pendingReport: ByteArray? = null
     }
@@ -75,6 +83,7 @@ class DevicePowerController(context: Context) : FeatureHandler {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val links = mutableMapOf<String, Link>()
+    private val macReadings = mutableStateMapOf<String, DevicePowerReading>()
     private var receiverRegistered = false
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { update(DevicePowerReading.from(intent)) }
@@ -94,6 +103,9 @@ class DevicePowerController(context: Context) : FeatureHandler {
     override fun retired(descriptor: ChannelDescriptor) {
         if (links[descriptor.transport]?.channel?.descriptor != descriptor) return
         links.remove(descriptor.transport)
+        if (links.values.none { peerKey(it.channel.descriptor.peer) == peerKey(descriptor.peer) }) {
+            macReadings.remove(peerKey(descriptor.peer))
+        }
         if (links.isEmpty()) unregisterReceiver()
     }
 
@@ -101,7 +113,24 @@ class DevicePowerController(context: Context) : FeatureHandler {
         links[descriptor.transport]?.takeIf { it.channel.descriptor == descriptor }?.let { drain(descriptor, it) }
     }
 
-    override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling = DataHandling.UNRECOGNIZED
+    override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+        val link = links[descriptor.transport]?.takeIf { it.channel.descriptor == descriptor } ?: return DataHandling.DISCARDED
+        val message = try { DevicePowerMessage.decode(bytes) ?: return DataHandling.UNRECOGNIZED }
+            catch (_: DevicePowerWireException) { return DataHandling.DISCARDED }
+            catch (_: SessionException) { return DataHandling.DISCARDED }
+        if (descriptor.peer.platform != "macos") return DataHandling.DISCARDED
+        if (message.kind == 1L) { link.remoteCapable = true; return DataHandling.HANDLED }
+        if (!link.remoteCapable) return DataHandling.DISCARDED
+        macReadings[peerKey(descriptor.peer)] = DevicePowerReading(message.state,
+            message.percent.takeIf { it >= 0 }?.toInt(), message.source)
+        return DataHandling.HANDLED
+    }
+
+    fun macSummary(peer: DeviceIdentity): String? {
+        return macReadings[peerKey(peer)]?.macSummary
+    }
+
+    private fun peerKey(peer: DeviceIdentity) = peer.deviceId + ":" + peer.fingerprint
 
     private fun update(next: DevicePowerReading) {
         if (reading == next) return

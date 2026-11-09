@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Keep Mac power summaries focused on battery percentage and charging state, omitting adapter details.
+
+- Show the connected Mac's event-driven power status on Home and Devices and refine shortcut and Settings spacing.
+
 - Deliver diagnostic checks before feature decoding and compact Home shortcut buttons.
 
 - Simplify the Home shortcuts prompt, compact Home send controls, and soften the selected Settings section.

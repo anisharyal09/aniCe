@@ -10,6 +10,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DevicePowerControllerTests {
+    @Test fun macSummaryShowsBatteryStateAndLevelWithoutPowerSourceDetails() {
+        assertEquals("Charging · 80%", DevicePowerReading(3, 80, 2).macSummary)
+        assertEquals("On battery · 35%", DevicePowerReading(2, 35, 1).macSummary)
+        assertEquals("Mac power unavailable", DevicePowerReading(0, null, 0).macSummary)
+        assertEquals("No battery", DevicePowerReading(1, null, 2).macSummary)
+    }
+
     @Test fun reportsChargingSourceAndUnknownPercentageAccurately() {
         val ac = DevicePowerReading.fromValues(true, 0, 0, BatteryManager.BATTERY_STATUS_CHARGING,
             BatteryManager.BATTERY_PLUGGED_AC)

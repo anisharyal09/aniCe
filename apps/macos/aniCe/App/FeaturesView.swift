@@ -11,7 +11,7 @@ struct HomeFeatureAccess: View {
   private var favourites: [AppFeature] { AppFeature.favourites(in: favouriteFeatures) }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 4) {
       Text("Quick access").font(.system(size: 14, weight: .medium))
       if favourites.isEmpty {
         HStack(spacing: 12) {
@@ -25,8 +25,12 @@ struct HomeFeatureAccess: View {
             ForEach(favourites) { feature in
               Button { onOpen(feature) } label: {
                 Label(feature.title, systemImage: feature.symbol)
+                  .font(.system(size: 13))
+                  .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                  .padding(.horizontal, 8).padding(.vertical, 6)
+                  .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.75) }
               }
-              .buttonStyle(AniCeButtonStyle(compact: true))
+              .buttonStyle(AniCeHoverButtonStyle())
             }
           }
         }

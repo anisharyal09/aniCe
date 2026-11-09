@@ -401,7 +401,7 @@ Review meaningful UI changes in both themes, compact/expanded widths, large text
 
 ## Transport connection details
 
-Each device has one readiness-based summary and a compact primary Bluetooth action. Only secured transports appear in Connected; pending/failed secondary channels retain separate feedback. Device-level Disconnect closes both owners; transport-specific actions close only their channel. LAN retains manual controls alongside the opt-in automatic policy. Mac Connect opens bounded admission and waits for the phone.
+Each device has one readiness-based summary and a compact primary Bluetooth action. Only secured transports appear in Connected; pending/failed secondary channels retain separate feedback. Device-level Disconnect closes both owners; transport-specific actions close only their channel. LAN retains manual controls alongside the automatic policy, which is enabled by default. Mac Connect opens bounded admission and waits for the phone.
 
 Ordinary buttons, navigation titles and close symbols use neutral primary/secondary ink. Automatic checkmarks use the shared neutral action ink; state colours remain separate. Android uses native outlined/text controls with modest corners and reduced visual padding. Connection action faces can be about 32 dp high; native Material interaction bounds remain 48 dp and scalable text may increase visual height. Android automatic preference is observable application state presented outside Connection details as a compact native checkbox in one accessible 48-dp row. The close symbol is 18 dp inside its native 48-dp icon-button target.
 

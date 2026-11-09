@@ -406,9 +406,11 @@ struct MacSessionView: View {
               bluetoothConnected: ownsBluetooth && model.state == "Secured",
               localNetworkConnected: ownsLan && lan.state == "Secured",
               color: AniCePalette.secondaryText(scheme)).font(.callout)
+            Text(phonePower.summary(for: device)).font(.caption)
+              .foregroundStyle(AniCePalette.secondaryText(scheme))
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
-          .accessibilityValue(connectionStatusValue)
+          .accessibilityValue(connectionStatusValue + ". " + phonePower.summary(for: device))
         Button(presentation.action.rawValue) {
           switch presentation.action {
           case .disconnect: disconnectSelectedDevice()
@@ -417,8 +419,6 @@ struct MacSessionView: View {
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
       }.padding(.vertical, 14).padding(.bottom, 4)
-      Text(phonePower.summary(for: device)).font(.caption)
-        .foregroundStyle(AniCePalette.secondaryText(scheme)).frame(maxWidth: .infinity, alignment: .leading)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 16) {
           Button {

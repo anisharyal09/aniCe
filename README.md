@@ -24,7 +24,7 @@ Physical testing includes authenticated connections, real transfers in both dire
 
 ---
 
-Automatic LAN connection is available through an opt-in preference in Settings and pairing on both apps. It coordinates over secured Bluetooth; [LAN behavior and limits](docs/LAN_CONNECTIONS.md#automatic-connection-on-events-and-demand) describe eligibility and event-triggered initiation.
+Automatic LAN connection is enabled by default, with a preference in Settings and pairing on both apps. It coordinates over secured Bluetooth; [LAN behavior and limits](docs/LAN_CONNECTIONS.md#automatic-connection-on-events-and-demand) describe eligibility and event-triggered initiation.
 
 ## Repository Structure
 
@@ -40,7 +40,7 @@ protocol/
   session/              EDHOC, encrypted records, controls and session envelopes
   media/                Now Playing DATA contract and bounded artwork
   desk-deck/            Mac telemetry, approved apps and remote controls
-  device-power/         Shared phone battery status
+  device-power/         Peer battery and charging status
   dnd-sync/             Phone-to-Mac Do Not Disturb changes
   notifications/        Android alerts, call controls and LAN source-icon contract
   transfer/             Local file transfer protocol and CDDL schema

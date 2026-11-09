@@ -8,6 +8,12 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
+
+- Show Mac battery and charging information on Android Home and Devices; refine Quick access and phone Settings selection.
+
+- Align the Mac device power status and tighten Edge Drop and Desk Deck settings spacing.
+
 - Restore Mac Control Android pointer movement after trackpad gesture momentum begins and show its floating-keyboard shortcut.
 
 - Route connection checks before feature decoding, compact phone shortcuts, and add Mac shortcut hover feedback.

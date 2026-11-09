@@ -522,12 +522,12 @@ struct EdgeDropSettingsView: View {
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .leading, spacing: 2) {
       Toggle("Edge Drop", isOn: Binding(
         get: { controller.preferences.enabled },
         set: { controller.setEnabled($0) }))
         .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-        .controlSize(.regular).frame(minHeight: 40, alignment: .leading)
+        .controlSize(.regular).frame(minHeight: 32, alignment: .leading)
       HStack {
         Text("Shelf edge")
         Spacer()
@@ -539,7 +539,7 @@ struct EdgeDropSettingsView: View {
         .labelsHidden().pickerStyle(.menu).controlSize(.regular).frame(width: 112)
           .accessibilityLabel("Shelf edge")
       }
-      .frame(minHeight: 40)
+      .frame(minHeight: 32)
       Text(controller.preferences.enabled
         ? "Drag files to the selected edge and drop them on the shelf."
         : "Turn on to send files from Finder.")

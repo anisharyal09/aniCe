@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Share Mac power changes with connected Android devices and soften Overview Quick access controls.
+
+- Align device power information beneath the connection status and compact Edge Drop and Desk Deck settings rows.
+
 - Release trackpad gestures when momentum begins so pointer movement can resume, and show the floating-keyboard shortcut on Control Android.
 
 - Deliver diagnostic checks before feature decoding and show hover feedback on Overview shortcuts.

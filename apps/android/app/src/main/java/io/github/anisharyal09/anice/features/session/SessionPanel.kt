@@ -156,6 +156,8 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         showConnectionAction = !(compact && automaticConfigured && nearby.connectionPaused),
                         bluetoothConnected = bleState == ConnectionState.SECURED,
                         localNetworkConnected = lanState == ConnectionState.SECURED,
+                        powerSummary = if (summary.state == ConnectionState.SECURED)
+                            model.devicePower.macSummary(record.peer) ?: "Mac power unavailable" else null,
                         connectionOptions = connectionOptions)
                 if (!compact) {
                 val groupOutline = MaterialTheme.colorScheme.outlineVariant
@@ -444,6 +446,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
     action: String = connectionSummary(state, ConnectionState.DISCONNECTED).action,
     detailsExpanded: Boolean = false, compact: Boolean = false, showDetailsAction: Boolean = true, showConnectionAction: Boolean = true,
     bluetoothConnected: Boolean = false, localNetworkConnected: Boolean = false,
+    powerSummary: String? = null,
     connectionOptions: (@Composable () -> Unit)? = null) {
     val statusColor = when (state) {
         ConnectionState.SECURED -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -459,6 +462,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
                 Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
                 ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
+                if (powerSummary != null) Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = statusColor)
                 if (state == ConnectionState.SECURED && summary != "Connected")
                     Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
@@ -482,6 +486,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
                 onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
+                if (powerSummary != null) Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = statusColor)
                 if (state == ConnectionState.SECURED && summary != "Connected")
                     Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
