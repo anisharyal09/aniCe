@@ -46,6 +46,19 @@ class AppNavigationTest {
         state.back()
         assertEquals(AppDestination.Home, state.destination)
     }
+    @Test fun notificationAppPickerBackReturnsToSettingsAndSurvivesRestoration() {
+        val state = AppNavigation()
+        state.select(AppDestination.Settings, false)
+        state.settingsRoute = SettingsRoute.NotificationApps
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(state) }!!
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals(AppDestination.Settings, restored.destination)
+        assertEquals(SettingsRoute.NotificationApps, restored.settingsRoute)
+        restored.back()
+        assertEquals(AppDestination.Settings, restored.destination)
+        assertEquals(SettingsRoute.Overview, restored.settingsRoute)
+    }
     @Test fun unknownAppearanceDoesNotForceLightOrDark() {
         assertEquals(Appearance.System, Appearance.stored(null))
         assertEquals(Appearance.System, Appearance.stored("unknown"))
@@ -111,7 +124,7 @@ class AppNavigationTest {
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
         assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
-        assertEquals(6, AppFeature.entries.size)
+        assertEquals(7, AppFeature.entries.size)
         AppFeature.entries.forEach { feature ->
             assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
             assertEquals("", feature.toggled(feature.toggled("")))

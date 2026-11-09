@@ -12,6 +12,8 @@ Current release: **v0.3.0, build 3**. Changes after that release are recorded un
 | Find Device | Peer alerts, Android ringing/Stop/expiry and Mac notifications | Remaining physical device-state matrix is recorded in the feature guide. |
 | Clipboard | Manual text/link sharing, optional automatic sharing and local history | Android observation requires input focus; background receiving can overwrite a newer local clipboard. |
 | Messages | Android SMS relay, Mac notifications, conversation/history/search and replies | RCS, MMS sending, attachments, contact resolution and mark-as-read are excluded. |
+| Notification mirroring | Selected Android app alerts and incoming call controls on Mac | Android notification access and platform support are required. |
+| Mac Desk Deck and DND | Mac dashboard controls and phone-to-Mac DND sync | System permissions and configured shortcuts govern available actions. |
 | Remote input | Mac-to-Android Bluetooth HID and Android-to-Mac authenticated input | OS pairing/permissions and deliberate input activation remain required. |
 | UX and recovery | Guided pairing, device navigation, timed pauses, Settings categories, ordered Features/Favourites and Mac reopen recovery | Physical acceptance and optional follow-ups are listed in the [UX audit](UX_IMPROVEMENTS.md). |
 

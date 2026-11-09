@@ -10,6 +10,10 @@ Share semantic roles across Mac, its menu-bar companion and Android; use each pl
 
 Feature panels demonstrate layout and interaction, not capability availability or OS support. Implement only established product behavior that the platform supports.
 
+## Brand mark
+
+Use the transparent path-only ringless silver interlocking ribbon ([final SVG](../../assets/logo/anice-mark-final.svg)) on app brand surfaces. Full-color artwork carries the metallic lighting; the Mac menu-bar template uses shaded alpha to preserve the folded form at 21.5 pt. The Mac app icon uses a full rounded warm-light tile; its appearance-aware Dock tile is inset around the same-sized mark so it sits with neighboring Dock icons, with a near-black graphite tile, subtle inner glow and fine top/bottom rim highlights in Dark appearance. Android's adaptive icon keeps its foreground size and uses a softly toned Light background with the same near-black graphite glow and a fine adaptive edge highlight in Dark appearance. Keep the mark's proportions and use the platform's native feature symbols for controls.
+
 ## Reference fidelity
 
 The approved reference is the visual target. Preserve its hierarchy, proportions, typography, outlined actions, sidebar branding, grouped connection rows, flat Home player, file-selection target, and Mac pairing/detail sheets. Match each platform before moving to another area. Adapt only where native behavior, supported capabilities or accessibility require it. Keep Choose files and use native drag-and-drop where implemented; pairing requires mutual approval rather than the simulator’s Continue action.
@@ -66,7 +70,7 @@ On Mac, the window titlebar is split at the sidebar boundary. Keep macOS traffic
 
 Android uses a native app bar and five bottom destinations: Home, Devices, Features, Favourites and Settings. About is reached from the app bar. Preserve system Back and RTL-aware in-app Back. Keep aniCe in the app bar and use restrained destination headings in the body, as in the approved reference.
 
-Opening or leaving a section never retires a transport, playback session, draft or transfer. A feature panel's Back returns to its entry destination: Home/Overview, Features or Favourites. Feature settings open inline from that feature's gear; they edit the same preference and do not send the user to the global Settings page. Main Settings remains available for app-wide discovery and management.
+Opening or leaving a section never retires a transport, playback session, draft or transfer. Use the platform navigation to leave a feature: Android system/app-bar Back and destination tabs, or the Mac sidebar and toolbar history. Do not add a second in-content Back button. Desk Deck uses the same Android app bar and destination tabs as other feature panels. Feature settings open inline from that feature's gear; they edit the same preference and do not send the user to the global Settings page. Main Settings remains available for app-wide discovery and management.
 
 ## Screen specifications
 
@@ -104,7 +108,7 @@ Connection state must distinguish trusted, connecting, secured, offline, permiss
 
 Show one device row with its name, one readiness status and a compact action. When connected, show secured Bluetooth and local-network links as accessible icons beside Connected instead of repeating transport names. The Mac Home device name opens Devices. When automatic connection is configured, provide a labeled Pause/Resume menu with timed choices and Resume now while paused. Keep the automatic preference and device lists in Devices.
 
-Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Do not invent battery, storage or charging values.
+Place compact Send files and Send clipboard actions below the device row. Keep simultaneous current playback and file-transfer activity visible together when space permits. Show activity only when relevant; do not reserve empty cards. Recent clipboard, messages and completed transfer are secondary rows below current work. High-activity incoming approval takes visual precedence and remains visible while navigating. Show battery and charging only from actual device-power readings beside a connected peer; keep unavailable values explicit, never estimate them, and do not add a Mac battery page.
 
 ### Devices and device details
 
@@ -113,6 +117,12 @@ Show a flat peer group with device name, one readiness status, secured-transport
 ### Features and Favourites
 
 Present a compact launcher as clear flat rows, not a wall of equal large tiles. Each row has a neutral icon, feature name, concise current availability or state, separate favourite control and trailing chevron. Entire row opens the feature except for independent star or overflow controls. Mac right-click and Android long-press menus let people move a row up or down and change its favourite state; keep these controls out of the everyday row. Persist ordering locally and keep Features and Favourites orders independent. On Mac use two columns only when the detail width supports readable rows; on phones use full-width rows. Favourites use the same feature destination and permission rules as Features. Show starred features in a compact, horizontally scrollable Quick access row on Overview/Home; when empty, link to Features to choose shortcuts. This gives one-tap access without growing the main navigation.
+
+### Mac Desk Deck
+
+Desk Deck stays in the standard Android app shell, with app-bar Back and bottom tabs visible. Retain system insets once. In landscape, place CPU and memory cards beside quick actions, with output selection and volume nearby; stack the same content in portrait. Use a compact top card with the Mac name, connection state and sample age above two clearly labeled Mac/phone power summaries. Put transport details, thermal state, usage breakdowns, graphs, diagnostics and keep-awake preferences in the Details dialog.
+
+Open the shell before connection or telemetry is ready. Retain stale readings with their age, disable actions until fresh telemetry returns, and offer one recovery action. Refresh never replays a command. Explain missing Events access through the Lock tile. Preserve 48-dp touch targets and native text scaling; keep sliders outside horizontal navigation gestures. History contains at most 60 samples with visible gaps across disconnects. Keep awake is off by default and applies only while the deck is visible and the phone is charging.
 
 **Android Control Mac** is a feature in Features and can be added to Favourites. It uses the phone's normal IME in aniCe. Keep composition local in committed mode, send it in Live typing, reconcile corrections on grapheme boundaries and send Unicode separately from key transitions. The trackpad supports pointer movement, tap-to-click, long-press dragging and two-finger scrolling; an inactive pad passes gestures to the page. Start control does not open the keyboard; tapping a text field does. Changing Live typing preserves the session. Leaving this page or backgrounding stops input but does not directly disconnect BLE. Do not log or persist text, install a cross-app keyboard or add another transport.
 
@@ -271,7 +281,7 @@ Feature panels use native navigation to return to their source. Keep Back inside
 
 The companion is for checking a device and taking a quick action. Browsing and configuration belong in the full window.
 
-- Use a monochrome template status-item glyph and a native anchored panel approximately 340–360 pt wide.
+- Use a 21.5 pt monochrome template of the shared ribbon for the status item and a native anchored panel approximately 340–360 pt wide.
 - Show compact device rows with a small native name and connection status inline, a contextual connection action when disconnected and a details route. Wrap long names rather than increasing the normal row height for short names. Connected peers appear first; when any are connected, other peers remain accessible through the full workspace.
 - Show Send files only for the actual ready, compatible transfer target and hide it during preparation or an active/result transfer. Do not attach a global transfer command to an unrelated connected peer.
 - Use the original companion hierarchy: compact aniCe heading with overflow, device header, then content separated by dividers between populated sections. Do not place filled activity cards inside the companion surface. Keep playback and transfer visible together without paging, page counters or swipe gestures. Keep incoming offers visible.
@@ -440,3 +450,7 @@ Conversations keep the phone's provider order (newest first) with address, one-l
 Keep request, permission and unsupported states separate and truthful: an empty result, a disabled permission, an unavailable provider and a connected-but-capable-pending phone never share one message. Report skipped unreadable rows as a count instead of silently dropping them, and do not describe the Mac view as a message store: history, unread counts and read state live on the phone, and the Mac clears its copy when the last channel retires.
 
 Mac Messages keeps routine loading/history status out of the conversation header; permission, failure and uncertain-send feedback stays visible. Connection counters live under the feature settings disclosure. Date separators carry the day; bubble metadata keeps time, pending state and mixed-SIM context. The composer shows byte capacity only near its limit. Settings section shortcuts include File transfer, Now Playing and This device; all targets participate in layout before scrolling.
+
+## Do Not Disturb sync
+
+Keep DND sync phone-to-Mac only. Put one-time Mac Shortcut setup behind a disclosure and keep the On/Off selectors visible. Label the Desk Deck action as a Mac-local toggle with no phone sync. Report command results without claiming Focus state was verified; changes require an existing connection and are not replayed after reconnecting.

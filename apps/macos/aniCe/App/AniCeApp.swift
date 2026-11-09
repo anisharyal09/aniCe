@@ -2,6 +2,7 @@
 // Assembles shared trust, peer reservations and native Bluetooth/LAN owners for both scenes.
 import SwiftUI
 import UserNotifications
+import os
 
 @main
 struct AniCeApp: App {
@@ -17,19 +18,25 @@ struct AniCeApp: App {
   @State private var findDevice: MacFindDeviceModel
   private let findNotifier: MacFindDeviceNotifier
   @State private var sms: MacSmsModel
+  @State private var notificationMirror: MacNotificationMirrorModel
   @State private var keyboardTrackpad: MacKeyboardTrackpadModel
   @State private var phoneInput: MacPhoneInputModel
   @State private var floatingKeyboard: FloatingKeyboardController
   @State private var smsPreferences: SmsPreferences
   private let smsNotifier: MacSmsNotifier
+  private let notificationMirrorNotifier: MacNotificationMirrorNotifier
   @State private var transfer: MacTransferModel
   @State private var edgeDrop: MacEdgeDropController
+  @State private var dndSync: MacDndSyncModel
+  @State private var deskDeck: MacDeskDeckModel
+  @State private var phonePower: MacPhonePowerModel
   @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
   @State private var servicesStarted = false
 
   init() {
+    let assemblyStarted = ProcessInfo.processInfo.systemUptime
     let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
     let notifier = MacFindDeviceNotifier()
@@ -80,10 +87,20 @@ struct AniCeApp: App {
     self.smsNotifier = smsNotifier
     let sms = MacSmsModel(notifier: smsNotifier)
     _sms = State(initialValue: sms)
+    let notificationMirrorNotifier = MacNotificationMirrorNotifier()
+    self.notificationMirrorNotifier = notificationMirrorNotifier
+    let notificationMirror = MacNotificationMirrorModel(notifier: notificationMirrorNotifier)
+    _notificationMirror = State(initialValue: notificationMirror)
     let keyboardTrackpad = MacKeyboardTrackpadModel(preferences: .standard)
     _keyboardTrackpad = State(initialValue: keyboardTrackpad)
     let phoneInput = MacPhoneInputModel()
     _phoneInput = State(initialValue: phoneInput)
+    let dndSync = MacDndSyncModel()
+    _dndSync = State(initialValue: dndSync)
+    let deskDeck = MacDeskDeckModel()
+    _deskDeck = State(initialValue: deskDeck)
+    let phonePower = MacPhonePowerModel()
+    _phonePower = State(initialValue: phonePower)
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
@@ -108,7 +125,11 @@ struct AniCeApp: App {
     features.register(findDevice)
     features.register(clipboard)
     features.register(sms)
+    features.register(notificationMirror)
     features.register(phoneInput)
+    features.register(dndSync)
+    features.register(deskDeck)
+    features.register(phonePower)
     session.channelStateChanged = { [weak session] in
       if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
         features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
@@ -147,6 +168,7 @@ struct AniCeApp: App {
       session.retireTrust(); lan.cancel(); clipboard.invalidate(); sms.invalidate()
       Task { @MainActor in
         await pairing.refresh()
+        deskDeck.pruneApprovals(keeping: pairing.peers.map(\.peer))
         clipboard.prune(pairing.peers.map(\.peer), confirmedTrust: true)
         smsPreferences.prune(pairing.peers.map(\.peer))
         transfer.autoReceivePreferences.prune(pairing.peers.map(\.peer))
@@ -154,18 +176,23 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      dndSync.removeSelections()
       transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()
       sms.invalidate(); smsPreferences.clear()
       transfer.autoReceivePreferences.clear()
       lan.cancel()
       session.retireTrust()
+      deskDeck.clearApprovals()
       pairing.cancel()
       keyboardTrackpad.identityWasReset()
     }
     _pairing = State(initialValue: pairing)
     _session = State(initialValue: session)
-    delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier, sms: smsNotifier)
+    delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier, sms: smsNotifier,
+      notificationMirror: notificationMirrorNotifier)
+    Logger(subsystem: Bundle.main.bundleIdentifier ?? "aniCe", category: "Startup")
+      .info("event=app_assembly_complete duration_ms=\(Int((ProcessInfo.processInfo.systemUptime - assemblyStarted) * 1000))")
   }
 
   @MainActor private func startDeferredServices() {
@@ -181,14 +208,14 @@ struct AniCeApp: App {
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
     delegate.onTerminate = {
-      findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll()
-      floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown()
+      findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
+      floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
       PasteTrayController.shared.hide()
     }
     delegate.installCompanion(
       CompanionView(identity: identity, discovery: discovery, pairing: pairing,
         session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
-        keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, navigation: navigation,
+        keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: phonePower, navigation: navigation,
         openMainWindow: { delegate.openMainFromCompanion() }),
       navigation: navigation, floatingKeyboard: floatingKeyboard)
     floatingKeyboard.restoreIfNeeded()
@@ -225,7 +252,7 @@ struct AniCeApp: App {
         session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
-        onInitialRender: { startDeferredServices() }, navigation: navigation)
+        onInitialRender: { startDeferredServices() }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
     }
     .defaultSize(width: 800, height: 560)
     .windowResizability(.contentMinSize)

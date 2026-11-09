@@ -251,7 +251,7 @@ class SessionController(application: Application) {
               },
               { bytes ->
                 withContext(Dispatchers.Main.immediate) {
-                  if (op == operation && app.features.handle("ble", channelToken, bytes) == DataHandling.UNRECOGNIZED) {
+                  if (op == operation && (bytes.contentEquals(CHECK) || bytes.contentEquals(CHECK_REPLY))) {
                     when {
                       bytes.contentEquals(CHECK) -> {
                         receivedChecks++
@@ -277,7 +277,7 @@ class SessionController(application: Application) {
                         status = "Bluetooth check confirmed."
                       }
                     }
-                  }
+                  } else if (op == operation) { app.features.handle("ble", channelToken, bytes) }
                 }
               },
               {

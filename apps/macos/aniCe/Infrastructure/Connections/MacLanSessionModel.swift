@@ -395,7 +395,6 @@ import OSLog
   }
   private func received(_ bytes: Data, _ op: Int, _ attempt: Int) async {
     guard op == generation, attempt == candidate else { return }
-    if await applicationDataReceived(bytes) { return }
     if bytes == SessionConnectionCheck.request {
       receivedChecks += 1
       status = "Local-network check received."
@@ -408,9 +407,10 @@ import OSLog
           }
         }
       }
-    } else if bytes == SessionConnectionCheck.reply, checkPending {
-      checkPending = false
-      status = "Local-network check confirmed."
+    } else if bytes == SessionConnectionCheck.reply {
+      if checkPending { checkPending = false; status = "Local-network check confirmed." }
+    } else {
+      _ = await applicationDataReceived(bytes)
     }
   }
   private func maintain() {

@@ -17,10 +17,13 @@ Contracts define required behavior.
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
+| **Mac Desk Deck** | `1`–`4` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
+| **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Phone battery status on existing Mac device surfaces over authenticated DATA, with no new connection lease |
 | **LAN Binding** | `1` | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
+| **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
 | **Phone-to-Mac input** | 1 | In progress | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
 
@@ -120,6 +123,12 @@ protocol/
 ├── README.md                      # This document
 ├── bluetooth/
 │   └── README.md                  # BLE discovery wire format & lifecycle
+├── desk-deck/
+│   ├── README.md                  # Mac telemetry, app approval and control behavior
+│   └── desk-deck.cddl             # Bounded Desk Deck v1–v4 messages
+├── device-power/
+│   ├── README.md                  # Reciprocal phone power status behavior
+│   └── device-power.cddl          # Shared device-power capability and report
 ├── fixtures/
 │   └── identity/                  # Sample valid JSON records (android.json, macos.json)
 ├── lan/
@@ -131,6 +140,9 @@ protocol/
 ├── phone-input/
 │   ├── README.md                  # Phone-to-Mac input v1 contract and lifecycle rules
 │   └── phone-input.cddl           # Phone-to-Mac input message shapes
+├── notifications/
+│   ├── README.md                  # Android-to-Mac alert mirroring behavior and lifecycle
+│   └── notifications.cddl         # Notification message shapes
 ├── schemas/
 │   └── identity.schema.json       # Canonical JSON Schema for public identity
 ├── session/
@@ -142,6 +154,8 @@ protocol/
 │   └── transfer.cddl              # Authoritative message and envelope CDDL definitions
 └── test-vectors/
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
+    ├── desk-deck-vectors.json      # Desk Deck v1–v4 samples, actions and invalid records
+    ├── device-power-vectors.json   # Phone power states and invalid records
     ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
     ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
     ├── lan/
@@ -154,6 +168,9 @@ protocol/
     ├── phone-input/
     │   ├── phone-input-vectors.json # Positive & negative Phone-to-Mac input fixtures
     │   └── generate.py              # Independent Phone-to-Mac input fixture generator
+    ├── notifications/
+    │   ├── notification-vectors.json # Positive & negative notification mirroring fixtures
+    │   └── generate_notification_vectors.py # Independent CBOR fixture generator
     ├── session/
     │   ├── session-vectors.json  # Complete method-0/suite-5 traces and invalid handshakes
     │   ├── record-vectors.json   # AES-GCM records, nonce/counter boundaries and tampering cases
@@ -165,6 +182,10 @@ protocol/
         ├── transfer-vectors.json  # Positive & negative transfer message fixtures
         └── generate_transfer_vectors.py # Fixture generator
 ```
+
+## Mac Desk Deck and Device Power
+
+[Mac Desk Deck v1–v5](desk-deck/README.md) defines subscription-bound Mac telemetry and controls. V2 adds renewable leases, richer memory and Mac power readings, and paged launches for Mac-approved app bundles; v4 adds one locally selected Do Not Disturb Shortcut; v5 adds default-output selection. Older peers remain supported. [Device Power v1](device-power/README.md) sends the phone's battery state to existing Mac device surfaces over a secured channel that is already open. Both contracts have shared Kotlin/Swift fixtures under [test-vectors](test-vectors/desk-deck-vectors.json).
 
 ## Media
 
@@ -191,3 +212,11 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 ## SMS Relay
 
 [SMS relay v3](sms/README.md) defines provider thread, paged history and search reads, live `SMS_RECEIVED` events with capability gating and `messageResult` acknowledgement, an optional SIM listing for per-reply subscription choice, and Mac-composed replies reassembled by Android before SMS submission. [CDDL](sms/sms.cddl) and [independent fixtures](test-vectors/sms/sms-vectors.json) specify canonical DATA messages; the thread list and history/search pages are ordered with byte-wise lexical id ties, each message carries the subscription it arrived on, and live/provider copies merge by content key. Version 3 requires both applications to update together.
+
+## Notification Mirroring
+
+[Notification Mirroring v1](notifications/README.md) carries selected Android app alerts over authenticated DATA to native Mac notifications, with revision- and peer-bound source taps, available actions, simple text replies and synchronized dismissal. Android excludes aniCe and the current default SMS app; snapshot reconciliation keeps BLE/LAN handoffs idempotent. [CDDL](notifications/notifications.cddl) and [independent fixtures](test-vectors/notifications/notification-vectors.json) define the bounded canonical records.
+
+## Do Not Disturb sync
+
+[DND sync v1](dnd-sync/README.md) carries explicit phone-to-Mac DND state changes independently of Desk Deck. Android requires Notification Policy access to observe phone changes, and Mac applies them through selected On/Off Shortcuts. Mac-to-phone state changes are unsupported. It uses only existing secured connections and opens no feature lease. [Shared fixtures](test-vectors/dnd-sync-vectors.json) cover both codecs.

@@ -5,6 +5,7 @@ package io.github.anisharyal09.anice.app
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -53,16 +54,21 @@ fun SettingsScreen(
 ) {
     var showingIdentity by rememberSaveable { mutableStateOf(false) }
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
+    val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
     if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
         AboutScreen(context)
+    } else if (navigation.destination == AppDestination.Settings &&
+        navigation.settingsRoute == SettingsRoute.NotificationApps) {
+        io.github.anisharyal09.anice.features.notifications.NotificationAppSelection(app.notificationMirror)
     } else {
-        val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
         val lan = app.lanSessionController
         val sections = buildList {
             add("Appearance")
             add("Connection")
+            add("Do Not Disturb")
             add("Clipboard")
             if (!app.sms.granted) add("Messages")
+            add("Notification sync")
             add("File transfer")
             add("This device")
         }
@@ -234,6 +240,10 @@ fun SettingsScreen(
                         }
                     }
 
+                    PreferenceSection("Do Not Disturb", sectionModifier("Do Not Disturb"), highlightedSection == "Do Not Disturb") {
+                        io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(app.dndSync)
+                    }
+
                     PreferenceSection("Clipboard", sectionModifier("Clipboard"), highlightedSection == "Clipboard") {
                         io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
                     }
@@ -241,6 +251,23 @@ fun SettingsScreen(
                     if (!app.sms.granted) {
                         PreferenceSection("Messages", sectionModifier("Messages"), highlightedSection == "Messages") {
                             io.github.anisharyal09.anice.features.sms.SmsSettings(app.sms)
+                        }
+                    }
+
+                    PreferenceSection("Notification sync", sectionModifier("Notification sync"), highlightedSection == "Notification sync") {
+                        io.github.anisharyal09.anice.features.notifications.NotificationSettings(app.notificationMirror)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        val selectedCount = app.notificationMirror.preferences.selectedPackages().size
+                        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                            .clickable(role = Role.Button, onClickLabel = "Select apps") { navigation.settingsRoute = SettingsRoute.NotificationApps }
+                            .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Select apps", style = MaterialTheme.typography.bodyMedium)
+                                Text(when (selectedCount) { 0 -> "No apps selected"; 1 -> "1 app selected"; else -> "$selectedCount apps selected" },
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                                modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -319,8 +346,8 @@ private fun AboutScreen(context: Context) {
                 if (compact) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(painterResource(R.drawable.ic_link), contentDescription = null,
-                                modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
+                                modifier = Modifier.size(20.dp))
                             Text("aniCe", style = MaterialTheme.typography.titleMedium)
                         }
                         Column(Modifier.padding(start = 32.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -330,8 +357,8 @@ private fun AboutScreen(context: Context) {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.ic_link), contentDescription = null,
-                            modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
+                            modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
                         Text("aniCe", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.weight(1f))

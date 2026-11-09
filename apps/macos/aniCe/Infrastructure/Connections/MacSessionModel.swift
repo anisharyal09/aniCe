@@ -464,7 +464,6 @@ struct SessionStartupRecovery {
   }
   private func received(_ bytes: Data, _ op: Int, _ candidate: Int) async {
     guard op == generation, candidate == attempt else { return }
-    if await applicationDataReceived(bytes) { return }
     if bytes == SessionConnectionCheck.request {
       receivedChecks += 1
       status = "Bluetooth check received."
@@ -477,9 +476,10 @@ struct SessionStartupRecovery {
           }
         }
       }
-    } else if bytes == SessionConnectionCheck.reply, checkPending {
-      checkPending = false
-      status = "Bluetooth check confirmed."
+    } else if bytes == SessionConnectionCheck.reply {
+      if checkPending { checkPending = false; status = "Bluetooth check confirmed." }
+    } else {
+      _ = await applicationDataReceived(bytes)
     }
   }
   private func startMaintenance() {

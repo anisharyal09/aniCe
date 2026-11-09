@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.app
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -110,7 +111,13 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(title = { Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp)) }, navigationIcon = {
+            TopAppBar(title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
+                        modifier = Modifier.size(22.dp))
+                    Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
+                }
+            }, navigationIcon = {
                 if ((navigation.destination == AppDestination.Devices &&
                         navigation.route != DeviceRoute.Overview && navigation.route != DeviceRoute.Pairing) ||
                     (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
@@ -213,8 +220,10 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
                             DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity)
                         }
-                        AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation)
-                        AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation, favouritesOnly = true)
+                        AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation,
+                            trustedPeersLoaded = pairing.trustedPeersLoaded)
+                        AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation,
+                            favouritesOnly = true, trustedPeersLoaded = pairing.trustedPeersLoaded)
                         AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
                     }
                 }

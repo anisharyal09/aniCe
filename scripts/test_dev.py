@@ -23,6 +23,7 @@ class DevLauncherTests(unittest.TestCase):
         self.log = self.root / 'calls'
         self.env = dict(os.environ, PATH=f'{self.bin}:/usr/bin:/bin',
                         HOME=str(self.root), CALLS=str(self.log),
+                        SDK_LOG=str(self.root / 'sdk-paths'),
                         ANDROID_HOME=str(self.root / 'sdk'), ANDROID_SDK_ROOT='',
                         ANICE_DEVELOPMENT_TEAM='')
         self.tool('adb', '''if [ "$1" = devices ]; then
@@ -34,7 +35,7 @@ fi''')
         android = self.root / 'apps/android'
         android.mkdir(parents=True)
         gradle = android / 'gradlew'
-        gradle.write_text('#!/bin/bash\necho build >> "$CALLS"\nexit "${BUILD_EXIT:-0}"\n')
+        gradle.write_text('#!/bin/bash\necho build >> "$CALLS"\nprintf "%s\\n" "${ANDROID_HOME-}" >> "$SDK_LOG"\nexit "${BUILD_EXIT:-0}"\n')
         gradle.chmod(0o755)
 
     def tool(self, name, body):
@@ -77,6 +78,17 @@ fi''')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('-s two install -r ', self.calls())
 
+    def test_sdk_derived_from_adb_path_is_exported_to_gradle(self):
+        sdk_bin = self.root / 'sdk/platform-tools'
+        sdk_bin.mkdir(parents=True)
+        shutil.move(self.bin / 'adb', sdk_bin / 'adb')
+        result = self.run_dev('android', ANDROID_HOME='', ANDROID_SDK_ROOT='',
+                              PATH=f'{sdk_bin}:{self.bin}:/usr/bin:/bin',
+                              DEVICES='phone\tdevice')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / 'sdk-paths').read_text().splitlines()[-1],
+                         str(self.root / 'sdk'))
+
     def test_build_failure_never_installs(self):
         result = self.run_dev('android', DEVICES='phone\tdevice', BUILD_EXIT='1')
         self.assertNotEqual(result.returncode, 0)
@@ -113,12 +125,24 @@ fi''')
         self.assertEqual([line.split()[0] for line in calls],
                          ['osascript', 'python3', 'xcodebuild', 'codesign', 'codesign', 'open'])
         self.assertIn('build/dev-mac/anice dev ', calls[2])
-        self.assertIn('-dGVzdC9kZXYtYnJhbmNo', calls[2])
+        self.assertIn('-test_2Fdev-branch', calls[2])
+        self.assertNotIn('%', calls[2])
         self.assertIn('INFOPLIST_KEY_CFBundleDisplayName=aniCe (test/dev-branch)', calls[2])
         self.assertIn('open -n ', calls[-1])
-        self.assertIn('-dGVzdC9kZXYtYnJhbmNo', calls[-1])
+        self.assertIn('-test_2Fdev-branch', calls[-1])
         self.assertIn("Building Mac branch 'test/dev-branch'", result.stdout)
         first_app = calls[-1]
+        app_paths = {first_app}
+        for branch in ('test_2Fdev-branch', 'test%2Fdev-branch'):
+            subprocess.run(['git', '-C', str(self.root), 'symbolic-ref', 'HEAD',
+                            'refs/heads/' + branch], check=True)
+            self.log.unlink()
+            result = self.run_dev('mac', ANICE_DEVELOPMENT_TEAM='TESTTEAM')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            app_path = self.calls().splitlines()[-1]
+            self.assertNotIn('%', app_path)
+            self.assertNotIn(app_path, app_paths)
+            app_paths.add(app_path)
         subprocess.run(['git', '-C', str(self.root), 'symbolic-ref', 'HEAD',
                         'refs/heads/test-dev-branch'], check=True)
         self.log.unlink()

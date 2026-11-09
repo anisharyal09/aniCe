@@ -1,0 +1,24 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Android notification mirroring over authenticated application DATA.
+
+message = ["aniCe notifications", 1, kind, fields]
+kind = 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9
+fields = capability / notification / removal / snapshot-begin / snapshot-end / action / action-result / dismiss / source-icon
+sequence = 1..9007199254740991
+high-water = 0..9007199254740991
+snapshot-token = "" / uuid
+
+capability = [max-actions: 8]
+notification = [snapshot-token, id: hash, epoch: uuid, sequence, package-name: text, app-name: text, title: text, body: text, actions: [* action-item]]
+action-item = [index: 0..7, title: text, reply-placeholder: text]
+removal = [id: hash, epoch: uuid, sequence]
+snapshot-begin = [token: uuid, epoch: uuid, high-water]
+snapshot-end = [token: uuid]
+action = [request-id: uuid, id: hash, epoch: uuid, sequence, index: -1..7, reply-text: text]
+action-result = [request-id: uuid, result: 0..3]
+dismiss = [request-id: uuid, id: hash, epoch: uuid, sequence]
+; Kind 9 is carried only over the authenticated LAN channel, never BLE.
+source-icon = [package-name: text, png: bstr .size (33..3000)]
+
+hash = text .size 64
+uuid = text .size 36

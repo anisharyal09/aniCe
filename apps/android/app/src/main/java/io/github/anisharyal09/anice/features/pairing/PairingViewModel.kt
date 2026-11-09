@@ -49,6 +49,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     var peers by mutableStateOf(listOf<PeerTrustRecord>())
         private set
 
+    var trustedPeersLoaded by mutableStateOf(false)
+        private set
+
     var recovery by mutableStateOf("")
         private set
 
@@ -488,6 +491,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 handler.post {
                     if (generation == op) {
                         peers = list
+                        trustedPeersLoaded = true
                         onPeersChanged(list)
                     }
                 }
@@ -517,6 +521,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                         recovery = ""
                         trustRemoved()
                         peers = emptyList()
+                        trustedPeersLoaded = true
                         onPeersChanged(emptyList())
                         status =
                             "Local trust was reset. Pair your devices again. The unreadable file was preserved."

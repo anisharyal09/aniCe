@@ -400,7 +400,9 @@ class LanSessionController(private val app: AniCeApplication,
                                         tcp.submit(bytes)
                                     },
                                     { bytes ->
-                                        val handled =
+                                        val isCheck = bytes.contentEquals(SessionController.CHECK) ||
+                                            bytes.contentEquals(SessionController.CHECK_REPLY)
+                                        val handled = if (isCheck) DataHandling.UNRECOGNIZED else
                                             if (op == generation)
                                                 withContext(Dispatchers.Main.immediate) {
                                                     if (op == generation) app.features.handle("lan", channelToken, bytes)

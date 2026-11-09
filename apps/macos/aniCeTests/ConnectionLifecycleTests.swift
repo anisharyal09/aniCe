@@ -207,7 +207,7 @@ import AppKit
           for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
           let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
             pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
-            keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, navigation: ConnectionNavigation(),
+            keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: MacPhonePowerModel(), navigation: ConnectionNavigation(),
             openMainWindow: { XCTFail("Rendering opened the main window") })
             .environment(\.colorScheme, scheme)
           let host = NSHostingView(rootView: view)
@@ -317,8 +317,8 @@ import AppKit
             transfer: transfer, edgeDrop: MacEdgeDropController(model: transfer),
             clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
             sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
-            phoneInput: MacPhoneInputModel(),
-            smsPreferences: SmsPreferences(storage: nil), onInitialRender: {}, navigation: navigation)
+            phoneInput: MacPhoneInputModel(), smsPreferences: SmsPreferences(storage: nil),
+            onInitialRender: {}, dndSync: MacDndSyncModel(defaults: preferences), deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: 800)
@@ -483,6 +483,7 @@ import AppKit
       let ack = try SessionEnvelope.decode(try XCTUnwrap(radio.sent.first))
       XCTAssertEqual(ack.0, 6)
       _ = try await channel.receive(ack.1)
+      model.applicationDataReceived = { _ in true }
       try await channel.send(.data, plaintext: Data("aniCe connection check".utf8))
       let dataRecords = await records.take()
       let data = try XCTUnwrap(dataRecords.first)

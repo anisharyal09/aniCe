@@ -9,11 +9,11 @@ enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"),
     companion object { val primary = listOf(Home, Devices, Features, Favourites, Settings) }
 }
 enum class DeviceRoute { Overview, Pairing, Discovery }
-enum class SettingsRoute { Overview, Identity, About }
+enum class SettingsRoute { Overview, Identity, NotificationApps, About }
 
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
-    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device"), Clipboard("Clipboard"),
+    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device"), Clipboard("Clipboard"), DeskDeck("Mac Desk Deck"),
     PhoneInput("Control Mac"), Sms("Messages");
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableList()

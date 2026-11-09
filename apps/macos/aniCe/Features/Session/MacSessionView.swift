@@ -98,6 +98,7 @@ struct MacSessionView: View {
   let peers: [PeerTrustRecord]
   @Bindable var model: MacSessionModel
   @Bindable var lan: MacLanSessionModel
+  @Bindable var phonePower: MacPhonePowerModel
   @Binding var details: Bool
   @Binding var diagnostics: Bool
   var workspaceHeader = false
@@ -264,6 +265,7 @@ struct MacSessionView: View {
             Button { onOpenDevice(peer.deviceId) } label: { Image(systemName: "chevron.right") }
               .buttonStyle(.borderless).aniCeControlFeedback().accessibilityLabel("Device details for " + peer.deviceName)
           }
+          Text(phonePower.summary(for: peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }
       }
       if lan.allowing && lan.authenticatedPeer == nil {
@@ -362,6 +364,8 @@ struct MacSessionView: View {
           bluetoothConnected: ownsBluetooth && model.state == "Secured",
           localNetworkConnected: ownsLan && lan.state == "Secured",
           color: AniCePalette.secondaryText(scheme)).font(.callout)
+        Text(phonePower.summary(for: device)).font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
     }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Devices for " + (device?.deviceName ?? "your phone"))
       .accessibilityValue(connectionStatusValue)
@@ -413,6 +417,8 @@ struct MacSessionView: View {
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
       }.padding(.vertical, 14).padding(.bottom, 4)
+      Text(phonePower.summary(for: device)).font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(scheme)).frame(maxWidth: .infinity, alignment: .leading)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 16) {
           Button {

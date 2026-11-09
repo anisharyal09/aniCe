@@ -26,7 +26,7 @@ struct HomeFeatureAccess: View {
               Button { onOpen(feature) } label: {
                 Label(feature.title, systemImage: feature.symbol)
               }
-              .buttonStyle(.bordered).controlSize(.small)
+              .buttonStyle(AniCeButtonStyle(compact: true))
             }
           }
         }

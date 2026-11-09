@@ -47,6 +47,12 @@ struct MacKeyboardTrackpadView: View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
 
+      if !floatingPresentation {
+        Text("Shortcut: ⌥⌘K shows or hides the floating keyboard")
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+
       if showsConnectionControls {
         ViewThatFits(in: .horizontal) {
           HStack(alignment: .center, spacing: 16) {

@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D70000000000000000000003 /* DndSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000004; };
+        D70000000000000000000005 /* dnd-sync-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000006; };
+        D70000000000000000000001 /* MacDndSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000002; };
         C11000000000000000000001 = {isa = PBXBuildFile; fileRef = C11000000000000000000002; };
         C11000000000000000000003 = {isa = PBXBuildFile; fileRef = C11000000000000000000004; };
         C11000000000000000000005 = {isa = PBXBuildFile; fileRef = C11000000000000000000006; };
@@ -120,6 +123,11 @@
 		B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */; };
 		B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */; };
 		B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */; };
+		B40100000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift */; };
+		B40100000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift */; };
+		B40100000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift */; };
+		B40100000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = B40200000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json */; };
+		AC0100000000000000000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000011 /* Assets.xcassets */; };
 		D10000000000000000000001 /* MacKeyboardTrackpadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002; };
 		D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000004; };
 		D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002; };
@@ -135,6 +143,8 @@
 		D40000000000000000000002 /* MacPhoneInputModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000005; };
 		D40000000000000000000003 /* MacPhoneInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000006; };
 		D40000000000000000000007 /* MacPhoneInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000008; };
+		D50000000000000000000001 /* MacDeskDeck.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000002; };
+		D60000000000000000000001 /* DeskDeckWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002; };
 		B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */; };
 		B1010000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000B; };
 		B1010000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1020000000000000000000C; };
@@ -154,6 +164,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        D70000000000000000000004 /* DndSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DndSyncTests.swift"; sourceTree = SOURCE_ROOT; };
+        D70000000000000000000006 /* dnd-sync-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/dnd-sync-vectors.json"; sourceTree = SOURCE_ROOT; };
+        D70000000000000000000002 /* MacDndSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DndSync/MacDndSync.swift"; sourceTree = SOURCE_ROOT; };
         C11000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/ClipboardHistory.swift"; sourceTree = SOURCE_ROOT; };
         C11000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/GlobalHotkeyManager.swift"; sourceTree = SOURCE_ROOT; };
         C11000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Clipboard/PasteTrayView.swift"; sourceTree = SOURCE_ROOT; };
@@ -270,6 +283,11 @@
 		B30200000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsModelTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Sms/SmsNotifierTests.swift"; sourceTree = SOURCE_ROOT; };
 		B30200000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sms/sms-vectors.json"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Notifications/NotificationWire.swift"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Notifications/MacNotificationMirror.swift"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/Notifications/NotificationMirrorTests.swift"; sourceTree = SOURCE_ROOT; };
+		B40200000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/notifications/notification-vectors.json"; sourceTree = SOURCE_ROOT; };
+		AC0100000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = aniCe/Assets.xcassets; sourceTree = SOURCE_ROOT; };
 		D10000000000000000000002 /* MacKeyboardTrackpadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/MacKeyboardTrackpadModel.swift"; sourceTree = SOURCE_ROOT; };
 		D10000000000000000000004 /* MacKeyboardTrackpadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/MacKeyboardTrackpadView.swift"; sourceTree = SOURCE_ROOT; };
 		D20000000000000000000002 /* FloatingKeyboardWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/KeyboardTrackpad/FloatingKeyboardWindow.swift"; sourceTree = SOURCE_ROOT; };
@@ -289,6 +307,9 @@
 		D40000000000000000000005 /* MacPhoneInputModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PhoneInput/MacPhoneInputModel.swift"; sourceTree = SOURCE_ROOT; };
 		D40000000000000000000006 /* MacPhoneInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PhoneInput/MacPhoneInputTests.swift"; sourceTree = SOURCE_ROOT; };
 		D40000000000000000000008 /* MacPhoneInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PhoneInput/MacPhoneInputView.swift"; sourceTree = SOURCE_ROOT; };
+		D50000000000000000000002 /* MacDeskDeck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeck.swift"; sourceTree = SOURCE_ROOT; };
+		D60000000000000000000002 /* DeskDeckWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DeskDeckWireTests.swift"; sourceTree = SOURCE_ROOT; };
+		D50000000000000000000003 /* DeskDeck */ = {isa = PBXGroup; children = (D50000000000000000000002,); path = DeskDeck; sourceTree = "<group>"; };
 		B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Sms/MacSmsReceiving.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRecovery.swift"; sourceTree = SOURCE_ROOT; };
@@ -316,11 +337,17 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+        D70000000000000000000007 /* DndSync */ = {isa = PBXGroup; children = (D70000000000000000000002,); path = DndSync; sourceTree = "<group>"; };
 		D30000000000000000000007 /* PhoneInput */ = {isa = PBXGroup; children = (D30000000000000000000002, D40000000000000000000004, D40000000000000000000005, D40000000000000000000008,); path = PhoneInput; sourceTree = "<group>"; };
 		D30000000000000000000008 /* PhoneInputTests */ = {isa = PBXGroup; children = (D30000000000000000000004, D30000000000000000000006, D40000000000000000000006,); path = PhoneInput; sourceTree = "<group>"; };
 		00000000000000000000000B = {
 			isa = PBXGroup;
 			children = (
+				AC0100000000000000000011 /* Assets.xcassets */,
+				B40200000000000000000001,
+				B40200000000000000000002,
+				B40200000000000000000003,
+				B40200000000000000000004,
 				76FCD82333FFE32A403584EC,
 				7886F9180923AA3BA021362F,
 				D7F2A1210EAF55185006B8AA,
@@ -418,6 +445,8 @@
 		000000000000000000000206 /* aniCeTests */ = {
 			isa = PBXGroup;
 			children = (
+				D60000000000000000000002 /* DeskDeckWireTests.swift */,
+                D70000000000000000000004, D70000000000000000000006,
 				D30000000000000000000008 /* PhoneInputTests */,
 				D10000000000000000000012 /* KeyboardTrackpadTests */,
 				AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */,
@@ -484,6 +513,8 @@
 				000000000000000000000461 /* Discovery */,
 				D30000000000000000000007 /* PhoneInput */,
 				D1000000000000000000000A /* KeyboardTrackpad */,
+				D50000000000000000000003 /* DeskDeck */,
+                D70000000000000000000007 /* DndSync */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -657,6 +688,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C7F01D6B909E13E9D6AF2780,
+				AC0100000000000000000010 /* Assets.xcassets in Resources */,
 				AB0000000000000000000012 /* ../../core/rust/pairing/THIRD_PARTY_NOTICES.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -665,6 +697,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                D70000000000000000000005,
 				7BF06424CFA331AA5DC65AD5,
 				9DF815E709C26EE3E825817A,
 				B267B0535D61B78766EECCF5,
@@ -682,6 +715,7 @@
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 				B10100000000000000000003 /* ../../protocol/test-vectors/transfer/transfer-vectors.json in Resources */,
 				B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */,
+				B40100000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json in Resources */,
 				D1000000000000000000000E /* hid-vectors.json in Resources */,
 				D30000000000000000000005 /* phone-input-vectors.json in Resources */,
 			);
@@ -786,6 +820,8 @@
 				B30100000000000000000002 /* aniCe/Features/Sms/MacSmsModel.swift in Sources */,
 				B30100000000000000000003 /* aniCe/Features/Sms/MacSmsNotifier.swift in Sources */,
 				B30100000000000000000004 /* aniCe/Features/Sms/SmsView.swift in Sources */,
+				B40100000000000000000001 /* aniCe/Features/Notifications/NotificationWire.swift in Sources */,
+				B40100000000000000000002 /* aniCe/Features/Notifications/MacNotificationMirror.swift in Sources */,
 				D10000000000000000000001 /* MacKeyboardTrackpadModel.swift in Sources */,
 				D10000000000000000000003 /* MacKeyboardTrackpadView.swift in Sources */,
 				D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */,
@@ -794,6 +830,8 @@
 				D40000000000000000000001 /* MacPhoneInputEventAdapter.swift in Sources */,
 				D40000000000000000000002 /* MacPhoneInputModel.swift in Sources */,
 				D40000000000000000000007 /* MacPhoneInputView.swift in Sources */,
+				D50000000000000000000001 /* MacDeskDeck.swift in Sources */,
+                D70000000000000000000001 /* MacDndSync.swift in Sources */,
 				B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -822,10 +860,13 @@
 				B30100000000000000000005 /* aniCeTests/Sms/SmsWireTests.swift in Sources */,
 				B30100000000000000000006 /* aniCeTests/Sms/SmsModelTests.swift in Sources */,
 				B30100000000000000000007 /* aniCeTests/Sms/SmsNotifierTests.swift in Sources */,
+				B40100000000000000000003 /* aniCeTests/Notifications/NotificationMirrorTests.swift in Sources */,
 				D1000000000000000000000C /* KeyboardTrackpadTests.swift in Sources */,
 				D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */,
 				D30000000000000000000003 /* PhoneInputTests.swift in Sources */,
 				D40000000000000000000003 /* MacPhoneInputTests.swift in Sources */,
+				D60000000000000000000001 /* DeskDeckWireTests.swift in Sources */,
+                D70000000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -951,11 +992,13 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = aniCe/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -978,11 +1021,13 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = aniCe/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = aniCe;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";

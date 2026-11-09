@@ -95,7 +95,8 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                             }
                             if (favourites.isEmpty()) {
                                 TextButton(onClick = { navigation.select(AppDestination.Features, false) },
-                                    contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
                                     Icon(painterResource(R.drawable.ic_star), contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(6.dp))
                                     Text("Add shortcuts")
@@ -108,7 +109,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                                         OutlinedButton(onClick = { navigation.openFeature(feature) },
                                             shape = MaterialTheme.shapes.small,
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                            modifier = Modifier.heightIn(min = 48.dp)) {
+                                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
                                             Text(feature.label, maxLines = 1, softWrap = false)
                                         }
                                     }

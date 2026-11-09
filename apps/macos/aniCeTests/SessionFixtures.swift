@@ -16,6 +16,7 @@ struct SessionFixtures {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
+      .deletingLastPathComponent()
       .appendingPathComponent("protocol/test-vectors")
     let candidates = [
       bundleUrl,
@@ -25,6 +26,7 @@ struct SessionFixtures {
       repoUrl.appendingPathComponent("lan/\(name).json"),
       repoUrl.appendingPathComponent("phone-input/\(name).json"),
       repoUrl.appendingPathComponent("sms/\(name).json"),
+      repoUrl.appendingPathComponent("notifications/\(name).json"),
     ].compactMap { $0 }
     guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
       throw SessionFailure.malformed
