@@ -10,6 +10,10 @@ Share semantic roles across Mac, its menu-bar companion and Android; use each pl
 
 Feature panels demonstrate layout and interaction, not capability availability or OS support. Implement only established product behavior that the platform supports.
 
+## Brand mark
+
+Use the transparent path-only ringless silver interlocking ribbon ([final SVG](../../branding/anice-mark-final.svg)) on app brand surfaces. Full-color artwork carries the metallic lighting; the Mac menu-bar template uses shaded alpha to preserve the folded form at 21.5 pt. The Mac app icon uses a full rounded warm-light tile; its appearance-aware Dock tile is inset around the same-sized mark so it sits with neighboring Dock icons. Android's adaptive icon keeps its foreground size and uses a softly toned Light background with a darker charcoal Dark background. Keep the mark's proportions and use the platform's native feature symbols for controls.
+
 ## Reference fidelity
 
 The approved reference is the visual target. Preserve its hierarchy, proportions, typography, outlined actions, sidebar branding, grouped connection rows, flat Home player, file-selection target, and Mac pairing/detail sheets. Match each platform before moving to another area. Adapt only where native behavior, supported capabilities or accessibility require it. Keep Choose files and use native drag-and-drop where implemented; pairing requires mutual approval rather than the simulator’s Continue action.
@@ -269,7 +273,7 @@ Without a trusted Android device, show No devices paired yet and Pair a device. 
 
 The companion is for checking a device and taking a quick action. Browsing and configuration belong in the full window.
 
-- Use a monochrome template status-item glyph and a native anchored panel approximately 340–360 pt wide.
+- Use a 21.5 pt monochrome template of the shared ribbon for the status item and a native anchored panel approximately 340–360 pt wide.
 - Show compact device rows with a small native name and connection status inline, a contextual connection action when disconnected and a details route. Wrap long names rather than increasing the normal row height for short names. Connected peers appear first; when any are connected, other peers remain accessible through the full workspace.
 - Show Send files only for the actual ready, compatible transfer target and hide it during preparation or an active/result transfer. Do not attach a global transfer command to an unrelated connected peer.
 - Use the original companion hierarchy: compact aniCe heading with overflow, device header, then content separated by dividers between populated sections. Do not place filled activity cards inside the companion surface. Keep playback and transfer visible together without paging, page counters or swipe gestures. Keep incoming offers visible.

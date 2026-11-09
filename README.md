@@ -1,5 +1,9 @@
 # aniCe
 
+<p align="center">
+  <img src="branding/anice-mark-final.svg" width="168" alt="aniCe silver interlocking ribbon mark">
+</p>
+
 A native, local-first continuity bridge, starting with Android and macOS. Connects your phone and Mac directly over Bluetooth Low Energy and local-network TCP, using authenticated, encrypted sessions — no cloud accounts, external relays or telemetry.
 
 The pairing and transport foundations include P-256 identities, QR and OPAQUE PIN pairing, RFC 9528 EDHOC key exchange, and AES-256-GCM encrypted records. See [ARCHITECTURE.md](ARCHITECTURE.md) for technical design and protocol details.

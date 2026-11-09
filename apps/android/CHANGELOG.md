@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master; preserve launcher foreground size and darken the night tile slightly.
+
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
 - Keep notification app choices in the Settings page's existing scroll container to prevent a Compose nested-scroll crash.

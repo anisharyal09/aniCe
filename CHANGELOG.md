@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Replace the embedded-raster logo wrapper with a transparent, path-only SVG master; inset the Mac Dock tile around the unchanged mark and darken Android's night launcher tile slightly.
+
 - Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
 
 - Fix an Android Settings crash caused by nesting the notification app picker scroll inside the page scroll.

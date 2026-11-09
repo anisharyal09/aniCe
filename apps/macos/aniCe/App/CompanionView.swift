@@ -177,7 +177,7 @@ struct CompanionView: View {
   static weak var currentHost: CompanionHost?
   var isPickingFile = false
 
-  private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+  private let item = NSStatusBar.system.statusItem(withLength: 24)
   private let popover = NSPopover()
   private let playback: MacPlaybackModel
   private let floatingKeyboard: FloatingKeyboardController
@@ -202,7 +202,9 @@ struct CompanionView: View {
     popover.animates = false
     popover.delegate = self
     if let button = item.button {
-      let image = NSImage(systemSymbolName: "laptopcomputer.and.iphone", accessibilityDescription: "aniCe")
+      let image = NSImage(named: "StatusBarMark")
+        ?? NSImage(systemSymbolName: "laptopcomputer.and.iphone", accessibilityDescription: "aniCe")
+      image?.size = NSSize(width: 21.5, height: 21.5)
       image?.isTemplate = true
       button.image = image
       button.setAccessibilityLabel("aniCe")

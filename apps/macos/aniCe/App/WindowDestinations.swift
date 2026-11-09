@@ -267,8 +267,8 @@ extension MainWindowView {
   }
 
   private var aboutMark: some View {
-    Image(systemName: "link").font(.system(size: 17)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-      .frame(width: 20).accessibilityHidden(true)
+    Image("BrandMark").resizable().scaledToFit()
+      .frame(width: 28, height: 28).accessibilityHidden(true)
   }
 
   private func aboutProductDetails(alignment: HorizontalAlignment) -> some View {

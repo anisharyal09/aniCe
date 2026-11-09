@@ -56,7 +56,7 @@ class FindDeviceNotification(private val context: Context) : FindDeviceNotifying
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher).setContentTitle(context.getString(R.string.find_ringing_title))
+            .setSmallIcon(R.drawable.ic_notification_small).setContentTitle(context.getString(R.string.find_ringing_title))
             .setContentText(context.getString(R.string.find_notification_body, ring.peerName))
             .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.find_notification_body, ring.peerName)))
             .setContentIntent(open).setDeleteIntent(dismiss).setAutoCancel(false).setOnlyAlertOnce(true).setSilent(true)

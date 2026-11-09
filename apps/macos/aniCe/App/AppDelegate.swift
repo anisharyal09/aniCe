@@ -11,13 +11,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var findNotifier: MacFindDeviceNotifier?
     private var smsNotifier: MacSmsNotifier?
     private var notificationMirrorNotifier: MacNotificationMirrorNotifier?
+    private var iconAppearanceObservation: NSKeyValueObservation?
     private var companion: CompanionHost?
     private var floatingKeyboard: FloatingKeyboardController?
     var onTerminate: () -> Void = {}
     func applicationWillTerminate(_ notification: Notification) { onTerminate() }
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        updateDockIcon()
+        iconAppearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            Task { @MainActor in self?.updateDockIcon() }
+        }
+    }
+
+    private func updateDockIcon() {
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+            guard let icon = NSImage(named: "DockIcon") else {
+                NSLog("aniCe: DockIcon asset is missing from the app bundle")
+                return
+            }
+            NSApp.applicationIconImage = icon
+        }
     }
 
     func configureNotifications(findDevice: MacFindDeviceNotifier, transfer: MacTransferNotifier, sms: MacSmsNotifier? = nil,

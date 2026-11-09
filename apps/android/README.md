@@ -2,6 +2,8 @@
 
 Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust.
 
+The launcher, app bar and About header use the shared [silver ribbon mark](../../branding/anice-mark-final.svg). The adaptive icon keeps its current foreground scale; its backgrounds use soft warm light and darker charcoal appearances, and its monochrome layer preserves the ribbon silhouette.
+
 Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and fresh-session renewal are implemented. Manual authenticated LAN connections over TCP operate independently alongside BLE with shared peer reservations.
 
 Automatic nearby recovery uses an OS-bound companion lease and one device setting. The shared API 31+ resource enables notification-free ownership in Debug and Release. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
