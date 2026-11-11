@@ -28,62 +28,35 @@ For low-level protocol schemas and transport state machines, see [ARCHITECTURE.m
 
 ## Features
 
-### Seamless Zero-Window File Transfer
-Share files between devices without opening app windows, scanning codes, or waiting on progress screens:
-* **Mac (Zero-Window):**
-  * **Edge Drop:** Drag any file from Finder directly to your screen edge (right, left, or top) to send.
-  * **Menu Bar Picker:** Select files and send directly from the menu bar companion picker.
-  * **Window Drop:** Drop files anywhere onto the main app window.
-* **Android (Direct Share Sheet):**
-  * Tap **Share → aniCe** from Gallery, Files, or any app.
-  * Hit **Continue in background** to keep using your phone while files transfer via a background service.
-* **Custom Destinations & Silent Auto-Receive:**
-  * Custom save paths on both devices (`~/Downloads/aniCe` default on Mac).
-  * Files save silently to Downloads without prompt fatigue.
+#### Seamless File Transfer (Zero-Window AirDrop Alternative)
+- **Mac Edge Drop:** Drag files directly from Finder to your screen edge (left, right, or top) to send instantly.
+- **Menu Bar File Picker:** Select and send files from the macOS status bar without bringing any app forward.
+- **Android Direct Share:** Share photos, videos, or documents directly from the Android system share sheet with background transfer completion.
+- **Zero-Window Auto-Receive:** Inbound files save silently to your custom directory (`~/Downloads/aniCe` default) without prompt fatigue.
 
-### Control Android (Keyboard & Trackpad)
-Control your Android phone with your Mac's physical keyboard and trackpad over Classic Bluetooth HID:
-* Draggable **Floating Key** window with full-header dragging, collapse, and hide controls.
-* Quick shortcuts for Android **Back**, **Home**, **Recents**, and clipboard text typing.
+#### Remote Control & Workspace Input
+- **Control Mac (Phone as Remote):** Use your phone screen as a wireless trackpad and keyboard to navigate, click, and type on your Mac.
+- **Control Android (Mac Keyboard & Trackpad):** Control your phone with your Mac's physical keyboard and trackpad via Bluetooth HID, with a draggable floating controller for Android Home, Back, and Recents.
+- **macOS Menu Bar Companion:** Quick-access status bar companion for device connectivity, pinned actions, and the Quick Paste Tray (`⌥⌘V`).
 
-### Control Mac (Phone as Remote Control)
-Use your phone as a remote control cursor and keyboard for your Mac:
-* Move the pointer, click, and type text on your Mac directly from your phone screen.
+#### Desk Deck (Mac Control & Telemetry from Phone)
+- **Remote Mac Controls:** Lock Mac, mute/unmute audio, adjust volume, and switch Mac audio output devices right from your phone.
+- **One-Tap App Launcher:** Launch approved macOS applications directly from your phone screen.
+- **Live Mac Telemetry:** Real-time monitoring of Mac CPU load, memory utilization, thermal pressure, and battery percentage.
+- **Remote Screenshots:** Trigger and capture macOS screenshots directly from your device deck.
 
-### Dedicated macOS Menu Bar Companion
-Lightweight menu bar companion for quick background control without opening the main window:
-* Select files and send directly from the menu bar picker.
-* Access pinned quick actions, device connection status, and Quick Paste Tray (`⌥⌘V`).
+#### Clipboard Sync & Direct Link Forwarding
+- **Encrypted Clipboard Sync:** Real-time, bidirectional clipboard sharing with sensitive text detection (passwords and tokens stay local unless confirmed).
+- **Direct Browser Forwarding:** Share links from Android to open immediately in your Mac's default browser without cluttering your clipboard history.
+- **Quick Paste Tray:** Instant clipboard history access with global shortcut (`⌥⌘V`).
 
-### Clipboard Sync & Direct Link Forwarding
-Instant, encrypted clipboard sharing:
-* **Direct Browser Forwarding:** Share links from Android to open immediately in your Mac's default browser *without cluttering your clipboard history*.
-* Automatic or manual sync with sensitive text protection (passwords/tokens stay local unless confirmed).
-* macOS Quick Paste Tray (`⌥⌘V`) with local history.
-
-### Mac Desk Deck (Remote Control & Telemetry)
-Monitor and control your Mac directly from your phone:
-* **Remote Controls:** Lock Mac, mute Mac (input & output), adjust volume, and switch audio output devices.
-* **Launch Mac Apps:** Open approved Mac applications directly from your phone with one tap.
-* **Live Telemetry:** Real-time Mac CPU load, memory utilization, thermal pressure, and battery status.
-* **Quick Actions:** Trigger Mac screenshots remotely.
-
-### Notification Sync & Call Controls
-Real-time Android notification mirroring to macOS:
-* Mirror selected apps with synced dismissal across devices.
-* Answer, decline, or silence incoming SIM calls directly from Mac notification banners with caller ID.
-
-### Messages (SMS Relay)
-Read, search, and reply to phone text messages directly on Mac:
-* Full conversation browsing with multi-SIM origin chips.
-* Inline reply directly from macOS notification banners.
-
-### Now Playing
-Live media playback controls and album artwork synchronized between Android and Mac.
-
-### Do Not Disturb Sync & Find Device
-* Sync phone DND state to macOS Focus modes via native Shortcuts.
-* Ring a misplaced phone (alarm) from Mac or alert your Mac with one tap.
+#### Communication, Alerts & Media
+- **Notification Mirroring:** Real-time phone notifications on Mac with synchronized cross-device dismissal.
+- **Call Handling:** View caller ID and answer, decline, or silence incoming SIM phone calls directly from Mac notification banners.
+- **Messages (SMS Relay):** Browse full SMS threads with multi-SIM origin chips and send inline replies from macOS notifications.
+- **Now Playing:** Synchronized media playback controls and album artwork between phone and Mac.
+- **Do Not Disturb Sync:** Sync phone DND state with macOS Focus modes via native Shortcuts.
+- **Find Device:** Remotely ring a misplaced phone or ping your Mac with one tap.
 
 ---
 
