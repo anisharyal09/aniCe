@@ -403,6 +403,32 @@ exit "$ANICE_TEST_SDK_EXIT"
         self.assertEqual(upload.get("if"), "always()")
         self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
 
+    def test_security_workflow_policies(self):
+        document = workflow_documents()["security.yml"]
+        events = triggers(document)
+        self.assertNotIn("pull_request", events)
+        self.assertNotIn("pull_request_target", events)
+        self.assertEqual(document.get("permissions"), {"contents": "read"})
+        codeql = document["jobs"]["codeql"]
+        self.assertEqual(codeql.get("permissions"), {"contents": "read", "security-events": "write"})
+        self.assertIn("java-kotlin", codeql.get("strategy", {}).get("matrix", {}).get("language", []))
+        codeql_swift = document["jobs"]["codeql-swift"]
+        self.assertEqual(codeql_swift.get("runs-on"), "macos-15")
+        self.assertIn("Xcode_26.3.app", codeql_swift.get("env", {}).get("DEVELOPER_DIR", ""))
+        self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
+        scorecard = document["jobs"]["scorecard"]
+        self.assertEqual(scorecard.get("permissions"), {"security-events": "write", "id-token": "write", "contents": "read"})
+
+    def test_dependency_review_workflow_policies(self):
+        document = workflow_documents()["dependency-review.yml"]
+        events = triggers(document)
+        self.assertEqual(events, {"pull_request"})
+        self.assertEqual(document.get("permissions"), {"contents": "read"})
+        job = document["jobs"]["dependency-review"]
+        self.assertEqual(job.get("permissions"), {"contents": "read"})
+        step = next(s for s in job["steps"] if "dependency-review-action" in s.get("uses", ""))
+        self.assertEqual(step.get("with", {}).get("fail-on-severity"), "high")
+
     def test_codeowners_covers_the_gate_files(self):
         path = ROOT / ".github" / "CODEOWNERS"
         patterns = [
@@ -413,6 +439,9 @@ exit "$ANICE_TEST_SDK_EXIT"
         for required in (
             "/.github/workflows/",
             "/.github/actionlint.yaml",
+            "/.github/PULL_REQUEST_TEMPLATE.md",
+            "/SECURITY.md",
+            "/CONTRIBUTING.md",
             "/scripts/verify-suite.py",
             "/scripts/test_ci_workflow.py",
             "/scripts/test_verify_suite.py",

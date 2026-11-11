@@ -2,7 +2,10 @@
 # Changes that can weaken a required verification gate need an owner review.
 /.github/workflows/ @anisharyal09
 /.github/actionlint.yaml @anisharyal09
+/.github/PULL_REQUEST_TEMPLATE.md @anisharyal09
 /.github/CODEOWNERS @anisharyal09
+/SECURITY.md @anisharyal09
+/CONTRIBUTING.md @anisharyal09
 /scripts/verify-suite.py @anisharyal09
 /scripts/test_verify_suite.py @anisharyal09
 /scripts/test_ci_workflow.py @anisharyal09

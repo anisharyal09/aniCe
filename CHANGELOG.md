@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Add supply-chain security and repository governance: automated CodeQL analysis for Python, Actions, Java/Kotlin, and Swift (`security.yml`), OpenSSF Scorecard analysis, fork-safe PR dependency review (`dependency-review.yml`), security vulnerability disclosure policy (`SECURITY.md`), contribution guidelines (`CONTRIBUTING.md`), and pull request verification template (`.github/PULL_REQUEST_TEMPLATE.md`).
+
 - Add protected physical Android device lab verification for native cross-platform interchange (`device-lab.yml`), serialized to avoid USB ADB contention, with automated battery and thermal guardrails (`scripts/check-device-health.py`), device inventory definitions (`tools/device-lab/inventory.json`), and explicit non-automated manual-acceptance tracking.
 
 - Compile Android instrumentation tests with `assembleDebugAndroidTest` in `verify-android`, make `connected` verification Linux-friendly, and add scheduled/manual emulator execution for API 29 and 36 on headless KVM in `runtime.yml`.

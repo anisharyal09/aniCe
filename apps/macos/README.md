@@ -116,7 +116,7 @@ The Mac gate includes Keychain tests and rejects zero tests, failures, crashes a
 
 The storage backend remains the development login Keychain, without hardware isolation. Local app builds default to ad-hoc signing; developers may use a stable Apple Development identity locally when testing macOS permission persistence. Automated tests remain ad-hoc signed. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
-The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Universal builds support Apple Silicon and Intel; macOS 14 is the deployment target.
+The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Releases natively target Apple Silicon (`arm64`); macOS 14 is the deployment target.
 
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
