@@ -381,6 +381,28 @@ exit "$ANICE_TEST_SDK_EXIT"
         self.assertEqual(upload.get("if"), "always()")
         self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
 
+    def test_device_lab_workflow_is_protected_and_self_hosted(self):
+        document = workflow_documents()["device-lab.yml"]
+        events = triggers(document)
+        self.assertNotIn("pull_request", events)
+        self.assertNotIn("merge_group", events)
+        self.assertLessEqual(events, {"schedule", "workflow_dispatch", "push"})
+        self.assertEqual(document.get("permissions"), {"contents": "read"})
+        job = document["jobs"]["verify-native-interchange"]
+        self.assertEqual(job.get("environment"), "device-lab")
+        runner = job.get("runs-on")
+        self.assertIn("self-hosted", runner)
+        self.assertIn("device-lab", runner)
+        runs = step_runs(job)
+        self.assertTrue(any("scripts/check-device-health.py" in run for run in runs))
+        self.assertTrue(any("scripts/verify-suite.py --only interchange" in run for run in runs))
+        upload = next(
+            step for step in job["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        self.assertEqual(upload.get("if"), "always()")
+        self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
+
     def test_codeowners_covers_the_gate_files(self):
         path = ROOT / ".github" / "CODEOWNERS"
         patterns = [
@@ -390,9 +412,13 @@ exit "$ANICE_TEST_SDK_EXIT"
         ]
         for required in (
             "/.github/workflows/",
+            "/.github/actionlint.yaml",
             "/scripts/verify-suite.py",
             "/scripts/test_ci_workflow.py",
             "/scripts/test_verify_suite.py",
+            "/scripts/test_device_health.py",
+            "/scripts/check-device-health.py",
+            "/tools/device-lab/",
             "/scripts/build-pairing-native.py",
             "/scripts/requirements.txt",
         ):

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "guardrails": {
+    "min_battery_percent": 20,
+    "max_temperature_celsius": 42.0
+  },
+  "devices": [
+    {
+      "serial": "RZCW916NELW",
+      "model": "SM_A346E",
+      "manufacturer": "samsung",
+      "role": "primary-interchange-lab",
+      "min_sdk": 29
+    }
+  ]
+}

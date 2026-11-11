@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Changes that can weaken a required verification gate need an owner review.
 /.github/workflows/ @anisharyal09
+/.github/actionlint.yaml @anisharyal09
 /.github/CODEOWNERS @anisharyal09
 /scripts/verify-suite.py @anisharyal09
 /scripts/test_verify_suite.py @anisharyal09
 /scripts/test_ci_workflow.py @anisharyal09
+/scripts/test_device_health.py @anisharyal09
 /scripts/build-pairing-native.py @anisharyal09
 /scripts/requirements.txt @anisharyal09
 /scripts/check-structure.py @anisharyal09
+/scripts/check-device-health.py @anisharyal09
+/tools/device-lab/ @anisharyal09

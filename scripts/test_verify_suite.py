@@ -653,6 +653,37 @@ class AggregateGateTests(unittest.TestCase):
                 {}, self.root)
         self.assertEqual(result, suite.NotExecuted('No authorized device (--allow-no-device)'))
 
+    def test_interchange_execution_records_harnesses_and_manual_acceptance_metadata(self):
+        with patch.object(suite, 'find_adb', return_value='/adb'), \
+             patch.object(suite, 'selected_device', return_value='RZCW916NELW'), \
+             patch.object(suite, 'run_step') as mock_step, \
+             contextlib.redirect_stdout(io.StringIO()):
+            result = suite.run_interchange_checks(
+                SimpleNamespace(serial='RZCW916NELW', allow_no_device=False, session_mac_binary=Path('/mock/helper')),
+                {}, self.root)
+        self.assertEqual(result, {
+            'harnesses': 3,
+            'ble_verified': False,
+            'manual_acceptance': 'pending',
+        })
+        self.assertEqual(mock_step.call_count, 3)
+
+    def test_markdown_summary_formats_interchange_evidence(self):
+        summary = {
+            'status': 'passed',
+            'suites': {
+                'interchange': {
+                    'status': 'passed',
+                    'harnesses': 3,
+                    'ble_verified': False,
+                    'manual_acceptance': 'pending',
+                }
+            },
+            'errors': [],
+        }
+        text = suite.markdown_summary(summary)
+        self.assertIn('| interchange | passed | harnesses 3; ble verified False; manual acceptance pending |', text)
+
     def test_failure_marks_later_suites_unexecuted_and_returns_nonzero(self):
         code, report, mocks = self.invoke(['fast', '--android'],
                                         {'run_vector_checks': suite.GateError('fixture drift')})

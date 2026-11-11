@@ -461,7 +461,7 @@ def markdown_summary(summary):
         evidence = []
         for key in ("passed", "failed", "documented_skips", "checks",
                     "policy_tests", "harnesses", "actionlint", "xcode",
-                    "arch"):
+                    "arch", "ble_verified", "manual_acceptance"):
             if key in row:
                 evidence.append("%s %s" % (key.replace("_", " "), row[key]))
         if row.get("reason"):
@@ -840,7 +840,11 @@ def run_interchange_checks(args, env, artifacts):
          "--output", str(artifacts / "session-interchange")],
         artifacts, env=env, timeout=2400,
     )
-    return {"harnesses": 3}
+    return {
+        "harnesses": 3,
+        "ble_verified": False,
+        "manual_acceptance": "pending",
+    }
 
 
 def run_connected_checks(args, env, artifacts, documented_android):
