@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Defines semantic appearance colors and shared Mac control feedback.
+import AppKit
 import SwiftUI
 
 enum AniCePalette {
@@ -42,6 +43,9 @@ enum AniCePalette {
   static func error(_ scheme: ColorScheme) -> Color {
     color(light: 0xA13D38, dark: 0xE8AAA4, scheme: scheme)
   }
+  static func wordmarkAccent(_ scheme: ColorScheme) -> Color {
+    color(light: 0xD26458, dark: 0xE58B82, scheme: scheme)
+  }
 
   private static func color(light: UInt32, dark: UInt32, scheme: ColorScheme) -> Color {
     let hex = scheme == .dark ? dark : light
@@ -52,6 +56,79 @@ enum AniCePalette {
       blue: Double(hex & 0xFF) / 255,
       opacity: 1
     )
+  }
+}
+
+struct AniCeWordmark: View {
+  var size: CGFloat = 17
+  var weight: Font.Weight = .semibold
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    (Text("ani") + Text("Ce").foregroundStyle(AniCePalette.wordmarkAccent(scheme)))
+      .font(.system(size: size, weight: weight))
+      .accessibilityLabel("aniCe")
+  }
+}
+
+struct TitlebarWordmarkFormatter: NSViewRepresentable {
+  let colorScheme: ColorScheme
+
+  func makeNSView(context: Context) -> TitlebarObserverView {
+    let view = TitlebarObserverView()
+    view.colorScheme = colorScheme
+    return view
+  }
+
+  func updateNSView(_ nsView: TitlebarObserverView, context: Context) {
+    nsView.colorScheme = colorScheme
+    nsView.colorize()
+  }
+}
+
+final class TitlebarObserverView: NSView {
+  var colorScheme: ColorScheme = .light
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    NotificationCenter.default.removeObserver(self)
+    if let window {
+      NotificationCenter.default.addObserver(self, selector: #selector(handleWindowChange), name: NSWindow.didBecomeKeyNotification, object: window)
+      NotificationCenter.default.addObserver(self, selector: #selector(handleWindowChange), name: NSWindow.didResignKeyNotification, object: window)
+      NotificationCenter.default.addObserver(self, selector: #selector(handleWindowChange), name: NSWindow.didResizeNotification, object: window)
+    }
+    colorize()
+  }
+
+  @objc private func handleWindowChange() {
+    colorize()
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+  }
+
+  func colorize() {
+    guard let window else { return }
+    DispatchQueue.main.async { [weak self, weak window] in
+      guard let self, let window, let frameView = window.contentView?.superview else { return }
+      self.formatTitleInView(frameView)
+    }
+  }
+
+  private func formatTitleInView(_ view: NSView) {
+    if let tf = view as? NSTextField, tf.stringValue == "aniCe" {
+      let isDark = colorScheme == .dark
+      let primary = isDark ? NSColor.white : NSColor(red: 0x1A/255.0, green: 0x1A/255.0, blue: 0x1A/255.0, alpha: 1.0)
+      let coral = isDark ? NSColor(red: 0xE5/255.0, green: 0x8B/255.0, blue: 0x82/255.0, alpha: 1.0) : NSColor(red: 0xD2/255.0, green: 0x64/255.0, blue: 0x58/255.0, alpha: 1.0)
+      let font = tf.font ?? NSFont.systemFont(ofSize: 13, weight: .semibold)
+      let attr = NSMutableAttributedString(string: "ani", attributes: [.font: font, .foregroundColor: primary])
+      attr.append(NSAttributedString(string: "Ce", attributes: [.font: font, .foregroundColor: coral]))
+      tf.attributedStringValue = attr
+    }
+    for sub in view.subviews {
+      formatTitleInView(sub)
+    }
   }
 }
 

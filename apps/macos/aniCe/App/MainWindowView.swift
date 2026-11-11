@@ -63,7 +63,7 @@ struct MainWindowView: View {
           Image("BrandMark")
             .resizable().scaledToFit().frame(width: 22, height: 22)
             .accessibilityHidden(true)
-          Text("aniCe").font(.system(size: 21 * fontScale, weight: .semibold))
+          AniCeWordmark(size: 21 * fontScale, weight: .semibold)
         }.foregroundStyle(AniCePalette.primaryText(colorScheme))
           .padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 24)
         Text("Workspace").font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -141,6 +141,7 @@ struct MainWindowView: View {
     .toolbarBackground(.visible, for: .windowToolbar)
     .background(AniCePalette.background(colorScheme))
     .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+    .background(TitlebarWordmarkFormatter(colorScheme: colorScheme))
   }
 
   @ViewBuilder private var pendingRequestRows: some View {

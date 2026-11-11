@@ -24,7 +24,7 @@ struct CompanionView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       HStack(spacing: 12) {
-        Text("aniCe").font(.headline)
+        AniCeWordmark(size: 15, weight: .semibold)
         Spacer()
         Menu {
           Button("Quick Paste Tray (⌥⌘V)") {
@@ -230,8 +230,9 @@ struct CompanionView: View {
     VStack(spacing: 12) {
       Divider()
       Button(action: openMain) {
-        HStack {
-          Text("Open aniCe")
+        HStack(spacing: 5) {
+          Text("Open")
+          AniCeWordmark(size: 13, weight: .medium)
           Spacer()
           Image(systemName: "arrow.up.right").accessibilityHidden(true)
         }.contentShape(Rectangle())

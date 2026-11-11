@@ -40,6 +40,7 @@ import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
 import io.github.anisharyal09.anice.ui.theme.saveAppearance
+import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
 import io.github.anisharyal09.anice.ui.theme.fontScalePreference
 import io.github.anisharyal09.anice.ui.theme.saveFontScale
 import kotlinx.coroutines.launch
@@ -389,7 +390,7 @@ private fun AboutScreen(context: Context) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
                                 modifier = Modifier.size(20.dp))
-                            Text("aniCe", style = MaterialTheme.typography.titleMedium)
+                            AniCeWordmark(style = MaterialTheme.typography.titleMedium)
                         }
                         Column(Modifier.padding(start = 32.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -401,7 +402,7 @@ private fun AboutScreen(context: Context) {
                         Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
                             modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text("aniCe", style = MaterialTheme.typography.titleMedium)
+                        AniCeWordmark(style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.weight(1f))
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("macOS + Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -430,7 +431,7 @@ private fun AboutScreen(context: Context) {
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("No accounts, no telemetry. The only request outside your devices is the optional update check, sent to github.com.",
+                Text("No accounts, no telemetry. All connections stay local to your devices.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
                     modifier = Modifier

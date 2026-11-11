@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Highlight 'Ce' in aniCe (indicating Core Ecosystem) with a warm terracotta accent across macOS and Android wordmarks, format the Mac titlebar header with isolated navigation controls, style the menu bar companion open button, and sharpen feature documentation and Desk Deck controls.
+
 - Add fine-grained text scaling (80%–120%) across macOS and Android, remove redundant Disconnect buttons in favor of wrapped Pause controls with concise status text, set default platform favorites and pinned companion quick actions, default Mac SMS notifications to preview messages with sound muted, cleansify phone SMS conversations and Find Device cards, and streamline the About view with an updated tagline and understated support link.
 
 - Keep connection status and device power inline after the Wi-Fi icon across Mac and Android, refine the menu bar companion device row and action grid, present file transfers as floating panels on the active space, rename Floating Key's menu to Show trackpad too, and compact phone SMS actions.

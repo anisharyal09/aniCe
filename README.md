@@ -29,61 +29,61 @@ For low-level protocol schemas and transport state machines, see [ARCHITECTURE.m
 ## Features
 
 ### Seamless Zero-Window File Transfer
-Send files instantly without the friction of opening app windows, scanning codes, or waiting on foreground screens:
+Share files between devices without opening app windows, scanning codes, or waiting on progress screens:
 * **Mac (Zero-Window):**
-  * **Edge Drop:** Drag any file from Finder directly to your screen edge (right, left, or top) onto the popout shelf.
-  * **Menu Bar Companion:** Quick-send and drag target directly from the menu bar status icon.
-  * **Overview Drop:** Drop files anywhere onto the main app window.
+  * **Edge Drop:** Drag any file from Finder directly to your screen edge (right, left, or top) to send.
+  * **Menu Bar Picker:** Select files and send directly from the menu bar companion picker.
+  * **Window Drop:** Drop files anywhere onto the main app window.
 * **Android (Direct Share Sheet):**
   * Tap **Share → aniCe** from Gallery, Files, or any app.
-  * Send with one tap, or hit **Continue in background** to keep using your phone while files transfer via a background service.
-* **Custom Destination Folders & Silent Auto-Receive:**
-  * Choose custom save destinations on both devices (`~/Downloads/aniCe` by default on Mac, or custom folder on Android).
-  * Automatic receiving: Incoming files land silently in your Downloads folder without prompt fatigue.
+  * Hit **Continue in background** to keep using your phone while files transfer via a background service.
+* **Custom Destinations & Silent Auto-Receive:**
+  * Custom save paths on both devices (`~/Downloads/aniCe` default on Mac).
+  * Files save silently to Downloads without prompt fatigue.
 
 ### Control Android (Keyboard & Trackpad)
 Control your Android phone with your Mac's physical keyboard and trackpad over Classic Bluetooth HID:
-* Fluid two-finger scrolling, left/right pointer dragging, and native modifier mapping.
-* Persistent **Floating Key** button with full-header dragging, collapse, and hide controls.
+* Draggable **Floating Key** window with full-header dragging, collapse, and hide controls.
 * Quick shortcuts for Android **Back**, **Home**, **Recents**, and clipboard text typing.
 
 ### Control Mac (Phone as Remote Control)
-Use your phone as a remote control cursor and keyboard directly:
-* Navigate the Mac pointer, perform left/right clicks, and type text on your Mac directly from your phone screen over an authenticated Bluetooth session.
+Use your phone as a remote control cursor and keyboard for your Mac:
+* Move the pointer, click, and type text on your Mac directly from your phone screen.
+
+### Dedicated macOS Menu Bar Companion
+Lightweight menu bar companion for quick background control without opening the main window:
+* Select files and send directly from the menu bar picker.
+* Access pinned quick actions, device connection status, and Quick Paste Tray (`⌥⌘V`).
 
 ### Clipboard Sync & Direct Link Forwarding
-Instant, encrypted clipboard sharing between devices:
-* **Direct Browser Forwarding:** Share or send links from Android to open immediately in your Mac's default browser *without cluttering your clipboard history*.
-* Automatic or manual clipboard sync with sensitive text protection (passwords/tokens stay local unless explicitly confirmed).
-* Optional local history and Quick Paste Tray on macOS.
+Instant, encrypted clipboard sharing:
+* **Direct Browser Forwarding:** Share links from Android to open immediately in your Mac's default browser *without cluttering your clipboard history*.
+* Automatic or manual sync with sensitive text protection (passwords/tokens stay local unless confirmed).
+* macOS Quick Paste Tray (`⌥⌘V`) with local history.
 
 ### Mac Desk Deck (Remote Control & Telemetry)
-Monitor and control your Mac from your Android phone:
-* **Launch Mac Apps:** Open any approved Mac application directly from your phone with one tap.
-* **Audio & Power Controls:** Remote Mac volume slider, input mute toggle, and switch active Mac audio output devices (e.g. Speakers vs Headphones).
-* **System Telemetry:** Real-time Mac CPU load, memory utilization, thermal pressure, and battery status.
-* **Quick Actions:** Remote screen lock and screenshot triggers.
+Monitor and control your Mac directly from your phone:
+* **Remote Controls:** Lock Mac, mute Mac (input & output), adjust volume, and switch audio output devices.
+* **Launch Mac Apps:** Open approved Mac applications directly from your phone with one tap.
+* **Live Telemetry:** Real-time Mac CPU load, memory utilization, thermal pressure, and battery status.
+* **Quick Actions:** Trigger Mac screenshots remotely.
 
 ### Notification Sync & Call Controls
-Real-time notification mirroring from Android to macOS:
-* Filter which Android apps mirror to Mac; synced dismissal clears alerts on both devices.
-* Live incoming call relay with caller ID, Answer, Decline, and Silence buttons directly from macOS notifications.
+Real-time Android notification mirroring to macOS:
+* Mirror selected apps with synced dismissal across devices.
+* Answer, decline, or silence incoming SIM calls directly from Mac notification banners with caller ID.
 
 ### Messages (SMS Relay)
-Read and reply to phone text messages directly on Mac:
-* Full conversation browsing, search, and message history cache.
-* Multi-SIM origin chips, phone carrier status, and inline reply directly from macOS notifications.
+Read, search, and reply to phone text messages directly on Mac:
+* Full conversation browsing with multi-SIM origin chips.
+* Inline reply directly from macOS notification banners.
 
 ### Now Playing
-Live media playback controls and album artwork synchronized between Android and Mac:
-* Play, pause, skip, and scrub media playing on either device.
-* Overview and menu bar companion widget support.
+Live media playback controls and album artwork synchronized between Android and Mac.
 
-### Do Not Disturb Sync
-One-way sync from phone DND to macOS Focus modes via native macOS Shortcuts.
-
-### Find Device
-Ping and locate a misplaced phone by ringing (alarm) from Mac or alert your Mac from your phone with one tap.
+### Do Not Disturb Sync & Find Device
+* Sync phone DND state to macOS Focus modes via native Shortcuts.
+* Ring a misplaced phone (alarm) from Mac or alert your Mac with one tap.
 
 ---
 

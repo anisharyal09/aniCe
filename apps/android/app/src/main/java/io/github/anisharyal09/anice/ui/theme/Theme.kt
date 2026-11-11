@@ -18,6 +18,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
 
 // Static semantic roles preserve the project palette rather than inheriting Material defaults.
 private val LightColors =
@@ -194,3 +200,25 @@ val ColorScheme.subtleAccent: Color
 val ColorScheme.selectionAccent: Color
     @Composable
     get() = if (surface == DarkColors.surface) DarkColors.primary else LightColors.primary
+
+val ColorScheme.wordmarkAccent: Color
+    @Composable
+    get() = if (surface == DarkColors.surface) Color(0xFFE58B82) else Color(0xFFD26458)
+
+@Composable
+fun AniCeWordmark(
+    style: TextStyle = MaterialTheme.typography.titleMedium,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.colorScheme.wordmarkAccent
+    Text(
+        text = buildAnnotatedString {
+            append("ani")
+            withStyle(SpanStyle(color = accent)) {
+                append("Ce")
+            }
+        },
+        style = style,
+        modifier = modifier
+    )
+}

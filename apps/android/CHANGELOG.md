@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Highlight 'Ce' in aniCe with a warm terracotta/coral accent on the TopAppBar and About screen, and prune About view privacy text to local-only connections.
+
 - Add a fine-grained text size slider (80%–120%) matching Mac's Appearance row layout, style the Pause control as a wrapped compact button in the device header and remove redundant Disconnect buttons, set default favorites (Control Mac, Mac Desk Deck, Clipboard), cleansify SMS conversations and Find Device cards, and streamline About with an updated tagline and understated support link.
 
 - Keep device connection status and Mac power summary inline on a single line after the Wi-Fi icon, and use a circular pause control matching the Mac companion.

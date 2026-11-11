@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
 import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
@@ -116,7 +117,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
                         modifier = Modifier.size(22.dp))
-                    Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
+                    AniCeWordmark(style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
                 }
             }, navigationIcon = {
                 if ((navigation.destination == AppDestination.Devices &&

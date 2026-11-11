@@ -199,19 +199,20 @@ extension MainWindowView {
       VStack(alignment: .leading, spacing: 16) {
         Text("About").font(.system(size: 18 * fontScale, weight: .medium))
         Text("Android + Mac, like never before.")
-          .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .font(.system(size: 13 * fontScale, weight: .regular))
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
               aboutMark
-              Text("aniCe").font(.system(size: 18 * fontScale, weight: .medium))
+              AniCeWordmark(size: 18 * fontScale, weight: .semibold)
               Spacer(minLength: 8)
               aboutProductDetails(alignment: .trailing)
             }
             VStack(alignment: .leading, spacing: 6) {
               HStack(spacing: 12) {
                 aboutMark
-                Text("aniCe").font(.system(size: 18 * fontScale, weight: .medium))
+                AniCeWordmark(size: 18 * fontScale, weight: .semibold)
               }
               aboutProductDetails(alignment: .leading).padding(.leading, 32)
             }
@@ -236,7 +237,7 @@ extension MainWindowView {
         .frame(maxWidth: 660, alignment: .leading)
 
         VStack(alignment: .leading, spacing: 14) {
-          Text("No accounts, no telemetry. The only request outside your devices is the optional update check, sent to github.com.")
+          Text("No accounts, no telemetry. All connections stay local to your devices.")
             .font(.system(size: 11 * fontScale))
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             .fixedSize(horizontal: false, vertical: true)
