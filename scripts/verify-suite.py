@@ -8,6 +8,9 @@ unreported tests, undocumented skips, fixture drift and missing toolchains.
 
 The gate runs locally and in CI; physical radio, protected-storage,
 minimum-OS and native interaction behavior require separate runtime checks.
+
+Use --only LANE (repeatable) to invoke one workflow gate without running the
+local aggregate.  Lanes are the only interface workflow YAML needs.
 """
 
 import argparse
@@ -34,8 +37,30 @@ RUST = ROOT / "core" / "rust" / "pairing"
 
 # Floors prevent a shrunken or entirely absent suite from looking green.
 # They are inventory guards, not coverage targets.
-MINIMUMS = {"android-jvm": 250, "macos": 230, "rust": 4, "python": 18}
+MINIMUMS = {
+    "android-jvm": 250,
+    "macos": 230,
+    "rust": 4,
+    "python": 18,
+    "ci-policy": 12,
+}
 MINIMUM_CONNECTED = 10
+
+# A workflow lane is the only unit CI selects.  Keeping this mapping in the
+# verifier prevents YAML from acquiring its own test inventory or ordering.
+LANES = {
+    "ci-integrity": ("ci-integrity",),
+    "contracts": ("structure", "vectors", "python"),
+    "rust": ("rust",),
+    "android": ("android",),
+    "macos": ("macos",),
+    "connected": ("connected",),
+    "interchange": ("interchange",),
+}
+SUITE_ORDER = (
+    "ci-integrity", "structure", "vectors", "python", "rust",
+    "android", "macos", "connected", "interchange",
+)
 
 # Environment-gated tests that cannot execute in every configuration.  They
 # are listed explicitly so an unexpected skip still fails the gate.  The
@@ -92,6 +117,13 @@ class TestResult:
     def short_identifier(self):
         short = self.suite.rsplit(".", 1)[-1] if self.suite else ""
         return short + "#" + self.name if short else self.name
+
+
+@dataclass
+class NotExecuted:
+    """An explicit, recorded omission rather than a passing suite."""
+
+    reason: str
 
 
 # ---------------------------------------------------------------------------
@@ -221,25 +253,26 @@ def cargo_results(log_path):
     return passed
 
 
-def unittest_results(log_path):
+def unittest_results(log_path, minimum=None, label="Python harness"):
     text = log_path.read_text(encoding="utf-8", errors="replace")
     match = re.search(r"^Ran (\d+) tests? in ", text, re.MULTILINE)
     if not match:
-        raise GateError("Python harness tests did not report a test count; log: %s" % log_path)
+        raise GateError("%s tests did not report a test count; log: %s" % (label, log_path))
     count = int(match.group(1))
+    required = MINIMUMS["python"] if minimum is None else minimum
     if re.search(r"skipped=\d+", text):
-        raise GateError("Python harness tests skipped at least one test; log: %s" % log_path)
+        raise GateError("%s tests skipped at least one test; log: %s" % (label, log_path))
     if re.search(r"^FAILED", text, re.MULTILINE) or count == 0:
-        raise GateError("Python harness tests failed or ran zero tests; log: %s" % log_path)
+        raise GateError("%s tests failed or ran zero tests; log: %s" % (label, log_path))
     # A count line alone can survive a truncated run; expected failures are not passing tests.
     if not re.search(r"^OK\s*$", text, re.MULTILINE):
-        raise GateError("Python harness tests lack a complete, unconditional OK result; log: %s" % log_path)
-    if count < MINIMUMS["python"]:
+        raise GateError("%s tests lack a complete, unconditional OK result; log: %s" % (label, log_path))
+    if count < required:
         raise GateError(
-            "Python harness suite ran %d tests, below the required floor of %d" %
-            (count, MINIMUMS["python"])
+            "%s suite ran %d tests, below the required floor of %d" %
+            (label, count, required)
         )
-    print("Python harness: %d passed, 0 skipped" % count)
+    print("%s: %d passed, 0 skipped" % (label, count))
     return count
 
 
@@ -418,6 +451,41 @@ def write_json(path, document):
     temporary.replace(path)
 
 
+def markdown_summary(summary):
+    """Renders the saved evidence without inventing counts or coverage claims."""
+    lines = ["## Verification summary", "", "| Suite | Status | Evidence |", "| --- | --- | --- |"]
+    for name in SUITE_ORDER:
+        row = summary.get("suites", {}).get(name)
+        if not row or row.get("status") == "not_selected":
+            continue
+        evidence = []
+        for key in ("passed", "failed", "documented_skips", "checks",
+                    "policy_tests", "harnesses", "actionlint"):
+            if key in row:
+                evidence.append("%s %s" % (key.replace("_", " "), row[key]))
+        if row.get("reason"):
+            evidence.append(str(row["reason"]))
+        lines.append("| %s | %s | %s |" % (name, row.get("status", "unknown"), "; ".join(evidence) or "-"))
+    lines.extend(["", "**Overall: %s**" % summary.get("status", "unknown")])
+    if summary.get("errors"):
+        lines.extend(["", "Errors:"])
+        lines.extend("- " + str(error).replace("\n", " ") for error in summary["errors"])
+    return "\n".join(lines) + "\n"
+
+
+def append_step_summary(summary):
+    """Publishes the same evidence to the job summary when GitHub provides one."""
+    destination = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not destination:
+        return
+    try:
+        with open(destination, "a", encoding="utf-8") as stream:
+            stream.write(markdown_summary(summary))
+    except OSError as error:
+        # The JSON report remains the acceptance evidence; reporting failure is visible but not green-washing.
+        print("::warning::Cannot append the verification step summary: %s" % error, file=sys.stderr)
+
+
 def workflow_error(error):
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return
@@ -482,6 +550,17 @@ def run_step(label, command, artifacts, cwd=ROOT, env=None, timeout=1800):
 def toolchain_env(android=False, macos=False):
     # Probe only selected platforms; Linux Android checks have no Xcode dependency.
     env = os.environ.copy()
+    if android and not env.get("ANDROID_HOME"):
+        if env.get("ANDROID_SDK_ROOT"):
+            # Keep the two names consistent when only the legacy variable is set.
+            env["ANDROID_HOME"] = env["ANDROID_SDK_ROOT"]
+        else:
+            for candidate in (Path.home() / "Library" / "Android" / "sdk",
+                              Path.home() / "Android" / "Sdk"):
+                if candidate.is_dir():
+                    env["ANDROID_HOME"] = str(candidate)
+                    env["ANDROID_SDK_ROOT"] = str(candidate)
+                    break
     if android and not env.get("JAVA_HOME"):
         bundled = Path("/Applications/Android Studio.app/Contents/jbr/Contents/Home")
         if bundled.is_dir():
@@ -614,6 +693,26 @@ def run_python_meta_tests(env, artifacts):
     return unittest_results(log)
 
 
+def run_ci_integrity(env, artifacts):
+    actionlint = shutil.which("actionlint", path=env.get("PATH"))
+    if not actionlint:
+        raise GateError(
+            "actionlint is required for the ci-integrity lane; install the pinned "
+            "release or put actionlint on PATH"
+        )
+    run_step("Workflow syntax", [actionlint, "-no-color"], artifacts, env=env)
+    log = run_step(
+        "Workflow policy tests",
+        [sys.executable, "-m", "unittest", "discover", "-s", str(SCRIPTS),
+         "-p", "test_ci_workflow.py", "-v"],
+        artifacts, env=env,
+    )
+    policy_tests = unittest_results(
+        log, minimum=MINIMUMS["ci-policy"], label="Workflow policy",
+    )
+    return {"actionlint": "passed", "policy_tests": policy_tests}
+
+
 def run_rust(env, artifacts):
     log = run_step(
         "Rust pairing tests",
@@ -684,17 +783,24 @@ def build_session_helper(env, artifacts):
     return output
 
 
-def run_device_checks(args, env, artifacts, documented_android):
+def selected_serial_or_skip(args):
     adb = find_adb()
     serial = selected_device(adb, args.serial)
+    if serial is not None:
+        return serial
+    if args.allow_no_device:
+        print("\nDEVICE CHECKS NOT EXECUTED: no authorized device is connected (--allow-no-device).")
+        return None
+    raise GateError(
+        "Device lanes require one authorized Android device; pass --serial, "
+        "or --allow-no-device to record that device coverage was not run"
+    )
+
+
+def run_interchange_checks(args, env, artifacts):
+    serial = selected_serial_or_skip(args)
     if serial is None:
-        if args.allow_no_device:
-            print("\nDEVICE CHECKS NOT EXECUTED: no authorized device is connected (--allow-no-device).")
-            return
-        raise GateError(
-            "Device mode requires one authorized Android device; pass --serial, "
-            "or --allow-no-device to record that device coverage was not run"
-        )
+        return NotExecuted("No authorized device (--allow-no-device)")
 
     serial_args = ["--serial", serial]
     run_step(
@@ -717,7 +823,17 @@ def run_device_checks(args, env, artifacts, documented_android):
          "--output", str(artifacts / "session-interchange")],
         artifacts, env=env, timeout=2400,
     )
-    return run_connected_android(env, artifacts, documented_android)
+    return {"harnesses": 3}
+
+
+def run_connected_checks(args, env, artifacts, documented_android):
+    serial = selected_serial_or_skip(args)
+    if serial is None:
+        return NotExecuted("No authorized device (--allow-no-device)")
+    # Gradle otherwise chooses its own target when more than one device is attached.
+    isolated = env.copy()
+    isolated["ANDROID_SERIAL"] = serial
+    return run_connected_android(isolated, artifacts, documented_android)
 
 
 def run_connected_android(env, artifacts, documented):
@@ -754,10 +870,15 @@ def run_connected_android(env, artifacts, documented):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("fast", "device", "all"))
+    parser.add_argument("mode", nargs="?", choices=("fast", "device", "all"),
+                        help="legacy aggregate mode; omit it when using --only")
+    parser.add_argument("--only", action="append", choices=tuple(LANES), metavar="LANE",
+                        help="run one workflow lane; repeat to run several")
+    parser.add_argument("--list-lanes", action="store_true",
+                        help="print the available lanes and exit")
     parser.add_argument("--android", action="store_true", help="include Android host checks")
     parser.add_argument("--macos", action="store_true", help="include macOS hosted checks")
-    parser.add_argument("--serial", help="adb serial for device mode")
+    parser.add_argument("--serial", help="adb serial for device lanes")
     parser.add_argument("--allow-no-device", action="store_true",
                         help="record that device checks were not executed instead of failing")
     parser.add_argument("--vector-python", type=Path,
@@ -773,22 +894,72 @@ def main(argv=None):
                         help="report root; each invocation creates an isolated run directory")
     args = parser.parse_args(argv)
 
-    # Bare fast retains both local platform suites; CI selects Android explicitly.
-    host_checks = args.mode in ("fast", "all")
-    android = host_checks and (args.android or not args.macos)
-    macos = host_checks and (args.macos or not args.android)
-    device = args.mode in ("device", "all")
-    selected = {"structure": host_checks, "vectors": host_checks, "python": host_checks,
-                "rust": host_checks and not args.skip_rust, "android": android,
-                "macos": macos, "device": device}
-    summary = {"mode": args.mode, "status": "running", "suites": {
-        name: {"status": "pending" if included else "not_selected"}
-        for name, included in selected.items()}, "commands": [], "errors": []}
-    if host_checks and args.skip_rust:
+    if args.list_lanes:
+        for name, suites in LANES.items():
+            print("%s: %s" % (name, ", ".join(suites)))
+        return 0
+
+    if args.only and args.mode:
+        parser.error("mode and --only are mutually exclusive")
+    if not args.only and not args.mode:
+        parser.error("choose a mode (fast, device, all) or at least one --only LANE")
+    if args.only and (args.android or args.macos or args.skip_rust):
+        parser.error("--android, --macos and --skip-rust only modify a mode; "
+                     "do not combine them with --only")
+
+    if args.only:
+        requested = list(dict.fromkeys(args.only))
+        selected = {name: False for name in SUITE_ORDER}
+        for lane in requested:
+            for name in LANES[lane]:
+                selected[name] = True
+        mode = "only"
+    else:
+        # Bare fast retains both local platform suites; CI selects one lane explicitly.
+        host_checks = args.mode in ("fast", "all")
+        android = host_checks and (args.android or not args.macos)
+        macos = host_checks and (args.macos or not args.android)
+        device = args.mode in ("device", "all")
+        selected = {name: False for name in SUITE_ORDER}
+        selected.update({
+            "structure": host_checks,
+            "vectors": host_checks,
+            "python": host_checks,
+            "rust": host_checks and not args.skip_rust,
+            "android": android,
+            "macos": macos,
+            "connected": device,
+            "interchange": device,
+        })
+        requested = [lane for lane, suites in LANES.items()
+                     if any(selected[name] for name in suites)]
+        mode = args.mode
+
+    device_selected = selected["connected"] or selected["interchange"]
+    if args.allow_no_device and not device_selected:
+        parser.error("--allow-no-device requires the connected or interchange lane")
+    if args.serial and not device_selected:
+        parser.error("--serial requires the connected or interchange lane")
+    if args.session_mac_binary and not selected["interchange"]:
+        parser.error("--session-mac-binary requires the interchange lane")
+
+    summary = {
+        "mode": mode,
+        "requested_lanes": requested,
+        "status": "running",
+        "suites": {name: {"status": "pending" if selected[name] else "not_selected"}
+                   for name in SUITE_ORDER},
+        "commands": [],
+        "errors": [],
+    }
+    if mode in ("fast", "all") and args.skip_rust:
         # An explicit omission is recorded separately from a suite that was never selected.
         summary["suites"]["rust"].update(status="not_executed", reason="--skip-rust")
-    summary["suites"]["android"]["reports"] = [str(ANDROID / "app/build/test-results/testDebugUnitTest"),
-                                                  str(ANDROID / "app/build/reports")]
+    if selected["android"]:
+        summary["suites"]["android"]["reports"] = [
+            str(ANDROID / "app/build/test-results/testDebugUnitTest"),
+            str(ANDROID / "app/build/reports"),
+        ]
     artifacts = None
     active = None
     started = time.monotonic()
@@ -801,10 +972,11 @@ def main(argv=None):
         artifacts = Path(tempfile.mkdtemp(prefix="run-", dir=args.output_dir)).resolve()
         print("Verification artifacts: " + str(artifacts), flush=True)
         write_json(artifacts / "summary.json", summary)
-        if (macos or device) and platform.system() != "Darwin":
-            raise GateError("macOS hosted and device interchange checks require macOS; "
-                            "use fast --android for Linux host checks")
-        env = toolchain_env(android=android or device, macos=macos or device)
+        if (selected["macos"] or selected["interchange"]) and platform.system() != "Darwin":
+            raise GateError("macOS hosted and interchange checks require macOS; "
+                            "use --only android or --only contracts on Linux")
+        env = toolchain_env(android=selected["android"] or selected["connected"],
+                            macos=selected["macos"] or selected["interchange"])
 
         def execute(name, function):
             # Persist suite progress around execution so an unfinished run cannot resemble a pass.
@@ -819,8 +991,10 @@ def main(argv=None):
             finally:
                 row["elapsed_seconds"] = round(time.monotonic() - suite_started, 3)
             row["status"] = "passed"
-            if name == "device" and result is None:
-                row.update(status="not_executed", reason="No authorized device (--allow-no-device)")
+            if isinstance(result, NotExecuted):
+                row.update(status="not_executed", reason=result.reason)
+            elif isinstance(result, dict):
+                row.update(result)
             elif isinstance(result, tuple):
                 # Native validators return accepted passes and the reviewed skip count.
                 row.update(passed=result[0], documented_skips=result[1])
@@ -829,20 +1003,27 @@ def main(argv=None):
             write_json(artifacts / "summary.json", summary)
             active = None
 
-        if host_checks:
+        if selected["ci-integrity"]:
+            execute("ci-integrity", lambda: run_ci_integrity(env, artifacts))
+        if selected["structure"]:
             execute("structure", lambda: run_structure(artifacts))
+        if selected["vectors"]:
             active = "vectors"
             interpreter = vector_interpreter(args.vector_python)
             execute("vectors", lambda: run_vector_checks(interpreter, artifacts))
+        if selected["python"]:
             execute("python", lambda: run_python_meta_tests(env, artifacts))
-            if not args.skip_rust:
-                execute("rust", lambda: run_rust(env, artifacts))
-            if android:
-                execute("android", lambda: run_android_jvm(env, artifacts))
-            if macos:
-                execute("macos", lambda: run_macos_with_skips(env, artifacts, documented_macos, args.allow_skip))
-        if device:
-            execute("device", lambda: run_device_checks(args, env, artifacts, documented_android))
+        if selected["rust"]:
+            execute("rust", lambda: run_rust(env, artifacts))
+        if selected["android"]:
+            execute("android", lambda: run_android_jvm(env, artifacts))
+        if selected["macos"]:
+            execute("macos", lambda: run_macos_with_skips(env, artifacts, documented_macos, args.allow_skip))
+        # Preserve the legacy device order: native interchange first, then the broad connected suite.
+        if selected["interchange"]:
+            execute("interchange", lambda: run_interchange_checks(args, env, artifacts))
+        if selected["connected"]:
+            execute("connected", lambda: run_connected_checks(args, env, artifacts, documented_android))
         summary["status"] = "passed_with_omissions" if any(
             row["status"] == "not_executed" for row in summary["suites"].values()) else "passed"
     except (GateError, OSError, ValueError, subprocess.SubprocessError) as error:
@@ -866,12 +1047,25 @@ def main(argv=None):
             try:
                 summary["commands"] = [json.loads(path.read_text(encoding="utf-8"))
                                        for path in sorted(artifacts.glob("*.command.json"))]
+            except (OSError, ValueError) as error:
+                summary["status"] = "failed"
+                summary["errors"].append("Cannot read verification diagnostics: " + str(error))
+                workflow_error(error)
+            try:
+                (artifacts / "summary.md").write_text(
+                    markdown_summary(summary), encoding="utf-8")
+            except OSError as error:
+                summary["status"] = "failed"
+                summary["errors"].append("Cannot save verification summary: " + str(error))
+                workflow_error(error)
+            try:
+                # A successful command cannot make an unreadable or unwritable final report green.
                 write_json(artifacts / "summary.json", summary)
             except (OSError, ValueError) as error:
-                # A successful command cannot make an unreadable or unwritable final report green.
                 summary["status"] = "failed"
                 summary["errors"].append("Cannot save verification diagnostics: " + str(error))
                 workflow_error(error)
+        append_step_summary(summary)
 
     if summary["status"] == "failed":
         print("\nVERIFICATION FAILED:", file=sys.stderr)

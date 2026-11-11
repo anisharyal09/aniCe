@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.
+
 - Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.
