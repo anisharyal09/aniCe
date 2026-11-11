@@ -68,7 +68,7 @@ final class GlobalHotkeyManager: @unchecked Sendable {
     let modifiers = UInt32(cmdKey | optionKey)
     // ⌥⌘V leaves the system's ⌘⇧V Paste and Match Style shortcut alone.
     register(UInt32(kVK_ANSI_V), id: 1, modifiers: modifiers)
-    // ⌥⌘K toggles the floating keyboard while aniCe is running, even when its windows are hidden.
+    // ⌥⌘K toggles Floating Key while aniCe is running, even when its windows are hidden.
     register(UInt32(kVK_ANSI_K), id: 2, modifiers: modifiers)
   }
 

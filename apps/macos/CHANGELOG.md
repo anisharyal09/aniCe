@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Keep connection status, transport icons and phone power on a single line after the Wi-Fi icon, refine the menu-bar companion device row hover and spacing, present file selection modally on the active space without switching windows, restore the menu-bar Quick Paste Tray button in a 2x2 grid, and rename Floating Key's menu to Show trackpad too.
+
+- Make Control Android follow native vertical pointer movement by default and reverse it only when requested.
+
 - Share Mac power changes with connected Android devices and soften Overview Quick access controls.
 
 - Align device power information beneath the connection status and compact Edge Drop and Desk Deck settings rows.

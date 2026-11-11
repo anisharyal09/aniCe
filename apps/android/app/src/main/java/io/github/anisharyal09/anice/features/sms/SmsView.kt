@@ -225,7 +225,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                             TextButton(onClick = {
                                 if (simEntries.size >= 2 || simChoice != 0) simMenu = true
                                 else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
-                            }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.heightIn(min = 48.dp)) {
+                            }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.defaultMinSize(minHeight = 36.dp)) {
                                 Text(if (simEntries.size >= 2 || simChoice != 0) "SIM: " +
                                     (if (simChoice == 0) "Default" else simChoiceLabel ?:
                                         if (simListing.value == null) "Checking…" else "Unavailable") else "Choose SIM…",
@@ -243,12 +243,12 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                     FilledTonalButton(onClick = ::submitDraft,
                         enabled = !sending && draft.isNotBlank() && bytes <= SmsWireMessage.MAX_BODY_BYTES && state.send,
                         shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)) {
-                        if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Icon(painterResource(R.drawable.ic_send), contentDescription = "Send SMS", modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (sending) "Sending…" else "Send", maxLines = 1, softWrap = false)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 36.dp)) {
+                        if (sending) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Icon(painterResource(R.drawable.ic_send), contentDescription = "Send SMS", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (sending) "Sending…" else "Send", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                     }
                 }
                 if (draft.length > 1000) Text("Long messages may be rejected; Unicode text reaches the limit sooner.",

@@ -124,6 +124,17 @@ struct TransferReceiveDestinationControls: View {
   panel.canChooseFiles = true
   panel.canChooseDirectories = false
   panel.prompt = "Send"
+  panel.level = .floating
+  panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+  if let screen = NSScreen.main {
+    let screenFrame = screen.visibleFrame
+    let panelSize = panel.frame.size
+    panel.setFrameOrigin(NSPoint(
+      x: screenFrame.midX - panelSize.width / 2,
+      y: screenFrame.midY - panelSize.height / 2
+    ))
+  }
+  panel.orderFrontRegardless()
   if panel.runModal() == .OK && !panel.urls.isEmpty {
     let urls = panel.urls
     let names = urls.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
@@ -133,6 +144,9 @@ struct TransferReceiveDestinationControls: View {
     review.informativeText = names + additional
     review.addButton(withTitle: "Send files")
     review.addButton(withTitle: "Cancel")
+    review.window.level = .floating
+    review.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    review.window.orderFrontRegardless()
     guard review.runModal() == .alertFirstButtonReturn else { return }
     guard let currentPeer = model.activeChannel?.descriptor.peer,
       currentPeer.deviceId == reviewedPeer.deviceId, currentPeer.fingerprint == reviewedPeer.fingerprint else {
@@ -140,6 +154,9 @@ struct TransferReceiveDestinationControls: View {
       changed.messageText = "Connection changed"
       changed.informativeText = "No files were sent. Choose the files again to review them for the current device."
       changed.addButton(withTitle: "OK")
+      changed.window.level = .floating
+      changed.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+      changed.window.orderFrontRegardless()
       changed.runModal()
       return
     }

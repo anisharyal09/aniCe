@@ -10,7 +10,7 @@ Automatic nearby recovery uses an OS-bound companion lease and one device settin
 
 ## Mac Desk Deck and Do Not Disturb
 
-Open **Features → Mac Desk Deck** to view a trusted Mac’s live system readings and use its available controls, including output volume and audio-device selection. Approve app shortcuts on the Mac in **Settings → Desk Deck**. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
+Open **Features → Mac Desk Deck** to view a trusted Mac’s live system readings and use its available controls, including output volume and audio-device selection. Desk Deck shows when its latest reading arrived rather than a ticking age counter. Approve app shortcuts on the Mac in **Settings → Desk Deck**. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
 
 Peer battery and charging status appears on Android Home and Devices and Mac device summaries while an existing secured connection is open. Power changes use native observations without opening a connection or extending its background lifetime. Android summaries omit power-source details.
 
@@ -125,7 +125,7 @@ Home and Features → Now Playing provide playback, player selection and support
 
 ## Local File Transfer
 
-Home → Files and Features → Send files provide transfer controls; Android’s system Share sheet can send files to a connected Mac. Receives default to `Downloads/aniCe`; File transfer settings allow a saved custom folder and per-Mac automatic receiving. New pairings enable automatic receiving; existing peers retain their saved choice. Eligible background work uses the existing connected-device service; otherwise offers wait until aniCe opens. Transfers pause on connection loss and resume over LAN or explicit Bluetooth continuation. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Home → Files and Features → Send files provide transfer controls; Android’s system Share sheet can send files to a connected Mac. A pending manual offer appears below the connected device summary on Home, with its file list and destination above **Accept** and **Decline**. Receives default to `Downloads/aniCe`; File transfer settings allow a saved custom folder and per-Mac automatic receiving. New pairings enable automatic receiving; existing peers retain their saved choice. Eligible background work uses the existing connected-device service; otherwise offers wait until aniCe opens. Transfers pause on connection loss and resume over LAN or explicit Bluetooth continuation. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 ## Find Device
 

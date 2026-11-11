@@ -204,6 +204,7 @@ struct ClipboardView: View {
 struct ClipboardSendButton: View {
   let model: MacClipboardModel
   var quiet = false
+  var compact = false
   @Environment(\.colorScheme) private var colorScheme
   @State private var sensitiveSample: ClipboardSample?
   var body: some View {
@@ -212,10 +213,10 @@ struct ClipboardSendButton: View {
     } label: {
       Label { Text("Send clipboard") } icon: {
         Image(systemName: "doc.on.clipboard")
-          .foregroundStyle(quiet ? AniCePalette.secondaryText(colorScheme) : AniCePalette.primaryText(colorScheme))
+          .foregroundStyle((quiet || compact) ? AniCePalette.secondaryText(colorScheme) : AniCePalette.primaryText(colorScheme))
       }
     }
-      .buttonStyle(AniCeButtonStyle(quiet: quiet)).controlSize(.small)
+      .buttonStyle(AniCeButtonStyle(quiet: quiet, compact: compact))
       .disabled(model.busy || model.selected.map(model.supports) != true)
       .alert("Send sensitive text?", isPresented: Binding(get: { sensitiveSample != nil }, set: { if !$0 { sensitiveSample = nil } }), presenting: sensitiveSample) { captured in
         Button("Send") { model.sendConfirmed(captured); sensitiveSample = nil }

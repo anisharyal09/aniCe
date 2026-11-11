@@ -157,7 +157,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         bluetoothConnected = bleState == ConnectionState.SECURED,
                         localNetworkConnected = lanState == ConnectionState.SECURED,
                         powerSummary = if (summary.state == ConnectionState.SECURED)
-                            model.devicePower.macSummary(record.peer) ?: "Mac power unavailable" else null,
+                            model.devicePower.macShortSummary(record.peer) else null,
                         connectionOptions = connectionOptions)
                 if (!compact) {
                 val groupOutline = MaterialTheme.colorScheme.outlineVariant
@@ -419,7 +419,7 @@ private fun ConnectionPauseMenu(
                 contentDescription = "${if (paused) "Resume" else "Pause"} automatic connection to $peerName"
             },
         ) {
-            Icon(painterResource(R.drawable.ic_media_pause), contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(painterResource(R.drawable.ic_pause_circle), contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
             Text(if (paused) "Resume" else "Pause")
         }
@@ -461,8 +461,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
                 .heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
                 Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
-                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
-                if (powerSummary != null) Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = statusColor)
+                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor, powerSummary)
                 if (state == ConnectionState.SECURED && summary != "Connected")
                     Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
@@ -485,8 +484,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
                 onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
-                if (powerSummary != null) Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = statusColor)
+                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor, powerSummary)
                 if (state == ConnectionState.SECURED && summary != "Connected")
                     Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
             }
@@ -520,6 +518,7 @@ private fun ConnectionStatusLine(
     bluetoothConnected: Boolean,
     localNetworkConnected: Boolean,
     color: androidx.compose.ui.graphics.Color,
+    powerSummary: String? = null,
 ) {
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -529,6 +528,10 @@ private fun ConnectionStatusLine(
             tint = color, modifier = Modifier.size(14.dp))
         if (localNetworkConnected) Icon(painterResource(R.drawable.ic_wifi), contentDescription = "Local network connected",
             tint = color, modifier = Modifier.size(14.dp))
+        if (!powerSummary.isNullOrBlank()) {
+            Text("·", style = MaterialTheme.typography.bodySmall, color = color.copy(alpha = 0.6f))
+            Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = color.copy(alpha = 0.85f))
+        }
     }
 }
 

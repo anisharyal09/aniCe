@@ -50,6 +50,7 @@ data class DeskDeckSnapshot(
     val memoryFree: Long = -1,
     val memorySwap: Long = -1,
     val outputRouteID: String = "",
+    val receivedAtWallMillis: Long = System.currentTimeMillis(),
 )
 
 class DeskDeckController(
@@ -105,7 +106,6 @@ class DeskDeckController(
     private val latestSliderIntents = mutableMapOf<Long, Intent>()
     private val previewIntents = mutableMapOf<Long, Intent>()
     private var snapshotPeerFingerprint: String? = null
-    private var snapshotReceivedAtWallMillis = 0L
     private var lastSnapshotCacheWriteMillis: Long? = null
     private var deckOpenedAtMillis = 0L
     private var firstSampleLogged = false
@@ -215,7 +215,6 @@ class DeskDeckController(
         peer = target
         if (peerChanged) {
             snapshot = null
-            snapshotReceivedAtWallMillis = 0L
             history = emptyList()
             shortcuts = emptyList()
             outputRoutes = emptyList()
@@ -231,7 +230,7 @@ class DeskDeckController(
         autoRetryUsed = false
         if (snapshot != null) {
             connectionState = DeskDeckConnectionState.STALE
-            status = "Last reading · reconnecting"
+            status = "Reconnecting to Mac…"
         } else {
             connectionState = DeskDeckConnectionState.OPENING
             status = if (connected(target)) "Opening Desk Deck…" else "Connect to this Mac to use Desk Deck."
@@ -251,7 +250,6 @@ class DeskDeckController(
         stopSubscription(sendStop = true)
         snapshotPeerFingerprint = null
         snapshot = null
-        snapshotReceivedAtWallMillis = 0L
         clearCachedSnapshot()
         history = emptyList()
         shortcuts = emptyList()
@@ -450,8 +448,8 @@ class DeskDeckController(
                 message.microphoneMuted, message.brightnessSupported, message.brightnessTarget, message.brightnessRevision,
                 message.brightnessLevel, message.memoryActive, message.memoryWired, message.memoryCompressed,
                 message.powerState, message.powerPercent, message.powerSource, clock(), message.version,
-                message.memoryApp, message.memoryCached, message.memoryFree, message.memorySwap, message.outputRouteID)
-            snapshotReceivedAtWallMillis = System.currentTimeMillis()
+                message.memoryApp, message.memoryCached, message.memoryFree, message.memorySwap, message.outputRouteID,
+                receivedAtWallMillis = System.currentTimeMillis())
             persistCachedSnapshot()
             history = (history + DeskDeckHistoryPoint(clock(), message.cpuPercent.takeIf { it >= 0 }?.toInt(),
                 if (message.memoryTotal > 0 && message.memoryUsed >= 0) (message.memoryUsed * 100 / message.memoryTotal).toInt() else null)).takeLast(HISTORY_LIMIT)
@@ -682,19 +680,26 @@ class DeskDeckController(
 
     private fun startFreshnessWatch(ownedGeneration: Long, descriptor: ChannelDescriptor, subscription: String) {
         freshnessJob?.cancel()
+        val sample = snapshot ?: return
         freshnessJob = scope.launch {
-            while (isCurrent(descriptor, subscription, ownedGeneration)) {
-                wait(FRESHNESS_CHECK_MILLIS)
-                val sample = snapshot ?: continue
+            while (isCurrent(descriptor, subscription, ownedGeneration) && snapshot === sample) {
                 val age = clock() - sample.receivedAtMillis
-                if (age >= STALE_AFTER_MILLIS && connectionState == DeskDeckConnectionState.LIVE) {
-                    connectionState = DeskDeckConnectionState.STALE
-                    status = "Stale · last reading ${age / 1000}s ago"
+                val deadline = when (connectionState) {
+                    DeskDeckConnectionState.LIVE -> STALE_AFTER_MILLIS
+                    DeskDeckConnectionState.STALE -> FAILED_AFTER_MILLIS
+                    else -> return@launch
                 }
-                if (age >= FAILED_AFTER_MILLIS) {
+                wait((deadline - age).coerceAtLeast(1L))
+                if (!isCurrent(descriptor, subscription, ownedGeneration) || snapshot !== sample) return@launch
+                val updatedAge = clock() - sample.receivedAtMillis
+                if (updatedAge >= FAILED_AFTER_MILLIS) {
                     connectionState = DeskDeckConnectionState.FAILED
                     status = "Mac isn’t responding. Refresh or check connection details."
                     return@launch
+                }
+                if (updatedAge >= STALE_AFTER_MILLIS && connectionState == DeskDeckConnectionState.LIVE) {
+                    connectionState = DeskDeckConnectionState.STALE
+                    status = "No recent data."
                 }
             }
         }
@@ -774,6 +779,8 @@ class DeskDeckController(
             if (!fingerprint.matches(Regex("[0-9a-f]{64}"))) throw IllegalArgumentException("Invalid cached peer")
             val nowWallMillis = System.currentTimeMillis()
             val sampledAtWallMillis = value.getLong("received_wall_ms")
+            val lastSampleWallMillis = if (sampledAtWallMillis <= nowWallMillis) sampledAtWallMillis
+                else nowWallMillis - MINIMUM_CACHED_AGE_MILLIS
             val ageMillis = if (sampledAtWallMillis <= nowWallMillis) {
                 (nowWallMillis - sampledAtWallMillis).coerceAtLeast(MINIMUM_CACHED_AGE_MILLIS)
             } else MINIMUM_CACHED_AGE_MILLIS
@@ -808,12 +815,12 @@ class DeskDeckController(
                 memoryCached = value.optLong("memory_cached", -1),
                 memoryFree = value.optLong("memory_free", -1),
                 memorySwap = value.optLong("memory_swap", -1),
+                receivedAtWallMillis = lastSampleWallMillis,
             )
             snapshotPeerFingerprint = fingerprint
-            snapshotReceivedAtWallMillis = sampledAtWallMillis
             lastSnapshotCacheWriteMillis = clock()
             connectionState = DeskDeckConnectionState.STALE
-            status = "Last reading · reconnecting"
+            status = "Reconnecting to Mac…"
         } catch (_: Exception) {
             clearCachedSnapshot()
         }
@@ -823,13 +830,13 @@ class DeskDeckController(
         val preferences = snapshotPreferences ?: return
         val sample = snapshot ?: return
         val fingerprint = snapshotPeerFingerprint ?: return
-        if (snapshotReceivedAtWallMillis <= 0L) return
+        if (sample.receivedAtWallMillis <= 0L) return
         val now = clock()
         val lastWrite = lastSnapshotCacheWriteMillis
         if (!force && lastWrite != null && now >= lastWrite && now - lastWrite < SNAPSHOT_CACHE_INTERVAL_MILLIS) return
         val encoded = JSONObject()
             .put("peer", fingerprint)
-            .put("received_wall_ms", snapshotReceivedAtWallMillis)
+            .put("received_wall_ms", sample.receivedAtWallMillis)
             .put("sequence", sample.sequence)
             .put("cpu", sample.cpuPercent)
             .put("memory_used", sample.memoryUsed)
@@ -973,7 +980,6 @@ class DeskDeckController(
         const val OPENING_TIMEOUT_MILLIS = 5_000L
         const val COMMAND_TIMEOUT_MILLIS = 6_000L
         const val RENEWAL_INTERVAL_MILLIS = 5_000L
-        const val FRESHNESS_CHECK_MILLIS = 250L
         const val STALE_AFTER_MILLIS = 3_000L
         const val FAILED_AFTER_MILLIS = 10_000L
         const val TIMING_TAG = "aniCe-deskdeck"

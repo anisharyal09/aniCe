@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Keep connection status and device power inline after the Wi-Fi icon across Mac and Android, refine the menu bar companion device row and action grid, present file transfers as floating panels on the active space, rename Floating Key's menu to Show trackpad too, and compact phone SMS actions.
+
 - Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
 
 - Show Mac battery and charging information on Android Home and Devices; refine Quick access and phone Settings selection.

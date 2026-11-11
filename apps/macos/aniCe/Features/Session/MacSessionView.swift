@@ -47,9 +47,10 @@ private struct ConnectionStatusLine: View {
   let bluetoothConnected: Bool
   let localNetworkConnected: Bool
   let color: Color
+  var power: String? = nil
 
   var body: some View {
-    HStack(spacing: 7) {
+    HStack(spacing: 6) {
       Text(text)
       if bluetoothConnected {
         BluetoothGlyph()
@@ -63,12 +64,17 @@ private struct ConnectionStatusLine: View {
           .baselineOffset(1)
           .accessibilityLabel("Local network connected")
       }
+      if let power, !power.isEmpty {
+        Text("·").foregroundStyle(color.opacity(0.6))
+        Text(power).foregroundStyle(color.opacity(0.85))
+      }
     }
     .foregroundStyle(color)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(connectionAccessibilityValue(text,
       bluetoothConnected: bluetoothConnected,
-      localNetworkConnected: localNetworkConnected))
+      localNetworkConnected: localNetworkConnected) +
+      (power != nil && !power!.isEmpty ? ". \(power!)" : ""))
   }
 }
 
@@ -235,37 +241,44 @@ struct MacSessionView: View {
           lan: ownsLan ? lan.state : "Disconnected", bluetoothAllowing: ownsBluetooth && model.allowing,
           lanAllowing: ownsLan && lan.allowing, automatic: ownsBluetooth && model.automatic)
         let occupied = model.allowing || lan.allowing || model.automatic
-        VStack(alignment: .leading, spacing: 8) {
-          HStack(spacing: 12) {
-            Button { onOpenDevice(peer.deviceId) } label: {
-              HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(spacing: 8) {
+          Button { onOpenDevice(peer.deviceId) } label: {
+            HStack(spacing: 8) {
+              VStack(alignment: .leading, spacing: 3) {
                 Text(peer.deviceName).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
                 ConnectionStatusLine(text: state.connected ? "Connected" : state.summary,
                   bluetoothConnected: ownsBluetooth && model.state == "Secured",
                   localNetworkConnected: ownsLan && lan.state == "Secured",
-                  color: state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
+                  color: state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme),
+                  power: state.connected ? phonePower.shortSummary(for: peer) : nil)
                   .font(.caption).fixedSize(horizontal: false, vertical: true)
-              }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + peer.deviceName)
-              .accessibilityValue(connectionAccessibilityValue(state.connected ? "Connected" : state.summary,
-                bluetoothConnected: ownsBluetooth && model.state == "Secured",
-                localNetworkConnected: ownsLan && lan.state == "Secured"))
-
-            if !state.connected {
-              Button(state.action.rawValue) {
-                switch state.action {
-                case .disconnect: disconnectDevice(peer)
-                case .stop: model.disconnect(); lan.disconnect()
-                case .allow, .retry: model.selectedPeer = peer; model.allow()
-                }
-              }.buttonStyle(AniCeButtonStyle()).controlSize(.small)
-                .disabled(occupied && !ownsBluetooth && !ownsLan)
+              }.frame(maxWidth: .infinity, alignment: .leading)
+              Spacer(minLength: 4)
+              Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AniCePalette.secondaryText(scheme))
             }
-
-            Button { onOpenDevice(peer.deviceId) } label: { Image(systemName: "chevron.right") }
-              .buttonStyle(.borderless).aniCeControlFeedback().accessibilityLabel("Device details for " + peer.deviceName)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
           }
-          Text(phonePower.summary(for: peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .buttonStyle(AniCeHoverButtonStyle())
+          .accessibilityLabel("Device details for " + peer.deviceName)
+          .accessibilityValue(connectionAccessibilityValue(state.connected ? "Connected" : state.summary,
+            bluetoothConnected: ownsBluetooth && model.state == "Secured",
+            localNetworkConnected: ownsLan && lan.state == "Secured") +
+            (state.connected && phonePower.shortSummary(for: peer) != nil ? ". " + phonePower.shortSummary(for: peer)! : ""))
+
+          if !state.connected {
+            Button(state.action.rawValue) {
+              switch state.action {
+              case .disconnect: disconnectDevice(peer)
+              case .stop: model.disconnect(); lan.disconnect()
+              case .allow, .retry: model.selectedPeer = peer; model.allow()
+              }
+            }.buttonStyle(AniCeButtonStyle()).controlSize(.small)
+              .disabled(occupied && !ownsBluetooth && !ownsLan)
+          }
         }
       }
       if lan.allowing && lan.authenticatedPeer == nil {
@@ -363,16 +376,15 @@ struct MacSessionView: View {
         ConnectionStatusLine(text: connectionSummaryText,
           bluetoothConnected: ownsBluetooth && model.state == "Secured",
           localNetworkConnected: ownsLan && lan.state == "Secured",
-          color: AniCePalette.secondaryText(scheme)).font(.callout)
-        Text(phonePower.summary(for: device)).font(.caption)
-          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          color: AniCePalette.secondaryText(scheme),
+          power: presentation.connected ? phonePower.shortSummary(for: device) : nil).font(.callout)
+          .fixedSize(horizontal: presentation.connected, vertical: !presentation.connected)
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
     }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Devices for " + (device?.deviceName ?? "your phone"))
-      .accessibilityValue(connectionStatusValue)
+      .accessibilityValue(connectionStatusValue + (presentation.connected && phonePower.shortSummary(for: device) != nil ? ". " + phonePower.shortSummary(for: device)! : ""))
   }
 
   @ViewBuilder private var workspaceActions: some View {
-    automaticControl
     pauseMenu
     Button(presentation.action.rawValue) {
       switch presentation.action {
@@ -405,12 +417,11 @@ struct MacSessionView: View {
             ConnectionStatusLine(text: connectionSummaryText,
               bluetoothConnected: ownsBluetooth && model.state == "Secured",
               localNetworkConnected: ownsLan && lan.state == "Secured",
-              color: AniCePalette.secondaryText(scheme)).font(.callout)
-            Text(phonePower.summary(for: device)).font(.caption)
-              .foregroundStyle(AniCePalette.secondaryText(scheme))
+              color: AniCePalette.secondaryText(scheme),
+              power: presentation.connected ? phonePower.shortSummary(for: device) : nil).font(.callout)
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
-          .accessibilityValue(connectionStatusValue + ". " + phonePower.summary(for: device))
+          .accessibilityValue(connectionStatusValue + (presentation.connected && phonePower.shortSummary(for: device) != nil ? ". " + phonePower.shortSummary(for: device)! : ""))
         Button(presentation.action.rawValue) {
           switch presentation.action {
           case .disconnect: disconnectSelectedDevice()
@@ -500,7 +511,8 @@ struct MacSessionView: View {
         ConnectionStatusLine(text: connectionSummaryText,
           bluetoothConnected: ownsBluetooth && model.state == "Secured",
           localNetworkConnected: ownsLan && lan.state == "Secured",
-          color: AniCePalette.secondaryText(scheme))
+          color: AniCePalette.secondaryText(scheme),
+          power: presentation.connected ? phonePower.shortSummary(for: device) : nil)
         if device != nil { Text("Trusted device") }
       }.font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       VStack(spacing: 14) {

@@ -8,7 +8,7 @@ extension MainWindowView {
     GeometryReader { geometry in
       let activityWidth = geometry.size.width - 56
       ScrollView {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
           Text("Overview").font(.system(size: 20, weight: .medium))
           if pairing.hasTrustedAndroid {
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
@@ -53,13 +53,14 @@ extension MainWindowView {
             Text("Recent").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
             ClipboardActivityView(model: clipboard, compact: true, open: { navigation.openFeature(.clipboard) })
           }
-        }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+          .transferFileDropTarget(model: transfer, cornerRadius: 0)
       }
     }
   }
 
   @ViewBuilder private func homeActivities(isResult: Bool, availableWidth: CGFloat) -> some View {
-    VStack(alignment: .leading, spacing: 24) {
+    VStack(alignment: .leading, spacing: 20) {
       if availableWidth >= 720 {
         let showPlayback = playback.showOnMac && playback.compactVisible
         let showFileTransfer = pairing.hasTrustedAndroid && transfer.pendingOffer == nil
@@ -87,7 +88,9 @@ extension MainWindowView {
           MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
             visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
         }
-        if pairing.hasTrustedAndroid && transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
+        if pairing.hasTrustedAndroid && transfer.pendingOffer == nil {
+          homeFileTransferActivity(isResult: isResult)
+        }
       }
       if isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }

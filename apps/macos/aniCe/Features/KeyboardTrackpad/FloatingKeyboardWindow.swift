@@ -71,7 +71,14 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
 
   var accessibilityName: String {
     let phone = model.targetPeer?.deviceName ?? "no phone selected"
-    return "Phone keyboard, \(phone), \(statusDescription)"
+    return "Floating Key for \(phone), \(statusDescription)"
+  }
+
+  var accessibilityHint: String {
+    guard let phone = model.targetPeer?.deviceName else {
+      return "Open full controls to choose a trusted phone and use its keyboard or trackpad."
+    }
+    return "Click to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."
   }
 
   var statusDescription: String {
@@ -253,7 +260,7 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     cancelPendingActivation()
     model.applicationWasInterrupted()
     let menu = NSMenu()
-    let expandItem = NSMenuItem(title: "Show full controls", action: #selector(showFullControlsFromMenu), keyEquivalent: "")
+    let expandItem = NSMenuItem(title: "Show trackpad too", action: #selector(showFullControlsFromMenu), keyEquivalent: "")
     expandItem.target = self
     menu.addItem(expandItem)
     menu.addItem(.separator())
@@ -428,8 +435,8 @@ private struct FloatingKeyboardPanelView: View {
     .aniCeControlFeedback(prominent: isActive, cornerRadius: 15)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(controller.accessibilityName)
-    .accessibilityHint("Click to toggle typing to the phone. Right-click for full controls or to hide the button.")
-    .help(controller.accessibilityName)
+    .accessibilityHint(controller.accessibilityHint)
+    .help(controller.accessibilityHint)
   }
 
   private var expandedControls: some View {

@@ -212,7 +212,7 @@ extension SessionTests {
     let target = NSObject()
     let items = CompanionHost.makeMenu(target: target).items
     XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Manage devices", "Show floating keyboard  ⌥⌘K", "Quit aniCe"])
+      ["Open aniCe", "Manage devices", "Show Floating Key  ⌥⌘K", "Quit aniCe"])
     XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
     for item in items where !item.isSeparatorItem {
       XCTAssertTrue(item.target === target)
@@ -220,7 +220,7 @@ extension SessionTests {
     }
     XCTAssertEqual(Set(items.compactMap(\.action)).count, 4)
     XCTAssertEqual(CompanionHost.makeMenu(target: target, floatingKeyboardVisible: true).items[2].title,
-      "Hide floating keyboard  ⌥⌘K")
+      "Hide Floating Key  ⌥⌘K")
   }
 
   func testConnectionSummaryRequiresReadinessAcrossBothTransports() {

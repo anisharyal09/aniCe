@@ -36,6 +36,22 @@ data class DevicePowerReading(val state: Long, val percent: Int?, val source: Lo
         val stateText = if (state == 0L) "Mac power unavailable" else label
         return listOfNotNull(stateText, percent?.let { "$it%" }).joinToString(" · ")
     }
+    val shortSummary: String get() {
+        if (percent == null || percent < 0) {
+            return when (state) {
+                3L -> "Charging"
+                4L -> "Full"
+                5L -> "Plugged in"
+                else -> ""
+            }
+        }
+        return when (state) {
+            3L -> "$percent% (Charging)"
+            4L -> "$percent% (Full)"
+            5L -> "$percent% (Plugged in)"
+            else -> "$percent%"
+        }
+    }
 
     companion object {
         fun from(intent: Intent?): DevicePowerReading {
@@ -128,6 +144,11 @@ class DevicePowerController(context: Context) : FeatureHandler {
 
     fun macSummary(peer: DeviceIdentity): String? {
         return macReadings[peerKey(peer)]?.macSummary
+    }
+
+    fun macShortSummary(peer: DeviceIdentity): String? {
+        val short = macReadings[peerKey(peer)]?.shortSummary ?: return null
+        return short.takeIf { it.isNotEmpty() }
     }
 
     private fun peerKey(peer: DeviceIdentity) = peer.deviceId + ":" + peer.fingerprint

@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.features.deskdeck
 
 import android.content.Context
+import android.text.format.DateUtils
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
@@ -35,7 +36,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
-import kotlinx.coroutines.delay
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -165,11 +168,6 @@ private fun DeskDeckGrid(
     var lockHelp by rememberSaveable { mutableStateOf(false) }
     var focusHelp by rememberSaveable { mutableStateOf(false) }
     var managingApps by rememberSaveable { mutableStateOf(false) }
-    var ageNow by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
-    LaunchedEffect(sample?.sequence) {
-        ageNow = android.os.SystemClock.elapsedRealtime()
-        while (true) { delay(1_000); ageNow = android.os.SystemClock.elapsedRealtime() }
-    }
     val fresh = owner.readingsAreFresh && connected
     val thermal = sample?.let { listOf("Nominal", "Fair", "Serious", "Critical").getOrElse(it.thermalState.toInt()) { "Unavailable" } } ?: "Waiting"
     val memoryAvailable = sample != null && sample.memoryTotal > 0 && sample.memoryUsed >= 0
@@ -236,7 +234,7 @@ private fun DeskDeckGrid(
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(target?.deviceName ?: "Mac", style = MaterialTheme.typography.titleSmall,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(connectionSummary(owner, connected, sample, ageNow), style = MaterialTheme.typography.bodySmall,
+                                Text(connectionSummary(owner, connected, sample), style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             if (!connected && target != null) {
@@ -416,15 +414,18 @@ private fun DeskDeckGrid(
     }
     if (showDetails) DeckDetailDialog("Desk Deck details", { showDetails = false }) {
         Text(owner.status, style = MaterialTheme.typography.bodyMedium)
-        Text("${owner.activeTransportLabel()} · Sample ${sample?.sequence ?: 0} · ${sample?.let { sampleAge(it, ageNow) } ?: "No reading"}", style = MaterialTheme.typography.bodySmall)
+        Text("Connection · ${owner.activeTransportLabel()}", style = MaterialTheme.typography.bodySmall)
+        Text(sample?.let { "Last data · ${sampleTimestamp(it, includeDate = true)}" } ?: "No data received yet",
+            style = MaterialTheme.typography.bodySmall)
         Text("Thermal pressure: $thermal. Fair means rising pressure; Serious or Critical can reduce performance. This is not a temperature reading.", style = MaterialTheme.typography.bodySmall)
         if (owner.feedback.isNotBlank()) Text(owner.feedback, style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Keep awake while charging", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = keepAwake, onCheckedChange = onKeepAwakeChange,
-                modifier = Modifier.semantics { contentDescription = "Keep screen awake while charging" })
-        }
-        Text("Only while this deck is visible and the phone has external power.", style = MaterialTheme.typography.bodySmall)
+        AutomaticConnectionToggle(
+            checked = keepAwake,
+            enabled = true,
+            onCheckedChange = onKeepAwakeChange,
+            label = "Keep awake while charging",
+            description = "Only while Desk Deck is visible and the phone has external power.",
+        )
         TextButton(onClick = owner::refresh, enabled = connected, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh readings") }
     }
     if (microphoneHelp) DeckDetailDialog("Mac input mute unavailable", { microphoneHelp = false }) {
@@ -544,18 +545,27 @@ private fun PowerSummary(title: String, value: String, modifier: Modifier = Modi
     }
 }
 
-private fun connectionSummary(owner: DeskDeckController, connected: Boolean, sample: DeskDeckSnapshot?, now: Long): String = when {
-    !connected && sample != null -> "Cached · stale · ${sampleAge(sample, now)}"
-    !connected -> "Disconnected"
-    owner.connectionState == DeskDeckConnectionState.OPENING -> "Connecting…"
-    owner.connectionState == DeskDeckConnectionState.FAILED -> "Connection failed"
-    owner.connectionState == DeskDeckConnectionState.STALE -> "Mac isn’t responding${sample?.let { " · ${sampleAge(it, now)}" }.orEmpty()}"
-    sample != null -> "Live · ${owner.activeTransportLabel()} · ${sampleAge(sample, now)}"
-    else -> "Opening Desk Deck…"
+private fun connectionSummary(owner: DeskDeckController, connected: Boolean, sample: DeskDeckSnapshot?): String {
+    val lastData = sample?.let { " · Last data ${sampleTimestamp(it)}" }.orEmpty()
+    return when {
+        !connected && sample != null -> "Disconnected$lastData"
+        !connected -> "Disconnected"
+        owner.connectionState == DeskDeckConnectionState.OPENING -> "Connecting…$lastData"
+        owner.connectionState == DeskDeckConnectionState.FAILED -> "Mac isn’t responding$lastData"
+        owner.connectionState == DeskDeckConnectionState.STALE -> "No recent data$lastData"
+        sample != null -> "Live · ${owner.activeTransportLabel()} · Updated ${sampleTimestamp(sample)}"
+        else -> "Opening Desk Deck…"
+    }
 }
 
-private fun sampleAge(sample: DeskDeckSnapshot, now: Long = android.os.SystemClock.elapsedRealtime()): String =
-    "${((now - sample.receivedAtMillis).coerceAtLeast(0) / 1000)}s ago"
+private fun sampleTimestamp(sample: DeskDeckSnapshot, includeDate: Boolean = false): String {
+    val timestamp = sample.receivedAtWallMillis
+    val value = Date(timestamp)
+    val format = if (includeDate || !DateUtils.isToday(timestamp)) {
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+    } else DateFormat.getTimeInstance(DateFormat.SHORT)
+    return format.format(value)
+}
 
 private fun macPowerSummary(sample: DeskDeckSnapshot?): String {
     if (sample == null) return "Unavailable"
