@@ -189,11 +189,21 @@ struct MainWindowView: View {
         Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
         Text(destination.rawValue).font(.system(size: 13 * fontScale, weight: selected ? .medium : .regular))
         Spacer(minLength: 0)
-      }.foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
-        .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
-        .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityAddTraits(selected ? [.isSelected] : [])
-      .padding(.bottom, 4)
+      }
+      .foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+      .padding(.horizontal, 14).padding(.vertical, 8)
+      .frame(minHeight: 34)
+      .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+      .overlay {
+        if selected {
+          RoundedRectangle(cornerRadius: 7).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.5)
+        }
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 7))
+    }
+    .buttonStyle(AniCeHoverButtonStyle())
+    .accessibilityAddTraits(selected ? [.isSelected] : [])
+    .padding(.bottom, 4)
   }
 
 }

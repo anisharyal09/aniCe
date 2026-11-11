@@ -14,7 +14,7 @@ struct TransferNotificationControls: View {
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
-      Text("Incoming offers in the background only. macOS notification permission is also required; progress and results stay in the app.")
+      Text("Notifies when incoming files arrive while aniCe is in the background.")
         .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
@@ -43,7 +43,7 @@ struct TransferAutoReceiveSettings: View {
             set: { preferences.setEnabled($0, for: record.peer) }))
             .aniCeControlFeedback(feedbackPadding: 3)
         }
-        Text("New pairings start enabled. Turn this off any time.")
+        Text("Accepts incoming files without a prompt.")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
@@ -512,7 +512,7 @@ struct TransferView: View {
   private var transferTargetDescription: String {
     guard model.peerConnected else { return "Connect your phone to send files." }
     guard model.peerCompatible else { return "File transfer is unavailable on this device." }
-    return "Drop files here to send to \(model.activeChannel?.descriptor.peer.deviceName ?? "your phone")"
+    return "Drop files here, drag to your screen edge (Edge Drop), or pick from the menu bar."
   }
 
   @ViewBuilder

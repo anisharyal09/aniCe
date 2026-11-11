@@ -159,10 +159,6 @@ struct CompanionView: View {
 
   private func executeQuickAction(_ feature: AppFeature) {
     switch feature {
-    case .keyboardTrackpad:
-      floatingKeyboard.toggleVisibility()
-    case .clipboard:
-      PasteTrayController.shared.toggle()
     case .files:
       if let sendFilesAction {
         sendFilesAction()
@@ -170,7 +166,7 @@ struct CompanionView: View {
         navigation.openFeature(.files)
         openMain()
       }
-    case .messages, .findDevice, .playback:
+    case .keyboardTrackpad, .clipboard, .messages, .findDevice, .playback:
       navigation.openFeature(feature)
       openMain()
     }

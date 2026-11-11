@@ -442,20 +442,17 @@ private struct FloatingKeyboardPanelView: View {
   private var expandedControls: some View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
-        ZStack {
-          Image(systemName: "line.3.horizontal")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-            .allowsHitTesting(false)
-          FloatingWindowDragHandle()
-        }
-        .frame(width: 22, height: 24)
-        .help("Drag to move floating controls")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Move floating controls")
-        Label("Keyboard & Trackpad", systemImage: "keyboard")
+        Image(systemName: "line.3.horizontal")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .frame(width: 16, height: 24)
+          .accessibilityHidden(true)
+          .allowsHitTesting(false)
+        Label("Control Android", systemImage: "keyboard")
           .font(.system(size: 13, weight: .medium))
+          .allowsHitTesting(false)
         Spacer()
+          .allowsHitTesting(false)
         Label("Floating", systemImage: "macwindow")
           .font(.caption2.weight(.medium))
           .foregroundStyle(AniCePalette.accent(scheme))
@@ -463,13 +460,20 @@ private struct FloatingKeyboardPanelView: View {
           .padding(.vertical, 4)
           .background(AniCePalette.accent(scheme).opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
           .accessibilityLabel("Floating control window")
+          .allowsHitTesting(false)
         Button("Collapse", action: controller.collapse)
         Button("Hide", action: controller.hide)
       }
       .buttonStyle(AniCeButtonStyle(compact: true))
       .padding(.horizontal, 14)
       .padding(.vertical, 10)
-      .background(AniCePalette.surface(scheme))
+      .background {
+        ZStack {
+          AniCePalette.surface(scheme)
+          FloatingWindowDragHandle()
+        }
+      }
+      .help("Drag header to move floating controls")
       Divider()
       ScrollView {
         MacKeyboardTrackpadView(model: model, presentationID: controller.expandedPresentationID,

@@ -117,12 +117,12 @@ fun NotificationSettings(owner: NotificationMirrorController) {
     }
     LaunchedEffect(Unit) { refresh() }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            if (access) "Notification access is on. Choose app alerts to sync below."
-            else "Enable notification access to sync alerts to your Mac.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         if (!access) {
+            Text(
+                "Enable notification access to sync alerts to your Mac.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedButton(
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -137,8 +137,7 @@ fun NotificationSettings(owner: NotificationMirrorController) {
             checked = mirrorIncomingCalls,
             enabled = true,
             label = "Mirror incoming calls",
-            description = if (callPermissions) "Answer or decline incoming calls from your Mac. Audio stays on the phone."
-            else "Mirror calling-app alerts. Allow phone access below to include live SIM calls.",
+            description = "Answer or decline calls from your Mac (audio stays on phone).",
             compact = true,
             onCheckedChange = { enabled ->
                 owner.preferences.setMirrorIncomingCalls(enabled)
@@ -148,7 +147,7 @@ fun NotificationSettings(owner: NotificationMirrorController) {
         )
         if (mirrorIncomingCalls && !callPermissions) {
             Text(
-                "Allow phone access to detect ringing SIM calls and answer or decline them from your Mac.",
+                "Allow phone access to answer or decline SIM calls from your Mac.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -168,8 +167,11 @@ fun NotificationSettings(owner: NotificationMirrorController) {
             }
         }
         if (mirrorIncomingCalls && !callerIdPermissions) {
-            Text("Show caller names by matching the incoming number to Contacts. Call details stay in memory. Android may restrict number access on this installation.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Match incoming numbers against Contacts for caller names.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedButton(
                 onClick = { callPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS)) },
                 modifier = permissionButtonModifier,

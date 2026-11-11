@@ -73,3 +73,6 @@ docs/testing
 ISSUES.md
 
 change.md
+
+# Knowledge graph generated artifacts
+graphify-out/

@@ -202,7 +202,7 @@ struct FeaturesView: View {
       if peers.contains(where: { sms.connected($0.peer) }) { return "SMS connected" }
       return peers.isEmpty ? "Pair a phone to relay messages" : "Connect your phone"
     case .keyboardTrackpad:
-      return "Keyboard & Trackpad · \(keyboardTrackpad.featureSummary)"
+      return "Control Android · \(keyboardTrackpad.featureSummary)"
     case .findDevice:
       if findDevice.busy { return "Request in progress" }
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }

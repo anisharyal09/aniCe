@@ -118,7 +118,7 @@ private struct AniCeHoverButtonFace<Label: View>: View {
 }
 
 extension View {
-  func aniCeControlFeedback(pressed: Bool = false, prominent: Bool = false, cornerRadius: CGFloat = 6, feedbackPadding: CGFloat = 0) -> some View {
+  func aniCeControlFeedback(pressed: Bool = false, prominent: Bool = false, cornerRadius: CGFloat = 7, feedbackPadding: CGFloat = 0) -> some View {
     modifier(AniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: cornerRadius, feedbackPadding: feedbackPadding))
   }
 }

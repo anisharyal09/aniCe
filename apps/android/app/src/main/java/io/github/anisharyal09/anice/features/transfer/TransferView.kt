@@ -288,6 +288,13 @@ fun TransferView(
                                 Text("Choose files")
                             }
                         }
+                        if (controller.peerConnected) {
+                            Text(
+                                "Tip: Share files directly to Mac from Gallery or Files without opening aniCe.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
                     }
                 }

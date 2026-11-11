@@ -135,7 +135,7 @@ Overview, Devices, Features, Favourites, Settings and About use a native sidebar
 
 Features → Now Playing → Playback setup provides remote playback to Android. Local Overview/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
 
-## Control Android (Keyboard & Trackpad, unreleased)
+## Control Android (Keyboard & Trackpad)
 
 Features → Control Android sends native keyboard and mouse input to a trusted Android phone over Classic Bluetooth HID. Pair in macOS Bluetooth Settings, then confirm the paired device's link to the aniCe phone once. Connecting leaves input idle until you click the keyboard or pointer pad. Two fingers up/down scroll; left/right drags the phone pointer. Scrolling over an inactive embedded pad browses the local panel.
 

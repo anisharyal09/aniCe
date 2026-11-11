@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     identity: DeviceIdentityViewModel,
@@ -179,7 +180,6 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
                     PreferenceSection("Appearance", sectionModifier("Appearance"), highlightedSection == "Appearance") {
-                        val fontScale = fontScalePreference()
                         Box {
                             Row(
                                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -203,26 +203,35 @@ fun SettingsScreen(
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        val savedScale = fontScalePreference()
+                        var sliderPosition by remember(savedScale) { mutableFloatStateOf(savedScale) }
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Text size", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            Text("${kotlin.math.round(fontScale * 100).toInt()}%",
+                            Text(
+                                "${kotlin.math.round(sliderPosition * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Spacer(Modifier.width(8.dp))
                             Slider(
-                                value = fontScale,
-                                onValueChange = { saveFontScale(context, kotlin.math.round(it * 20f) / 20f) },
+                                value = sliderPosition,
+                                onValueChange = { sliderPosition = kotlin.math.round(it * 20f) / 20f },
+                                onValueChangeFinished = { saveFontScale(context, sliderPosition) },
                                 valueRange = 0.80f..1.20f,
-                                steps = 7,
+                                thumb = { Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape)) },
+                                track = { slider -> SliderDefaults.Track(slider, modifier = Modifier.height(3.dp), thumbTrackGapSize = 2.dp) },
                                 modifier = Modifier.width(130.dp)
                             )
-                            if (kotlin.math.abs(fontScale - 1.0f) > 0.02f) {
+                            if (kotlin.math.abs(sliderPosition - 1.0f) > 0.02f) {
                                 Spacer(Modifier.width(4.dp))
                                 TextButton(
-                                    onClick = { saveFontScale(context, 1.0f) },
+                                    onClick = {
+                                        sliderPosition = 1.0f
+                                        saveFontScale(context, 1.0f)
+                                    },
                                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                                     modifier = Modifier.heightIn(min = 32.dp)
                                 ) {

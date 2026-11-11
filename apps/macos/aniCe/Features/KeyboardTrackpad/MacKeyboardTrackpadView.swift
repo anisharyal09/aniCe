@@ -143,7 +143,7 @@ struct MacKeyboardTrackpadView: View {
           .foregroundStyle(AniCePalette.accent(scheme))
         }
         .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
-        .help("Open Keyboard & Trackpad in the main aniCe window")
+        .help("Open Control Android in the main aniCe window")
         .accessibilityHint("Opens this control in the main aniCe window")
       }
       Spacer(minLength: 8)
