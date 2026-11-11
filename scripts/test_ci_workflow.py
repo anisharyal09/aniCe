@@ -349,6 +349,38 @@ exit "$ANICE_TEST_SDK_EXIT"
             "python3 scripts/verify-suite.py --only macos",
         )
 
+    def test_runtime_workflow_pins_emulator_matrix_and_is_nightly_only(self):
+        document = workflow_documents()["runtime.yml"]
+        events = triggers(document)
+        self.assertEqual(events, {"schedule", "workflow_dispatch"})
+        self.assertEqual(document.get("permissions"), {"contents": "read"})
+        job = document["jobs"]["verify-android-connected"]
+        self.assertEqual(job.get("runs-on"), "ubuntu-24.04")
+        matrix = job.get("strategy", {}).get("matrix", {}).get("include", [])
+        self.assertEqual({row.get("api-level") for row in matrix}, {29, 36})
+        runner_step = next(
+            step for step in job["steps"]
+            if "android-emulator-runner" in step.get("uses", "")
+        )
+        self.assertEqual(
+            runner_step["uses"],
+            "ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d",
+        )
+        self.assertIn("adb wait-for-device", runner_step.get("with", {}).get("script", ""))
+        self.assertIn("python3 scripts/verify-suite.py --only connected", runner_step.get("with", {}).get("script", ""))
+        archive = next(
+            step for step in job["steps"]
+            if step.get("name") == "Archive emulator diagnostics"
+        )
+        self.assertEqual(archive.get("if"), "always()")
+        self.assertIn("build/reports/emulator", archive.get("run", ""))
+        upload = next(
+            step for step in job["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        self.assertEqual(upload.get("if"), "always()")
+        self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
+
     def test_codeowners_covers_the_gate_files(self):
         path = ROOT / ".github" / "CODEOWNERS"
         patterns = [

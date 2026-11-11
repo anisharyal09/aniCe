@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Compile Android instrumentation tests with `assembleDebugAndroidTest` in `verify-android`, make `connected` verification Linux-friendly, and add scheduled/manual emulator execution for API 29 and 36 on headless KVM in `runtime.yml`.
+
 - Add a hosted macOS platform-truth lane on `macos-15` with pinned Xcode 26.3; rebuild the native Apple Silicon (`arm64`) Rust pairing bridge before `xcodebuild`, compile and verify native Release with codesign, isolate derived data with cleanup, and make macOS a required aggregate lane.
 
 - Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.

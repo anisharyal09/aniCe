@@ -44,7 +44,7 @@ MINIMUMS = {
     "python": 18,
     "ci-policy": 12,
 }
-MINIMUM_CONNECTED = 10
+MINIMUM_CONNECTED = 30
 
 # A workflow lane is the only unit CI selects.  Keeping this mapping in the
 # verifier prevents YAML from acquiring its own test inventory or ordering.
@@ -622,23 +622,30 @@ def vector_interpreter(explicit):
     )
 
 
-def find_adb():
+def find_adb(env=None):
+    source = env if env is not None else os.environ
     candidate = shutil.which("adb")
     if candidate:
         return candidate
     for variable in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
-        if os.environ.get(variable):
-            path = Path(os.environ[variable]) / "platform-tools" / "adb"
+        if source.get(variable):
+            path = Path(source[variable]) / "platform-tools" / "adb"
             if path.is_file():
                 return str(path)
-    path = Path.home() / "Library" / "Android" / "sdk" / "platform-tools" / "adb"
-    if path.is_file():
-        return str(path)
+    for candidate_dir in (
+        Path.home() / "Library" / "Android" / "sdk",
+        Path.home() / "Android" / "Sdk",
+        Path("/usr/local/lib/android/sdk"),
+        Path("/usr/lib/android-sdk"),
+    ):
+        path = candidate_dir / "platform-tools" / "adb"
+        if path.is_file():
+            return str(path)
     raise GateError("adb is not available; set ANDROID_HOME or put adb on PATH")
 
 
-def connected_devices(adb):
-    completed = subprocess.run([adb, "devices"], capture_output=True, text=True)
+def connected_devices(adb, env=None):
+    completed = subprocess.run([adb, "devices"], capture_output=True, text=True, env=env)
     if completed.returncode:
         raise GateError("adb devices failed: " + completed.stdout.strip())
     return [
@@ -648,8 +655,8 @@ def connected_devices(adb):
     ]
 
 
-def selected_device(adb, serial):
-    devices = connected_devices(adb)
+def selected_device(adb, serial, env=None):
+    devices = connected_devices(adb, env=env)
     if serial:
         if serial not in devices:
             raise GateError("The selected device %s is not connected and authorized" % serial)
@@ -736,9 +743,12 @@ def run_android_jvm(env, artifacts):
         if folder.exists():
             shutil.rmtree(folder)
     run_step(
-        "Android JVM tests and lint",
+        "Android JVM tests, lint, and test compilation",
         # Dependency caches remain usable, but cached task outputs must not replace test execution.
-        [ANDROID / "gradlew", "--console=plain", "--no-build-cache", "testDebugUnitTest", "lintDebug"],
+        [
+            ANDROID / "gradlew", "--console=plain", "--no-build-cache",
+            "testDebugUnitTest", "lintDebug", "assembleDebugAndroidTest",
+        ],
         artifacts, cwd=ANDROID, env=env, timeout=2400,
     )
     paths = collect_junit_reports([reports])
@@ -790,22 +800,22 @@ def build_session_helper(env, artifacts):
     return output
 
 
-def selected_serial_or_skip(args):
-    adb = find_adb()
-    serial = selected_device(adb, args.serial)
+def selected_serial_or_skip(args, env=None):
+    adb = find_adb(env=env)
+    serial = selected_device(adb, args.serial, env=env)
     if serial is not None:
         return serial
     if args.allow_no_device:
         print("\nDEVICE CHECKS NOT EXECUTED: no authorized device is connected (--allow-no-device).")
         return None
     raise GateError(
-        "Device lanes require one authorized Android device; pass --serial, "
-        "or --allow-no-device to record that device coverage was not run"
+        "Device lanes require one authorized Android device or emulator; pass --serial, "
+        "or ensure emulator is booted (adb devices reported no authorized device)"
     )
 
 
 def run_interchange_checks(args, env, artifacts):
-    serial = selected_serial_or_skip(args)
+    serial = selected_serial_or_skip(args, env=env)
     if serial is None:
         return NotExecuted("No authorized device (--allow-no-device)")
 
@@ -834,7 +844,7 @@ def run_interchange_checks(args, env, artifacts):
 
 
 def run_connected_checks(args, env, artifacts, documented_android):
-    serial = selected_serial_or_skip(args)
+    serial = selected_serial_or_skip(args, env=env)
     if serial is None:
         return NotExecuted("No authorized device (--allow-no-device)")
     # Gradle otherwise chooses its own target when more than one device is attached.

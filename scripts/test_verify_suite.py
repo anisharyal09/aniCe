@@ -701,6 +701,7 @@ class AndroidReportFreshnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(suite.GateError, 'no JUnit reports'):
                     suite.run_android_jvm({}, root)
                 self.assertIn('--no-build-cache', command.call_args.args[1])
+                self.assertIn('assembleDebugAndroidTest', command.call_args.args[1])
             self.assertFalse(reports.exists())
 
     def test_failed_report_cleanup_stops_before_running_gradle(self):
@@ -713,6 +714,41 @@ class AndroidReportFreshnessTests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     suite.run_android_jvm({}, root)
                 command.assert_not_called()
+
+    def test_find_adb_discovers_custom_env_and_linux_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk = root / 'custom_sdk'
+            adb = sdk / 'platform-tools/adb'
+            adb.parent.mkdir(parents=True)
+            adb.write_text('#!/bin/sh\nexit 0\n')
+            adb.chmod(0o755)
+
+            with patch.object(suite.shutil, 'which', return_value=None):
+                # Custom env takes precedence over os.environ
+                found = suite.find_adb(env={'ANDROID_HOME': str(sdk)})
+                self.assertEqual(found, str(adb))
+
+                # Discovery checks Linux home path
+                linux_sdk = root / 'Android/Sdk'
+                linux_adb = linux_sdk / 'platform-tools/adb'
+                linux_adb.parent.mkdir(parents=True)
+                linux_adb.write_text('#!/bin/sh\nexit 0\n')
+                linux_adb.chmod(0o755)
+                with patch.object(Path, 'home', return_value=root):
+                    found_linux = suite.find_adb(env={})
+                    self.assertEqual(found_linux, str(linux_adb))
+
+    def test_connected_devices_passes_environment(self):
+        test_env = {'ANDROID_SERIAL': 'emulator-5554'}
+        with patch.object(suite.subprocess, 'run') as mock_run:
+            mock_run.return_value = SimpleNamespace(
+                returncode=0,
+                stdout='List of devices attached\nemulator-5554\tdevice\n',
+            )
+            devices = suite.connected_devices('/mock/adb', env=test_env)
+            self.assertEqual(devices, ['emulator-5554'])
+            self.assertEqual(mock_run.call_args.kwargs['env'], test_env)
 
 
 if __name__ == "__main__":
