@@ -4,6 +4,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Check GitHub releases with a stable/beta preference and user-confirmed Android package installation; configure protected release signing.
+
 - Keep Mac power summaries focused on battery percentage and charging state, omitting adapter details.
 
 - Show the connected Mac's event-driven power status on Home and Devices and refine shortcut and Settings spacing.

@@ -203,6 +203,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         // Consume Scaffold insets here so nested sheets and feature content do not apply the same padding twice.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
         Column(content) {
+            io.github.anisharyal09.anice.update.UpdateNotice((context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).updates)
             if (pairing.busy && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
                 PendingRequestRow(if (pairing.phase == "approval") "Review pairing" else "Pairing in progress", pairing.status, navigation::pair)
             }

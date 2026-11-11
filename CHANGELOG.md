@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Add GitHub release checks and Android update installation; install signed Mac updates through a verified archive and detached rollback helper, with a fail-closed signed release workflow.
+
 - Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
 
 - Show Mac battery and charging information on Android Home and Devices; refine Quick access and phone Settings selection.

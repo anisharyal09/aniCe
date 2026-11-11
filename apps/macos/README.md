@@ -18,6 +18,12 @@ Peer battery and charging status appears on Android Home and Devices and Mac dev
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
 
+## Updates
+
+[Release signing and workflow setup](../../docs/RELEASE_UPDATES.md).
+
+aniCe checks GitHub Releases while the main window is open. Settings → Updates selects stable releases by default, offers an optional beta channel and provides a manual check. An available release offers Install, Later and Skip version. Installation downloads the signed archive, verifies its signature, identifier, versions and certificate pins, then replaces the app through a detached helper that atomically exchanges the bundles and restores the previous one if the relaunch fails or the new build never reaches its main window. The new build confirms startup before the previous bundle is deleted; a failed or abandoned install is reported in the main window and Settings → Updates. If aniCe cannot replace itself where it runs, the release remains available for manual download and **Show in Finder** reveals the current app. A self-signed release identity is not Apple notarization, so the first launch may require Gatekeeper approval.
+
 ## Nearby discovery
 
 Mac advertises only the public aniCe service UUID and generic name for 120 seconds, with a rotating GATT discovery nonce. Discovery does not pair or trust devices.

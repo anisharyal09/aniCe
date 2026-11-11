@@ -322,7 +322,7 @@ extension MainWindowView {
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
-                ("appearance", "Appearance"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
+                ("appearance", "Appearance"), ("updates", "Updates"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
                 ("dnd-sync", "Do Not Disturb"), ("clipboard", "Clipboard"),
                 ("messages", "Messages"), ("file-transfer", "File transfer"),
                 ("now-playing", "Now Playing"), ("this-device", "This device")
@@ -352,6 +352,34 @@ extension MainWindowView {
                     }
                     .labelsHidden().pickerStyle(.menu).frame(width: 130)
                   }.frame(minHeight: 48)
+                }
+                preferenceSection("Updates", id: "updates") {
+                  VStack(alignment: .leading, spacing: 8) {
+                    if let message = updates.recoveryMessage {
+                      Text(message).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    }
+                    Toggle("Include beta releases", isOn: $updates.includeBeta).toggleStyle(.checkbox)
+                    Text("Turning this off keeps an installed beta until a newer stable release is available.")
+                      .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    Button("Check for updates") { Task { await updates.check(force: true) } }.disabled(updates.checking)
+                    if updates.installing {
+                      HStack {
+                        ProgressView(value: updates.progress) { Text("Downloading update…") }
+                        Button("Cancel") { updates.cancelInstall() }
+                      }
+                    } else if updates.installProblem == nil, let release = updates.release {
+                      Button("Install \(release.version.tag)") { updates.install() }
+                    }
+                    if let error = updates.installError {
+                      Text(error).font(.caption).foregroundStyle(.red)
+                    } else if updates.release != nil, let problem = updates.installProblem {
+                      Text(problem).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    }
+                    if let release = updates.release, updates.installProblem != nil || updates.installError != nil {
+                      Button("Open \(release.version.tag) on GitHub") { NSWorkspace.shared.open(release.pageURL) }
+                    }
+                    if !updates.status.isEmpty { Text(updates.status).font(.caption) }
+                  }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {
                   VStack(alignment: .leading, spacing: 5) {

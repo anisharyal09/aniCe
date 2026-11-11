@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Check GitHub releases with a stable/beta preference and install signed updates through a detached helper with startup-confirmation rollback.
+
 - Share Mac power changes with connected Android devices and soften Overview Quick access controls.
 
 - Align device power information beneath the connection status and compact Edge Drop and Desk Deck settings rows.

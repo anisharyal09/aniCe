@@ -64,6 +64,7 @@ fun SettingsScreen(
         val lan = app.lanSessionController
         val sections = buildList {
             add("Appearance")
+            add("Updates")
             add("Connection")
             add("Do Not Disturb")
             add("Clipboard")
@@ -199,6 +200,10 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+
+                    PreferenceSection("Updates", sectionModifier("Updates"), highlightedSection == "Updates") {
+                        io.github.anisharyal09.anice.update.UpdateSettings(app.updates)
                     }
 
                     PreferenceSection("Connection", sectionModifier("Connection"), highlightedSection == "Connection") {

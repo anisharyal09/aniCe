@@ -7,7 +7,26 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseStorePath = providers.environmentVariable("ANICE_ANDROID_KEYSTORE").orNull
+val releaseStorePassword = providers.environmentVariable("ANICE_ANDROID_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANICE_ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANICE_ANDROID_KEY_PASSWORD").orNull
+val releaseSigningReady = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+
 android {
+    signingConfigs {
+        create("production") {
+            if (releaseSigningReady) {
+                storeFile = file(requireNotNull(releaseStorePath))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release { if (releaseSigningReady) signingConfig = signingConfigs.getByName("production") }
+    }
     namespace = "io.github.anisharyal09.anice"
     compileSdk = 36
     ndkVersion = "27.3.13750724"
@@ -15,8 +34,8 @@ android {
         applicationId = "io.github.anisharyal09.anice"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = providers.gradleProperty("aniceVersionCode").orNull?.toInt() ?: 3
+        versionName = providers.gradleProperty("aniceVersionName").orNull ?: "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -63,4 +82,11 @@ dependencies {
     testImplementation("org.json:json:20260814")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+}
+
+// Public releases must never fall back to an unsigned or debug-signed APK.
+tasks.configureEach {
+    if (name == "packageRelease") {
+        doFirst { check(releaseSigningReady) { "Set ANICE_ANDROID_KEYSTORE, ANICE_ANDROID_STORE_PASSWORD, ANICE_ANDROID_KEY_ALIAS and ANICE_ANDROID_KEY_PASSWORD for a release build." } }
+    }
 }

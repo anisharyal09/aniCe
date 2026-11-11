@@ -18,6 +18,12 @@ Peer battery and charging status appears on Android Home and Devices and Mac dev
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
 
+## Updates
+
+[Release signing and workflow setup](../../docs/RELEASE_UPDATES.md).
+
+aniCe checks GitHub Releases while the app is open, with stable releases selected by default. Settings → Updates offers beta releases and a manual check. To install an update, review the release and use Android’s package installer; the first time, Android may ask you to allow aniCe to install apps. The first production-signed APK is a manual baseline install; later updates require the same signing identity and retain app data.
+
 ## Nearby discovery
 
 Android finds nearby aniCe candidates using a service-filtered foreground scan, validates a read-only GATT payload, then disconnects. Discovery does not pair or trust devices.

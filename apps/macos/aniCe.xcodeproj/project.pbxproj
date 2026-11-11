@@ -7,6 +7,23 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F40100000000000000000017 /* MacUpdateStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000018 /* MacUpdateStaging.swift */; };
+		F4010000000000000000001B /* MacUpdateRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000001C /* MacUpdateRecord.swift */; };
+		F4010000000000000000001D /* MacUpdateInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000001E /* MacUpdateInstall.swift */; };
+		F4010000000000000000001F /* MacUpdateRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000020 /* MacUpdateRecordTests.swift */; };
+		F40100000000000000000021 /* MacUpdateInstallTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000022 /* MacUpdateInstallTests.swift */; };
+		F40100000000000000000019 /* MacUpdateStagingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000001A /* MacUpdateStagingTests.swift */; };
+		F40100000000000000000015 /* MacUpdateSignatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000016 /* MacUpdateSignatureTests.swift */; };
+		F40100000000000000000013 /* MacUpdateArchiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000014 /* MacUpdateArchiveTests.swift */; };
+		F40100000000000000000011 /* MacUpdateSignature.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000012 /* MacUpdateSignature.swift */; };
+		F4010000000000000000000F /* MacUpdateArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000010 /* MacUpdateArchive.swift */; };
+		F4010000000000000000000D /* MacUpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000000E /* MacUpdateModel.swift */; };
+		F4010000000000000000000B /* ReleaseDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000000C /* ReleaseDiscoveryTests.swift */; };
+		F40100000000000000000009 /* ReleaseDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000000A /* ReleaseDiscovery.swift */; };
+		F40100000000000000000005 /* ReleaseCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000006 /* ReleaseCatalog.swift */; };
+		F40100000000000000000007 /* ReleaseCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000008 /* ReleaseCatalogTests.swift */; };
+		F40100000000000000000003 /* UpdateVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000004 /* UpdateVersionTests.swift */; };
+		F40100000000000000000001 /* UpdateVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000002 /* UpdateVersion.swift */; };
         D70000000000000000000003 /* DndSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000004; };
         D70000000000000000000005 /* dnd-sync-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000006; };
         D70000000000000000000001 /* MacDndSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000002; };
@@ -164,6 +181,23 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F40100000000000000000018 /* MacUpdateStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateStaging.swift; sourceTree = SOURCE_ROOT; };
+		F4010000000000000000001C /* MacUpdateRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateRecord.swift; sourceTree = SOURCE_ROOT; };
+		F4010000000000000000001E /* MacUpdateInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateInstall.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000020 /* MacUpdateRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/MacUpdateRecordTests.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000022 /* MacUpdateInstallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/MacUpdateInstallTests.swift; sourceTree = SOURCE_ROOT; };
+		F4010000000000000000001A /* MacUpdateStagingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/MacUpdateStagingTests.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000016 /* MacUpdateSignatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/MacUpdateSignatureTests.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000014 /* MacUpdateArchiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/MacUpdateArchiveTests.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000012 /* MacUpdateSignature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateSignature.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000010 /* MacUpdateArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateArchive.swift; sourceTree = SOURCE_ROOT; };
+		F4010000000000000000000E /* MacUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateModel.swift; sourceTree = SOURCE_ROOT; };
+		F4010000000000000000000C /* ReleaseDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseDiscoveryTests.swift; sourceTree = SOURCE_ROOT; };
+		F4010000000000000000000A /* ReleaseDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseDiscovery.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000006 /* ReleaseCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseCatalog.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000008 /* ReleaseCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseCatalogTests.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000004 /* UpdateVersionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/UpdateVersionTests.swift; sourceTree = SOURCE_ROOT; };
+		F40100000000000000000002 /* UpdateVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/UpdateVersion.swift; sourceTree = SOURCE_ROOT; };
         D70000000000000000000004 /* DndSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DndSyncTests.swift"; sourceTree = SOURCE_ROOT; };
         D70000000000000000000006 /* dnd-sync-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/dnd-sync-vectors.json"; sourceTree = SOURCE_ROOT; };
         D70000000000000000000002 /* MacDndSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DndSync/MacDndSync.swift"; sourceTree = SOURCE_ROOT; };
@@ -459,6 +493,14 @@
 				04E1689DBE5CE27F2E4DE8D6 /* ../../protocol/test-vectors/pairing-vectors.json */,
 				000000000000000000000450 /* aniCeTests/DiscoveryTests.swift */,
 				000000000000000000000452 /* ../../protocol/test-vectors/discovery-vectors.json */,
+				F4010000000000000000001A /* MacUpdateStagingTests.swift */,
+				F40100000000000000000020 /* MacUpdateRecordTests.swift */,
+				F40100000000000000000022 /* MacUpdateInstallTests.swift */,
+				F40100000000000000000016 /* MacUpdateSignatureTests.swift */,
+				F40100000000000000000014 /* MacUpdateArchiveTests.swift */,
+				F4010000000000000000000C /* ReleaseDiscoveryTests.swift */,
+				F40100000000000000000008 /* ReleaseCatalogTests.swift */,
+				F40100000000000000000004 /* UpdateVersionTests.swift */,
 				000000000000000000000201 /* IdentityTests.swift */,
 				000000000000000000000203 /* ../../protocol/test-vectors/identity-vectors.json */,
 			);
@@ -468,6 +510,15 @@
 		000000000000000000000300 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				F40100000000000000000018 /* MacUpdateStaging.swift */,
+				F4010000000000000000001E /* MacUpdateInstall.swift */,
+				F4010000000000000000001C /* MacUpdateRecord.swift */,
+				F40100000000000000000012 /* MacUpdateSignature.swift */,
+				F40100000000000000000010 /* MacUpdateArchive.swift */,
+				F4010000000000000000000E /* MacUpdateModel.swift */,
+				F4010000000000000000000A /* ReleaseDiscovery.swift */,
+				F40100000000000000000006 /* ReleaseCatalog.swift */,
+				F40100000000000000000002 /* UpdateVersion.swift */,
 				000000000000000000000064 /* AniCeApp.swift */,
 				000000000000000000000065 /* AppDelegate.swift */,
 				000000000000000000000066 /* MainWindowView.swift */,
@@ -621,6 +672,7 @@
 				000000000000000000000015 /* Frameworks */,
 				000000000000000000000016 /* Resources */,
 				BA0100000000000000000001 /* Package Now Playing adapter */,
+				BA0100000000000000000002 /* Build update helper */,
 			);
 			buildRules = (
 			);
@@ -724,6 +776,16 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+        BA0100000000000000000002 /* Build update helper */ = {
+            isa = PBXShellScriptBuildPhase;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ("$(SRCROOT)/aniCe/Update/UpdateHelper/main.swift", "$(SRCROOT)/aniCe/Update/UpdateVersion.swift", "$(SRCROOT)/aniCe/Update/MacUpdateRecord.swift", "$(SRCROOT)/aniCe/Update/MacUpdateSignature.swift", "$(SRCROOT)/aniCe/Update/build_helper.sh");
+            outputPaths = ("$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/aniCeUpdateHelper");
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/bash;
+            shellScript = "bash \"$SRCROOT/aniCe/Update/build_helper.sh\"";
+        };
         BA0100000000000000000001 /* Package Now Playing adapter */ = {
             isa = PBXShellScriptBuildPhase;
             buildActionMask = 2147483647;
@@ -741,6 +803,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F40100000000000000000017 /* MacUpdateStaging.swift in Sources */,
+				F4010000000000000000001D /* MacUpdateInstall.swift in Sources */,
+				F4010000000000000000001B /* MacUpdateRecord.swift in Sources */,
+				F40100000000000000000011 /* MacUpdateSignature.swift in Sources */,
+				F4010000000000000000000F /* MacUpdateArchive.swift in Sources */,
+				F4010000000000000000000D /* MacUpdateModel.swift in Sources */,
+				F40100000000000000000009 /* ReleaseDiscovery.swift in Sources */,
+				F40100000000000000000005 /* ReleaseCatalog.swift in Sources */,
+				F40100000000000000000001 /* UpdateVersion.swift in Sources */,
 				E358D2436EC54F89A980C517,
                 C11000000000000000000001,
                 C11000000000000000000003,
@@ -852,6 +923,14 @@
 				FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */,
 				5AC4A19CBFF38BE42CBB0A83 /* aniCeTests/PairingTests.swift in Sources */,
 				000000000000000000000451 /* aniCeTests/DiscoveryTests.swift in Sources */,
+				F40100000000000000000019 /* MacUpdateStagingTests.swift in Sources */,
+				F4010000000000000000001F /* MacUpdateRecordTests.swift in Sources */,
+				F40100000000000000000021 /* MacUpdateInstallTests.swift in Sources */,
+				F40100000000000000000015 /* MacUpdateSignatureTests.swift in Sources */,
+				F40100000000000000000013 /* MacUpdateArchiveTests.swift in Sources */,
+				F4010000000000000000000B /* ReleaseDiscoveryTests.swift in Sources */,
+				F40100000000000000000007 /* ReleaseCatalogTests.swift in Sources */,
+				F40100000000000000000003 /* UpdateVersionTests.swift in Sources */,
 				000000000000000000000202 /* IdentityTests.swift in Sources */,
 				B10100000000000000000002 /* aniCeTests/Transfer/TransferWireTests.swift in Sources */,
 				B10100000000000000000005 /* aniCeTests/Transfer/TransferModelTests.swift in Sources */,
