@@ -295,11 +295,11 @@ def parse_xcode_log(log_path):
     return results
 
 
-def _xcresult_json(bundle, command):
+def _xcresult_json(bundle, command, env=None):
     completed = subprocess.run(
         ["xcrun", "xcresulttool", "get", "test-results", command,
          "--path", str(bundle), "--format", "json"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
     if completed.returncode:
         return None
@@ -328,8 +328,8 @@ def _walk_test_nodes(node, suite_path, out):
         _walk_test_nodes(child, next_path, out)
 
 
-def parse_xcresult_tree(bundle):
-    document = _xcresult_json(bundle, "tests")
+def parse_xcresult_tree(bundle, env=None):
+    document = _xcresult_json(bundle, "tests", env=env)
     if not document:
         return []
     results = []
@@ -338,16 +338,16 @@ def parse_xcresult_tree(bundle):
     return results
 
 
-def parse_xcode_results(bundle, log_path):
+def parse_xcode_results(bundle, log_path, env=None):
     """Checks the result bundle against xcodebuild's own test-case lines.
 
     A disagreement fails closed: silently accepting only the summary would
     hide an unreported or truncated test.
     """
-    summary = _xcresult_json(bundle, "summary")
+    summary = _xcresult_json(bundle, "summary", env=env)
     logged = parse_xcode_log(log_path)
     if not logged:
-        logged = parse_xcresult_tree(bundle)
+        logged = parse_xcresult_tree(bundle, env=env)
     if not logged:
         raise GateError(
             "xcodebuild produced no test-case results; the suite did not run "
@@ -460,7 +460,8 @@ def markdown_summary(summary):
             continue
         evidence = []
         for key in ("passed", "failed", "documented_skips", "checks",
-                    "policy_tests", "harnesses", "actionlint"):
+                    "policy_tests", "harnesses", "actionlint", "xcode",
+                    "arch"):
             if key in row:
                 evidence.append("%s %s" % (key.replace("_", " "), row[key]))
         if row.get("reason"):
@@ -547,7 +548,7 @@ def run_step(label, command, artifacts, cwd=ROOT, env=None, timeout=1800):
     return log
 
 
-def toolchain_env(android=False, macos=False):
+def toolchain_env(android=False, macos=False, require_xcode=False):
     # Probe only selected platforms; Linux Android checks have no Xcode dependency.
     env = os.environ.copy()
     if android and not env.get("ANDROID_HOME"):
@@ -565,18 +566,24 @@ def toolchain_env(android=False, macos=False):
         bundled = Path("/Applications/Android Studio.app/Contents/jbr/Contents/Home")
         if bundled.is_dir():
             env["JAVA_HOME"] = str(bundled)
-    if macos and not env.get("DEVELOPER_DIR"):
-        developer = ""
-        try:
-            developer = subprocess.check_output(
-                ["xcode-select", "-p"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-        except (OSError, subprocess.CalledProcessError):
-            pass
-        if not (Path(developer) / "Platforms/MacOSX.platform").is_dir():
-            developer = "/Applications/Xcode.app/Contents/Developer"
-        if (Path(developer) / "Platforms/MacOSX.platform").is_dir():
-            env["DEVELOPER_DIR"] = developer
+    if macos:
+        developer = env.get("DEVELOPER_DIR", "")
+        if developer and not (Path(developer) / "Platforms/MacOSX.platform").is_dir():
+            # A pin must name a complete Xcode; falling back would hide a broken runner image.
+            raise GateError("DEVELOPER_DIR is not a full Xcode developer directory: " + developer)
+        if not developer:
+            try:
+                developer = subprocess.check_output(
+                    ["xcode-select", "-p"], text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            except (OSError, subprocess.CalledProcessError):
+                developer = ""
+            if not (Path(developer) / "Platforms/MacOSX.platform").is_dir():
+                developer = "/Applications/Xcode.app/Contents/Developer"
+            if (Path(developer) / "Platforms/MacOSX.platform").is_dir():
+                env["DEVELOPER_DIR"] = developer
+        if require_xcode and not env.get("DEVELOPER_DIR"):
+            raise GateError("macOS hosted tests require a full Xcode installation")
     # Hosted Keychain tests skip unless this reaches the test runner.
     if macos:
         env["TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS"] = "1"
@@ -976,7 +983,8 @@ def main(argv=None):
             raise GateError("macOS hosted and interchange checks require macOS; "
                             "use --only android or --only contracts on Linux")
         env = toolchain_env(android=selected["android"] or selected["connected"],
-                            macos=selected["macos"] or selected["interchange"])
+                            macos=selected["macos"] or selected["interchange"],
+                            require_xcode=selected["macos"])
 
         def execute(name, function):
             # Persist suite progress around execution so an unfinished run cannot resemble a pass.
@@ -1078,27 +1086,92 @@ def main(argv=None):
     return 0
 
 
+def read_xcode_version(log_path):
+    """Returns the toolchain identity that actually compiled the app."""
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    return lines[0].strip() if lines else ""
+
+
 def run_macos_with_skips(env, artifacts, documented, extra):
-    derived = artifacts / "macos-derived-data"
-    bundle = artifacts / "macos.xcresult"
-    if bundle.exists():
-        shutil.rmtree(bundle)
-    log = run_step(
-        "macOS hosted tests",
-        [
-            "xcodebuild", "-project", "aniCe.xcodeproj", "-scheme", "aniCe",
-            "-configuration", "Debug", "-derivedDataPath", str(derived),
-            "-destination", "platform=macOS", "-resultBundlePath", str(bundle),
-            "CODE_SIGN_IDENTITY=-", "test",
-        ],
-        artifacts, cwd=MACOS, env=env, timeout=2400,
+    # The native library is a link input, not an app test result. Rebuild it from
+    # source so a stale archive cannot make a broken bridge look green.
+    library = MACOS / "build" / "native" / "libanice_pairing.a"
+    toolchain = run_step("macOS toolchain", ["xcodebuild", "-version"], artifacts, env=env)
+    if library.exists():
+        library.unlink()
+    run_step(
+        "macOS native pairing bridge",
+        [sys.executable, SCRIPTS / "build-pairing-native.py", "macos"],
+        artifacts, env=env, timeout=1200,
     )
-    results = parse_xcode_results(bundle, log)
-    write_json(artifacts / "macos-tests.json", [asdict(result) for result in results])
-    return validate_results(
-        results, "macOS hosted", MINIMUMS["macos"],
-        documented=documented, extra=extra,
-    )
+    if not library.is_file():
+        raise GateError("macOS native pairing build produced no libanice_pairing.a")
+
+    # Keep generated build products out of the uploaded evidence directory, and
+    # ensure temporary derived data is cleaned up even if compilation or tests fail.
+    derived = Path(tempfile.mkdtemp(prefix="anice-macos-derived-"))
+    try:
+        run_step(
+            "macOS Release build",
+            [
+                "xcodebuild", "-project", "aniCe.xcodeproj", "-scheme", "aniCe",
+                "-configuration", "Release", "-derivedDataPath", str(derived),
+                "ARCHS=arm64", "ONLY_ACTIVE_ARCH=YES", "CODE_SIGN_IDENTITY=-",
+                "build",
+            ],
+            artifacts, cwd=MACOS, env=env, timeout=1800,
+        )
+        app_bundle = derived / "Build" / "Products" / "Release" / "aniCe.app"
+        app_binary = app_bundle / "Contents" / "MacOS" / "aniCe"
+        if not app_binary.is_file():
+            raise GateError("macOS Release build produced no app binary at " + str(app_binary))
+
+        arch_log = run_step(
+            "macOS architecture verification",
+            ["lipo", "-info", str(app_binary)],
+            artifacts, env=env,
+        )
+        arch_text = arch_log.read_text(encoding="utf-8")
+        if "arm64" not in arch_text:
+            raise GateError("aniCe.app binary does not contain arm64 architecture: " + arch_text.strip())
+
+        run_step(
+            "macOS codesign verification",
+            ["codesign", "--verify", "--deep", "--strict", str(app_bundle)],
+            artifacts, env=env,
+        )
+
+        bundle = artifacts / "macos.xcresult"
+        if bundle.exists():
+            shutil.rmtree(bundle)
+        log = run_step(
+            "macOS hosted tests",
+            [
+                "xcodebuild", "-project", "aniCe.xcodeproj", "-scheme", "aniCe",
+                "-configuration", "Debug", "-derivedDataPath", str(derived),
+                "-destination", "platform=macOS", "-resultBundlePath", str(bundle),
+                "CODE_SIGN_IDENTITY=-", "test",
+            ],
+            artifacts, cwd=MACOS, env=env, timeout=2400,
+        )
+        results = parse_xcode_results(bundle, log, env=env)
+        write_json(artifacts / "macos-tests.json", [asdict(result) for result in results])
+        passed, skipped = validate_results(
+            results, "macOS hosted", MINIMUMS["macos"],
+            documented=documented, extra=extra,
+        )
+        # Record the compiler and verified architecture.
+        return {
+            "passed": passed,
+            "documented_skips": skipped,
+            "xcode": read_xcode_version(toolchain),
+            "arch": "arm64",
+        }
+    finally:
+        shutil.rmtree(derived, ignore_errors=True)
 
 
 if __name__ == "__main__":

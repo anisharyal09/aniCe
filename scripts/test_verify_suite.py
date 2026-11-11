@@ -174,6 +174,16 @@ class XcodeGateTests(unittest.TestCase):
             with self.assertRaises(suite.GateError):
                 suite.validate_results(results, "macOS", minimum=1)
 
+    def test_xcresult_probe_uses_the_selected_toolchain(self):
+        environment = {"DEVELOPER_DIR": "/pinned/Xcode.app/Contents/Developer"}
+        with patch.object(suite.subprocess, "run") as probe:
+            probe.return_value = SimpleNamespace(returncode=0, stdout="{}")
+            self.assertEqual(
+                suite._xcresult_json(Path("tests.xcresult"), "summary", env=environment),
+                {},
+            )
+        self.assertEqual(probe.call_args.kwargs["env"], environment)
+
 
 class RunnerGateTests(unittest.TestCase):
     # Crafted summaries test count floors and skipped/filtered cases without rerunning Rust or Python.
@@ -371,6 +381,133 @@ class AggregateGateTests(unittest.TestCase):
         mocks['run_structure'].assert_not_called()
         mocks['run_android_jvm'].assert_not_called()
 
+    def test_only_macos_lane_runs_only_macos(self):
+        with patch.object(suite.platform, 'system', return_value='Darwin'):
+            code, report, mocks = self.invoke(['--only', 'macos'])
+        self.assertEqual(code, 0)
+        self.assertEqual(report['requested_lanes'], ['macos'])
+        self.assertEqual(report['suites']['macos']['passed'], 300)
+        self.assertEqual(report['suites']['macos']['documented_skips'], 3)
+        for name in ('ci-integrity', 'structure', 'vectors', 'python', 'rust',
+                     'android', 'connected', 'interchange'):
+            self.assertEqual(report['suites'][name]['status'], 'not_selected')
+        mocks['run_macos_with_skips'].assert_called_once()
+        mocks['run_android_jvm'].assert_not_called()
+
+    def test_macos_native_bridge_builds_before_the_xcode_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            macos = root / 'macos'
+            library = macos / 'build' / 'native' / 'libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            # A previous archive must not survive to be linked by this run.
+            library.write_bytes(b'stale')
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            calls = []
+
+            def fake_step(label, command, report_root, cwd=None, env=None, timeout=1800):
+                calls.append((label, [str(part) for part in command]))
+                log = report_root / (label.replace(' ', '_') + '.log')
+                if label == 'macOS toolchain':
+                    log.write_text('Xcode 26.3\nBuild version 17C529\n')
+                elif label == 'macOS native pairing bridge':
+                    library.write_bytes(b'fresh')
+                elif label == 'macOS Release build':
+                    binary = root / 'derived' / 'Build' / 'Products' / 'Release' / 'aniCe.app' / 'Contents' / 'MacOS' / 'aniCe'
+                    binary.parent.mkdir(parents=True, exist_ok=True)
+                    binary.write_bytes(b'app-binary')
+                    log.write_text('Release build completed\n')
+                elif label == 'macOS architecture verification':
+                    log.write_text('Non-fat file (architecture arm64)\n')
+                elif label == 'macOS codesign verification':
+                    log.write_text('codesign valid\n')
+                return log
+
+            derived_dir = root / 'derived'
+            derived_dir.mkdir(parents=True, exist_ok=True)
+            with patch.object(suite, 'MACOS', macos), \
+                 patch.object(suite.tempfile, 'mkdtemp', return_value=str(derived_dir)), \
+                 patch.object(suite, 'run_step', side_effect=fake_step), \
+                 patch.object(suite, 'parse_xcode_results', return_value=[]) as parse, \
+                 patch.object(suite, 'validate_results', return_value=(1, 0)):
+                result = suite.run_macos_with_skips({}, artifacts, (), ())
+
+            self.assertEqual(result['passed'], 1)
+            self.assertEqual(result['documented_skips'], 0)
+            self.assertEqual(result['xcode'], 'Xcode 26.3')
+            self.assertEqual(result['arch'], 'arm64')
+            self.assertEqual(
+                [label for label, _ in calls],
+                [
+                    'macOS toolchain',
+                    'macOS native pairing bridge',
+                    'macOS Release build',
+                    'macOS architecture verification',
+                    'macOS codesign verification',
+                    'macOS hosted tests',
+                ],
+            )
+            self.assertEqual(
+                calls[1][1][1:],
+                [str(suite.SCRIPTS / 'build-pairing-native.py'), 'macos'],
+            )
+            self.assertEqual(library.read_bytes(), b'fresh')
+            self.assertEqual(parse.call_args.kwargs['env'], {})
+            # Verify derived data was cleaned up on completion
+            self.assertFalse(derived_dir.exists())
+
+    def test_macos_lane_rejects_app_binary_missing_arm64(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            macos = root / 'macos'
+            library = macos / 'build' / 'native' / 'libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+
+            def fake_step(label, command, report_root, cwd=None, env=None, timeout=1800):
+                log = report_root / (label.replace(' ', '_') + '.log')
+                if label == 'macOS toolchain':
+                    log.write_text('Xcode 26.3\n')
+                elif label == 'macOS native pairing bridge':
+                    library.write_bytes(b'fresh')
+                elif label == 'macOS Release build':
+                    binary = root / 'derived' / 'Build' / 'Products' / 'Release' / 'aniCe.app' / 'Contents' / 'MacOS' / 'aniCe'
+                    binary.parent.mkdir(parents=True, exist_ok=True)
+                    binary.write_bytes(b'app-binary')
+                    log.write_text('Release build completed\n')
+                elif label == 'macOS architecture verification':
+                    # Missing arm64
+                    log.write_text('Non-fat file (architecture x86_64)\n')
+                return log
+
+            derived_dir = root / 'derived'
+            derived_dir.mkdir(parents=True, exist_ok=True)
+            with patch.object(suite, 'MACOS', macos), \
+                 patch.object(suite.tempfile, 'mkdtemp', return_value=str(derived_dir)), \
+                 patch.object(suite, 'run_step', side_effect=fake_step):
+                with self.assertRaisesRegex(suite.GateError, 'does not contain arm64'):
+                    suite.run_macos_with_skips({}, artifacts, (), ())
+            self.assertFalse(derived_dir.exists())
+
+    def test_macos_lane_rejects_a_native_build_without_a_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            macos = root / 'macos'
+            library = macos / 'build' / 'native' / 'libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b'stale')
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            with patch.object(suite, 'MACOS', macos), \
+                 patch.object(suite, 'run_step') as command:
+                with self.assertRaisesRegex(suite.GateError, 'no libanice_pairing.a'):
+                    suite.run_macos_with_skips({}, artifacts, (), ())
+            self.assertEqual([call.args[0] for call in command.call_args_list],
+                             ['macOS toolchain', 'macOS native pairing bridge'])
+            self.assertFalse(library.exists())
+
     def test_contracts_lane_runs_structure_vectors_and_python(self):
         code, report, mocks = self.invoke(['--only', 'contracts'])
         self.assertEqual(code, 0)
@@ -434,6 +571,7 @@ class AggregateGateTests(unittest.TestCase):
             code = suite.main(['--list-lanes'])
         self.assertEqual(code, 0)
         self.assertIn('contracts: structure, vectors, python', output.getvalue())
+        self.assertIn('macos: macos', output.getvalue())
         self.assertIn('interchange: interchange', output.getvalue())
 
     def test_markdown_summary_omits_unselected_suites_and_keeps_errors(self):
@@ -493,6 +631,18 @@ class AggregateGateTests(unittest.TestCase):
                 env = suite.toolchain_env(android=True)
         self.assertEqual(env['ANDROID_HOME'], '/legacy/sdk')
         self.assertEqual(env['ANDROID_SDK_ROOT'], '/legacy/sdk')
+
+    def test_toolchain_env_requires_a_complete_xcode_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pin = Path(directory)
+            with patch.dict(os.environ, {'DEVELOPER_DIR': str(pin)}, clear=True):
+                with self.assertRaisesRegex(suite.GateError, 'not a full Xcode'):
+                    suite.toolchain_env(macos=True, require_xcode=True)
+            (pin / 'Platforms' / 'MacOSX.platform').mkdir(parents=True)
+            with patch.dict(os.environ, {'DEVELOPER_DIR': str(pin)}, clear=True):
+                env = suite.toolchain_env(macos=True, require_xcode=True)
+        self.assertEqual(env['DEVELOPER_DIR'], str(pin))
+        self.assertEqual(env['TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS'], '1')
 
     def test_interchange_records_an_omission_without_a_device(self):
         with patch.object(suite, 'find_adb', return_value='/adb'), \

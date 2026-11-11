@@ -8,6 +8,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Add a hosted macOS platform-truth lane on `macos-15` with pinned Xcode 26.3; rebuild the native Apple Silicon (`arm64`) Rust pairing bridge before `xcodebuild`, compile and verify native Release with codesign, isolate derived data with cleanup, and make macOS a required aggregate lane.
+
 - Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.
 
 - Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.

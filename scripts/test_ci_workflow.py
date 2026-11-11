@@ -25,12 +25,14 @@ REQUIRED_JOBS = (
     "verify-contracts",
     "verify-rust",
     "verify-android",
+    "verify-macos",
 )
 REQUIRED_LANES = {
     "verify-ci-integrity": "ci-integrity",
     "verify-contracts": "contracts",
     "verify-rust": "rust",
     "verify-android": "android",
+    "verify-macos": "macos",
 }
 PR_EVENTS = {"pull_request", "merge_group"}
 SAFE_EVENTS = {"push", "pull_request", "merge_group", "workflow_dispatch", "schedule"}
@@ -319,6 +321,34 @@ exit "$ANICE_TEST_SDK_EXIT"
                     self.assertIn("--sdk_root=" + str(sdk), log)
                     self.assertIn("answer=y", log)
 
+    def test_macos_lane_pins_a_supported_image_and_full_xcode(self):
+        job = workflow_documents()["ci.yml"]["jobs"]["verify-macos"]
+        self.assertEqual(job.get("runs-on"), "macos-15")
+        self.assertEqual(
+            job.get("env", {}).get("DEVELOPER_DIR"),
+            "/Applications/Xcode_26.3.app/Contents/Developer",
+        )
+        self.assertNotIn("macos-14", str(job))
+        install = next(
+            step for step in job["steps"]
+            if step.get("name") == "Set up Rust and macOS targets"
+        )
+        self.assertIn("aarch64-apple-darwin", install["run"])
+        self.assertNotIn("x86_64-apple-darwin", install["run"])
+        keychain = next(
+            step for step in job["steps"]
+            if step.get("name") == "Prepare isolated test keychain"
+        )
+        self.assertIn("security create-keychain", keychain["run"])
+        self.assertIn("security unlock-keychain", keychain["run"])
+        verify = next(
+            step for step in job["steps"] if step.get("name") == "Verify macOS app"
+        )
+        self.assertEqual(
+            verify.get("run", "").strip(),
+            "python3 scripts/verify-suite.py --only macos",
+        )
+
     def test_codeowners_covers_the_gate_files(self):
         path = ROOT / ".github" / "CODEOWNERS"
         patterns = [
@@ -331,6 +361,7 @@ exit "$ANICE_TEST_SDK_EXIT"
             "/scripts/verify-suite.py",
             "/scripts/test_ci_workflow.py",
             "/scripts/test_verify_suite.py",
+            "/scripts/build-pairing-native.py",
             "/scripts/requirements.txt",
         ):
             self.assertIn(required, patterns)

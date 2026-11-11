@@ -103,9 +103,12 @@ Release shows **Mac input allowed** when Event Posting is granted, or the permis
 From the repository root:
 
 ```sh
+python3 scripts/verify-suite.py --only macos
 python3 scripts/verify-suite.py fast --macos --vector-python .venv/bin/python
 python3 scripts/test_dev.py
 ```
+
+`--only macos` is the CI lane. It requires a full Xcode, rebuilds `build/native/libanice_pairing.a` for Apple Silicon (`arm64`), compiles a native Release build with codesign verification, then runs the hosted suite. The `fast --macos` form also runs the local contract and Rust checks.
 
 The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. It prints the real-player/manual checks that cannot run.
 

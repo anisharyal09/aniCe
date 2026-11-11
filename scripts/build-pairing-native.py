@@ -22,10 +22,10 @@ if not cargo:
 manifest=root/'core/rust/pairing/Cargo.toml'; target=root/'core/rust/pairing/target'
 def build(triple): subprocess.run([cargo,'build','--locked','--release','--manifest-path',str(manifest),'--target',triple],env=env,check=True)
 if args.platform=='macos':
-    # The Mac library contains both CPU architectures so the same build input links on either Mac.
-    for t in ['aarch64-apple-darwin','x86_64-apple-darwin']: build(t)
+    # Apple Silicon native build for macOS.
+    build('aarch64-apple-darwin')
     out=root/'apps/macos/build/native';out.mkdir(parents=True,exist_ok=True)
-    subprocess.run(['lipo','-create',*[str(target/t/'release/libanice_pairing.a') for t in ['aarch64-apple-darwin','x86_64-apple-darwin']],'-output',str(out/'libanice_pairing.a')],check=True)
+    shutil.copy2(target/'aarch64-apple-darwin/release/libanice_pairing.a', out/'libanice_pairing.a')
 else:
     sdk = env.get('ANDROID_HOME') or env.get('ANDROID_SDK_ROOT')
     sdk = sdk or local.get('sdk.dir')
