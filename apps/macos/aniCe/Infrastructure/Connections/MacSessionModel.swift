@@ -732,9 +732,9 @@ struct SessionStartupRecovery {
       return
     }
     if let deadline = automaticPauseDeadline, deadline > Date() {
-      connectionPauseStatus = "Auto connect paused until \(deadline.formatted(date: .omitted, time: .shortened))"
+      connectionPauseStatus = "Paused until \(deadline.formatted(date: .omitted, time: .shortened))"
     } else {
-      connectionPauseStatus = "Auto connect paused until you resume it"
+      connectionPauseStatus = "Paused"
     }
   }
 

@@ -100,6 +100,60 @@ private struct BluetoothGlyph: Shape {
   }
 }
 
+@MainActor
+private final class MacPauseMenuHandler: NSObject {
+  var onPause: ((TimeInterval?) -> Void)?
+  var onCustom: (() -> Void)?
+  var onResume: (() -> Void)?
+
+  @objc func select1Hour() { onPause?(60 * 60) }
+  @objc func select3Hours() { onPause?(3 * 60 * 60) }
+  @objc func select6Hours() { onPause?(6 * 60 * 60) }
+  @objc func selectCustom() { onCustom?() }
+  @objc func selectUntilResume() { onPause?(nil) }
+  @objc func selectResume() { onResume?() }
+
+  func show(isPaused: Bool) {
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+
+    let item1 = NSMenuItem(title: "1 hour", action: #selector(select1Hour), keyEquivalent: "")
+    item1.target = self
+    menu.addItem(item1)
+
+    let item3 = NSMenuItem(title: "3 hours", action: #selector(select3Hours), keyEquivalent: "")
+    item3.target = self
+    menu.addItem(item3)
+
+    let item6 = NSMenuItem(title: "6 hours", action: #selector(select6Hours), keyEquivalent: "")
+    item6.target = self
+    menu.addItem(item6)
+
+    let itemCustom = NSMenuItem(title: "Custom…", action: #selector(selectCustom), keyEquivalent: "")
+    itemCustom.target = self
+    menu.addItem(itemCustom)
+
+    menu.addItem(.separator())
+
+    let itemUntilResume = NSMenuItem(title: "Until I resume", action: #selector(selectUntilResume), keyEquivalent: "")
+    itemUntilResume.target = self
+    menu.addItem(itemUntilResume)
+
+    if isPaused {
+      menu.addItem(.separator())
+      let itemResume = NSMenuItem(title: "Resume now", action: #selector(selectResume), keyEquivalent: "")
+      itemResume.target = self
+      menu.addItem(itemResume)
+    }
+
+    if let event = NSApp.currentEvent, let window = event.window, let contentView = window.contentView {
+      menu.popUp(positioning: nil, at: event.locationInWindow, in: contentView)
+    } else {
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+  }
+}
+
 struct MacSessionView: View {
   let peers: [PeerTrustRecord]
   @Bindable var model: MacSessionModel
@@ -119,10 +173,12 @@ struct MacSessionView: View {
   @State private var showCustomPause = false
   @State private var customPauseHours = 1
   @State private var customPauseMinutes = 0
+  @State private var pauseMenuHandler = MacPauseMenuHandler()
   var onManageDevices: () -> Void
   var onOpenDevice: (String) -> Void = { _ in }
   var onChoosePhone: () -> Void = {}
   var onOpenDiagnostics: () -> Void = {}
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var scheme
   private var androidPeers: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }
   private var device: DeviceIdentity? {
@@ -167,7 +223,6 @@ struct MacSessionView: View {
                 detailContent
                 HStack {
                   Spacer()
-                  if presentation.connected { Button("Disconnect") { disconnectSelectedDevice() }.buttonStyle(AniCeButtonStyle()) }
                   Button("Done") { details = false }.buttonStyle(AniCeButtonStyle(prominent: true)).keyboardShortcut(.cancelAction)
                 }
               }.padding(24)
@@ -301,23 +356,22 @@ struct MacSessionView: View {
   }
 
   private var pauseMenu: some View {
-    Menu {
-      Button("1 hour") { pauseAutomatic(for: 60 * 60) }
-      Button("3 hours") { pauseAutomatic(for: 3 * 60 * 60) }
-      Button("6 hours") { pauseAutomatic(for: 6 * 60 * 60) }
-      Button("Custom…") { showCustomPause = true }
-      Divider()
-      Button("Until I resume") { pauseAutomatic(for: nil) }
-      if model.connectionPauseStatus != nil {
-        Divider()
-        Button("Resume now", action: model.resumeAutomaticPause)
-      }
+    Button {
+      pauseMenuHandler.onPause = { pauseAutomatic(for: $0) }
+      pauseMenuHandler.onCustom = { showCustomPause = true }
+      pauseMenuHandler.onResume = { model.resumeAutomaticPause() }
+      pauseMenuHandler.show(isPaused: model.connectionPauseStatus != nil)
     } label: {
-      Label(model.connectionPauseStatus == nil ? "Pause" : "Resume", systemImage: "pause.circle")
+      HStack(spacing: 5) {
+        Image(systemName: "pause.circle")
+        Text(model.connectionPauseStatus == nil ? "Pause" : "Resume")
+        Image(systemName: "chevron.down")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
     }
-    .menuStyle(.borderlessButton)
-    .aniCeControlFeedback()
-    .disabled(!model.automatic && model.connectionPauseStatus == nil)
+    .buttonStyle(AniCeButtonStyle())
+    .disabled(!peerAvailable)
   }
 
   private var customPausePopover: some View {
@@ -386,13 +440,15 @@ struct MacSessionView: View {
 
   @ViewBuilder private var workspaceActions: some View {
     pauseMenu
-    Button(presentation.action.rawValue) {
-      switch presentation.action {
-      case .disconnect: disconnectSelectedDevice()
-      case .stop: model.disconnect(); lan.disconnect()
-      case .allow, .retry: model.selectedPeer = device; model.allow()
-      }
-    }.buttonStyle(AniCeButtonStyle()).controlSize(.small).disabled(!peerAvailable)
+    if !presentation.connected {
+      Button(presentation.action.rawValue) {
+        switch presentation.action {
+        case .disconnect: disconnectSelectedDevice()
+        case .stop: model.disconnect(); lan.disconnect()
+        case .allow, .retry: model.selectedPeer = device; model.allow()
+        }
+      }.buttonStyle(AniCeButtonStyle()).controlSize(.small).disabled(!peerAvailable)
+    }
     Menu {
       if lan.allowing {
         Button(lan.state == "Secured" ? "Disconnect LAN" : "Stop allowing LAN", action: lan.disconnect).disabled(!ownsLan)
@@ -422,13 +478,16 @@ struct MacSessionView: View {
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
           .accessibilityValue(connectionStatusValue + (presentation.connected && phonePower.shortSummary(for: device) != nil ? ". " + phonePower.shortSummary(for: device)! : ""))
-        Button(presentation.action.rawValue) {
-          switch presentation.action {
-          case .disconnect: disconnectSelectedDevice()
-          case .stop: model.disconnect(); lan.disconnect()
-          case .allow, .retry: model.selectedPeer = device; model.allow()
-          }
-        }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
+        pauseMenu
+        if !presentation.connected {
+          Button(presentation.action.rawValue) {
+            switch presentation.action {
+            case .disconnect: disconnectSelectedDevice()
+            case .stop: model.disconnect(); lan.disconnect()
+            case .allow, .retry: model.selectedPeer = device; model.allow()
+            }
+          }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
+        }
       }.padding(.vertical, 14).padding(.bottom, 4)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 16) {
@@ -442,7 +501,6 @@ struct MacSessionView: View {
           }.buttonStyle(AniCeHoverButtonStyle()).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
           Toggle("Auto connect", isOn: Binding(get: { ownsBluetooth && model.automatic }, set: { model.selectedPeer = device; model.setAutomatic($0) }))
             .labelsHidden().toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
-          pauseMenu
         }.padding(.vertical, 8)
         Divider()
         transportRow("Bluetooth", symbol: "antenna.radiowaves.left.and.right", state: ownsBluetooth ? model.state : "In use by another phone",
@@ -519,7 +577,7 @@ struct MacSessionView: View {
         HStack { Text("Bluetooth"); Spacer(); Text(ownsBluetooth ? model.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
         HStack { Text("Local network"); Spacer(); Text(ownsLan ? lan.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
       }.font(.callout)
-      HStack(spacing: 12) { automaticControl; pauseMenu }
+      automaticControl
       if let device {
         VStack(alignment: .leading, spacing: 10) {
           Text("Security fingerprint").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))

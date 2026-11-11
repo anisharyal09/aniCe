@@ -17,6 +17,8 @@ struct CompanionView: View {
   @Bindable var phonePower: MacPhonePowerModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
+  @AppStorage("ui.companionPinnedFeatures") private var companionPinnedFeatures = AppFeature.defaultPinnedToCompanion
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
@@ -78,6 +80,13 @@ struct CompanionView: View {
 
   @ViewBuilder private var sendActions: some View {
     VStack(alignment: .leading, spacing: 8) {
+      companionActionsGrid
+      pinnedQuickActions
+    }
+  }
+
+  private var companionActionsGrid: some View {
+    VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
         if clipboard.selected.map(clipboard.supports) == true {
           ClipboardSendButton(model: clipboard, compact: true)
@@ -116,6 +125,54 @@ struct CompanionView: View {
         .accessibilityLabel(floatingKeyboard.isVisible ? "Hide Floating Key" : "Show Floating Key")
         .help("Show Floating Key to type directly on Android; right-click for full controls including trackpad (⌥⌘K).")
       }
+    }
+  }
+
+  @ViewBuilder private var pinnedQuickActions: some View {
+    let pinned = AppFeature.pinnedToCompanion(in: companionPinnedFeatures)
+    if !pinned.isEmpty {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Quick actions").font(.system(size: 11 * fontScale, weight: .medium))
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        ScrollView(.horizontal) {
+          HStack(spacing: 6) {
+            ForEach(pinned) { feature in
+              Button {
+                executeQuickAction(feature)
+              } label: {
+                HStack(spacing: 4) {
+                  Image(systemName: feature.symbol).font(.system(size: 10 * fontScale))
+                  Text(feature.title).font(.system(size: 11 * fontScale))
+                }
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                .padding(.horizontal, 7).padding(.vertical, 4)
+                .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.75) }
+              }
+              .buttonStyle(AniCeHoverButtonStyle())
+            }
+          }
+        }
+        .scrollIndicators(.hidden)
+      }
+    }
+  }
+
+  private func executeQuickAction(_ feature: AppFeature) {
+    switch feature {
+    case .keyboardTrackpad:
+      floatingKeyboard.toggleVisibility()
+    case .clipboard:
+      PasteTrayController.shared.toggle()
+    case .files:
+      if let sendFilesAction {
+        sendFilesAction()
+      } else {
+        navigation.openFeature(.files)
+        openMain()
+      }
+    case .messages, .findDevice, .playback:
+      navigation.openFeature(feature)
+      openMain()
     }
   }
 

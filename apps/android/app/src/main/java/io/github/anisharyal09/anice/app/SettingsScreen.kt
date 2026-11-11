@@ -40,6 +40,8 @@ import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
 import io.github.anisharyal09.anice.ui.theme.saveAppearance
+import io.github.anisharyal09.anice.ui.theme.fontScalePreference
+import io.github.anisharyal09.anice.ui.theme.saveFontScale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -177,6 +179,7 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
                     PreferenceSection("Appearance", sectionModifier("Appearance"), highlightedSection == "Appearance") {
+                        val fontScale = fontScalePreference()
                         Box {
                             Row(
                                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -196,6 +199,34 @@ fun SettingsScreen(
                                         trailingIcon = if (appearance == mode) ({ Text("✓") }) else null,
                                         onClick = { appearanceExpanded = false; saveAppearance(context, mode) }
                                     )
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Text size", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Text("${kotlin.math.round(fontScale * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Slider(
+                                value = fontScale,
+                                onValueChange = { saveFontScale(context, kotlin.math.round(it * 20f) / 20f) },
+                                valueRange = 0.80f..1.20f,
+                                steps = 7,
+                                modifier = Modifier.width(130.dp)
+                            )
+                            if (kotlin.math.abs(fontScale - 1.0f) > 0.02f) {
+                                Spacer(Modifier.width(4.dp))
+                                TextButton(
+                                    onClick = { saveFontScale(context, 1.0f) },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.heightIn(min = 32.dp)
+                                ) {
+                                    Text("Reset", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -339,7 +370,8 @@ private fun AboutScreen(context: Context) {
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
             Text("About", style = MaterialTheme.typography.titleMedium)
-            Text("Connect your Mac and Android.", Modifier.padding(top = 6.dp, bottom = 16.dp),
+            Text("Android + Mac, like never before.",
+                Modifier.padding(top = 6.dp, bottom = 16.dp),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val compact = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.4f
@@ -372,6 +404,7 @@ private fun AboutScreen(context: Context) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             AboutDetailRow("Source code", "GitHub", "https://github.com/anisharyal09/aniCe", uriHandler::openUri)
             AboutDetailRow("License", "GPL-3.0-or-later", "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", uriHandler::openUri)
+            AboutDetailRow("Report an issue", "GitHub Issues", "https://github.com/anisharyal09/aniCe/issues", uriHandler::openUri)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 if (maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.4f) {
                     Column {
@@ -387,12 +420,24 @@ private fun AboutScreen(context: Context) {
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            IconButton(
-                onClick = { uriHandler.openUri("https://anisharyal09.com.np/support?from=anice") },
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 14.dp).size(48.dp)
-            ) {
-                Icon(painterResource(R.drawable.ic_heart), contentDescription = "Support aniCe",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("No accounts, no telemetry. The only request outside your devices is the optional update check, sent to github.com.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier
+                        .clickable(role = Role.Button, onClickLabel = "Support aniCe") {
+                            uriHandler.openUri("https://anisharyal09.com.np/support?from=anice")
+                        }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                    Icon(painterResource(R.drawable.ic_heart), contentDescription = null,
+                        tint = contentColor, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Support aniCe :)", style = MaterialTheme.typography.labelMedium,
+                        color = contentColor)
+                }
             }
         }
     }

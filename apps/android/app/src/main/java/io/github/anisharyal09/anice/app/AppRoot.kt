@@ -67,7 +67,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val uiPreferences = remember { context.getSharedPreferences("ui_preferences", android.content.Context.MODE_PRIVATE) }
     val navigation = rememberSaveable(saver = AppNavigation.saver) {
         AppNavigation().also {
-            it.favouriteFeatures = uiPreferences.getString("favourite_features", "").orEmpty()
+            val savedFavs = uiPreferences.getString("favourite_features", null)
+            it.favouriteFeatures = if (savedFavs.isNullOrEmpty()) AppFeature.DEFAULT_FAVOURITES else savedFavs
             it.featureOrder = uiPreferences.getString("feature_order", "").orEmpty()
         }
     }

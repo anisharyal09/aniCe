@@ -13,14 +13,15 @@ enum class SettingsRoute { Overview, Identity, NotificationApps, About }
 
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
-    Playback("Now Playing"), Files("Send files"), FindDevice("Find Device"), Clipboard("Clipboard"), DeskDeck("Mac Desk Deck"),
-    PhoneInput("Control Mac"), Sms("Messages");
+    PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),
+    Playback("Now Playing"), Sms("Messages"), FindDevice("Find Device");
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableList()
         if (!saved.remove(this)) saved.add(this)
         return saved.joinToString(",") { it.name }
     }
     companion object {
+        const val DEFAULT_FAVOURITES = "PhoneInput,DeskDeck,Clipboard"
         fun favourites(value: String): List<AppFeature> {
             return value.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name } }.distinct()
         }
@@ -50,7 +51,7 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     var mediaDetails by mutableStateOf(false)
     var findDetails by mutableStateOf(false)
     var settingsRoute by mutableStateOf(settingsRoute)
-    var favouriteFeatures by mutableStateOf("")
+    var favouriteFeatures by mutableStateOf(AppFeature.DEFAULT_FAVOURITES)
     var featureOrder by mutableStateOf("")
     fun openFeature(feature: AppFeature) {
         if (destination != AppDestination.Features || featurePanel == null) {

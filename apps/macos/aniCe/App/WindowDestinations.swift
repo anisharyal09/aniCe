@@ -9,7 +9,7 @@ extension MainWindowView {
       let activityWidth = geometry.size.width - 56
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
-          Text("Overview").font(.system(size: 20, weight: .medium))
+          Text("Overview").font(.system(size: 20 * fontScale, weight: .medium))
           if pairing.hasTrustedAndroid {
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
               phonePower: phonePower,
@@ -100,13 +100,13 @@ extension MainWindowView {
     VStack(alignment: .leading, spacing: 16) {
       Button { navigation.openFeature(.files) } label: {
         HStack(spacing: 8) { Text("File transfer"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }
-          .font(.system(size: 14, weight: .medium)).contentShape(Rectangle())
+          .font(.system(size: 14 * fontScale, weight: .medium)).contentShape(Rectangle())
       }.buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 3))
       if transfer.state == .idle && !transfer.preparing {
         HStack(spacing: 16) {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           VStack(alignment: .leading, spacing: 6) {
-            Text("Send files").font(.system(size: 14, weight: .medium))
+            Text("Send files").font(.system(size: 14 * fontScale, weight: .medium))
             Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.deviceName } ?? "Connect a compatible Android phone to send files")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
@@ -128,7 +128,7 @@ extension MainWindowView {
       VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top) {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Devices").font(.system(size: 20, weight: .medium))
+            Text("Devices").font(.system(size: 20 * fontScale, weight: .medium))
             Text("Connection and trust.").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer()
@@ -173,7 +173,7 @@ extension MainWindowView {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           HStack {
-            Text("Pair a device").font(.system(size: 20, weight: .medium))
+            Text("Pair a device").font(.system(size: 20 * fontScale, weight: .medium))
             Spacer()
             Button { navigation.show(.devices) } label: { Image(systemName: "xmark") }
               .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Close pairing")
@@ -197,20 +197,21 @@ extension MainWindowView {
   var aboutContent: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        Text("About").font(.system(size: 18, weight: .medium))
-        Text("Connect your Mac and Android.").font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        Text("About").font(.system(size: 18 * fontScale, weight: .medium))
+        Text("Android + Mac, like never before.")
+          .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
               aboutMark
-              Text("aniCe").font(.system(size: 18, weight: .medium))
+              Text("aniCe").font(.system(size: 18 * fontScale, weight: .medium))
               Spacer(minLength: 8)
               aboutProductDetails(alignment: .trailing)
             }
             VStack(alignment: .leading, spacing: 6) {
               HStack(spacing: 12) {
                 aboutMark
-                Text("aniCe").font(.system(size: 18, weight: .medium))
+                Text("aniCe").font(.system(size: 18 * fontScale, weight: .medium))
               }
               aboutProductDetails(alignment: .leading).padding(.leading, 32)
             }
@@ -219,6 +220,7 @@ extension MainWindowView {
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
           aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
           aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
+          aboutLink("Report an issue", detail: "GitHub Issues", destination: "https://github.com/anisharyal09/aniCe/issues")
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
               aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09", showSeparator: false)
@@ -230,18 +232,29 @@ extension MainWindowView {
             }
           }
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
-          HStack {
-            Spacer()
-            Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
-              Image(systemName: "heart").font(.system(size: 14))
-                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                .frame(width: 40, height: 40).contentShape(RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Support aniCe").help("Support aniCe")
-            Spacer()
-          }
-          .padding(.top, 4)
         }
+        .frame(maxWidth: 660, alignment: .leading)
+
+        VStack(alignment: .leading, spacing: 14) {
+          Text("No accounts, no telemetry. The only request outside your devices is the optional update check, sent to github.com.")
+            .font(.system(size: 11 * fontScale))
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .fixedSize(horizontal: false, vertical: true)
+
+          Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+            HStack(spacing: 6) {
+              Image(systemName: "heart").font(.system(size: 12 * fontScale))
+              Text("Support aniCe :)").font(.system(size: 12 * fontScale))
+            }
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(AniCeHoverButtonStyle())
+          .accessibilityLabel("Support aniCe")
+          .help("Support aniCe")
+        }
+        .padding(.top, 4)
         .frame(maxWidth: 660, alignment: .leading)
       }
       .frame(maxWidth: 660, alignment: .leading).padding(24)
@@ -286,8 +299,8 @@ extension MainWindowView {
 
   private func aboutProductDetails(alignment: HorizontalAlignment) -> some View {
     VStack(alignment: alignment, spacing: 2) {
-      Text("macOS + Android").font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false)
-      if let version = aboutVersion { Text(version).font(.system(size: 11)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false) }
+      Text("macOS + Android").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false)
+      if let version = aboutVersion { Text(version).font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false) }
     }
   }
 
@@ -296,10 +309,10 @@ extension MainWindowView {
       let hovered = hoveredAboutLink == title
       Link(destination: url) {
         HStack(spacing: 16) {
-          Text(title).font(.system(size: 12)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+          Text(title).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.primaryText(colorScheme))
           Spacer()
           HStack(spacing: 8) {
-            Text(detail).font(.system(size: 11)).fixedSize(horizontal: true, vertical: false).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+            Text(detail).font(.system(size: 11 * fontScale)).fixedSize(horizontal: true, vertical: false).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
             Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
               .accessibilityHidden(true)
           }
@@ -346,15 +359,34 @@ extension MainWindowView {
 
               SettingsSectionLayout(columns: expanded ? 2 : 1) {
                 preferenceSection("Appearance", id: "appearance") {
-                  HStack {
-                    Text("Window appearance")
-                    Spacer()
-                    Picker("Window appearance", selection: Binding(
-                      get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
-                        ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
-                    }
-                    .labelsHidden().pickerStyle(.menu).frame(width: 130)
-                  }.frame(minHeight: 48)
+                  VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                      Text("Window appearance").font(.system(size: 13 * fontScale))
+                      Spacer()
+                      Picker("Window appearance", selection: Binding(
+                        get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
+                          ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
+                      }
+                      .labelsHidden().pickerStyle(.menu).frame(width: 130)
+                    }.frame(minHeight: 40)
+                    Divider()
+                    HStack(spacing: 8) {
+                      Text("Text size").font(.system(size: 13 * fontScale))
+                      Spacer()
+                      Text("\(Int(round(fontScale * 100)))%")
+                        .font(.system(size: 11 * fontScale, design: .monospaced))
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                        .frame(width: 44, alignment: .trailing)
+                      Slider(value: $fontScale, in: 0.80...1.20, step: 0.05)
+                        .frame(width: 130)
+                      if abs(fontScale - 1.0) > 0.01 {
+                        Button("Reset") { fontScale = 1.0 }
+                          .buttonStyle(AniCeHoverButtonStyle())
+                          .font(.system(size: 11 * fontScale))
+                          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      }
+                    }.frame(minHeight: 40)
+                  }
                 }
                 preferenceSection("Connection", id: "connection") {
                   VStack(alignment: .leading, spacing: 5) {
@@ -438,14 +470,14 @@ extension MainWindowView {
   ) -> some View {
     let focused = focusedSettingsSection == id
     let group = VStack(alignment: .leading, spacing: 0, content: content)
-      .font(.system(size: 13))
+      .font(.system(size: 13 * fontScale))
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 14)
       .background(focused ? AniCePalette.subtleAccent(colorScheme) : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
       .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
       .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
     VStack(alignment: .leading, spacing: 8) {
-      Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      Text(title).font(.system(size: 12 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       group
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -468,7 +500,7 @@ extension MainWindowView {
       }
     } label: {
       Text(label)
-        .font(.system(size: 12, weight: selected ? .medium : .regular))
+        .font(.system(size: 12 * fontScale, weight: selected ? .medium : .regular))
         .foregroundStyle(selected || hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
         .padding(.horizontal, 9).padding(.vertical, 5)
         .background(selected ? AniCePalette.subtleAccent(colorScheme) : .clear, in: RoundedRectangle(cornerRadius: 6))

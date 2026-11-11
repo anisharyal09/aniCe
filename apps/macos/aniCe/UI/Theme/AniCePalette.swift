@@ -73,13 +73,14 @@ private struct AniCeButtonFace<Label: View>: View {
   let prominent: Bool
   let quiet: Bool
   let compact: Bool
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var scheme
   @Environment(\.isEnabled) private var enabled
   @Environment(\.isFocused) private var focused
 
   var body: some View {
     label
-      .font(.system(size: 13, weight: .medium))
+      .font(.system(size: 13 * fontScale, weight: .medium))
       .foregroundStyle(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
       .padding(.horizontal, quiet ? 0 : (compact ? 6 : 12)).padding(.vertical, compact ? 5 : 7)
       .frame(minWidth: compact ? 32 : nil, minHeight: (quiet || compact) ? 30 : 32)

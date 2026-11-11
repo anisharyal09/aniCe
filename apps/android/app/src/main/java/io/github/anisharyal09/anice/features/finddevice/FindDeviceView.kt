@@ -9,8 +9,10 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -37,9 +39,9 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
         onDispose { lifecycle.removeObserver(observer) }
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(stringResource(R.string.find_explanation), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.find_explanation), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (permitted) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.find_local_allowed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false))
                 TextButton(
                     onClick = {
@@ -47,35 +49,39 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 48.dp)
+                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                 ) {
-                    Text(stringResource(R.string.find_settings), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.find_settings), style = MaterialTheme.typography.labelSmall)
                 }
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-                        },
-                        shape = MaterialTheme.shapes.small,
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text(stringResource(R.string.find_permission)) }
-                    TextButton(
-                        onClick = {
-                            context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
-                        },
-                        shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.find_settings))
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                        ) { Text(stringResource(R.string.find_permission), style = MaterialTheme.typography.labelMedium) }
+                        TextButton(
+                            onClick = {
+                                context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                        ) {
+                            Text(stringResource(R.string.find_settings), style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
@@ -83,40 +89,44 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
         if (peers.isEmpty()) {
             Text(stringResource(R.string.find_pair_first), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            HorizontalDivider()
-            primaryPeers(peers) { owner.connected(it.peer) }.forEach { record ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(record.peer.deviceName, style = MaterialTheme.typography.titleSmall)
-                        val status = if (owner.feedbackPeer == record.peer && owner.feedbackKey != "find_idle") {
-                            feedbackText
-                        } else if (!owner.supports(record.peer)) {
-                            if (owner.connected(record.peer)) stringResource(R.string.find_not_advertised)
-                            else stringResource(R.string.find_connect_first)
-                        } else if (owner.connected(record.peer)) {
-                            stringResource(R.string.find_connected)
-                        } else {
-                            stringResource(R.string.find_connect_first)
-                        }
-                        Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    val findLabel = stringResource(R.string.find_peer_action, record.peer.deviceName)
-                    OutlinedButton(
-                        onClick = { owner.find(record.peer) },
-                        enabled = owner.canFind(record.peer),
-                        shape = MaterialTheme.shapes.small,
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = findLabel }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                primaryPeers(peers) { owner.connected(it.peer) }.forEach { record ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
                     ) {
-                        Text(stringResource(R.string.find_title))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(record.peer.deviceName, style = MaterialTheme.typography.titleSmall)
+                                val status = if (owner.feedbackPeer == record.peer && owner.feedbackKey != "find_idle") {
+                                    feedbackText
+                                } else if (!owner.supports(record.peer)) {
+                                    if (owner.connected(record.peer)) stringResource(R.string.find_not_advertised)
+                                    else stringResource(R.string.find_connect_first)
+                                } else if (owner.connected(record.peer)) {
+                                    stringResource(R.string.find_connected)
+                                } else {
+                                    stringResource(R.string.find_connect_first)
+                                }
+                                Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            val findLabel = stringResource(R.string.find_peer_action, record.peer.deviceName)
+                            FilledTonalButton(
+                                onClick = { owner.find(record.peer) },
+                                enabled = owner.canFind(record.peer),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 34.dp).semantics { contentDescription = findLabel }
+                            ) {
+                                Text(stringResource(R.string.find_title), style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
         val feedbackPeerMissing = owner.feedbackPeer?.let { peer -> peers.none { it.peer == peer } } == true

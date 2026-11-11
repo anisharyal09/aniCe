@@ -46,6 +46,15 @@ struct MainWindowView: View {
   }
 
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
+  @AppStorage("ui.fontScale") var fontScale: Double = 1.0
+
+  private var dynamicTypeSizeForScale: DynamicTypeSize {
+    if fontScale < 0.88 { return .small }
+    else if fontScale < 0.98 { return .medium }
+    else if fontScale <= 1.05 { return .large }
+    else if fontScale <= 1.15 { return .xLarge }
+    else { return .xxLarge }
+  }
 
   var body: some View {
     NavigationSplitView {
@@ -54,10 +63,10 @@ struct MainWindowView: View {
           Image("BrandMark")
             .resizable().scaledToFit().frame(width: 22, height: 22)
             .accessibilityHidden(true)
-          Text("aniCe").font(.system(size: 21, weight: .semibold))
+          Text("aniCe").font(.system(size: 21 * fontScale, weight: .semibold))
         }.foregroundStyle(AniCePalette.primaryText(colorScheme))
           .padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 24)
-        Text("Workspace").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        Text("Workspace").font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           .padding(.horizontal, 14).padding(.bottom, 12)
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
         Spacer(minLength: 24)
@@ -86,6 +95,7 @@ struct MainWindowView: View {
     .preferredColorScheme(colorScheme)
     .frame(minWidth: 620, minHeight: 420)
     .tint(AniCePalette.primaryText(colorScheme))
+    .font(.system(size: 13 * fontScale))
     .task {
       // Let SwiftUI present the first window before loading saved identity or starting radios.
       await Task.yield()
@@ -177,7 +187,7 @@ struct MainWindowView: View {
     } label: {
       HStack(spacing: 12) {
         Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
-        Text(destination.rawValue).font(.body)
+        Text(destination.rawValue).font(.system(size: 13 * fontScale, weight: selected ? .medium : .regular))
         Spacer(minLength: 0)
       }.foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
         .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())

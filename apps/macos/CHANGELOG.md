@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Add a fine-grained text size slider (80%–120%) in Appearance settings, style the Pause control as a wrapped compact button in the device header and remove redundant Disconnect buttons, set default favorites and pinned menu bar quick actions (Clipboard, Control Android, Messages), default SMS notifications to show message previews with sound muted, and streamline About with an updated tagline and understated support link.
+
 - Keep connection status, transport icons and phone power on a single line after the Wi-Fi icon, refine the menu-bar companion device row hover and spacing, present file selection modally on the active space without switching windows, restore the menu-bar Quick Paste Tray button in a 2x2 grid, and rename Floating Key's menu to Show trackpad too.
 
 - Make Control Android follow native vertical pointer movement by default and reverse it only when requested.
