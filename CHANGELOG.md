@@ -8,6 +8,75 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Add GitHub release checks and Android update installation; install signed Mac updates through a verified archive and detached rollback helper, with a fail-closed signed release workflow.
+
+- Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
+
+- Show Mac battery and charging information on Android Home and Devices; refine Quick access and phone Settings selection.
+
+- Align the Mac device power status and tighten Edge Drop and Desk Deck settings spacing.
+
+- Restore Mac Control Android pointer movement after trackpad gesture momentum begins and show its floating-keyboard shortcut.
+
+- Route connection checks before feature decoding, compact phone shortcuts, and add Mac shortcut hover feedback.
+
+- Simplify phone Home shortcuts and compact its send controls, soften the Settings selection, and remove redundant Mac input guidance.
+
+- Add one-tap Home shortcuts for starred features, use a clear send-arrow control for phone messages, and confirm Bluetooth/LAN checks on both devices.
+
+- Align the Mac Bluetooth/Wi-Fi status icons and clarify that file-offer notifications appear only for background offers.
+
+- Make the selected phone Settings shortcut explicit and briefly highlight its destination group after a jump, matching Mac.
+
+- Route the Mac Home device name to Devices and show secured Bluetooth/Wi-Fi links as icons on both platforms.
+
+- Keep phone Settings on one vertically scrollable page with top section shortcuts, and start Mac identity, radio and system integrations after the first window render.
+
+- Keep phone Settings section selection visible through jumps and show Home connection status and pause controls in one aligned device row.
+
+- Replace duplicated roadmap specifications with current status and source links; correct LAN defaults and platform verification claims.
+
+- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
+
+- Reopen and focus the Mac workspace from Dock and app activation, and make the phone identity disclosure grow only when Advanced opens.
+
+- Preserve explicit Mac Disconnect across restart instead of restoring an obsolete automatic-connection flag.
+
+- Use the same labeled Pause/Resume menu and duration choices on Android Home and Devices.
+
+- Compact Android pairing, permission and Settings controls.
+
+- Use URL-safe branch keys for Mac Debug DerivedData paths so Xcode accepts slash-containing branch names.
+
+- Fix Android and Mac debug compilation errors and align Android Gradle with the documented NDK r27d toolchain.
+
+- Add timed automatic connection pauses with clear resume status on Mac and Android.
+
+- Hide empty trusted-device controls and simplify the first Bluetooth link step for Mac input.
+
+- Add top category navigation to phone Settings and balance Mac preference sections to reduce gaps.
+
+- Add the system-wide ⌥⌘K shortcut for the existing Mac floating keyboard.
+
+- Allow Features and Favourites to be reordered on Mac and Android.
+
+- Hide idle Mac companion activity and send actions until a phone is trusted, and clarify file review and save-location results on both platforms.
+
+- Scroll the phone identity sheet to its reset control when Advanced opens.
+
+- Enable automatic file receipt for new pairings while preserving existing peers’ saved choices.
+
+- Add Mac keyboard capture to the full-screen trackpad window.
+
+- Record a phased UX improvement plan and architecture guardrails.
+
+- Show Bluetooth and LAN check feedback beside their received counts in Diagnostics.
+
+- Open Home device selection in Devices with details collapsed and remove duplicate feature navigation links.
+
+- Clarify QR and six-digit code selection during pairing on both platforms.
+
+- Clarify first-launch device setup and hide file-send shortcuts until a device is trusted.
 - Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.

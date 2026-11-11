@@ -47,15 +47,23 @@ struct MacKeyboardTrackpadView: View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
 
+      if !floatingPresentation {
+        Text("Shortcut: ⌥⌘K shows or hides the floating keyboard")
+          .font(.caption)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+
       if showsConnectionControls {
         ViewThatFits(in: .horizontal) {
           HStack(alignment: .center, spacing: 16) {
             connectionStatus.frame(minWidth: 240, maxWidth: .infinity, alignment: .leading)
-            connectionActions.fixedSize(horizontal: true, vertical: false)
+            if !model.needsDeviceLink {
+              connectionActions.fixedSize(horizontal: true, vertical: false)
+            }
           }
           VStack(alignment: .leading, spacing: 8) {
             connectionStatus
-            connectionActions
+            if !model.needsDeviceLink { connectionActions }
           }
         }
       }
@@ -106,7 +114,7 @@ struct MacKeyboardTrackpadView: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: { candidate in
-      Text("Link “\(candidate.name)” (\(candidate.address)) to \(linkPeer?.deviceName ?? "this phone")?\n\naniCe fingerprint: \(linkPeer?.fingerprint ?? "")\n\nConfirm the device yourself; matching names do not prove identity. An existing link to another phone will be replaced.")
+      Text("Use the Bluetooth device you paired with this Mac for \(linkPeer?.deviceName ?? "this phone"). aniCe will reconnect when Keyboard & Trackpad opens. Input starts only after you click the keyboard or pad.")
     }
   }
 
@@ -245,10 +253,20 @@ struct MacKeyboardTrackpadView: View {
 
   private var setupPanel: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Pair the phone in Bluetooth Settings, then link its paired device once.")
-        .font(.callout)
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
-        .fixedSize(horizontal: false, vertical: true)
+      if !model.pairedDevicesChecked {
+        ProgressView("Checking Bluetooth pairings…")
+          .controlSize(.small)
+      } else if !model.matchingPairedDevices.isEmpty {
+        Text("Choose the Bluetooth device paired with \(model.targetPeer?.deviceName ?? "this phone"). Linking it will connect automatically.")
+          .font(.callout)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        Text("Pair this phone with your Mac in Bluetooth Settings, then return here and choose Refresh.")
+          .font(.callout)
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      }
 
       if model.pairedDevicesChecked {
         ForEach(model.matchingPairedDevices) { candidate in
@@ -256,17 +274,12 @@ struct MacKeyboardTrackpadView: View {
         }
         let otherDevices = model.pairedDevices.filter { !model.matchingPairedDevices.contains($0) }
         if !otherDevices.isEmpty {
-          DisclosureGroup("Other paired Bluetooth devices") {
+          DisclosureGroup("Phone has a different name?") {
+            Text("Choose only the Bluetooth pairing for this phone. Other accessories paired with this Mac may appear here too.")
+              .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
             ForEach(otherDevices) { pairedDeviceRow($0) }
           }
         }
-        if model.pairedDevices.isEmpty {
-          Text("No paired devices found. Pair the phone, then refresh.")
-            .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-        }
-      } else {
-        ProgressView("Checking Mac Bluetooth pairings…")
-          .controlSize(.small)
       }
 
       HStack(spacing: 8) {
@@ -292,7 +305,6 @@ struct MacKeyboardTrackpadView: View {
     HStack(spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
         Text(candidate.name).font(.system(size: 13, weight: .medium))
-        Text(candidate.address).font(.caption.monospaced()).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
       Spacer(minLength: 8)
       Button("Link device") {
@@ -301,7 +313,7 @@ struct MacKeyboardTrackpadView: View {
         showLinkConfirmation = true
       }
       .buttonStyle(AniCeButtonStyle(prominent: true))
-      .accessibilityLabel("Link Bluetooth device \(candidate.name), \(candidate.address)")
+      .accessibilityLabel("Link Bluetooth device \(candidate.name) to \(model.targetPeer?.deviceName ?? "this phone")")
       .disabled(model.phase == .disconnecting)
     }
   }
@@ -701,7 +713,7 @@ private struct TrackpadPad: View {
     self.model = model
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
       styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-    window.title = "Phone trackpad"
+    window.title = "Phone keyboard and trackpad"
     window.minSize = NSSize(width: 480, height: 320)
     window.collectionBehavior = [.fullScreenPrimary]
     window.isReleasedWhenClosed = false
@@ -737,6 +749,12 @@ private struct FullScreenTrackpadContent: View {
   @Environment(\.colorScheme) private var scheme
   let presentationID: UUID
   let onDone: () -> Void
+  @State private var keyboardInputID = UUID()
+  @State private var keyboardFocused = false
+
+  private var keyboardOwner: KeyboardTrackpadCaptureOwner {
+    KeyboardTrackpadCaptureOwner(presentationID: presentationID, inputID: keyboardInputID, surface: .keyboard)
+  }
 
   var body: some View {
     VStack(spacing: 8) {
@@ -753,6 +771,7 @@ private struct FullScreenTrackpadContent: View {
         Button("Done", action: onDone)
       }
       .buttonStyle(AniCeButtonStyle())
+      keyboardInput
       TrackpadPad(model: model, presentationID: presentationID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -760,6 +779,39 @@ private struct FullScreenTrackpadContent: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .foregroundStyle(AniCePalette.primaryText(scheme))
     .background(AniCePalette.background(scheme))
+  }
+
+  private var keyboardInput: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Keyboard").font(.callout.weight(.medium))
+      ZStack {
+        KeyboardCaptureSurface(model: model, presentationID: presentationID,
+          inputID: keyboardInputID, focused: $keyboardFocused)
+        VStack(spacing: 4) {
+          Image(systemName: model.isControlling(owner: keyboardOwner) ? "keyboard.fill" : "keyboard")
+            .font(.system(size: 20))
+            .foregroundStyle(model.isControlling(owner: keyboardOwner)
+              ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+          Text(model.isControlling(owner: keyboardOwner) ? "Typing to phone" : "Click to type from your Mac")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+        }
+        .allowsHitTesting(false)
+      }
+      .frame(height: 58)
+      .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10))
+      .overlay {
+        RoundedRectangle(cornerRadius: 10)
+          .stroke(model.isControlling(owner: keyboardOwner)
+            ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme),
+            lineWidth: model.isControlling(owner: keyboardOwner) ? 1.5 : 0.75)
+          .allowsHitTesting(false)
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 10))
+      .aniCeControlFeedback(cornerRadius: 10)
+      .accessibilityLabel("Keyboard input area")
+      .accessibilityHint("Click to type from your Mac to the phone")
+    }
   }
 }
 

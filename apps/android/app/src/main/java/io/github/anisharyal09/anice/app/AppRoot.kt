@@ -66,10 +66,16 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val navigationScrollScope = rememberCoroutineScope()
     val uiPreferences = remember { context.getSharedPreferences("ui_preferences", android.content.Context.MODE_PRIVATE) }
     val navigation = rememberSaveable(saver = AppNavigation.saver) {
-        AppNavigation().also { it.favouriteFeatures = uiPreferences.getString("favourite_features", "").orEmpty() }
+        AppNavigation().also {
+            it.favouriteFeatures = uiPreferences.getString("favourite_features", "").orEmpty()
+            it.featureOrder = uiPreferences.getString("feature_order", "").orEmpty()
+        }
     }
     LaunchedEffect(navigation.favouriteFeatures) {
         uiPreferences.edit().putString("favourite_features", navigation.favouriteFeatures).apply()
+    }
+    LaunchedEffect(navigation.featureOrder) {
+        uiPreferences.edit().putString("feature_order", navigation.featureOrder).apply()
     }
     LaunchedEffect(session.media.openWorkspaceRequest) {
         if(session.media.openWorkspaceRequest) { navigation.openFeature(AppFeature.Playback);session.media.workspaceOpened() }
@@ -197,6 +203,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         // Consume Scaffold insets here so nested sheets and feature content do not apply the same padding twice.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
         Column(content) {
+            io.github.anisharyal09.anice.update.UpdateNotice((context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).updates)
             if (pairing.busy && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
                 PendingRequestRow(if (pairing.phase == "approval") "Review pairing" else "Pairing in progress", pairing.status, navigation::pair)
             }

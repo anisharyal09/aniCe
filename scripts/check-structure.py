@@ -102,8 +102,9 @@ def membership_errors(root, project):
         for path, count in counts.items():
             if count != 1: errors.append(f'{target["name"]}: duplicate source {path.relative_to(root)}')
         folder = base / target['name']
-        # The playback helper is compiled separately; its sources belong in build inputs, not app membership.
+        # Helpers compiled separately belong in build inputs, not app membership.
         helper_inputs = {base / 'aniCe/Features/NowPlaying/Adapter' / name for name in ('NowPlayingAdapter.swift', 'NowPlayingSelection.swift')}
+        helper_inputs.add(base / 'aniCe/Update/UpdateHelper/main.swift')
         declared_inputs = {value for obj in objects.values() if obj.get('isa') == 'PBXShellScriptBuildPhase' for value in obj.get('inputPaths', [])}
         for path in folder.rglob('*.swift'):
             if path == base / 'aniCeTests/NowPlaying/AdapterChecks.swift':

@@ -1,6 +1,6 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Manual feature/UI testing and native device checks have been completed on the current phone/Mac setup.
+Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Feature-specific verification and limits are recorded in the linked guides; current UX acceptance gaps are tracked in the [UX audit](../../docs/UX_IMPROVEMENTS.md).
 
 The [path-only ringless silver ribbon](../../assets/logo/anice-mark-final.svg) supplies the app icon, sidebar, About and menu-bar art. The app icon uses a full rounded Light tile. The Dock switches between Light and Dark appearance-aware tiles with extra transparent inset around the tile, keeping the mark at its selected size alongside neighboring icons. The Dark Dock tile stays near-black with a subtle inner glow and fine top/bottom rim highlights. The menu-bar companion uses a 21.5 pt shaded template.
 
@@ -12,9 +12,17 @@ Opt-in Connect automatically shares nearby admission, allowed-phone selection an
 
 Approve app shortcuts separately for each trusted phone in **Settings → Desk Deck**. Android’s **Features → Mac Desk Deck** shows Mac telemetry and available controls, including output volume and audio-device selection. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
 
+Peer battery and charging status appears on Android Home and Devices and Mac device summaries while an existing secured connection is open. Power changes use native observations without opening a connection or extending its background lifetime. Android summaries omit power-source details.
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
+
+## Updates
+
+[Release signing and workflow setup](../../docs/RELEASE_UPDATES.md).
+
+aniCe checks GitHub Releases while the main window is open. Settings → Updates selects stable releases by default, offers an optional beta channel and provides a manual check. An available release offers Install, Later and Skip version. Installation downloads the signed archive, verifies its signature, identifier, versions and certificate pins, then replaces the app through a detached helper that atomically exchanges the bundles and restores the previous one if the relaunch fails or the new build never reaches its main window. The new build confirms startup before the previous bundle is deleted; a failed or abandoned install is reported in the main window and Settings → Updates. If aniCe cannot replace itself where it runs, the release remains available for manual download and **Show in Finder** reveals the current app. A self-signed release identity is not Apple notarization, so the first launch may require Gatekeeper approval.
 
 ## Nearby discovery
 
@@ -80,11 +88,11 @@ ANICE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
 
 The script quits aniCe, builds Debug, verifies the signature/team and launches the exact output. If another copy remains open, it stops before building. It never resets permissions. Set `DEVELOPER_DIR` if Xcode is installed elsewhere.
 
-- App: `build/dev-mac/<checkout>-<branch>/Build/Products/Debug/aniCe.app` under the checkout root.
+- App: `build/dev-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCe.app` under the checkout root.
 - Display name: `aniCe (<branch>)`; the window header stays aniCe.
 - Branch slashes are escaped as `_2F`, underscores as `_5F`, and percent signs as `_25` in folder names. This keeps branch copies distinct without percent escapes that break Xcode's SDK stat-cache paths. Detached checkouts use their commit ID.
 - Worktrees have separate build folders but share app identity, permissions and device state. Run one copy at a time; Mac hosted tests also use aniCe, so let those finish before running the launcher. Each worktree needs its own local signing file or exported environment settings.
-- Closing the window leaves the companion running. **Command-Q** quits.
+- Closing the window leaves the companion running. Dock reopen restores the main window even when companion or floating panels are open; activation restores it whenever no main window is visible. **Command-Q** quits.
 
 Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery-during-development).
 
@@ -147,7 +155,7 @@ Settings → Permissions shows Event Posting status and setup for Mac input. ani
 
 ## Local File Transfer
 
-Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. New pairings enable automatic receiving; existing peers retain their saved choice. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
 

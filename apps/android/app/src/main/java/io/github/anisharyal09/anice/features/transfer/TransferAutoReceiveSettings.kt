@@ -52,7 +52,7 @@ fun TransferAutoReceiveSettings(
                     compact = true,
                 )
             }
-            Text("For background receipt, turn on Connect automatically.",
+            Text("New pairings start enabled. Change this any time. Background receipt also needs Connect automatically.",
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                 color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = if (compact) 0.dp else 8.dp))

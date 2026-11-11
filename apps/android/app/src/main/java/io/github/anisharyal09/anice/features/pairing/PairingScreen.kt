@@ -12,7 +12,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
@@ -21,6 +24,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +35,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.LayoutDirection
@@ -91,7 +96,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("Pair a device", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text("Add device", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             IconButton(onClick = onDismiss) {
                 Icon(painterResource(R.drawable.ic_close), contentDescription = "Close pairing")
             }
@@ -131,6 +136,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                         Box(
                             Modifier.weight(1f).clip(MaterialTheme.shapes.small)
                                 .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small) else Modifier)
                                 .selectable(selected = selected, role = Role.Tab) { enterCode = codeMode }
                                 .heightIn(min = 48.dp)
                                 .padding(horizontal = 8.dp),
@@ -141,20 +147,51 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                     }
                 }
             }
+            Text(
+                if (enterCode) "Enter the six-digit code shown on your Mac."
+                else "Scan the QR code shown on your Mac.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (enterCode) {
-                OutlinedTextField(
+                val codeInteraction = remember { MutableInteractionSource() }
+                val codeFocused by codeInteraction.collectIsFocusedAsState()
+                BasicTextField(
                     value = pin,
                     onValueChange = { pin = it.filter { c -> c in '0'..'9' }.take(6) },
-                    placeholder = { Text("090909", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
-                    supportingText = { Text("Enter the code shown on your Mac.") },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.headlineSmall.copy(
                         fontFamily = FontFamily.Monospace,
                         letterSpacing = 2.sp,
                         textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface,
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Six-digit pairing code" },
+                    interactionSource = codeInteraction,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                        .border(
+                            width = if (codeFocused) 2.dp else 1.dp,
+                            color = if (codeFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                            shape = MaterialTheme.shapes.small,
+                        )
+                        .semantics { contentDescription = "Six-digit pairing code" },
+                    decorationBox = { innerTextField ->
+                        Box(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
+                            contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            if (pin.isEmpty()) Text(
+                                "090909",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    letterSpacing = 2.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            innerTextField()
+                        }
+                    }
                 )
             }
             if (!enterCode &&
@@ -189,7 +226,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                             if (model.phase == "permission") start()
                         },
                         enabled = pin.length == 6,
-                    ) { Text("Pair using code") }
+                    ) { Text("Continue") }
                 } else {
                     OutlinedButton(shape = MaterialTheme.shapes.small,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -198,7 +235,7 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                                 PackageManager.PERMISSION_GRANTED
                             ) camera = true else cameraPermission.launch(Manifest.permission.CAMERA)
                         },
-                    ) { Text("Scan & continue") }
+                    ) { Text("Scan QR code") }
                 }
             }
         }

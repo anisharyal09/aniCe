@@ -56,14 +56,25 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(stringResource(R.string.find_local_blocked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick = {
-                        if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-                    }) { Text(stringResource(R.string.find_permission)) }
-                    TextButton(onClick = {
-                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
-                    }) {
+                    OutlinedButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                        },
+                        shape = MaterialTheme.shapes.small,
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) { Text(stringResource(R.string.find_permission)) }
+                    TextButton(
+                        onClick = {
+                            context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, FindDeviceNotification.CHANNEL))
+                        },
+                        shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
                         Text(stringResource(R.string.find_settings))
                     }
                 }
@@ -97,6 +108,9 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                     OutlinedButton(
                         onClick = { owner.find(record.peer) },
                         enabled = owner.canFind(record.peer),
+                        shape = MaterialTheme.shapes.small,
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                         modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = findLabel }
                     ) {
                         Text(stringResource(R.string.find_title))

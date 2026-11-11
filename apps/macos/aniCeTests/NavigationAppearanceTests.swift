@@ -10,6 +10,14 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  @MainActor func testDockReopenRestoresMainWindowWhenOtherWindowsAreVisible() {
+    let delegate = AppDelegate()
+    var requests = 0
+    delegate.reopenMainWindow = { requests += 1 }
+    XCTAssertTrue(delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: true))
+    XCTAssertEqual(requests, 1)
+  }
+
   @MainActor func testNavigationDeepLinkUpdatesContextBeforePresentationAndRetainsItAcrossTabs() {
     let navigation = ConnectionNavigation()
     XCTAssertEqual(navigation.destination, .home)
@@ -59,7 +67,7 @@ extension SessionTests {
   }
 
   @MainActor func testFavouritesIgnoreUnknownEntriesAndRouteWithoutChangingDeviceContext() {
-    XCTAssertEqual(AppFeature.favourites(in: "files,files,unknown,playback"), [.playback, .files])
+    XCTAssertEqual(AppFeature.favourites(in: "files,files,unknown,playback"), [.files, .playback])
     XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
     XCTAssertTrue(AppFeature.favourites(in: "typeToMac").isEmpty)
     XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
@@ -204,7 +212,7 @@ extension SessionTests {
     let target = NSObject()
     let items = CompanionHost.makeMenu(target: target).items
     XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
-      ["Open aniCe", "Manage devices", "Show floating keyboard", "Quit aniCe"])
+      ["Open aniCe", "Manage devices", "Show floating keyboard  ⌥⌘K", "Quit aniCe"])
     XCTAssertEqual(items.filter(\.isSeparatorItem).count, 1)
     for item in items where !item.isSeparatorItem {
       XCTAssertTrue(item.target === target)
@@ -212,7 +220,7 @@ extension SessionTests {
     }
     XCTAssertEqual(Set(items.compactMap(\.action)).count, 4)
     XCTAssertEqual(CompanionHost.makeMenu(target: target, floatingKeyboardVisible: true).items[2].title,
-      "Hide floating keyboard")
+      "Hide floating keyboard  ⌥⌘K")
   }
 
   func testConnectionSummaryRequiresReadinessAcrossBothTransports() {
@@ -227,8 +235,7 @@ extension SessionTests {
           connected += 1
           XCTAssertTrue(result.connected)
           XCTAssertEqual(result.action, .disconnect)
-          XCTAssertEqual(result.summary.contains("Bluetooth"), bluetooth == "Secured")
-          XCTAssertEqual(result.summary.contains("Local network"), lan == "Secured")
+          XCTAssertEqual(result.summary, "Connected")
         } else {
           unready += 1
           XCTAssertFalse(result.connected)
@@ -252,10 +259,10 @@ extension SessionTests {
     XCTAssertEqual(presentation("Connecting", bleAllowing: true).action, .stop)
     XCTAssertEqual(presentation(automatic: true).summary, "Waiting nearby")
     XCTAssertEqual(presentation(automatic: true).action, .stop)
-    XCTAssertEqual(presentation("Failed", "Secured", lanAllowing: true).summary, "Connected · Local network")
+    XCTAssertEqual(presentation("Failed", "Secured", lanAllowing: true).summary, "Connected")
     XCTAssertEqual(presentation("Secured", "Failed", bleAllowing: true).action, .disconnect)
     XCTAssertEqual(presentation("Secured", "Connecting", bleAllowing: true, lanAllowing: true).summary,
-      "Connected · Bluetooth")
+      "Connected")
   }
 
 }

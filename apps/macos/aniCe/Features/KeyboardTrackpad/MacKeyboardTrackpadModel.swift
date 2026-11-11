@@ -688,8 +688,9 @@ enum ClipboardTypingValidationError: Error, Equatable {
 
   func scrollGesture(deltaX: Double, deltaY: Double, phase: NSEvent.Phase, precise: Bool, momentum: Bool,
     owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard isControlling, activeSurface == .pad, owner == nil || activeOwner == owner, !momentum,
+    guard isControlling, activeSurface == .pad, owner == nil || activeOwner == owner,
           deltaX.isFinite, deltaY.isFinite, heldButtons == 0 || scrollDragging else { return }
+    if momentum { cancelScrollGesture(owner: owner); return }
     if phase.contains(.cancelled) { cancelScrollGesture(owner: owner); return }
     if phase.isEmpty {
       if scrollAxis == nil { scroll(deltaY: deltaY, precise: precise, owner: owner) }

@@ -596,7 +596,8 @@ class SessionControlTests {
       val outboundI = java.util.ArrayDeque<ByteArray>()
       val outboundR = java.util.ArrayDeque<ByteArray>()
       val delivered = mutableListOf<ByteArray>()
-      val client = SessionConnection(helper.engine(fixture, false), false, { writable }, { outboundI.add(it) }, {}, {}, true, { clock }, changed = { signals.incrementAndGet() })
+      val deliveredClient = mutableListOf<ByteArray>()
+      val client = SessionConnection(helper.engine(fixture, false), false, { writable }, { outboundI.add(it) }, { deliveredClient.add(it) }, {}, true, { clock }, changed = { signals.incrementAndGet() })
       val server = SessionConnection(helper.engine(fixture, true), true, { true }, { outboundR.add(it) }, { delivered.add(it) }, {}, serverControls, { clock })
       suspend fun pump() {
         var count = 0
@@ -629,6 +630,9 @@ class SessionControlTests {
         writable = true
         client.sendData("aniCe connection check".toByteArray()); pump()
         assertEquals(1, delivered.size)
+        server.sendData("aniCe connection check reply".toByteArray()); pump()
+        assertEquals(1, deliveredClient.size)
+        assertArrayEquals("aniCe connection check reply".toByteArray(), deliveredClient.single())
         clock = 3600000
         try { client.tick(); fail("Keepalive extended the hard lifetime") }
         catch (error: SessionException) { assertEquals(SessionFailure.EXPIRED, error.reason) }

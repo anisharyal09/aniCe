@@ -5,6 +5,11 @@ import Foundation
 import Observation
 import OSLog
 
+enum SessionConnectionCheck {
+  static let request = Data("aniCe connection check".utf8)
+  static let reply = Data("aniCe connection check reply".utf8)
+}
+
 struct SessionStartupRecovery {
   private var failures = 0
   private(set) var stableDeadline: TimeInterval?
@@ -24,17 +29,25 @@ struct SessionStartupRecovery {
 
 @Observable @MainActor final class MacSessionModel {
   private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "BLE lifecycle")
-  var state = "Disconnected" { didSet { channelStateChanged() } }
+  private static let pauseUntilKey = "session.pausedUntil"
+  var state = "Disconnected" {
+    didSet {
+      if state != "Secured" { checkPending = false }
+      channelStateChanged()
+    }
+  }
   var status = "Allow your trusted Android device to connect."
   var selectedPeer: DeviceIdentity?
   var allowing = false
   var remaining: Int { allowing ? Int(ceil(max(0, (windowDeadline ?? now()) - now()))) : 0 }
   var receivedChecks = 0
+  private var checkPending = false
   private(set) var automatic = false
   private var suspended = false
   private var sleeping = false
   private var quitting = false
   private var restart: Task<Void, Never>?
+  private var pauseResumeTask: Task<Void, Never>?
   private var radioBlocked = false
   private var startupRecovery = SessionStartupRecovery()
   private var cooldownUntil: TimeInterval?
@@ -90,6 +103,8 @@ struct SessionStartupRecovery {
   private var inputCount = 0
   private var inputBytes = 0
   private var observers = [NSObjectProtocol]()
+  private(set) var connectionPauseStatus: String?
+  var automaticPauseEnded: () -> Void = {}
   init(
     identity: IdentityService, adapter: any SessionPeripheralAdapter,
     store: @escaping @MainActor () async throws -> PeerTrustStore,
@@ -133,16 +148,34 @@ struct SessionStartupRecovery {
       ) { [weak self] _ in MainActor.assumeIsolated { self?.quit() } })
   }
   func restoreAutomatic() {
-    guard preferences?.bool(forKey: "session.automatic") == true,
-      preferences?.bool(forKey: "session.paused") != true else { return }
+    guard preferences?.bool(forKey: "session.automatic") == true else { return }
+    if preferences?.bool(forKey: "session.paused") == true {
+      guard preferences?.object(forKey: Self.pauseUntilKey) != nil else {
+        // A missing resume marker means a manual Disconnect or retired trust, not a saved pause.
+        automatic = false
+        preferences?.set(false, forKey: "session.automatic")
+        updateConnectionPauseStatus()
+        return
+      }
+      automatic = true
+      updateConnectionPauseStatus()
+      if let deadline = automaticPauseDeadline, deadline > Date() { schedulePauseResume() }
+      else if automaticPauseDeadline != nil { resumeAutomaticPause() }
+      return
+    }
     automatic = true
+    updateConnectionPauseStatus()
     allow()
   }
   func setAutomatic(_ enabled: Bool) {
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
     cooldownUntil = nil
     automatic = enabled
     preferences?.set(enabled, forKey: "session.automatic")
     preferences?.set(false, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
+    automaticPauseEnded()
     preferences?.set(selectedPeer?.deviceId, forKey: "session.target")
     preferences?.set(selectedPeer?.fingerprint, forKey: "session.fingerprint")
     preferences?.removeObject(forKey: "session.local") // Explicit setup binds the current identity anew.
@@ -157,6 +190,12 @@ struct SessionStartupRecovery {
   func suspendAutomatic() { suspended = true; cancel() }
   func resumeAutomatic() {
     suspended = false
+    if automatic, preferences?.bool(forKey: "session.paused") == true,
+      let deadline = automaticPauseDeadline, deadline <= Date() {
+      resumeAutomaticPause()
+      return
+    }
+    if automatic && isAutomaticPauseActive { schedulePauseResume(); return }
     if automatic && !sleeping && !quitting && !allowing {
       if let until = cooldownUntil, now() < until { reopen(after: until - now()) }
       else { allow() }
@@ -166,14 +205,17 @@ struct SessionStartupRecovery {
   func wake() { sleeping = false; resumeAutomatic() }
   func quit() { quitting = true; cancel() }
   func retireTrust() {
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = false
     preferences?.set(true, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
     cancel()
   }
   private func reopen(after delay: TimeInterval = 0) {
     let old = connection
     cancel()
-    guard automatic, !suspended, !sleeping, !quitting else { return }
+    guard automatic, !isAutomaticPauseActive, !suspended, !sleeping, !quitting else { return }
     let op = generation
     let wait = wait
     status = delay > 0 ? "Waiting before allowing nearby connections." : "Waiting nearby."
@@ -187,7 +229,13 @@ struct SessionStartupRecovery {
     }
   }
   func allow() {
+    if automatic, preferences?.bool(forKey: "session.paused") == true,
+      let deadline = automaticPauseDeadline, deadline <= Date() {
+      resumeAutomaticPause()
+      return
+    }
     if automatic && (suspended || sleeping || quitting) { return }
+    if automatic && isAutomaticPauseActive { schedulePauseResume(); return }
     if automatic, let until = cooldownUntil, now() < until { return }
     cancel()
     beforeAllow()
@@ -416,10 +464,23 @@ struct SessionStartupRecovery {
   }
   private func received(_ bytes: Data, _ op: Int, _ candidate: Int) async {
     guard op == generation, candidate == attempt else { return }
-    if await applicationDataReceived(bytes) { return }
-    guard bytes == Data("aniCe connection check".utf8) else { return }
-    receivedChecks += 1
-    status = "Secured. Connection check received."
+    if bytes == SessionConnectionCheck.request {
+      receivedChecks += 1
+      status = "Bluetooth check received."
+      Task { [weak self] in
+        guard let self, op == self.generation, candidate == self.attempt else { return }
+        do { try await self.sendData(SessionConnectionCheck.reply) }
+        catch {
+          if op == self.generation, candidate == self.attempt, self.status == "Bluetooth check received." {
+            self.status = "Bluetooth check received, but its reply could not be sent."
+          }
+        }
+      }
+    } else if bytes == SessionConnectionCheck.reply {
+      if checkPending { checkPending = false; status = "Bluetooth check confirmed." }
+    } else {
+      _ = await applicationDataReceived(bytes)
+    }
   }
   private func startMaintenance() {
     guard allowing else { return }
@@ -589,16 +650,27 @@ struct SessionStartupRecovery {
     Task { await old?.close() }
   }
   func checkConnection() {
-    guard state == "Secured", let connection else { return }
+    guard state == "Secured", let connection, !checkPending else { return }
     let op = generation
+    let candidate = attempt
+    checkPending = true
+    status = "Checking Bluetooth connection…"
     Task {
       do {
-        try await connection.sendData(Data("aniCe connection check".utf8))
-        if op == generation { status = "Secured. Connection check sent." }
+        try await connection.sendData(SessionConnectionCheck.request)
+        guard op == generation, candidate == attempt, checkPending else { return }
+        status = "Bluetooth check sent. Waiting for a reply."
+        try await Task.sleep(for: .seconds(5))
+        guard op == generation, candidate == attempt, checkPending else { return }
+        checkPending = false
+        status = "No reply to the Bluetooth check. Check the Android connection."
       } catch is SessionBackpressure {
-        if op == generation { status = "Connection is busy. Try again." }
+        if op == generation, candidate == attempt { checkPending = false; status = "Bluetooth check could not be sent. Try again." }
+      } catch is CancellationError {
+        return
       } catch {
-        if op == generation {
+        if op == generation, candidate == attempt {
+          checkPending = false
           failWindow("Connection check could not be sent. Allow connections and retry.")
         }
       }
@@ -606,8 +678,82 @@ struct SessionStartupRecovery {
   }
   func disconnect() {
     // Stop outranks renewal/recovery; persist the pause before any suspended close.
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = false
     preferences?.set(true, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
+    disconnectAndCancel()
+  }
+
+  func pauseAutomatic(for duration: TimeInterval?) {
+    guard automatic || preferences?.bool(forKey: "session.automatic") == true else { return }
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
+    automatic = true
+    preferences?.set(true, forKey: "session.automatic")
+    preferences?.set(true, forKey: "session.paused")
+    if let duration {
+      preferences?.set(Date().addingTimeInterval(duration).timeIntervalSince1970, forKey: Self.pauseUntilKey)
+    } else {
+      preferences?.set(0.0, forKey: Self.pauseUntilKey)
+    }
+    updateConnectionPauseStatus()
+    disconnectAndCancel()
+    if automaticPauseDeadline != nil { schedulePauseResume() }
+  }
+
+  func resumeAutomaticPause() {
+    pauseResumeTask?.cancel(); pauseResumeTask = nil
+    guard preferences?.bool(forKey: "session.automatic") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil else { return }
+    automatic = true
+    preferences?.set(false, forKey: "session.paused")
+    preferences?.removeObject(forKey: Self.pauseUntilKey)
+    updateConnectionPauseStatus()
+    automaticPauseEnded()
+    if !suspended && !sleeping && !quitting { allow() }
+  }
+
+  private var automaticPauseDeadline: Date? {
+    guard let timestamp = preferences?.object(forKey: Self.pauseUntilKey) as? Double, timestamp > 0 else { return nil }
+    return Date(timeIntervalSince1970: timestamp)
+  }
+
+  private var isAutomaticPauseActive: Bool {
+    guard preferences?.bool(forKey: "session.paused") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil else { return false }
+    return automaticPauseDeadline.map { $0 > Date() } ?? true
+  }
+
+  private func updateConnectionPauseStatus() {
+    guard automatic, preferences?.bool(forKey: "session.paused") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil else {
+      connectionPauseStatus = nil
+      return
+    }
+    if let deadline = automaticPauseDeadline, deadline > Date() {
+      connectionPauseStatus = "Auto connect paused until \(deadline.formatted(date: .omitted, time: .shortened))"
+    } else {
+      connectionPauseStatus = "Auto connect paused until you resume it"
+    }
+  }
+
+  private func schedulePauseResume() {
+    guard let deadline = automaticPauseDeadline else { return }
+    pauseResumeTask?.cancel()
+    let expected = deadline.timeIntervalSince1970
+    pauseResumeTask = Task { [weak self] in
+      guard let self else { return }
+      try? await self.wait(max(0, deadline.timeIntervalSinceNow))
+      guard !Task.isCancelled,
+        self.preferences?.bool(forKey: "session.automatic") == true,
+        self.preferences?.bool(forKey: "session.paused") == true,
+        self.preferences?.double(forKey: Self.pauseUntilKey) == expected else { return }
+      self.resumeAutomaticPause()
+    }
+  }
+
+  private func disconnectAndCancel() {
     guard let connection else {
       cancel()
       return

@@ -4,6 +4,47 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Check GitHub releases with a stable/beta preference and install signed updates through a detached helper with startup-confirmation rollback.
+
+- Share Mac power changes with connected Android devices and soften Overview Quick access controls.
+
+- Align device power information beneath the connection status and compact Edge Drop and Desk Deck settings rows.
+
+- Release trackpad gestures when momentum begins so pointer movement can resume, and show the floating-keyboard shortcut on Control Android.
+
+- Deliver diagnostic checks before feature decoding and show hover feedback on Overview shortcuts.
+
+- Remove redundant input-focus copy from the Permissions card.
+
+- Add one-tap Overview shortcuts for starred features and confirm Bluetooth/LAN checks with a reply from Android.
+
+- Align the Bluetooth and Wi-Fi status icons and clarify that file-offer notifications appear only in the background.
+
+- Open Devices when the Home device name is clicked, and show secured Bluetooth/Wi-Fi links as icons beside one Connected status.
+
+- Restore the main Mac window from Dock, app activation and reopen events even when the companion or floating tools are visible.
+
+- Defer identity loading, automatic connection startup and system integrations until after the first main-window render.
+
+- Keep manual Disconnect effective across restart when an older automatic-connection preference remains saved.
+
+- Encode branch names in Mac Debug DerivedData paths to avoid ClangStatCache failures on slash-containing branches.
+
+- Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
+
+- Simplify first-time Mac Bluetooth linking and show trust management only when there are devices to manage.
+
+- Balance two-column Settings sections to use the available space more consistently.
+
+- Add ⌥⌘K to show or hide the floating keyboard while aniCe is running.
+
+- Reorder Features and Favourites and add favourite actions to feature context menus.
+
+- Hide idle companion activity and send actions until a phone is trusted and clarify incoming-file review and completion.
+
+- Enable automatic file receipt for new pairings and retain explicit off choices.
+
+- Add keyboard input to the full-screen trackpad window.
 - Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar artwork, and inset the appearance-aware Dock tile while preserving the silver mark's size. Give the Dark Dock tile a near-black graphite glow with fine rim and top/bottom highlights.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.
@@ -22,6 +63,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Shorten Mac input permission and connection guidance.
 
 ### Fixed
+
+- Use Carbon-compatible event parameter types in the system-wide keyboard and clipboard shortcuts.
+
+- Show the latest Bluetooth and LAN connection-check feedback beside received counts.
+
+- Route Home device selection to Devices and keep connection details collapsed.
 
 - Use percent-free branch build folders so the developer launcher avoids ClangStatCache failures on branch names containing slashes.
 
@@ -82,6 +129,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
 
 ### Changed
+
+- Remove feature-level Back links that duplicate titlebar navigation.
+
+- Use consistent Add device language in the Mac pairing flow.
+
+- Guide first-launch users to add their Android phone and hide empty file-send shortcuts until a device is trusted.
 
 - Clarify File transfer settings and Edge Drop placement; enlarge send and result controls.
 - Pin each Mac send to its selected phone, prefer LAN, and require an explicit Bluetooth fallback choice.

@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Builds signed release artifacts and publishes only a fully verified draft.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build'
+        required: true
+        type: string
+      dry_run:
+        description: 'Upload workflow artifacts only'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      code: ${{ steps.version.outputs.code }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate version and source
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release_version.py "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" == push || "$DRY_RUN" != true ]]; then
+            commit="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
+          else
+            commit="$(git rev-parse HEAD)"
+          fi
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$commit" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android and Rust prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          (yes 2>/dev/null || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.3.13750724'
+      - name: Build and verify signed APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANICE_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANICE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANICE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_CODE: ${{ needs.metadata.outputs.code }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_KEYSTORE_BASE64:?Missing Android keystore}"
+          : "${ANICE_ANDROID_STORE_PASSWORD:?Missing Android store password}"
+          : "${ANICE_ANDROID_KEY_ALIAS:?Missing Android alias}"
+          : "${ANICE_ANDROID_KEY_PASSWORD:?Missing Android key password}"
+          [[ "$ANDROID_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid Android certificate pin' >&2; exit 1; }
+          export ANICE_ANDROID_KEYSTORE="$RUNNER_TEMP/anice-release.keystore"
+          trap 'rm -f "$ANICE_ANDROID_KEYSTORE"' EXIT
+          umask 077
+          python3 -c 'import base64, os, pathlib; pathlib.Path(os.environ["ANICE_ANDROID_KEYSTORE"]).write_bytes(base64.b64decode(os.environ["ANDROID_KEYSTORE_BASE64"], validate=True))'
+          (cd apps/android && ./gradlew assembleRelease --no-daemon "-PaniceVersionName=$RELEASE_VERSION" "-PaniceVersionCode=$RELEASE_CODE")
+          apk='apps/android/app/build/outputs/apk/release/app-release.apk'
+          [[ -f "$apk" && "$(stat -c '%s' "$apk")" -le 268435456 ]]
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signature.txt"
+          [[ "$(grep -c 'certificate SHA-256 digest:' "$RUNNER_TEMP/apk-signature.txt")" == 1 ]]
+          actual="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' "$RUNNER_TEMP/apk-signature.txt" | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          [[ "$actual" == "$ANDROID_CERT_SHA256" ]] || { echo 'Android signer does not match configured pin' >&2; exit 1; }
+          ANICE_AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt" PYTHONPATH=scripts python3 - "$apk" "$RELEASE_CODE" "$RELEASE_VERSION" <<'PY'
+          import os, sys
+          from publish_release import apk_code
+          if apk_code(sys.argv[1], os.environ['ANICE_AAPT']) != (int(sys.argv[2]), sys.argv[3]):
+              raise SystemExit('APK version or package does not match the release')
+          PY
+          mkdir -p dist
+          cp "$apk" dist/aniCe-android.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anice-android
+          path: dist/aniCe-android.apk
+          if-no-files-found: error
+
+  macos:
+    needs: metadata
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - name: Install Rust targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build and verify signed Mac archive
+        shell: bash
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          MAC_SIGNING_IDENTITY: ${{ vars.MAC_SIGNING_IDENTITY }}
+          MAC_UPDATE_PIN_CURRENT: ${{ vars.MAC_UPDATE_PIN_CURRENT }}
+          MAC_UPDATE_PIN_NEXT: ${{ vars.MAC_UPDATE_PIN_NEXT }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_CODE: ${{ needs.metadata.outputs.code }}
+        run: bash scripts/build_release_macos.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anice-macos
+          path: dist/aniCe-mac.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [metadata, android, macos]
+    if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: anice-*
+          merge-multiple: true
+          path: dist
+      - name: Require device verification for this commit
+        env:
+          VERIFIED_COMMIT: ${{ vars.RELEASE_DEVICE_VERIFIED_COMMIT }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+        run: |
+          if [[ ! "$VERIFIED_COMMIT" =~ ^[0-9a-f]{40}$ || "$VERIFIED_COMMIT" != "$RELEASE_COMMIT" ]]; then
+            echo 'Set RELEASE_DEVICE_VERIFIED_COMMIT after the signed device and recovery checks pass for this commit.' >&2
+            exit 1
+          fi
+      - name: Install APK inspection tools
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "build-tools;36.0.0"'
+      - name: Verify and publish draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+        run: ANICE_AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt" python3 scripts/publish_release.py "$RELEASE_TAG" "$RELEASE_COMMIT" dist

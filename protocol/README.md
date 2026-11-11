@@ -18,7 +18,7 @@ Contracts define required behavior.
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **Mac Desk Deck** | `1`–`4` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
-| **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Phone battery status on existing Mac device surfaces over authenticated DATA, with no new connection lease |
+| **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Peer battery and charging status on existing device surfaces over authenticated DATA, with no new connection lease |
 | **LAN Binding** | `1` | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
@@ -185,7 +185,7 @@ protocol/
 
 ## Mac Desk Deck and Device Power
 
-[Mac Desk Deck v1–v5](desk-deck/README.md) defines subscription-bound Mac telemetry and controls. V2 adds renewable leases, richer memory and Mac power readings, and paged launches for Mac-approved app bundles; v4 adds one locally selected Do Not Disturb Shortcut; v5 adds default-output selection. Older peers remain supported. [Device Power v1](device-power/README.md) sends the phone's battery state to existing Mac device surfaces over a secured channel that is already open. Both contracts have shared Kotlin/Swift fixtures under [test-vectors](test-vectors/desk-deck-vectors.json).
+[Mac Desk Deck v1–v5](desk-deck/README.md) defines subscription-bound Mac telemetry and controls. V2 adds renewable leases, richer memory and Mac power readings, and paged launches for Mac-approved app bundles; v4 adds one locally selected Do Not Disturb Shortcut; v5 adds default-output selection. Older peers remain supported. [Device Power v1](device-power/README.md) shares peer battery and charging state on Mac device surfaces and Android Home and Devices over a secured channel that is already open. Both contracts have shared Kotlin/Swift fixtures under [test-vectors](test-vectors/desk-deck-vectors.json).
 
 ## Media
 

@@ -144,7 +144,7 @@ A renewal flag blocks new application submissions before sealing. One pending Ma
 
 ## Application diagnostic
 
-The connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). It is accepted only after readiness; receipt updates the local connection status. This diagnostic has no automatic echo or persistence; keepalive controls are consumed separately and do not increment received-check counters. Feature DATA uses the shared authenticated dispatcher. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
+The connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). After readiness, the receiver recognizes check and reply payloads before feature decoding, updates its local status, and replies on the same secured transport with UTF-8 `aniCe connection check reply`. A sender awaiting a reply reports confirmation on receipt or a timeout after five seconds. Older peers can receive the original check without returning a reply. Keepalive controls are consumed separately and do not increment received-check counters. Feature DATA uses the shared authenticated dispatcher. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
 
 Baseline minimum-OS runtime coverage (API 29 and macOS 14) and independent security review remain tracked as outstanding release gates.
 

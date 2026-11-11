@@ -2,6 +2,45 @@
 // Presents feature-specific panels and locally saved launcher shortcuts through shared owners.
 import SwiftUI
 
+struct HomeFeatureAccess: View {
+  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
+  @Environment(\.colorScheme) private var colorScheme
+  let onOpen: (AppFeature) -> Void
+  let onBrowse: () -> Void
+
+  private var favourites: [AppFeature] { AppFeature.favourites(in: favouriteFeatures) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("Quick access").font(.system(size: 14, weight: .medium))
+      if favourites.isEmpty {
+        HStack(spacing: 12) {
+          Text("Star features to open them from Overview.")
+            .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Explore features", action: onBrowse).buttonStyle(AniCeButtonStyle()).controlSize(.small)
+        }
+      } else {
+        ScrollView(.horizontal) {
+          HStack(spacing: 8) {
+            ForEach(favourites) { feature in
+              Button { onOpen(feature) } label: {
+                Label(feature.title, systemImage: feature.symbol)
+                  .font(.system(size: 13))
+                  .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                  .padding(.horizontal, 8).padding(.vertical, 6)
+                  .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.75) }
+              }
+              .buttonStyle(AniCeHoverButtonStyle())
+            }
+          }
+        }
+        .scrollIndicators(.hidden)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
 struct FeaturesView: View {
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
@@ -16,7 +55,11 @@ struct FeaturesView: View {
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
+  @AppStorage("ui.featureOrder") private var featureOrder = ""
   @Environment(\.colorScheme) private var colorScheme
+  private var displayedFeatures: [AppFeature] {
+    favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.ordered(in: featureOrder)
+  }
   var body: some View {
     GeometryReader { geometry in
     if !favouritesOnly, navigation.featurePanel == .messages {
@@ -48,7 +91,7 @@ struct FeaturesView: View {
           }
         } else {
           Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20, weight: .medium))
-          Text(favouritesOnly ? "Your selected shortcuts. Edit them with the stars in Features." : "Open a feature, or star it for quick access.")
+          Text(favouritesOnly ? "Your selected shortcuts. Right-click to change their order." : "Open or star a feature. Right-click to reorder or change favourites.")
             .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           if favouritesOnly && AppFeature.favourites(in: favouriteFeatures).isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -60,8 +103,8 @@ struct FeaturesView: View {
             .padding(.top, 8)
           }
           LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 850 ? 2 : 1), alignment: .leading, spacing: 0) {
-            ForEach(favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.allCases) { item in
-              feature(item)
+            ForEach(displayedFeatures) { item in
+              feature(item, in: displayedFeatures)
             }
           }
         }
@@ -74,7 +117,7 @@ struct FeaturesView: View {
     }
   }
 
-  private func feature(_ feature: AppFeature) -> some View {
+  private func feature(_ feature: AppFeature, in rows: [AppFeature]) -> some View {
     let selected = AppFeature.favourites(in: favouriteFeatures).contains(feature)
     return HStack(spacing: 8) {
       Button { navigation.openFeature(feature) } label: {
@@ -107,6 +150,23 @@ struct FeaturesView: View {
     .padding(.vertical, 16)
     .frame(maxWidth: .infinity, alignment: .leading)
     .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+    .contextMenu {
+      if let index = rows.firstIndex(of: feature), index > 0 {
+        Button("Move Up") { updateOrder(feature, in: rows, offset: -1) }
+      }
+      if let index = rows.firstIndex(of: feature), index < rows.count - 1 {
+        Button("Move Down") { updateOrder(feature, in: rows, offset: 1) }
+      }
+      Divider()
+      Button(selected ? "Remove from Favourites" : "Add to Favourites") {
+        favouriteFeatures = feature.toggled(in: favouriteFeatures)
+      }
+    }
+  }
+
+  private func updateOrder(_ feature: AppFeature, in rows: [AppFeature], offset: Int) {
+    if favouritesOnly { favouriteFeatures = AppFeature.moved(feature, in: rows, offset: offset) }
+    else { featureOrder = AppFeature.moved(feature, in: rows, offset: offset) }
   }
 
   private func status(for feature: AppFeature) -> String {

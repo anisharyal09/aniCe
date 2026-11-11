@@ -21,6 +21,7 @@ struct MainWindowView: View {
   let keyboardTrackpad: MacKeyboardTrackpadModel
   let phoneInput: MacPhoneInputModel
   let smsPreferences: SmsPreferences
+  let onInitialRender: () -> Void
   @Bindable var dndSync: MacDndSyncModel
   @Bindable var deskDeck: MacDeskDeckModel
   @Bindable var phonePower: MacPhonePowerModel
@@ -35,6 +36,7 @@ struct MainWindowView: View {
   @State var settingsFocusToken = UUID()
   @State var settingsScroller = SettingsScrollCoordinator()
   @State var showingLocalIdentity = false
+  @State var updates = MacUpdateModel.shared
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
   }
@@ -86,6 +88,12 @@ struct MainWindowView: View {
     .frame(minWidth: 620, minHeight: 420)
     .tint(AniCePalette.primaryText(colorScheme))
     .task {
+      // Confirm a swapped-in build before anything else can delay the helper's startup watchdog.
+      updates.confirmStartup()
+      // Let SwiftUI present the first window before loading saved identity or starting radios.
+      await Task.yield()
+      onInitialRender()
+      if !IdentityView.isTesting { Task { await updates.check() } }
       if !IdentityView.isTesting {
         await identity.load()
         if identity.local != nil { await pairing.refresh() }
@@ -112,11 +120,6 @@ struct MainWindowView: View {
       let action = openWindow
       delegate.reopenMainWindow = {
         action(id: "main")
-        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
-          window.deminiaturize(nil)
-          window.makeKeyAndOrderFront(nil)
-        }
-        NSApp.activate()
         playback.presented("main",mediaSurfaceVisible)
       }
     }
@@ -124,6 +127,7 @@ struct MainWindowView: View {
 
   private var detailContent: some View {
     VStack(spacing: 0) {
+      MacUpdateNotice(model: updates)
       pendingRequestRows
       destinationContent
     }
@@ -135,6 +139,11 @@ struct MainWindowView: View {
   }
 
   @ViewBuilder private var pendingRequestRows: some View {
+    if let message = updates.recoveryMessage {
+      PendingRequestRow(title: "Previous update did not finish", detail: message) {
+        navigation.select(.settings)
+      }
+    }
     if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
       PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
         detail: pairing.status) { navigation.show(.devices, route: .pairing) }

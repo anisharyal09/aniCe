@@ -4,6 +4,7 @@ package io.github.anisharyal09.anice.app
 
 import androidx.compose.material3.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
@@ -75,21 +76,46 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                     },
                     quickActions = {
                         if (pairing.peers.isNotEmpty()) {
+                            val favourites = AppFeature.favourites(navigation.favouriteFeatures)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = sendFiles::chooseFiles,
                                     enabled = transfer.peerConnected && transfer.peerCompatible && !transfer.preparing && !transfer.isBusy,
                                     shape = MaterialTheme.shapes.small,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                    modifier = Modifier.heightIn(min = 48.dp)) {
+                                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
                                     Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(6.dp))
                                     Text("Send files")
                                 }
-                                ClipboardSendButton(session.clipboard, Modifier.heightIn(min = 48.dp), compact = true)
+                                ClipboardSendButton(session.clipboard, compact = true)
                             }
                             if (session.clipboard.status != "Ready to share text" && session.clipboard.status != "Confirm sending sensitive text") {
                                 Text(session.clipboard.status, style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (favourites.isEmpty()) {
+                                TextButton(onClick = { navigation.select(AppDestination.Features, false) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
+                                    Icon(painterResource(R.drawable.ic_star), contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Add shortcuts")
+                                }
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Quick access", style = MaterialTheme.typography.titleSmall)
+                                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        favourites.forEach { feature ->
+                                            OutlinedButton(onClick = { navigation.openFeature(feature) },
+                                                shape = MaterialTheme.shapes.small,
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                                modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
+                                                Text(feature.label, maxLines = 1, softWrap = false)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
@@ -196,7 +222,9 @@ private fun DevicesOverviewContent(
                 onFocusConsumed = { navigation.focusedPeer = null },
             )
             Spacer(Modifier.height(8.dp))
-            TrustedDevicesSection(pairing)
+            if (pairing.peers.isNotEmpty() || pairing.recovery == "trustStore") {
+                TrustedDevicesSection(pairing)
+            }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     .clickable(role = Role.Button, onClickLabel = "Open this device details", onClick = { showingIdentity = true })

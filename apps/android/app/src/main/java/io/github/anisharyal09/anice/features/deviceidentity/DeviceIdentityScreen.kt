@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -19,11 +20,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -36,8 +38,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -65,6 +69,10 @@ fun DeviceIdentityScreen(
     var editingName by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable(state.snapshot?.identity?.deviceId) { mutableStateOf("") }
     var advanced by rememberSaveable { mutableStateOf(false) }
+    val advancedSection = remember { BringIntoViewRequester() }
+    LaunchedEffect(advanced) {
+        if (advanced) advancedSection.bringIntoView()
+    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val deviceIdLabel = stringResource(R.string.device_id)
@@ -102,7 +110,7 @@ fun DeviceIdentityScreen(
             TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { confirmation = false }) { Text(stringResource(R.string.cancel)) }
         },
     )
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()
             .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.isWorking) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -168,19 +176,23 @@ fun DeviceIdentityScreen(
             }
             // Keep destructive recovery separate from the everyday rename and copy actions.
             if (state.canReset) {
-                TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .semantics { stateDescription = if (advanced) "Expanded" else "Collapsed" }) {
-                    Text(if (advanced) "Hide advanced" else "Advanced")
-                }
-                if (advanced) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
-                        modifier = Modifier.defaultMinSize(minHeight = 32.dp),
-                        onClick = { confirmation = true }, enabled = !state.isWorking) {
-                        Text(stringResource(R.string.reset_identity))
+                Column(Modifier.fillMaxWidth().animateContentSize()) {
+                    TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .semantics { stateDescription = if (advanced) "Expanded" else "Collapsed" }) {
+                        Text(if (advanced) "Hide advanced" else "Advanced")
+                    }
+                    if (advanced) {
+                        Column(Modifier.fillMaxWidth().bringIntoViewRequester(advancedSection)) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(stringResource(R.string.reset_identity_description), style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                                onClick = { confirmation = true }, enabled = !state.isWorking) {
+                                Text(stringResource(R.string.reset_identity))
+                            }
+                        }
                     }
                 }
             }

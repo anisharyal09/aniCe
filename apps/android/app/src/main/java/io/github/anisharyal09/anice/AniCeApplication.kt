@@ -12,6 +12,7 @@ import io.github.anisharyal09.anice.infrastructure.identity.IdentityService
 import io.github.anisharyal09.anice.features.sms.SmsTrace
 
 class AniCeApplication : Application() {
+    internal val updates by lazy { io.github.anisharyal09.anice.update.AndroidUpdateManager(this) }
     val processStartElapsedMillis: Long = SystemClock.elapsedRealtime()
     private var lastStartupMarkMillis = processStartElapsedMillis
 

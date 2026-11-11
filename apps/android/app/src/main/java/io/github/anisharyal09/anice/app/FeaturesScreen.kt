@@ -5,7 +5,7 @@ package io.github.anisharyal09.anice.app
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -80,12 +80,13 @@ fun FeaturesScreen(
             io.github.anisharyal09.anice.features.finddevice.FindDeviceView(findDevice, peers)
         }
     } else {
-        val features = if (favouritesOnly) AppFeature.favourites(navigation.favouriteFeatures) else AppFeature.entries
+        val features = if (favouritesOnly) AppFeature.favourites(navigation.favouriteFeatures)
+            else AppFeature.ordered(navigation.featureOrder)
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(if (favouritesOnly) "Favourites" else "Features", style = MaterialTheme.typography.titleMedium)
-                    Text(if (favouritesOnly) "Your selected shortcuts. Edit them with the stars in Features." else "Open a feature, or star it for quick access.",
+                    Text(if (favouritesOnly) "Your selected shortcuts. Long-press a row to change its order." else "Open a feature, star it for quick access, or long-press to reorder.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (favouritesOnly && features.isEmpty()) Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("No favourites yet", style = MaterialTheme.typography.titleSmall)
@@ -99,45 +100,73 @@ fun FeaturesScreen(
                 }
                 Spacer(Modifier.height(12.dp))
             }
-            items(features, key = { it.name }) { feature ->
+            itemsIndexed(features, key = { _, feature -> feature.name }) { index, feature ->
                 FeatureEntry(feature, AppFeature.favourites(navigation.favouriteFeatures).contains(feature),
                     status = featureStatus(feature, session, peers),
                     onFavourite = { navigation.favouriteFeatures = feature.toggled(navigation.favouriteFeatures) },
-                    onClick = { navigation.openFeature(feature) })
+                    onClick = { navigation.openFeature(feature) },
+                    onMove = { offset ->
+                        if (favouritesOnly) navigation.favouriteFeatures = AppFeature.moved(feature, features, offset)
+                        else navigation.featureOrder = AppFeature.moved(feature, features, offset)
+                    },
+                    canMoveUp = index > 0,
+                    canMoveDown = index < features.lastIndex)
             }
         }
     }
 }
 
 @Composable
-internal fun FeatureEntry(feature: AppFeature, favourite: Boolean, status: String, onFavourite: () -> Unit, onClick: () -> Unit) {
+internal fun FeatureEntry(
+    feature: AppFeature, favourite: Boolean, status: String,
+    onFavourite: () -> Unit, onClick: () -> Unit, onMove: (Int) -> Unit,
+    canMoveUp: Boolean, canMoveDown: Boolean,
+) {
+    var actionsExpanded by remember(feature) { mutableStateOf(false) }
     val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms }
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 72.dp)
-                .clickable(role = Role.Button, onClickLabel = "Open ${feature.label}", onClick = onClick)
-                .padding(vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(painterResource(icon), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(feature.label, style = MaterialTheme.typography.bodyMedium)
-                Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    Box(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 72.dp)
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = "Open ${feature.label}",
+                        onLongClickLabel = "More actions for ${feature.label}",
+                        onLongClick = { actionsExpanded = true },
+                        onClick = onClick
+                    )
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(painterResource(icon), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(feature.label, style = MaterialTheme.typography.bodyMedium)
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                // The star owns its click independently of the enclosing row’s open action.
+                IconButton(onClick = onFavourite, modifier = Modifier.semantics {
+                    contentDescription = (if (favourite) "Remove " else "Add ") + feature.label + (if (favourite) " from favourites" else " to favourites")
+                }) {
+                    Icon(painterResource(if (favourite) R.drawable.ic_star_filled else R.drawable.ic_star), contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
             }
-            // The star owns its click independently of the enclosing row’s open action.
-            IconButton(onClick = onFavourite, modifier = Modifier.semantics {
-                contentDescription = (if (favourite) "Remove " else "Add ") + feature.label + (if (favourite) " from favourites" else " to favourites")
-            }) {
-                Icon(painterResource(if (favourite) R.drawable.ic_star_filled else R.drawable.ic_star), contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            }
-            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
         }
-        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+            if (canMoveUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { actionsExpanded = false; onMove(-1) })
+            if (canMoveDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { actionsExpanded = false; onMove(1) })
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(if (favourite) "Remove from Favourites" else "Add to Favourites") },
+                onClick = { actionsExpanded = false; onFavourite() }
+            )
+        }
     }
 }
 

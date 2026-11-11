@@ -869,6 +869,24 @@ final class KeyboardTrackpadTests: XCTestCase {
     model.pointerButtonUp()
   }
 
+  @MainActor func testMomentumEndsDragAndAllowsPointerMovement() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    model.requestControl(on: .pad)
+    model.scrollGesture(deltaX: 12, deltaY: 0, phase: .began, precise: true, momentum: false)
+    XCTAssertTrue(model.isScrolling)
+    model.scrollGesture(deltaX: 2, deltaY: 0, phase: [], precise: true, momentum: true)
+    XCTAssertFalse(model.isScrolling)
+    XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 0))
+    model.pointerMoved(deltaX: 4, deltaY: 0)
+    try await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(transport.writes.last, .mouse(0, 4, 0, 0))
+  }
+
   @MainActor func testPadConsumesArmingMouseDownThroughMouseUp() throws {
     let peer = try phone("Phone")
     let transport = FakeKeyboardTrackpadTransport()

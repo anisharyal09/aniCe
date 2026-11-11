@@ -45,7 +45,7 @@ struct MacPairingView: View {
     VStack(alignment: .leading, spacing: 16) {
       if !embedded {
       HStack {
-        Text(model.active ? "Pairing invitation" : "Pair a device")
+        Text(model.active ? "Pairing invitation" : "Add device")
           .font(.headline)
         Spacer()
         if model.active && model.remaining > 0 {
