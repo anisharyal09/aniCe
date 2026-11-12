@@ -118,6 +118,8 @@ class LanSessionController(private val app: AniCeApplication,
     var receivedChecks by mutableIntStateOf(0)
         private set
 
+    private var checkPending = false
+
     private var backgroundTimeoutJob: Job? = null
     private var workLease = false
     private var pickerLease = false
@@ -398,7 +400,9 @@ class LanSessionController(private val app: AniCeApplication,
                                         tcp.submit(bytes)
                                     },
                                     { bytes ->
-                                        val handled =
+                                        val isCheck = bytes.contentEquals(SessionController.CHECK) ||
+                                            bytes.contentEquals(SessionController.CHECK_REPLY)
+                                        val handled = if (isCheck) DataHandling.UNRECOGNIZED else
                                             if (op == generation)
                                                 withContext(Dispatchers.Main.immediate) {
                                                     if (op == generation) app.features.handle("lan", channelToken, bytes)
@@ -408,19 +412,40 @@ class LanSessionController(private val app: AniCeApplication,
                                         if (
                                             op == generation &&
                                                 handled == DataHandling.UNRECOGNIZED &&
-                                                bytes.contentEquals(SessionController.CHECK)
+                                                (bytes.contentEquals(SessionController.CHECK) ||
+                                                    bytes.contentEquals(SessionController.CHECK_REPLY))
                                         ) {
                                             withContext(Dispatchers.Main.immediate) {
-                                                if (op == generation) {
-                                                    receivedChecks++
-                                                    status = "Local-network connection check received."
+                                                if (op == generation &&
+                                                    (bytes.contentEquals(SessionController.CHECK) || checkPending)) {
+                                                    if (bytes.contentEquals(SessionController.CHECK)) {
+                                                        receivedChecks++
+                                                        status = "Local-network check received."
+                                                        scope.launch {
+                                                            val active = connection ?: return@launch
+                                                            if (op != generation || state != ConnectionState.SECURED) return@launch
+                                                            try { withContext(Dispatchers.IO) { active.sendData(SessionController.CHECK_REPLY) } }
+                                                            catch (_: SessionBackpressure) {
+                                                                if (op == generation && status == "Local-network check received.") {
+                                                                    status = "Local-network check received, but its reply could not be sent."
+                                                                }
+                                                            } catch (error: CancellationException) {
+                                                                throw error
+                                                            } catch (error: Exception) {
+                                                                if (op == generation) finish(error, active)
+                                                            }
+                                                        }
+                                                    } else {
+                                                        checkPending = false
+                                                        status = "Local-network check confirmed."
+                                                    }
                                                 }
                                             }
                                         }
                                     },
                                     {
                                         withContext(Dispatchers.Main.immediate) {
-                                            if(op==generation) { tcp.markSecured(); state=ConnectionState.SECURED; publishChannel() }
+                                            if(op==generation) { tcp.markSecured(); state=ConnectionState.SECURED; checkPending = false; publishChannel() }
                                         }
                                         signal.complete(Unit)
                                     },
@@ -582,16 +607,27 @@ class LanSessionController(private val app: AniCeApplication,
 
     fun checkConnection() {
         val engine = connection ?: return
-        if (state != ConnectionState.SECURED) return
+        if (state != ConnectionState.SECURED || checkPending) return
         val op = generation
+        checkPending = true
+        status = "Checking the local-network connection…"
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { engine.sendData(SessionController.CHECK) }
-                if (op == generation) status = "Local-network connection check sent."
+                if (op == generation && checkPending) {
+                    status = "Local-network check sent. Waiting for a reply."
+                    delay(5000)
+                    if (op == generation && checkPending) {
+                        checkPending = false
+                        status = "No reply to the local-network check. Check your Mac connection."
+                    }
+                }
             } catch (_: SessionBackpressure) {
-                if (op == generation) status = "Local-network connection is busy. Try again."
+                if (op == generation) { checkPending = false; status = "Local-network check could not be sent. Try again." }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                if (op == generation) finish(error, engine)
+                if (op == generation) { checkPending = false; finish(error, engine) }
             }
         }
     }
@@ -620,6 +656,13 @@ class LanSessionController(private val app: AniCeApplication,
             delay(2000)
             if (op == generation) this@LanSessionController.end()
         }
+    }
+
+    fun resumeAfterTimedPause() {
+        if (!automatic) return
+        automaticPaused = false
+        automaticGate.trigger()
+        scheduleAutomatic()
     }
 
     fun cancel(message: String = "Allow local-network connections on your Mac to reconnect.") {

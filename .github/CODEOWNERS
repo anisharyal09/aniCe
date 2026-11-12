@@ -11,6 +11,10 @@
 /scripts/test_ci_workflow.py @anisharyal09
 /scripts/test_device_health.py @anisharyal09
 /scripts/build-pairing-native.py @anisharyal09
+/scripts/test_pairing_build.py @anisharyal09
+/scripts/build_release_macos.sh @anisharyal09
+/apps/macos/aniCe/Update/ @anisharyal09
+/apps/macos/aniCeTests/MacUpdateSignatureTests.swift @anisharyal09
 /scripts/requirements.txt @anisharyal09
 /scripts/check-structure.py @anisharyal09
 /scripts/check-device-health.py @anisharyal09

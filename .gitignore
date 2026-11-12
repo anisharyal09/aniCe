@@ -21,6 +21,8 @@ __pycache__/
 *.local.*
 *.keystore
 *.jks
+*.p12
+*.pfx
 !.env.example
 !.env.*.example
 
@@ -31,6 +33,7 @@ __pycache__/
 .externalNativeBuild/
 build/
 out/
+dist/
 local.properties
 gradle-daemon-jvm.properties
 *.iml

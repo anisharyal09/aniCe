@@ -28,7 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun TransferReceiveDestinationSettings(controller: TransferController) {
+internal fun rememberReceiveDestinationSummary(controller: TransferController): String {
     val selection = controller.destinationPreferences?.selection()
     val message = controller.destinationMessage
     val destinationLabel by produceState(
@@ -36,11 +36,17 @@ fun TransferReceiveDestinationSettings(controller: TransferController) {
         key1 = selection,
         key2 = message,
     ) {
-        // Document-provider metadata can block while the saved folder is resolved.
+        // Document providers can block while resolving the saved folder name.
         value = withContext(Dispatchers.IO) {
             controller.destinationPreferences?.summary() ?: "Downloads/aniCe"
         }
     }
+    return destinationLabel
+}
+
+@Composable
+fun TransferReceiveDestinationSettings(controller: TransferController) {
+    val destinationLabel = rememberReceiveDestinationSummary(controller)
     val destinationPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val intent = result.data
         if (result.resultCode == Activity.RESULT_OK && intent?.data != null) {

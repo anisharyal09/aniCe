@@ -14,13 +14,9 @@ internal fun connectionSummary(
     lan: ConnectionState,
     waitingNearby: Boolean = false,
 ): ConnectionSummary {
-    val secured = buildList {
-        if (bluetooth == ConnectionState.SECURED) add("Bluetooth")
-        if (lan == ConnectionState.SECURED) add("Local network")
-    }
     return when {
-        secured.isNotEmpty() -> ConnectionSummary(ConnectionState.SECURED,
-            "Connected · ${secured.joinToString(" + ")}", "Disconnect")
+        bluetooth == ConnectionState.SECURED || lan == ConnectionState.SECURED ->
+            ConnectionSummary(ConnectionState.SECURED, "Connected", "Disconnect")
         bluetooth == ConnectionState.CONNECTING || lan == ConnectionState.CONNECTING ->
             ConnectionSummary(ConnectionState.CONNECTING, "Connecting", "Cancel")
         waitingNearby -> ConnectionSummary(ConnectionState.DISCONNECTED, "Waiting nearby", "Disconnect")

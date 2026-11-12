@@ -9,6 +9,7 @@ import Observation
   var beforePairing: () -> Void = {}
   var afterPairing: () -> Void = {}
   var onPaired: ((DeviceIdentity) -> Void)?
+  var onNewPeerPaired: ((DeviceIdentity) -> Void)?
   var completedPeer: DeviceIdentity?
   var status = "Choose how to pair your Android device."
   var phase = "idle"
@@ -35,6 +36,7 @@ import Observation
   private var deadline: TimeInterval?
   private var startedRadio = false
   private var observers: [NSObjectProtocol] = []
+  private var trustedPeerIdsBeforePairing = Set<String>()
   init(
     identity: IdentityService, discovery: MacDiscoveryModel,
     makeStore: @escaping @Sendable () throws -> PeerTrustStore = { try PeerTrustStore() }
@@ -65,6 +67,10 @@ import Observation
       do {
         let factory = self.makeStore
         let store = try await Task.detached { try factory() }.value
+        let localIdentity = try await identity.publicIdentity()
+        guard op == generation, active else { return }
+        trustedPeerIdsBeforePairing = Set(
+          store.list(localFingerprint: localIdentity.fingerprint).map { $0.peer.deviceId })
         let engine = try await PairingEngine(
           method: method, identity: identity, store: store,
           send: { [weak self] data in
@@ -260,6 +266,7 @@ import Observation
   func cancel(message: String = "Pairing stopped. Start a fresh invitation when ready.") {
     let wasActive = active
     let paired = phase == "paired" ? peer : nil
+    let isNewPeer = paired.map { !trustedPeerIdsBeforePairing.contains($0.deviceId) } ?? false
     generation += 1
     let operation = generation
     active = false
@@ -286,6 +293,7 @@ import Observation
       if wasActive && !self.active && self.generation == operation {
         if let paired, let onPaired = self.onPaired {
           self.completedPeer = paired
+          if isNewPeer { self.onNewPeerPaired?(paired) }
           onPaired(paired)
         } else { self.afterPairing() }
       }

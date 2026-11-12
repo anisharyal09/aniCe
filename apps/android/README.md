@@ -12,9 +12,17 @@ Automatic nearby recovery uses an OS-bound companion lease and one device settin
 
 Open **Features → Mac Desk Deck** to view a trusted Mac’s live system readings and use its available controls, including output volume and audio-device selection. Approve app shortcuts on the Mac in **Settings → Desk Deck**. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
 
+Peer battery and charging status appears on Android Home and Devices and Mac device summaries while an existing secured connection is open. Power changes use native observations without opening a connection or extending its background lifetime. Android summaries omit power-source details.
+
 ## Current release
 
 Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
+
+## Updates
+
+[Release signing and workflow setup](../../docs/RELEASE_UPDATES.md).
+
+aniCe checks GitHub Releases while the app is open, with stable releases selected by default. Settings → Updates offers beta releases and a manual check. To install an update, review the release and use Android’s package installer; the first time, Android may ask you to allow aniCe to install apps. The first production-signed APK is a manual baseline install; later updates require the same signing identity and retain app data.
 
 ## Nearby discovery
 
@@ -103,7 +111,7 @@ Licensed under [GPL-3.0-or-later](../../LICENSE).
 
 Home → Pair a device → Devices offers QR scanning and six-digit entry. Camera access is requested only for QR scanning; Bluetooth access only after an invitation/code is entered and Start runs. A 15-second QR lookup gathers bounded candidates and checks ephemeral rendezvous IDs; manual mode selects a generic row. Both devices require explicit approval after identity verification. Trusted-device forgetting is local.
 
-`preBuild` invokes the shared Rust build. Install the [native prerequisites](../../core/rust/pairing/README.md). For Android Studio, custom installations can be configured with `cargo.home`, `rustup.home` and `ndk.dir` in ignored `local.properties`; explicit environment variables take precedence. Keep these installations in persistent home/SDK directories rather than `/tmp`: Cargo under `~/.cargo`, Rustup under `~/.rustup`, and NDK r27d under the Android SDK’s `ndk/27.3.13750724`. Stale private paths can remain hidden by incremental native outputs until a clean build or task invalidation requires recompilation. Packaged ABIs: arm64-v8a, armeabi-v7a and x86_64, with 16 KiB ELF alignment. No Google Play Services are required.
+`preBuild` invokes the shared Rust build. Install the [native prerequisites](../../core/rust/pairing/README.md). Gradle pins NDK r27d (`27.3.13750724`) for the app and Rust build. For Android Studio, custom Cargo and Rustup installations can be configured with `cargo.home` and `rustup.home` in ignored `local.properties`; set `ANICE_NDK` if the NDK is outside the standard SDK path. Avoid `ndk.dir`, which Android Gradle Plugin deprecates. Keep these installations in persistent home/SDK directories rather than `/tmp`: Cargo under `~/.cargo`, Rustup under `~/.rustup`, and NDK r27d under the Android SDK’s `ndk/27.3.13750724`. Stale private paths can remain hidden by incremental native outputs until a clean build or task invalidation requires recompilation. Packaged ABIs: arm64-v8a, armeabi-v7a and x86_64, with 16 KiB ELF alignment. No Google Play Services are required.
 
 ## Secure sessions
 
@@ -127,7 +135,7 @@ Home and Features → Now Playing provide playback, player selection and support
 
 ## Local File Transfer
 
-Home → Files and Features → Send files provide transfer controls; Android’s system Share sheet can send files to a connected Mac. Receives default to `Downloads/aniCe`; File transfer settings allow a saved custom folder and per-Mac automatic receiving. Eligible background work uses the existing connected-device service; otherwise offers wait until aniCe opens. Transfers pause on connection loss and resume over LAN or explicit Bluetooth continuation. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
+Home → Files and Features → Send files provide transfer controls; Android’s system Share sheet can send files to a connected Mac. Receives default to `Downloads/aniCe`; File transfer settings allow a saved custom folder and per-Mac automatic receiving. New pairings enable automatic receiving; existing peers retain their saved choice. Eligible background work uses the existing connected-device service; otherwise offers wait until aniCe opens. Transfers pause on connection loss and resume over LAN or explicit Bluetooth continuation. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
 
 ## Find Device
 

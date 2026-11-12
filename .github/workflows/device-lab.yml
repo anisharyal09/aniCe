@@ -36,6 +36,8 @@ jobs:
     runs-on: [self-hosted, macOS, device-lab]
     environment: device-lab
     timeout-minutes: 45
+    env:
+      ANICE_DEVICE_SERIAL: ${{ inputs.serial }}
     steps:
       - name: Check out sources
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -50,24 +52,13 @@ jobs:
       - name: Preflight device thermal and battery guardrails
         run: |
           mkdir -p build/reports/verification
-          SERIAL="${{ github.event.inputs.serial }}"
-          ARGS=()
-          if [ -n "$SERIAL" ]; then
-            ARGS+=(--serial "$SERIAL")
-          fi
-          python3 scripts/check-device-health.py "${ARGS[@]}" --output build/reports/verification/device-health.json
+          python3 scripts/check-device-health.py --serial "$ANICE_DEVICE_SERIAL" --output build/reports/verification/device-health.json
 
       - name: Build macOS pairing native bridge
         run: python3 scripts/build-pairing-native.py macos
 
       - name: Verify native interchange
-        run: |
-          SERIAL="${{ github.event.inputs.serial }}"
-          ARGS=()
-          if [ -n "$SERIAL" ]; then
-            ARGS+=(--serial "$SERIAL")
-          fi
-          python3 scripts/verify-suite.py --only interchange "${ARGS[@]}"
+        run: python3 scripts/verify-suite.py --only interchange --serial "$ANICE_DEVICE_SERIAL"
 
       - name: Upload verification evidence
         if: always()

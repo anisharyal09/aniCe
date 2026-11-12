@@ -2569,6 +2569,9 @@ final class TransferModelTests: XCTestCase {
     try testData.write(to: testFileURL)
 
     var sentChunkCount = 0
+    var sentPayloadBytes: Int64 = 0
+    let windowReached = expectation(description: "Sender reaches the 64-chunk credit boundary")
+    let payloadSent = expectation(description: "Sender submits the complete file after credit is granted")
     var batchIdStr = ""
     var fileIdStr = ""
 
@@ -2581,6 +2584,9 @@ final class TransferModelTests: XCTestCase {
         }
       } else if msg.kind == 5 {
         sentChunkCount += 1
+        sentPayloadBytes += Int64(msg.bytes(3).count)
+        if sentChunkCount == 64 { windowReached.fulfill() }
+        if sentPayloadBytes == totalSize { payloadSent.fulfill() }
       }
     }
 
@@ -2591,34 +2597,32 @@ final class TransferModelTests: XCTestCase {
     let acceptMsg = TransferMessage.accept(batch: batchIdStr, files: [])
     _ = await sender.handle(try acceptMsg.encode(), on: senderChannel.descriptor)
 
-    // Wait until sender pauses at 64 chunks (196,608 bytes)
-    for _ in 0..<50 {
-      if sentChunkCount >= 64 { break }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
+    // Wait for actual submission, not a scheduler-dependent polling iteration.
+    await fulfillment(of: [windowReached], timeout: 0.5)
 
     XCTAssertEqual(sentChunkCount, 64, "Sender should pause at exactly 64 chunks before receiving ack")
 
     _ = await sender.handle(try TransferMessage.ack(batch: UUID().uuidString.lowercased(), file: fileIdStr, written: Int64.max).encode(), on: senderChannel.descriptor)
     _ = await sender.handle(try TransferMessage.ack(batch: batchIdStr, file: fileIdStr, written: totalSize + 1).encode(), on: senderChannel.descriptor)
     _ = await sender.handle(try TransferMessage.batchResult(batch: batchIdStr, result: 0).encode(), on: senderChannel.descriptor)
+    let fileRes = TransferMessage.fileResult(batch: batchIdStr, file: fileIdStr, result: 0, hash: Data(SHA256.hash(data: testData)))
+    _ = await sender.handle(try fileRes.encode(), on: senderChannel.descriptor)
     try await Task.sleep(for: .milliseconds(30))
     XCTAssertEqual(sentChunkCount, 64, "Wrong/future ACK cannot release credit")
+    if case .completed = sender.state { XCTFail("A premature receipt must not complete an unsent file") }
 
     // Send ack for 64 chunks
     let ack = TransferMessage.ack(batch: batchIdStr, file: fileIdStr, written: 64 * 3072)
     _ = await sender.handle(try ack.encode(), on: senderChannel.descriptor)
 
-    // Sender should resume and send the rest of the chunks
-    for _ in 0..<50 {
-      if sentChunkCount > 64 { break }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
+    // A successful receipt is valid only after every byte was submitted.
+    await fulfillment(of: [payloadSent], timeout: 0.5)
 
     XCTAssertGreaterThan(sentChunkCount, 64, "Sender should have resumed sending after receiving ack")
+    XCTAssertEqual(sentChunkCount, 82, "The full 250,000-byte file requires 82 chunks")
+    XCTAssertEqual(sentPayloadBytes, totalSize)
 
     // Send file-result and batch-result to finish
-    let fileRes = TransferMessage.fileResult(batch: batchIdStr, file: fileIdStr, result: 0, hash: Data(SHA256.hash(data: testData)))
     _ = await sender.handle(try fileRes.encode(), on: senderChannel.descriptor)
     let batchRes = TransferMessage.batchResult(batch: batchIdStr, result: 0)
     _ = await sender.handle(try batchRes.encode(), on: senderChannel.descriptor)
@@ -2930,4 +2934,3 @@ final class TransferPublisherTests: XCTestCase {
     return partial
   }
 }
-

@@ -30,7 +30,7 @@ Every `input` payload consists of `uint32` big-endian length-prefixed fields: `f
 ## Prerequisites & Building
 
 - **Rust:** `>= 1.85`
-- **macOS Target:** `aarch64-apple-darwin` / `x86_64-apple-darwin`
+- **macOS:** Apple Silicon Mac and a native arm64 shell; Rust target `aarch64-apple-darwin`. Intel Mac builds are not supported.
 - **Android NDK:** `r27d` (`27.3.13750724`)
 - **Android Targets:** `aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android`
 

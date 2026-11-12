@@ -5,7 +5,7 @@
 ## Changes
 
 <!-- Clear bullet points detailing functional, architectural, or structural changes. -->
-- 
+-
 
 ## Visual Changes (if applicable)
 
@@ -27,9 +27,9 @@
 <!-- Describe manual testing steps performed (e.g. on real device, pairing, UI verification). -->
 - **Test environment:** *(Device model, OS version, Mac architecture)*
 - **Steps taken:**
-  1. 
-  2. 
-- **Observed behavior:** 
+  1.
+  2.
+- **Observed behavior:**
 
 ## Documentation
 

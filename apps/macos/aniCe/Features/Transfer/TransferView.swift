@@ -14,6 +14,8 @@ struct TransferNotificationControls: View {
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
+      Text("Incoming offers in the background only. macOS notification permission is also required; progress and results stay in the app.")
+        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
   }
@@ -41,7 +43,7 @@ struct TransferAutoReceiveSettings: View {
             set: { preferences.setEnabled($0, for: record.peer) }))
             .aniCeControlFeedback(feedbackPadding: 3)
         }
-        Text("Skip approval for new files.")
+        Text("New pairings start enabled. Turn this off any time.")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
@@ -522,6 +524,9 @@ struct TransferView: View {
         Text("Incoming files from \(batch.peerName)").font(.callout.weight(.medium))
         Spacer()
       }
+      Text("Review the file list and save location before accepting.")
+        .font(.caption)
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
       Text("\(batch.files.count) file\(batch.files.count == 1 ? "" : "s") · \(ByteCountFormatter.string(fromByteCount: batch.totalBytes, countStyle: .file))")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -692,7 +697,7 @@ struct TransferView: View {
         Image(systemName: "checkmark.circle.fill")
           .font(.subheadline)
           .foregroundStyle(AniCePalette.success(colorScheme))
-        Text("Transfer completed").font(.subheadline.weight(.medium))
+        Text(model.receiving ? "Files received" : "Files sent").font(.subheadline.weight(.medium))
       }
       Text(model.receiving
         ? "\(fileCount) file\(fileCount == 1 ? "" : "s") (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))) saved to \(destName)."

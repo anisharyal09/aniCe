@@ -215,6 +215,7 @@ jobs:
           rustup target add aarch64-apple-darwin
 
       - name: Prepare isolated test keychain
+        # Keep hosted identity tests separate from the runner's login keychain.
         run: |
           security create-keychain -p "" ci.keychain
           security default-keychain -s ci.keychain

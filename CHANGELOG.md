@@ -8,6 +8,14 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Make Apple Silicon (`arm64`) the official Mac build and release target; align the app, native libraries, signed update helper and updater architecture checks, and document the unsupported Intel path.
+
+- Align CI with the release workflow already on `main`, add bounded release-job timeouts, correct emulator acceleration checks and diagnostics, and require explicit builds for compiled-language CodeQL scans.
+
+- Update the Android feature-row instrumentation fixture for the current reorder controls and verify that opening or favouriting a row does not reorder it.
+
+- Synchronize the Mac cumulative-credit fixture with complete payload submission before sending a success receipt, without changing production transfer validation.
+
 - Add supply-chain security and repository governance: automated CodeQL analysis for Python, Actions, Java/Kotlin, and Swift (`security.yml`), OpenSSF Scorecard analysis, fork-safe PR dependency review (`dependency-review.yml`), security vulnerability disclosure policy (`SECURITY.md`), contribution guidelines (`CONTRIBUTING.md`), and pull request verification template (`.github/PULL_REQUEST_TEMPLATE.md`).
 
 - Add protected physical Android device lab verification for native cross-platform interchange (`device-lab.yml`), serialized to avoid USB ADB contention, with automated battery and thermal guardrails (`scripts/check-device-health.py`), device inventory definitions (`tools/device-lab/inventory.json`), and explicit non-automated manual-acceptance tracking.
@@ -17,6 +25,76 @@ Shared product changes, repository structure, documentation and development conv
 - Add a hosted macOS platform-truth lane on `macos-15` with pinned Xcode 26.3; rebuild the native Apple Silicon (`arm64`) Rust pairing bridge before `xcodebuild`, compile and verify native Release with codesign, isolate derived data with cleanup, and make macOS a required aggregate lane.
 
 - Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.
+
+- Add GitHub release checks and Android update installation; install signed Mac updates through a verified archive and detached rollback helper, with a fail-closed signed release workflow.
+
+- Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
+
+- Show Mac battery and charging information on Android Home and Devices; refine Quick access and phone Settings selection.
+
+- Align the Mac device power status and tighten Edge Drop and Desk Deck settings spacing.
+
+- Restore Mac Control Android pointer movement after trackpad gesture momentum begins and show its floating-keyboard shortcut.
+
+- Route connection checks before feature decoding, compact phone shortcuts, and add Mac shortcut hover feedback.
+
+- Simplify phone Home shortcuts and compact its send controls, soften the Settings selection, and remove redundant Mac input guidance.
+
+- Add one-tap Home shortcuts for starred features, use a clear send-arrow control for phone messages, and confirm Bluetooth/LAN checks on both devices.
+
+- Align the Mac Bluetooth/Wi-Fi status icons and clarify that file-offer notifications appear only for background offers.
+
+- Make the selected phone Settings shortcut explicit and briefly highlight its destination group after a jump, matching Mac.
+
+- Route the Mac Home device name to Devices and show secured Bluetooth/Wi-Fi links as icons on both platforms.
+
+- Keep phone Settings on one vertically scrollable page with top section shortcuts, and start Mac identity, radio and system integrations after the first window render.
+
+- Keep phone Settings section selection visible through jumps and show Home connection status and pause controls in one aligned device row.
+
+- Replace duplicated roadmap specifications with current status and source links; correct LAN defaults and platform verification claims.
+
+- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
+
+- Reopen and focus the Mac workspace from Dock and app activation, and make the phone identity disclosure grow only when Advanced opens.
+
+- Preserve explicit Mac Disconnect across restart instead of restoring an obsolete automatic-connection flag.
+
+- Use the same labeled Pause/Resume menu and duration choices on Android Home and Devices.
+
+- Compact Android pairing, permission and Settings controls.
+
+- Use URL-safe branch keys for Mac Debug DerivedData paths so Xcode accepts slash-containing branch names.
+
+- Fix Android and Mac debug compilation errors and align Android Gradle with the documented NDK r27d toolchain.
+
+- Add timed automatic connection pauses with clear resume status on Mac and Android.
+
+- Hide empty trusted-device controls and simplify the first Bluetooth link step for Mac input.
+
+- Add top category navigation to phone Settings and balance Mac preference sections to reduce gaps.
+
+- Add the system-wide ⌥⌘K shortcut for the existing Mac floating keyboard.
+
+- Allow Features and Favourites to be reordered on Mac and Android.
+
+- Hide idle Mac companion activity and send actions until a phone is trusted, and clarify file review and save-location results on both platforms.
+
+- Scroll the phone identity sheet to its reset control when Advanced opens.
+
+- Enable automatic file receipt for new pairings while preserving existing peers’ saved choices.
+
+- Add Mac keyboard capture to the full-screen trackpad window.
+
+- Record a phased UX improvement plan and architecture guardrails.
+
+- Show Bluetooth and LAN check feedback beside their received counts in Diagnostics.
+
+- Open Home device selection in Devices with details collapsed and remove duplicate feature navigation links.
+
+- Clarify QR and six-digit code selection during pairing on both platforms.
+
+- Clarify first-launch device setup and hide file-send shortcuts until a device is trusted.
 
 - Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
 

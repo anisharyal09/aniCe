@@ -11,7 +11,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -366,20 +368,47 @@ exit "$ANICE_TEST_SDK_EXIT"
             runner_step["uses"],
             "ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d",
         )
-        self.assertIn("adb wait-for-device", runner_step.get("with", {}).get("script", ""))
-        self.assertIn("python3 scripts/verify-suite.py --only connected", runner_step.get("with", {}).get("script", ""))
-        archive = next(
-            step for step in job["steps"]
-            if step.get("name") == "Archive emulator diagnostics"
-        )
-        self.assertEqual(archive.get("if"), "always()")
-        self.assertIn("build/reports/emulator", archive.get("run", ""))
+        settings = runner_step.get("with", {})
+        self.assertIs(settings.get("force-avd-creation"), True)
+        self.assertIs(settings.get("disable-linux-hw-accel"), False)
+        for option in ('-accel on', '-no-snapshot', '-wipe-data'):
+            self.assertIn(option, settings.get('emulator-options', ''))
+        self.assertEqual(settings.get('script'),
+                         'python3 scripts/verify-suite.py --only connected --serial "$ANDROID_SERIAL"')
+        self.assertIn('-accel-check', settings.get('pre-emulator-launch-script', ''))
+        self.assertIn('pipefail', settings.get('pre-emulator-launch-script', ''))
+        self.assertIn('avd-config.ini', settings.get('pre-emulator-launch-script', ''))
+        kvm = next(step for step in job['steps'] if step.get('name') == 'Require KVM access')
+        self.assertIn('! -c /dev/kvm', kvm['run'])
+        self.assertIn('exit 1', kvm['run'])
+        self.assertNotIn('|| true', kvm['run'])
         upload = next(
             step for step in job["steps"]
             if step.get("uses", "").startswith("actions/upload-artifact@")
         )
         self.assertEqual(upload.get("if"), "always()")
         self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
+
+    def test_emulator_acceleration_probe_keeps_failure_status_and_evidence(self):
+        job = workflow_documents()['runtime.yml']['jobs']['verify-android-connected']
+        settings = next(step['with'] for step in job['steps']
+                        if 'android-emulator-runner' in step.get('uses', ''))
+        command = settings['pre-emulator-launch-script'].splitlines()[0]
+        with tempfile.TemporaryDirectory(prefix='anice emulator probe ') as directory:
+            root = Path(directory)
+            emulator = root / 'Android SDK/emulator/emulator'
+            emulator.parent.mkdir(parents=True)
+            emulator.write_text('#!/bin/sh\nprintf "acceleration status %s\\n" "$ACCEL_EXIT"\nexit "$ACCEL_EXIT"\n')
+            emulator.chmod(0o755)
+            (root / 'build/reports/emulator').mkdir(parents=True)
+            for code in (0, 7):
+                with self.subTest(exit_code=code):
+                    result = subprocess.run(['sh', '-c', command], cwd=root,
+                        env=os.environ | {'ANDROID_HOME': str(root / 'Android SDK'), 'ACCEL_EXIT': str(code)},
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, code, result.stderr)
+                    self.assertIn('acceleration status ' + str(code),
+                                  (root / 'build/reports/emulator/acceleration.log').read_text())
 
     def test_device_lab_workflow_is_protected_and_self_hosted(self):
         document = workflow_documents()["device-lab.yml"]
@@ -403,6 +432,54 @@ exit "$ANICE_TEST_SDK_EXIT"
         self.assertEqual(upload.get("if"), "always()")
         self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
 
+    def test_device_lab_serial_is_environment_data_not_interpolated_shell_code(self):
+        job = workflow_documents()['device-lab.yml']['jobs']['verify-native-interchange']
+        self.assertEqual(job['env']['ANICE_DEVICE_SERIAL'], '${{ inputs.serial }}')
+        steps = [step['run'] for step in job['steps']
+                 if step.get('name') in ('Preflight device thermal and battery guardrails',
+                                        'Verify native interchange')]
+        with tempfile.TemporaryDirectory(prefix='anice lab serial ') as directory:
+            root = Path(directory)
+            bin_ = root / 'bin'
+            bin_.mkdir()
+            python = bin_ / 'python3'
+            python.write_text(f'''#!/bin/sh
+exec {shlex.quote(sys.executable)} - "$@" <<'PY'
+import json, os, sys
+with open(os.environ['CALLS'], 'a') as output:
+    output.write(json.dumps(sys.argv[1:]) + '\\n')
+PY
+''')
+            python.chmod(0o755)
+            log = root / 'calls.jsonl'
+            for serial in ('', 'phone-1', 'phone with spaces', 'phone;$(touch injected)'):
+                with self.subTest(serial=serial):
+                    log.unlink(missing_ok=True)
+                    env = os.environ | {'PATH': str(bin_) + os.pathsep + os.environ['PATH'],
+                        'ANICE_DEVICE_SERIAL': serial, 'CALLS': str(log)}
+                    for command in steps:
+                        self.assertNotIn('${{', command)
+                        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', command],
+                                                cwd=root, env=env, capture_output=True, text=True, timeout=10)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    commands = [json.loads(line) for line in log.read_text().splitlines()]
+                    self.assertEqual(len(commands), 2)
+                    for command in commands:
+                        self.assertEqual(command[command.index('--serial') + 1], serial)
+                    self.assertFalse((root / 'injected').exists())
+
+    def test_release_and_ci_share_arm64_toolchain_and_release_jobs_are_bounded(self):
+        documents = workflow_documents()
+        release = documents['release.yml']['jobs']
+        self.assertEqual(set(release), {'metadata', 'android', 'macos', 'publish'})
+        self.assertEqual(release['macos']['env']['DEVELOPER_DIR'],
+                         documents['ci.yml']['jobs']['verify-macos']['env']['DEVELOPER_DIR'])
+        setup = next(step for step in release['macos']['steps'] if step.get('name') == 'Install Rust targets')
+        self.assertIn('aarch64-apple-darwin', setup['run'])
+        self.assertNotIn('x86_64-apple-darwin', setup['run'])
+        for job in release.values():
+            self.assertIsInstance(job.get('timeout-minutes'), int)
+
     def test_security_workflow_policies(self):
         document = workflow_documents()["security.yml"]
         events = triggers(document)
@@ -418,6 +495,25 @@ exit "$ANICE_TEST_SDK_EXIT"
         self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
         scorecard = document["jobs"]["scorecard"]
         self.assertEqual(scorecard.get("permissions"), {"security-events": "write", "id-token": "write", "contents": "read"})
+
+    def test_compiled_codeql_languages_have_explicit_builds_before_analysis(self):
+        jobs = workflow_documents()['security.yml']['jobs']
+        kotlin = jobs['codeql']['steps']
+        init = next(index for index, step in enumerate(kotlin) if step.get('name') == 'Initialize CodeQL')
+        build = next(index for index, step in enumerate(kotlin) if step.get('name') == 'Build Android app for CodeQL')
+        analyze = next(index for index, step in enumerate(kotlin) if step.get('name') == 'Perform CodeQL Analysis')
+        self.assertLess(init, build)
+        self.assertLess(build, analyze)
+        self.assertIn("'manual'", kotlin[init]['with']['build-mode'])
+        self.assertEqual(kotlin[build]['if'], "matrix.language == 'java-kotlin'")
+        self.assertIn('assembleDebug', kotlin[build]['run'])
+        self.assertIn('--no-build-cache', kotlin[build]['run'])
+        swift = jobs['codeql-swift']['steps']
+        setup = next(step for step in swift if step.get('name') == 'Set up Rust and macOS target')
+        self.assertIn('aarch64-apple-darwin', setup['run'])
+        self.assertNotIn('x86_64-apple-darwin', setup['run'])
+        self.assertEqual(next(step['with']['build-mode'] for step in swift
+                              if step.get('name') == 'Initialize CodeQL'), 'manual')
 
     def test_dependency_review_workflow_policies(self):
         document = workflow_documents()["dependency-review.yml"]
@@ -449,6 +545,10 @@ exit "$ANICE_TEST_SDK_EXIT"
             "/scripts/check-device-health.py",
             "/tools/device-lab/",
             "/scripts/build-pairing-native.py",
+            "/scripts/test_pairing_build.py",
+            "/scripts/build_release_macos.sh",
+            "/apps/macos/aniCe/Update/",
+            "/apps/macos/aniCeTests/MacUpdateSignatureTests.swift",
             "/scripts/requirements.txt",
         ):
             self.assertIn(required, patterns)

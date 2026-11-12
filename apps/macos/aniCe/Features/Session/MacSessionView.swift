@@ -14,10 +14,9 @@ struct ConnectionPresentation: Equatable {
   let action: Action
 
   init(bluetooth: String, lan: String, bluetoothAllowing: Bool, lanAllowing: Bool, automatic: Bool) {
-    let secured = [("Bluetooth", bluetooth), ("Local network", lan)].filter { $0.1 == "Secured" }.map { $0.0 }
-    connected = !secured.isEmpty
+    connected = bluetooth == "Secured" || lan == "Secured"
     if connected {
-      summary = "Connected · " + secured.joined(separator: " + ")
+      summary = "Connected"
       action = .disconnect
     } else if bluetoothAllowing || lanAllowing {
       summary = bluetooth == "Connecting" || lan == "Connecting" ? "Connecting" : "Waiting for phone"
@@ -32,6 +31,66 @@ struct ConnectionPresentation: Equatable {
       summary = "Disconnected"
       action = .allow
     }
+  }
+}
+
+private func connectionAccessibilityValue(_ text: String, bluetoothConnected: Bool, localNetworkConnected: Bool) -> String {
+  let transports = [
+    bluetoothConnected ? "Bluetooth" : nil,
+    localNetworkConnected ? "Local network" : nil
+  ].compactMap { $0 }
+  return transports.isEmpty ? text : "\(text) via " + transports.joined(separator: " and ")
+}
+
+private struct ConnectionStatusLine: View {
+  let text: String
+  let bluetoothConnected: Bool
+  let localNetworkConnected: Bool
+  let color: Color
+
+  var body: some View {
+    HStack(spacing: 7) {
+      Text(text)
+      if bluetoothConnected {
+        BluetoothGlyph()
+          .stroke(color, style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round))
+          .frame(width: 14, height: 14)
+          .offset(y: -0.5)
+          .accessibilityLabel("Bluetooth connected")
+      }
+      if localNetworkConnected {
+        Text(Image(systemName: "wifi"))
+          .baselineOffset(1)
+          .accessibilityLabel("Local network connected")
+      }
+    }
+    .foregroundStyle(color)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(connectionAccessibilityValue(text,
+      bluetoothConnected: bluetoothConnected,
+      localNetworkConnected: localNetworkConnected))
+  }
+}
+
+private struct BluetoothGlyph: Shape {
+  func path(in rect: CGRect) -> Path {
+    let scale = min(rect.width, rect.height) / 24
+    let xOffset = (rect.width - 24 * scale) / 2
+    let yOffset = (rect.height - 24 * scale) / 2
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      CGPoint(x: xOffset + x * scale, y: yOffset + y * scale)
+    }
+
+    var path = Path()
+    path.move(to: point(12, 3))
+    path.addLine(to: point(12, 21))
+    path.move(to: point(12, 3))
+    path.addLine(to: point(18, 8))
+    path.addLine(to: point(6, 18))
+    path.move(to: point(6, 6))
+    path.addLine(to: point(18, 16))
+    path.addLine(to: point(12, 21))
+    return path
   }
 }
 
@@ -51,6 +110,9 @@ struct MacSessionView: View {
   var canDiscover = true
   var automaticEnabled = true
   @State private var securityExpanded = false
+  @State private var showCustomPause = false
+  @State private var customPauseHours = 1
+  @State private var customPauseMinutes = 0
   var onManageDevices: () -> Void
   var onOpenDevice: (String) -> Void = { _ in }
   var onChoosePhone: () -> Void = {}
@@ -112,6 +174,7 @@ struct MacSessionView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .popover(isPresented: $showCustomPause, arrowEdge: .trailing) { customPausePopover }
   }
 
   private func disconnectDevice(_ peer: DeviceIdentity) {
@@ -124,6 +187,22 @@ struct MacSessionView: View {
     if let device { keyboardTrackpad?.deviceWasDisconnected(device) }
     model.disconnect()
     lan.disconnect()
+  }
+
+  private func pauseAutomatic(for duration: TimeInterval?) {
+    if let device { model.selectedPeer = device }
+    model.pauseAutomatic(for: duration)
+    lan.disconnect()
+  }
+
+  private var connectionSummaryText: String {
+    model.connectionPauseStatus ?? (presentation.connected ? "Connected" : presentation.summary)
+  }
+
+  private var connectionStatusValue: String {
+    connectionAccessibilityValue(connectionSummaryText,
+      bluetoothConnected: ownsBluetooth && model.state == "Secured",
+      localNetworkConnected: ownsLan && lan.state == "Secured")
   }
 
   private func isPeerConnected(_ record: PeerTrustRecord) -> Bool {
@@ -161,12 +240,16 @@ struct MacSessionView: View {
             Button { onOpenDevice(peer.deviceId) } label: {
               HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(peer.deviceName).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                Text(state.summary).font(.caption)
-                  .foregroundStyle(state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
-                  .fixedSize(horizontal: false, vertical: true)
+                ConnectionStatusLine(text: state.connected ? "Connected" : state.summary,
+                  bluetoothConnected: ownsBluetooth && model.state == "Secured",
+                  localNetworkConnected: ownsLan && lan.state == "Secured",
+                  color: state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme))
+                  .font(.caption).fixedSize(horizontal: false, vertical: true)
               }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + peer.deviceName)
-              .accessibilityValue(state.summary)
+              .accessibilityValue(connectionAccessibilityValue(state.connected ? "Connected" : state.summary,
+                bluetoothConnected: ownsBluetooth && model.state == "Secured",
+                localNetworkConnected: ownsLan && lan.state == "Secured"))
 
             if !state.connected {
               Button(state.action.rawValue) {
@@ -204,6 +287,53 @@ struct MacSessionView: View {
       .disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
   }
 
+  private var pauseMenu: some View {
+    Menu {
+      Button("1 hour") { pauseAutomatic(for: 60 * 60) }
+      Button("3 hours") { pauseAutomatic(for: 3 * 60 * 60) }
+      Button("6 hours") { pauseAutomatic(for: 6 * 60 * 60) }
+      Button("Custom…") { showCustomPause = true }
+      Divider()
+      Button("Until I resume") { pauseAutomatic(for: nil) }
+      if model.connectionPauseStatus != nil {
+        Divider()
+        Button("Resume now", action: model.resumeAutomaticPause)
+      }
+    } label: {
+      Label(model.connectionPauseStatus == nil ? "Pause" : "Resume", systemImage: "pause.circle")
+    }
+    .menuStyle(.borderlessButton)
+    .aniCeControlFeedback()
+    .disabled(!model.automatic && model.connectionPauseStatus == nil)
+  }
+
+  private var customPausePopover: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Custom pause").font(.headline)
+      Text("Auto connect resumes after this time.")
+        .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+      Stepper("\(customPauseHours) hour\(customPauseHours == 1 ? "" : "s")",
+        value: $customPauseHours, in: 0...720)
+      Stepper("\(customPauseMinutes) minute\(customPauseMinutes == 1 ? "" : "s")",
+        value: $customPauseMinutes, in: 0...59)
+      HStack {
+        Spacer()
+        Button("Cancel") { showCustomPause = false }
+        Button("Pause") {
+          let duration = TimeInterval(customPauseHours * 3600 + customPauseMinutes * 60)
+          pauseAutomatic(for: duration)
+          showCustomPause = false
+        }
+        .buttonStyle(AniCeButtonStyle(prominent: true))
+        .disabled(customPauseHours == 0 && customPauseMinutes == 0)
+      }
+    }
+    .padding(16)
+    .frame(width: 280)
+    .foregroundStyle(AniCePalette.primaryText(scheme))
+    .background(AniCePalette.surface(scheme))
+  }
+
   private var workspaceSummary: some View {
     ViewThatFits(in: .horizontal) {
       HStack(spacing: 16) {
@@ -219,7 +349,10 @@ struct MacSessionView: View {
   }
 
   private var workspaceName: some View {
-    Button { diagnostics = false; details = true } label: {
+    Button {
+      if let device { onOpenDevice(device.deviceId) }
+      else { onManageDevices() }
+    } label: {
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 8) {
           Image(systemName: "iphone").foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
@@ -227,17 +360,20 @@ struct MacSessionView: View {
           Image(systemName: "chevron.forward").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
         }
         .fixedSize(horizontal: false, vertical: true)
-        Text(presentation.summary).font(.callout)
-          .foregroundStyle(AniCePalette.secondaryText(scheme))
+        ConnectionStatusLine(text: connectionSummaryText,
+          bluetoothConnected: ownsBluetooth && model.state == "Secured",
+          localNetworkConnected: ownsLan && lan.state == "Secured",
+          color: AniCePalette.secondaryText(scheme)).font(.callout)
         Text(phonePower.summary(for: device)).font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Connection details for " + (device?.deviceName ?? "your phone"))
-      .accessibilityValue(presentation.summary)
+    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Open Devices for " + (device?.deviceName ?? "your phone"))
+      .accessibilityValue(connectionStatusValue)
   }
 
   @ViewBuilder private var workspaceActions: some View {
     automaticControl
+    pauseMenu
     Button(presentation.action.rawValue) {
       switch presentation.action {
       case .disconnect: disconnectSelectedDevice()
@@ -266,9 +402,15 @@ struct MacSessionView: View {
           VStack(alignment: .leading, spacing: 6) {
             Text(device?.deviceName ?? "Any trusted phone").font(.system(size: 14, weight: .medium))
               .fixedSize(horizontal: false, vertical: true)
-            Text(presentation.summary).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+            ConnectionStatusLine(text: connectionSummaryText,
+              bluetoothConnected: ownsBluetooth && model.state == "Secured",
+              localNetworkConnected: ownsLan && lan.state == "Secured",
+              color: AniCePalette.secondaryText(scheme)).font(.callout)
+            Text(phonePower.summary(for: device)).font(.caption)
+              .foregroundStyle(AniCePalette.secondaryText(scheme))
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.deviceName ?? "your phone"))
+          .accessibilityValue(connectionStatusValue + ". " + phonePower.summary(for: device))
         Button(presentation.action.rawValue) {
           switch presentation.action {
           case .disconnect: disconnectSelectedDevice()
@@ -277,8 +419,6 @@ struct MacSessionView: View {
           }
         }.buttonStyle(AniCeButtonStyle()).disabled(!peerAvailable)
       }.padding(.vertical, 14).padding(.bottom, 4)
-      Text(phonePower.summary(for: device)).font(.caption)
-        .foregroundStyle(AniCePalette.secondaryText(scheme)).frame(maxWidth: .infinity, alignment: .leading)
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 16) {
           Button {
@@ -291,6 +431,7 @@ struct MacSessionView: View {
           }.buttonStyle(AniCeHoverButtonStyle()).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
           Toggle("Auto connect", isOn: Binding(get: { ownsBluetooth && model.automatic }, set: { model.selectedPeer = device; model.setAutomatic($0) }))
             .labelsHidden().toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+          pauseMenu
         }.padding(.vertical, 8)
         Divider()
         transportRow("Bluetooth", symbol: "antenna.radiowaves.left.and.right", state: ownsBluetooth ? model.state : "In use by another phone",
@@ -356,14 +497,17 @@ struct MacSessionView: View {
         Button { details = false } label: { Image(systemName: "xmark") }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Close connection details")
       }
       HStack(spacing: 12) {
-        Text(presentation.summary)
+        ConnectionStatusLine(text: connectionSummaryText,
+          bluetoothConnected: ownsBluetooth && model.state == "Secured",
+          localNetworkConnected: ownsLan && lan.state == "Secured",
+          color: AniCePalette.secondaryText(scheme))
         if device != nil { Text("Trusted device") }
       }.font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       VStack(spacing: 14) {
         HStack { Text("Bluetooth"); Spacer(); Text(ownsBluetooth ? model.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
         HStack { Text("Local network"); Spacer(); Text(ownsLan ? lan.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
       }.font(.callout)
-      automaticControl
+      HStack(spacing: 12) { automaticControl; pauseMenu }
       if let device {
         VStack(alignment: .leading, spacing: 10) {
           Text("Security fingerprint").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -427,10 +571,20 @@ struct MacSessionView: View {
         .accessibilityValue(diagnostics ? "Expanded" : "Collapsed")
         if diagnostics {
           VStack(alignment: .leading, spacing: 12) {
+            Text("A check appears as received on the other device. The sender confirms when its reply arrives.")
+              .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
             Text("Bluetooth checks received: \(ownsBluetooth ? model.receivedChecks : 0)")
+            if ownsBluetooth && model.status.localizedCaseInsensitiveContains("check") {
+              Text(model.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
             if ownsBluetooth && model.state == "Secured" { Button("Send Bluetooth check", action: model.checkConnection) }
+            else { Text("Connect over Bluetooth to send a check.").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
             Text("Local-network checks received: \(ownsLan ? lan.receivedChecks : 0)")
+            if ownsLan && lan.status.localizedCaseInsensitiveContains("check") {
+              Text(lan.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+            }
             if ownsLan && lan.state == "Secured" { Button("Send local-network check", action: lan.checkConnection) }
+            else { Text("Connect over the local network to send a check.").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
             if let discovery {
               Text("Nearby discovery compatibility check").font(.subheadline.weight(.medium))
               if !canDiscover { Text("Stop Bluetooth admission or pairing before checking discovery.").font(.caption) }

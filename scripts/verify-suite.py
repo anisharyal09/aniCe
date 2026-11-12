@@ -624,7 +624,7 @@ def vector_interpreter(explicit):
 
 def find_adb(env=None):
     source = env if env is not None else os.environ
-    candidate = shutil.which("adb")
+    candidate = shutil.which("adb", path=source.get("PATH", ""))
     if candidate:
         return candidate
     for variable in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
@@ -854,7 +854,28 @@ def run_connected_checks(args, env, artifacts, documented_android):
     # Gradle otherwise chooses its own target when more than one device is attached.
     isolated = env.copy()
     isolated["ANDROID_SERIAL"] = serial
-    return run_connected_android(isolated, artifacts, documented_android)
+    if not serial.startswith("emulator-"):
+        return run_connected_android(isolated, artifacts, documented_android)
+    # The emulator action shuts the device down as soon as this command returns.
+    # Capture runtime evidence here, not in a later workflow step.
+    failed = False
+    try:
+        return run_connected_android(isolated, artifacts, documented_android)
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            run_step(
+                "Emulator logcat", [find_adb(env=isolated), "-s", serial, "logcat", "-d"],
+                artifacts, env=isolated, timeout=30,
+            )
+        except (GateError, OSError) as error:
+            if not failed:
+                raise
+            # Keep the original test failure rather than replace it with diagnostics failure.
+            print("Cannot collect emulator logcat:", file=sys.stderr)
+            print("\n".join("| " + line for line in str(error).splitlines()), file=sys.stderr)
 
 
 def run_connected_android(env, artifacts, documented):
@@ -1143,14 +1164,18 @@ def run_macos_with_skips(env, artifacts, documented, extra):
         if not app_binary.is_file():
             raise GateError("macOS Release build produced no app binary at " + str(app_binary))
 
-        arch_log = run_step(
-            "macOS architecture verification",
-            ["lipo", "-info", str(app_binary)],
-            artifacts, env=env,
+        binaries = (
+            ("macOS architecture verification", app_binary),
+            ("macOS update helper architecture", app_bundle / "Contents/Helpers/aniCeUpdateHelper"),
+            ("macOS playback adapter architecture", app_bundle / "Contents/Resources/NowPlaying/libaniCeNowPlaying.dylib"),
         )
-        arch_text = arch_log.read_text(encoding="utf-8")
-        if "arm64" not in arch_text:
-            raise GateError("aniCe.app binary does not contain arm64 architecture: " + arch_text.strip())
+        for label, binary in binaries:
+            if not binary.is_file():
+                raise GateError("macOS Release build produced no binary at " + str(binary))
+            arch_log = run_step(label, ["lipo", "-archs", str(binary)], artifacts, env=env)
+            architectures = arch_log.read_text(encoding="utf-8").split()
+            if architectures != ["arm64"]:
+                raise GateError(str(binary) + " must contain exactly arm64; reported: " + " ".join(architectures))
 
         run_step(
             "macOS codesign verification",

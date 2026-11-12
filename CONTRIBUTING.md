@@ -26,8 +26,10 @@ python3 scripts/verify-suite.py --list-lanes
 ```
 
 For platform-specific testing:
-- **macOS:** Requires macOS with Xcode. Run `python3 scripts/verify-suite.py --only macos`.
+- **macOS:** Requires Apple Silicon (`arm64`), macOS 14 or newer, full Xcode and the [native Rust prerequisites](core/rust/pairing/README.md). Run `python3 scripts/verify-suite.py --only macos`.
 - **Android:** Requires Android SDK and Java 21. Run `python3 scripts/verify-suite.py --only android`.
+
+The `ci-integrity` lane also requires actionlint 1.7.12 on `PATH`; it is not installed by pip.
 
 ---
 

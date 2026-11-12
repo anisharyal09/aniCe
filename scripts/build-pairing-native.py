@@ -4,6 +4,8 @@
 import argparse, os, pathlib, platform, shutil, subprocess
 root = pathlib.Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(); p.add_argument('platform', choices=['macos','android']); args=p.parse_args()
+if args.platform == 'macos' and (platform.system() != 'Darwin' or platform.machine() != 'arm64'):
+    raise SystemExit('Mac builds require Apple Silicon and a native arm64 shell.')
 env=os.environ.copy()
 # Studio does not inherit shell-only tool paths; use its private project configuration as a fallback.
 properties = root/'apps/android/local.properties'

@@ -12,10 +12,12 @@ Only the latest release and the `main` development branch receive security updat
 | Latest stable tag (`v*`) | :white_check_mark: |
 | Older releases | :x: |
 
+Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer. Intel Macs are not supported.
+
 ## Security Architecture & Scope
 
 aniCe relies on explicit, defense-in-depth cryptographic primitives:
-- **Device Identity:** P-256 ECC keys generated and held in hardware-backed keystores (`AndroidKeyStore` on Android and macOS Keychain with actor isolation).
+- **Device Identity:** P-256 keys in `AndroidKeyStore` with actual hardware/software protection reported, and actor-isolated macOS Keychain storage. Current Mac app builds use the development Keychain backend, not hardware isolation; the separate Secure Enclave backend requires appropriate signing and entitlements.
 - **Pairing Bootstrap:** Ephemeral ECDH QR codes with SHA-256 fingerprint commitments, or 6-digit PIN pairing via an in-memory OPAQUE (`opaque-ke` 4.0.1) password-authenticated key exchange.
 - **Session Transport:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) authenticated record channels with directional AES-256-GCM encryption, monotonic sequence counters, and explicit rekeying schedules.
 - **LAN Discovery & Transfer:** Anonymous DNS-SD advertisements (`_anice._tcp`) and mutual credential verification prior to admission.
@@ -49,4 +51,3 @@ Please include:
 - **Assessment & reproduction:** Within 5 business days.
 - **Fix development & coordinated release:** Target resolution within 30 days depending on complexity and severity.
 - Credit will be attributed in the security advisory and release changelog (unless anonymity is requested).
-

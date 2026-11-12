@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var iconAppearanceObservation: NSKeyValueObservation?
     private var companion: CompanionHost?
     private var floatingKeyboard: FloatingKeyboardController?
+    private var mainWindowRestoreTask: Task<Void, Never>?
     var onTerminate: () -> Void = {}
     func applicationWillTerminate(_ notification: Notification) { onTerminate() }
 
@@ -96,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func openMainFromCompanion() {
         companion?.close()
-        reopenMainWindow?()
+        restoreMainWindow()
     }
 
     func installCompanion(_ content: CompanionView, navigation: ConnectionNavigation,
@@ -124,12 +125,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         false
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard !hasVisibleMainWindow else { return }
+        restoreMainWindow()
+    }
+
+    // Dock reopen can arrive while only the menu companion or a floating tool is visible.
     func applicationShouldHandleReopen(
-        _ sender: NSApplication, hasVisibleWindows: Bool
+        _ sender: NSApplication, hasVisibleWindows _: Bool
     ) -> Bool {
-        if !hasVisibleWindows {
-            reopenMainWindow?()
-        }
+        guard reopenMainWindow != nil else { return false }
+        restoreMainWindow()
         return true
+    }
+
+    private func restoreMainWindow() {
+        guard mainWindowRestoreTask == nil, let reopenMainWindow else { return }
+        reopenMainWindow()
+        NSApp.activate(ignoringOtherApps: true)
+        // SwiftUI may create the scene window on a later run-loop turn.
+        mainWindowRestoreTask = Task { @MainActor [weak self] in
+            for _ in 0..<10 {
+                guard let self else { return }
+                if let window = NSApp.windows.first(where: {
+                    $0.identifier?.rawValue == "main" || $0.title == "aniCe"
+                }) {
+                    if window.isMiniaturized { window.deminiaturize(nil) }
+                    window.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                    self.mainWindowRestoreTask = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            self?.mainWindowRestoreTask = nil
+        }
+    }
+
+    private var hasVisibleMainWindow: Bool {
+        NSApp.windows.contains {
+            $0.isVisible && ($0.identifier?.rawValue == "main" || $0.title == "aniCe")
+        }
     }
 }

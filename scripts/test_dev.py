@@ -101,7 +101,7 @@ fi''')
         self.assertNotIn('shell am start', self.calls())
 
     def test_mac_signing_and_verification_precede_launch(self):
-        self.tool('uname', 'echo Darwin')
+        self.tool('uname', 'case "$1" in -s) echo Darwin;; -m) echo arm64;; esac')
         self.tool('osascript', 'echo osascript >> "$CALLS"')
         self.tool('pgrep', 'exit "${RUNNING:-1}"')
         self.tool('sleep', ':')
@@ -128,6 +128,7 @@ fi''')
         self.assertIn('-test_2Fdev-branch', calls[2])
         self.assertNotIn('%', calls[2])
         self.assertIn('INFOPLIST_KEY_CFBundleDisplayName=aniCe (test/dev-branch)', calls[2])
+        self.assertIn('ARCHS=arm64 ONLY_ACTIVE_ARCH=YES', calls[2])
         self.assertIn('open -n ', calls[-1])
         self.assertIn('-test_2Fdev-branch', calls[-1])
         self.assertIn("Building Mac branch 'test/dev-branch'", result.stdout)
@@ -159,6 +160,13 @@ fi''')
                               SIGNATURE_AUTHORITY='Developer ID Application: Wrong Type')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(line.startswith('open ') for line in self.calls().splitlines()))
+
+    def test_intel_mac_is_rejected_before_build_or_launch(self):
+        self.tool('uname', 'case "$1" in -s) echo Darwin;; -m) echo x86_64;; esac')
+        result = self.run_dev('mac', ANICE_DEVELOPMENT_TEAM='TESTTEAM')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Apple Silicon and a native arm64 shell', result.stderr)
+        self.assertEqual(self.calls(), '')
 
     def test_invalid_arguments_and_help(self):
         self.assertEqual(self.run_dev('--help').returncode, 0)

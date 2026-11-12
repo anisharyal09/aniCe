@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Runs Android connected instrumentation verification on headless KVM emulators.
+# Runs Android instrumentation on KVM-accelerated CPUs with headless SwiftShader graphics.
 # Scheduled nightly and manually dispatched; never runs on PR events.
 name: Runtime
 
@@ -69,14 +69,18 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.3.13750724' 2>&1 | tee build/reports/ci/android-setup.log
           echo "ANICE_NDK=$ANDROID_HOME/ndk/27.3.13750724" >> "$GITHUB_ENV"
 
-      - name: Check KVM acceleration device
+      - name: Require KVM access
         run: |
-          if [ -e /dev/kvm ]; then
-            echo "KVM acceleration is available."
-            sudo chmod 0666 /dev/kvm || true
-          else
-            echo "::notice::/dev/kvm not found; emulator will execute with software rendering."
+          mkdir -p build/reports/emulator
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::KVM acceleration is required; /dev/kvm is missing." | tee build/reports/emulator/kvm-device.log
+            exit 1
           fi
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+          fi
+          [[ -r /dev/kvm && -w /dev/kvm ]] || { echo "::error::KVM is not accessible to the runner."; exit 1; }
+          ls -l /dev/kvm > build/reports/emulator/kvm-device.log
 
       - name: Run connected tests in emulator
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -84,20 +88,17 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
           arch: x86_64
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
+          avd-name: anice-api-${{ matrix.api-level }}
+          force-avd-creation: true
+          disable-linux-hw-accel: false
+          emulator-options: -accel on -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            adb wait-for-device
-            adb devices -l
-            python3 scripts/verify-suite.py --only connected
-
-      - name: Archive emulator diagnostics
-        if: always()
-        run: |
-          mkdir -p build/reports/emulator
-          adb logcat -d > build/reports/emulator/logcat.log 2>/dev/null || true
-          cp -R ~/.android/avd/*.avd/*.log build/reports/emulator/ 2>/dev/null || true
+          pre-emulator-launch-script: |
+            bash -e -o pipefail -c '"$ANDROID_HOME/emulator/emulator" -accel-check 2>&1 | tee build/reports/emulator/acceleration.log'
+            cp "$ANDROID_AVD_HOME/anice-api-${{ matrix.api-level }}.avd/config.ini" build/reports/emulator/avd-config.ini
+          # The action already waits for sys.boot_completed. The verifier saves
+          # logcat before the action shuts this exact emulator down, even on failure.
+          script: python3 scripts/verify-suite.py --only connected --serial "$ANDROID_SERIAL"
 
       - name: Upload verification evidence
         if: always()
@@ -112,4 +113,3 @@ jobs:
             build/reports/emulator/
             apps/android/app/build/outputs/androidTest-results/
             apps/android/app/build/reports/androidTests/
-

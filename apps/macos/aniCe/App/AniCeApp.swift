@@ -33,21 +33,12 @@ struct AniCeApp: App {
   @State private var transferNotifier: MacTransferNotifier?
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
+  @State private var servicesStarted = false
 
   init() {
     let assemblyStarted = ProcessInfo.processInfo.systemUptime
     let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
-    clipboard.installLifecycle()
-    // Guard tray setup and Carbon hotkey registration from running inside test harness processes.
-    if !IdentityView.isTesting {
-      PasteTrayController.shared.setup(model: clipboard)
-      let hotkey = GlobalHotkeyManager()
-      hotkey.onTrigger = {
-        PasteTrayController.shared.toggle()
-      }
-      _hotkeyManager = State(initialValue: hotkey)
-    }
     let notifier = MacFindDeviceNotifier()
     findNotifier = notifier
     let findDevice = MacFindDeviceModel(notifier: notifier)
@@ -64,7 +55,6 @@ struct AniCeApp: App {
     _transfer = State(initialValue: transfer)
     let edgeDrop = MacEdgeDropController(model: transfer, preferences: EdgeDropPreferences(storage: .standard))
     _edgeDrop = State(initialValue: edgeDrop)
-    if !IdentityView.isTesting { edgeDrop.start() }
     let transferNotifier = MacTransferNotifier(
       model: transfer,
       openMainWindow: {
@@ -126,6 +116,7 @@ struct AniCeApp: App {
     let session = MacSessionModel(
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
+    session.automaticPauseEnded = { [weak lan] in lan?.resumeAfterTimedPause() }
     let features=FeatureDispatch()
     features.applicationActivity = { [weak lan] descriptor, bytes in lan?.onApplicationActivity(descriptor, bytes) }
     features.register(lan.rendezvous)
@@ -160,6 +151,9 @@ struct AniCeApp: App {
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
     lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    pairing.onNewPeerPaired = { peer in
+      transfer.autoReceivePreferences.enableForNewPeer(peer)
+    }
     pairing.onPaired = { [weak session, weak navigation, weak lan] peer in
       guard let session, let navigation else { return }
       lan?.setAutomatic(navigation.automaticLanAfterPairing)
@@ -197,9 +191,34 @@ struct AniCeApp: App {
     _session = State(initialValue: session)
     delegate.configureNotifications(findDevice: notifier, transfer: transferNotifier, sms: smsNotifier,
       notificationMirror: notificationMirrorNotifier)
-    session.restoreAutomatic()
     Logger(subsystem: Bundle.main.bundleIdentifier ?? "aniCe", category: "Startup")
       .info("event=app_assembly_complete duration_ms=\(Int((ProcessInfo.processInfo.systemUptime - assemblyStarted) * 1000))")
+  }
+
+  @MainActor private func startDeferredServices() {
+    guard !servicesStarted else { return }
+    servicesStarted = true
+    clipboard.installLifecycle()
+    session.restoreAutomatic()
+    guard !IdentityView.isTesting else { return }
+    PasteTrayController.shared.setup(model: clipboard)
+    edgeDrop.start()
+    let hotkey = GlobalHotkeyManager()
+    hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
+    hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
+    hotkeyManager = hotkey
+    delegate.onTerminate = {
+      findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
+      floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
+      PasteTrayController.shared.hide()
+    }
+    delegate.installCompanion(
+      CompanionView(identity: identity, discovery: discovery, pairing: pairing,
+        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
+        keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: phonePower, navigation: navigation,
+        openMainWindow: { delegate.openMainFromCompanion() }),
+      navigation: navigation, floatingKeyboard: floatingKeyboard)
+    floatingKeyboard.restoreIfNeeded()
   }
 
   /// One shared radio owner; completed cleanup must not take the radio from a newer exclusive mode.
@@ -233,23 +252,7 @@ struct AniCeApp: App {
         session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
-        dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
-        .onAppear {
-          if !IdentityView.isTesting {
-            delegate.onTerminate = {
-              findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
-              floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
-              PasteTrayController.shared.hide()
-            }
-            delegate.installCompanion(
-              CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-                session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
-                keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: phonePower, navigation: navigation,
-                openMainWindow: { delegate.openMainFromCompanion() }),
-              navigation: navigation, floatingKeyboard: floatingKeyboard)
-            floatingKeyboard.restoreIfNeeded()
-          }
-        }
+        onInitialRender: { startDeferredServices() }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
     }
     .defaultSize(width: 800, height: 560)
     .windowResizability(.contentMinSize)

@@ -27,7 +27,7 @@ Live relay works with RECEIVE_SMS alone. Without READ_SMS, messages use `live:` 
 
 ## Conversations and replies
 
-Both panels read from oldest to newest and keep the composer below the newest message at the bottom. Android places the SIM selector on the left and **Send SMS** at the far-right edge of the same row. The selector appears only when a second active subscription is available; long labels shorten to fit. The Mac places its SIM selector beside Send and supports Return or Command-Return to send, with Shift-Return for a newline. Android's keyboard Send action uses the same path as its button.
+Both panels read from oldest to newest and keep the composer below the newest message at the bottom. Android places the SIM selector on the left and a filled send-arrow button at the far-right edge of the same row; it shows progress while the message is sending. The selector appears only when a second active subscription is available; long labels shorten to fit. The Mac places its SIM selector beside Send and supports Return or Command-Return to send, with Shift-Return for a newline. Android's keyboard Send action uses the same path as its button.
 
 New sends and live receipts retain their local submit/receive order, including after a provider copy replaces them. A carrier timestamp that predates the send it answers cannot move that received reply below the send. Untouched provider history keeps its timestamp and byte-wise identifier order. Displayed timestamps remain the original provider or carrier values; this presentation ordering does not change wire timestamps or paging cursors.
 

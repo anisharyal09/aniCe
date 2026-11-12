@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds and signs the universal MediaRemote adapter and packages its fixed Perl loader.
+# Builds and signs the arm64 MediaRemote adapter and packages its fixed Perl loader.
 set -euo pipefail
 adapter_root="$SRCROOT/aniCe/Features/NowPlaying/Adapter"
 adapter_output="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/NowPlaying"

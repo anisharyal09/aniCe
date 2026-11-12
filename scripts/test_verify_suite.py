@@ -304,10 +304,13 @@ class AggregateGateTests(unittest.TestCase):
         before = set(self.root.glob('run-*'))
         # These counts are synthetic return values; they do not represent executed app tests.
         defaults = {
+            'toolchain_env': {'PATH': '/mock/bin'},
             'run_ci_integrity': {'actionlint': 'passed', 'policy_tests': 12},
             'run_structure': None, 'vector_interpreter': sys.executable,
             'run_vector_checks': 13, 'run_python_meta_tests': 30, 'run_rust': 4,
-            'run_android_jvm': (300, 0), 'run_macos_with_skips': (300, 3),
+            'run_android_jvm': (300, 0),
+            'run_macos_with_skips': {'passed': 300, 'documented_skips': 3,
+                                     'xcode': 'Xcode 26.3', 'arch': 'arm64'},
             'run_connected_checks': (10, 0),
             'run_interchange_checks': {'harnesses': 3},
         }
@@ -388,6 +391,8 @@ class AggregateGateTests(unittest.TestCase):
         self.assertEqual(report['requested_lanes'], ['macos'])
         self.assertEqual(report['suites']['macos']['passed'], 300)
         self.assertEqual(report['suites']['macos']['documented_skips'], 3)
+        self.assertEqual(report['suites']['macos']['arch'], 'arm64')
+        self.assertEqual(report['suites']['macos']['xcode'], 'Xcode 26.3')
         for name in ('ci-integrity', 'structure', 'vectors', 'python', 'rust',
                      'android', 'connected', 'interchange'):
             self.assertEqual(report['suites'][name]['status'], 'not_selected')
@@ -414,12 +419,17 @@ class AggregateGateTests(unittest.TestCase):
                 elif label == 'macOS native pairing bridge':
                     library.write_bytes(b'fresh')
                 elif label == 'macOS Release build':
-                    binary = root / 'derived' / 'Build' / 'Products' / 'Release' / 'aniCe.app' / 'Contents' / 'MacOS' / 'aniCe'
-                    binary.parent.mkdir(parents=True, exist_ok=True)
-                    binary.write_bytes(b'app-binary')
+                    bundle = root / 'derived/Build/Products/Release/aniCe.app'
+                    for path in ('Contents/MacOS/aniCe', 'Contents/Helpers/aniCeUpdateHelper',
+                                 'Contents/Resources/NowPlaying/libaniCeNowPlaying.dylib'):
+                        binary = bundle / path
+                        binary.parent.mkdir(parents=True, exist_ok=True)
+                        binary.write_bytes(b'app-binary')
                     log.write_text('Release build completed\n')
-                elif label == 'macOS architecture verification':
-                    log.write_text('Non-fat file (architecture arm64)\n')
+                elif label in ('macOS architecture verification', 'macOS update helper architecture',
+                               'macOS playback adapter architecture'):
+                    self.assertEqual(str(command[1]), '-archs')
+                    log.write_text('arm64\n')
                 elif label == 'macOS codesign verification':
                     log.write_text('codesign valid\n')
                 return log
@@ -444,6 +454,8 @@ class AggregateGateTests(unittest.TestCase):
                     'macOS native pairing bridge',
                     'macOS Release build',
                     'macOS architecture verification',
+                    'macOS update helper architecture',
+                    'macOS playback adapter architecture',
                     'macOS codesign verification',
                     'macOS hosted tests',
                 ],
@@ -457,7 +469,7 @@ class AggregateGateTests(unittest.TestCase):
             # Verify derived data was cleaned up on completion
             self.assertFalse(derived_dir.exists())
 
-    def test_macos_lane_rejects_app_binary_missing_arm64(self):
+    def test_macos_lane_rejects_non_arm64_and_extra_architectures_in_every_binary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             macos = root / 'macos'
@@ -473,23 +485,29 @@ class AggregateGateTests(unittest.TestCase):
                 elif label == 'macOS native pairing bridge':
                     library.write_bytes(b'fresh')
                 elif label == 'macOS Release build':
-                    binary = root / 'derived' / 'Build' / 'Products' / 'Release' / 'aniCe.app' / 'Contents' / 'MacOS' / 'aniCe'
-                    binary.parent.mkdir(parents=True, exist_ok=True)
-                    binary.write_bytes(b'app-binary')
+                    bundle = root / 'derived/Build/Products/Release/aniCe.app'
+                    for path in ('Contents/MacOS/aniCe', 'Contents/Helpers/aniCeUpdateHelper',
+                                 'Contents/Resources/NowPlaying/libaniCeNowPlaying.dylib'):
+                        binary = bundle / path
+                        binary.parent.mkdir(parents=True, exist_ok=True)
+                        binary.write_bytes(b'app-binary')
                     log.write_text('Release build completed\n')
-                elif label == 'macOS architecture verification':
-                    # Missing arm64
-                    log.write_text('Non-fat file (architecture x86_64)\n')
+                elif 'architecture' in label:
+                    log.write_text(architecture if label == failing_step else 'arm64\n')
                 return log
 
             derived_dir = root / 'derived'
-            derived_dir.mkdir(parents=True, exist_ok=True)
-            with patch.object(suite, 'MACOS', macos), \
-                 patch.object(suite.tempfile, 'mkdtemp', return_value=str(derived_dir)), \
-                 patch.object(suite, 'run_step', side_effect=fake_step):
-                with self.assertRaisesRegex(suite.GateError, 'does not contain arm64'):
-                    suite.run_macos_with_skips({}, artifacts, (), ())
-            self.assertFalse(derived_dir.exists())
+            for failing_step in ('macOS architecture verification', 'macOS update helper architecture',
+                                 'macOS playback adapter architecture'):
+                for architecture in ('x86_64\n', 'arm64 x86_64\n', 'arm64e\n', ''):
+                    with self.subTest(step=failing_step, architecture=architecture):
+                        derived_dir.mkdir(parents=True, exist_ok=True)
+                        with patch.object(suite, 'MACOS', macos), \
+                             patch.object(suite.tempfile, 'mkdtemp', return_value=str(derived_dir)), \
+                             patch.object(suite, 'run_step', side_effect=fake_step):
+                            with self.assertRaisesRegex(suite.GateError, 'must contain exactly arm64'):
+                                suite.run_macos_with_skips({}, artifacts, (), ())
+                        self.assertFalse(derived_dir.exists())
 
     def test_macos_lane_rejects_a_native_build_without_a_library(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -615,6 +633,42 @@ class AggregateGateTests(unittest.TestCase):
         self.assertEqual(result, (10, 0))
         self.assertEqual(connected.call_args.args[0]['ANDROID_SERIAL'], 'serial-1')
         self.assertNotIn('ANDROID_SERIAL', env)
+
+    def test_emulator_diagnostics_are_collected_before_return_and_preserve_test_failures(self):
+        for test_failure, diagnostic_failure in (
+            (None, None), (suite.GateError('original test failure'), None),
+            (suite.GateError('original test failure'), suite.GateError('diagnostics unavailable')),
+            (suite.GateError('original test failure'), PermissionError('diagnostics unwritable')),
+            (None, suite.GateError('diagnostics unavailable')),
+        ):
+            with self.subTest(tests=test_failure, diagnostics=diagnostic_failure):
+                calls = []
+                def tests(*args):
+                    calls.append('tests')
+                    if test_failure:
+                        raise test_failure
+                    return (10, 0)
+                def diagnostics(label, command, artifacts, **kwargs):
+                    calls.append('logcat')
+                    self.assertEqual(command, ['/adb', '-s', 'emulator-5554', 'logcat', '-d'])
+                    self.assertEqual(kwargs['env']['ANDROID_SERIAL'], 'emulator-5554')
+                    if diagnostic_failure:
+                        raise diagnostic_failure
+                    return self.root / 'emulator-logcat.log'
+                with patch.object(suite, 'find_adb', return_value='/adb'), \
+                     patch.object(suite, 'selected_device', return_value='emulator-5554'), \
+                     patch.object(suite, 'run_connected_android', side_effect=tests), \
+                     patch.object(suite, 'run_step', side_effect=diagnostics), \
+                     contextlib.redirect_stderr(io.StringIO()):
+                    args = SimpleNamespace(serial='emulator-5554', allow_no_device=False)
+                    expected = test_failure or diagnostic_failure
+                    if expected:
+                        with self.assertRaises(type(expected)) as raised:
+                            suite.run_connected_checks(args, {}, self.root, ())
+                        self.assertIs(raised.exception, expected)
+                    else:
+                        self.assertEqual(suite.run_connected_checks(args, {}, self.root, ()), (10, 0))
+                self.assertEqual(calls, ['tests', 'logcat'])
 
     def test_toolchain_env_discovers_the_default_android_sdk(self):
         with tempfile.TemporaryDirectory() as directory:

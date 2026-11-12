@@ -36,10 +36,32 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Java for Kotlin extraction
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android build prerequisites
+        if: matrix.language == 'java-kotlin'
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          (yes 2>/dev/null || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.3.13750724'
+          echo "ANICE_NDK=$ANDROID_HOME/ndk/27.3.13750724" >> "$GITHUB_ENV"
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
+
+      - name: Build Android app for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: apps/android/gradlew --console=plain --no-daemon --no-build-cache -p apps/android assembleDebug
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11
@@ -65,6 +87,13 @@ jobs:
         uses: github/codeql-action/init@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11
         with:
           languages: swift
+          build-mode: manual
+
+      - name: Set up Rust and macOS target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin
 
       - name: Build macOS native pairing bridge
         run: python3 scripts/build-pairing-native.py macos
@@ -72,7 +101,8 @@ jobs:
       - name: Build macOS app for CodeQL
         run: |
           xcodebuild -project apps/macos/aniCe.xcodeproj -scheme aniCe \
-            -configuration Debug ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGN_IDENTITY=- build
+            -configuration Debug -derivedDataPath "$RUNNER_TEMP/anice-codeql-macos" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGN_IDENTITY=- build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11

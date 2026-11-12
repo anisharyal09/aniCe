@@ -71,6 +71,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private var overall = 0L
     private var deadline = 0L
     private var readyToFinish = false
+    @Volatile private var trustedPeerIdsBeforePairing = emptySet<String>()
     private var connectionStep = "connecting"
     private val transport =
         AndroidPairingTransport(
@@ -80,10 +81,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             { receive(it) },
             { success, reason ->
                 if (readyToFinish && success) {
-                    phase = "paired"
-                    status = "Pairing complete. Device saved as trusted."
-                    retireEngine()
-                    refresh()
+                    finishPairing()
                 } else if (busy) failLink(reason)
             },
             { step, expires ->
@@ -117,10 +115,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 if (now >= overall || now >= deadline) {
                     if (phase == "cleanup" && readyToFinish) {
                         transport.close()
-                        phase = "paired"
-                        status = "Pairing complete. Device saved as trusted."
-                        retireEngine()
-                        refresh()
+                        finishPairing()
                     } else if (phase == "scan" && transport.scanEndFailure != null) {
                         failLink(transport.scanEndFailure)
                     } else
@@ -279,6 +274,11 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         worker.execute {
             try {
                 val trust = store ?: app.trustStore.also { store = it }
+                val trustedPeerIds = trust.list(
+                    app.identityService.getOrCreateIdentity().identity.fingerprint
+                ).map { it.peer.deviceId }.toSet()
+                if (generation != op) return@execute
+                trustedPeerIdsBeforePairing = trustedPeerIds
                 val created =
                     PairingEngine(
                         method,
@@ -447,6 +447,16 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             } catch (_: Exception) {}
             engine = null
         }
+    }
+
+    private fun finishPairing() {
+        if (phase == "paired") return
+        peer?.takeIf { it.deviceId !in trustedPeerIdsBeforePairing }
+            ?.let(app.transfer.autoReceivePreferences::enableForNewPeer)
+        phase = "paired"
+        status = "Pairing complete. Device saved as trusted."
+        retireEngine()
+        refresh()
     }
 
     private fun failLink(failure: PairingTransportFailure?) {

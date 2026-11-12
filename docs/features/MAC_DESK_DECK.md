@@ -43,6 +43,6 @@ Desk Deck stays within the regular Android app shell. The app bar Back button an
 
 ## Implementation and protocol
 
-V1 through v4 remain available for older Macs. V3 adds app, cache, free and swap readings with explicit unavailable values. V4 adds the selected Do Not Disturb Shortcut while retaining the v3 sample shape. V5 adds the Mac output picker using a bounded, revisioned catalog and opaque route IDs. V2 supplies power samples, renewable subscriptions, and paged approved-app catalogs. Phone power is a separate authenticated shared capability, so Mac device status can show the phone's battery without opening Desk Deck. Neither capability opens a connection or extends another feature's lease.
+V1 through v4 remain available for older Macs. V3 adds app, cache, free and swap readings with explicit unavailable values. V4 adds the selected Do Not Disturb Shortcut while retaining the v3 sample shape. V5 adds the Mac output picker using a bounded, revisioned catalog and opaque route IDs. V2 supplies power samples, renewable subscriptions, and paged approved-app catalogs. Device Power is a separate event-driven capability: each device can show its trusted peer's battery and charging status without opening Desk Deck. Neither capability opens a connection or extends another feature's lease.
 
 See the [Desk Deck v1–v5 contract](../../protocol/desk-deck/README.md) and [Device Power v1 contract](../../protocol/device-power/README.md).

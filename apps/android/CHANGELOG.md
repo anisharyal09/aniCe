@@ -4,6 +4,43 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+- Check GitHub releases with a stable/beta preference and user-confirmed Android package installation; configure protected release signing.
+
+- Keep Mac power summaries focused on battery percentage and charging state, omitting adapter details.
+
+- Show the connected Mac's event-driven power status on Home and Devices and refine shortcut and Settings spacing.
+
+- Deliver diagnostic checks before feature decoding and compact Home shortcut buttons.
+
+- Simplify the Home shortcuts prompt, compact Home send controls, and soften the selected Settings section.
+
+- Add Home shortcuts for starred features, update the Messages send button, and confirm Bluetooth/LAN checks with a reply from the other device.
+
+- Explain when Bluetooth and local-network checks are available in Diagnostics.
+
+- Add a visible selected outline to the Settings shortcuts and briefly highlight the destination group after a tap, like Mac.
+
+- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
+
+- Use the same labeled Pause/Resume menu and Mac-matching duration choices on Home and Devices.
+
+- Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
+
+- Hide trust management on Devices until there are saved devices or trust recovery is needed.
+
+- Add a scrollable top category row to Settings so each preference group is one tap away.
+
+- Keep all phone Settings groups on one vertical page; top category shortcuts jump to a group and follow the current scroll position.
+
+- Tighten first-run Home spacing and Add device button padding while preserving standard touch targets.
+
+- Show one Connected status with icons for ready Bluetooth and local-network links; keep Home free of Disconnect and overflow controls.
+
+- Reorder Features and Favourites from a feature row’s long-press menu.
+
+- Keep the identity sheet content-sized while Advanced is closed, then expand and scroll the reset control into view.
+
+- Enable automatic file receipt for new pairings and retain explicit off choices.
 - Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master. Preserve launcher foreground size and monochrome artwork; use a near-black graphite glow with a subtle edge highlight for the Night launcher background and a softly warm Light background.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.
@@ -48,6 +85,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Document the remote-control source layout and remove outdated blanket validation claims.
 
 ### Fixed
+
+- Pin NDK r27d to match the native pairing build and import saveable settings state needed for compilation.
+
+- Compact the six-digit pairing field and align Find Device permission and peer actions with the standard outlined controls.
+
+- Show sent or received Bluetooth and LAN check feedback in Diagnostics while the transport is secured.
+
+- Keep connection details and diagnostics collapsed when Home opens a device in Devices.
 
 - Show v3 app, cache, free and swap readings; keep volume and actions near usage meters and move details into dialogs.
 
@@ -97,6 +142,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Keep full bottom-navigation labels accessible through horizontal scrolling at text sizes of 150% or above.
 
 ### Changed
+
+- Explain what to review before accepting files and confirm the saved folder after receipt.
+
+- Remove feature-level Back links that duplicate system navigation.
+
+- Highlight the selected QR or six-digit code method and clarify the next pairing action.
+
+- Guide first-launch users to add their Mac from Home with clear QR and six-digit code instructions.
 
 - Preserve the highest supported Desk Deck action mask while older compatibility capabilities arrive.
 - Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.

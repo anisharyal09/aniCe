@@ -104,6 +104,7 @@ class FeatureRowInteractionTests {
         ) as MainActivity
         val openEvents = AtomicInteger()
         val favouriteEvents = AtomicInteger()
+        val moveEvents = AtomicInteger()
         val drawn = CountDownLatch(1)
 
         try {
@@ -117,6 +118,9 @@ class FeatureRowInteractionTests {
                                 status = "Ready to send",
                                 onFavourite = { favouriteEvents.incrementAndGet() },
                                 onClick = { openEvents.incrementAndGet() },
+                                onMove = { moveEvents.incrementAndGet() },
+                                canMoveUp = true,
+                                canMoveDown = true,
                             )
                         }
                     }
@@ -137,6 +141,7 @@ class FeatureRowInteractionTests {
             instrumentation.waitForIdleSync()
             assertEquals("Opening the row should fire one navigation action", 1, openEvents.get())
             assertEquals("Opening the row must not also favourite it", 0, favouriteEvents.get())
+            assertEquals("Opening the row must not reorder it", 0, moveEvents.get())
 
             val star = findLabeledControl(instrumentation.uiAutomation.rootInActiveWindow, "Add Send files to favourites")
             assertNotNull("Favourite control should remain separately accessible", star)
@@ -144,6 +149,7 @@ class FeatureRowInteractionTests {
             instrumentation.waitForIdleSync()
             assertEquals("Starring should not open the feature", 1, openEvents.get())
             assertEquals("Starring the row should fire once", 1, favouriteEvents.get())
+            assertEquals("Starring the row must not reorder it", 0, moveEvents.get())
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
         }

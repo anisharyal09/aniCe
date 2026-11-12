@@ -347,7 +347,7 @@ internal class TransferDestinationPreferences(private val context: Context) {
 
 internal data class TransferReceiveDestinationSelection(val tree: Uri?, val modes: Int)
 
-/** Auto-receive consent is local to one full trusted peer credential and defaults off. */
+/** Auto-receive consent is local to one trusted peer; new pairings opt in while legacy peers stay unchanged. */
 class TransferAutoReceivePreferences(private val storage: SharedPreferences? = null) {
     private val values = mutableMapOf<String, Boolean>()
     private val prefix = "transfer.autoReceive."
@@ -359,15 +359,13 @@ class TransferAutoReceivePreferences(private val storage: SharedPreferences? = n
 
     fun set(peer: DeviceIdentity, enabled: Boolean) {
         val key = key(peer)
-        if (enabled) {
-            values[key] = true
-            storage?.edit()?.putBoolean(key, true)?.apply()
-        } else {
-            values.remove(key)
-            storage?.edit()?.remove(key)?.apply()
-        }
+        values[key] = enabled
+        // Keep opt-outs explicit so changing the default never affects an existing peer.
+        storage?.edit()?.putBoolean(key, enabled)?.apply()
         revision++
     }
+
+    fun enableForNewPeer(peer: DeviceIdentity) = set(peer, true)
 
     fun prune(peers: List<DeviceIdentity>) {
         val keep = peers.map(::key).toSet()

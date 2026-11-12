@@ -92,10 +92,6 @@ struct MacPhoneInputView: View {
             Button("Stop receiving") { model.disarm(for: phone) }
               .buttonStyle(AniCeButtonStyle())
           }
-
-          Text("Input goes to the Mac app with keyboard focus.")
-            .font(.callout)
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         } else {
           Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
             .font(.headline)

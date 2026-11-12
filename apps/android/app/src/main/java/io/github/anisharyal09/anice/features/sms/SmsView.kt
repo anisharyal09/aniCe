@@ -240,10 +240,15 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                             }
                         }
                     }
-                    OutlinedIconButton(onClick = ::submitDraft,
+                    FilledTonalButton(onClick = ::submitDraft,
                         enabled = !sending && draft.isNotBlank() && bytes <= SmsWireMessage.MAX_BODY_BYTES && state.send,
-                        modifier = Modifier.size(48.dp)) {
-                        Icon(painterResource(R.drawable.ic_sms), contentDescription = if (sending) "Sending message" else "Send SMS")
+                        shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        modifier = Modifier.heightIn(min = 48.dp)) {
+                        if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(painterResource(R.drawable.ic_send), contentDescription = "Send SMS", modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (sending) "Sending…" else "Send", maxLines = 1, softWrap = false)
                     }
                 }
                 if (draft.length > 1000) Text("Long messages may be rejected; Unicode text reaches the limit sooner.",

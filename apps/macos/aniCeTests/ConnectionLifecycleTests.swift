@@ -318,7 +318,7 @@ import AppKit
             clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
             sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
             phoneInput: MacPhoneInputModel(), smsPreferences: SmsPreferences(storage: nil),
-            dndSync: MacDndSyncModel(defaults: preferences), deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
+            onInitialRender: {}, dndSync: MacDndSyncModel(defaults: preferences), deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: 800)
@@ -483,17 +483,28 @@ import AppKit
       let ack = try SessionEnvelope.decode(try XCTUnwrap(radio.sent.first))
       XCTAssertEqual(ack.0, 6)
       _ = try await channel.receive(ack.1)
+      model.applicationDataReceived = { _ in true }
       try await channel.send(.data, plaintext: Data("aniCe connection check".utf8))
       let dataRecords = await records.take()
       let data = try XCTUnwrap(dataRecords.first)
       XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, data)) ?? false)
       try await waitFor { model.receivedChecks == 1 }
-      model.checkConnection()
       try await waitFor { radio.sent.count == 2 }
-      let response = try SessionEnvelope.decode(radio.sent[1])
+      let reply = try SessionEnvelope.decode(radio.sent[1])
+      let replyBody = try await channel.receive(reply.1)
+      XCTAssertEqual(replyBody.0, .data)
+      XCTAssertEqual(replyBody.1, SessionConnectionCheck.reply)
+      model.checkConnection()
+      try await waitFor { radio.sent.count == 3 }
+      let response = try SessionEnvelope.decode(radio.sent[2])
       let received = try await channel.receive(response.1)
       XCTAssertEqual(received.0, .data)
-      XCTAssertEqual(received.1, Data("aniCe connection check".utf8))
+      XCTAssertEqual(received.1, SessionConnectionCheck.request)
+      try await channel.send(.data, plaintext: SessionConnectionCheck.reply)
+      let confirmationRecords = await records.take()
+      let confirmation = try XCTUnwrap(confirmationRecords.first)
+      XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, confirmation)) ?? false)
+      try await waitFor { model.status == "Bluetooth check confirmed." }
       radio.hasCapacity = false
       do { try await model.sendData(Data([1])); XCTFail("Backpressure admitted a record") }
       catch is SessionBackpressure {}

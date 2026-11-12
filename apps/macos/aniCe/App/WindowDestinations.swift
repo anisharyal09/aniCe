@@ -16,13 +16,17 @@ extension MainWindowView {
               details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
               focusedPeer: navigation.focusedPeer, discovery: discovery,
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-              onManageDevices: { navigation.show(.devices) })
+              onManageDevices: { navigation.show(.devices) },
+              onOpenDevice: { navigation.show(.devices, peer: $0) })
+            HomeFeatureAccess(
+              onOpen: { navigation.openFeature($0) },
+              onBrowse: { navigation.show(.features) })
           } else {
             VStack(alignment: .leading, spacing: 12) {
-              Text("Pair your Android phone").font(.title3.weight(.semibold))
-              Text("Open aniCe on your phone, then scan a QR code or enter a six-digit code.")
+              Text("Connect your Android phone").font(.title3.weight(.semibold))
+              Text("Choose Add device on this Mac. Then choose Add device on your phone to scan the QR code or enter the six-digit code shown here.")
                 .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              Button("Pair a device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
+              Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
             }
           }
           if transfer.pendingOffer != nil {
@@ -58,30 +62,32 @@ extension MainWindowView {
     VStack(alignment: .leading, spacing: 24) {
       if availableWidth >= 720 {
         let showPlayback = playback.showOnMac && playback.compactVisible
-        let showFileTransfer = transfer.pendingOffer == nil
-        HStack(alignment: .top, spacing: 16) {
-          if showPlayback {
-            MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
-              visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-          if showPlayback && showFileTransfer {
-            Rectangle()
-              .fill(AniCePalette.separator(colorScheme))
-              .frame(width: 1)
-              .frame(maxHeight: .infinity)
-          }
-          if showFileTransfer {
-            homeFileTransferActivity(isResult: isResult)
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        let showFileTransfer = pairing.hasTrustedAndroid && transfer.pendingOffer == nil
+        if showPlayback || showFileTransfer {
+          HStack(alignment: .top, spacing: 16) {
+            if showPlayback {
+              MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
+                visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if showPlayback && showFileTransfer {
+              Rectangle()
+                .fill(AniCePalette.separator(colorScheme))
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
+            }
+            if showFileTransfer {
+              homeFileTransferActivity(isResult: isResult)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading)
+        }
       } else {
         if playback.showOnMac && playback.compactVisible {
           MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
             visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
         }
-        if transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
+        if pairing.hasTrustedAndroid && transfer.pendingOffer == nil { homeFileTransferActivity(isResult: isResult) }
       }
       if isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
     }
@@ -141,9 +147,11 @@ extension MainWindowView {
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
               onManageDevices: { navigation.show(.devices, route: .pairing) })
           }
-          DisclosureGroup("Trust and saved devices") {
-            MacPairingView(model: pairing, showPairingControls: false)
-          }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
+          if pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
+            DisclosureGroup("Trust and saved devices") {
+              MacPairingView(model: pairing, showPairingControls: false)
+            }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
+          }
 
         Divider()
         Button { showingLocalIdentity = true } label: {
@@ -314,7 +322,7 @@ extension MainWindowView {
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               let jumps = [
-                ("appearance", "Appearance"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
+                ("appearance", "Appearance"), ("updates", "Updates"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
                 ("dnd-sync", "Do Not Disturb"), ("clipboard", "Clipboard"),
                 ("messages", "Messages"), ("file-transfer", "File transfer"),
                 ("now-playing", "Now Playing"), ("this-device", "This device")
@@ -344,6 +352,34 @@ extension MainWindowView {
                     }
                     .labelsHidden().pickerStyle(.menu).frame(width: 130)
                   }.frame(minHeight: 48)
+                }
+                preferenceSection("Updates", id: "updates") {
+                  VStack(alignment: .leading, spacing: 8) {
+                    if let message = updates.recoveryMessage {
+                      Text(message).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    }
+                    Toggle("Include beta releases", isOn: $updates.includeBeta).toggleStyle(.checkbox)
+                    Text("Turning this off keeps an installed beta until a newer stable release is available.")
+                      .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    Button("Check for updates") { Task { await updates.check(force: true) } }.disabled(updates.checking)
+                    if updates.installing {
+                      HStack {
+                        ProgressView(value: updates.progress) { Text("Downloading update…") }
+                        Button("Cancel") { updates.cancelInstall() }
+                      }
+                    } else if updates.installProblem == nil, let release = updates.release {
+                      Button("Install \(release.version.tag)") { updates.install() }
+                    }
+                    if let error = updates.installError {
+                      Text(error).font(.caption).foregroundStyle(.red)
+                    } else if updates.release != nil, let problem = updates.installProblem {
+                      Text(problem).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                    }
+                    if let release = updates.release, updates.installProblem != nil || updates.installError != nil {
+                      Button("Open \(release.version.tag) on GitHub") { NSWorkspace.shared.open(release.pageURL) }
+                    }
+                    if !updates.status.isEmpty { Text(updates.status).font(.caption) }
+                  }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {
                   VStack(alignment: .leading, spacing: 5) {
@@ -473,32 +509,30 @@ extension MainWindowView {
 }
 
 
-// Eager layout creates offscreen section anchors so shortcuts can reach groups outside the viewport.
+// Eager, balanced columns keep section anchors available without leaving gaps beside tall groups.
 private struct SettingsSectionLayout: Layout {
   let columns: Int
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? 680
     let cellWidth = max(0, (width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var height: CGFloat = 0
-    for start in stride(from: 0, to: subviews.count, by: columns) {
-      height += (start..<min(start + columns, subviews.count)).map {
-        subviews[$0].sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
-      }.max() ?? 0
+    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
+    for subview in subviews {
+      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
+      columnHeights[column] += subview.sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
     }
-    return CGSize(width: width, height: height)
+    return CGSize(width: width, height: columnHeights.max() ?? 0)
   }
   func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
     let width = max(0, (bounds.width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var y = bounds.minY
-    for start in stride(from: 0, to: subviews.count, by: columns) {
-      var height: CGFloat = 0
-      for index in start..<min(start + columns, subviews.count) {
-        let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
-        subviews[index].place(at: CGPoint(x: bounds.minX + CGFloat(index - start) * (width + 24), y: y), anchor: .topLeading,
-          proposal: ProposedViewSize(width: width, height: size.height))
-        height = max(height, size.height)
-      }
-      y += height
+    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
+    for index in subviews.indices {
+      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
+      let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+      subviews[index].place(
+        at: CGPoint(x: bounds.minX + CGFloat(column) * (width + 24), y: bounds.minY + columnHeights[column]),
+        anchor: .topLeading,
+        proposal: ProposedViewSize(width: width, height: size.height))
+      columnHeights[column] += size.height
     }
   }
 }
@@ -564,7 +598,7 @@ private struct DeskDeckSettingsView: View {
 
   var body: some View {
     let catalogGeneration = model.catalogGeneration
-    return VStack(alignment: .leading, spacing: 10) {
+    return VStack(alignment: .leading, spacing: 8) {
       Text("Choose which apps each phone can launch from Desk Deck.")
         .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       if androidPeers.isEmpty {
@@ -572,13 +606,13 @@ private struct DeskDeckSettingsView: View {
       } else {
         ForEach(androidPeers, id: \.peer.fingerprint) { record in
           let peer = record.peer
-          VStack(alignment: .leading, spacing: 6) {
+          VStack(alignment: .leading, spacing: 4) {
             HStack {
               Text(peer.deviceName).font(.system(size: 13, weight: .medium)).lineLimit(1)
               Spacer()
               Button("Add app…") { chooseApplication(for: peer) }
                 .controlSize(.small).disabled(model.availableApprovalCount(for: peer) >= 32)
-            }.frame(minHeight: 48)
+            }.frame(minHeight: 32)
             let apps = model.approvedApps(for: peer)
             if apps.isEmpty {
               Text("No apps added").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -593,7 +627,7 @@ private struct DeskDeckSettingsView: View {
                 }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
                   .controlSize(.small).accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
-              }.frame(minHeight: 44)
+              }.frame(minHeight: 32)
             }
             if model.availableApprovalCount(for: peer) >= 32 {
               Text("This phone has reached the 32-app limit.").font(.caption)
@@ -601,7 +635,7 @@ private struct DeskDeckSettingsView: View {
             }
           }.frame(maxWidth: .infinity, alignment: .leading)
           if peer.fingerprint != androidPeers.last?.peer.fingerprint {
-            Divider().overlay(AniCePalette.separator(colorScheme)).padding(.vertical, 4)
+            Divider().overlay(AniCePalette.separator(colorScheme)).padding(.vertical, 2)
           }
         }
       }

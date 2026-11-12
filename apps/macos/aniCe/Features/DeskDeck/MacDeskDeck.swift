@@ -361,7 +361,7 @@ struct DeskDeckCPU {
   }
 }
 
-private struct DeskDeckPower {
+struct DeskDeckPower {
   let state: Int64 // 0 unavailable, 1 no battery, 2 battery, 3 charging, 4 charged, 5 plugged but not charging
   let percent: Int64
   let source: Int64 // 0 unavailable, 1 battery, 2 AC, 3 UPS
@@ -385,10 +385,14 @@ private struct DeskDeckPower {
     let percent = current.flatMap { current in maximum.flatMap { $0 > 0 ? Int64(current * 100 / $0) : nil } }.map { min(100, max(0, $0)) } ?? -1
     let powerState = battery[kIOPSPowerSourceStateKey] as? String
     let charging = battery[kIOPSIsChargingKey] as? Bool ?? false
-    if charging { return Self(state: 3, percent: percent, source: source) }
-    if percent >= 100 { return Self(state: 4, percent: percent, source: source) }
-    if powerState == kIOPSACPowerValue as String { return Self(state: 5, percent: percent, source: source) }
-    return Self(state: 2, percent: percent, source: source)
+    let external = powerState == kIOPSACPowerValue as String || source == 2 || source == 3
+    return Self(state: chargeState(charging: charging, percent: percent, external: external), percent: percent, source: source)
+  }
+
+  static func chargeState(charging: Bool, percent: Int64, external: Bool) -> Int64 {
+    if charging { return 3 }
+    if external { return percent >= 100 ? 4 : 5 }
+    return 2
   }
 }
 
@@ -631,29 +635,63 @@ struct MacPhonePowerReading: Equatable {
 }
 
 @Observable @MainActor final class MacPhonePowerModel: FeatureHandler {
-  private var links: [String: any SecuredChannel] = [:]
+  private final class Link {
+    let channel: any SecuredChannel
+    var capabilitySent = false
+    var sending = false
+    var pendingReport: Data?
+    init(_ channel: any SecuredChannel) { self.channel = channel }
+  }
+  private static let powerChangeCallback: IOPowerSourceCallbackType = { context in
+    guard let context else { return }
+    let model = Unmanaged<MacPhonePowerModel>.fromOpaque(context).takeUnretainedValue()
+    MainActor.assumeIsolated { model.powerChanged() }
+  }
+  private var links: [String: Link] = [:]
+  @ObservationIgnored private var powerSource: CFRunLoopSource?
+  private var lastPowerReport: Data?
   private var capableTransports = Set<String>()
   private(set) var readings: [String: MacPhonePowerReading] = [:]
 
   func available(_ channel: any SecuredChannel) {
     let transport = channel.descriptor.transport
-    links[transport] = channel
+    let link = Link(channel)
+    links[transport] = link
     capableTransports.remove(transport)
-  }
-
-  func retired(_ descriptor: ChannelDescriptor) {
-    guard links[descriptor.transport]?.descriptor == descriptor else { return }
-    links.removeValue(forKey: descriptor.transport)
-    capableTransports.remove(descriptor.transport)
-    if !links.values.contains(where: { $0.descriptor.peer.fingerprint == descriptor.peer.fingerprint }) {
-      readings.removeValue(forKey: descriptor.peer.fingerprint)
+    if powerSource == nil {
+      let context = Unmanaged.passUnretained(self).toOpaque()
+      if let source = IOPSNotificationCreateRunLoopSource(Self.powerChangeCallback, context)?.takeRetainedValue() {
+        powerSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+      }
+    }
+    let report = powerReport()
+    if report != lastPowerReport {
+      lastPowerReport = report
+      for current in links.values { current.pendingReport = report; drain(current) }
+    } else {
+      link.pendingReport = report
+      drain(link)
     }
   }
 
-  func capacityAvailable(_ descriptor: ChannelDescriptor) {}
+  func retired(_ descriptor: ChannelDescriptor) {
+    guard links[descriptor.transport]?.channel.descriptor == descriptor else { return }
+    links.removeValue(forKey: descriptor.transport)
+    capableTransports.remove(descriptor.transport)
+    if !links.values.contains(where: { $0.channel.descriptor.peer.fingerprint == descriptor.peer.fingerprint }) {
+      readings.removeValue(forKey: descriptor.peer.fingerprint)
+    }
+    if links.isEmpty { stopPowerObservation(); lastPowerReport = nil }
+  }
+
+  func capacityAvailable(_ descriptor: ChannelDescriptor) {
+    guard let link = links[descriptor.transport], link.channel.descriptor == descriptor else { return }
+    drain(link)
+  }
 
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {
-    guard links[descriptor.transport]?.descriptor == descriptor else { return .discarded }
+    guard links[descriptor.transport]?.channel.descriptor == descriptor else { return .discarded }
     let message: MacDevicePowerMessage
     do { guard let decoded = try MacDevicePowerMessage.decode(bytes) else { return .unrecognized }; message = decoded }
     catch { return .discarded }
@@ -670,6 +708,52 @@ struct MacPhonePowerReading: Equatable {
   func summary(for peer: DeviceIdentity?) -> String {
     guard let peer else { return "Phone power unavailable" }
     return readings[peer.fingerprint]?.summary ?? "Phone power unavailable"
+  }
+
+  func shutdown() { stopPowerObservation() }
+
+  private func stopPowerObservation() {
+    guard let powerSource else { return }
+    CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes)
+    CFRunLoopSourceInvalidate(powerSource)
+    self.powerSource = nil
+  }
+
+  private func powerReport() -> Data? {
+    let power = DeskDeckPower.read()
+    // Device Power v1 source 3 means USB, whereas Desk Deck uses it for UPS.
+    let source: Int64 = power.source == 3 ? 0 : power.source
+    return try? MacDevicePowerMessage(kind: 2, state: power.state, percent: power.percent, source: source).encode()
+  }
+
+  private func powerChanged() {
+    let report = powerReport()
+    guard report != lastPowerReport else { return }
+    lastPowerReport = report
+    for link in links.values { link.pendingReport = report; drain(link) }
+  }
+
+  private func drain(_ link: Link) {
+    let transport = link.channel.descriptor.transport
+    guard !link.sending, links[transport] === link else { return }
+    link.sending = true
+    Task { [weak self, weak link] in
+      guard let self, let link else { return }
+      defer { link.sending = false }
+      while self.links[transport] === link {
+        let capability = !link.capabilitySent
+        let bytes = capability ? try? MacDevicePowerMessage(kind: 1, state: 0, percent: -1, source: 0).encode() : link.pendingReport
+        guard let bytes else { return }
+        if !capability { link.pendingReport = nil }
+        do { try await link.channel.sendData(bytes) }
+        catch {
+          if !capability, link.pendingReport == nil { link.pendingReport = bytes }
+          return
+        }
+        guard self.links[transport] === link else { return }
+        if capability { link.capabilitySent = true }
+      }
+    }
   }
 }
 
