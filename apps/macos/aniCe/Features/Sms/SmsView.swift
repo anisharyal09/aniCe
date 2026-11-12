@@ -90,7 +90,7 @@ struct SmsView: View {
       VStack(alignment: .leading, spacing: 10) {
         // The phone picker exists only when more than one phone can serve this panel.
         if selectable.count > 1 {
-          Picker("Phone", selection: Binding(get: { peerKey }, set: selectPhone)) {
+          Picker("Phone", selection: Binding(get: { peerKey }, set: { key in selectPhone(key) })) {
             ForEach(selectable) { record in
               Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
             }
@@ -179,7 +179,7 @@ struct SmsView: View {
     guard key != peerKey else { return }
     if let peer, !address.isEmpty { model.saveDraft(draft, peer: peer, address: address) }
     peerKey = key
-    address = peer.map(model.selectedConversation) ?? ""
+    address = peer.map { model.selectedConversation($0) } ?? ""
     draft = peer.map { model.draft($0, address: address) } ?? ""
     if let peer { model.selectConversation(peer, address: address) }
     submittedDraft = nil
