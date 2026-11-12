@@ -4,59 +4,26 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
-- Compile cleanly under the pinned Swift toolchain by simplifying clipboard deadline scheduling and making the playback send closure explicitly `Sendable`.
+## [v0.9.0-beta.1] - 2026-11-12
 
-- Make official Mac builds, releases, playback adapters and update helpers arm64-only; reject incompatible update executables while retaining signature, identifier and certificate-pin validation.
+Beta release preparing for 1.0. Introduces the native zero-dependency in-app auto-updater, Control Android shortcuts, timed connection pauses, and companion UI refinements.
 
-- Check GitHub releases with a stable/beta preference and install signed updates through a detached helper with startup-confirmation rollback.
+### Features & Continuity
 
-- Highlight 'Ce' in aniCe with a warm terracotta/coral accent across headers, format the top titlebar with isolated navigation controls, style the menu bar companion open button, and unbold the About tagline.
+- **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
+- **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
+- **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on menu bar companion and main window.
+- **Live Phone Power:** Inline peer battery percentage and charging indicator beside connection status on menu bar companion and main window.
+- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in settings.
+- **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
+- **File Transfer:** Drag-and-drop file shelf on screen edges and modal file picker on the active display space.
+- **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.
 
-- Add a fine-grained text size slider (80%–120%) in Appearance settings, style the Pause control as a wrapped compact button in the device header and remove redundant Disconnect buttons, set default favorites and pinned menu bar quick actions (Clipboard, Control Android, Messages), default SMS notifications to show message previews with sound muted, and streamline About with an updated tagline and understated support link.
+### Platform & Toolchain
 
-- Keep connection status, transport icons and phone power on a single line after the Wi-Fi icon, refine the menu-bar companion device row hover and spacing, present file selection modally on the active space without switching windows, restore the menu-bar Quick Paste Tray button in a 2x2 grid, and rename Floating Key's menu to Show trackpad too.
-
-- Make Control Android follow native vertical pointer movement by default and reverse it only when requested.
-
-- Share Mac power changes with connected Android devices and soften Overview Quick access controls.
-
-- Align device power information beneath the connection status and compact Edge Drop and Desk Deck settings rows.
-
-- Release trackpad gestures when momentum begins so pointer movement can resume, and show the floating-keyboard shortcut on Control Android.
-
-- Deliver diagnostic checks before feature decoding and show hover feedback on Overview shortcuts.
-
-- Remove redundant input-focus copy from the Permissions card.
-
-- Add one-tap Overview shortcuts for starred features and confirm Bluetooth/LAN checks with a reply from Android.
-
-- Align the Bluetooth and Wi-Fi status icons and clarify that file-offer notifications appear only in the background.
-
-- Open Devices when the Home device name is clicked, and show secured Bluetooth/Wi-Fi links as icons beside one Connected status.
-
-- Restore the main Mac window from Dock, app activation and reopen events even when the companion or floating tools are visible.
-
-- Defer identity loading, automatic connection startup and system integrations until after the first main-window render.
-
-- Keep manual Disconnect effective across restart when an older automatic-connection preference remains saved.
-
-- Encode branch names in Mac Debug DerivedData paths to avoid ClangStatCache failures on slash-containing branches.
-
-- Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
-
-- Simplify first-time Mac Bluetooth linking and show trust management only when there are devices to manage.
-
-- Balance two-column Settings sections to use the available space more consistently.
-
-- Add ⌥⌘K to show or hide the floating keyboard while aniCe is running.
-
-- Reorder Features and Favourites and add favourite actions to feature context menus.
-
-- Hide idle companion activity and send actions until a phone is trusted and clarify incoming-file review and completion.
-
-- Enable automatic file receipt for new pairings and retain explicit off choices.
-
-- Add keyboard input to the full-screen trackpad window.
+- **Apple Silicon Standard:** Standardized native `arm64` as the official macOS architecture across the app, update helper, and Rust pairing libraries.
+- **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).
+- **Coordinate Handling:** Translated pause menu popup coordinates into flipped `NSHostingView` space and re-anchored custom pause popover directly to the button.
 - Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar artwork, and inset the appearance-aware Dock tile while preserving the silver mark's size. Give the Dark Dock tile a near-black graphite glow with fine rim and top/bottom highlights.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.

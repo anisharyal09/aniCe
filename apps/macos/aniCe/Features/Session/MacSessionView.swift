@@ -175,10 +175,10 @@ struct MacSessionView: View {
   @State private var customPauseHours = 1
   @State private var customPauseMinutes = 0
   @State private var pauseMenuHandler = MacPauseMenuHandler()
-  var onManageDevices: () -> Void
-  var onOpenDevice: (String) -> Void = { _ in }
-  var onChoosePhone: () -> Void = {}
-  var onOpenDiagnostics: () -> Void = {}
+  var onManageDevices: @MainActor () -> Void
+  var onOpenDevice: @MainActor (String) -> Void = { _ in }
+  var onChoosePhone: @MainActor () -> Void = {}
+  var onOpenDiagnostics: @MainActor () -> Void = {}
   @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var scheme
   private var androidPeers: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }

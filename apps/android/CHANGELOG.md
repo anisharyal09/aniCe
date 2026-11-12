@@ -4,57 +4,25 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
-- Check GitHub releases with a stable/beta preference and user-confirmed Android package installation; configure protected release signing.
+## [v0.9.0-beta.1] - 2026-11-12
 
-- Highlight 'Ce' in aniCe with a warm terracotta/coral accent on the TopAppBar and About screen, and prune About view privacy text to local-only connections.
+Beta release preparing for 1.0. Introduces the native zero-dependency in-app auto-updater, live Mac power display, outlined navigation destinations, and compact SMS and settings controls.
 
-- Add a fine-grained text size slider (80%–120%) matching Mac's Appearance row layout, style the Pause control as a wrapped compact button in the device header and remove redundant Disconnect buttons, set default favorites (Control Mac, Mac Desk Deck, Clipboard), cleansify SMS conversations and Find Device cards, and streamline About with an updated tagline and understated support link.
+### Features & Continuity
 
-- Keep device connection status and Mac power summary inline on a single line after the Wi-Fi icon, and use a circular pause control matching the Mac companion.
+- **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
+- **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.
+- **Live Mac Power:** Inline Mac battery percentage and charging indicator beside connection status on Home and Devices.
+- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) matching Mac's Appearance row layout.
+- **Navigation & Icons:** Outlined icons for inactive bottom destinations and filled icons for the active destination.
+- **Reordering:** Long-press context menu to reorder Features and Favourites.
 
-- Use outlined icons for inactive bottom destinations and filled icons for the selected destination.
+### UI & Architecture Polish
 
-- Reduce the SMS send and SIM button height and icon sizing for a more compact composer row.
-
-- Use the standard Desk Deck checkbox and show the last sample time without a ticking age counter or periodic freshness polling.
-
-- Move incoming file approvals below the device summary on Home and make Accept/Decline actions easier to scan.
-
-- Keep Mac power summaries focused on battery percentage and charging state, omitting adapter details.
-
-- Show the connected Mac's event-driven power status on Home and Devices and refine shortcut and Settings spacing.
-
-- Deliver diagnostic checks before feature decoding and compact Home shortcut buttons.
-
-- Simplify the Home shortcuts prompt, compact Home send controls, and soften the selected Settings section.
-
-- Add Home shortcuts for starred features, update the Messages send button, and confirm Bluetooth/LAN checks with a reply from the other device.
-
-- Explain when Bluetooth and local-network checks are available in Diagnostics.
-
-- Add a visible selected outline to the Settings shortcuts and briefly highlight the destination group after a tap, like Mac.
-
-- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
-
-- Use the same labeled Pause/Resume menu and Mac-matching duration choices on Home and Devices.
-
-- Add persisted 1, 3 and 6 hour, custom, or manual-resume connection pauses without changing event-driven reconnect behavior.
-
-- Hide trust management on Devices until there are saved devices or trust recovery is needed.
-
-- Add a scrollable top category row to Settings so each preference group is one tap away.
-
-- Keep all phone Settings groups on one vertical page; top category shortcuts jump to a group and follow the current scroll position.
-
-- Tighten first-run Home spacing and Add device button padding while preserving standard touch targets.
-
-- Show one Connected status with icons for ready Bluetooth and local-network links; keep Home free of Disconnect and overflow controls.
-
-- Reorder Features and Favourites from a feature row’s long-press menu.
-
-- Keep the identity sheet content-sized while Advanced is closed, then expand and scroll the reset control into view.
-
-- Enable automatic file receipt for new pairings and retain explicit off choices.
+- **SMS Composer:** Compacted composer row with reduced send button and SIM selector height.
+- **Settings:** Unified vertically scrollable page with top category shortcut jump navigation.
+- **Incoming Transfers:** Placed file-approval prompts directly below device summary on Home for immediate visibility.
+- **Branding:** Terracotta/coral accent on TopAppBar and About view; streamlined About with updated tagline and understated support link.
 - Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master. Preserve launcher foreground size and monochrome artwork; use a near-black graphite glow with a subtle edge highlight for the Night launcher background and a softly warm Light background.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.

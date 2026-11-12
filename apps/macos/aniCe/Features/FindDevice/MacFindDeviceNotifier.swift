@@ -6,7 +6,7 @@ import UserNotifications
 @MainActor final class MacFindDeviceNotifier: NSObject, FindDeviceNotifying {
   nonisolated static let category = "ANICE_FIND_DEVICE"
   nonisolated static let dismissAction = "ANICE_FIND_DISMISS"
-  var dismissed: (String) -> Void = { _ in }
+  var dismissed: @MainActor (String) -> Void = { _ in }
   private let center: UNUserNotificationCenter
   private var setup: Task<Void, Never>?
   private var identifiers = Set<String>()

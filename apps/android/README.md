@@ -16,7 +16,7 @@ Peer battery and charging status appears on Android Home and Devices and Mac dev
 
 ## Current release
 
-Current build: **v0.3.0 · build 3**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
+Current build: **v0.9.0-beta.1 · build 90021**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
 
 ## Updates
 

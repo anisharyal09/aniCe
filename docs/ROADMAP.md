@@ -1,6 +1,6 @@
 # Roadmap
 
-Current release: **v0.3.0, build 3**. Changes after that release are recorded under Unreleased in the [repository changelog](../CHANGELOG.md) and platform changelogs. Implementation status does not imply acceptance on every device or OS version.
+Current release: **v0.9.0-beta.1, build 90021**. Changes after that release are recorded under Unreleased in the [repository changelog](../CHANGELOG.md) and platform changelogs. Implementation status does not imply acceptance on every device or OS version.
 
 | Area | Current implementation | Remaining work or limits |
 | :--- | :--- | :--- |

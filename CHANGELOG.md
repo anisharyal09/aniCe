@@ -8,95 +8,27 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
-- Remove the OpenSSF Scorecard advisory job; keep CodeQL, dependency review and the remaining repository governance checks.
+## [v0.9.0-beta.1] - 2026-11-12
 
-- Fix Swift 6 compilation under the pinned Xcode 26.3 toolchain by simplifying the clipboard deadline expression and making the playback channel sender explicitly `Sendable`.
+Beta release preparing for 1.0. Introduces the native in-app auto-update pipeline, Control Android shortcuts, timed connection pauses, and major UI continuity polish across macOS and Android.
 
-- Make Apple Silicon (`arm64`) the official Mac build and release target; align the app, native libraries, signed update helper and updater architecture checks, and document the unsupported Intel path.
+### Features & Continuity
 
-- Align CI with the release workflow already on `main`, add bounded release-job timeouts, correct emulator acceleration checks and diagnostics, and require explicit builds for compiled-language CodeQL scans.
+- **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
+- **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
+- **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on Mac menu bar and Android Home.
+- **Live Device Power:** Inline peer battery percentage and charging indicator beside connection status on Mac menu bar companion and Android Home/Devices.
+- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in settings across both platforms.
+- **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
+- **File Transfer:** Drag-and-drop file shelf on Mac screen edges and modal file picker on the active display space.
+- **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.
 
-- Update the Android feature-row instrumentation fixture for the current reorder controls and verify that opening or favouriting a row does not reorder it.
+### Platform & Toolchain
 
-- Synchronize the Mac cumulative-credit fixture with complete payload submission before sending a success receipt, without changing production transfer validation.
-
-- Add supply-chain security and repository governance: automated CodeQL analysis for Python, Actions, Java/Kotlin, and Swift (`security.yml`), fork-safe PR dependency review (`dependency-review.yml`), security vulnerability disclosure policy (`SECURITY.md`), contribution guidelines (`CONTRIBUTING.md`), and pull request verification template (`.github/PULL_REQUEST_TEMPLATE.md`).
-
-- Add protected physical Android device lab verification for native cross-platform interchange (`device-lab.yml`), serialized to avoid USB ADB contention, with automated battery and thermal guardrails (`scripts/check-device-health.py`), device inventory definitions (`tools/device-lab/inventory.json`), and explicit non-automated manual-acceptance tracking.
-
-- Compile Android instrumentation tests with `assembleDebugAndroidTest` in `verify-android`, make `connected` verification Linux-friendly, and add scheduled/manual emulator execution for API 29 and 36 on headless KVM in `runtime.yml`.
-
-- Add a hosted macOS platform-truth lane on `macos-15` with pinned Xcode 26.3; rebuild the native Apple Silicon (`arm64`) Rust pairing bridge before `xcodebuild`, compile and verify native Release with codesign, isolate derived data with cleanup, and make macOS a required aggregate lane.
-
-- Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.
-
-- Add GitHub release checks and Android update installation; install signed Mac updates through a verified archive and detached rollback helper, with a fail-closed signed release workflow.
-
-- Highlight 'Ce' in aniCe (indicating Core Ecosystem) with a warm terracotta accent across macOS and Android wordmarks, format the Mac titlebar header with isolated navigation controls, style the menu bar companion open button, and sharpen feature documentation and Desk Deck controls.
-
-- Add fine-grained text scaling (80%–120%) across macOS and Android, remove redundant Disconnect buttons in favor of wrapped Pause controls with concise status text, set default platform favorites and pinned companion quick actions, default Mac SMS notifications to preview messages with sound muted, cleansify phone SMS conversations and Find Device cards, and streamline the About view with an updated tagline and understated support link.
-
-- Keep connection status and device power inline after the Wi-Fi icon across Mac and Android, refine the menu bar companion device row and action grid, present file transfers as floating panels on the active space, rename Floating Key's menu to Show trackpad too, and compact phone SMS actions.
-
-- Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
-
-- Show Mac battery and charging information on Android Home and Devices; refine Quick access and phone Settings selection.
-
-- Align the Mac device power status and tighten Edge Drop and Desk Deck settings spacing.
-
-- Restore Mac Control Android pointer movement after trackpad gesture momentum begins and show its floating-keyboard shortcut.
-
-- Route connection checks before feature decoding, compact phone shortcuts, and add Mac shortcut hover feedback.
-
-- Simplify phone Home shortcuts and compact its send controls, soften the Settings selection, and remove redundant Mac input guidance.
-
-- Add one-tap Home shortcuts for starred features, use a clear send-arrow control for phone messages, and confirm Bluetooth/LAN checks on both devices.
-
-- Align the Mac Bluetooth/Wi-Fi status icons and clarify that file-offer notifications appear only for background offers.
-
-- Make the selected phone Settings shortcut explicit and briefly highlight its destination group after a jump, matching Mac.
-
-- Route the Mac Home device name to Devices and show secured Bluetooth/Wi-Fi links as icons on both platforms.
-
-- Keep phone Settings on one vertically scrollable page with top section shortcuts, and start Mac identity, radio and system integrations after the first window render.
-
-- Keep phone Settings section selection visible through jumps and show Home connection status and pause controls in one aligned device row.
-
-- Replace duplicated roadmap specifications with current status and source links; correct LAN defaults and platform verification claims.
-
-- Audit original UX requests with explicit implementation limits and remove duplicate phone pause feedback.
-
-- Reopen and focus the Mac workspace from Dock and app activation, and make the phone identity disclosure grow only when Advanced opens.
-
-- Preserve explicit Mac Disconnect across restart instead of restoring an obsolete automatic-connection flag.
-
-- Use the same labeled Pause/Resume menu and duration choices on Android Home and Devices.
-
-- Compact Android pairing, permission and Settings controls.
-
-- Use URL-safe branch keys for Mac Debug DerivedData paths so Xcode accepts slash-containing branch names.
-
-- Fix Android and Mac debug compilation errors and align Android Gradle with the documented NDK r27d toolchain.
-
-- Add timed automatic connection pauses with clear resume status on Mac and Android.
-
-- Hide empty trusted-device controls and simplify the first Bluetooth link step for Mac input.
-
-- Add top category navigation to phone Settings and balance Mac preference sections to reduce gaps.
-
-- Add the system-wide ⌥⌘K shortcut for the existing Mac floating keyboard.
-
-- Allow Features and Favourites to be reordered on Mac and Android.
-
-- Hide idle Mac companion activity and send actions until a phone is trusted, and clarify file review and save-location results on both platforms.
-
-- Scroll the phone identity sheet to its reset control when Advanced opens.
-
-- Enable automatic file receipt for new pairings while preserving existing peers’ saved choices.
-
-- Add Mac keyboard capture to the full-screen trackpad window.
-
-- Record a phased UX improvement plan and architecture guardrails.
+- **Apple Silicon Standard:** Standardized native `arm64` as the official macOS architecture across the app, update helper, and Rust pairing libraries.
+- **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).
+- **Android UI Navigation:** Outlined icons for inactive bottom tabs and filled icons for active tabs; compacted SMS composer and SIM selector rows.
+- **CI & Security Governance:** Added CodeQL static analysis, fork-safe dependency review, workflow policy enforcement, and physical device lab verification guardrails.
 
 - Show Bluetooth and LAN check feedback beside their received counts in Diagnostics.
 

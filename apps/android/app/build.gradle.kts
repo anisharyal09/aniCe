@@ -34,8 +34,8 @@ android {
         applicationId = "io.github.anisharyal09.anice"
         minSdk = 29
         targetSdk = 36
-        versionCode = providers.gradleProperty("aniceVersionCode").orNull?.toInt() ?: 3
-        versionName = providers.gradleProperty("aniceVersionName").orNull ?: "0.3.0"
+        versionCode = providers.gradleProperty("aniceVersionCode").orNull?.toInt() ?: 90021
+        versionName = providers.gradleProperty("aniceVersionName").orNull ?: "0.9.0-beta.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
