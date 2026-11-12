@@ -1,6 +1,10 @@
 <h2 align="center">
   <img src="assets/logo/anice-mark-final.svg" width="168" alt="aniCe silver interlocking ribbon mark"><br>
-  ani<span style="color: #D26458;">Ce</span>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/anice-wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo/anice-wordmark-light.svg">
+    <img src="assets/logo/anice-wordmark.svg" height="27" alt="aniCe">
+  </picture>
 </h2>
 
 <p align="center">
@@ -36,7 +40,7 @@ For low-level protocol schemas and transport state machines, see [ARCHITECTURE.m
 
 #### Remote Control & Workspace Input
 - **Control Mac (Phone as Remote):** Use your phone screen as a wireless trackpad and keyboard to navigate, click, and type on your Mac.
-- **Control Android (Mac Keyboard & Trackpad):** Control your phone with your Mac's physical keyboard and trackpad via Bluetooth HID, with a draggable floating controller for Android Home, Back, and Recents.
+- **Control Android (Mac Keyboard & Trackpad):** Control your phone with your Mac's physical keyboard and trackpad via Bluetooth HID, with a draggable floating controller for Android Home, Back, and Recents (global shortcut `⌥⌘K`).
 - **macOS Menu Bar Companion:** Quick-access status bar companion for device connectivity, pinned actions, and the Quick Paste Tray (`⌥⌘V`).
 
 #### Desk Deck (Mac Control & Telemetry from Phone)
@@ -45,11 +49,6 @@ For low-level protocol schemas and transport state machines, see [ARCHITECTURE.m
 - **Live Mac Telemetry:** Real-time monitoring of Mac CPU load, memory utilization, thermal pressure, and battery percentage.
 - **Remote Screenshots:** Trigger and capture macOS screenshots directly from your device deck.
 
-#### Clipboard Sync & Direct Link Forwarding
-- **Encrypted Clipboard Sync:** Real-time, bidirectional clipboard sharing with sensitive text detection (passwords and tokens stay local unless confirmed).
-- **Direct Browser Forwarding:** Share links from Android to open immediately in your Mac's default browser without cluttering your clipboard history.
-- **Quick Paste Tray:** Instant clipboard history access with global shortcut (`⌥⌘V`).
-
 #### Communication, Alerts & Media
 - **Notification Mirroring:** Real-time phone notifications on Mac with synchronized cross-device dismissal.
 - **Call Handling:** View caller ID and answer, decline, or silence incoming SIM phone calls directly from Mac notification banners.
@@ -57,6 +56,11 @@ For low-level protocol schemas and transport state machines, see [ARCHITECTURE.m
 - **Now Playing:** Synchronized media playback controls and album artwork between phone and Mac.
 - **Do Not Disturb Sync:** Sync phone DND state with macOS Focus modes via native Shortcuts.
 - **Find Device:** Remotely ring a misplaced phone or ping your Mac with one tap.
+
+#### Clipboard Sync & Direct Link Forwarding
+- **Encrypted Clipboard Sync:** Real-time, bidirectional clipboard sharing with sensitive text detection (passwords and tokens stay local unless confirmed).
+- **Direct Browser Forwarding:** Share links from Android to open immediately in your Mac's default browser without cluttering your clipboard history.
+- **Quick Paste Tray:** Instant clipboard history access with global shortcut (`⌥⌘V`).
 
 ---
 

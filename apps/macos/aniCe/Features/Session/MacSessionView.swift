@@ -147,7 +147,8 @@ private final class MacPauseMenuHandler: NSObject {
     }
 
     if let event = NSApp.currentEvent, let window = event.window, let contentView = window.contentView {
-      menu.popUp(positioning: nil, at: event.locationInWindow, in: contentView)
+      let location = contentView.convert(event.locationInWindow, from: nil)
+      menu.popUp(positioning: nil, at: location, in: contentView)
     } else {
       menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
@@ -235,7 +236,6 @@ struct MacSessionView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .popover(isPresented: $showCustomPause, arrowEdge: .trailing) { customPausePopover }
   }
 
   private func disconnectDevice(_ peer: DeviceIdentity) {
@@ -358,7 +358,9 @@ struct MacSessionView: View {
   private var pauseMenu: some View {
     Button {
       pauseMenuHandler.onPause = { pauseAutomatic(for: $0) }
-      pauseMenuHandler.onCustom = { showCustomPause = true }
+      pauseMenuHandler.onCustom = {
+        DispatchQueue.main.async { showCustomPause = true }
+      }
       pauseMenuHandler.onResume = { model.resumeAutomaticPause() }
       pauseMenuHandler.show(isPaused: model.connectionPauseStatus != nil)
     } label: {
@@ -372,6 +374,9 @@ struct MacSessionView: View {
     }
     .buttonStyle(AniCeButtonStyle())
     .disabled(!peerAvailable)
+    .popover(isPresented: $showCustomPause, arrowEdge: .bottom) {
+      customPausePopover
+    }
   }
 
   private var customPausePopover: some View {
@@ -386,6 +391,7 @@ struct MacSessionView: View {
       HStack {
         Spacer()
         Button("Cancel") { showCustomPause = false }
+          .buttonStyle(AniCeButtonStyle())
         Button("Pause") {
           let duration = TimeInterval(customPauseHours * 3600 + customPauseMinutes * 60)
           pauseAutomatic(for: duration)
