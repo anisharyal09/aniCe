@@ -91,9 +91,13 @@ APK: `apps/android/app/build/outputs/apk/debug/app-debug.apk`. Installation uses
 For the strict aggregate gate, run from the repository root:
 
 ```sh
+python3 scripts/verify-suite.py --only android
+python3 scripts/verify-suite.py --only connected --serial DEVICE_SERIAL
 python3 scripts/verify-suite.py fast --android --vector-python .venv/bin/python
 python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
 ```
+
+`--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator.
 
 The gate parses the JUnit reports and fails on zero tests, failures, crashes, truncated reports and undocumented skips. `connectedDebugAndroidTest` alone is not an acceptance result because several native tests are environment-gated.
 

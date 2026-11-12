@@ -78,7 +78,7 @@ From the repository root:
 ./scripts/dev.sh mac
 ```
 
-Requires Xcode and the [native Rust prerequisites](../../core/rust/pairing/README.md). Install an Apple Development certificate in Xcode, then set your team in ignored `scripts/dev.local.sh`:
+Requires an Apple Silicon Mac, a native arm64 shell, full Xcode and the [native Rust prerequisites](../../core/rust/pairing/README.md). Install an Apple Development certificate in Xcode, then set your team in ignored `scripts/dev.local.sh`:
 
 ```sh
 ANICE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
@@ -111,17 +111,22 @@ Release shows **Mac input allowed** when Event Posting is granted, or the permis
 From the repository root:
 
 ```sh
+python3 scripts/verify-suite.py --only macos
 python3 scripts/verify-suite.py fast --macos --vector-python .venv/bin/python
 python3 scripts/test_dev.py
 ```
 
+`--only macos` is the CI lane. It requires a full Xcode, rebuilds `build/native/libanice_pairing.a` for Apple Silicon (`arm64`), compiles a native Release build with codesign verification, then runs the hosted suite. The `fast --macos` form also runs the local contract and Rust checks.
+
 The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. It prints the real-player/manual checks that cannot run.
+
+Timing checks require an awake Mac. Keep the lid open; `caffeinate -i python3 scripts/verify-suite.py --only macos` prevents idle sleep for the run without changing system settings. It does not prevent forced or lid-close sleep.
 
 ## Development storage
 
 The storage backend remains the development login Keychain, without hardware isolation. Local app builds default to ad-hoc signing; developers may use a stable Apple Development identity locally when testing macOS permission persistence. Automated tests remain ad-hoc signed. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
-The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Universal builds support Apple Silicon and Intel; macOS 14 is the deployment target.
+The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Official builds, releases and updates support Apple Silicon (`arm64`) only; Intel Macs are not supported. macOS 14 is the deployment target.
 
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 

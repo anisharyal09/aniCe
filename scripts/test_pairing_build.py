@@ -14,6 +14,57 @@ import unittest
 
 class NativeBuildTests(unittest.TestCase):
     # Fake tools exercise builder selection and output placement without compiling the Rust crate.
+    def test_macos_builds_only_arm64_and_rejects_unsupported_hosts_before_cargo(self):
+        with tempfile.TemporaryDirectory(prefix='anice arm64 build ') as directory:
+            root = Path(directory)
+            (root / 'scripts').mkdir()
+            script = root / 'scripts/build-pairing-native.py'
+            shutil.copy2(Path(__file__).with_name('build-pairing-native.py'), script)
+            cargo = root / 'cargo/bin/cargo'
+            cargo.parent.mkdir(parents=True)
+            cargo.write_text(f'''#!/bin/sh
+exec {shlex.quote(sys.executable)} - "$@" <<'PYEOF'
+import json, os, pathlib, sys
+manifest = pathlib.Path(sys.argv[sys.argv.index('--manifest-path') + 1])
+triple = sys.argv[sys.argv.index('--target') + 1]
+output = manifest.parent / 'target' / triple / 'release'
+output.mkdir(parents=True, exist_ok=True)
+(output / 'libanice_pairing.a').write_bytes(triple.encode())
+pathlib.Path(os.environ['CALLS']).write_text(json.dumps(sys.argv[1:]))
+PYEOF
+''')
+            cargo.chmod(0o755)
+            log = root / 'calls.json'
+            library = root / 'apps/macos/build/native/libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            env = os.environ | {'CARGO_HOME': str(root / 'cargo'), 'CALLS': str(log),
+                                'PYTHONDONTWRITEBYTECODE': '1'}
+            runner = '''import runpy, sys
+from unittest.mock import patch
+script, host, machine = sys.argv[1:]
+sys.argv = [script, 'macos']
+with patch('platform.system', return_value=host), patch('platform.machine', return_value=machine):
+    runpy.run_path(script, run_name='__main__')
+'''
+            for host, machine in [('Darwin', 'arm64'), ('Darwin', 'x86_64'),
+                                  ('Linux', 'arm64'), ('Linux', 'x86_64')]:
+                with self.subTest(host=host, machine=machine):
+                    library.write_bytes(b'previous archive')
+                    log.unlink(missing_ok=True)
+                    result = subprocess.run([sys.executable, '-c', runner, str(script), host, machine],
+                                            env=env, capture_output=True, text=True, timeout=10)
+                    if (host, machine) == ('Darwin', 'arm64'):
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(library.read_bytes(), b'aarch64-apple-darwin')
+                        command = json.loads(log.read_text())
+                        self.assertIn('--locked', command)
+                        self.assertEqual(command[-2:], ['--target', 'aarch64-apple-darwin'])
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn('Apple Silicon and a native arm64 shell', result.stderr)
+                        self.assertEqual(library.read_bytes(), b'previous archive')
+                        self.assertFalse(log.exists())
+
     def test_private_paths_environment_override_and_missing_tool(self):
         with tempfile.TemporaryDirectory(prefix="anice native build ") as directory:
             root = Path(directory)

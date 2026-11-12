@@ -4,6 +4,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+- Make official Mac builds, releases, playback adapters and update helpers arm64-only; reject incompatible update executables while retaining signature, identifier and certificate-pin validation.
+
 - Check GitHub releases with a stable/beta preference and install signed updates through a detached helper with startup-confirmation rollback.
 
 - Share Mac power changes with connected Android devices and soften Overview Quick access controls.

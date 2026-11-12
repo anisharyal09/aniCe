@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -173,6 +174,16 @@ class XcodeGateTests(unittest.TestCase):
             with self.assertRaises(suite.GateError):
                 suite.validate_results(results, "macOS", minimum=1)
 
+    def test_xcresult_probe_uses_the_selected_toolchain(self):
+        environment = {"DEVELOPER_DIR": "/pinned/Xcode.app/Contents/Developer"}
+        with patch.object(suite.subprocess, "run") as probe:
+            probe.return_value = SimpleNamespace(returncode=0, stdout="{}")
+            self.assertEqual(
+                suite._xcresult_json(Path("tests.xcresult"), "summary", env=environment),
+                {},
+            )
+        self.assertEqual(probe.call_args.kwargs["env"], environment)
+
 
 class RunnerGateTests(unittest.TestCase):
     # Crafted summaries test count floors and skipped/filtered cases without rerunning Rust or Python.
@@ -292,10 +303,17 @@ class AggregateGateTests(unittest.TestCase):
     def invoke(self, arguments=(), overrides=None):
         before = set(self.root.glob('run-*'))
         # These counts are synthetic return values; they do not represent executed app tests.
-        defaults = {'run_structure': None, 'vector_interpreter': sys.executable,
-                    'run_vector_checks': 13, 'run_python_meta_tests': 30, 'run_rust': 4,
-                    'run_android_jvm': (300, 0), 'run_macos_with_skips': (300, 3),
-                    'run_device_checks': (10, 0)}
+        defaults = {
+            'toolchain_env': {'PATH': '/mock/bin'},
+            'run_ci_integrity': {'actionlint': 'passed', 'policy_tests': 12},
+            'run_structure': None, 'vector_interpreter': sys.executable,
+            'run_vector_checks': 13, 'run_python_meta_tests': 30, 'run_rust': 4,
+            'run_android_jvm': (300, 0),
+            'run_macos_with_skips': {'passed': 300, 'documented_skips': 3,
+                                     'xcode': 'Xcode 26.3', 'arch': 'arm64'},
+            'run_connected_checks': (10, 0),
+            'run_interchange_checks': {'harnesses': 3},
+        }
         mocks = {}
         with contextlib.ExitStack() as stack:
             for name, result in defaults.items():
@@ -319,9 +337,12 @@ class AggregateGateTests(unittest.TestCase):
         self.assertEqual(report['status'], 'passed')
         self.assertEqual(report['suites']['android']['passed'], 300)
         self.assertEqual(report['suites']['macos']['status'], 'not_selected')
-        self.assertEqual(report['suites']['device']['status'], 'not_selected')
+        self.assertEqual(report['suites']['connected']['status'], 'not_selected')
+        self.assertEqual(report['suites']['interchange']['status'], 'not_selected')
+        self.assertEqual(report['requested_lanes'], ['contracts', 'rust', 'android'])
         mocks['run_macos_with_skips'].assert_not_called()
-        mocks['run_device_checks'].assert_not_called()
+        mocks['run_connected_checks'].assert_not_called()
+        mocks['run_interchange_checks'].assert_not_called()
 
     def test_linux_rejects_selected_macos_checks_with_a_saved_report(self):
         with patch.object(suite.platform, 'system', return_value='Linux'):
@@ -338,12 +359,384 @@ class AggregateGateTests(unittest.TestCase):
             mocks['run_android_jvm'].assert_called_once()
             mocks['run_macos_with_skips'].assert_called_once()
             self.assertEqual(report['suites']['macos']['documented_skips'], 3)
+            self.assertEqual(report['requested_lanes'], ['contracts', 'rust', 'android', 'macos'])
             code, report, mocks = self.invoke(['fast', '--android', '--skip-rust'])
             self.assertEqual((code, report['status']), (0, 'passed_with_omissions'))
             mocks['run_rust'].assert_not_called()
-            code, report, _ = self.invoke(['device', '--allow-no-device'], {'run_device_checks': None})
+            code, report, mocks = self.invoke(
+                ['device', '--allow-no-device'],
+                {'run_connected_checks': suite.NotExecuted('No authorized device'),
+                 'run_interchange_checks': suite.NotExecuted('No authorized device')},
+            )
             self.assertEqual((code, report['status']), (0, 'passed_with_omissions'))
-            self.assertEqual(report['suites']['device']['status'], 'not_executed')
+            self.assertEqual(report['suites']['connected']['status'], 'not_executed')
+            self.assertEqual(report['suites']['interchange']['status'], 'not_executed')
+
+    def test_only_lane_selection_runs_exactly_that_lane(self):
+        code, report, mocks = self.invoke(['--only', 'rust'])
+        self.assertEqual(code, 0)
+        self.assertEqual(report['requested_lanes'], ['rust'])
+        self.assertEqual(report['suites']['rust']['passed'], 4)
+        for name in ('ci-integrity', 'structure', 'vectors', 'python', 'android',
+                     'macos', 'connected', 'interchange'):
+            self.assertEqual(report['suites'][name]['status'], 'not_selected')
+        mocks['run_rust'].assert_called_once()
+        mocks['run_structure'].assert_not_called()
+        mocks['run_android_jvm'].assert_not_called()
+
+    def test_only_macos_lane_runs_only_macos(self):
+        with patch.object(suite.platform, 'system', return_value='Darwin'):
+            code, report, mocks = self.invoke(['--only', 'macos'])
+        self.assertEqual(code, 0)
+        self.assertEqual(report['requested_lanes'], ['macos'])
+        self.assertEqual(report['suites']['macos']['passed'], 300)
+        self.assertEqual(report['suites']['macos']['documented_skips'], 3)
+        self.assertEqual(report['suites']['macos']['arch'], 'arm64')
+        self.assertEqual(report['suites']['macos']['xcode'], 'Xcode 26.3')
+        for name in ('ci-integrity', 'structure', 'vectors', 'python', 'rust',
+                     'android', 'connected', 'interchange'):
+            self.assertEqual(report['suites'][name]['status'], 'not_selected')
+        mocks['run_macos_with_skips'].assert_called_once()
+        mocks['run_android_jvm'].assert_not_called()
+
+    def test_macos_native_bridge_builds_before_the_xcode_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            macos = root / 'macos'
+            library = macos / 'build' / 'native' / 'libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            # A previous archive must not survive to be linked by this run.
+            library.write_bytes(b'stale')
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            calls = []
+
+            def fake_step(label, command, report_root, cwd=None, env=None, timeout=1800):
+                calls.append((label, [str(part) for part in command]))
+                log = report_root / (label.replace(' ', '_') + '.log')
+                if label == 'macOS toolchain':
+                    log.write_text('Xcode 26.3\nBuild version 17C529\n')
+                elif label == 'macOS native pairing bridge':
+                    library.write_bytes(b'fresh')
+                elif label == 'macOS Release build':
+                    bundle = root / 'derived/Build/Products/Release/aniCe.app'
+                    for path in ('Contents/MacOS/aniCe', 'Contents/Helpers/aniCeUpdateHelper',
+                                 'Contents/Resources/NowPlaying/libaniCeNowPlaying.dylib'):
+                        binary = bundle / path
+                        binary.parent.mkdir(parents=True, exist_ok=True)
+                        binary.write_bytes(b'app-binary')
+                    log.write_text('Release build completed\n')
+                elif label in ('macOS architecture verification', 'macOS update helper architecture',
+                               'macOS playback adapter architecture'):
+                    self.assertEqual(str(command[1]), '-archs')
+                    log.write_text('arm64\n')
+                elif label == 'macOS codesign verification':
+                    log.write_text('codesign valid\n')
+                return log
+
+            derived_dir = root / 'derived'
+            derived_dir.mkdir(parents=True, exist_ok=True)
+            with patch.object(suite, 'MACOS', macos), \
+                 patch.object(suite.tempfile, 'mkdtemp', return_value=str(derived_dir)), \
+                 patch.object(suite, 'run_step', side_effect=fake_step), \
+                 patch.object(suite, 'parse_xcode_results', return_value=[]) as parse, \
+                 patch.object(suite, 'validate_results', return_value=(1, 0)):
+                result = suite.run_macos_with_skips({}, artifacts, (), ())
+
+            self.assertEqual(result['passed'], 1)
+            self.assertEqual(result['documented_skips'], 0)
+            self.assertEqual(result['xcode'], 'Xcode 26.3')
+            self.assertEqual(result['arch'], 'arm64')
+            self.assertEqual(
+                [label for label, _ in calls],
+                [
+                    'macOS toolchain',
+                    'macOS native pairing bridge',
+                    'macOS Release build',
+                    'macOS architecture verification',
+                    'macOS update helper architecture',
+                    'macOS playback adapter architecture',
+                    'macOS codesign verification',
+                    'macOS hosted tests',
+                ],
+            )
+            self.assertEqual(
+                calls[1][1][1:],
+                [str(suite.SCRIPTS / 'build-pairing-native.py'), 'macos'],
+            )
+            self.assertEqual(library.read_bytes(), b'fresh')
+            self.assertEqual(parse.call_args.kwargs['env'], {})
+            # Verify derived data was cleaned up on completion
+            self.assertFalse(derived_dir.exists())
+
+    def test_macos_lane_rejects_non_arm64_and_extra_architectures_in_every_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            macos = root / 'macos'
+            library = macos / 'build' / 'native' / 'libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+
+            def fake_step(label, command, report_root, cwd=None, env=None, timeout=1800):
+                log = report_root / (label.replace(' ', '_') + '.log')
+                if label == 'macOS toolchain':
+                    log.write_text('Xcode 26.3\n')
+                elif label == 'macOS native pairing bridge':
+                    library.write_bytes(b'fresh')
+                elif label == 'macOS Release build':
+                    bundle = root / 'derived/Build/Products/Release/aniCe.app'
+                    for path in ('Contents/MacOS/aniCe', 'Contents/Helpers/aniCeUpdateHelper',
+                                 'Contents/Resources/NowPlaying/libaniCeNowPlaying.dylib'):
+                        binary = bundle / path
+                        binary.parent.mkdir(parents=True, exist_ok=True)
+                        binary.write_bytes(b'app-binary')
+                    log.write_text('Release build completed\n')
+                elif 'architecture' in label:
+                    log.write_text(architecture if label == failing_step else 'arm64\n')
+                return log
+
+            derived_dir = root / 'derived'
+            for failing_step in ('macOS architecture verification', 'macOS update helper architecture',
+                                 'macOS playback adapter architecture'):
+                for architecture in ('x86_64\n', 'arm64 x86_64\n', 'arm64e\n', ''):
+                    with self.subTest(step=failing_step, architecture=architecture):
+                        derived_dir.mkdir(parents=True, exist_ok=True)
+                        with patch.object(suite, 'MACOS', macos), \
+                             patch.object(suite.tempfile, 'mkdtemp', return_value=str(derived_dir)), \
+                             patch.object(suite, 'run_step', side_effect=fake_step):
+                            with self.assertRaisesRegex(suite.GateError, 'must contain exactly arm64'):
+                                suite.run_macos_with_skips({}, artifacts, (), ())
+                        self.assertFalse(derived_dir.exists())
+
+    def test_macos_lane_rejects_a_native_build_without_a_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            macos = root / 'macos'
+            library = macos / 'build' / 'native' / 'libanice_pairing.a'
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b'stale')
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            with patch.object(suite, 'MACOS', macos), \
+                 patch.object(suite, 'run_step') as command:
+                with self.assertRaisesRegex(suite.GateError, 'no libanice_pairing.a'):
+                    suite.run_macos_with_skips({}, artifacts, (), ())
+            self.assertEqual([call.args[0] for call in command.call_args_list],
+                             ['macOS toolchain', 'macOS native pairing bridge'])
+            self.assertFalse(library.exists())
+
+    def test_contracts_lane_runs_structure_vectors_and_python(self):
+        code, report, mocks = self.invoke(['--only', 'contracts'])
+        self.assertEqual(code, 0)
+        self.assertEqual(report['requested_lanes'], ['contracts'])
+        for name in ('structure', 'vectors', 'python'):
+            self.assertEqual(report['suites'][name]['status'], 'passed')
+        self.assertEqual(report['suites']['vectors']['checks'], 13)
+        mocks['run_structure'].assert_called_once()
+        mocks['run_vector_checks'].assert_called_once()
+        mocks['run_python_meta_tests'].assert_called_once()
+        mocks['run_rust'].assert_not_called()
+
+    def test_ci_integrity_lane_reports_actionlint_and_policy_counts(self):
+        code, report, mocks = self.invoke(['--only', 'ci-integrity'])
+        self.assertEqual(code, 0)
+        self.assertEqual(report['requested_lanes'], ['ci-integrity'])
+        self.assertEqual(report['suites']['ci-integrity']['actionlint'], 'passed')
+        self.assertEqual(report['suites']['ci-integrity']['policy_tests'], 12)
+        mocks['run_ci_integrity'].assert_called_once()
+
+    def test_device_lanes_can_be_selected_independently(self):
+        with patch.object(suite.platform, 'system', return_value='Darwin'):
+            code, report, mocks = self.invoke(['--only', 'connected'])
+            self.assertEqual(code, 0)
+            self.assertEqual(report['requested_lanes'], ['connected'])
+            self.assertEqual(report['suites']['connected']['passed'], 10)
+            self.assertEqual(report['suites']['interchange']['status'], 'not_selected')
+            mocks['run_connected_checks'].assert_called_once()
+            mocks['run_interchange_checks'].assert_not_called()
+            code, report, mocks = self.invoke(['--only', 'interchange'])
+            self.assertEqual(code, 0)
+            self.assertEqual(report['requested_lanes'], ['interchange'])
+            self.assertEqual(report['suites']['interchange']['harnesses'], 3)
+            self.assertEqual(report['suites']['connected']['status'], 'not_selected')
+            mocks['run_interchange_checks'].assert_called_once()
+            mocks['run_connected_checks'].assert_not_called()
+
+    def test_legacy_device_mode_runs_both_device_lanes(self):
+        with patch.object(suite.platform, 'system', return_value='Darwin'):
+            code, report, mocks = self.invoke(['device'])
+        self.assertEqual(code, 0)
+        self.assertEqual(report['status'], 'passed')
+        self.assertEqual(report['suites']['connected']['passed'], 10)
+        self.assertEqual(report['suites']['interchange']['harnesses'], 3)
+        mocks['run_interchange_checks'].assert_called_once()
+        mocks['run_connected_checks'].assert_called_once()
+
+    def test_only_and_mode_are_mutually_exclusive(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            suite.main(['fast', '--only', 'rust', '--output-dir', str(self.root)])
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_allow_no_device_requires_a_device_lane(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            suite.main(['fast', '--allow-no-device', '--output-dir', str(self.root)])
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_list_lanes_prints_the_workflow_interface(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = suite.main(['--list-lanes'])
+        self.assertEqual(code, 0)
+        self.assertIn('contracts: structure, vectors, python', output.getvalue())
+        self.assertIn('macos: macos', output.getvalue())
+        self.assertIn('interchange: interchange', output.getvalue())
+
+    def test_markdown_summary_omits_unselected_suites_and_keeps_errors(self):
+        summary = {
+            'status': 'failed',
+            'suites': {'rust': {'status': 'failed', 'passed': 3},
+                       'macos': {'status': 'not_selected'}},
+            'errors': ['fixture drift\nmore detail'],
+        }
+        text = suite.markdown_summary(summary)
+        self.assertIn('| rust | failed | passed 3 |', text)
+        self.assertNotIn('macos', text)
+        self.assertIn('fixture drift more detail', text)
+
+    def test_step_summary_is_written_when_github_provides_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'step-summary.md'
+            with patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(destination)}):
+                code, report, _ = self.invoke(['--only', 'contracts'])
+            self.assertEqual(code, 0)
+            self.assertIn('Verification summary', destination.read_text())
+
+    def test_connected_checks_fail_without_a_device_unless_omission_is_allowed(self):
+        with patch.object(suite, 'find_adb', return_value='/adb'), \
+             patch.object(suite, 'selected_device', return_value=None):
+            with self.assertRaisesRegex(suite.GateError, 'require one authorized Android device'):
+                suite.run_connected_checks(
+                    SimpleNamespace(serial=None, allow_no_device=False), {}, self.root, ())
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = suite.run_connected_checks(
+                    SimpleNamespace(serial=None, allow_no_device=True), {}, self.root, ())
+        self.assertEqual(result, suite.NotExecuted('No authorized device (--allow-no-device)'))
+
+    def test_connected_checks_pass_the_selected_serial_to_gradle(self):
+        with patch.object(suite, 'find_adb', return_value='/adb'), \
+             patch.object(suite, 'selected_device', return_value='serial-1'), \
+             patch.object(suite, 'run_connected_android', return_value=(10, 0)) as connected:
+            env = {'PATH': '/bin'}
+            result = suite.run_connected_checks(
+                SimpleNamespace(serial='serial-1', allow_no_device=False), env, self.root, ())
+        self.assertEqual(result, (10, 0))
+        self.assertEqual(connected.call_args.args[0]['ANDROID_SERIAL'], 'serial-1')
+        self.assertNotIn('ANDROID_SERIAL', env)
+
+    def test_emulator_diagnostics_are_collected_before_return_and_preserve_test_failures(self):
+        for test_failure, diagnostic_failure in (
+            (None, None), (suite.GateError('original test failure'), None),
+            (suite.GateError('original test failure'), suite.GateError('diagnostics unavailable')),
+            (suite.GateError('original test failure'), PermissionError('diagnostics unwritable')),
+            (None, suite.GateError('diagnostics unavailable')),
+        ):
+            with self.subTest(tests=test_failure, diagnostics=diagnostic_failure):
+                calls = []
+                def tests(*args):
+                    calls.append('tests')
+                    if test_failure:
+                        raise test_failure
+                    return (10, 0)
+                def diagnostics(label, command, artifacts, **kwargs):
+                    calls.append('logcat')
+                    self.assertEqual(command, ['/adb', '-s', 'emulator-5554', 'logcat', '-d'])
+                    self.assertEqual(kwargs['env']['ANDROID_SERIAL'], 'emulator-5554')
+                    if diagnostic_failure:
+                        raise diagnostic_failure
+                    return self.root / 'emulator-logcat.log'
+                with patch.object(suite, 'find_adb', return_value='/adb'), \
+                     patch.object(suite, 'selected_device', return_value='emulator-5554'), \
+                     patch.object(suite, 'run_connected_android', side_effect=tests), \
+                     patch.object(suite, 'run_step', side_effect=diagnostics), \
+                     contextlib.redirect_stderr(io.StringIO()):
+                    args = SimpleNamespace(serial='emulator-5554', allow_no_device=False)
+                    expected = test_failure or diagnostic_failure
+                    if expected:
+                        with self.assertRaises(type(expected)) as raised:
+                            suite.run_connected_checks(args, {}, self.root, ())
+                        self.assertIs(raised.exception, expected)
+                    else:
+                        self.assertEqual(suite.run_connected_checks(args, {}, self.root, ()), (10, 0))
+                self.assertEqual(calls, ['tests', 'logcat'])
+
+    def test_toolchain_env_discovers_the_default_android_sdk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            sdk = home / 'Library' / 'Android' / 'sdk'
+            sdk.mkdir(parents=True)
+            with patch.object(suite.Path, 'home', return_value=home), \
+                 patch.dict(os.environ, {}, clear=True):
+                env = suite.toolchain_env(android=True)
+            self.assertEqual(env['ANDROID_HOME'], str(sdk))
+            self.assertEqual(env['ANDROID_SDK_ROOT'], str(sdk))
+            with patch.object(suite.Path, 'home', return_value=home), \
+                 patch.dict(os.environ, {'ANDROID_SDK_ROOT': '/legacy/sdk'}, clear=True):
+                env = suite.toolchain_env(android=True)
+        self.assertEqual(env['ANDROID_HOME'], '/legacy/sdk')
+        self.assertEqual(env['ANDROID_SDK_ROOT'], '/legacy/sdk')
+
+    def test_toolchain_env_requires_a_complete_xcode_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pin = Path(directory)
+            with patch.dict(os.environ, {'DEVELOPER_DIR': str(pin)}, clear=True):
+                with self.assertRaisesRegex(suite.GateError, 'not a full Xcode'):
+                    suite.toolchain_env(macos=True, require_xcode=True)
+            (pin / 'Platforms' / 'MacOSX.platform').mkdir(parents=True)
+            with patch.dict(os.environ, {'DEVELOPER_DIR': str(pin)}, clear=True):
+                env = suite.toolchain_env(macos=True, require_xcode=True)
+        self.assertEqual(env['DEVELOPER_DIR'], str(pin))
+        self.assertEqual(env['TEST_RUNNER_ANICE_RUN_KEYCHAIN_TESTS'], '1')
+
+    def test_interchange_records_an_omission_without_a_device(self):
+        with patch.object(suite, 'find_adb', return_value='/adb'), \
+             patch.object(suite, 'selected_device', return_value=None), \
+             contextlib.redirect_stdout(io.StringIO()):
+            result = suite.run_interchange_checks(
+                SimpleNamespace(serial=None, allow_no_device=True, session_mac_binary=None),
+                {}, self.root)
+        self.assertEqual(result, suite.NotExecuted('No authorized device (--allow-no-device)'))
+
+    def test_interchange_execution_records_harnesses_and_manual_acceptance_metadata(self):
+        with patch.object(suite, 'find_adb', return_value='/adb'), \
+             patch.object(suite, 'selected_device', return_value='RZCW916NELW'), \
+             patch.object(suite, 'run_step') as mock_step, \
+             contextlib.redirect_stdout(io.StringIO()):
+            result = suite.run_interchange_checks(
+                SimpleNamespace(serial='RZCW916NELW', allow_no_device=False, session_mac_binary=Path('/mock/helper')),
+                {}, self.root)
+        self.assertEqual(result, {
+            'harnesses': 3,
+            'ble_verified': False,
+            'manual_acceptance': 'pending',
+        })
+        self.assertEqual(mock_step.call_count, 3)
+
+    def test_markdown_summary_formats_interchange_evidence(self):
+        summary = {
+            'status': 'passed',
+            'suites': {
+                'interchange': {
+                    'status': 'passed',
+                    'harnesses': 3,
+                    'ble_verified': False,
+                    'manual_acceptance': 'pending',
+                }
+            },
+            'errors': [],
+        }
+        text = suite.markdown_summary(summary)
+        self.assertIn('| interchange | passed | harnesses 3; ble verified False; manual acceptance pending |', text)
 
     def test_failure_marks_later_suites_unexecuted_and_returns_nonzero(self):
         code, report, mocks = self.invoke(['fast', '--android'],
@@ -393,6 +786,7 @@ class AndroidReportFreshnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(suite.GateError, 'no JUnit reports'):
                     suite.run_android_jvm({}, root)
                 self.assertIn('--no-build-cache', command.call_args.args[1])
+                self.assertIn('assembleDebugAndroidTest', command.call_args.args[1])
             self.assertFalse(reports.exists())
 
     def test_failed_report_cleanup_stops_before_running_gradle(self):
@@ -405,6 +799,41 @@ class AndroidReportFreshnessTests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     suite.run_android_jvm({}, root)
                 command.assert_not_called()
+
+    def test_find_adb_discovers_custom_env_and_linux_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk = root / 'custom_sdk'
+            adb = sdk / 'platform-tools/adb'
+            adb.parent.mkdir(parents=True)
+            adb.write_text('#!/bin/sh\nexit 0\n')
+            adb.chmod(0o755)
+
+            with patch.object(suite.shutil, 'which', return_value=None):
+                # Custom env takes precedence over os.environ
+                found = suite.find_adb(env={'ANDROID_HOME': str(sdk)})
+                self.assertEqual(found, str(adb))
+
+                # Discovery checks Linux home path
+                linux_sdk = root / 'Android/Sdk'
+                linux_adb = linux_sdk / 'platform-tools/adb'
+                linux_adb.parent.mkdir(parents=True)
+                linux_adb.write_text('#!/bin/sh\nexit 0\n')
+                linux_adb.chmod(0o755)
+                with patch.object(Path, 'home', return_value=root):
+                    found_linux = suite.find_adb(env={})
+                    self.assertEqual(found_linux, str(linux_adb))
+
+    def test_connected_devices_passes_environment(self):
+        test_env = {'ANDROID_SERIAL': 'emulator-5554'}
+        with patch.object(suite.subprocess, 'run') as mock_run:
+            mock_run.return_value = SimpleNamespace(
+                returncode=0,
+                stdout='List of devices attached\nemulator-5554\tdevice\n',
+            )
+            devices = suite.connected_devices('/mock/adb', env=test_env)
+            self.assertEqual(devices, ['emulator-5554'])
+            self.assertEqual(mock_run.call_args.kwargs['env'], test_env)
 
 
 if __name__ == "__main__":

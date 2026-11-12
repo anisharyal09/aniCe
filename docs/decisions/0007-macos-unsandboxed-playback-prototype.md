@@ -1,5 +1,9 @@
 # macOS application process boundary
 
+## Amendment: Apple Silicon only
+
+Official Mac builds now package an arm64-only playback adapter and app. The universal-build references below describe the original packaging decision, not current Intel support. The process boundary, consent and signing requirements are unchanged.
+
 ## Decision
 
 Mac Debug and Release disable App Sandbox in the Xcode target and app entitlements. This applies to the entire Mac app; playback motivated the change but does not limit its scope. Hardened runtime remains enabled. Shared local builds default to ad-hoc signing; developers can use a stable Apple Development identity locally when checking macOS permission persistence. The development Keychain backend, key tags, trust credentials and session cryptography remain unchanged.

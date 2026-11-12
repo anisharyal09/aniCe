@@ -1,7 +1,10 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Build a self-signed Mac release in an isolated, temporary signing keychain.
+# Build a self-signed arm64 Mac release in an isolated, temporary signing keychain.
 set -euo pipefail
+[[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || {
+  echo 'Mac releases require Apple Silicon and a native arm64 shell.' >&2; exit 1;
+}
 : "${MAC_CERT_P12_BASE64:?Missing Mac signing certificate}"
 : "${MAC_CERT_PASSWORD:?Missing Mac certificate password}"
 : "${MAC_SIGNING_IDENTITY:?Missing Mac signing identity}"
@@ -40,7 +43,7 @@ python3 scripts/build-pairing-native.py macos
 pins="$MAC_UPDATE_PIN_CURRENT"
 if [[ -n "$next_pin" ]]; then pins="$pins,$next_pin"; fi
 xcodebuild -project apps/macos/aniCe.xcodeproj -scheme aniCe -configuration Release \
-  -derivedDataPath "$work/DerivedData" ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO \
+  -derivedDataPath "$work/DerivedData" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
   CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$MAC_SIGNING_IDENTITY" \
   "OTHER_CODE_SIGN_FLAGS=--keychain $keychain" "MARKETING_VERSION=$RELEASE_VERSION" \
   "CURRENT_PROJECT_VERSION=$RELEASE_CODE" "ANICE_UPDATE_PINS=$pins" build
@@ -50,15 +53,19 @@ app="$work/DerivedData/Build/Products/Release/aniCe.app"
 codesign --verify --deep --strict "$app"
 executable="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")"
 [[ -x "$executable" ]] || { echo 'Mac app executable is missing' >&2; exit 1; }
-[[ "$(lipo -archs "$executable" | tr ' ' '\n' | sort | tr '\n' ' ')" == "arm64 x86_64 " ]] || {
-  echo 'Mac app executable must contain exactly arm64 and x86_64' >&2; exit 1;
+[[ "$(lipo -archs "$executable")" == arm64 ]] || {
+  echo 'Mac app executable must contain exactly arm64' >&2; exit 1;
 }
 codesign -dvv "$app" 2> "$work/signature.txt"
 grep -q 'flags=.*runtime' "$work/signature.txt" || { echo 'Mac hardened runtime is missing' >&2; exit 1; }
 codesign --verify --strict "$app/Contents/Helpers/aniCeUpdateHelper"
 helper="$app/Contents/Helpers/aniCeUpdateHelper"
-[[ "$(lipo -archs "$helper" | tr ' ' '\n' | sort | tr '\n' ' ')" == "arm64 x86_64 " ]] || {
-  echo 'Update helper must contain exactly arm64 and x86_64' >&2; exit 1;
+[[ "$(lipo -archs "$helper")" == arm64 ]] || {
+  echo 'Update helper must contain exactly arm64' >&2; exit 1;
+}
+adapter="$app/Contents/Resources/NowPlaying/libaniCeNowPlaying.dylib"
+[[ -f "$adapter" && "$(lipo -archs "$adapter")" == arm64 ]] || {
+  echo 'Now Playing adapter must contain exactly arm64' >&2; exit 1;
 }
 codesign -dvv "$helper" 2> "$work/helper-signature.txt"
 grep -q '^Identifier=io.github.anisharyal09.anice.update-helper$' "$work/helper-signature.txt" || {

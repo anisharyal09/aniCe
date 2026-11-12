@@ -81,7 +81,7 @@ See the platform setup guides below for prerequisites and local Mac signing sett
 - **Features:** [Mac Desk Deck (unreleased)](docs/features/MAC_DESK_DECK.md) · [Do Not Disturb sync (unreleased)](docs/features/DND_SYNC.md) · [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md) · [Find Device](docs/features/FIND_DEVICE.md) · [Clipboard](docs/features/CLIPBOARD.md) · [Messages (SMS relay)](docs/features/SMS.md) · [Notification mirroring (unreleased)](docs/features/NOTIFICATION_MIRRORING.md) · [Mac keyboard & trackpad for Android (unreleased)](docs/features/KEYBOARD_TRACKPAD.md) · [Control Mac (unreleased)](docs/features/PHONE_TO_MAC.md)
 - **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
 
-Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
+Android compiles/targets API 36 with `minSdk = 29`; building and running the Mac app requires Apple Silicon (`arm64`) and macOS 14 or newer. Swift language mode is 6. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
 
 ---
 

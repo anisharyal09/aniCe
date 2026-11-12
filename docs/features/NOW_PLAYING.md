@@ -56,10 +56,10 @@ aniCe implements the application-scoped playback owner, authenticated transport 
 
 ## Verification
 
-Manual application testing exercises playback controls, player selection and presentation on the current phone/Mac setup, including playback alongside Phone→Mac transfer. Packaged WebKit controls, native API checks and Mac output writes have also been exercised on Apple Silicon macOS. Offline Android tests/lint/builds and Mac hosted tests pass; earlier universal builds are recorded separately.
+Manual application testing exercises playback controls, player selection and presentation on the current phone/Mac setup, including playback alongside Phone→Mac transfer. Packaged WebKit controls, native API checks and Mac output writes have also been exercised on Apple Silicon macOS. Current automated build and test evidence is recorded by `scripts/verify-suite.py`. Earlier universal-build results are historical; official Mac builds and the packaged adapter now target arm64 only.
 
 ## Known limitations
 
-The remaining matrix includes extended phone-button/lock-screen lifecycle, Music/Spotify permission and volume combinations, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery measurements. Optional Mac Home/companion display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer; profiling is still required to identify the cause and quantify control latency. macOS 14, Intel runtime and certificate-signed Debug coverage remain open; universal compilation does not establish runtime support.
+The remaining matrix includes extended phone-button/lock-screen lifecycle, Music/Spotify permission and volume combinations, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery measurements. Optional Mac Home/companion display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer; profiling is still required to identify the cause and quantify control latency. macOS 14 and certificate-signed Debug coverage remain open; compilation does not establish runtime support. Intel Macs are outside the supported platform matrix.
 
 Audio streaming, a separate media background service, shuffle, lyrics and queues are outside this feature. Discovery-disconnect recovery remains separate.

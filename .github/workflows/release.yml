@@ -27,6 +27,7 @@ concurrency:
 jobs:
   metadata:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
@@ -59,6 +60,7 @@ jobs:
   android:
     needs: metadata
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     environment: release
     permissions:
       contents: read
@@ -125,6 +127,9 @@ jobs:
   macos:
     needs: metadata
     runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     environment: release
     permissions:
       contents: read
@@ -137,7 +142,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
       - name: Build and verify signed Mac archive
         shell: bash
         env:
@@ -159,6 +164,7 @@ jobs:
     needs: [metadata, android, macos]
     if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     environment: release
     permissions:
       contents: write

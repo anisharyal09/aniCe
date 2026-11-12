@@ -8,6 +8,24 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Make Apple Silicon (`arm64`) the official Mac build and release target; align the app, native libraries, signed update helper and updater architecture checks, and document the unsupported Intel path.
+
+- Align CI with the release workflow already on `main`, add bounded release-job timeouts, correct emulator acceleration checks and diagnostics, and require explicit builds for compiled-language CodeQL scans.
+
+- Update the Android feature-row instrumentation fixture for the current reorder controls and verify that opening or favouriting a row does not reorder it.
+
+- Synchronize the Mac cumulative-credit fixture with complete payload submission before sending a success receipt, without changing production transfer validation.
+
+- Add supply-chain security and repository governance: automated CodeQL analysis for Python, Actions, Java/Kotlin, and Swift (`security.yml`), OpenSSF Scorecard analysis, fork-safe PR dependency review (`dependency-review.yml`), security vulnerability disclosure policy (`SECURITY.md`), contribution guidelines (`CONTRIBUTING.md`), and pull request verification template (`.github/PULL_REQUEST_TEMPLATE.md`).
+
+- Add protected physical Android device lab verification for native cross-platform interchange (`device-lab.yml`), serialized to avoid USB ADB contention, with automated battery and thermal guardrails (`scripts/check-device-health.py`), device inventory definitions (`tools/device-lab/inventory.json`), and explicit non-automated manual-acceptance tracking.
+
+- Compile Android instrumentation tests with `assembleDebugAndroidTest` in `verify-android`, make `connected` verification Linux-friendly, and add scheduled/manual emulator execution for API 29 and 36 on headless KVM in `runtime.yml`.
+
+- Add a hosted macOS platform-truth lane on `macos-15` with pinned Xcode 26.3; rebuild the native Apple Silicon (`arm64`) Rust pairing bridge before `xcodebuild`, compile and verify native Release with codesign, isolate derived data with cleanup, and make macOS a required aggregate lane.
+
+- Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.
+
 - Add GitHub release checks and Android update installation; install signed Mac updates through a verified archive and detached rollback helper, with a fail-closed signed release workflow.
 
 - Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
@@ -77,6 +95,7 @@ Shared product changes, repository structure, documentation and development conv
 - Clarify QR and six-digit code selection during pairing on both platforms.
 
 - Clarify first-launch device setup and hide file-send shortcuts until a device is trusted.
+
 - Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
 
 - Document Mac Desk Deck and DND setup in the README feature guides.

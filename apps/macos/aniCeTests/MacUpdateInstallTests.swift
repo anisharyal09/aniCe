@@ -30,6 +30,7 @@ final class MacUpdateInstallTests: XCTestCase {
       MacUpdateStaging.Error.invalidDownload, MacUpdateStaging.Error.invalidBundle,
       MacUpdateStaging.Error.extractionFailed, MacUpdateStaging.Error.stagingUnavailable,
       MacUpdateArchive.Error.invalid("test"), MacUpdateSignature.Error.invalidConfiguration,
+      MacUpdateSignature.Error.invalidArchitecture,
       MacUpdateSignature.Error.invalidCode(-1), MacUpdateSignature.Error.wrongCertificate,
     ]
     for failure in failures {

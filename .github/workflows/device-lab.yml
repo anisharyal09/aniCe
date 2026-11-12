@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Protected physical device lab verification for native cross-platform interchange.
+# Runs only on self-hosted hardware with physical Android phones attached via USB.
+# NEVER triggered by untrusted pull_request code.
+name: Device Lab
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      serial:
+        description: 'Explicit Android device serial (optional)'
+        required: false
+        type: string
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+# Physical USB access must be serialized; never cancel an active on-device session.
+concurrency:
+  group: device-lab-physical-access
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  verify-native-interchange:
+    runs-on: [self-hosted, macOS, device-lab]
+    environment: device-lab
+    timeout-minutes: 45
+    env:
+      ANICE_DEVICE_SERIAL: ${{ inputs.serial }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: Preflight device thermal and battery guardrails
+        run: |
+          mkdir -p build/reports/verification
+          python3 scripts/check-device-health.py --serial "$ANICE_DEVICE_SERIAL" --output build/reports/verification/device-health.json
+
+      - name: Build macOS pairing native bridge
+        run: python3 scripts/build-pairing-native.py macos
+
+      - name: Verify native interchange
+        run: python3 scripts/verify-suite.py --only interchange --serial "$ANICE_DEVICE_SERIAL"
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verify-native-interchange-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            build/reports/verification/

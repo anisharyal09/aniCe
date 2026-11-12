@@ -34,6 +34,7 @@ fi
 
 if [[ "$platform" == mac ]]; then
     [[ "$(uname -s)" == Darwin ]] || fail "Mac builds require macOS."
+    [[ "$(uname -m)" == arm64 ]] || fail "Mac builds require Apple Silicon and a native arm64 shell."
     [[ -n "${ANICE_DEVELOPMENT_TEAM:-}" ]] || fail "Set ANICE_DEVELOPMENT_TEAM to your Apple development team ID (see apps/macos/README.md)."
     identity="${ANICE_CODE_SIGN_IDENTITY:-Apple Development}"
     [[ "$identity" != - ]] || fail "Use an Apple Development certificate, not ad-hoc signing, for permission testing."
@@ -63,6 +64,7 @@ APPLESCRIPT
     echo "Building Mac branch '$branch' from $ROOT"
     xcodebuild -project "$ROOT/apps/macos/aniCe.xcodeproj" -scheme aniCe \
         -configuration Debug -destination 'platform=macOS' -derivedDataPath "$derived" \
+        ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
         "CODE_SIGN_IDENTITY=$identity" "DEVELOPMENT_TEAM=$ANICE_DEVELOPMENT_TEAM" \
         "INFOPLIST_KEY_CFBundleDisplayName=aniCe ($branch)" build
     app="$derived/Build/Products/Debug/aniCe.app"

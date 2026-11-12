@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Runs Android instrumentation on KVM-accelerated CPUs with headless SwiftShader graphics.
+# Scheduled nightly and manually dispatched; never runs on PR events.
+name: Runtime
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  verify-android-connected:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 29
+            target: default
+          - api-level: 36
+            target: google_apis
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Java and Gradle dependency cache
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            apps/android/**/*.gradle.kts
+            apps/android/gradle.properties
+            apps/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Set up Rust and Android targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
+      - name: Install Android SDK and NDK components
+        run: |
+          mkdir -p build/reports/ci
+          (yes 2>/dev/null || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses 2>&1 | tee build/reports/ci/android-licenses.log
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.3.13750724' 2>&1 | tee build/reports/ci/android-setup.log
+          echo "ANICE_NDK=$ANDROID_HOME/ndk/27.3.13750724" >> "$GITHUB_ENV"
+
+      - name: Require KVM access
+        run: |
+          mkdir -p build/reports/emulator
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::KVM acceleration is required; /dev/kvm is missing." | tee build/reports/emulator/kvm-device.log
+            exit 1
+          fi
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            sudo chmod 0666 /dev/kvm
+          fi
+          [[ -r /dev/kvm && -w /dev/kvm ]] || { echo "::error::KVM is not accessible to the runner."; exit 1; }
+          ls -l /dev/kvm > build/reports/emulator/kvm-device.log
+
+      - name: Run connected tests in emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          avd-name: anice-api-${{ matrix.api-level }}
+          force-avd-creation: true
+          disable-linux-hw-accel: false
+          emulator-options: -accel on -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none
+          disable-animations: true
+          pre-emulator-launch-script: |
+            bash -e -o pipefail -c '"$ANDROID_HOME/emulator/emulator" -accel-check 2>&1 | tee build/reports/emulator/acceleration.log'
+            cp "$ANDROID_AVD_HOME/anice-api-${{ matrix.api-level }}.avd/config.ini" build/reports/emulator/avd-config.ini
+          # The action already waits for sys.boot_completed. The verifier saves
+          # logcat before the action shuts this exact emulator down, even on failure.
+          script: python3 scripts/verify-suite.py --only connected --serial "$ANDROID_SERIAL"
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verify-android-connected-api-${{ matrix.api-level }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            build/reports/verification/
+            build/reports/ci/
+            build/reports/emulator/
+            apps/android/app/build/outputs/androidTest-results/
+            apps/android/app/build/reports/androidTests/

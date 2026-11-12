@@ -44,7 +44,7 @@ Mac path updates retain a connection while the path is satisfied, uses Wi-Fi/Eth
 
 ## Automated verification
 
-Run `python3 protocol/test-vectors/lan/generate_lan_vectors.py --check`, Android unit tests/lint/builds and Mac hosted tests/universal builds. Fixture inventory includes eight valid/ten invalid frames. Tests cover splits, coalescing, malformed lengths/versions, incomplete EOF, fixed deadlines, stale NSD completion, IPv6 scope and cross-transport peer exclusion.
+Run `python3 protocol/test-vectors/lan/generate_lan_vectors.py --check`, `python3 scripts/verify-suite.py --only android` and `python3 scripts/verify-suite.py --only macos` (Apple Silicon only). Fixture inventory includes eight valid/ten invalid frames. Tests cover splits, coalescing, malformed lengths/versions, incomplete EOF, fixed deadlines, stale NSD completion, IPv6 scope and cross-transport peer exclusion.
 
 With test APKs installed on a Wi-Fi-connected phone, run:
 
