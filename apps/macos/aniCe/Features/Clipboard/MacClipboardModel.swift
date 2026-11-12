@@ -523,7 +523,14 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   private func schedule() {
     timer?.cancel(); timer = nil
     // Reuse the delivery deadline timer so recent activity needs no additional polling loop.
-    let deadlines = histories.values.flatMap { h in h.terminal.values.map(\.expiry) + (h.incoming.map { [$0.deadline] } ?? []) } + (outgoing.map { [$0.deadline] } ?? []) + (recent.map { [$0.deadline] } ?? [])
+    // Keep this imperative: older Swift compilers time out type-checking the chained flatMap form.
+    var deadlines: [TimeInterval] = []
+    for history in histories.values {
+      deadlines.append(contentsOf: history.terminal.values.map(\.expiry))
+      if let incoming = history.incoming { deadlines.append(incoming.deadline) }
+    }
+    if let outgoing { deadlines.append(outgoing.deadline) }
+    if let recent { deadlines.append(recent.deadline) }
     guard let next = deadlines.min() else { return }
     let delay = max(0.001, next - now()), wait = self.wait
     timer = Task { [weak self] in

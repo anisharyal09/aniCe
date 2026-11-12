@@ -5,7 +5,7 @@ Mac Desk Deck is an Android feature panel for a trusted Mac. It opens its shell 
 
 ## Status and recovery
 
-The top card names the Mac, summarizes connection state and sample age, and gives each device a labeled power summary. **Details** shows transport, sample sequence, thermal pressure and the keep-awake preference. A previous sample remains visible as stale after reconnect or refresh, but controls remain disabled until a fresh sample arrives.
+The top card names the Mac, summarizes connection state and the local time of the last received sample, and gives each device a labeled power summary. **Details** shows transport, the full last-received date and time, thermal pressure and the keep-awake preference. A previous sample remains visible with its timestamp after reconnect or refresh, but controls remain disabled until a fresh sample arrives.
 
 The panel shows opening progress immediately. After five seconds it explains that it is reconnecting once; after ten seconds it stops retrying and offers **Refresh**. Refresh starts a fresh read-only subscription and does not repeat any action. Readings become stale after three seconds without telemetry. The latest sample is cached locally so it can appear immediately after an app restart; cached readings are always stale and cannot enable actions until the Mac sends a fresh sample. The Mac stops sampling after fifteen seconds without a five-second renewal from the visible panel. Closing or backgrounding the panel sends Stop and cancels renewal.
 
@@ -39,7 +39,7 @@ Landscape presents meters and quick actions in an adaptive grid. Portrait stacks
 
 Desk Deck stays within the regular Android app shell. The app bar Back button and bottom destinations remain available while the panel is open.
 
-**Keep screen awake while charging** is off by default. When enabled, it prevents the screen timeout only while Desk Deck is visible and Android reports external power; backgrounding, unplugging, or leaving the panel restores the normal timeout.
+**Keep screen awake while charging** is off by default and uses the standard labeled checkbox control. When enabled, it prevents the screen timeout only while Desk Deck is visible and Android reports external power; backgrounding, unplugging, or leaving the panel restores the normal timeout.
 
 ## Implementation and protocol
 

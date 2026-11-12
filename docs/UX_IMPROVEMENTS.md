@@ -20,7 +20,7 @@ BLE retains automatic reconnect ownership through native events and bounded back
 | Phone Settings navigation like Mac, smaller controls | Implemented as a vertically scrolling page with horizontally scrollable top shortcuts that jump to groups, retain visible selected styling through the jump, briefly highlight the destination group, and reveal the active shortcut during manual scroll. Mac Settings uses balanced section columns. Phone visual acceptance remains pending. |
 | Phone identity sheet should expand only for Advanced | Implemented: collapsed content wraps its height; Advanced animates open and requests that Reset identity be brought into view. Visual phone acceptance remains pending. |
 | Enable automatic file acceptance in both directions | Enabled for new pairings on both platforms. Existing peers retain saved choices; no saved choice on an existing peer remains off. See [file transfer](features/FILE_TRANSFER.md). |
-| Mac global keyboard shortcut | Implemented: Option-Command-K toggles the existing floating keyboard. |
+| Mac global keyboard shortcut | Implemented: Option-Command-K toggles Floating Key. |
 | Favourites empty state teaches how to add items | Implemented on both platforms, with a Choose favourites action. |
 | Improve the first app opening | Both Home views show one Add device entry with instructions for the other device; Android opens pairing directly when Devices is selected with no trusted phone. Unavailable send actions and empty trust/activity controls are hidden. This is an implemented flow change, not a completed visual usability study. |
 | Reorder lists on phone and Mac | Features and Favourites have saved order with long-press/right-click Move actions. Trusted-device manual ordering is not implemented. |

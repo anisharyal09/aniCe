@@ -71,7 +71,14 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
 
   var accessibilityName: String {
     let phone = model.targetPeer?.deviceName ?? "no phone selected"
-    return "Phone keyboard, \(phone), \(statusDescription)"
+    return "Floating Key for \(phone), \(statusDescription)"
+  }
+
+  var accessibilityHint: String {
+    guard let phone = model.targetPeer?.deviceName else {
+      return "Open full controls to choose a trusted phone and use its keyboard or trackpad."
+    }
+    return "Click to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."
   }
 
   var statusDescription: String {
@@ -253,7 +260,7 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     cancelPendingActivation()
     model.applicationWasInterrupted()
     let menu = NSMenu()
-    let expandItem = NSMenuItem(title: "Show full controls", action: #selector(showFullControlsFromMenu), keyEquivalent: "")
+    let expandItem = NSMenuItem(title: "Show trackpad too", action: #selector(showFullControlsFromMenu), keyEquivalent: "")
     expandItem.target = self
     menu.addItem(expandItem)
     menu.addItem(.separator())
@@ -428,27 +435,24 @@ private struct FloatingKeyboardPanelView: View {
     .aniCeControlFeedback(prominent: isActive, cornerRadius: 15)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(controller.accessibilityName)
-    .accessibilityHint("Click to toggle typing to the phone. Right-click for full controls or to hide the button.")
-    .help(controller.accessibilityName)
+    .accessibilityHint(controller.accessibilityHint)
+    .help(controller.accessibilityHint)
   }
 
   private var expandedControls: some View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
-        ZStack {
-          Image(systemName: "line.3.horizontal")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(AniCePalette.secondaryText(scheme))
-            .allowsHitTesting(false)
-          FloatingWindowDragHandle()
-        }
-        .frame(width: 22, height: 24)
-        .help("Drag to move floating controls")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Move floating controls")
-        Label("Keyboard & Trackpad", systemImage: "keyboard")
+        Image(systemName: "line.3.horizontal")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .frame(width: 16, height: 24)
+          .accessibilityHidden(true)
+          .allowsHitTesting(false)
+        Label("Control Android", systemImage: "keyboard")
           .font(.system(size: 13, weight: .medium))
+          .allowsHitTesting(false)
         Spacer()
+          .allowsHitTesting(false)
         Label("Floating", systemImage: "macwindow")
           .font(.caption2.weight(.medium))
           .foregroundStyle(AniCePalette.accent(scheme))
@@ -456,13 +460,20 @@ private struct FloatingKeyboardPanelView: View {
           .padding(.vertical, 4)
           .background(AniCePalette.accent(scheme).opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
           .accessibilityLabel("Floating control window")
+          .allowsHitTesting(false)
         Button("Collapse", action: controller.collapse)
         Button("Hide", action: controller.hide)
       }
       .buttonStyle(AniCeButtonStyle(compact: true))
       .padding(.horizontal, 14)
       .padding(.vertical, 10)
-      .background(AniCePalette.surface(scheme))
+      .background {
+        ZStack {
+          AniCePalette.surface(scheme)
+          FloatingWindowDragHandle()
+        }
+      }
+      .help("Drag header to move floating controls")
       Divider()
       ScrollView {
         MacKeyboardTrackpadView(model: model, presentationID: controller.expandedPresentationID,

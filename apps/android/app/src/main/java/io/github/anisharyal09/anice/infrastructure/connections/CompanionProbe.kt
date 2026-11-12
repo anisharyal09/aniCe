@@ -75,8 +75,8 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   val fingerprint get() = preferences.getString("fingerprint", null)
   val automaticEnabled get() = preferences.getBoolean("automatic", false)
   val pauseStatus: String? get() = if (!connectionPaused || !automaticEnabled) null else connectionPauseUntil?.let {
-    "Paused · resumes at ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}"
-  } ?: "Paused · resume when ready"
+    "Paused until ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}"
+  } ?: "Paused"
   val available get() = Build.VERSION.SDK_INT >= 31 && app.resources.getBoolean(R.bool.companion_probe_supported) &&
     app.packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP)
   init { reconcileForeground() }
@@ -314,8 +314,8 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     }
     connectionPauseUntil = until
     val message = until?.let {
-      "Paused · resumes at ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}"
-    } ?: "Paused · resume when ready"
+      "Paused until ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}"
+    } ?: "Paused"
     pause(message)
     app.sessionController.disconnect(skipAutomaticPause = true)
     app.lanSessionController.disconnect()

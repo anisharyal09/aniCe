@@ -8,6 +8,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+- Remove the OpenSSF Scorecard advisory job; keep CodeQL, dependency review and the remaining repository governance checks.
+
+- Fix Swift 6 compilation under the pinned Xcode 26.3 toolchain by simplifying the clipboard deadline expression and making the playback channel sender explicitly `Sendable`.
+
 - Make Apple Silicon (`arm64`) the official Mac build and release target; align the app, native libraries, signed update helper and updater architecture checks, and document the unsupported Intel path.
 
 - Align CI with the release workflow already on `main`, add bounded release-job timeouts, correct emulator acceleration checks and diagnostics, and require explicit builds for compiled-language CodeQL scans.
@@ -16,7 +20,7 @@ Shared product changes, repository structure, documentation and development conv
 
 - Synchronize the Mac cumulative-credit fixture with complete payload submission before sending a success receipt, without changing production transfer validation.
 
-- Add supply-chain security and repository governance: automated CodeQL analysis for Python, Actions, Java/Kotlin, and Swift (`security.yml`), OpenSSF Scorecard analysis, fork-safe PR dependency review (`dependency-review.yml`), security vulnerability disclosure policy (`SECURITY.md`), contribution guidelines (`CONTRIBUTING.md`), and pull request verification template (`.github/PULL_REQUEST_TEMPLATE.md`).
+- Add supply-chain security and repository governance: automated CodeQL analysis for Python, Actions, Java/Kotlin, and Swift (`security.yml`), fork-safe PR dependency review (`dependency-review.yml`), security vulnerability disclosure policy (`SECURITY.md`), contribution guidelines (`CONTRIBUTING.md`), and pull request verification template (`.github/PULL_REQUEST_TEMPLATE.md`).
 
 - Add protected physical Android device lab verification for native cross-platform interchange (`device-lab.yml`), serialized to avoid USB ADB contention, with automated battery and thermal guardrails (`scripts/check-device-health.py`), device inventory definitions (`tools/device-lab/inventory.json`), and explicit non-automated manual-acceptance tracking.
 
@@ -27,6 +31,12 @@ Shared product changes, repository structure, documentation and development conv
 - Split verification into independent CI integrity, contract, Rust and Android lanes; add a fail-closed required aggregator, pinned runner images, job summaries, always-uploaded evidence, YAML-aware workflow policy tests and CODEOWNERS protection for the gate.
 
 - Add GitHub release checks and Android update installation; install signed Mac updates through a verified archive and detached rollback helper, with a fail-closed signed release workflow.
+
+- Highlight 'Ce' in aniCe (indicating Core Ecosystem) with a warm terracotta accent across macOS and Android wordmarks, format the Mac titlebar header with isolated navigation controls, style the menu bar companion open button, and sharpen feature documentation and Desk Deck controls.
+
+- Add fine-grained text scaling (80%–120%) across macOS and Android, remove redundant Disconnect buttons in favor of wrapped Pause controls with concise status text, set default platform favorites and pinned companion quick actions, default Mac SMS notifications to preview messages with sound muted, cleansify phone SMS conversations and Find Device cards, and streamline the About view with an updated tagline and understated support link.
+
+- Keep connection status and device power inline after the Wi-Fi icon across Mac and Android, refine the menu bar companion device row and action grid, present file transfers as floating panels on the active space, rename Floating Key's menu to Show trackpad too, and compact phone SMS actions.
 
 - Correct automatic LAN defaults and bidirectional power descriptions across architecture, READMEs and design guidance.
 

@@ -114,7 +114,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     if (!canUsePeer) add("Disconnect your current Mac to connect to this one.")
                     if (!active && !waiting && pauseStatus == null && isEmpty()) add("Tap Connect on both devices.")
                 }.joinToString("\n")
-                val connectionOptions: (@Composable () -> Unit)? = if (automaticConfigured && nearby.available) {
+                val connectionOptions: (@Composable () -> Unit)? = if (nearby.available && (automaticConfigured || summary.state == ConnectionState.SECURED || nearby.connectionPaused)) {
                     {
                         ConnectionPauseMenu(
                             peerName = record.peer.deviceName,
@@ -157,7 +157,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         bluetoothConnected = bleState == ConnectionState.SECURED,
                         localNetworkConnected = lanState == ConnectionState.SECURED,
                         powerSummary = if (summary.state == ConnectionState.SECURED)
-                            model.devicePower.macSummary(record.peer) ?: "Mac power unavailable" else null,
+                            model.devicePower.macShortSummary(record.peer) else null,
                         connectionOptions = connectionOptions)
                 if (!compact) {
                 val groupOutline = MaterialTheme.colorScheme.outlineVariant
@@ -249,9 +249,6 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                 Text("Security fingerprint", style = MaterialTheme.typography.labelMedium)
                                 Text(record.peer.fingerprint, style = MaterialTheme.typography.bodySmall)
                             }
-                        }
-                        if (!flatDeviceLayout && (summary.state == ConnectionState.SECURED || summary.state == ConnectionState.CONNECTING)) {
-                            TextButton(onClick = model::disconnect) { Text("Disconnect device") }
                         }
                         HorizontalDivider()
                         TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { diagnostics = !diagnostics; showEvents = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -411,17 +408,19 @@ private fun ConnectionPauseMenu(
     onResume: () -> Unit,
 ) {
     Box {
-        TextButton(
+        OutlinedButton(
             onClick = onOpen,
             enabled = enabled,
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+            shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             modifier = Modifier.defaultMinSize(minHeight = 32.dp).semantics {
                 contentDescription = "${if (paused) "Resume" else "Pause"} automatic connection to $peerName"
             },
         ) {
-            Icon(painterResource(R.drawable.ic_media_pause), contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(if (paused) "Resume" else "Pause")
+            Icon(painterResource(R.drawable.ic_pause_circle), contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (paused) "Resume" else "Pause", style = MaterialTheme.typography.labelMedium)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
             DropdownMenuItem(text = { Text("1 hour") }, onClick = { onPause(3_600_000L) })
@@ -461,10 +460,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
                 .heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
                 Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
-                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
-                if (powerSummary != null) Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = statusColor)
-                if (state == ConnectionState.SECURED && summary != "Connected")
-                    Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
+                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor, powerSummary)
             }
             connectionOptions?.invoke()
             Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
@@ -485,16 +481,13 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
                 onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor)
-                if (powerSummary != null) Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = statusColor)
-                if (state == ConnectionState.SECURED && summary != "Connected")
-                    Text(summary, style = MaterialTheme.typography.bodySmall, color = statusColor)
+                ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor, powerSummary)
             }
             connectionOptions?.invoke()
-            if (showConnectionAction) OutlinedButton(shape = MaterialTheme.shapes.small,
+            if (showConnectionAction && action != "Disconnect") OutlinedButton(shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
-                onClick = if (action == "Disconnect" || action == "Cancel") onDisconnect else onConnect,
-                enabled = action == "Disconnect" || action == "Cancel" || canConnect,
+                onClick = if (action == "Cancel") onDisconnect else onConnect,
+                enabled = action == "Cancel" || canConnect,
                 modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
         }
         if (status.isNotBlank()) Text(status,
@@ -520,15 +513,24 @@ private fun ConnectionStatusLine(
     bluetoothConnected: Boolean,
     localNetworkConnected: Boolean,
     color: androidx.compose.ui.graphics.Color,
+    powerSummary: String? = null,
 ) {
     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(if (state == ConnectionState.SECURED) "Connected" else summary,
-            style = MaterialTheme.typography.bodySmall, color = color)
+        val label = if (state == ConnectionState.SECURED) {
+            if (summary.startsWith("Paused")) summary else "Connected"
+        } else summary
+        Text(label, style = MaterialTheme.typography.bodySmall, color = color,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         if (bluetoothConnected) Icon(painterResource(R.drawable.ic_bluetooth), contentDescription = "Bluetooth connected",
-            tint = color, modifier = Modifier.size(14.dp))
+            tint = color, modifier = Modifier.size(13.dp))
         if (localNetworkConnected) Icon(painterResource(R.drawable.ic_wifi), contentDescription = "Local network connected",
-            tint = color, modifier = Modifier.size(14.dp))
+            tint = color, modifier = Modifier.size(13.dp))
+        if (!powerSummary.isNullOrBlank()) {
+            Text("·", style = MaterialTheme.typography.bodySmall, color = color.copy(alpha = 0.6f))
+            Text(powerSummary, style = MaterialTheme.typography.bodySmall, color = color.copy(alpha = 0.85f),
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
     }
 }
 

@@ -48,7 +48,7 @@ struct MacKeyboardTrackpadView: View {
       targetHeader
 
       if !floatingPresentation {
-        Text("Shortcut: ⌥⌘K shows or hides the floating keyboard")
+        Text("Shortcut: ⌥⌘K shows or hides Floating Key")
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }
@@ -143,7 +143,7 @@ struct MacKeyboardTrackpadView: View {
           .foregroundStyle(AniCePalette.accent(scheme))
         }
         .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
-        .help("Open Keyboard & Trackpad in the main aniCe window")
+        .help("Open Control Android in the main aniCe window")
         .accessibilityHint("Opens this control in the main aniCe window")
       }
       Spacer(minLength: 8)
@@ -664,11 +664,11 @@ private struct TrackpadPad: View {
   var body: some View {
     ZStack {
       MousePadSurface(model: model, presentationID: presentationID, inputID: inputID, focused: $focused)
-        .accessibilityLabel("Mouse and trackpad pad")
-        .accessibilityHint("Click to arm pointer input; the first click is consumed. Two-finger scrolling browses this panel until the pad is active, then scrolls the phone.")
+        .accessibilityLabel("Phone trackpad")
+        .accessibilityHint("Click to control the phone pointer; the first click is consumed. Two-finger scrolling browses this panel until active, then scrolls the phone.")
       VStack {
         HStack {
-          Label("Phone pointer", systemImage: "cursorarrow")
+          Label("Phone trackpad", systemImage: "cursorarrow")
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
           Spacer()
@@ -1232,8 +1232,8 @@ private struct MousePadSurface: NSViewRepresentable {
     guard !consumingArmingGesture, !blockedTouchSequence, model?.isScrolling != true,
           model?.isControlling(owner: captureOwner) == true else { return }
     guard isInsidePad(event), let model else { return }
-    // Keep the legacy inverted mapping available without changing canonical HID coordinates in the model.
-    let deltaY = model.reverseVerticalPointer ? event.deltaY : -event.deltaY
+    // Keep the native vertical mapping by default; invert it only when requested.
+    let deltaY = model.reverseVerticalPointer ? -event.deltaY : event.deltaY
     model.pointerMoved(deltaX: event.deltaX, deltaY: deltaY, owner: captureOwner)
   }
 }

@@ -14,8 +14,16 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
 
 // Static semantic roles preserve the project palette rather than inheriting Material defaults.
 private val LightColors =
@@ -121,6 +129,26 @@ fun saveAppearance(context: Context, appearance: Appearance) {
         .edit().putString("mode", appearance.name).apply()
 }
 
+private val appFontScaleState = mutableFloatStateOf(1.0f)
+private var appFontScaleLoaded = false
+
+@Composable
+fun fontScalePreference(): Float {
+    val context = LocalContext.current
+    if (!appFontScaleLoaded) {
+        val preferences = context.applicationContext.getSharedPreferences("appearance", Context.MODE_PRIVATE)
+        appFontScaleState.floatValue = preferences.getFloat("font_scale", 1.0f)
+        appFontScaleLoaded = true
+    }
+    return appFontScaleState.floatValue
+}
+
+fun saveFontScale(context: Context, scale: Float) {
+    appFontScaleState.floatValue = scale
+    context.applicationContext.getSharedPreferences("appearance", Context.MODE_PRIVATE)
+        .edit().putFloat("font_scale", scale).apply()
+}
+
 @Composable
 fun AniCeTheme(content: @Composable () -> Unit) {
     val dark = when (appearancePreference()) {
@@ -129,25 +157,34 @@ fun AniCeTheme(content: @Composable () -> Unit) {
         Appearance.Dark -> true
     }
     val palette = if (dark) DarkColors else LightColors
-    MaterialTheme(
-        colorScheme = palette,
-        typography = Typography().let { type -> type.copy(
-            titleLarge = type.titleLarge.copy(fontSize = 20.sp, lineHeight = 26.sp),
-            titleMedium = type.titleMedium.copy(fontSize = 16.sp, lineHeight = 22.sp),
-            titleSmall = type.titleSmall.copy(fontSize = 14.sp, lineHeight = 20.sp),
-            bodyLarge = type.bodyLarge.copy(fontSize = 14.sp, lineHeight = 20.sp),
-            bodyMedium = type.bodyMedium.copy(fontSize = 13.sp, lineHeight = 19.sp),
-            bodySmall = type.bodySmall.copy(fontSize = 12.sp, lineHeight = 17.sp)
-        ) },
-        shapes = Shapes(
-            extraSmall = RoundedCornerShape(6.dp),
-            small = RoundedCornerShape(8.dp),
-            medium = RoundedCornerShape(10.dp),
-            large = RoundedCornerShape(12.dp),
-            extraLarge = RoundedCornerShape(14.dp),
-        ),
-        content = content,
-    )
+    val fontScale = fontScalePreference()
+    val currentDensity = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(
+            density = currentDensity.density,
+            fontScale = currentDensity.fontScale * fontScale
+        )
+    ) {
+        MaterialTheme(
+            colorScheme = palette,
+            typography = Typography().let { type -> type.copy(
+                titleLarge = type.titleLarge.copy(fontSize = 20.sp, lineHeight = 26.sp),
+                titleMedium = type.titleMedium.copy(fontSize = 16.sp, lineHeight = 22.sp),
+                titleSmall = type.titleSmall.copy(fontSize = 14.sp, lineHeight = 20.sp),
+                bodyLarge = type.bodyLarge.copy(fontSize = 14.sp, lineHeight = 20.sp),
+                bodyMedium = type.bodyMedium.copy(fontSize = 13.sp, lineHeight = 19.sp),
+                bodySmall = type.bodySmall.copy(fontSize = 12.sp, lineHeight = 17.sp)
+            ) },
+            shapes = Shapes(
+                extraSmall = RoundedCornerShape(6.dp),
+                small = RoundedCornerShape(8.dp),
+                medium = RoundedCornerShape(10.dp),
+                large = RoundedCornerShape(12.dp),
+                extraLarge = RoundedCornerShape(14.dp),
+            ),
+            content = content,
+        )
+    }
 }
 
 /** Semantic roles defined in docs/design/DESIGN.md. */
@@ -163,3 +200,25 @@ val ColorScheme.subtleAccent: Color
 val ColorScheme.selectionAccent: Color
     @Composable
     get() = if (surface == DarkColors.surface) DarkColors.primary else LightColors.primary
+
+val ColorScheme.wordmarkAccent: Color
+    @Composable
+    get() = if (surface == DarkColors.surface) Color(0xFFE58B82) else Color(0xFFD26458)
+
+@Composable
+fun AniCeWordmark(
+    style: TextStyle = MaterialTheme.typography.titleMedium,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.colorScheme.wordmarkAccent
+    Text(
+        text = buildAnnotatedString {
+            append("ani")
+            withStyle(SpanStyle(color = accent)) {
+                append("Ce")
+            }
+        },
+        style = style,
+        modifier = modifier
+    )
+}

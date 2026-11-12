@@ -36,7 +36,6 @@ fun HomeScreen(
     ) {
       Text("Home", style = MaterialTheme.typography.titleLarge,
         modifier = Modifier.semantics { heading() })
-      attention()
       if (hasTrustedDevices && showManagement) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
           TextButton(onClick = onPair, modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage devices") }
@@ -62,6 +61,7 @@ fun HomeScreen(
           }
         }
       }
+      attention()
       quickActions()
       activities()
       if (showRecentHeading) Text("Recent", style = MaterialTheme.typography.labelMedium,

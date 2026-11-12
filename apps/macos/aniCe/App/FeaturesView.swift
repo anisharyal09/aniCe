@@ -3,7 +3,8 @@
 import SwiftUI
 
 struct HomeFeatureAccess: View {
-  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
+  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
   let onOpen: (AppFeature) -> Void
   let onBrowse: () -> Void
@@ -12,11 +13,11 @@ struct HomeFeatureAccess: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text("Quick access").font(.system(size: 14, weight: .medium))
+      Text("Quick access").font(.system(size: 14 * fontScale, weight: .medium))
       if favourites.isEmpty {
         HStack(spacing: 12) {
           Text("Star features to open them from Overview.")
-            .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .font(.system(size: 13 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Explore features", action: onBrowse).buttonStyle(AniCeButtonStyle()).controlSize(.small)
         }
       } else {
@@ -25,7 +26,7 @@ struct HomeFeatureAccess: View {
             ForEach(favourites) { feature in
               Button { onOpen(feature) } label: {
                 Label(feature.title, systemImage: feature.symbol)
-                  .font(.system(size: 13))
+                  .font(.system(size: 13 * fontScale))
                   .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                   .padding(.horizontal, 8).padding(.vertical, 6)
                   .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.75) }
@@ -54,8 +55,10 @@ struct FeaturesView: View {
   let edgeDrop: MacEdgeDropController
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
-  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = ""
+  @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
   @AppStorage("ui.featureOrder") private var featureOrder = ""
+  @AppStorage("ui.companionPinnedFeatures") private var companionPinnedFeatures = AppFeature.defaultPinnedToCompanion
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
   private var displayedFeatures: [AppFeature] {
     favouritesOnly ? AppFeature.favourites(in: favouriteFeatures) : AppFeature.ordered(in: featureOrder)
@@ -90,7 +93,7 @@ struct FeaturesView: View {
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
           }
         } else {
-          Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20, weight: .medium))
+          Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20 * fontScale, weight: .medium))
           Text(favouritesOnly ? "Your selected shortcuts. Right-click to change their order." : "Open or star a feature. Right-click to reorder or change favourites.")
             .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           if favouritesOnly && AppFeature.favourites(in: favouriteFeatures).isEmpty {
@@ -125,8 +128,8 @@ struct FeaturesView: View {
           Image(systemName: feature.symbol).font(.system(size: 17)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
             .frame(width: 20).accessibilityHidden(true)
           VStack(alignment: .leading, spacing: 2) {
-            Text(feature.title).font(.system(size: 14, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
-            Text(status(for: feature)).font(.system(size: 12)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            Text(feature.title).font(.system(size: 14 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+            Text(status(for: feature)).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               .lineLimit(1).truncationMode(.tail)
           }
           Spacer(minLength: 0)
@@ -160,6 +163,10 @@ struct FeaturesView: View {
       Divider()
       Button(selected ? "Remove from Favourites" : "Add to Favourites") {
         favouriteFeatures = feature.toggled(in: favouriteFeatures)
+      }
+      let isPinned = AppFeature.isPinned(feature, in: companionPinnedFeatures)
+      Button(isPinned ? "Remove from Menu Bar" : "Pin to Menu Bar") {
+        companionPinnedFeatures = feature.toggledPinned(in: companionPinnedFeatures)
       }
     }
   }
@@ -195,7 +202,7 @@ struct FeaturesView: View {
       if peers.contains(where: { sms.connected($0.peer) }) { return "SMS connected" }
       return peers.isEmpty ? "Pair a phone to relay messages" : "Connect your phone"
     case .keyboardTrackpad:
-      return "Keyboard & Trackpad · \(keyboardTrackpad.featureSummary)"
+      return "Control Android · \(keyboardTrackpad.featureSummary)"
     case .findDevice:
       if findDevice.busy { return "Request in progress" }
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }

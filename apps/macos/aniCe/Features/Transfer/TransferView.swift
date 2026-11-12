@@ -14,7 +14,7 @@ struct TransferNotificationControls: View {
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
-      Text("Incoming offers in the background only. macOS notification permission is also required; progress and results stay in the app.")
+      Text("Notifies when incoming files arrive while aniCe is in the background.")
         .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
@@ -43,7 +43,7 @@ struct TransferAutoReceiveSettings: View {
             set: { preferences.setEnabled($0, for: record.peer) }))
             .aniCeControlFeedback(feedbackPadding: 3)
         }
-        Text("New pairings start enabled. Turn this off any time.")
+        Text("Accepts incoming files without a prompt.")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
@@ -124,6 +124,17 @@ struct TransferReceiveDestinationControls: View {
   panel.canChooseFiles = true
   panel.canChooseDirectories = false
   panel.prompt = "Send"
+  panel.level = .floating
+  panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+  if let screen = NSScreen.main {
+    let screenFrame = screen.visibleFrame
+    let panelSize = panel.frame.size
+    panel.setFrameOrigin(NSPoint(
+      x: screenFrame.midX - panelSize.width / 2,
+      y: screenFrame.midY - panelSize.height / 2
+    ))
+  }
+  panel.orderFrontRegardless()
   if panel.runModal() == .OK && !panel.urls.isEmpty {
     let urls = panel.urls
     let names = urls.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
@@ -133,6 +144,9 @@ struct TransferReceiveDestinationControls: View {
     review.informativeText = names + additional
     review.addButton(withTitle: "Send files")
     review.addButton(withTitle: "Cancel")
+    review.window.level = .floating
+    review.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    review.window.orderFrontRegardless()
     guard review.runModal() == .alertFirstButtonReturn else { return }
     guard let currentPeer = model.activeChannel?.descriptor.peer,
       currentPeer.deviceId == reviewedPeer.deviceId, currentPeer.fingerprint == reviewedPeer.fingerprint else {
@@ -140,6 +154,9 @@ struct TransferReceiveDestinationControls: View {
       changed.messageText = "Connection changed"
       changed.informativeText = "No files were sent. Choose the files again to review them for the current device."
       changed.addButton(withTitle: "OK")
+      changed.window.level = .floating
+      changed.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+      changed.window.orderFrontRegardless()
       changed.runModal()
       return
     }
@@ -495,7 +512,7 @@ struct TransferView: View {
   private var transferTargetDescription: String {
     guard model.peerConnected else { return "Connect your phone to send files." }
     guard model.peerCompatible else { return "File transfer is unavailable on this device." }
-    return "Drop files here to send to \(model.activeChannel?.descriptor.peer.deviceName ?? "your phone")"
+    return "Drop files here, drag to your screen edge (Edge Drop), or pick from the menu bar."
   }
 
   @ViewBuilder

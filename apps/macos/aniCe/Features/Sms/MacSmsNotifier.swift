@@ -47,12 +47,12 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
     delivery = storage?.dictionary(forKey: "sms.enabled") as? [String: Bool] ?? [:]
   }
   func key(_ peer: DeviceIdentity) -> String { peer.deviceId + ":" + peer.fingerprint }
-  func preview(_ key: String) -> Bool { previews[key] ?? false }
+  func preview(_ key: String) -> Bool { previews[key] ?? true }
   func preview(_ peer: DeviceIdentity) -> Bool { preview(key(peer)) }
-  /** Notifications default to on; sound defaults to on and is muted with the notifications themselves. */
+  /** Notifications default to on; sound defaults to off and is muted with the notifications themselves. */
   func notifications(_ key: String) -> Bool { delivery[key] ?? true }
   func notifications(_ peer: DeviceIdentity) -> Bool { notifications(key(peer)) }
-  func sound(_ key: String) -> Bool { notifications(key) && (sounds[key] ?? true) }
+  func sound(_ key: String) -> Bool { notifications(key) && (sounds[key] ?? false) }
   func sound(_ peer: DeviceIdentity) -> Bool { sound(key(peer)) }
   func set(_ peer: DeviceIdentity, _ enabled: Bool) { previews[key(peer)] = enabled; persist() }
   func setNotifications(_ peer: DeviceIdentity, _ on: Bool) { delivery[key(peer)] = on; persist() }

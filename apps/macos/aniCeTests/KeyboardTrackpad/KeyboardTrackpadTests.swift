@@ -1384,19 +1384,19 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertEqual(transport.writes, [.keyboard(2, []), .keyboard(2, [4]), .keyboard(0, [4]), .keyboard(0, [])])
   }
 
-  @MainActor func testPointerPreferencesDefaultToCorrectedDirectionAndRestoreExplicitChoices() {
+  @MainActor func testPointerPreferencesDefaultToNativeDirectionAndRestoreExplicitChoices() {
     let preferences = testDefaults()
     let first = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
-    XCTAssertTrue(first.reverseVerticalPointer)
+    XCTAssertFalse(first.reverseVerticalPointer)
     XCTAssertEqual(first.pointerSpeed, .standard)
-    first.reverseVerticalPointer = false
+    first.reverseVerticalPointer = true
     first.pointerSpeed = .fast
     first.scrollSpeed = .gentle
     first.shutdown()
 
     let restored = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: preferences)
     defer { restored.shutdown() }
-    XCTAssertFalse(restored.reverseVerticalPointer, "An explicit false preference must survive reconstruction")
+    XCTAssertTrue(restored.reverseVerticalPointer, "An explicit true preference must survive reconstruction")
     XCTAssertEqual(restored.pointerSpeed, .fast)
     XCTAssertEqual(restored.scrollSpeed, .gentle)
   }
@@ -1478,7 +1478,7 @@ final class KeyboardTrackpadTests: XCTestCase {
 
     pad.mouseMoved(with: try motion(at: visiblePoint))
     XCTAssertEqual(transport.writes, [.mouse(0, 8, 4, 0)], "The default direction preserves AppKit's downward-positive delta")
-    model.reverseVerticalPointer = false
+    model.reverseVerticalPointer = true
     try await Task.sleep(for: .milliseconds(30))
     pad.mouseMoved(with: try motion(at: visiblePoint))
     XCTAssertEqual(transport.writes.last, .mouse(0, 8, -4, 0))

@@ -14,10 +14,12 @@ enum DeviceRoute: Equatable { case overview, pairing }
 enum SettingsRoute: Equatable { case overview, identity, about }
 // Stable identifiers belong to local presentation preferences, never peer capabilities.
 enum AppFeature: String, CaseIterable, Identifiable {
-  case playback, files, findDevice, clipboard, messages, keyboardTrackpad
+  case keyboardTrackpad, messages, files, clipboard, findDevice, playback
+  static let defaultFavourites = "clipboard,keyboardTrackpad,messages"
+  static let defaultPinnedToCompanion = "clipboard,keyboardTrackpad,messages"
   var id: Self { self }
-  var title: String { switch self { case .playback: "Now Playing"; case .files: "Send files"; case .findDevice: "Find Device"; case .clipboard: "Clipboard"; case .messages: "Messages"; case .keyboardTrackpad: "Control Android" } }
-  var symbol: String { switch self { case .playback: "music.note"; case .files: "arrow.up.doc"; case .findDevice: "bell"; case .clipboard: "doc.on.clipboard"; case .messages: "message"; case .keyboardTrackpad: "keyboard" } }
+  var title: String { switch self { case .keyboardTrackpad: "Control Android"; case .messages: "Messages"; case .files: "Send files"; case .clipboard: "Clipboard"; case .findDevice: "Find Device"; case .playback: "Now Playing" } }
+  var symbol: String { switch self { case .keyboardTrackpad: "keyboard"; case .messages: "message"; case .files: "arrow.up.doc"; case .clipboard: "doc.on.clipboard"; case .findDevice: "bell"; case .playback: "music.note" } }
   static func favourites(in value: String) -> [Self] {
     uniqueFeatures(in: value)
   }
@@ -30,6 +32,18 @@ enum AppFeature: String, CaseIterable, Identifiable {
   static func ordered(in value: String) -> [Self] {
     let saved = uniqueFeatures(in: value)
     return saved + allCases.filter { !saved.contains($0) }
+  }
+  static func pinnedToCompanion(in value: String) -> [Self] {
+    uniqueFeatures(in: value)
+  }
+  func toggledPinned(in value: String) -> String {
+    var saved = Self.pinnedToCompanion(in: value)
+    if let index = saved.firstIndex(of: self) { saved.remove(at: index) }
+    else { saved.append(self) }
+    return saved.map(\.rawValue).joined(separator: ",")
+  }
+  static func isPinned(_ feature: Self, in value: String) -> Bool {
+    pinnedToCompanion(in: value).contains(feature)
   }
   static func moved(_ feature: Self, in rows: [Self], offset: Int) -> String {
     var reordered = rows

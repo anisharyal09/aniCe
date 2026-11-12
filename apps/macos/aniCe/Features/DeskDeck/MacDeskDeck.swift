@@ -632,6 +632,24 @@ struct MacPhonePowerReading: Equatable {
     let sourceSuffix = sourceText.isEmpty ? "" : " · \(sourceText)"
     return stateText + percentText + sourceSuffix
   }
+
+  var shortSummary: String {
+    guard percent >= 0 else {
+      switch state {
+      case 3: return "Charging"
+      case 4: return "Full"
+      case 5: return "Plugged in"
+      default: return ""
+      }
+    }
+    switch state {
+    case 3: return "\(percent)% (Charging)"
+    case 4: return "\(percent)% (Full)"
+    case 5: return "\(percent)% (Plugged in)"
+    case 2: return "\(percent)%"
+    default: return "\(percent)%"
+    }
+  }
 }
 
 @Observable @MainActor final class MacPhonePowerModel: FeatureHandler {
@@ -708,6 +726,12 @@ struct MacPhonePowerReading: Equatable {
   func summary(for peer: DeviceIdentity?) -> String {
     guard let peer else { return "Phone power unavailable" }
     return readings[peer.fingerprint]?.summary ?? "Phone power unavailable"
+  }
+
+  func shortSummary(for peer: DeviceIdentity?) -> String? {
+    guard let peer, let reading = readings[peer.fingerprint] else { return nil }
+    let short = reading.shortSummary
+    return short.isEmpty ? nil : short
   }
 
   func shutdown() { stopPowerObservation() }

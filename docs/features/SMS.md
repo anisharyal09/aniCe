@@ -51,7 +51,7 @@ Mac search matches a substring in SMS bodies and text/plain MMS parts on the pho
 
 ## Notifications
 
-Mac notifications name the sender, support inline Reply and open Messages on the default tap. Message text is hidden until **Show message text in notifications** is enabled for that phone. **Notifications** and **Play sound** default on; turning notifications off also suppresses sound and reply-failure alerts while relay and panel counters continue. These controls are available in Settings → Messages and behind the panel's gear.
+Mac notifications name the sender, support inline Reply and open Messages on the default tap. Message text preview is shown by default (with an option to hide message text per phone). **Notifications** default on and **Play sound** defaults off to avoid intrusive rings. Turning notifications off also suppresses sound and reply-failure alerts while relay and panel counters continue. These controls are available in **Settings → Messages** and behind the panel's gear.
 
 Authorization is requested at Mac launch. Permission, alert availability and submission failures appear in the panel. Focus and macOS presentation settings can suppress an accepted notification. A provider row fetched before its live copy does not consume the notification; only successful notification submission suppresses repeat announcements. SMS notifications are cleared on quit and leftover identifiers are removed at startup.
 

@@ -56,23 +56,22 @@ final class SmsNotifierTests: XCTestCase {
   @MainActor func testNotificationContentHidesBodyUntilPreviewIsEnabledForThatPeer() async throws {
     let center = SpySmsNotificationCenter(), prefs = preferences(), peer = phone()
     let notifier = MacSmsNotifier(preferences: prefs, center: center)
-    await notifier.post(note(peer))
-    await notifier.post(note(peer, body: "Secret", identifier: smsNotificationPrefix + "sms:2"))
-    XCTAssertEqual(center.added.count, 2)
+    await notifier.post(note(peer, body: "Dinner at 8?"))
+    XCTAssertEqual(center.added.count, 1)
     XCTAssertEqual(center.added[0].content.categoryIdentifier, "ANICE_SMS")
-    XCTAssertEqual(center.added[0].content.body, "New message")
+    XCTAssertEqual(center.added[0].content.body, "Dinner at 8?")
     XCTAssertEqual(center.added[0].content.title, "+15551234567")
     XCTAssertEqual(center.added[0].content.threadIdentifier, "+15551234567")
     XCTAssertEqual(center.authRequests, 1)
-    prefs.set(peer, true)
-    await notifier.post(note(peer, body: "Dinner at 8?", identifier: smsNotificationPrefix + "sms:3"))
-    XCTAssertEqual(center.added[2].content.body, "Dinner at 8?")
-    // Preview is per peer: another phone stays generic.
+    prefs.set(peer, false)
+    await notifier.post(note(peer, body: "Secret", identifier: smsNotificationPrefix + "sms:2"))
+    XCTAssertEqual(center.added[1].content.body, "New message")
+    // Preview is per peer: another phone stays at default true.
     let other = phone("Tablet")
-    XCTAssertFalse(prefs.preview(other))
-    XCTAssertTrue(prefs.preview(peer))
-    prefs.prune([other])
+    XCTAssertTrue(prefs.preview(other))
     XCTAssertFalse(prefs.preview(peer))
+    prefs.prune([other])
+    XCTAssertTrue(prefs.preview(peer))
   }
 
   @MainActor func testFailedSubmissionCanBeRetriedAndDeniedAlertsAreVisible() async throws {
@@ -127,7 +126,7 @@ final class SmsNotifierTests: XCTestCase {
     await notifier.post(note(peer))
     await notifier.post(note(peer, body: "changed"))
     XCTAssertEqual(center.added.count, 1)
-    XCTAssertEqual(center.added[0].content.body, "New message")
+    XCTAssertEqual(center.added[0].content.body, "Dinner at 8?")
     notifier.clear(identifier: smsNotificationPrefix + "sms:1")
     XCTAssertEqual(center.removedDelivered.last, [smsNotificationPrefix + "sms:1"])
     notifier.clearAll()
@@ -196,19 +195,19 @@ final class SmsNotifierTests: XCTestCase {
   @MainActor func testPerPhoneNotificationControlsMuteBannersAndSound() async throws {
     let center = SpySmsNotificationCenter(), prefs = preferences(), peer = phone()
     let notifier = MacSmsNotifier(preferences: prefs, center: center)
-    // Defaults: delivery on and sound on, so the first banner carries the default sound.
-    XCTAssertTrue(prefs.notifications(peer))
-    XCTAssertTrue(prefs.sound(peer))
-    await notifier.post(note(peer))
-    XCTAssertEqual(center.added.count, 1)
-    XCTAssertNotNil(center.added[0].content.sound)
-    // Sound off keeps the banner but drops its sound.
-    prefs.setSound(peer, false)
+    // Defaults: delivery on and sound off.
     XCTAssertTrue(prefs.notifications(peer))
     XCTAssertFalse(prefs.sound(peer))
+    await notifier.post(note(peer))
+    XCTAssertEqual(center.added.count, 1)
+    XCTAssertNil(center.added[0].content.sound)
+    // Sound on keeps the banner and adds its sound.
+    prefs.setSound(peer, true)
+    XCTAssertTrue(prefs.notifications(peer))
+    XCTAssertTrue(prefs.sound(peer))
     await notifier.post(note(peer, identifier: smsNotificationPrefix + "sms:2"))
     XCTAssertEqual(center.added.count, 2)
-    XCTAssertNil(center.added[1].content.sound)
+    XCTAssertNotNil(center.added[1].content.sound)
     // Notifications off posts nothing at all, and the sound control has no effect while it is off.
     prefs.setNotifications(peer, false)
     XCTAssertFalse(prefs.sound(peer))
@@ -219,14 +218,14 @@ final class SmsNotifierTests: XCTestCase {
     let mutedFailure = await notifier.post(failure)
     XCTAssertEqual(mutedFailure, .muted)
     XCTAssertEqual(center.added.count, 2)
-    // Delivery back on resumes banners; the sound stays off until it is re-enabled.
+    // Delivery back on resumes banners; sound remains on as configured.
     prefs.setNotifications(peer, true)
-    XCTAssertFalse(prefs.sound(peer))
+    XCTAssertTrue(prefs.sound(peer))
     let resumed = await notifier.post(note(peer, identifier: smsNotificationPrefix + "sms:3"))
     XCTAssertEqual(resumed, .submitted)
-    XCTAssertNil(center.added.last?.content.sound)
-    prefs.setSound(peer, true)
-    XCTAssertTrue(prefs.sound(peer))
+    XCTAssertNotNil(center.added.last?.content.sound)
+    prefs.setSound(peer, false)
+    XCTAssertFalse(prefs.sound(peer))
     // The controls are per phone and are pruned with the peer.
     let other = phone("Tablet")
     XCTAssertTrue(prefs.notifications(other))
@@ -234,7 +233,7 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertTrue(prefs.notifications(peer))
     prefs.clear()
     XCTAssertTrue(prefs.notifications(peer))
-    XCTAssertTrue(prefs.sound(peer))
+    XCTAssertFalse(prefs.sound(peer))
   }
 
   @MainActor func testCategoryRegistersInlineReplyAndDefaultTap() {

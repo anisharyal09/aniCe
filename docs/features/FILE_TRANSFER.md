@@ -20,6 +20,8 @@ Receives default to `~/Downloads/aniCe` on Mac and `Downloads/aniCe` on Android.
 
 Both platforms offer **Automatically receive files** per trusted sender. New pairings enable it on both sides; existing peers keep their saved choice, and a peer with no saved choice remains off. The receiver can change this at any time. Consent and the destination are captured when a complete offer is admitted. With consent off, the receiver shows the file list and save folder for review before approval; with consent on, it validates the offer and destination before accepting. Success identifies the received files and save folder. The user can cancel an active transfer. Trust removal clears that sender’s consent.
 
+On Android Home, a pending manual offer appears below the connected device summary and before Quick access. The file list and destination stay visible above the equal-width **Accept** and **Decline** actions.
+
 Android can receive in the background when its existing connected-device/companion ownership permits it. Otherwise the offer stays pending until aniCe opens. Background connection also requires **Connect automatically**.
 
 Files are written to job-owned partials, verified against their SHA-256 offer, then published without overwriting existing files. Android keeps default MediaStore entries pending until publication succeeds. Custom document providers are checked before use, but they do not guarantee atomic rename.

@@ -12,7 +12,7 @@ struct ChannelDescriptor: Equatable {
     lhs.maximumDataBytes == rhs.maximumDataBytes && lhs.instance == rhs.instance && lhs.transport == rhs.transport && lhs.peer.deviceId == rhs.peer.deviceId && lhs.peer.fingerprint == rhs.peer.fingerprint
   }
 }
-@MainActor protocol SecuredChannel: AnyObject {
+@MainActor protocol SecuredChannel: AnyObject, Sendable {
   var descriptor: ChannelDescriptor { get }
   func sendData(_ bytes: Data) async throws
   // Deferred handlers report activity only after successful handling, never on queue admission.

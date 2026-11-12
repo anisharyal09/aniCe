@@ -17,19 +17,15 @@ struct CompanionView: View {
   @Bindable var phonePower: MacPhonePowerModel
   let navigation: ConnectionNavigation
   let openMainWindow: () -> Void
+  @AppStorage("ui.companionPinnedFeatures") private var companionPinnedFeatures = AppFeature.defaultPinnedToCompanion
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       HStack(spacing: 12) {
-        Text("aniCe").font(.headline)
+        AniCeWordmark(size: 15, weight: .semibold)
         Spacer()
-        Button { floatingKeyboard.toggleVisibility() } label: {
-          Label("Keyboard", systemImage: "keyboard")
-        }
-        .buttonStyle(AniCeButtonStyle(quiet: true))
-        .accessibilityLabel(floatingKeyboard.isVisible ? "Hide floating keyboard" : "Show floating keyboard")
-        .help("Show or hide the floating keyboard anywhere with Option-Command-K")
         Menu {
           Button("Quick Paste Tray (⌥⌘V)") {
             PasteTrayController.shared.show()
@@ -52,20 +48,13 @@ struct CompanionView: View {
             Divider()
             liveActivitySection
           }
-          if pairing.hasTrustedAndroid {
-            Group {
-              Divider()
-              VStack(alignment: .leading, spacing: 8) {
-                ViewThatFits(in: .horizontal) {
-                  HStack { sendActions }
-                  VStack(alignment: .leading, spacing: 8) { sendActions }
-                }
-                if let peer = transfer.activeChannel?.descriptor.peer, sendFilesAction != nil {
-                  Text("To " + peer.deviceName).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                }
-                if !["Ready to share text", "Clipboard received", "Clipboard delivered"].contains(clipboard.status) {
-                  Text(clipboard.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                }
+          Group {
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+              sendActions
+              if pairing.hasTrustedAndroid,
+                 !["Ready to share text", "Clipboard received", "Clipboard delivered"].contains(clipboard.status) {
+                Text(clipboard.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               }
             }
           }
@@ -90,23 +79,96 @@ struct CompanionView: View {
   }
 
   @ViewBuilder private var sendActions: some View {
-    HStack(spacing: 8) {
-      if clipboard.selected.map(clipboard.supports) == true { ClipboardSendButton(model: clipboard, quiet: true) }
-      Button { PasteTrayController.shared.toggle() } label: {
-        Image(systemName: "rectangle.stack").font(.system(size: 15))
-          .foregroundStyle(AniCePalette.secondaryText(colorScheme)).frame(width: 30, height: 16)
-      }
-      .buttonStyle(AniCeButtonStyle(quiet: true))
-      .accessibilityLabel("Open clipboard tray")
-      .help("Open clipboard tray (⌥⌘V)")
+    VStack(alignment: .leading, spacing: 8) {
+      companionActionsGrid
+      pinnedQuickActions
     }
-    if let sendFilesAction {
-      Button(action: sendFilesAction) {
-        Label { Text("Send files") } icon: {
-          Image(systemName: "paperplane").foregroundStyle(AniCePalette.secondaryText(colorScheme))
+  }
+
+  private var companionActionsGrid: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        if clipboard.selected.map(clipboard.supports) == true {
+          ClipboardSendButton(model: clipboard, compact: true)
+            .frame(maxWidth: .infinity)
         }
+        Button { PasteTrayController.shared.toggle() } label: {
+          Label { Text("Paste tray") } icon: {
+            Image(systemName: "rectangle.stack").foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+        }
+        .buttonStyle(AniCeButtonStyle(compact: true))
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Open clipboard tray")
+        .help("Open clipboard tray (⌥⌘V)")
       }
-        .buttonStyle(AniCeButtonStyle(quiet: true))
+
+      HStack(spacing: 8) {
+        if let sendFilesAction {
+          Button(action: sendFilesAction) {
+            Label { Text("Send files") } icon: {
+              Image(systemName: "paperplane").foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
+          }
+          .buttonStyle(AniCeButtonStyle(compact: true))
+          .frame(maxWidth: .infinity)
+        }
+        Button { floatingKeyboard.toggleVisibility() } label: {
+          Label {
+            Text(floatingKeyboard.isVisible ? "Hide Floating Key" : "Floating Key")
+          } icon: {
+            Image(systemName: "keyboard").foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+        }
+        .buttonStyle(AniCeButtonStyle(compact: true))
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(floatingKeyboard.isVisible ? "Hide Floating Key" : "Show Floating Key")
+        .help("Show Floating Key to type directly on Android; right-click for full controls including trackpad (⌥⌘K).")
+      }
+    }
+  }
+
+  @ViewBuilder private var pinnedQuickActions: some View {
+    let pinned = AppFeature.pinnedToCompanion(in: companionPinnedFeatures)
+    if !pinned.isEmpty {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Quick actions").font(.system(size: 11 * fontScale, weight: .medium))
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        ScrollView(.horizontal) {
+          HStack(spacing: 6) {
+            ForEach(pinned) { feature in
+              Button {
+                executeQuickAction(feature)
+              } label: {
+                HStack(spacing: 4) {
+                  Image(systemName: feature.symbol).font(.system(size: 10 * fontScale))
+                  Text(feature.title).font(.system(size: 11 * fontScale))
+                }
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                .padding(.horizontal, 7).padding(.vertical, 4)
+                .overlay { RoundedRectangle(cornerRadius: 6).stroke(AniCePalette.separator(colorScheme), lineWidth: 0.75) }
+              }
+              .buttonStyle(AniCeHoverButtonStyle())
+            }
+          }
+        }
+        .scrollIndicators(.hidden)
+      }
+    }
+  }
+
+  private func executeQuickAction(_ feature: AppFeature) {
+    switch feature {
+    case .files:
+      if let sendFilesAction {
+        sendFilesAction()
+      } else {
+        navigation.openFeature(.files)
+        openMain()
+      }
+    case .keyboardTrackpad, .clipboard, .messages, .findDevice, .playback:
+      navigation.openFeature(feature)
+      openMain()
     }
   }
 
@@ -168,8 +230,9 @@ struct CompanionView: View {
     VStack(spacing: 12) {
       Divider()
       Button(action: openMain) {
-        HStack {
-          Text("Open aniCe")
+        HStack(spacing: 5) {
+          Text("Open")
+          AniCeWordmark(size: 13, weight: .medium)
           Spacer()
           Image(systemName: "arrow.up.right").accessibilityHidden(true)
         }.contentShape(Rectangle())
@@ -238,7 +301,7 @@ struct CompanionView: View {
     eventType == .rightMouseUp || eventType == .rightMouseDown || modifiers.contains(.control)
   }
 
-  /// Constructs the status bar menu for window routes, the floating keyboard and Quit.
+  /// Constructs the status bar menu for window routes, Floating Key and Quit.
   static func makeMenu(target: AnyObject, floatingKeyboardVisible: Bool = false) -> NSMenu {
     let menu = NSMenu()
     for (title, action) in [("Open aniCe", #selector(openMain)),
@@ -248,7 +311,7 @@ struct CompanionView: View {
       menu.addItem(entry)
     }
 
-    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide floating keyboard" : "Show floating keyboard") + "  ⌥⌘K",
+    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide Floating Key" : "Show Floating Key") + "  ⌥⌘K",
       action: #selector(toggleFloatingKeyboard), keyEquivalent: "")
     keyboard.target = target
     menu.addItem(keyboard)

@@ -59,19 +59,12 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
     BackHandler(enabled = owner.selectedThreadId != null) { owner.select(null) }
     val peerCredentials = peers.map { it.peer.deviceId + ":" + it.peer.fingerprint }
     LaunchedEffect(peerCredentials) { owner.retainDrafts(peerCredentials.toSet()) }
+    var showRelayInfo by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val relay = peers.firstOrNull { owner.reachable(it.peer) }
-        val granted = state.receive && state.read && state.send
-        Text(
-            when {
-                peers.isEmpty() -> "Pair a Mac to relay messages."
-                relay != null -> "Sharing new messages with ${relay.peer.deviceName}."
-                // Access granted is said once; the card below is the only thing that ever asks for it.
-                granted -> "SMS access granted. Connect your Mac to share new messages and reply from it."
-                else -> "Connect your Mac to share new messages and reply from it."
-            },
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (peers.isEmpty()) {
+            Text("Pair a Mac to relay messages.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         val missing = buildList {
             if (!state.receive) add(Manifest.permission.RECEIVE_SMS)
             if (!state.read) add(Manifest.permission.READ_SMS)
@@ -97,21 +90,39 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                 }
             }
         }
-        if (owner.status.isNotEmpty() && owner.status !in setOf("Ready", "Message sent")) {
-            Text(owner.status, style = MaterialTheme.typography.bodySmall,
-                color = if ("rejected" in owner.status.lowercase() || "not confirmed" in owner.status.lowercase()) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (owner.relayedLive + owner.waitingLive + owner.failedLive > 0) {
-            Text("${owner.relayedLive} relayed · ${owner.waitingLive} waiting · ${owner.failedLive} not relayed",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (owner.skippedRows > 0) Text("${owner.skippedRows} rows could not be read", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         val threadId = owner.selectedThreadId
         if (threadId == null) {
-            Text("Conversations", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Conversations", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                val hasRelayInfo = relay != null || (owner.relayedLive + owner.waitingLive + owner.failedLive > 0) ||
+                    (owner.status.isNotEmpty() && owner.status !in setOf("Ready", "Message sent"))
+                if (hasRelayInfo) {
+                    IconButton(onClick = { showRelayInfo = !showRelayInfo }, modifier = Modifier.size(28.dp)) {
+                        Icon(painterResource(R.drawable.ic_about), contentDescription = "Relay info",
+                            tint = if (showRelayInfo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+            if (showRelayInfo) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.small) {
+                    Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (relay != null) Text("Sharing with ${relay.peer.deviceName}", style = MaterialTheme.typography.bodySmall)
+                        if (owner.status.isNotEmpty() && owner.status !in setOf("Ready", "Message sent")) {
+                            Text(owner.status, style = MaterialTheme.typography.bodySmall,
+                                color = if ("rejected" in owner.status.lowercase() || "not confirmed" in owner.status.lowercase()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (owner.relayedLive + owner.waitingLive + owner.failedLive > 0) {
+                            Text("${owner.relayedLive} relayed · ${owner.waitingLive} waiting · ${owner.failedLive} not relayed",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (owner.skippedRows > 0) {
+                            Text("${owner.skippedRows} rows could not be read", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
             when {
                 owner.threads == null -> if (owner.loading) CircularProgressIndicator(Modifier.size(20.dp)) else Text("Conversations are unavailable", style = MaterialTheme.typography.bodyMedium)
                 owner.threads!!.isEmpty() -> Text("No conversations on this device", style = MaterialTheme.typography.bodyMedium)
@@ -120,20 +131,33 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                         items(owner.threads!!, key = { it.threadId }) { record ->
                             Row(
                                 Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Open conversation") { owner.select(record.threadId) }
-                                    .heightIn(min = 64.dp).padding(vertical = 8.dp),
+                                    .padding(horizontal = 4.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                     Text(record.address, style = MaterialTheme.typography.titleSmall)
                                     if (record.snippet.isNotEmpty()) Text(record.snippet, style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
-                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(stamp(record.dateMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (record.unreadCount > 0) Text("${record.unreadCount} unread", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.selectionAccent)
+                                Spacer(Modifier.width(10.dp))
+                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(stamp(record.dateMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (record.unreadCount > 0) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer
+                                        ) {
+                                            Text(
+                                                "${record.unreadCount} unread",
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                            HorizontalDivider()
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         }
                         if (owner.threadsMore) item {
                             if (owner.loading) Text("Loading more conversations…", style = MaterialTheme.typography.bodySmall,
@@ -156,15 +180,20 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                 owner.send(address, draft, simChoice, draftKey)
             }
 
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { owner.select(null) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                    Icon(painterResource(R.drawable.ic_back), contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp)); Text("Conversations")
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { owner.select(null) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
+                    Icon(painterResource(R.drawable.ic_back), contentDescription = "Back", modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Conversations", style = MaterialTheme.typography.labelMedium)
                 }
+                Spacer(Modifier.width(6.dp))
                 Text(address, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f))
                 TextButton(onClick = owner::loadConversation, enabled = !owner.loading,
-                    contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
+                    Text("Refresh", style = MaterialTheme.typography.labelMedium)
+                }
             }
             val multiSim = remember(draftKey) { owner.modemCount() >= 2 }
             val simListing = remember(draftKey) { mutableStateOf<SmsSubscriptionListing?>(null) }
@@ -196,13 +225,18 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                         " · " + simName(message.subscriptionId, simEntries) else ""
                     val stateLabel = (if (message.direction == 1L) if (message.pending) "Sending" else "Sent" else "Received") +
                         " · " + stamp(message.dateMillis) + sim + if (message.unread) " · Unread" else ""
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.direction == 1L) Arrangement.End else Arrangement.Start) {
+                    val outgoing = message.direction == 1L
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start) {
                         Surface(
-                            modifier = Modifier.fillMaxWidth(0.88f),
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (message.direction == 1L) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow
+                            modifier = Modifier.fillMaxWidth(0.85f),
+                            shape = RoundedCornerShape(
+                                topStart = 14.dp, topEnd = 14.dp,
+                                bottomStart = if (outgoing) 14.dp else 3.dp,
+                                bottomEnd = if (outgoing) 3.dp else 14.dp
+                            ),
+                            color = if (outgoing) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow
                         ) {
-                            Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(message.text, style = MaterialTheme.typography.bodyMedium)
                                 Text(stateLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -225,7 +259,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                             TextButton(onClick = {
                                 if (simEntries.size >= 2 || simChoice != 0) simMenu = true
                                 else phoneState.launch(Manifest.permission.READ_PHONE_STATE)
-                            }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.heightIn(min = 48.dp)) {
+                            }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.defaultMinSize(minHeight = 36.dp)) {
                                 Text(if (simEntries.size >= 2 || simChoice != 0) "SIM: " +
                                     (if (simChoice == 0) "Default" else simChoiceLabel ?:
                                         if (simListing.value == null) "Checking…" else "Unavailable") else "Choose SIM…",
@@ -243,12 +277,12 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
                     FilledTonalButton(onClick = ::submitDraft,
                         enabled = !sending && draft.isNotBlank() && bytes <= SmsWireMessage.MAX_BODY_BYTES && state.send,
                         shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)) {
-                        if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Icon(painterResource(R.drawable.ic_send), contentDescription = "Send SMS", modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (sending) "Sending…" else "Send", maxLines = 1, softWrap = false)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 36.dp)) {
+                        if (sending) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Icon(painterResource(R.drawable.ic_send), contentDescription = "Send SMS", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (sending) "Sending…" else "Send", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                     }
                 }
                 if (draft.length > 1000) Text("Long messages may be rejected; Unicode text reaches the limit sooner.",

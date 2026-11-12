@@ -493,8 +493,7 @@ PY
         self.assertEqual(codeql_swift.get("runs-on"), "macos-15")
         self.assertIn("Xcode_26.3.app", codeql_swift.get("env", {}).get("DEVELOPER_DIR", ""))
         self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
-        scorecard = document["jobs"]["scorecard"]
-        self.assertEqual(scorecard.get("permissions"), {"security-events": "write", "id-token": "write", "contents": "read"})
+        self.assertEqual(set(document["jobs"]), {"codeql", "codeql-swift"})
 
     def test_compiled_codeql_languages_have_explicit_builds_before_analysis(self):
         jobs = workflow_documents()['security.yml']['jobs']

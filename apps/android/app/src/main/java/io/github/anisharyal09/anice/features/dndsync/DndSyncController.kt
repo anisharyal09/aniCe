@@ -199,10 +199,12 @@ fun DndSyncSettings(model: DndSyncController) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
             checked = model.sending, enabled = true, onCheckedChange = model::setSendingEnabled,
-            label = "Sync phone DND to Mac", description = "Send changes to Mac.")
-        if (!model.granted) TextButton(onClick = model::requestAccess) { Text("Allow phone DND access") }
-        Text("Requires Android DND access. Changes are only sent while connected.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            label = "Sync phone DND to Mac", description = "Updates Mac Focus when this phone enters Do Not Disturb.")
+        if (!model.granted) {
+            Text("Requires Do Not Disturb permission.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = model::requestAccess) { Text("Allow DND access") }
+        }
         if (model.status.isNotBlank()) Text(model.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

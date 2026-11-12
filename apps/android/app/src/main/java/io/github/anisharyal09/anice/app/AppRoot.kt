@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
 import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
@@ -67,7 +68,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val uiPreferences = remember { context.getSharedPreferences("ui_preferences", android.content.Context.MODE_PRIVATE) }
     val navigation = rememberSaveable(saver = AppNavigation.saver) {
         AppNavigation().also {
-            it.favouriteFeatures = uiPreferences.getString("favourite_features", "").orEmpty()
+            val savedFavs = uiPreferences.getString("favourite_features", null)
+            it.favouriteFeatures = if (savedFavs.isNullOrEmpty()) AppFeature.DEFAULT_FAVOURITES else savedFavs
             it.featureOrder = uiPreferences.getString("feature_order", "").orEmpty()
         }
     }
@@ -115,7 +117,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Image(painterResource(R.drawable.ic_brand_mark), contentDescription = null,
                         modifier = Modifier.size(22.dp))
-                    Text("aniCe", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
+                    AniCeWordmark(style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
                 }
             }, navigationIcon = {
                 if ((navigation.destination == AppDestination.Devices &&
@@ -167,7 +169,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                                     .padding(horizontal = 12.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(painterResource(page.icon),
+                                    Icon(painterResource(page.icon(selected)),
                                         contentDescription = null, modifier = Modifier.size(20.dp), tint = itemColor)
                                     Text(page.label, style = MaterialTheme.typography.labelSmall,
                                         maxLines = 1, softWrap = false, color = itemColor)
@@ -193,7 +195,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AppDestination.primary.forEach { page ->
                         NavigationBarItem(selected = navigation.destination == page,
                             onClick = { navigation.select(page, pairing.peers.isEmpty()) },
-                            icon = { Icon(painterResource(page.icon), contentDescription = null) },
+                            icon = { Icon(painterResource(page.icon(navigation.destination == page)), contentDescription = null) },
                             label = { Text(page.label, style = MaterialTheme.typography.labelSmall, maxLines = 1) })
                     }
                 }
@@ -233,15 +235,14 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     }
 }
 
-private val AppDestination.icon: Int
-    get() = when (this) {
-        AppDestination.Home -> R.drawable.ic_home
-        AppDestination.Devices -> R.drawable.ic_devices
-        AppDestination.Features -> R.drawable.ic_features
-        AppDestination.Favourites -> R.drawable.ic_star
-        AppDestination.Settings -> R.drawable.ic_settings
-        AppDestination.About -> R.drawable.ic_about
-    }
+private fun AppDestination.icon(selected: Boolean): Int = when (this) {
+    AppDestination.Home -> if (selected) R.drawable.ic_home else R.drawable.ic_home_outline
+    AppDestination.Devices -> if (selected) R.drawable.ic_devices else R.drawable.ic_devices_outline
+    AppDestination.Features -> if (selected) R.drawable.ic_features_filled else R.drawable.ic_features
+    AppDestination.Favourites -> if (selected) R.drawable.ic_star_filled else R.drawable.ic_star
+    AppDestination.Settings -> if (selected) R.drawable.ic_settings else R.drawable.ic_settings_outline
+    AppDestination.About -> R.drawable.ic_about
+}
 
 @Composable
 internal fun PendingRequestRow(title: String, detail: String, onReview: () -> Unit) {

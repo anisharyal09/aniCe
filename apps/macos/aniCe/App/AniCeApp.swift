@@ -36,6 +36,10 @@ struct AniCeApp: App {
   @State private var servicesStarted = false
 
   init() {
+    UserDefaults.standard.register(defaults: [
+      "ui.favouriteFeatures": AppFeature.defaultFavourites,
+      "ui.companionPinnedFeatures": AppFeature.defaultPinnedToCompanion
+    ])
     let assemblyStarted = ProcessInfo.processInfo.systemUptime
     let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)

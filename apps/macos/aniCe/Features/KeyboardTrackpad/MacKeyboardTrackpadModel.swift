@@ -261,7 +261,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   private(set) var isTypingClipboard = false
   private(set) var typingProgress = 0
   private(set) var typingLength = 0
-  var reverseVerticalPointer = true {
+  var reverseVerticalPointer = false {
     didSet { preferences.set(reverseVerticalPointer, forKey: "keyboardTrackpad.reverseVerticalPointer") }
   }
   var pointerSpeed: KeyboardTrackpadSpeed = .standard {

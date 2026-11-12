@@ -44,7 +44,14 @@ private final class PlaybackEvent: @unchecked Sendable {
   }
 }
 @Observable @MainActor final class MacPlaybackModel: FeatureHandler {
-  func available(_ channel: any SecuredChannel) { let d=channel.descriptor; self.channel(d.transport,token:d.instance,send:channel.sendData) }
+  func available(_ channel: any SecuredChannel) {
+    let d = channel.descriptor
+    // Pass an explicitly Sendable closure; older Swift compilers reject the unapplied method reference.
+    let send: @MainActor @Sendable (Data) async throws -> Void = { data in
+      try await channel.sendData(data)
+    }
+    self.channel(d.transport, token: d.instance, send: send)
+  }
   func retired(_ descriptor: ChannelDescriptor) {
     guard sessionLink.isCurrent(descriptor.transport, token: descriptor.instance) else { return }
     channel(descriptor.transport,token:nil) { _ in throw SessionFailure.cancelled }
