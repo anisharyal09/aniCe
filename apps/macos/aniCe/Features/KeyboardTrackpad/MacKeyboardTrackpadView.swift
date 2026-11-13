@@ -149,6 +149,7 @@ struct MacKeyboardTrackpadView: View {
       Spacer(minLength: 8)
       if model.trustedPeers.count > 1 || model.targetPeer != nil {
         Menu {
+          Text("Trusted phones in aniCe")
           ForEach(model.trustedPeers, id: \.deviceId) { peer in
             peerMenuOption(peer)
           }
@@ -156,6 +157,8 @@ struct MacKeyboardTrackpadView: View {
             if model.trustedPeers.count > 1 { Divider() }
             Button("Change Bluetooth device…", action: model.relinkBluetoothDevice)
           }
+          Divider()
+          Button("Manage trusted phones…", action: onOpenDevices)
         } label: {
           Label(model.targetPeer == nil ? "Choose phone…" : "Other devices…", systemImage: "arrow.left.arrow.right")
         }
@@ -211,7 +214,7 @@ struct MacKeyboardTrackpadView: View {
   private var noTarget: some View {
     VStack(alignment: .leading, spacing: 10) {
       if model.trustedPeers.isEmpty {
-        Text("Pair and trust an Android phone in Devices, then return here.")
+        Text("First add your phone in aniCe → Devices using a QR code or six-digit code. System Bluetooth pairing for input comes next.")
           .font(.callout)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
         Button("Open Devices", action: onOpenDevices)
@@ -253,20 +256,24 @@ struct MacKeyboardTrackpadView: View {
 
   private var setupPanel: some View {
     VStack(alignment: .leading, spacing: 12) {
+      Text("Link system Bluetooth device").font(.system(size: 14, weight: .medium))
       if !model.pairedDevicesChecked {
         ProgressView("Checking Bluetooth pairings…")
           .controlSize(.small)
       } else if !model.matchingPairedDevices.isEmpty {
-        Text("Choose the Bluetooth device paired with \(model.targetPeer?.deviceName ?? "this phone"). Linking it will connect automatically.")
+        Text("Choose the system Bluetooth device you paired with \(model.targetPeer?.deviceName ?? "this phone"), then confirm Link device.")
           .font(.callout)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
           .fixedSize(horizontal: false, vertical: true)
       } else {
-        Text("Pair this phone with your Mac in Bluetooth Settings, then return here and choose Refresh.")
+        Text("Pair this phone with your Mac in Bluetooth Settings on both devices. Then choose Refresh to see its system pairing below.")
           .font(.callout)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
           .fixedSize(horizontal: false, vertical: true)
       }
+      Text("aniCe trust and system Bluetooth pairing are separate. This list shows system-paired Bluetooth devices.")
+        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        .fixedSize(horizontal: false, vertical: true)
 
       if model.pairedDevicesChecked {
         ForEach(model.matchingPairedDevices) { candidate in

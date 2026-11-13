@@ -134,8 +134,12 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Settings and About
 - Grouped preferences using native controls (toggles, sliders, pickers).
+- Android Updates uses a compact labeled checkbox row for beta inclusion, with update status and the text **Check for updates** action sharing one trailing row. At narrow widths or large text, put status above the trailing action rather than squeezing it into a thin column. Do not add a divider or a full-width bordered button between them. Mac retains its native update actions. Enabling beta updates on either platform requires a native confirmation; cancellation leaves the setting unchanged, and disabling does not require another dialog.
+- Mac Settings uses 13 pt body/section text and 12 pt supporting text at 100%, scaled through the existing text-size preference; other destinations keep their established scale.
 - Dynamic text scaling slider (80%–120%) in macOS Appearance and Android settings.
 - About section: Concise tagline `"Android + Mac, like never before."`, version metadata, license, and understated `[♡] Support aniCe :)`.
+- About uses **Reach out** for the profile/contact row. Keep the label at the leading edge and the name/social actions trailing. When large text forces a second line, keep that group trailing rather than left-aligning it; do not orphan individual icons on another row.
+- **Report an issue** opens a GitHub form containing only app/OS version information. Users review and submit it themselves; no automatic log, identity, message or file upload.
 
 ## Design agent rules
 

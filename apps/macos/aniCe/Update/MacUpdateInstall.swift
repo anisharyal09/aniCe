@@ -5,7 +5,7 @@ import Foundation
 
 enum MacUpdateInstall {
   enum Error: LocalizedError {
-    case pinsUnavailable, unsupportedLocation, unsupportedVolume, helperMissing, launchFailed
+    case pinsUnavailable, unsupportedLocation, unsupportedVolume, helperMissing, launchFailed, previewBuild
 
     var errorDescription: String? {
       switch self {
@@ -19,6 +19,8 @@ enum MacUpdateInstall {
         return "The update helper is missing from this build. Open the release on GitHub to install manually."
       case .launchFailed:
         return "The update helper did not start. Try again or install the update manually."
+      case .previewBuild:
+        return "Preview copies do not install release updates. Use the installed aniCe app to test updating."
       }
     }
   }
@@ -37,6 +39,7 @@ enum MacUpdateInstall {
   }
 
   static func problem(destination: URL = Bundle.main.bundleURL) -> String? {
+    if MacAppStorage.isPreview { return Error.previewBuild.localizedDescription }
     let destination = destination.standardizedFileURL.resolvingSymlinksInPath()
     if destination.path.contains("/AppTranslocation/") {
       return "Move aniCe to Applications before installing an update."
@@ -77,6 +80,7 @@ enum MacUpdateInstall {
 
   static func launch(_ release: AvailableMacRelease, destination: URL = Bundle.main.bundleURL,
     progress: @escaping @Sendable (Int64, Int64?) async -> Void) async throws {
+    guard !MacAppStorage.isPreview else { throw Error.previewBuild }
     guard let pins = pins() else { throw Error.pinsUnavailable }
     // Swap the bundle the symlink points at, never a link placed beside it.
     let destination = destination.standardizedFileURL.resolvingSymlinksInPath()

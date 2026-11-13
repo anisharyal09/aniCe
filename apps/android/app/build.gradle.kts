@@ -12,6 +12,7 @@ val releaseStorePassword = providers.environmentVariable("ANICE_ANDROID_STORE_PA
 val releaseKeyAlias = providers.environmentVariable("ANICE_ANDROID_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("ANICE_ANDROID_KEY_PASSWORD").orNull
 val releaseSigningReady = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+val previewBuild = providers.gradleProperty("anicePreview").orNull == "true"
 
 android {
     signingConfigs {
@@ -25,6 +26,12 @@ android {
         }
     }
     buildTypes {
+        debug {
+            if (previewBuild) {
+                applicationIdSuffix = ".preview"
+                manifestPlaceholders["aniceAppLabel"] = "aniCe Preview"
+            }
+        }
         release { if (releaseSigningReady) signingConfig = signingConfigs.getByName("production") }
     }
     namespace = "io.github.anisharyal09.anice"
@@ -32,6 +39,7 @@ android {
     ndkVersion = "27.3.13750724"
     defaultConfig {
         applicationId = "io.github.anisharyal09.anice"
+        manifestPlaceholders["aniceAppLabel"] = "@string/app_name"
         minSdk = 29
         targetSdk = 36
         versionCode = providers.gradleProperty("aniceVersionCode").orNull?.toInt() ?: 90021
@@ -87,6 +95,9 @@ dependencies {
 // Public releases must never fall back to an unsigned or debug-signed APK.
 tasks.configureEach {
     if (name == "packageRelease") {
-        doFirst { check(releaseSigningReady) { "Set ANICE_ANDROID_KEYSTORE, ANICE_ANDROID_STORE_PASSWORD, ANICE_ANDROID_KEY_ALIAS and ANICE_ANDROID_KEY_PASSWORD for a release build." } }
+        doFirst {
+            check(!previewBuild) { "Preview builds are Debug-only and cannot be packaged as a release." }
+            check(releaseSigningReady) { "Set ANICE_ANDROID_KEYSTORE, ANICE_ANDROID_STORE_PASSWORD, ANICE_ANDROID_KEY_ALIAS and ANICE_ANDROID_KEY_PASSWORD for a release build." }
+        }
     }
 }

@@ -141,7 +141,7 @@ struct MainWindowView: View {
       pendingRequestRows
       destinationContent
     }
-    .navigationTitle("aniCe")
+    .navigationTitle(MacAppStorage.applicationName)
     .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
     .toolbarBackground(.visible, for: .windowToolbar)
     .background(AniCePalette.background(colorScheme))

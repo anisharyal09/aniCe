@@ -12,6 +12,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add a user-reviewed GitHub bug-report form with app and OS version fields.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
 - **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on Mac menu bar and Android Home.
@@ -27,13 +28,15 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Add Mac Settings approval for per-phone app shortcuts; keep launch authorization on Mac and transmit only catalog IDs and revisions.
 - Add authenticated phone power status to the Mac overview and menu-bar companion without creating a connection lease.
 - Add `scripts/dev.sh` for branch-labelled, per-checkout signed Mac builds that stop the running copy before rebuilding and Android build/install/launch with automatic ADB discovery and explicit selection when multiple devices are connected.
-- Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
+- Add bidirectional Mac–Android file sharing with Mac drop targets, an Edge Drop shelf that is on by default and Android Share-sheet sending.
 - Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 - Add per-peer automatic receiving and saved default/custom destinations on both platforms.
 
 ### Changed
 
+- Refine native beta opt-in confirmation, About contact/report actions and Mac Settings readability; highlight window-free sharing and clarify Bluetooth HID setup.
+- Add isolated Mac and emulator UI-preview modes without replacing production app installations or their storage.
 - Restore grouped README features, the native technical foundation and repository overview; clarify Now Playing, actionable notifications and the maintainer-beta-to-public-release sequence while retaining setup, privacy, recovery and platform limits.
 - Require successful CI for the exact main commit before release signing, verify both draft assets, and leave final publication to the maintainer. Extend ownership review to release scripts and Android update code.
 - Consolidate installation and update guidance, correct architecture/security claims, remove public maintainer/UX audit notes, and organize changelogs under Added, Changed and Fixed while retaining development history.
@@ -62,6 +65,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Negotiate Desk Deck v4 for the new control while preserving v1–v3 behavior and action masks.
 - Extend Desk Deck with backward-compatible v2 memory and power details, subscription renewal, paged approved-app catalogs, clear stale/failure recovery and responsive landscape/portrait layouts; keep the shell available before telemetry.
 - Let Android file sends continue when the share panel is hidden and show progress for active sends and receives in notifications.
+- Enable Edge Drop by default at the right edge; keep an explicit opt-out saved.
 - Clarify Edge Drop placement, enlarge the Mac send target, and simplify transfer settings and result actions.
 - Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
 - Keep confirmed Mac sends pinned to their trusted recipient and require an explicit Bluetooth choice when LAN setup is unavailable.
@@ -72,7 +76,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
-- Create tagged release drafts through the Releases API, capture their IDs for verification, and retain generated release notes.
+- Create tagged release drafts through the Releases API, capture their IDs for verification, and fill marker-only drafts with generated notes while preserving maintainer descriptions.
 - Disable injected debugger entitlements in signed Mac releases and bound signing cleanup so validation failures exit promptly.
 - Check signing configuration, device-verification source and conflicting release state before signed builds; retain final publication checks.
 - **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).

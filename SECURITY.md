@@ -38,7 +38,7 @@ If you discover a security vulnerability in aniCe, please **do not open a public
 Instead, report it through one of the following private channels:
 
 1. **GitHub Private Vulnerability Reporting:** Use the [Security Advisories form](https://github.com/anisharyal09/aniCe/security/advisories/new) if it is available for this repository.
-2. **Security Contact:** If the form is unavailable, email the maintainer at `anisharyal09@gmail.com` with the subject `[SECURITY] aniCe Vulnerability Report`.
+2. **Security Contact:** If the form is unavailable, email the maintainer at `anish.creations.hq@gmail.com` with the subject `[SECURITY] aniCe Vulnerability Report`.
 
 Please include:
 

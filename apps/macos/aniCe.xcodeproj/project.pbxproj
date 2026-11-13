@@ -18,6 +18,7 @@
 		F40100000000000000000011 /* MacUpdateSignature.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000012 /* MacUpdateSignature.swift */; };
 		F4010000000000000000000F /* MacUpdateArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000010 /* MacUpdateArchive.swift */; };
 		F4010000000000000000000D /* MacUpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000000E /* MacUpdateModel.swift */; };
+		F41100000000000000000001 /* IssueReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41100000000000000000002 /* IssueReport.swift */; };
 		F4010000000000000000000B /* ReleaseDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000000C /* ReleaseDiscoveryTests.swift */; };
 		F40100000000000000000009 /* ReleaseDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000000A /* ReleaseDiscovery.swift */; };
 		F40100000000000000000005 /* ReleaseCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000006 /* ReleaseCatalog.swift */; };
@@ -196,6 +197,7 @@
 		F40100000000000000000012 /* MacUpdateSignature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateSignature.swift; sourceTree = SOURCE_ROOT; };
 		F40100000000000000000010 /* MacUpdateArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateArchive.swift; sourceTree = SOURCE_ROOT; };
 		F4010000000000000000000E /* MacUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateModel.swift; sourceTree = SOURCE_ROOT; };
+		F41100000000000000000002 /* IssueReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/App/IssueReport.swift; sourceTree = SOURCE_ROOT; };
 		F4010000000000000000000C /* ReleaseDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseDiscoveryTests.swift; sourceTree = SOURCE_ROOT; };
 		F4010000000000000000000A /* ReleaseDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseDiscovery.swift; sourceTree = SOURCE_ROOT; };
 		F40100000000000000000006 /* ReleaseCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseCatalog.swift; sourceTree = SOURCE_ROOT; };
@@ -524,6 +526,7 @@
 				F40100000000000000000012 /* MacUpdateSignature.swift */,
 				F40100000000000000000010 /* MacUpdateArchive.swift */,
 				F4010000000000000000000E /* MacUpdateModel.swift */,
+				F41100000000000000000002 /* IssueReport.swift */,
 				F4010000000000000000000A /* ReleaseDiscovery.swift */,
 				F40100000000000000000006 /* ReleaseCatalog.swift */,
 				F40100000000000000000002 /* UpdateVersion.swift */,
@@ -817,6 +820,7 @@
 				F40100000000000000000011 /* MacUpdateSignature.swift in Sources */,
 				F4010000000000000000000F /* MacUpdateArchive.swift in Sources */,
 				F4010000000000000000000D /* MacUpdateModel.swift in Sources */,
+				F41100000000000000000001 /* IssueReport.swift in Sources */,
 				F40100000000000000000009 /* ReleaseDiscovery.swift in Sources */,
 				F40100000000000000000005 /* ReleaseCatalog.swift in Sources */,
 				F40100000000000000000001 /* UpdateVersion.swift in Sources */,

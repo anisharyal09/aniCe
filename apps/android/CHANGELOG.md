@@ -33,6 +33,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Use the shared checkbox row and explicit confirmation for beta updates; group available/busy status with a minimal trailing check action and reflow at narrow widths or larger text without an extra divider.
+- Rename the About contact row to Reach out, with the label leading and the name/social actions kept together at the trailing edge, including larger text sizes.
+- Open a user-reviewed GitHub report form with app and OS versions from About.
+- Add a Debug-only preview package with isolated app data and emulator-only launcher deployment.
 - Restore Android app entry points, Share/Quick Settings guidance, permission distinctions and background-connection limits in the platform README.
 - **Navigation & Icons:** Outlined icons for inactive bottom destinations and filled icons for the active destination.
 - **Reordering:** Long-press context menu to reorder Features and Favourites.

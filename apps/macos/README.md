@@ -14,7 +14,7 @@ The development version is **0.9.0-beta.1 · build 90021**. See [installation, p
 - The **menu-bar companion** shares connection owners with the main window. Closing the window keeps it running; Command-Q quits. It offers Send clipboard, Quick Paste Tray, Send files and Floating Key for the selected compatible phone.
 - **Control Android** uses native Classic Bluetooth HID after OS pairing and one explicit link to the trusted phone. Option–Command–K toggles Floating Key; input starts deliberately in its capture area. See [keyboard, pointer and clipboard typing](../../docs/features/KEYBOARD_TRACKPAD.md).
 - **Clipboard** offers manual sharing, separate automatic-sharing consent and optional local history. Option–Command–V opens the Quick Paste Tray even without a connected phone. Return copies selected history for normal paste; the tray does not type into another application.
-- **Send files** accepts local file drops and the native picker. Optional Edge Drop is off by default; automatic receiving and save folders are configured per trusted sender. [File transfer](../../docs/features/FILE_TRANSFER.md) documents approval, recovery and unsupported inputs.
+- **Send files** accepts local file drops and the native picker. Edge Drop is on by default at the right edge and can be moved or turned off. Choose a local save folder and configure automatic receiving per trusted sender. [File transfer](../../docs/features/FILE_TRANSFER.md) documents approval, recovery and unsupported inputs.
 - **Now Playing → Playback setup** configures supported playback controls for Android. Showing playback in Mac Overview/companion is separately optional and off by default. This controls local Mac players; it does not receive an audio stream from the phone.
 - **Settings → Desk Deck** approves apps separately for each trusted phone. **Settings → Do Not Disturb** selects the phone-sync On/Off Shortcuts and the separate Desk Deck toggle. **Settings → Permissions** contains the input-access setup needed for Control Mac and supported lock requests.
 
@@ -82,7 +82,7 @@ ANICE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
 # ANICE_CODE_SIGN_IDENTITY='Apple Development: Your Name (CERTIFICATE_ID)'
 ```
 
-The script quits aniCe, builds Debug, verifies the signature/team and launches the exact output. If another copy remains open, it stops before building. It never resets permissions. Set `DEVELOPER_DIR` if Xcode is installed elsewhere.
+The normal script mode quits aniCe, builds Debug, verifies the signature/team and launches the exact output. If another copy remains open, it stops before building. It never resets permissions. Set `DEVELOPER_DIR` if Xcode is installed elsewhere.
 
 - App: `build/dev-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCe.app` under the checkout root.
 - Display name: `aniCe (<branch>)`; the window header stays aniCe.
@@ -91,6 +91,16 @@ The script quits aniCe, builds Debug, verifies the signature/team and launches t
 - Closing the window leaves the companion running. Dock reopen restores the main window even when companion or floating panels are open; activation restores it whenever no main window is visible. **Command-Q** quits.
 
 Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery).
+
+### Isolated UI preview
+
+```sh
+./scripts/dev.sh mac --preview
+```
+
+This builds **aniCe Preview** with bundle ID `io.github.anisharyal09.anice.preview`, separate preferences, identity keys and runtime files. It leaves installed aniCe copies running and does not load the normal private signing settings. The output is `build/preview-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCePreview.app`.
+
+The preview is ad-hoc signed for UI work. It does not start automatic connections, clipboard lifecycle observers, global hotkeys or the menu-bar companion, and it cannot run release-update installation/recovery. Use normal certificate-signed releases for permission persistence and beta-to-beta update testing.
 
 Opening the project in Xcode and pressing Command-R uses its own DerivedData copy. The shared project defaults to ad-hoc signing; use the script for repeat permission testing.
 

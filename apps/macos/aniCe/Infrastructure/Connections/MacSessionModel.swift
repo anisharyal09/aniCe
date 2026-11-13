@@ -335,7 +335,12 @@ struct SessionStartupRecovery {
         if op == generation {
           automatic = false
           preferences?.set(true, forKey: "session.paused")
-          failWindow("Trusted devices or identity access are unavailable. Check access and retry.")
+          Self.logger.error("Session start failed: \(String(describing: error), privacy: .public)")
+          if let identity = error as? IdentityError, let message = identity.errorDescription {
+            failWindow(message)
+          } else {
+            failWindow("Trusted devices or identity access are unavailable. Check access and retry.")
+          }
         }
       }
     }

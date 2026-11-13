@@ -3,7 +3,7 @@
 
 ## Install
 
-Download published builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/releases). Until the first beta is published, use the [development setup](../CONTRIBUTING.md).
+Download published builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/releases). Betas appear under pre-releases; enable **Include beta releases** in Settings → Updates to receive later betas. Use the [development setup](../CONTRIBUTING.md) to build from source.
 
 - **Mac:** Apple Silicon and macOS 14 or newer. Extract `aniCe-mac.zip`, move `aniCe.app` to Applications and open it. The current release pipeline uses a self-signed certificate, without Apple notarization; macOS may require explicit approval in System Settings → Privacy & Security. Do not disable Gatekeeper globally.
 - **Android:** Android 10 or newer. Open `aniCe-android.apk` and approve installation from the app used to download it. Development builds use a different signer; Android cannot update them in place with a production APK. Preserve anything needed before deliberately removing a development installation, since uninstalling removes app data and trust.
@@ -38,10 +38,14 @@ Automatic receiving is enabled for new pairings. Review each sender's file-trans
 
 ## Updates
 
-aniCe checks GitHub Releases while open and also offers **Settings → Updates → Check for updates**. Stable releases are selected by default, including on beta installations. Enable **Include beta releases** to receive subsequent betas. Skip version hides that release; Later leaves it available.
+aniCe checks GitHub Releases while open and also offers **Settings → Updates → Check for updates**. Stable releases are selected by default, including on beta installations. Enable **Include beta releases** and confirm **Enable beta updates** to receive subsequent betas. Beta builds may contain bugs or need recovery; ordinary updates are intended to retain settings and trusted devices. Turning beta updates off does not downgrade an installed beta. Skip version hides that release; Later leaves it available.
 
 Android verifies the downloaded APK's package, version and signing lineage before handing it to the system installer. Installation requires confirmation, and Android may ask you to allow aniCe to install apps. Updates retain app data when Android accepts the signing identity.
 
 Mac verifies the archive and app signature before a detached helper replaces the bundle. The previous bundle is retained until the new build reaches its main window; failed launch triggers a restore attempt. Automatic replacement needs a writable app folder and a volume supporting atomic exchange. Move the app out of its downloaded/translocated location first. If installation is unavailable or fails, open the release on GitHub and install manually.
 
 An update changes the application, not the permissions granted by another computer. Signing changes can require privacy or Keychain approval again. Older experimental universal Mac updaters may require a manual installation of the first arm64-only build.
+
+## Report a problem
+
+Open **About → Report an issue** to open the GitHub bug-report form. aniCe fills in only its app version and your OS version. It does not automatically attach logs, messages, device identities or files. Review the report and redact personal information before submitting; a GitHub account is required. Use [security reporting](../SECURITY.md) for vulnerabilities instead of a public issue.

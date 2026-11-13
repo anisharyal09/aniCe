@@ -13,7 +13,8 @@ final class NowPlayingGateTests: XCTestCase, @unchecked Sendable {
   func testSandboxRemovalKeepsOriginalJournalDirectory() {
     let home = URL(fileURLWithPath: "/Users/test account", isDirectory: true)
     let directory = MacAppStorage.directory(home: home)
-    XCTAssertEqual(directory.path, "/Users/test account/Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe")
+    let identifier = MacAppStorage.isPreview ? "io.github.anisharyal09.anice.preview" : "io.github.anisharyal09.anice"
+    XCTAssertEqual(directory.path, "/Users/test account/Library/Containers/\(identifier)/Data/Library/Application Support/aniCe")
     XCTAssertNotEqual(directory.path, home.appendingPathComponent("Library/Application Support/aniCe").path)
   }
 

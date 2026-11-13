@@ -199,7 +199,7 @@ extension MainWindowView {
       VStack(alignment: .leading, spacing: 16) {
         Text("About").font(.system(size: 18 * fontScale, weight: .medium))
         Text("Android + Mac, like never before.")
-          .font(.system(size: 13 * fontScale, weight: .regular))
+          .font(.system(size: 14 * fontScale, weight: .regular))
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {
           ViewThatFits(in: .horizontal) {
@@ -221,31 +221,34 @@ extension MainWindowView {
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
           aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
           aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
-          aboutLink("Report an issue", detail: "GitHub Issues", destination: "https://github.com/anisharyal09/aniCe/issues")
+          aboutLink("Report an issue", detail: "GitHub form", destination: IssueReport.currentURL.absoluteString)
           ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-              aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09", showSeparator: false)
-              aboutProfileLinks
+            HStack(spacing: 12) {
+              Text("Reach out").font(.system(size: 13 * fontScale)).fixedSize()
+              Spacer(minLength: 12)
+              aboutContactLinks
             }
-            VStack(spacing: 0) {
-              aboutLink("Developer", detail: "@anisharyal09", destination: "https://github.com/anisharyal09", showSeparator: false)
-              aboutProfileLinks.frame(maxWidth: .infinity, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 4) {
+              Text("Reach out").font(.system(size: 13 * fontScale))
+                .frame(maxWidth: .infinity, alignment: .leading)
+              aboutContactLinks
             }
           }
+          .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
         }
         .frame(maxWidth: 660, alignment: .leading)
 
         VStack(alignment: .leading, spacing: 14) {
-          Text("No accounts, no telemetry. All connections stay local to your devices.")
-            .font(.system(size: 11 * fontScale))
+          Text("No account needed to connect your devices. No telemetry. Updates and issue reports use GitHub.")
+            .font(.system(size: 13 * fontScale))
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             .fixedSize(horizontal: false, vertical: true)
 
           Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
             HStack(spacing: 6) {
-              Image(systemName: "heart").font(.system(size: 12 * fontScale))
-              Text("Support aniCe :)").font(.system(size: 12 * fontScale))
+              Image(systemName: "heart").font(.system(size: 13 * fontScale))
+              Text("Support aniCe :)").font(.system(size: 13 * fontScale))
             }
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             .padding(.vertical, 4)
@@ -261,6 +264,19 @@ extension MainWindowView {
       .frame(maxWidth: 660, alignment: .leading).padding(24)
       .frame(maxWidth: .infinity, alignment: .center)
     }
+  }
+
+  private var aboutContactLinks: some View {
+    HStack(spacing: 8) {
+      Link(destination: URL(string: "https://github.com/anisharyal09")!) {
+        HStack(spacing: 4) {
+          Text("@anisharyal09").font(.system(size: 13 * fontScale))
+          Image(systemName: "arrow.up.right").font(.system(size: 11)).accessibilityHidden(true)
+        }.frame(minHeight: 36).contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("GitHub profile, @anisharyal09")
+      aboutProfileLinks
+    }.foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize()
   }
 
   private var aboutProfileLinks: some View {
@@ -290,7 +306,7 @@ extension MainWindowView {
   private var aboutVersion: String? {
     guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else { return nil }
     let channel = Bundle.main.object(forInfoDictionaryKey: "AniCeReleaseChannel") as? String ?? ""
-    return "Version v" + version + (channel.isEmpty ? "" : "-" + channel)
+    return "Version " + version + (channel.isEmpty ? "" : " (" + channel + ")")
   }
 
   private var aboutMark: some View {
@@ -300,8 +316,8 @@ extension MainWindowView {
 
   private func aboutProductDetails(alignment: HorizontalAlignment) -> some View {
     VStack(alignment: alignment, spacing: 2) {
-      Text("macOS + Android").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false)
-      if let version = aboutVersion { Text(version).font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false) }
+      Text("macOS + Android").font(.system(size: 13 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false)
+      if let version = aboutVersion { Text(version).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize(horizontal: true, vertical: false) }
     }
   }
 
@@ -310,10 +326,10 @@ extension MainWindowView {
       let hovered = hoveredAboutLink == title
       Link(destination: url) {
         HStack(spacing: 16) {
-          Text(title).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+          Text(title).font(.system(size: 13 * fontScale)).foregroundStyle(AniCePalette.primaryText(colorScheme))
           Spacer()
           HStack(spacing: 8) {
-            Text(detail).font(.system(size: 11 * fontScale)).fixedSize(horizontal: true, vertical: false).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+            Text(detail).font(.system(size: 12 * fontScale)).fixedSize(horizontal: true, vertical: false).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
             Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
               .accessibilityHidden(true)
           }
@@ -349,7 +365,7 @@ extension MainWindowView {
                   ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
                 }
                 .fixedSize(horizontal: true, vertical: false)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), alignment: .leading)], alignment: .leading, spacing: 6) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120 * fontScale), alignment: .leading)], alignment: .leading, spacing: 6) {
                   ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
                 }
               }
@@ -375,15 +391,16 @@ extension MainWindowView {
                       Text("Text size").font(.system(size: 13 * fontScale))
                       Spacer()
                       Text("\(Int(round(fontScale * 100)))%")
-                        .font(.system(size: 11 * fontScale, design: .monospaced))
+                        .font(.system(size: 12 * fontScale, design: .monospaced))
                         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                         .frame(width: 44, alignment: .trailing)
                       Slider(value: $fontScale, in: 0.80...1.20, step: 0.05)
                         .frame(width: 130)
+                        .accessibilityLabel("Text size")
                       if abs(fontScale - 1.0) > 0.01 {
                         Button("Reset") { fontScale = 1.0 }
                           .buttonStyle(AniCeHoverButtonStyle())
-                          .font(.system(size: 11 * fontScale))
+                          .font(.system(size: 12 * fontScale))
                           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                       }
                     }.frame(minHeight: 40)
@@ -392,12 +409,11 @@ extension MainWindowView {
                 preferenceSection("Updates", id: "updates") {
                   VStack(alignment: .leading, spacing: 8) {
                     if let message = updates.recoveryMessage {
-                      Text(message).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      Text(message).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
                     }
-                    Toggle("Include beta releases", isOn: $updates.includeBeta).toggleStyle(.checkbox)
-                    Text("Turning this off keeps an installed beta until a newer stable release is available.")
-                      .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                    Button("Check for updates") { Task { await updates.check(force: true) } }.disabled(updates.checking)
+                    BetaUpdatePreference(checked: $updates.includeBeta)
+                    Button("Check for updates") { Task { await updates.check(force: true) } }
+                      .buttonStyle(AniCeButtonStyle()).disabled(updates.checking || updates.installing)
                     if updates.installing {
                       HStack {
                         ProgressView(value: updates.progress) { Text("Downloading update…") }
@@ -407,21 +423,21 @@ extension MainWindowView {
                       Button("Install \(release.version.tag)") { updates.install() }
                     }
                     if let error = updates.installError {
-                      Text(error).font(.caption).foregroundStyle(.red)
+                      Text(error).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.error(colorScheme))
                     } else if updates.release != nil, let problem = updates.installProblem {
-                      Text(problem).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      Text(problem).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
                     }
                     if let release = updates.release, updates.installProblem != nil || updates.installError != nil {
                       Button("Open \(release.version.tag) on GitHub") { NSWorkspace.shared.open(release.pageURL) }
                     }
-                    if !updates.status.isEmpty { Text(updates.status).font(.caption) }
+                    if !updates.status.isEmpty { Text(updates.status).font(.system(size: 12 * fontScale)) }
                   }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {
                   VStack(alignment: .leading, spacing: 5) {
                     Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small)
-                    Text("Enable on both devices to use Wi-Fi.").font(.caption)
+                      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
+                    Text("Enable on both devices to use Wi-Fi.").font(.system(size: 12 * fontScale))
                       .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
                   }.frame(minHeight: 48, alignment: .leading)
                 }
@@ -447,26 +463,27 @@ extension MainWindowView {
                 }
                 preferenceSection("File transfer", id: "file-transfer") {
                   VStack(alignment: .leading, spacing: 8) {
-                    TransferNotificationControls(preferences: transfer.notificationPreferences)
+                    TransferNotificationControls(preferences: transfer.notificationPreferences, settingsFontScale: fontScale)
                     Divider().overlay(AniCePalette.separator(colorScheme))
-                    TransferAutoReceiveSettings(preferences: transfer.autoReceivePreferences, peers: pairing.peers, compact: true)
+                    TransferAutoReceiveSettings(preferences: transfer.autoReceivePreferences, peers: pairing.peers,
+                      compact: true, settingsFontScale: fontScale)
                     Divider().overlay(AniCePalette.separator(colorScheme))
-                    TransferReceiveDestinationControls(model: transfer)
+                    TransferReceiveDestinationControls(model: transfer, settingsFontScale: fontScale)
                     Divider().overlay(AniCePalette.separator(colorScheme))
-                    EdgeDropSettingsView(controller: edgeDrop)
+                    EdgeDropSettingsView(controller: edgeDrop, settingsFontScale: fontScale)
                   }
                   .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-                    .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).frame(minHeight: 48)
+                    .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).frame(minHeight: 48)
                 }
                 preferenceSection("This device", id: "this-device") {
                   Button { showingLocalIdentity = true } label: {
                     HStack(spacing: 10) {
                       VStack(alignment: .leading, spacing: 2) {
                         Text(identity.local?.identity.deviceName ?? "This Mac")
-                        Text("Identity and security").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                        Text("Identity and security").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
                       }
                       Spacer()
                       Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
@@ -506,7 +523,7 @@ extension MainWindowView {
       .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
       .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
     VStack(alignment: .leading, spacing: 8) {
-      Text(title).font(.system(size: 12 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+      Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
       group
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -530,8 +547,9 @@ extension MainWindowView {
     } label: {
       Text(label)
         .font(.system(size: 12 * fontScale, weight: selected ? .medium : .regular))
+        .fixedSize(horizontal: true, vertical: false)
         .foregroundStyle(selected || hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
-        .padding(.horizontal, 9).padding(.vertical, 5)
+        .padding(.horizontal, 9).padding(.vertical, 8)
         .background(selected ? AniCePalette.subtleAccent(colorScheme) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? AniCePalette.separator(colorScheme) : .clear, lineWidth: 0.75) }
         .contentShape(RoundedRectangle(cornerRadius: 6))
@@ -629,6 +647,7 @@ private struct DeskDeckSettingsView: View {
   let peers: [PeerTrustRecord]
   @Environment(\.colorScheme) private var colorScheme
   @State private var notice = ""
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
 
   private var androidPeers: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }
 
@@ -636,37 +655,37 @@ private struct DeskDeckSettingsView: View {
     let catalogGeneration = model.catalogGeneration
     return VStack(alignment: .leading, spacing: 8) {
       Text("Choose which apps each phone can launch from Desk Deck.")
-        .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       if androidPeers.isEmpty {
-        Text("Pair a phone to add approved apps.").font(.callout)
+        Text("Pair a phone to add approved apps.").font(.system(size: 12 * fontScale))
       } else {
         ForEach(androidPeers, id: \.peer.fingerprint) { record in
           let peer = record.peer
           VStack(alignment: .leading, spacing: 4) {
             HStack {
-              Text(peer.deviceName).font(.system(size: 13, weight: .medium)).lineLimit(1)
+              Text(peer.deviceName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
               Spacer()
               Button("Add app…") { chooseApplication(for: peer) }
-                .controlSize(.small).disabled(model.availableApprovalCount(for: peer) >= 32)
+                .disabled(model.availableApprovalCount(for: peer) >= 32)
             }.frame(minHeight: 32)
             let apps = model.approvedApps(for: peer)
             if apps.isEmpty {
-              Text("No apps added").font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              Text("No apps added").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
             }
             ForEach(apps) { app in
               HStack(spacing: 10) {
                 Text(app.name).lineLimit(1)
                 Spacer(minLength: 8)
                 if !model.applicationIsAvailable(app) {
-                  Text("Unavailable").font(.caption)
+                  Text("Unavailable").font(.system(size: 12 * fontScale))
                     .foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
                 }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
-                  .controlSize(.small).accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
+                  .accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
               }.frame(minHeight: 32)
             }
             if model.availableApprovalCount(for: peer) >= 32 {
-              Text("This phone has reached the 32-app limit.").font(.caption)
+              Text("This phone has reached the 32-app limit.").font(.system(size: 12 * fontScale))
                 .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             }
           }.frame(maxWidth: .infinity, alignment: .leading)
@@ -675,7 +694,7 @@ private struct DeskDeckSettingsView: View {
           }
         }
       }
-      if !notice.isEmpty { Text(notice).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme)) }
+      if !notice.isEmpty { Text(notice).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme)) }
     }
     .id(catalogGeneration)
   }

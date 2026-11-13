@@ -179,7 +179,8 @@ class PublishReleaseTest(unittest.TestCase):
         self.argv[1] = 'v0.4.0-beta.1'
         assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
         draft = {'tag_name': self.argv[1], 'draft': True, 'prerelease': True,
-                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': [], 'id': 1}
+                 'body': f'<!-- anice-source:{self.commit} -->\n\n## What\'s Changed\n\n* First beta.',
+                 'assets': [], 'id': 1}
         complete = {**draft, 'assets': assets}
         # subprocess.check_output sequence:
         # 1. check_tag_commit, 2. check_release_state pagination (empty),
@@ -215,10 +216,110 @@ class PublishReleaseTest(unittest.TestCase):
     def test_refuses_publication_if_verified_asset_changes(self):
         self.check_draft_resume(change_asset=True)
 
+    def test_marker_only_drafts_get_notes_without_overwriting_concurrent_edits(self):
+        marker = f'<!-- anice-source:{self.commit} -->'
+        notes = "## What's Changed\n\n* Improve release preparation."
+        assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
+        for original, manual in ((marker, False), ('\n ' + marker + ' \n', False), (marker, True)):
+            draft = {'id': 7, 'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                     'body': original, 'assets': assets}
+            refreshed = {**draft, 'body': marker + '\n\nMaintainer description.'} if manual else draft
+            updated = {**draft, 'body': marker + '\n\n' + notes}
+            outputs = [json.dumps({'sha': self.commit}), json.dumps([[draft]]), json.dumps(draft),
+                       json.dumps({'sha': self.commit}), json.dumps(draft), json.dumps({'body': notes}),
+                       json.dumps({'sha': self.commit}), json.dumps(refreshed)]
+            if not manual:
+                outputs.append(json.dumps(updated))
+            outputs.append(json.dumps({'sha': self.commit}))
+            def download(*args, **kwargs):
+                kwargs['stdout'].write(b'apk')
+            with self.subTest(original=original, manual=manual), mock.patch.object(sys, 'argv', self.argv), \
+                    mock.patch.dict(os.environ, self.env), \
+                    mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs) as api, \
+                    mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
+                    mock.patch.object(publish_release, 'gh', side_effect=download) as gh:
+                publish_release.main()
+                commands = [call.args[0] for call in api.call_args_list]
+                self.assertEqual(len(commands), len(outputs))
+                self.assertIn(['gh', 'api', '--method', 'POST',
+                               'repos/anisharyal09/aniCe/releases/generate-notes',
+                               '-f', 'tag_name=v0.4.0', '-f', f'target_commitish={self.commit}'], commands)
+                patches = [command for command in commands if command[:4] == ['gh', 'api', '--method', 'PATCH']]
+                self.assertEqual(patches, [] if manual else [
+                    ['gh', 'api', '--method', 'PATCH', 'repos/anisharyal09/aniCe/releases/7',
+                     '-f', f'body={updated["body"]}']])
+                self.assertEqual(gh.call_count, 2)
+                self.assertFalse(any(call.args[0] == 'release' for call in gh.call_args_list))
+
+    def test_rejects_empty_or_invalid_generated_descriptions_before_patch(self):
+        assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
+        draft = {'id': 7, 'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': assets}
+        for notes in (None, [], {}, {'body': None}, {'body': ''}, {'body': ' \n\t'}, {'body': 42},
+                      {'body': draft['body']}):
+            outputs = [json.dumps({'sha': self.commit}), json.dumps([[draft]]), json.dumps(draft),
+                       json.dumps({'sha': self.commit}), json.dumps(draft), json.dumps(notes)]
+            def download(*args, **kwargs):
+                kwargs['stdout'].write(b'apk')
+            with self.subTest(notes=notes), mock.patch.object(sys, 'argv', self.argv), \
+                    mock.patch.dict(os.environ, self.env), \
+                    mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs) as api, \
+                    mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
+                    mock.patch.object(publish_release, 'gh', side_effect=download):
+                with self.assertRaisesRegex(ValueError, 'Generated release description is empty or invalid'):
+                    publish_release.main()
+                self.assertFalse(any(call.args[0][:4] == ['gh', 'api', '--method', 'PATCH']
+                                     for call in api.call_args_list))
+
+    def test_rechecks_source_and_draft_state_before_description_update(self):
+        assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
+        draft = {'id': 7, 'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': assets}
+        changed_assets = [{**assets[0], 'id': 99}, assets[1]]
+        cases = [({'sha': self.commit}, {**draft, **change}, 'Draft changed') for change in (
+            {'draft': False}, {'tag_name': 'v0.4.1'}, {'prerelease': True},
+            {'body': '<!-- anice-source:wrong -->'}, {'assets': changed_assets})]
+        cases.append(({'sha': 'b' * 40}, None, 'Remote tag no longer'))
+        for ref, refreshed, error in cases:
+            outputs = [json.dumps({'sha': self.commit}), json.dumps([[draft]]), json.dumps(draft),
+                       json.dumps({'sha': self.commit}), json.dumps(draft), json.dumps({'body': 'Release notes.'}),
+                       json.dumps(ref)]
+            if refreshed:
+                outputs.append(json.dumps(refreshed))
+            def download(*args, **kwargs):
+                kwargs['stdout'].write(b'apk')
+            with self.subTest(ref=ref, refreshed=refreshed), mock.patch.object(sys, 'argv', self.argv), \
+                    mock.patch.dict(os.environ, self.env), \
+                    mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs) as api, \
+                    mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
+                    mock.patch.object(publish_release, 'gh', side_effect=download):
+                with self.assertRaisesRegex(ValueError, error):
+                    publish_release.main()
+                self.assertFalse(any(call.args[0][:4] == ['gh', 'api', '--method', 'PATCH']
+                                     for call in api.call_args_list))
+
+    def test_refuses_verified_status_if_description_update_is_not_saved(self):
+        assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
+        draft = {'id': 7, 'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': assets}
+        outputs = [json.dumps({'sha': self.commit}), json.dumps([[draft]]), json.dumps(draft),
+                   json.dumps({'sha': self.commit}), json.dumps(draft), json.dumps({'body': 'Release notes.'}),
+                   json.dumps({'sha': self.commit}), json.dumps(draft), json.dumps(draft)]
+        def download(*args, **kwargs):
+            kwargs['stdout'].write(b'apk')
+        with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs) as api, \
+                mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
+                mock.patch.object(publish_release, 'gh', side_effect=download):
+            with self.assertRaisesRegex(ValueError, 'Draft release description was not saved'):
+                publish_release.main()
+            self.assertEqual(sum(call.args[0][:4] == ['gh', 'api', '--method', 'PATCH']
+                                 for call in api.call_args_list), 1)
+
     def check_draft_resume(self, change_asset):
         assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
         draft = {'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
-                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': assets}
+                 'body': f'<!-- anice-source:{self.commit} -->\n\nMaintainer description.', 'assets': assets}
         latest = {**draft, 'assets': [dict(item) for item in assets]}
         if change_asset:
             latest['assets'][1]['id'] = 999
@@ -228,7 +329,7 @@ class PublishReleaseTest(unittest.TestCase):
             if args[0] == 'api':
                 kwargs['stdout'].write(b'apk')
         with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
-             mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs), \
+             mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs) as api, \
              mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
              mock.patch.object(publish_release, 'gh', side_effect=call) as gh:
             if change_asset:
@@ -240,6 +341,7 @@ class PublishReleaseTest(unittest.TestCase):
                 self.assertFalse(any(call.args[0] == 'release' for call in gh.call_args_list))
                 self.assertEqual(gh.call_args_list[0].args[0], 'api')
                 self.assertEqual(gh.call_args_list[1].args[0], 'api')
+                self.assertFalse(any('--method' in call.args[0] for call in api.call_args_list))
 
 
 class ReleaseCITest(unittest.TestCase):

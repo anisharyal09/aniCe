@@ -45,6 +45,7 @@ import SwiftUI
   func skip() { if let release { discovery.skip(release.version.tag) }; release = nil; status = "" }
 
   func confirmStartup() {
+    guard !MacAppStorage.isPreview else { return }
     let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
     recoveryMessage = MacUpdateRecovery.confirmStartup(version: version)
   }
@@ -69,6 +70,57 @@ import SwiftUI
   }
 
   func cancelInstall() { installTask?.cancel() }
+}
+
+struct BetaUpdateConsent {
+  private(set) var confirming = false
+
+  mutating func request(_ requested: Bool, current: Bool) -> Bool? {
+    if requested && !current {
+      confirming = true
+      return nil
+    }
+    confirming = false
+    return requested
+  }
+
+  mutating func confirm() -> Bool {
+    confirming = false
+    return true
+  }
+
+  mutating func cancel() {
+    confirming = false
+  }
+}
+
+struct BetaUpdatePreference: View {
+  @Binding var checked: Bool
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  @State private var consent = BetaUpdateConsent()
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle("Include beta releases", isOn: Binding(
+        get: { checked },
+        set: { requested in
+          if let resolved = consent.request(requested, current: checked) { checked = resolved }
+        }))
+        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
+        .accessibilityHint("Confirms before enabling beta updates")
+      Text(checked ? "Turning this off keeps your installed version." : "Get early builds and help test aniCe.")
+        .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+    }
+    .alert("Try beta updates?", isPresented: Binding(
+      get: { consent.confirming },
+      set: { if !$0 { consent.cancel() } })) {
+      Button("Enable beta updates") { if consent.confirm() { checked = true } }
+      Button("Not now", role: .cancel) { consent.cancel() }
+    } message: {
+      Text("You’ll be helping test aniCe. Beta builds may have bugs, interrupt connections or file transfers, and occasionally need recovery or re-adding trusted devices. Normal updates are intended to keep your settings and pairings.")
+    }
+  }
 }
 
 struct MacUpdateNotice: View {

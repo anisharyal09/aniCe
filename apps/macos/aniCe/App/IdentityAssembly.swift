@@ -7,7 +7,7 @@ enum IdentityAssembly {
     static func makeModel() -> IdentityViewModel {
         let backend = MacIdentityBackend.current
         let suffix = backend == .developmentKeychain ? "development" : "protected"
-        let namespace = "io.github.anisharyal09.anice.identity." + suffix
+        let namespace = MacAppStorage.bundleIdentifier + ".identity." + suffix
         let storage = MacIdentityStorage(namespace: namespace, backend: backend)
         let service = IdentityService(storage: storage, deviceName: Host.current().localizedName ?? "Mac",
                                       tagPrefix: namespace + ".")

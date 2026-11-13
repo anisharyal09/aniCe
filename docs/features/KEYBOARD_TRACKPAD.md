@@ -6,10 +6,11 @@ Keyboard & Trackpad lets the Mac send standard Bluetooth keyboard and mouse inpu
 
 ## First-time setup
 
-1. Pair the phone with the Mac in macOS Bluetooth Settings.
-2. Open **Keyboard & Trackpad** from Features or Favourites. The authenticated BLE-connected phone is the default; use **Other devices…** to choose another trusted phone. A live HID session keeps its target until stopped or explicitly changed.
-3. Choose the Bluetooth device paired with your phone and confirm **Link device**. A matching name appears first; if the phone uses a different name, open **Phone has a different name?** and choose its pairing. Confirmation stores a local association for that trusted aniCe phone and starts the HID connection. Other Bluetooth accessories may also appear in the expanded list.
-4. On later visits, aniCe reconnects once to the saved paired device over Bluetooth HID. The connection stays idle until you click the keyboard area or pad; connecting never captures input by itself. Two-finger scrolling over an inactive pad scrolls this panel. Once you click the pad to activate it, two-finger scrolling controls the phone.
+1. Add and approve the phone in **aniCe → Devices** using a QR code or six-digit code. This establishes aniCe trust; it is separate from system Bluetooth pairing.
+2. Pair the phone with the Mac in **Bluetooth Settings on both devices**.
+3. Open **Keyboard & Trackpad** from Features or Favourites. The authenticated BLE-connected phone is the default; **Other devices…** lists aniCe-trusted phones, not arbitrary nearby Bluetooth devices. A live HID session keeps its target until stopped or explicitly changed.
+4. Choose **Refresh** after system pairing, select the corresponding Bluetooth device and confirm **Link device**. This list contains only system-paired devices. A matching name appears first; if the phone uses a different name, open **Phone has a different name?** and choose its pairing. Confirmation stores a local association for that trusted aniCe phone and starts the HID connection. Other Bluetooth accessories may also appear in the expanded list.
+5. On later visits, aniCe reconnects once to the saved paired device over Bluetooth HID. The connection stays idle until you click the keyboard area or pad; connecting never captures input by itself. Two-finger scrolling over an inactive pad scrolls this panel. Once you click the pad to activate it, two-finger scrolling controls the phone.
 
 Press **⌥⌘K** anywhere while aniCe is running to show or hide **Floating Key**. Hover its button for direct-typing and trackpad guidance.
 

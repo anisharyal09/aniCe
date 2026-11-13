@@ -41,7 +41,7 @@
     </queries>
     <application android:name=".AniCeApplication" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
-        android:label="@string/app_name" android:supportsRtl="true" android:theme="@style/Theme.AniCe">
+        android:label="${aniceAppLabel}" android:supportsRtl="true" android:theme="@style/Theme.AniCe">
         <activity android:name=".features.clipboard.SendToMacActivity" android:exported="true"
             android:label="Send to Mac" android:excludeFromRecents="true" android:theme="@style/Theme.AniCe.ClipboardAction">
             <intent-filter>

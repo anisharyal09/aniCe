@@ -23,11 +23,14 @@ class DevLauncherTests(unittest.TestCase):
         self.log = self.root / 'calls'
         self.env = dict(os.environ, PATH=f'{self.bin}:/usr/bin:/bin',
                         HOME=str(self.root), CALLS=str(self.log),
-                        SDK_LOG=str(self.root / 'sdk-paths'),
+                         SDK_LOG=str(self.root / 'sdk-paths'),
+                         GRADLE_ARGS_LOG=str(self.root / 'gradle-args'),
                         ANDROID_HOME=str(self.root / 'sdk'), ANDROID_SDK_ROOT='',
                         ANICE_DEVELOPMENT_TEAM='')
         self.tool('adb', '''if [ "$1" = devices ]; then
 printf 'List of devices attached\\n%s\\n' "$DEVICES"
+elif [ "$3" = shell ] && [ "$4" = getprop ] && [ "$5" = ro.hardware ]; then
+printf '%s\\n' "${EMULATOR_HARDWARE:-ranchu}"
 else
 printf '%s\\n' "$*" >> "$CALLS"
 exit "${INSTALL_EXIT:-0}"
@@ -35,7 +38,7 @@ fi''')
         android = self.root / 'apps/android'
         android.mkdir(parents=True)
         gradle = android / 'gradlew'
-        gradle.write_text('#!/bin/bash\necho build >> "$CALLS"\nprintf "%s\\n" "${ANDROID_HOME-}" >> "$SDK_LOG"\nexit "${BUILD_EXIT:-0}"\n')
+        gradle.write_text('#!/bin/bash\necho build >> "$CALLS"\nprintf "%s\\n" "$*" > "$GRADLE_ARGS_LOG"\nprintf "%s\\n" "${ANDROID_HOME-}" >> "$SDK_LOG"\nexit "${BUILD_EXIT:-0}"\n')
         gradle.chmod(0o755)
 
     def tool(self, name, body):
@@ -173,6 +176,62 @@ fi''')
         self.assertNotEqual(self.run_dev('android', '--serial').returncode, 0)
         self.assertNotEqual(self.run_dev('mac', '--serial', 'phone').returncode, 0)
         self.assertEqual(self.calls(), '')
+
+    def test_android_preview_uses_an_isolated_package_on_an_explicit_emulator(self):
+        tool = self.root / 'sdk/build-tools/36.0.0/aapt'
+        tool.parent.mkdir(parents=True)
+        tool.write_text('#!/bin/bash\nprintf "package: name=\\047%s\\047 versionCode=\\04790021\\047\\n" "${APK_PACKAGE:-io.github.anisharyal09.anice.preview}"\n')
+        tool.chmod(0o755)
+        result = self.run_dev('android', '--preview', '--serial', 'emulator-5554',
+                              DEVICES='phone\tdevice\nemulator-5554\tdevice')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-PanicePreview=true', (self.root / 'gradle-args').read_text())
+        self.assertIn('-s emulator-5554 install -r ', self.calls())
+        self.assertIn('-s emulator-5554 shell am start -W -n io.github.anisharyal09.anice.preview/io.github.anisharyal09.anice.MainActivity', self.calls())
+        self.assertNotIn('-s phone ', self.calls())
+        self.log.unlink()
+        result = self.run_dev('android', '--preview', '--serial', 'emulator-5554',
+                              DEVICES='emulator-5554\tdevice', APK_PACKAGE='io.github.anisharyal09.anice')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('install -r ', self.calls())
+
+    def test_preview_never_builds_or_installs_on_a_physical_phone(self):
+        for args in (('--serial', 'phone'), ()):
+            result = self.run_dev('android', '--preview', *args, DEVICES='phone\tdevice')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.calls(), '')
+        result = self.run_dev('android', '--preview', '--serial', 'emulator-5554',
+                              DEVICES='emulator-5554\tdevice', EMULATOR_HARDWARE='samsung')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), '')
+
+    def test_mac_preview_does_not_quit_production_or_load_its_signing_file(self):
+        self.tool('uname', 'case "$1" in -s) echo Darwin;; -m) echo arm64;; esac')
+        self.tool('osascript', 'echo osascript >> "$CALLS"; exit 1')
+        self.tool('pgrep', 'echo pgrep >> "$CALLS"; exit 0')
+        self.tool('python3', 'echo python3 >> "$CALLS"')
+        self.tool('xcodebuild', 'printf "xcodebuild %s\\n" "$*" >> "$CALLS"')
+        self.tool('codesign', '''echo codesign >> "$CALLS"
+if [ "$1" = -dv ]; then
+  echo "Identifier=${SIGNATURE_IDENTIFIER:-io.github.anisharyal09.anice.preview}" >&2
+  echo "Signature=adhoc" >&2
+fi''')
+        self.tool('open', 'printf "open %s\\n" "$*" >> "$CALLS"')
+        (self.root / 'scripts/dev.local.sh').write_text('echo loaded-signing >> "$CALLS"\nexit 1\n')
+        result = self.run_dev('mac', '--preview')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertNotIn('osascript', calls)
+        self.assertNotIn('pgrep', calls)
+        self.assertNotIn('loaded-signing', calls)
+        self.assertIn('PRODUCT_BUNDLE_IDENTIFIER=io.github.anisharyal09.anice.preview', calls)
+        self.assertIn('ANICE_PREVIEW', calls)
+        self.assertIn('build/preview-mac/', calls)
+        self.assertIn('aniCePreview.app', calls)
+        self.log.unlink()
+        result = self.run_dev('mac', '--preview', SIGNATURE_IDENTIFIER='io.github.anisharyal09.anice')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('open -n ', self.calls())
 
 
 if __name__ == '__main__':

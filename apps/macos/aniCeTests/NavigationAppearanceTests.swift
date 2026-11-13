@@ -10,6 +10,31 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  func testIssueReportEncodesOnlyAppAndOSVersions() throws {
+    let cases = [
+      ("0.9.0-beta.1", "macOS 27.1"),
+      ("build + preview & test#1", "macOS / नमस्ते"),
+      ("v1\n&title=other&body=private", "https://other.invalid/#redirect")
+    ]
+    XCTAssertEqual(cases.count, 3)
+    for (version, system) in cases {
+      let url = IssueReport.url(appVersion: version, osVersion: system)
+      let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+      XCTAssertEqual(components.scheme, "https")
+      XCTAssertEqual(components.host, "github.com")
+      XCTAssertEqual(components.path, "/anisharyal09/aniCe/issues/new")
+      XCTAssertNil(components.fragment)
+      XCTAssertNil(components.user)
+      XCTAssertFalse(try XCTUnwrap(components.percentEncodedQuery).contains("+"),
+        "A literal plus must survive GitHub's form-style query decoding")
+      let fields = Dictionary(uniqueKeysWithValues: try XCTUnwrap(components.queryItems).map { ($0.name, $0.value) })
+      XCTAssertEqual(Set(fields.keys), ["template", "app-version", "os-version"])
+      XCTAssertEqual(fields["template"], "bug_report.yml")
+      XCTAssertEqual(fields["app-version"], version)
+      XCTAssertEqual(fields["os-version"], system)
+    }
+  }
+
   @MainActor func testDockReopenRestoresMainWindowWhenOtherWindowsAreVisible() {
     let delegate = AppDelegate()
     var requests = 0
@@ -312,4 +337,25 @@ extension SessionTests {
 
 private final class FlippedSettingsDocument: NSView {
   override var isFlipped: Bool { true }
+}
+
+final class BetaUpdatePreferenceTests: XCTestCase {
+  func testConsentDefersOnlyEnablementAndCancelKeepsTheSettingOff() {
+    var consent = BetaUpdateConsent()
+    XCTAssertNil(consent.request(true, current: false))
+    XCTAssertTrue(consent.confirming)
+    consent.cancel()
+    XCTAssertFalse(consent.confirming)
+    XCTAssertNil(consent.request(true, current: false))
+    XCTAssertTrue(consent.confirm())
+    XCTAssertFalse(consent.confirming)
+  }
+
+  func testDisablingBetaUpdatesIsImmediateAndNeedsNoConfirmation() {
+    var consent = BetaUpdateConsent()
+    XCTAssertEqual(consent.request(false, current: true), false)
+    XCTAssertFalse(consent.confirming)
+    XCTAssertEqual(consent.request(false, current: false), false)
+    XCTAssertFalse(consent.confirming)
+  }
 }

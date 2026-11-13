@@ -377,7 +377,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
         return "Choose Link device to confirm which paired Bluetooth device belongs to this aniCe phone."
       }
       if pairedDevicesChecked {
-        return "Pair this phone with your Mac in Bluetooth Settings, then check again."
+        return "No matching system Bluetooth pairing found."
       }
       return "Pair this phone with your Mac in Bluetooth Settings, then link it once."
     }

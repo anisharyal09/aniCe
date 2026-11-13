@@ -362,13 +362,13 @@ final class TransferModelTests: XCTestCase {
     XCTAssertFalse(TransferDropValidation.containsPromisedFile([UTType.fileURL.identifier]))
   }
 
-  func testEdgeDropDefaultsRightAndPersistsTheSelectedEdge() throws {
+  func testEdgeDropDefaultsOnAtRightAndPersistsTheSelectedEdge() throws {
     let suite = "aniCe.edge-drop.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let preferences = EdgeDropPreferences(storage: defaults)
 
-    XCTAssertFalse(preferences.enabled)
+    XCTAssertTrue(preferences.enabled)
     XCTAssertEqual(preferences.edge, .right)
     preferences.setEnabled(true)
     preferences.setEdge(.top)

@@ -35,6 +35,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Require confirmation before enabling beta updates and use compact, scalable text across Settings, including embedded feature preferences.
+- Use Reach out for About contacts, keep the name/social actions together at the trailing edge, and open a user-reviewed GitHub report form with app and OS versions.
+- Clarify aniCe trust versus system Bluetooth pairing in Control Android setup and device selection.
+- Add an isolated UI-preview bundle with separate identity/runtime storage and no production-update recovery or installation.
 - Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
 
 - Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.
@@ -52,6 +56,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Remove feature-level Back links that duplicate titlebar navigation.
 - Use consistent Add device language in the Mac pairing flow.
 - Guide first-launch users to add their Android phone and hide empty file-send shortcuts until a device is trusted.
+- Enable Edge Drop by default at the right edge; keep an explicit opt-out saved.
 - Clarify File transfer settings and Edge Drop placement; enlarge send and result controls.
 - Pin each Mac send to its selected phone, prefer LAN, and require an explicit Bluetooth fallback choice.
 - Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input styling in the feature and floating controls.

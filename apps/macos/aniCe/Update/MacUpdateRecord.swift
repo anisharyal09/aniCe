@@ -14,8 +14,14 @@ struct MacUpdateRecord: Codable, Equatable {
   let created: Double
   var phase: Phase
 
-  static let directory = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/Application Support/aniCe/Update", isDirectory: true)
+  static let directory: URL = {
+    #if ANICE_PREVIEW
+    let path = "Library/Application Support/aniCe Preview/Update"
+    #else
+    let path = "Library/Application Support/aniCe/Update"
+    #endif
+    return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(path, isDirectory: true)
+  }()
   static let recordURL = directory.appendingPathComponent("record.json")
   static let lockURL = directory.appendingPathComponent("install.lock")
 

@@ -313,8 +313,29 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
 
 /// Sandbox removal must not redirect identity/trust reads to a fresh application-support directory.
 enum MacAppStorage {
-    static func directory(home: URL) -> URL {
-        home.appendingPathComponent("Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe", isDirectory: true)
+    static let productionBundleIdentifier = "io.github.anisharyal09.anice"
+    static let previewBundleIdentifier = "io.github.anisharyal09.anice.preview"
+    static var isPreview: Bool {
+        #if ANICE_PREVIEW
+        true
+        #else
+        false
+        #endif
+    }
+    static var bundleIdentifier: String {
+        isPreview ? previewBundleIdentifier : productionBundleIdentifier
+    }
+    static var applicationName: String { isPreview ? "aniCe Preview" : "aniCe" }
+
+    static func directory(home: URL, preview: Bool = isPreview) -> URL {
+        let identifier = preview ? previewBundleIdentifier : productionBundleIdentifier
+        return home.appendingPathComponent("Library/Containers/\(identifier)/Data/Library/Application Support/aniCe", isDirectory: true)
+    }
+    static func applicationSupport(home: URL, preview: Bool = isPreview) -> URL {
+        home.appendingPathComponent(preview ? "Library/Application Support/aniCe Preview" : "Library/Application Support/aniCe", isDirectory: true)
+    }
+    static var applicationSupport: URL {
+        applicationSupport(home: FileManager.default.homeDirectoryForCurrentUser)
     }
     static var directory: URL {
         // passwd names the account home independently of Foundation's sandbox container redirection.

@@ -205,6 +205,7 @@ struct DndSyncSettingsView: View {
   @Bindable var model: MacDndSyncModel
   @Bindable var deskDeck: MacDeskDeckModel
   @State private var copiedPrompt: String?
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
 
   private static let togglePrompt = """
     Create a macOS shortcut named “Toggle Do Not Disturb” using built-in Shortcuts actions. Get Current Focus. If the current Focus is Do Not Disturb, use Set Focus to turn it off. Otherwise, use Set Focus to turn it on until turned off. Ask for no input, show no menus or notifications, and change no other Focus. Do not use AppleScript, shell commands, or URLs.
@@ -218,28 +219,28 @@ struct DndSyncSettingsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Phone → Mac").font(.headline)
+      Text("Phone → Mac").font(.system(size: 13 * fontScale, weight: .medium))
       Text("Apply the phone’s DND changes on this Mac while it is connected.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
       HStack(alignment: .top, spacing: 12) {
         receiveShortcutPicker(enabled: true).frame(maxWidth: .infinity, alignment: .leading)
         receiveShortcutPicker(enabled: false).frame(maxWidth: .infinity, alignment: .leading)
       }
       Button(model.loading ? "Checking…" : "Refresh Shortcuts") { Task { await model.refreshShortcuts() } }
         .disabled(model.loading)
-      Text(model.receiveStatus).font(.caption).foregroundStyle(.secondary)
+      Text(model.receiveStatus).font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
 
       DisclosureGroup("Set up once") {
         VStack(alignment: .leading, spacing: 8) {
           Text("Create two Shortcuts with Set Focus: one turns Do Not Disturb on until turned off; the other turns it off. Copy each prompt, open Shortcuts, click +, then paste into Describe a Shortcut (Apple Intelligence) if available. Otherwise add Set Focus manually and test each Shortcut.")
-            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary).textSelection(.enabled)
           HStack {
             copyPromptButton("On", prompt: Self.onShortcutPrompt)
             copyPromptButton("Off", prompt: Self.offShortcutPrompt)
-            Button("Open Shortcuts", action: openShortcuts).controlSize(.small)
+            Button("Open Shortcuts", action: openShortcuts)
           }
           if model.onName != nil || model.offName != nil {
-            Button("Clear On/Off selections") { model.removeSelections() }.controlSize(.small)
+            Button("Clear On/Off selections") { model.removeSelections() }
           }
         }.padding(.top, 6)
       }
@@ -248,16 +249,16 @@ struct DndSyncSettingsView: View {
       DisclosureGroup("Desk Deck button · Mac only") {
         VStack(alignment: .leading, spacing: 8) {
           Text("Runs a local Do Not Disturb toggle on the Mac. It does not sync to the phone.")
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
           Text("Create a Shortcut with Get Current Focus → If → Set Focus, or copy this prompt and paste it into Describe a Shortcut.")
-            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary).textSelection(.enabled)
           HStack {
             Button(copiedPrompt == "toggle" ? "Copied prompt" : "Copy prompt") {
               NSPasteboard.general.clearContents()
               NSPasteboard.general.setString(Self.togglePrompt, forType: .string)
               copiedPrompt = "toggle"
-            }.controlSize(.small)
-            Button("Open Shortcuts", action: openShortcuts).controlSize(.small)
+            }
+            Button("Open Shortcuts", action: openShortcuts)
           }
           HStack {
             Menu(deskDeck.approvedFocusShortcutName.map { "Selected · \($0)" } ?? "Choose toggle Shortcut") {
@@ -273,7 +274,7 @@ struct DndSyncSettingsView: View {
             }
           }
           if !deskDeck.focusShortcutStatus.isEmpty {
-            Text(deskDeck.focusShortcutStatus).font(.caption).foregroundStyle(.secondary)
+            Text(deskDeck.focusShortcutStatus).font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
           }
         }.padding(.top, 6)
       }
@@ -290,7 +291,7 @@ struct DndSyncSettingsView: View {
       NSPasteboard.general.clearContents()
       NSPasteboard.general.setString(prompt, forType: .string)
       copiedPrompt = label
-    }.controlSize(.small)
+    }
   }
 
   private func openShortcuts() {
@@ -300,7 +301,7 @@ struct DndSyncSettingsView: View {
 
   @ViewBuilder private func receiveShortcutPicker(enabled: Bool) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(enabled ? "When phone DND turns on" : "When phone DND turns off").font(.callout)
+      Text(enabled ? "When phone DND turns on" : "When phone DND turns off").font(.system(size: 12 * fontScale))
       Menu((enabled ? model.onName : model.offName) ?? "Choose Shortcut") {
         ForEach(model.shortcuts) { shortcut in
           Button(shortcut.name) { model.choose(shortcut, enabled: enabled) }

@@ -162,13 +162,36 @@ def main():
             if digest(downloaded) != digest(path):
                 raise ValueError(f"Draft asset digest mismatch: {path.name}")
             verified[path.name] = (asset["id"], asset["size"])
+        def check_verified_draft(release):
+            current_assets = {item.get("name"): (item.get("id"), item.get("size")) for item in release.get("assets", [])}
+            if not release.get("draft") or release.get("tag_name") != tag or marker not in (release.get("body") or "") \
+                    or bool(release.get("prerelease")) != prerelease or set(current_assets) != set(NAMES) \
+                    or any(current_assets.get(name) != item for name, item in verified.items()):
+                raise ValueError("Draft changed before verification completed")
+
         check_tag_commit()
         latest = find_release(repository, tag, release_id)
-        current_assets = {item.get("name"): (item.get("id"), item.get("size")) for item in latest.get("assets", [])}
-        if not latest.get("draft") or latest.get("tag_name") != tag or marker not in (latest.get("body") or "") \
-                or bool(latest.get("prerelease")) != prerelease or set(current_assets) != set(NAMES) \
-                or any(current_assets.get(name) != item for name, item in verified.items()):
-            raise ValueError("Draft changed before verification completed")
+        check_verified_draft(latest)
+        if not latest["body"].replace(marker, "").strip():
+            notes = json.loads(subprocess.check_output([
+                "gh", "api", "--method", "POST", f"repos/{repository}/releases/generate-notes",
+                "-f", f"tag_name={tag}", "-f", f"target_commitish={commit}"], text=True))
+            description = notes.get("body") if isinstance(notes, dict) else None
+            if not isinstance(description, str) or not description.replace(marker, "").strip():
+                raise ValueError("Generated release description is empty or invalid")
+            # Preserve maintainer edits made while GitHub generates notes.
+            check_tag_commit()
+            latest = find_release(repository, tag, release_id)
+            check_verified_draft(latest)
+            if not latest["body"].replace(marker, "").strip():
+                body = f"{marker}\n\n{description.strip()}"
+                latest = json.loads(subprocess.check_output([
+                    "gh", "api", "--method", "PATCH", f"repos/{repository}/releases/{release_id}",
+                    "-f", f"body={body}"], text=True))
+                check_verified_draft(latest)
+                if not latest["body"].replace(marker, "").strip():
+                    raise ValueError("Draft release description was not saved")
+            check_tag_commit()
         print(f"Verified draft ready for review: https://github.com/{repository}/releases")
 
 

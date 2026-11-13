@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct TransferNotificationControls: View {
   let preferences: TransferNotificationPreferences
+  var settingsFontScale: Double? = nil
   @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -15,9 +16,9 @@ struct TransferNotificationControls: View {
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
       Text("Notifies when incoming files arrive while aniCe is in the background.")
-        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
-    .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+    .toggleStyle(.checkbox).controlSize(settingsFontScale == nil ? .small : .regular).tint(AniCePalette.accent(scheme))
   }
 }
 
@@ -25,6 +26,7 @@ struct TransferAutoReceiveSettings: View {
   let preferences: TransferAutoReceivePreferences
   let peers: [PeerTrustRecord]
   var compact = false
+  var settingsFontScale: Double? = nil
   @Environment(\.colorScheme) private var scheme
 
   private var senders: [PeerTrustRecord] { peers.filter { $0.peer.platform == "android" } }
@@ -32,10 +34,11 @@ struct TransferAutoReceiveSettings: View {
   var body: some View {
     VStack(alignment: .leading, spacing: compact ? 2 : 8) {
       Text("Automatically receive files")
-        .font(compact ? .caption.weight(.medium) : .callout.weight(.medium))
+        .font(settingsFontScale.map { Font.system(size: 13 * $0, weight: .medium) }
+          ?? (compact ? .caption.weight(.medium) : .callout.weight(.medium)))
       if senders.isEmpty {
         Text("Pair an Android phone first.")
-          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
         ForEach(senders) { record in
           Toggle("Android · \(label(for: record))", isOn: Binding(
@@ -44,10 +47,10 @@ struct TransferAutoReceiveSettings: View {
             .aniCeControlFeedback(feedbackPadding: 3)
         }
         Text("Accepts incoming files without a prompt.")
-          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
-    .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+    .toggleStyle(.checkbox).controlSize(settingsFontScale == nil ? .small : .regular).tint(AniCePalette.accent(scheme))
   }
 
   private func label(for record: PeerTrustRecord) -> String {
@@ -59,26 +62,29 @@ struct TransferAutoReceiveSettings: View {
 
 struct TransferReceiveDestinationControls: View {
   let model: MacTransferModel
+  var settingsFontScale: Double? = nil
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
       HStack(spacing: 8) {
         VStack(alignment: .leading, spacing: 2) {
-          Text("Save received files to").font(.caption.weight(.medium))
+          Text("Save received files to")
+            .font(settingsFontScale.map { Font.system(size: 13 * $0, weight: .medium) } ?? .caption.weight(.medium))
           Text(model.receiveDestinationPreferences.summary)
-            .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)).lineLimit(1).truncationMode(.middle)
+            .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption)
+            .foregroundStyle(AniCePalette.secondaryText(scheme)).lineLimit(1).truncationMode(.middle)
         }
         Spacer(minLength: 8)
         Button("Choose…", action: chooseFolder)
-          .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+          .buttonStyle(.bordered).aniCeControlFeedback().controlSize(settingsFontScale == nil ? .small : .regular)
         if model.receiveDestinationPreferences.hasCustomFolder {
           Button("Reset", action: resetFolder)
-            .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+            .buttonStyle(.bordered).aniCeControlFeedback().controlSize(settingsFontScale == nil ? .small : .regular)
         }
       }
       if let error = model.receiveDestinationError {
-        Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme))
+        Text(error).font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.error(scheme))
       }
     }
   }

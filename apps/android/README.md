@@ -84,6 +84,14 @@ Enable USB debugging and approve the computer first. One authorized device is se
 
 APK: `apps/android/app/build/outputs/apk/debug/app-debug.apk`. Installation uses `adb install -r`, preserving data and pairing. Installing another branch replaces the phone's current build. A signing mismatch fails without uninstalling. Android permissions still require user approval.
 
+For an isolated emulator preview, run from the repository root:
+
+```sh
+./scripts/dev.sh android --preview --serial emulator-5554
+```
+
+Preview mode verifies the target is an emulator and the APK package is `io.github.anisharyal09.anice.preview` before installing. **aniCe Preview** has its own app data and Keystore identity; it does not replace the normal aniCe package. Preview builds are Debug-only.
+
 For the strict aggregate gate, run from the repository root:
 
 ```sh

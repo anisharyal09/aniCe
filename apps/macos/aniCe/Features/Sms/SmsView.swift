@@ -7,6 +7,7 @@ import SwiftUI
 struct SmsNotificationControls: View {
   let preferences: SmsPreferences
   let peer: DeviceIdentity
+  var controlSize: ControlSize = .small
   @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -22,7 +23,7 @@ struct SmsNotificationControls: View {
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
     }
-    .toggleStyle(.checkbox).controlSize(.small).tint(AniCePalette.accent(scheme))
+    .toggleStyle(.checkbox).controlSize(controlSize).tint(AniCePalette.accent(scheme))
   }
 }
 
@@ -31,21 +32,22 @@ struct SmsSettingsView: View {
   let peers: [PeerTrustRecord]
   var showTitle = true
   @Environment(\.colorScheme) private var scheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       if showTitle { Text("Messages").font(.headline) }
       if peers.isEmpty {
-        Text("Pair a phone to relay messages.").font(.caption)
+        Text("Pair a phone to relay messages.").font(.system(size: 12 * fontScale))
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
         // One collapsed row per phone keeps the section short; the label still carries the state that matters.
         ForEach(peers) { record in
           DisclosureGroup {
-            SmsNotificationControls(preferences: preferences, peer: record.peer)
+            SmsNotificationControls(preferences: preferences, peer: record.peer, controlSize: .regular)
           } label: {
             VStack(alignment: .leading, spacing: 2) {
               Text(record.peer.deviceName)
-              Text(summary(record.peer)).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+              Text(summary(record.peer)).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
             }
           }
         }

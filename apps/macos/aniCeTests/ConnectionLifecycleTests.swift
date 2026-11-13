@@ -178,7 +178,8 @@ import AppKit
       "kMRMediaRemoteNowPlayingInfoDuration": 236, "kMRMediaRemoteNowPlayingInfoElapsedTime": 92,
       "isPlaying": true, "canSendCommandsDirectly": true, "canToggle": true, "canSeek": true]))
     XCTAssertTrue(playback.compactVisible)
-    let folder = URL(fileURLWithPath: "/private/tmp/aniCe-reference-renders", isDirectory: true)
+    let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"]
+      ?? "/private/tmp/aniCe-reference-renders", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     var renders = 0
     for (index, name) in ["Pixel 9", "Alexandra’s Android phone for work and travel"].enumerated() {
@@ -275,7 +276,8 @@ import AppKit
     transfer.available(channel)
     _ = await transfer.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
 
-    let folder = URL(fileURLWithPath: "/private/tmp/aniCe-reference-renders", isDirectory: true)
+    let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"]
+      ?? "/private/tmp/aniCe-reference-renders", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     var renders = 0
     let trustedRecords = pairing.peers
@@ -295,8 +297,12 @@ import AppKit
         let routes: [(AppDestination, AppFeature?, String?)] =
           AppDestination.primary.map { ($0, nil, nil) } + AppFeature.allCases.map { (.features, $0, nil) } + [
             (.home, nil, "first-run"), (.devices, nil, "pairing"), (.devices, nil, "pairing-code"),
-            (.devices, nil, "pairing-approval"), (.settings, nil, "pending-pairing")]
+            (.devices, nil, "pairing-approval"), (.settings, nil, "pending-pairing"),
+            (.settings, nil, "settings-80"), (.settings, nil, "settings-120"),
+            (.about, nil, "about-80"), (.about, nil, "about-120")]
         for (destination, feature, scenario) in routes {
+          preferences.set(scenario?.hasSuffix("-80") == true ? 0.8
+            : scenario?.hasSuffix("-120") == true ? 1.2 : 1.0, forKey: "ui.fontScale")
           pairing.peers = scenario == "first-run" ? [] : trustedRecords
           if feature == .keyboardTrackpad {
             keyboardTrackpad.updateTargets([peer], connectedPeerIDs: [peer.deviceId], peerContextID: nil)
@@ -341,7 +347,7 @@ import AppKit
         }
       }
     }
-    XCTAssertEqual(renders, 2 * widths.count * (AppDestination.primary.count + AppFeature.allCases.count + 5))
+    XCTAssertEqual(renders, 2 * widths.count * (AppDestination.primary.count + AppFeature.allCases.count + 9))
     XCTAssertFalse(radio.started)
     XCTAssertTrue(radio.sent.isEmpty)
     XCTAssertFalse(lan.allowing)

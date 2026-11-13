@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Collects user-reviewed bug reports without requesting private identity data or automatic uploads.
+name: Bug report
+description: Report something that is not working in aniCe.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem and how to reproduce it. App and OS versions may be filled in by aniCe.
+        Remove private messages, phone numbers, device fingerprints, keys and personal files from anything you share.
+        This form does not automatically attach logs or files.
+        For a security vulnerability, follow [SECURITY.md](https://github.com/anisharyal09/aniCe/blob/main/SECURITY.md) instead.
+  - type: input
+    id: app-version
+    attributes:
+      label: aniCe version
+      placeholder: "0.9.0-beta.1"
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating system
+      placeholder: "Android 16 or macOS 27.1"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the exact error text, if available.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open…
+        2. Choose…
+        3. Observe…
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or additional context
+      description: Optional. Review and redact personal information before attaching anything.

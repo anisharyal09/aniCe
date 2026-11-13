@@ -7,6 +7,7 @@ struct MacPhoneInputView: View {
   @Bindable var model: MacPhoneInputModel
   let onOpenDevices: () -> Void
   @Environment(\.colorScheme) private var colorScheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
 
   private var appDisplayName: String {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -29,17 +30,17 @@ struct MacPhoneInputView: View {
     VStack(alignment: .leading, spacing: 16) {
       if let phone = connectedPhone {
         Label(phone.deviceName, systemImage: "iphone")
-          .font(.headline)
+          .font(.system(size: 13 * fontScale, weight: .medium))
           .foregroundStyle(AniCePalette.primaryText(colorScheme))
       }
 
       if model.needsPostEventAccess {
         VStack(alignment: .leading, spacing: 10) {
           Label("Allow Mac input", systemImage: "exclamationmark.triangle")
-            .font(.subheadline.weight(.medium))
+            .font(.system(size: 13 * fontScale, weight: .medium))
             .foregroundStyle(AniCePalette.error(colorScheme))
           Text("Allow Events access for \(appDisplayName) in System Settings → Privacy & Security → \(permissionPaneName).")
-            .font(.callout)
+            .font(.system(size: 12 * fontScale))
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Request Events access") {
             if !model.requestEventAccess() { openSystemSettings() }
@@ -48,18 +49,18 @@ struct MacPhoneInputView: View {
 #if DEBUG
           if !model.hasStableSigningIdentity {
             Text("Development build: rebuilding may require permission again.")
-              .font(.callout)
+              .font(.system(size: 12 * fontScale))
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
 #endif
           if model.permissionGrantMayBeStale {
             Text("Accessibility is allowed, but macOS still blocks Events for \(appDisplayName).")
-              .font(.callout)
+              .font(.system(size: 12 * fontScale))
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           if model.hasStableSigningIdentity {
             Text("Already allowed? Remove the old aniCe entry in System Settings and add this copy again.")
-              .font(.callout)
+              .font(.system(size: 12 * fontScale))
               .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             Button("Show this app in Finder") {
               NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
@@ -76,7 +77,7 @@ struct MacPhoneInputView: View {
         .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
       } else {
         Label("Mac input allowed", systemImage: "checkmark.circle")
-          .font(.callout)
+          .font(.system(size: 13 * fontScale))
           .foregroundStyle(AniCePalette.success(colorScheme))
 
         if let phone = connectedPhone {
@@ -85,7 +86,7 @@ struct MacPhoneInputView: View {
               ? model.statusMessage : "Ready. Start Control Mac on your phone.",
             systemImage: model.isReceiving ? "keyboard" : "circle"
           )
-            .font(.callout)
+            .font(.system(size: 12 * fontScale))
             .foregroundStyle(model.isReceiving ? AniCePalette.success(colorScheme) : AniCePalette.secondaryText(colorScheme))
 
           if model.isArmed(for: phone) {
@@ -94,10 +95,10 @@ struct MacPhoneInputView: View {
           }
         } else {
           Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
-            .font(.headline)
+            .font(.system(size: 13 * fontScale, weight: .medium))
             .foregroundStyle(AniCePalette.primaryText(colorScheme))
           Text("Then start Control Mac on the phone.")
-            .font(.callout)
+            .font(.system(size: 12 * fontScale))
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
           Button("Open Devices", action: onOpenDevices)
             .buttonStyle(AniCeButtonStyle())

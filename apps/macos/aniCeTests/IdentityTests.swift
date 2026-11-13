@@ -7,6 +7,30 @@ import XCTest
 @testable import aniCe
 
 final class IdentityTests: XCTestCase, @unchecked Sendable {
+    func testPreviewStorageDoesNotRedirectOrShareProductionFiles() {
+        let home = URL(fileURLWithPath: "/Users/Fixture", isDirectory: true)
+        let production = MacAppStorage.directory(home: home, preview: false)
+        let preview = MacAppStorage.directory(home: home, preview: true)
+        XCTAssertEqual(production.path,
+            "/Users/Fixture/Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe")
+        XCTAssertEqual(preview.path,
+            "/Users/Fixture/Library/Containers/io.github.anisharyal09.anice.preview/Data/Library/Application Support/aniCe")
+        XCTAssertNotEqual(production, preview)
+        XCTAssertEqual(MacAppStorage.applicationSupport(home: home, preview: false).path,
+            "/Users/Fixture/Library/Application Support/aniCe")
+        XCTAssertEqual(MacAppStorage.applicationSupport(home: home, preview: true).path,
+            "/Users/Fixture/Library/Application Support/aniCe Preview")
+        #if ANICE_PREVIEW
+        XCTAssertTrue(MacAppStorage.isPreview)
+        XCTAssertEqual(MacAppStorage.bundleIdentifier, "io.github.anisharyal09.anice.preview")
+        XCTAssertEqual(MacAppStorage.directory(home: home), preview)
+        #else
+        XCTAssertFalse(MacAppStorage.isPreview)
+        XCTAssertEqual(MacAppStorage.bundleIdentifier, "io.github.anisharyal09.anice")
+        XCTAssertEqual(MacAppStorage.directory(home: home), production)
+        #endif
+    }
+
     func testFingerprintUsesCanonicalFixedWidthLowercaseHex() {
         XCTAssertEqual(DeviceIdentity.fingerprint(Data()), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         XCTAssertEqual(DeviceIdentity.fingerprint(Data("abc".utf8)), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")

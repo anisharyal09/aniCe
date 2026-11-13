@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.app
 
 import android.content.Context
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -374,10 +375,14 @@ private fun PreferenceSection(
 }
 
 @Composable
-private fun AboutScreen(context: Context) {
+internal fun AboutScreen(context: Context) {
     val uriHandler = LocalUriHandler.current
-    val version = remember {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName?.let { "Version v$it" }.orEmpty()
+    val installedVersion = remember(context) {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+    }
+    val version = installedVersion.takeIf { it.isNotEmpty() }?.let { "Version $it" }.orEmpty()
+    val reportUrl = remember(installedVersion) {
+        IssueReport.url(installedVersion.ifEmpty { "Unknown" }, "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
@@ -419,24 +424,25 @@ private fun AboutScreen(context: Context) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             AboutDetailRow("Source code", "GitHub", "https://github.com/anisharyal09/aniCe", uriHandler::openUri)
             AboutDetailRow("License", "GPL-3.0-or-later", "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", uriHandler::openUri)
-            AboutDetailRow("Report an issue", "GitHub Issues", "https://github.com/anisharyal09/aniCe/issues", uriHandler::openUri)
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.4f) {
-                    Column {
-                        AboutDetailRow("Developer", "@anisharyal09", "https://github.com/anisharyal09", uriHandler::openUri, showDivider = false)
-                        AboutProfileLinks(Modifier.align(Alignment.End), uriHandler::openUri)
+            AboutDetailRow("Report an issue", "GitHub form", reportUrl, uriHandler::openUri)
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                val compact = maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.4f
+                if (compact) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Reach out", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium)
+                        AboutContactLinks(uriHandler::openUri)
                     }
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AboutDetailRow("Developer", "@anisharyal09", "https://github.com/anisharyal09", uriHandler::openUri,
-                            modifier = Modifier.weight(1f), showDivider = false)
-                        AboutProfileLinks(openUri = uriHandler::openUri)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Reach out", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        AboutContactLinks(uriHandler::openUri)
                     }
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("No accounts, no telemetry. All connections stay local to your devices.",
+                Text("No account needed to connect your devices. No telemetry. Updates and issue reports use GitHub.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
                     modifier = Modifier
@@ -489,6 +495,27 @@ private fun AboutDetailRow(label: String, detail: String, url: String, openUri: 
     }
 }
 
+
+@Composable
+private fun AboutContactLinks(openUri: (String) -> Unit) {
+    Row(Modifier.width(IntrinsicSize.Max), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            Modifier.weight(1f, fill = false).heightIn(min = 48.dp)
+                .clickable(role = Role.Button, onClickLabel = "GitHub profile, @anisharyal09") {
+                    openUri("https://github.com/anisharyal09")
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text("@anisharyal09", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(painterResource(R.drawable.ic_external_link), contentDescription = null,
+                modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        AboutProfileLinks(openUri = openUri)
+    }
+}
 
 @Composable
 private fun AboutProfileLinks(modifier: Modifier = Modifier, openUri: (String) -> Unit) {

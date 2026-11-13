@@ -22,7 +22,7 @@ enum EdgeDropEdge: String, CaseIterable, Identifiable {
 
   init(storage: UserDefaults? = nil) {
     self.storage = storage
-    enabled = storage?.object(forKey: enabledKey) as? Bool ?? false
+    enabled = storage?.object(forKey: enabledKey) as? Bool ?? true
     edge = storage?.string(forKey: edgeKey).flatMap(EdgeDropEdge.init(rawValue:)) ?? .right
   }
 
@@ -519,6 +519,7 @@ private struct EdgeDropShelfView: View {
 struct EdgeDropSettingsView: View {
   let controller: MacEdgeDropController
   var showsPlacementPreview = false
+  var settingsFontScale: Double? = nil
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
@@ -543,10 +544,10 @@ struct EdgeDropSettingsView: View {
       Text(controller.preferences.enabled
         ? "Drag files to the selected edge and drop them on the shelf."
         : "Turn on to send files from Finder.")
-        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+        .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         .fixedSize(horizontal: false, vertical: true)
       if let error = controller.monitorError {
-        Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme))
+        Text(error).font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.error(scheme))
       }
       if showsPlacementPreview {
         EdgeDropPlacementPreview(edge: controller.preferences.edge, enabled: controller.preferences.enabled)

@@ -10,6 +10,7 @@ struct ClipboardSettingsView: View {
   var compactSettings = false
   var showPreferences = true
   @Environment(\.colorScheme) private var scheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   var body: some View {
     VStack(alignment: .leading, spacing: compactSettings ? 0 : 8) {
       if peers.isEmpty { Text("Pair a device to share your clipboard.").foregroundStyle(.secondary) }
@@ -24,10 +25,10 @@ struct ClipboardSettingsView: View {
       }
       if showPreferences {
         Toggle(compactSettings ? "Automatic sharing" : "Automatic clipboard sharing", isOn: Binding(get: { model.automatic }, set: { model.setAutomatic($0) }))
-          .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
+          .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(compactSettings ? .regular : .small).tint(AniCePalette.accent(scheme)).disabled(model.selected == nil)
         if compactSettings {
           if model.selected != nil {
-            Text("Enable on both devices. Manual sends stay available.").font(.caption)
+            Text("Enable on both devices. Manual sends stay available.").font(.system(size: 12 * fontScale))
               .foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.leading, 20).padding(.top, 4)
             }
         } else {
@@ -56,7 +57,7 @@ struct ClipboardSettingsView: View {
           HistoryPreference(history: model.history, compact: compactSettings)
         }
       }
-      ClipboardAccessGuidance(model: model)
+      ClipboardAccessGuidance(model: model, settingsFontScale: compactSettings ? fontScale : nil)
     }
     .onAppear { model.prune(peers.map(\.peer)); if model.selected == nil { model.select(peers.first?.peer) }; model.refreshAccess() }
     .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in model.prune(peers.map(\.peer)); if model.selected == nil { model.select(peers.first?.peer) } }
@@ -64,9 +65,11 @@ struct ClipboardSettingsView: View {
 }
 private struct ClipboardAccessGuidance: View {
   let model: MacClipboardModel
+  var settingsFontScale: Double? = nil
   var body: some View {
     if (model.automatic || model.history.enabled) && !model.automaticAccessAllowed {
-      Text("Allow pasteboard access for automatic reading, or paste text into Share → More options.").font(.caption).foregroundStyle(.secondary)
+      Text("Allow pasteboard access for automatic reading, or paste text into Share → More options.")
+        .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(.secondary)
       Button("Pasteboard settings") {
         if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension") { NSWorkspace.shared.open(url) }
       }
@@ -78,15 +81,16 @@ private struct HistoryPreference: View {
   var compact = false
   @Environment(\.colorScheme) private var scheme
   @State private var confirming = false
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Keep clipboard history", isOn: Binding(get: { history.enabled }, set: { if $0 { confirming = true } else { history.setEnabled(false) } }))
-        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(.small).tint(AniCePalette.accent(scheme))
+        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).controlSize(compact ? .regular : .small).tint(AniCePalette.accent(scheme))
         .alert("Keep clipboard history?", isPresented: $confirming) {
           Button("Enable") { history.setEnabled(true) }; Button("Cancel", role: .cancel) {}
         } message: { Text("Save the latest text items on this Mac across restarts. Recognized sensitive text is excluded. Turning this off pauses collection and keeps saved items. Delete items or use Clear to remove them.") }
       if compact {
-        Text("Saved on this Mac. Pausing keeps saved clips.").font(.caption)
+        Text("Saved on this Mac. Pausing keeps saved clips.").font(.system(size: 12 * fontScale))
           .foregroundStyle(AniCePalette.secondaryText(scheme)).padding(.leading, 20)
       }
 
@@ -104,7 +108,9 @@ private struct HistoryPreference: View {
       }
     }
     if !compact && !history.enabled && !history.entries.isEmpty { Text("Collection paused · Saved items are kept").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme)) }
-    if let error = history.error { Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
+    if let error = history.error {
+      Text(error).font(compact ? .system(size: 13 * fontScale) : .caption).foregroundStyle(AniCePalette.error(scheme))
+    }
   }
 }
 struct ClipboardView: View {

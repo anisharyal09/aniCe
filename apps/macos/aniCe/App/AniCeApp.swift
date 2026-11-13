@@ -36,12 +36,14 @@ struct AniCeApp: App {
   @State private var servicesStarted = false
 
   init() {
+    precondition(MacAppStorage.isPreview == (Bundle.main.bundleIdentifier == MacAppStorage.previewBundleIdentifier),
+      "The preview compilation flag and isolated bundle identifier must agree.")
     UserDefaults.standard.register(defaults: [
       "ui.favouriteFeatures": AppFeature.defaultFavourites,
       "ui.companionPinnedFeatures": AppFeature.defaultPinnedToCompanion
     ])
     let assemblyStarted = ProcessInfo.processInfo.systemUptime
-    let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/aniCe/Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
+    let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: MacAppStorage.applicationSupport.appendingPathComponent("Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
     let notifier = MacFindDeviceNotifier()
     findNotifier = notifier
@@ -51,8 +53,8 @@ struct AniCeApp: App {
     let playback = MacPlaybackModel()
     _playback = State(initialValue: playback)
     let identity = IdentityAssembly.makeModel()
-    let transfer = MacTransferModel(recoveryURL: IdentityView.isTesting ? nil : FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent("Library/Application Support/aniCe/Transfers/checkpoint.json"), identity: identity.service,
+    let transfer = MacTransferModel(recoveryURL: IdentityView.isTesting ? nil : MacAppStorage.applicationSupport
+      .appendingPathComponent("Transfers/checkpoint.json"), identity: identity.service,
       notificationPreferences: TransferNotificationPreferences(storage: .standard),
       autoReceivePreferences: TransferAutoReceivePreferences(storage: .standard),
       receiveDestinationPreferences: TransferReceiveDestinationPreferences(storage: .standard))
@@ -202,6 +204,8 @@ struct AniCeApp: App {
   @MainActor private func startDeferredServices() {
     guard !servicesStarted else { return }
     servicesStarted = true
+    // UI previews must not register competing hotkeys, clipboard observers or background connections.
+    guard !MacAppStorage.isPreview else { return }
     clipboard.installLifecycle()
     session.restoreAutomatic()
     guard !IdentityView.isTesting else { return }
@@ -250,7 +254,7 @@ struct AniCeApp: App {
   }
 
   var body: some Scene {
-    Window("aniCe", id: "main") {
+    Window(MacAppStorage.applicationName, id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
         session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
