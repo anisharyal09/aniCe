@@ -130,11 +130,14 @@ def main():
                 if old.stat().st_size != asset["size"] or apk_code(old, aapt)[0] >= code:
                     raise ValueError("Candidate Android versionCode is not greater than a published APK")
         if existing is None:
-            args = ["release", "create", tag, "--repo", repository, "--verify-tag", "--draft", "--title", tag, "--notes", marker]
-            if prerelease:
-                args.append("--prerelease")
-            gh(*args)
-        release_id = existing.get("id") if existing else None
+            args = ["api", "--method", "POST", f"repos/{repository}/releases",
+                    "-f", f"tag_name={tag}", "-f", f"name={tag}", "-f", f"body={marker}",
+                    "-F", "draft=true", "-F", f"prerelease={str(prerelease).lower()}",
+                    "-F", "generate_release_notes=true"]
+            created = json.loads(subprocess.check_output(["gh"] + args, text=True))
+            release_id = created["id"]
+        else:
+            release_id = existing.get("id")
         release = find_release(repository, tag, release_id)
         release_id = release.get("id", release_id)
         if not release.get("draft") or release.get("tag_name") != tag or marker not in (release.get("body") or "") or bool(release.get("prerelease")) != prerelease:

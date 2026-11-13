@@ -72,6 +72,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Create tagged release drafts through the Releases API, capture their IDs for verification, and retain generated release notes.
 - Disable injected debugger entitlements in signed Mac releases and bound signing cleanup so validation failures exit promptly.
 - Check signing configuration, device-verification source and conflicting release state before signed builds; retain final publication checks.
 - **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).

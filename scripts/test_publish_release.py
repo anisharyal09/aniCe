@@ -179,23 +179,37 @@ class PublishReleaseTest(unittest.TestCase):
         self.argv[1] = 'v0.4.0-beta.1'
         assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
         draft = {'tag_name': self.argv[1], 'draft': True, 'prerelease': True,
-                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': []}
+                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': [], 'id': 1}
         complete = {**draft, 'assets': assets}
-        outputs = [json.dumps({'sha': self.commit}), json.dumps([[]]), json.dumps(draft),
+        # subprocess.check_output sequence:
+        # 1. check_tag_commit, 2. check_release_state pagination (empty),
+        # 3. Create API response -> {'id': 1}, 4. find_release by id -> draft,
+        # 5. find_release after apk upload, 6. find_release after mac upload,
+        # 7. check_tag_commit, 8. final find_release
+        outputs = [json.dumps({'sha': self.commit}), json.dumps([[]]),
+                   json.dumps({'id': 1}), json.dumps(draft),
                    json.dumps({**draft, 'assets': assets[:1]}), json.dumps(complete),
                    json.dumps({'sha': self.commit}), json.dumps(complete)]
         def call(*args, **kwargs):
             if args[0] == 'api':
                 kwargs['stdout'].write(b'apk')
         with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
-             mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs), \
+             mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs) as check_output, \
              mock.patch.object(publish_release, 'apk_code', return_value=(40021, '0.4.0-beta.1')), \
              mock.patch.object(publish_release, 'gh', side_effect=call) as gh:
             publish_release.main()
+            commands = [invocation.args[0] for invocation in check_output.call_args_list]
+            create = next(command for command in commands if command[:4] ==
+                          ['gh', 'api', '--method', 'POST'])
+            self.assertEqual(create, [
+                'gh', 'api', '--method', 'POST', 'repos/anisharyal09/aniCe/releases',
+                '-f', f'tag_name={self.argv[1]}', '-f', f'name={self.argv[1]}',
+                '-f', f'body=<!-- anice-source:{self.commit} -->',
+                '-F', 'draft=true', '-F', 'prerelease=true', '-F', 'generate_release_notes=true',
+            ])
+            self.assertIn(['gh', 'api', 'repos/anisharyal09/aniCe/releases/1'], commands)
             mutations = [call.args for call in gh.call_args_list if call.args[0] == 'release']
-            self.assertEqual([call[1] for call in mutations], ['create', 'upload', 'upload'])
-            self.assertIn('--draft', mutations[0])
-            self.assertIn('--prerelease', mutations[0])
+            self.assertEqual([call[1] for call in mutations], ['upload', 'upload'])
             self.assertEqual(sum(call.args[0] == 'api' for call in gh.call_args_list), 2)
 
     def test_refuses_publication_if_verified_asset_changes(self):
