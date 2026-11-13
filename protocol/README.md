@@ -17,15 +17,15 @@ Contracts define required behavior.
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
-| **Mac Desk Deck** | `1`–`4` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
+| **Mac Desk Deck** | `1`–`5` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
 | **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Peer battery and charging status on existing device surfaces over authenticated DATA, with no new connection lease |
-| **LAN Binding** | `1` | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
+| **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
-| **Phone-to-Mac input** | 1 | In progress | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
+| **Phone-to-Mac input** | 1 | Implemented | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
 
 ---
 
@@ -98,18 +98,18 @@ Full specification, byte framing, cryptographic derivation, and lifetime rules a
 Full specification, record framing, CBOR definitions, and keepalive controls are documented in [`session/README.md`](session/README.md).
 
 - **Handshake:** RFC 9528 EDHOC method 0, cipher suite 5 (P-256, SHA-256, ChaCha20-Poly1305), mandatory message 4.
-- **Application Records:** AES-256-GCM, directional 64-bit sequence counters, 4,000-byte plaintext limit.
-- **Liveness & Renewal:** Encrypted HELLO/ACK, PING/PONG keepalive, and coordinated session renewal before lifetime or sequence limits.
+- **Application Records:** AES-256-GCM with directional 64-bit counters; standard/BLE plaintext is bounded to 4,000 bytes. Negotiated LAN profiles use the larger bounds in the [LAN profile](lan/TRANSFER_PROFILE.md).
+- **Liveness & Renewal:** Encrypted HELLO/ACK and PING/PONG; automatic BLE reconnects with fresh sessions before lifetime/record limits. Manual LAN requires another Connect after expiry; automatic LAN waits for an eligible event or feature demand.
 - **BLE Transport:** Session v2 fragmentation header, 10-second reassembly deadline, 32 KiB queue limit.
 
 ---
 
-## 5. LAN Binding Contract (`v1`)
+## 5. LAN Binding Contract (revision 3)
 
 Full specification, DNS-SD locator rules, and TCP stream framing are documented in [`lan/README.md`](lan/README.md).
 
-- **Discovery:** `_anice._tcp` DNS-SD service registration with anonymous instance name (`aniCe-<UUID>`) and `v=1` TXT record.
-- **Stream Framing:** 5-byte header (`version:u8=1`, `length:u32BE`) preceding logical session envelope (2–4096 bytes).
+- **Discovery:** `_anice._tcp` DNS-SD registration with an anonymous `aniCe-<UUID>` instance and current `v=3` TXT revision; legacy revisions are `1` and `2`. Locators confer no trust.
+- **Stream Framing:** A five-byte version/length header precedes each session envelope. Current profile 4 uses frame version 4 and a 2–524,447-byte envelope; legacy profile 3 and standard profile 1 retain their own negotiated limits. Handshakes remain bounded to 4,096 bytes.
 - **Transport Security:** Independent fresh EDHOC session and directional AES-GCM records over TCP.
 - **Coexistence:** Shared peer reservation permits concurrent BLE and LAN sessions only to the same pinned peer.
 
@@ -195,7 +195,7 @@ Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_
 
 ## File Transfer
 
-[File Transfer v1](transfer/README.md) defines sequential multi-file batch transfers over authenticated LAN DATA records with 64-chunk cumulative credit flow control, recipient batch approval, temporary `.anice-part` staging with atomic renames, and incremental SHA-256 verification. [Independent fixtures](test-vectors/transfer/transfer-vectors.json) validate positive and negative envelopes and transfer parameters.
+[File Transfer v1](transfer/README.md) defines sequential multi-file batches over authenticated LAN/BLE DATA, negotiated chunk/window limits, per-sender approval, exclusive partial staging, incremental SHA-256 verification and checked non-overwriting publication. Current LAN profile 4 permits 512-KiB chunks and eight-chunk credit; both native BLE implementations advertise four 3,072-byte chunks within the v1 protocol's 64-chunk ceiling. Document-provider finalization is not guaranteed atomic. [Independent fixtures](test-vectors/transfer/transfer-vectors.json) validate the envelopes and bounds.
 
 ## Find Device
 

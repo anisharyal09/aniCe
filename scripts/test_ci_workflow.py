@@ -480,6 +480,24 @@ PY
         for job in release.values():
             self.assertIsInstance(job.get('timeout-minutes'), int)
 
+    def test_release_checks_ci_before_signing_and_keeps_publication_manual(self):
+        jobs = workflow_documents()['release.yml']['jobs']
+        metadata = jobs['metadata']
+        self.assertEqual(metadata['permissions'], {'contents': 'read', 'actions': 'read'})
+        source_check = next(step for step in metadata['steps'] if step.get('id') == 'version')
+        self.assertIn('git merge-base --is-ancestor "$commit" refs/remotes/origin/main', source_check['run'])
+        self.assertIn("require_ci(os.environ['GITHUB_REPOSITORY'], sys.argv[1])", source_check['run'])
+        for platform in ('android', 'macos'):
+            self.assertEqual(jobs[platform]['needs'], 'metadata')
+            self.assertEqual(jobs[platform]['environment'], 'release')
+        draft = jobs['publish']
+        self.assertEqual(set(draft['needs']), {'metadata', 'android', 'macos'})
+        self.assertEqual(draft['permissions'], {'contents': 'write', 'actions': 'read'})
+        names = [step.get('name') for step in draft['steps']]
+        self.assertLess(names.index('Require device verification for this commit'),
+                        names.index('Prepare and verify release draft'))
+        self.assertNotIn('--draft=false', '\n'.join(step_runs(draft)))
+
     def test_security_workflow_policies(self):
         document = workflow_documents()["security.yml"]
         events = triggers(document)
@@ -546,6 +564,13 @@ PY
             "/scripts/build-pairing-native.py",
             "/scripts/test_pairing_build.py",
             "/scripts/build_release_macos.sh",
+            "/scripts/publish_release.py",
+            "/scripts/test_publish_release.py",
+            "/scripts/release_version.py",
+            "/scripts/test_release_version.py",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/update/",
+            "/apps/android/app/src/test/java/io/github/anisharyal09/anice/update/",
+            "/apps/android/app/build.gradle.kts",
             "/apps/macos/aniCe/Update/",
             "/apps/macos/aniCeTests/MacUpdateSignatureTests.swift",
             "/scripts/requirements.txt",

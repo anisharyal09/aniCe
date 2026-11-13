@@ -50,6 +50,14 @@ func openApp(_ url: URL) -> Bool {
   return launcher.terminationStatus == 0
 }
 
+func restorePreviousApp(_ record: MacUpdateRecord) -> Never {
+  guard MacUpdateRecovery.restorePreviousBundle(record, swap: swapBundles, launch: openApp) else {
+    fail(record, keepingStaging: true)
+  }
+  try? FileManager.default.removeItem(at: record.stagingURL)
+  exit(1)
+}
+
 // A launch can succeed even when the new build crashes before its main window appears.
 func runningApp(at destination: URL, excluding pid: Int32) -> NSRunningApplication? {
   NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anisharyal09.anice")
@@ -96,8 +104,7 @@ try? record.write()
 
 if !openApp(destination) {
   // The staged path now holds the previous bundle; exchange it back before giving up.
-  if swapBundles(record.bundleURL, destination) { fail(record) }
-  fail(record, keepingStaging: true)
+  restorePreviousApp(record)
 }
 
 // The new build proves startup by clearing its install record from the main window.
@@ -115,10 +122,4 @@ if let launchedApp = runningApp(at: destination, excluding: pid) {
   if !launchedApp.isTerminated { _ = launchedApp.forceTerminate() }
 }
 guard installRecordExists() else { exit(0) }
-guard swapBundles(record.bundleURL, destination) else { fail(record, keepingStaging: true) }
-var failed = record
-failed.phase = .failed
-if (try? failed.write()) == nil { MacUpdateRecord.remove(ifOwnedBy: failed.nonce) }
-_ = openApp(destination)
-try? FileManager.default.removeItem(at: failed.stagingURL)
-exit(1)
+restorePreviousApp(record)

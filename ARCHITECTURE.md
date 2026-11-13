@@ -6,7 +6,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ---
 
-## 1. Platform-Native Device Identity
+## Platform-Native Device Identity
 
 - **Android:** P-256 signing keys in `AndroidKeyStore`, with actual hardware/software protection reported and metadata excluded from backup.
 - **macOS:** Actor-isolated P-256 lifecycle through Security and Keychain. Current app builds select development Keychain storage; the separate signed backend prefers Secure Enclave when available and still requires verification.
@@ -15,7 +15,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ---
 
-## 2. Cryptographic Bootstrap & Mutual Trust
+## Cryptographic Bootstrap & Mutual Trust
 
 - **QR Pairing:** Ephemeral P-256 ECDH with a 256-bit PSK and SHA-256 identity fingerprint commitment. Android scans the Mac's invitation using CameraX/ZXing.
 - **Manual 6-Digit PIN Pairing:** Password-Authenticated Key Exchange (PAKE) powered by an isolated, in-memory [OPAQUE bridge](core/rust/pairing/README.md) (`opaque-ke 4.0.1`, Argon2id).
@@ -24,7 +24,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ---
 
-## 3. Authenticated Secure Sessions
+## Authenticated Secure Sessions
 
 - **EDHOC Handshake:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) with mandatory message 4 authenticating pinned active trust.
 - **Directional Record Channel:** Exporter-derived AES-256-GCM keys, strict ordered 64-bit counters, plaintext bounds of 4,000 bytes for standard records and 262,144 bytes for legacy LAN profile 3 or 524,416 bytes for LAN profile 4, one-hour lifetime, and a hard limit of `2^20` records per direction. AES-GCM is aniCe's application profile; EDHOC suite 5 uses ChaCha20-Poly1305.
@@ -33,7 +33,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ---
 
-## 4. Independent BLE & LAN Transports
+## Independent BLE & LAN Transports
 
 - **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime on supported API 31+ platforms in Debug and Release.
   - Contract: [BLE Discovery Wire Format](protocol/bluetooth/README.md)
@@ -51,7 +51,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ---
 
-## 5. Encrypted Liveness & BLE Session Renewal
+## Encrypted Liveness & BLE Session Renewal
 
 - **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG after 60 seconds without authenticated activity, with monotonic deadlines.
 - **Event-Driven Idle:** Connection maintenance replaced earlier periodic 1-second polling loops with absolute monotonic deadline waits and transport events. Quiet deadline evaluation performs zero storage or Keystore/Keychain reads; full native identity and active-trust validation are enforced on authenticated operations.
@@ -59,33 +59,6 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 - **Specifications & Decisions:** Keepalive envelopes, event-driven scheduling, and renewal thresholds are specified in the [Session Protocol Contract](protocol/session/README.md) and recorded in [ADR 0005 (EDHOC Secure Sessions)](docs/decisions/0005-edhoc-secure-sessions.md).
 
 ---
-
-## Complete Reference Index
-
-### Architecture Decisions (ADRs)
-
-See the [decision index](docs/decisions/README.md) for shared foundations and feature-specific decisions.
-
-### Protocol Contracts & Schemas
-- [Protocol Overview & Active Contracts](protocol/README.md)
-- [Public Device Identity Schema v1](protocol/schemas/identity.schema.json)
-- [BLE Discovery Wire Format](protocol/bluetooth/README.md)
-- [Pairing Bootstrap Protocol](protocol/pairing/README.md)
-- [Secure Sessions & Record Channel](protocol/session/README.md)
-- [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
-- [Now Playing DATA](protocol/media/README.md)
-- [Mac Desk Deck](protocol/desk-deck/README.md)
-- [Local File Transfer Protocol](protocol/transfer/README.md)
-- [Android Notification Mirroring Protocol](protocol/notifications/README.md)
-
-### Operational Guides & Implementation Roadmaps
-- [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
-- [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
-- [Local File Transfer Feature Guide](docs/features/FILE_TRANSFER.md)
-- [Notification Mirroring Feature Guide](docs/features/NOTIFICATION_MIRRORING.md)
-- [Authenticated Record Performance & Cost Model](docs/PERFORMANCE.md)
-- [Design Guide & Palette](docs/design/DESIGN.md)
-- [Project Roadmap & Verification Gates](docs/ROADMAP.md)
 
 ## Now Playing
 
@@ -97,7 +70,18 @@ App Sandbox is disabled for the entire Mac app. Identity/trust paths, Keychain p
 
 ## Local File Transfer
 
-Local file transfer streams sequential multi-file batches (1..128 files) between trusted peers over authenticated LAN DATA records, using negotiated cumulative credit flow control (four 3,072-byte chunks on BLE; up to eight larger chunks on capable LAN), recipient offer approval, exclusive partial staging with incremental SHA-256 verification and checked finalization, full-duplex ACK pipelining, and presentation across Features and Home live-activity. See [feature behavior](docs/features/FILE_TRANSFER.md) and [transfer contracts](protocol/transfer/README.md). Each transfer subsystem decomposes into five focused domain roles: coordinator (`TransferController`/`MacTransferModel`), outgoing streaming (`TransferSender`), incoming assembly (`TransferReceiver`), checkpoint recovery (`TransferRecovery`), and filesystem persistence (`TransferStorage`). Android receive-storage instances share an injected IO dispatcher limited to one blocking operation at a time, with per-file mutex ownership. Mac receive storage remains actor-owned. Capable LAN senders qualify their large window with a small acknowledged probe and constrain delayed paths to at most two 65,536-byte chunks within peer credit, amortizing per-record validation under a 128-KiB fallback backlog cap. Recovery retries after a five-second probe cooldown and drains outstanding data before a fresh probe; source preparation and fully drained idle time do not count as submission-to-ACK delay. Each transfer owner queues authenticated chunks in a bounded FIFO, so shared feature delivery does not await their decode or storage work.
+Local file transfer streams sequential multi-file batches (1..128 files) between trusted peers over authenticated LAN or BLE DATA records, using negotiated cumulative credit flow control, recipient offer approval, exclusive partial staging with incremental SHA-256 verification and checked finalization, full-duplex ACK pipelining, and presentation across Features and Home live-activity. See [feature behavior](docs/features/FILE_TRANSFER.md) and [transfer contracts](protocol/transfer/README.md). Each transfer subsystem decomposes into five focused domain roles: coordinator (`TransferController`/`MacTransferModel`), outgoing streaming (`TransferSender`), incoming assembly (`TransferReceiver`), checkpoint recovery (`TransferRecovery`), and filesystem persistence (`TransferStorage`). Android receive-storage instances share an injected IO dispatcher limited to one blocking operation at a time, with per-file mutex ownership. Mac receive storage remains actor-owned. Capable LAN senders qualify their large window with a small acknowledged probe and constrain delayed paths to at most two 65,536-byte chunks within peer credit, amortizing per-record validation under a 128-KiB fallback backlog cap. Recovery retries after a five-second probe cooldown and drains outstanding data before a fresh probe; source preparation and fully drained idle time do not count as submission-to-ACK delay. Each transfer owner queues authenticated chunks in a bounded FIFO, so shared feature delivery does not await their decode or storage work.
+
+The current native implementations advertise the following receive limits. These are negotiated maxima; startup probing and delayed-path fallback can use smaller chunks and credit.
+
+| Channel / transfer capability | Maximum chunk | Maximum outstanding data |
+| --- | ---: | ---: |
+| BLE / capability 1 | 3,072 bytes | Four chunks / 12 KiB (protocol ceiling: 64 chunks) |
+| Legacy LAN / capability 2 | 131,072 bytes / 128 KiB | Eight chunks / 1 MiB |
+| Legacy LAN profile 3 / capability 3 | 262,016 bytes | Eight chunks / 2,096,128 bytes |
+| LAN profile 4 / capability 4 | 524,288 bytes / **512 KiB** | Eight chunks / **4 MiB** |
+
+Profile 4 reserves a 524,416-byte authenticated plaintext budget for each transfer envelope, including metadata. These bounds are defined in the [LAN profile](protocol/lan/TRANSFER_PROFILE.md) and [transfer contract](protocol/transfer/README.md). A 512-KiB chunk is 0.5 MiB.
 
 ## Application DATA and source organization
 
@@ -111,7 +95,9 @@ Approved Android reception uses document-tree grants and provider preflight. Tra
 
 ## Messages (SMS relay)
 
-Application-scoped SMS owners register with FeatureDispatch and share authenticated LAN/BLE channels; the Mac never stores SMS content on disk and drops peer data when the last link retires, trust is removed or the app quits. Android remains the source of truth: an IO-dispatched store reads `content://mms-sms/conversations` with a direct `content://sms`/`content://mms` fallback, sanitizes provider rows, pages the thread list on a `(dateMillis, threadId)` cursor and history on a `(dateMillis, messageId)` cursor with a bounded provider window and in-memory byte-wise tie-break, and reports the subscription each message arrived on; a manifest `SMS_RECEIVED` receiver decodes PDUs through Android telephony and passes ordered parts to a pure event assembler. The Mac reassembles live and provider records through one fragment/digest path, paints thread cards and conversation pages as they arrive, shows an outgoing reply as a provisional row stamped with its submit time until the phone's result settles or removes it, retains local submit/receive ordering independently of carrier timestamps when provider copies replace observed rows, merges provider copies by a subscription-aware content key, and posts one notification per previously unknown live message with an inline reply clamped to the protocol bound, under per-phone notification and sound switches reachable from Settings → Messages and the panel's own gear. Search reuses the same bounded, cancellable page scan with the query as a `LIKE … ESCAPE '\'` match over SMS bodies and text/plain MMS parts and keeps no index on either side; replies use the phone's default SMS subscription unless the Mac sends an explicit active one from a SIM listing the phone answers on demand. See [Messages](docs/features/SMS.md) and the [wire contract](protocol/sms/README.md).
+Application-scoped SMS owners share authenticated LAN/BLE channels through FeatureDispatch. Android is the source of truth: provider reads, search and sending run off the presentation thread. Thread/history pages and multipart messages are bounded by the SMS contract; each link advertises its own page limits. Replies use the default SMS subscription unless an active SIM is selected explicitly.
+
+The Mac holds conversation content in memory and drops peer data when the last link retires, trust is removed or the app quits. Live/provider fragments share one digest and reassembly path. Provisional outgoing rows retain submit ordering when provider copies arrive; uncertain send outcomes remain visible. Notifications are peer-scoped and do not create a disk history. Search scans bounded pages without a persistent index. See [Messages](docs/features/SMS.md) and the [wire contract](protocol/sms/README.md).
 
 ## Notification Mirroring
 
@@ -135,8 +121,44 @@ Android's Mac Desk Deck subscribes to one trusted Mac while the feature panel is
 
 Application-scoped native clipboard owners register with FeatureDispatch and share authenticated LAN/BLE channels. Clipboard v1 bounds text to 64 KiB, applies complete items to native clipboards, and shares in-memory deduplication/revision floors across transports. Automatic consent is credential-scoped and off by default; Android reads require actual input focus, while Mac observation respects native pasteboard access behavior. A separate device-local, default-off history owner persists eligible items with a local 20/50/100-item capacity through bounded atomic file operations off the presentation thread. Its saved collection preference is independent of its retained entries; pausing collection, restarting, identity reset and trust removal preserve history. Android text-selection and text Share-sheet actions pass literal text or URLs directly into manual delivery without clipboard reads. A system-bound Quick Settings tile opens a focused manual-read panel without activating observers. One process-local successful activity retains eligible text for five minutes, independently of saved history, with a bounded preview and full-item local Copy on Android Home and the Mac overview/companion. See [feature behavior](docs/features/CLIPBOARD.md) and the [wire contract](protocol/clipboard/README.md).
 
-Current LAN revision 3 uses [record profile 4](protocol/lan/TRANSFER_PROFILE.md) and capability 4 for 512-KiB chunks, with eight-chunk maximum credit. Larger chunks increase per-record buffering and control head-of-line delay; sustained fallback retains its existing 128-KiB cap.
 
 ## Do Not Disturb sync
 
 Application-scoped DND owners register with FeatureDispatch independently of Desk Deck. Android sends local interruption-filter changes over an existing secured channel; Mac applies them through locally selected On and Off Shortcuts. Mac-to-phone DND sync is not supported. aniCe does not poll or replay disconnected changes. See [feature behavior](docs/features/DND_SYNC.md) and [DND sync v1](protocol/dnd-sync/README.md).
+
+## Release and update boundary
+
+Official artifacts are `aniCe-android.apk` and `aniCe-mac.zip` for Apple Silicon. Release tags, Android version codes and Mac build numbers use the same ordering in `scripts/release_version.py` and both native version parsers. Pre-release tags support alpha, beta and rc stages; release metadata must agree with the tag and packaged version.
+
+GitHub update discovery is separate from peer networking. It uses bounded HTTPS metadata/downloads, conditional requests, retry spacing and an Atom fallback on rate limiting. Stable releases are the default; beta discovery is opt-in even when running a beta. Downloads are restricted to GitHub hosts and expected asset paths. Metadata does not authorize installation: Android checks package/version/signing lineage and uses the system confirmation flow; Mac checks archive paths, bundle identity/version, arm64 code and pinned leaf certificates.
+
+Mac installation stages beside the destination and uses a separately signed helper with a nonce-bound record. Atomic bundle exchange retains the previous app until the new main window confirms startup. Failed launch or startup timeout attempts rollback and relaunch; failed exchange retains staging for recovery. Current Mac releases use self-signed certificates without Apple notarization. A certificate rotation requires planning for users who skip the intermediate release that introduces the new pin; discovery does not install a chain of intermediate updates.
+
+The release workflow requires a commit on main with successful CI before signing, and a matching physical-device verification commit before draft preparation. Both artifacts are downloaded back and checked against their local digests. The workflow leaves a verified draft; a maintainer reviews the assets and notes before publishing. Repository protections and signing credentials are configured outside source control. See [user installation and recovery](docs/GETTING_STARTED.md).
+
+## Complete Reference Index
+
+### Architecture Decisions (ADRs)
+
+See the [decision index](docs/decisions/README.md) for shared foundations and feature-specific decisions.
+
+### Protocol Contracts & Schemas
+- [Protocol Overview & Active Contracts](protocol/README.md)
+- [Public Device Identity Schema v1](protocol/schemas/identity.schema.json)
+- [BLE Discovery Wire Format](protocol/bluetooth/README.md)
+- [Pairing Bootstrap Protocol](protocol/pairing/README.md)
+- [Secure Sessions & Record Channel](protocol/session/README.md)
+- [LAN TCP Stream & mDNS Binding](protocol/lan/README.md)
+- [Now Playing DATA](protocol/media/README.md)
+- [Mac Desk Deck](protocol/desk-deck/README.md)
+- [Local File Transfer Protocol](protocol/transfer/README.md)
+- [Android Notification Mirroring Protocol](protocol/notifications/README.md)
+
+### Implementation guides
+- [Background BLE Connections Lifecycle](docs/BACKGROUND_CONNECTIONS.md)
+- [Local Network Connections Specification](docs/LAN_CONNECTIONS.md)
+- [Local File Transfer Feature Guide](docs/features/FILE_TRANSFER.md)
+- [Notification Mirroring Feature Guide](docs/features/NOTIFICATION_MIRRORING.md)
+- [Authenticated Record Performance & Cost Model](docs/PERFORMANCE.md)
+- [Design Guide & Palette](docs/design/DESIGN.md)
+- [Project Roadmap & Verification Gates](docs/ROADMAP.md)

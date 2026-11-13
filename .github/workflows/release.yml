@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds signed release artifacts and publishes only a fully verified draft.
+# Builds signed artifacts and prepares a verified draft for maintainer publication.
 name: Release
 
 on:
@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       dry_run:
-        description: 'Upload workflow artifacts only'
+        description: 'Build signed workflow artifacts without creating a release draft'
         required: true
         default: true
         type: boolean
@@ -28,6 +28,9 @@ jobs:
   metadata:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
@@ -46,6 +49,7 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
           EVENT_NAME: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 scripts/release_version.py "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
@@ -55,6 +59,12 @@ jobs:
             commit="$(git rev-parse HEAD)"
           fi
           [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$commit" refs/remotes/origin/main
+          PYTHONPATH=scripts python3 - "$commit" <<'PY'
+          import os, sys
+          from publish_release import require_ci
+          require_ci(os.environ['GITHUB_REPOSITORY'], sys.argv[1])
+          PY
           printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$commit" >> "$GITHUB_OUTPUT"
 
   android:
@@ -168,6 +178,7 @@ jobs:
     environment: release
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -189,7 +200,7 @@ jobs:
           fi
       - name: Install APK inspection tools
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "build-tools;36.0.0"'
-      - name: Verify and publish draft
+      - name: Prepare and verify release draft
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}

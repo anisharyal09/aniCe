@@ -13,8 +13,16 @@
 /scripts/build-pairing-native.py @anisharyal09
 /scripts/test_pairing_build.py @anisharyal09
 /scripts/build_release_macos.sh @anisharyal09
+/scripts/publish_release.py @anisharyal09
+/scripts/test_publish_release.py @anisharyal09
+/scripts/release_version.py @anisharyal09
+/scripts/test_release_version.py @anisharyal09
+/apps/android/app/src/main/java/io/github/anisharyal09/anice/update/ @anisharyal09
+/apps/android/app/src/test/java/io/github/anisharyal09/anice/update/ @anisharyal09
+/apps/android/app/build.gradle.kts @anisharyal09
 /apps/macos/aniCe/Update/ @anisharyal09
 /apps/macos/aniCeTests/MacUpdateSignatureTests.swift @anisharyal09
+/apps/macos/aniCeTests/MacUpdateRecordTests.swift @anisharyal09
 /scripts/requirements.txt @anisharyal09
 /scripts/check-structure.py @anisharyal09
 /scripts/check-device-health.py @anisharyal09

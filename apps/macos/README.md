@@ -1,32 +1,26 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Feature-specific verification and limits are recorded in the linked guides; current UX acceptance gaps are tracked in the [UX audit](../../docs/UX_IMPROVEMENTS.md).
+Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Feature-specific verification and limits are recorded in the linked guides.
 
-The [path-only ringless silver ribbon](../../assets/logo/anice-mark-final.svg) supplies the app icon, sidebar, About and menu-bar art. The app icon uses a full rounded Light tile. The Dock switches between Light and Dark appearance-aware tiles with extra transparent inset around the tile, keeping the mark at its selected size alongside neighboring icons. The Dark Dock tile stays near-black with a subtle inner glow and fine top/bottom rim highlights. The menu-bar companion uses a 21.5 pt shaded template.
+## Requirements and user setup
 
-Native EDHOC method 0/suite 5, directional AES-GCM records, BLE v2, readiness, negotiated encrypted keepalive and manual authenticated LAN TCP connections with shared peer reservations are implemented. Manual Connect retains its 120-second admission window.
+Apple Silicon and macOS 14 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
-Opt-in Connect automatically shares nearby admission, allowed-phone selection and fresh-session renewal between window and menu companion. Disconnect pauses it; sleep/wake retires/restores availability. [Background BLE](../../docs/BACKGROUND_CONNECTIONS.md) records lifecycle policy.
+The development version is **0.9.0-beta.1 · build 90021**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
 
-## Mac Desk Deck and Do Not Disturb
+## Using the Mac app
 
-Approve app shortcuts separately for each trusted phone in **Settings → Desk Deck**. Android’s **Features → Mac Desk Deck** shows Mac telemetry and available controls, including output volume and audio-device selection. See the [Desk Deck guide](../../docs/features/MAC_DESK_DECK.md) for capabilities and limits. Phone-to-Mac DND sync uses separate On/Off Shortcuts; the Desk Deck DND button uses a Mac-local toggle. See [DND setup](../../docs/features/DND_SYNC.md).
+- **Overview** shows the selected device and current activity; **Devices** owns pairing, trusted phones, automatic connection preferences and independent Bluetooth/LAN controls. Features and Favourites provide saved access to the implemented panels.
+- The **menu-bar companion** shares connection owners with the main window. Closing the window keeps it running; Command-Q quits. It offers Send clipboard, Quick Paste Tray, Send files and Floating Key for the selected compatible phone.
+- **Control Android** uses native Classic Bluetooth HID after OS pairing and one explicit link to the trusted phone. Option–Command–K toggles Floating Key; input starts deliberately in its capture area. See [keyboard, pointer and clipboard typing](../../docs/features/KEYBOARD_TRACKPAD.md).
+- **Clipboard** offers manual sharing, separate automatic-sharing consent and optional local history. Option–Command–V opens the Quick Paste Tray even without a connected phone. Return copies selected history for normal paste; the tray does not type into another application.
+- **Send files** accepts local file drops and the native picker. Optional Edge Drop is off by default; automatic receiving and save folders are configured per trusted sender. [File transfer](../../docs/features/FILE_TRANSFER.md) documents approval, recovery and unsupported inputs.
+- **Now Playing → Playback setup** configures supported playback controls for Android. Showing playback in Mac Overview/companion is separately optional and off by default. This controls local Mac players; it does not receive an audio stream from the phone.
+- **Settings → Desk Deck** approves apps separately for each trusted phone. **Settings → Do Not Disturb** selects the phone-sync On/Off Shortcuts and the separate Desk Deck toggle. **Settings → Permissions** contains the input-access setup needed for Control Mac and supported lock requests.
 
-Peer battery and charging status appears on Android Home and Devices and Mac device summaries while an existing secured connection is open. Power changes use native observations without opening a connection or extending its background lifetime. Android summaries omit power-source details.
+Notification mirroring presents selected Android alerts as native Mac notifications, including supported inline replies, source-app actions and synchronized dismissal. Incoming-call alerts can offer Answer/Decline and optional caller identity after phone permission setup; call audio stays on Android. Source icons use LAN, and Android/source-app restrictions still apply. See [notification setup and limits](../../docs/features/NOTIFICATION_MIRRORING.md).
 
-## Current release
-
-Current build: **v0.9.0-beta.1 · build 90021**. Now Playing, Local File Transfer, Find Device, text Clipboard and SMS relay are included.
-
-## Updates
-
-[Release signing and workflow setup](../../docs/RELEASE_UPDATES.md).
-
-aniCe checks GitHub Releases while the main window is open. Settings → Updates selects stable releases by default, offers an optional beta channel and provides a manual check. An available release offers Install, Later and Skip version. Installation downloads the signed archive, verifies its signature, identifier, versions and certificate pins, then replaces the app through a detached helper that atomically exchanges the bundles and restores the previous one if the relaunch fails or the new build never reaches its main window. The new build confirms startup before the previous bundle is deleted; a failed or abandoned install is reported in the main window and Settings → Updates. If aniCe cannot replace itself where it runs, the release remains available for manual download and **Show in Finder** reveals the current app. A self-signed release identity is not Apple notarization, so the first launch may require Gatekeeper approval.
-
-## Nearby discovery
-
-Mac advertises only the public aniCe service UUID and generic name for 120 seconds, with a rotating GATT discovery nonce. Discovery does not pair or trust devices.
+Messages, notification mirroring and Find Device use the existing trusted connection. Mac notification visibility still follows system notification and Focus settings. [Feature guides](../../README.md#features) retain their permission, content and platform limits.
 
 ## Code structure
 
@@ -51,6 +45,7 @@ aniCe/
     LAN/                       Bonjour, TCP, framing and bounded ingress queue
     Pairing/                   Bootstrap, trust and native PAKE interface
     Session/                   EDHOC, encrypted records and readiness
+  Update/                      GitHub discovery, archive/signature checks, staging and detached helper
   UI/                          Shared palette and components
   Info.plist                   Native service and permission declarations
   aniCe.entitlements           App Sandbox disabled; hardware/network entitlements
@@ -94,17 +89,15 @@ The script quits aniCe, builds Debug, verifies the signature/team and launches t
 - Worktrees have separate build folders but share app identity, permissions and device state. Run one copy at a time; Mac hosted tests also use aniCe, so let those finish before running the launcher. Each worktree needs its own local signing file or exported environment settings.
 - Closing the window leaves the companion running. Dock reopen restores the main window even when companion or floating panels are open; activation restores it whenever no main window is visible. **Command-Q** quits.
 
-Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery-during-development).
+Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery).
 
 Opening the project in Xcode and pressing Command-R uses its own DerivedData copy. The shared project defaults to ad-hoc signing; use the script for repeat permission testing.
 
 ## Archive and distribution
 
-**Product → Archive** uses Release. The app is named **aniCe**, without a branch suffix. In the archive it lives at `Products/Applications/aniCe.app`.
+Product → Archive creates a Release app at `Products/Applications/aniCe.app`. The checked-in configuration is ad-hoc signed; copying this archive does not make it a production release or grant permissions on another Mac.
 
-Release shows **Mac input allowed** when Event Posting is granted, or the permission action when blocked. Developer signing warnings appear only in Debug. Copying the app preserves its signature; it does not grant permissions on another Mac.
-
-**The checked-in Release configuration is ad-hoc signed too.** An archive copied directly from it is a local test build. For public distribution outside the Mac App Store, use Organizer → Distribute App with Developer ID signing and notarization. See [Apple's distribution workflow](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution). Development and distribution signatures may require separate privacy approval; see [Apple's signing requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
+The GitHub release workflow overrides signing, embeds the update certificate pins and packages the signed helper. It currently uses a self-signed identity, without notarization. Developer ID distribution would require a deliberate signing/pin migration and notarization; see [Apple's distribution workflow](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
 ## Checks
 
@@ -130,54 +123,6 @@ The separate data-protection/Secure Enclave backend requires certificate signing
 
 [Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
-Licensed under [GPL-3.0-or-later](../../LICENSE).
-
 Signing diagnostics log only operation counts under `identity-signing`; repeated UI prompts still require physical observation.
 
-## Secure sessions
-
-Mac taps **Connect** to open Bluetooth admission; Android selects a trusted Mac on Home and taps **Connect**. The device summary shows **Connected** only after encrypted readiness, names ready transports and keeps secondary-channel failures separate. **Connection details** contains transport-specific controls and collapsed **Diagnostics** for checks/counters/discovery. Details use a sheet in Devices; the companion opens that main-window destination. **Manage devices** opens pairing/trust management; active pairing remains visible. Several trusted phones require a concrete selection for LAN. [LAN ownership and verification](../../docs/LAN_CONNECTIONS.md). [Local File Transfer](../../docs/features/FILE_TRANSFER.md) prefers authenticated LAN for new sends and asks before using Bluetooth when the LAN attempt does not succeed.
-
-Pairing offers Connect automatically before approval and starts fresh Bluetooth work after mutual trust activation and pairing cleanup, returning to Home. Android first enable still requires the native companion association dialog; build/platform availability gates remain enforced. Manual LAN is independent.
-
-Overview, Devices, Features, Favourites, Settings and About use a native sidebar. Overview owns a compact device/status header, Pause/Resume and quick actions; Devices retains the automatic connection preference, transport controls and trust management, with direct LAN access; security details remain nested. Companion arrows select the peer and open its details in Devices before restoring the main window. Settings has a compact This device entry opening local identity and explicit name editing, alongside saved Window appearance; System resolves application appearance; the main window and connection-details sheet apply the resolved native presentation scheme. The companion and context menus follow macOS appearance independently. Feature boxes use trailing chevrons and stars for local favourites on a separate Favourites page. Cards expand with the window and use at most two columns. About aniCe shows the installed version, license and source link.
-
-## Now Playing
-
-Features → Now Playing → Playback setup provides remote playback to Android. Local Overview/companion playback is optional and off by default. See [Now Playing](../../docs/features/NOW_PLAYING.md) for controls, permissions and limitations.
-
-## Control Android (Keyboard & Trackpad)
-
-Features → Control Android sends native keyboard and mouse input to a trusted Android phone over Classic Bluetooth HID. Pair in macOS Bluetooth Settings, then confirm the paired device's link to the aniCe phone once. Connecting leaves input idle until you click the keyboard or pointer pad. Two fingers up/down scroll; left/right drags the phone pointer. Scrolling over an inactive embedded pad browses the local panel.
-
-The menu-bar companion keeps the selected device in its status header with a header **Floating Key** button to toggle phone typing anywhere; the compact action row places **Send clipboard**, the **Quick Paste Tray** button and **Send files** side by side. Right-click Floating Key for **Show trackpad too** and **Hide**. Compact position and visibility are saved; reopening restores idle controls. Resizing the full controls preserves keyboard focus. Stopping or hiding releases held input while the HID connection can remain idle.
-
-The Objective-C adapter adapts aniKey's GPL transport and report conventions with aniCe's bounded worker and connection checks; Swift owns trusted targets, input capture and cancellation. See the [feature guide](../../docs/features/KEYBOARD_TRACKPAD.md), [Classic HID contract](../../protocol/bluetooth/classic-hid.md) and [adaptation record](../../docs/decisions/features/keyboard-trackpad/0011-macos-classic-hid-input.md#anikey-adaptation). No Android app component or Accessibility permission is required.
-
-## Phone-to-Mac input
-
-Settings → Permissions shows Event Posting status and setup for Mac input. aniCe checks `CGPreflightPostEventAccess()` before accepting a phone start; Accessibility trust alone is not enough. After access is granted, the authenticated phone can start input without a Mac feature page or receiver toggle. Use the same signed app copy for setup and later runs; ad-hoc rebuilds can invalidate the saved permission. See the [feature guide](../../docs/features/PHONE_TO_MAC.md) and [input contract](../../protocol/phone-input/README.md).
-
-## Local File Transfer
-
-Overview → Files and Features → File transfer support Choose files and drag-and-drop. The optional **Edge Drop** shelf can appear at the right, left or top edge. Receives default to `~/Downloads/aniCe`; saved custom folders and per-phone automatic receiving are available. New pairings enable automatic receiving; existing peers retain their saved choice. Sends prefer authenticated LAN, with an explicit Bluetooth choice when LAN setup fails. Transfers pause on connection loss and resume with the same trusted peer. See [Local File Transfer](../../docs/features/FILE_TRANSFER.md).
-
-Debug/Release disable App Sandbox for the whole app. Journals retain their existing container paths without migration or reset; [ADR 0007](../../docs/decisions/0007-macos-unsandboxed-playback-prototype.md) records signing and access consequences.
-
-## Find Device
-
-Features → Find Device opens peer request actions and local notification setup. See [Find Device](../../docs/features/FIND_DEVICE.md) for acknowledgement semantics, verified Samsung ringing/Stop/timeout checks and the remaining device-state matrix.
-
-## Messages (SMS relay)
-
-Features → Messages relays incoming SMS to notifications with an inline reply, reads the phone's conversations and history on demand, searches matching messages in bounded pages without indexing them, and replies on the phone's default SIM unless another active subscription is chosen while the panel is open. The thread list paints 15 cards first, keeps filling from the cursor and shows **Load older conversations** whenever a page is available and none is loading; **Return** or **Command-Return** sends (Shift-Return keeps a newline), and the reply paints as a **Sending** row until the phone confirms it. A conversation that mixes two SIMs labels each row with the subscription it arrived on. Settings → Messages collapses each phone's **Notifications** switch (off by default), **Play sound** switch (on when notifications are enabled), and **Show message text in notifications** preview (on by default) behind its clickable name label; the panel's gear expands the same switches under its row. macOS notification permission is still requested at launch. A failed or unconfirmed reply posts a follow-up alert, and SMS notifications are cleared on quit. See [Messages](../../docs/features/SMS.md) for paging limits, search behavior and the notification controls.
-
-## Notification Mirroring
-
-Live Android SIM calls appear as native Mac alerts with **Answer** and **Decline** after phone permission setup; answering keeps audio on the phone. Calling-app controls depend on their exposed notification actions. Stale call actions are rejected and ending or answering the call clears its live alert.
-
-The Mac presents selected Android alerts as native notifications with source-app icons available over LAN, system actions, replies and synchronized dismissals. macOS owns the fixed sender-app icon, so notifications identify aniCe there; the Android launcher icon is attached alongside the alert content. The Mac app currently uses the same simple development mark as Android until final brand artwork is defined. See [Notification mirroring](../../docs/features/NOTIFICATION_MIRRORING.md) and the [wire contract](../../protocol/notifications/README.md).
-
-## Clipboard
-
-Features → Clipboard provides manual text sharing and off-by-default per-device automatic sharing over LAN or BLE. Receiving writes directly to the native clipboard. Android automatic reads require aniCe input focus; Mac observation respects pasteboard access settings. [Clipboard behavior](../../docs/features/CLIPBOARD.md) describes permissions, focus rules and the background-overwrite limitation.
+Licensed under [GPL-3.0-or-later](../../LICENSE).

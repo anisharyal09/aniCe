@@ -20,6 +20,19 @@ class PublishReleaseTest(unittest.TestCase):
         self.commit = 'a' * 40
         self.argv = ['publish_release.py', 'v0.4.0', self.commit, self.temp.name]
         self.env = {'GITHUB_REPOSITORY': 'anisharyal09/aniCe', 'ANICE_AAPT': '/test/aapt'}
+        ci = mock.patch.object(publish_release, 'require_ci')
+        self.require_ci = ci.start()
+        self.addCleanup(ci.stop)
+
+    def test_requires_ci_before_creating_or_uploading_a_draft(self):
+        self.require_ci.side_effect = ValueError('CI did not succeed')
+        with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
+             mock.patch.object(publish_release.subprocess, 'check_output', return_value=json.dumps({'sha': self.commit})), \
+             mock.patch.object(publish_release, 'gh') as gh:
+            with self.assertRaisesRegex(ValueError, 'CI did not succeed'):
+                publish_release.main()
+            gh.assert_not_called()
+            self.require_ci.assert_called_once_with('anisharyal09/aniCe', self.commit)
 
     def test_rejects_moved_tag_before_mutation(self):
         with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
@@ -90,6 +103,29 @@ class PublishReleaseTest(unittest.TestCase):
     def test_resumes_matching_draft_after_verifying_both_assets(self):
         self.check_draft_resume(change_asset=False)
 
+    def test_first_beta_creates_and_verifies_a_draft_without_publishing(self):
+        self.argv[1] = 'v0.4.0-beta.1'
+        assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
+        draft = {'tag_name': self.argv[1], 'draft': True, 'prerelease': True,
+                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': []}
+        complete = {**draft, 'assets': assets}
+        outputs = [json.dumps({'sha': self.commit}), json.dumps([[]]), json.dumps(draft),
+                   json.dumps({**draft, 'assets': assets[:1]}), json.dumps(complete),
+                   json.dumps({'sha': self.commit}), json.dumps(complete)]
+        def call(*args, **kwargs):
+            if args[0] == 'api':
+                kwargs['stdout'].write(b'apk')
+        with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
+             mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs), \
+             mock.patch.object(publish_release, 'apk_code', return_value=(40021, '0.4.0-beta.1')), \
+             mock.patch.object(publish_release, 'gh', side_effect=call) as gh:
+            publish_release.main()
+            mutations = [call.args for call in gh.call_args_list if call.args[0] == 'release']
+            self.assertEqual([call[1] for call in mutations], ['create', 'upload', 'upload'])
+            self.assertIn('--draft', mutations[0])
+            self.assertIn('--prerelease', mutations[0])
+            self.assertEqual(sum(call.args[0] == 'api' for call in gh.call_args_list), 2)
+
     def test_refuses_publication_if_verified_asset_changes(self):
         self.check_draft_resume(change_asset=True)
 
@@ -115,9 +151,32 @@ class PublishReleaseTest(unittest.TestCase):
                 self.assertFalse(any(call.args[0] == 'release' for call in gh.call_args_list))
             else:
                 publish_release.main()
-                self.assertEqual(gh.call_args.args[:2], ('release', 'edit'))
+                self.assertFalse(any(call.args[0] == 'release' for call in gh.call_args_list))
                 self.assertEqual(gh.call_args_list[0].args[0], 'api')
                 self.assertEqual(gh.call_args_list[1].args[0], 'api')
+
+
+class ReleaseCITest(unittest.TestCase):
+    def test_only_latest_successful_main_push_for_exact_commit_is_accepted(self):
+        commit = 'a' * 40
+        good = {'id': 1, 'head_sha': commit, 'head_branch': 'main', 'event': 'push',
+                'status': 'completed', 'conclusion': 'success'}
+        cases = [([], False), ([good], True),
+                 ([{**good, 'head_sha': 'b' * 40}], False),
+                 ([{**good, 'head_branch': 'feat/test'}], False),
+                 ([{**good, 'event': 'pull_request'}], False)]
+        for conclusion in ('failure', 'cancelled', 'skipped', None):
+            cases.append(([good, {**good, 'id': 2, 'conclusion': conclusion}], False))
+        cases.append(([good, {**good, 'id': 2, 'status': 'in_progress'}], False))
+        for runs, accepted in cases:
+            with self.subTest(runs=runs), mock.patch.object(publish_release.subprocess, 'check_output',
+                    return_value=json.dumps({'workflow_runs': runs})) as api:
+                if accepted:
+                    publish_release.require_ci('anisharyal09/aniCe', commit)
+                else:
+                    with self.assertRaises(ValueError):
+                        publish_release.require_ci('anisharyal09/aniCe', commit)
+                self.assertIn('/actions/workflows/ci.yml/runs?', api.call_args.args[0][-1])
 
 
 if __name__ == '__main__':

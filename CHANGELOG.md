@@ -8,223 +8,142 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
-## [v0.9.0-beta.1] - 2026-11-12
+Preparing the first public beta. Entries remain unreleased until publication.
 
-Beta release preparing for 1.0. Introduces the native in-app auto-update pipeline, Control Android shortcuts, timed connection pauses, and major UI continuity polish across macOS and Android.
-
-### Features & Continuity
+### Added
 
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
 - **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on Mac menu bar and Android Home.
 - **Live Device Power:** Inline peer battery percentage and charging indicator beside connection status on Mac menu bar companion and Android Home/Devices.
 - **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in settings across both platforms.
-- **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
 - **File Transfer:** Drag-and-drop file shelf on Mac screen edges and modal file picker on the active display space.
-- **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.
-
-### Platform & Toolchain
-
-- **Apple Silicon Standard:** Standardized native `arm64` as the official macOS architecture across the app, update helper, and Rust pairing libraries.
-- **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).
-- **Android UI Navigation:** Outlined icons for inactive bottom tabs and filled icons for active tabs; compacted SMS composer and SIM selector rows.
-- **CI & Security Governance:** Added CodeQL static analysis, fork-safe dependency review, workflow policy enforcement, and physical device lab verification guardrails.
-
-- Show Bluetooth and LAN check feedback beside their received counts in Diagnostics.
-
-- Open Home device selection in Devices with details collapsed and remove duplicate feature navigation links.
-
-- Clarify QR and six-digit code selection during pairing on both platforms.
-
-- Clarify first-launch device setup and hide file-send shortcuts until a device is trusted.
-
-- Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
-
-- Document Mac Desk Deck and DND setup in the README feature guides.
-
-- Show caller names or numbers in mirrored SIM call alerts with optional caller-ID permission; keep live Answer/Decline available independently.
-
 - Add an Android telephony-state fallback for live SIM call alerts when the dialer publishes no incoming notification; expose explicit phone-state and call-control permission setup for Mac Answer/Decline.
-
-- Stop excluding clearable incoming-call alerts with explicit Answer/Decline controls.
-
-- Recognize supported ongoing system call notifications, deliver live mirrors as active alerts, and send source-app icons only over LAN.
-
-- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
-
-- Fix an Android Settings crash caused by nesting the notification app picker scroll inside the page scroll.
-
-- Harden notification mirroring against disconnect and cross-transport delivery races, and repair notification Xcode navigation membership.
-
 - Add opt-in incoming Android CallStyle mirroring with stable Answer and Decline actions on Mac.
-
-- Match the Notifications card's inner spacing to Connection, keep one **Select apps** row, and hide its compact access action after permission is granted.
-
 - Add app search and compact picker switches; use the standard checkbox row for incoming-call mirroring.
-
-- Show Android launcher icons in the notification app picker.
-
-- Include selected Android app icons alongside Mac mirrored alerts and replace the generic Mac bundle placeholder with aniCe's current development icon.
-
-- Allow authenticated Mac notification actions to launch their source app under current Android background-activity rules.
-
-- Allow each distinct action on a mirrored Mac notification once, instead of disabling every action after the first.
-
-- Keep branch-specific Mac build folders percent-free and export the detected Android SDK path to Gradle.
-
-- Keep DND sync phone-to-Mac only, simplify one-time setup, and label the Desk Deck toggle as Mac-local.
-- Keep Desk Deck in the regular Android app shell and simplify trusted-phone app approvals in Mac Settings.
-- Distinguish Control Mac from Mac Desk Deck in the Android feature list and label the deck control **DND mode**.
-- Remove duplicate in-content Back controls while retaining platform navigation.
-
-- Clarify Mac remote-control permission guidance and correct the transfer recovery description.
-
-### Added
-
 - Add phone-side selection of the Mac's default audio output in Desk Deck.
-
-
 - Add selected-app Android notification mirroring to Mac over authenticated DATA, including native source actions, replies, synchronized dismissal and separately opted-in incoming call controls.
-
-
 - Add a responsive Android Mac Desk Deck with live CPU, memory, thermal-pressure and reciprocal battery status, per-action feedback, Mac-approved app shortcuts, output volume and a charging-only keep-awake option.
 - Add Mac Settings approval for per-phone app shortcuts; keep launch authorization on Mac and transmit only catalog IDs and revisions.
 - Add authenticated phone power status to the Mac overview and menu-bar companion without creating a connection lease.
 - Add `scripts/dev.sh` for branch-labelled, per-checkout signed Mac builds that stop the running copy before rebuilding and Android build/install/launch with automatic ADB discovery and explicit selection when multiple devices are connected.
-
 - Add bidirectional Mac–Android file sharing with Mac drop targets, an optional Edge Drop shelf and Android Share-sheet sending.
-
 - Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
-
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 - Add per-peer automatic receiving and saved default/custom destinations on both platforms.
 
 ### Changed
 
+- Clarify the Android–Mac continuity introduction, Now Playing controls/background presentation and actionable notification mirroring; preserve setup, privacy, recovery and platform limitations in linked guides.
+- Require successful CI for the exact main commit before release signing, verify both draft assets, and leave final publication to the maintainer. Extend ownership review to release scripts and Android update code.
+- Consolidate installation and update guidance, correct architecture/security claims, remove public maintainer/UX audit notes, and organize changelogs under Added, Changed and Fixed while retaining development history.
+- **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
+- **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.
+- **Apple Silicon Standard:** Standardized native `arm64` as the official macOS architecture across the app, update helper, and Rust pairing libraries.
+- **Android UI Navigation:** Outlined icons for inactive bottom tabs and filled icons for active tabs; compacted SMS composer and SIM selector rows.
+- **CI & Security Governance:** Added CodeQL static analysis, fork-safe dependency review, workflow policy enforcement, and physical device lab verification guardrails.
+- Show Bluetooth and LAN check feedback beside their received counts in Diagnostics.
+- Open Home device selection in Devices with details collapsed and remove duplicate feature navigation links.
+- Clarify QR and six-digit code selection during pairing on both platforms.
+- Clarify first-launch device setup and hide file-send shortcuts until a device is trusted.
+- Organize shared logo masters, exports and review previews under `assets/logo/`, update documentation references, and tighten README logo/title spacing. Replace the embedded-raster logo wrapper with a transparent, path-only SVG master.
+- Document Mac Desk Deck and DND setup in the README feature guides.
+- Show caller names or numbers in mirrored SIM call alerts with optional caller-ID permission; keep live Answer/Decline available independently.
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+- Match the Notifications card's inner spacing to Connection, keep one **Select apps** row, and hide its compact access action after permission is granted.
+- Show Android launcher icons in the notification app picker.
+- Include selected Android app icons alongside Mac mirrored alerts and replace the generic Mac bundle placeholder with aniCe's current development icon.
+- Keep branch-specific Mac build folders percent-free and export the detected Android SDK path to Gradle.
+- Keep DND sync phone-to-Mac only, simplify one-time setup, and label the Desk Deck toggle as Mac-local.
+- Keep Desk Deck in the regular Android app shell and simplify trusted-phone app approvals in Mac Settings.
+- Distinguish Control Mac from Mac Desk Deck in the Android feature list and label the deck control **DND mode**.
+- Remove duplicate in-content Back controls while retaining platform navigation.
+- Clarify Mac remote-control permission guidance and correct the transfer recovery description.
 - Negotiate Desk Deck v4 for the new control while preserving v1–v3 behavior and action masks.
-
-
 - Extend Desk Deck with backward-compatible v2 memory and power details, subscription renewal, paged approved-app catalogs, clear stale/failure recovery and responsive landscape/portrait layouts; keep the shell available before telemetry.
-
 - Let Android file sends continue when the share panel is hidden and show progress for active sends and receives in notifications.
-
 - Clarify Edge Drop placement, enlarge the Mac send target, and simplify transfer settings and result actions.
-
 - Refine macOS Keyboard & Trackpad controls, floating-window behavior and gesture guidance.
 - Keep confirmed Mac sends pinned to their trusted recipient and require an explicit Bluetooth choice when LAN setup is unavailable.
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
-
 - Redesign Android and macOS with shared neutral light/dark colors, compact controls and consistent navigation across Home, Devices, pairing, Features, Settings, About and feature screens; see the component changelogs for details.
 - Expand the [design guide](docs/design/DESIGN.md) with screen layouts, interaction states, accessibility requirements and semantic palette samples.
 - Run branch push CI for `seamless-redesign`.
 
 ### Fixed
 
+- **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).
+- Stop excluding clearable incoming-call alerts with explicit Answer/Decline controls.
+- Recognize supported ongoing system call notifications, deliver live mirrors as active alerts, and send source-app icons only over LAN.
+- Fix an Android Settings crash caused by nesting the notification app picker scroll inside the page scroll.
+- Harden notification mirroring against disconnect and cross-transport delivery races, and repair notification Xcode navigation membership.
+- Allow authenticated Mac notification actions to launch their source app under current Android background-activity rules.
+- Allow each distinct action on a mirrored Mac notification once, instead of disabling every action after the first.
 - Correct Desk Deck memory accounting, CPU sampling intervals and screenshot launch; compact the phone layout and add Events-access guidance.
-
 - Fence Desk Deck commands and samples to the active peer, channel, subscription and generation; bound opening and recovery, renew visible v2 leases, retain at most 60 history points and disable controls while readings are stale.
-
 - Keep opted-in Android receives active in the background and allow another send from terminal results.
-
 - Move Mac Event Posting setup and receiver status to Settings → Permissions; accept authenticated phone starts automatically after access is granted.
-
 - List Android Control Mac in Features and Favourites; keep BLE connected when leaving the feature, preserve the session when Live typing changes and open the keyboard only after tapping the text field.
-
 - Clear stale Phone-to-Mac input after remote stops or send failures.
-
 - Ignore stale macOS channel callbacks so an old BLE/LAN session cannot retire a replacement connection or make playback controls unresponsive.
-
 - Remove transfer-chunk preparation from presentation threads, keep Find Device startup from blocking shared DATA delivery, and correct interrupted SMS and session-close handling.
-
 - Keep artwork scoped to the current recording, reduce routine playback feedback flashing and bound notification retirement during transport handoffs; make manual LAN teardown tolerate an already-retired session.
-
 - Retry constrained LAN transfer probes on cadence so a slow 64-KiB fallback cannot keep itself permanently rate-limited.
 
-## [v0.3.0]
+## [v0.3.0] — development milestone
 
 Application release v0.3.0, build 3.
 
 ### Added
 
 - Support matched raw TCP diagnostics with normal Wi-Fi policy or a temporary performance lock, independently of authenticated application transfers.
-
 - Log Mac LAN waiting and failed states separately while preserving existing channel retirement and timeout behavior.
-
 - Isolate authenticated transfer chunks in bounded feature-owned FIFOs while interactive delivery continues. Include active writes in byte/record accounting, fence cancelled generations, drain accepted work on normal close, and report successful receive activity only after handling. Android receiver storage shares one injected single-parallelism IO dispatcher; opt-in timings distinguish ingress admission, consumption and storage work.
-
 - Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Cancellation remains effective until nonce ownership; session-owned completion protects sealed records while transfer cleanup cancels queued producers. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
-
 - Connection diagnostics distinguish incomplete LAN frames by profile, byte counts and read age. Opt-in timings separate socket reads, Mac callback scheduling and Android writer admission, dispatch and blocking writes; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
-
 - Linux CI for shared protocol and Android host checks, with pinned actions, dependency caches and failure artifacts. Verification writes isolated run reports under `build/reports/verification/` and emits GitHub error annotations; structure and Android native-build checks support Linux hosts.
-
 - Updated implementation summaries to remove outdated blanket acceptance-pending labels.
-
 - SMS relay v3 connects Android Messages with Mac notifications, inline replies, paged conversations, history, phone-side search and per-reply SIM selection over secured LAN/Bluetooth. Content stays in memory on the Mac. Live receipts and sends retain local observation order across provider refreshes; thread scans complete timestamp groups and continue past unreadable rows. Native composers expose SIM choice beside Send, with per-phone Mac notification, sound and preview controls.
-
 - Native Quick Paste Tray on macOS: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), menu-bar companion button, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, contiguous multi-selection via Shift + Click / Shift + Arrow, individual toggle via Command + Click, Backspace/Delete to delete selected items, and Return to copy (joining multi-selections with newlines). History capacity is configurable on both platforms (20 default, 50, 100); pausing collection, app restart, Forget device and Reset identity preserve saved items, with explicit Clear/Delete controls. Pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
-
 - Pause clipboard observation on macOS for timed intervals (11m, 21m, 45m, 3h, 9h) or indefinitely until re-enabled, with instant Resume controls accessible from the menu-bar status item right-click menu, the companion popover (organized into logical sections with dividers), the Quick Paste Tray, and the Clipboard panel settings.
-
 - Clipboard adds Android Send to Mac actions for selected/shared text and URLs, plus a Quick Settings tile for explicit focused capture. Both platforms offer compact sharing controls and optional persistent local history grouped by date. Phone Home and the Mac overview/companion show a five-minute recent preview with local Copy.
-
 - Strict verification gate (`scripts/verify-suite.py`) with `fast`, `device` and `all` modes. It parses Android JUnit XML and macOS result bundles, cross-checks `xcodebuild` test-case lines, and rejects zero-test runs, failures, crashes, truncated reports and undocumented skips. Adversarial meta-tests (`scripts/test_verify_suite.py`) exercise those false-success shapes.
 - `--check` drift verification for every independent vector generator (clipboard, SMS, transfer, media, find-device, identity, pairing, session handshake/control/record, LAN framing, bulk probe and LAN transfer). Identity checking compares all non-randomized fields and verifies committed signatures with OpenSSL.
 - Replaced the macOS transfer-ordering test that asserted a local reimplementation with a production-path test through `ConnectionPresentation.primaryPeers`, covering connected filtering, stored order and the all-disconnected fallback.
-
 - Native text Clipboard v1 on Android and macOS, with manual sharing, per-device opt-in automatic sharing and direct native clipboard delivery over secured LAN or BLE.
-
 - File transfers now pause instead of failing when the active LAN or Bluetooth channel drops mid-stream. The verified partial is retained for 15 minutes, local-network reconnection resumes automatically at the last verified offset, and either device can explicitly continue over Bluetooth when LAN stays down (the receiver asks the sender to validate the prefix it already holds). Paused cards show frozen progress, Continue over Bluetooth where available and Cancel; pause remains automatic on transport loss, with no manual pause action. A capable LAN that appears during a Bluetooth stream upgrades the active transfer in place through the same resume handshake, so continuing over Bluetooth no longer keeps streaming over Bluetooth after Wi-Fi returns. On Android, a paused or active batch retains a secured Bluetooth fallback lease so the fallback survives and the channel does not connect/disconnect repeatedly.
 - Automatic BLE-coordinated LAN initiation on connection events, secured BLE feature activity, companion media demand and file selection. Automation is on when no preference is stored, a stored off still wins, and pairing exposes one post-pairing toggle that sets both the Bluetooth and LAN choices.
 
 ### Changed
 
 - Set Android and macOS app metadata and About screens to display `v0.3.0` (build 3).
-
 - Start Android LAN authentication as discovery candidates resolve, removing the fixed browse wait while retaining bounded discovery and selected-peer authentication.
-
 - Qualify large LAN transfer windows with a small acknowledged startup chunk. Delayed acknowledgement constrains subsequent sender backlog to at most two 65,536-byte chunks within peer credit, amortizing native validation without restoring the full bulk window; drained senders can requalify after five seconds, each file/resume probes afresh, and fast paths retain negotiated large chunks.
-
 - Retain the Mac Bluetooth service database across radio power-off and preserve LAN rendezvous capacity wakeups on both platforms. LAN reads stop at frame boundaries so ingress backpressure cannot consume the next frame's assembly deadline. Android distinguishes unsent media actions from submitted actions with unknown outcomes.
-
 - Transfer preparation uses capability-aware LAN/BLE selection and cancellation-safe rendezvous; Android nearby recovery retains rediscovery eligibility after failed attempts.
-
 - Raise authenticated LAN file-transfer chunks to 262,016 bytes under transfer capability 3, reducing per-byte record overhead while retaining profile-3 limits and old-peer negotiation.
-
 - Clarified in-app Clipboard guidance for manual sharing, Android text-selection menu availability and connected-device requirements.
 
 ### Fixed
 
 - Recover LAN after Wi-Fi address restoration and retain authenticated reconnect requests through delayed channel retirement.
-
 - Avoid repeated transfer drain/probe cycles on delayed LAN paths and return receive credit immediately for chunks smaller than the negotiated LAN maximum.
-
 - Deliver packaged Now Playing replies in pipe order and publish promptly resolved capabilities with metadata. Retain known support through discovery failures and timing only for the same recording. Position samples can recover duration; explicit support removal and invalid timing still disable seeking.
-
 - Serialize receiver resume verification with chunk writes through transport takeover. Release cancelled macOS resume waiters and fence source-close completion before accessing replacement transfer results.
-
 - Separate raw TCP diagnostic completion waiting from data-read timeout so locally accepted bytes can drain before peer confirmation.
-
 - Preserve native Bluetooth write-admission failures through Android transport teardown instead of replacing them with cancellation; include operation context in failure and stale-callback diagnostics.
-
 - Preserve Android Bluetooth retry history through brief secured intervals during approved-transfer recovery. Reset only after fifteen uninterrupted seconds of authenticated readiness.
-
 - Repair transfer credit wakeups and ACK coalescing so window shrinkage and overlapping submissions cannot strand progress. Recover large LAN chunks under continuous traffic and exclude source preparation or fully drained idle time from slow-path classification.
-
 - Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
-
 - Defer macOS LAN EOF retirement until accepted transport frames and feature work drain within ten seconds. Explicit close and failures remain immediate, and delivery errors retain their cause.
-
 - Preserve independent BLE/LAN ownership while repairing BLE recovery, transfer cancellation and restart-safe pending work. Cap Android native GATT fragments at 512 bytes and serialize control issuance across DATA, receive and maintenance. Fence Mac LAN retirement to live routes/submissions and add file-transfer notification controls.
-
 - Repair LAN transfer startup, bound automatic connection demand from BLE traffic, and calculate sender progress from receiver acknowledgements.
-
 - Any feature communication or interaction over BLE (Now Playing, File Transfer, Find Device, etc.) now automatically triggers the LAN connection and opens the Mac Allow window when LAN is not yet connected. Android background Now Playing additionally requests and retains LAN (including artwork) while playing or inside the paused grace.
 - File selection and a pending send no longer retire a secured BLE channel. A requested LAN route gets a bounded rendezvous before a compatible Bluetooth channel carries the offer; a LAN demand that cannot be served fails immediately instead of waiting for the connect timeout.
 - Feature traffic no longer resumes LAN after an explicit Disconnect.
 - Settings and pairing are decluttered: one post-pairing toggle, one local-network preference, and a collapsed Background timeout row that still defaults to Never.
 
-## [0.2.0]
+## [0.2.0] — development milestone
 
 Development milestone: 0.2.0-dev, build 2.
 
@@ -283,7 +202,7 @@ Development milestone: 0.2.0-dev, build 2.
 - **Keychain & Keystore Caching**: Reused validated Keychain key handles and Keystore provider instances while re-verifying live aliases, public keys, and key protection on every operation.
 - **Transfer Lifecycle**: Enforced LAN preference with BLE fallback, exclusive partial staging, and deterministic timer releases so notification denial never halts approved foreground transfers.
 
-## [0.1.0]
+## [0.1.0] — development milestone
 
 ### Added
 
@@ -332,4 +251,4 @@ Development milestone: 0.2.0-dev, build 2.
 - Replace roadmap placeholders in pairing completion messages with the saved trust state on both platforms.
 - Send authenticated cancellation on Mac pairing Decline before Bluetooth cleanup; report cancellation and release GATT on Android.
 
-Release 0.1.0 captures initial foundation protocols, dual transports, idle optimization, and unified connection flow. Active development proceeds toward subsequent feature milestones.
+Development milestone 0.1.0 records the initial protocols, dual transports, idle optimization and connection flow.

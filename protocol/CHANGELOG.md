@@ -1,86 +1,66 @@
 # Protocol changelog
 
-Records shared communication-contract changes and compatibility implications. Protocol contracts remain independently versioned; this section groups the contract changes included with application release v0.3.0. Repository-wide changes are recorded in the [root changelog](../CHANGELOG.md).
+Records shared communication-contract changes and compatibility implications. Protocol contracts remain independently versioned; entries are grouped by application development milestone until the first public release. Repository-wide changes are recorded in the [root changelog](../CHANGELOG.md).
 
 ## [Unreleased]
 
-- Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.
-
-- Document the optional connection-check reply and compatibility with older peers.
-- Document synthetic SIM call records and revision-bound Telecom actions; the v1 wire shape is unchanged.
-
-- Document the LAN-only delivery rule for additive source-icon records and supported incoming call detection.
-
-- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
-
-- Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
-
-- Limit DND state events to phone-to-Mac over existing secured DATA; keep the v1 envelope unchanged.
-- Specify that Desk Deck DND action success means the selected Shortcut command finished, not that Focus state was read back.
-
-### Fixed
-
-- Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample formats.
-
-- Reject stale v2 app-catalog revisions and obsolete Desk Deck messages; allow unknown battery percentages without manufacturing values.
-
-- Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.
-
-- Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
-
 ### Added
 
+- Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
 - Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
-
 - Define Desk Deck v5 output selection, with a bounded revisioned catalog and opaque device IDs.
 - Define a Desk Deck v4 action for a locally selected Do Not Disturb Shortcut while preserving v1–v3 message shapes.
 - Add Desk Deck v2 catalog revision announcements so an open phone panel reloads approved apps after Mac-side edits.
-
 - Define Mac Desk Deck v2 with backward-compatible v1 support, richer memory and Mac power samples, five-second subscription renewal and fifteen-second expiry, bounded paged app catalogs and opaque approved-app launch IDs.
 - Define Device Power v1 for phone charging state and percentage on existing Mac device surfaces over secured DATA, without opening or renewing a connection lease.
 - Add shared positive and negative Desk Deck and Device Power wire fixtures.
-
 - Define Phone-to-Mac input v1 over authenticated BLE DATA, with phone-started sessions gated by Mac Event Posting, Unicode text separate from key transitions, bounded motion coalescing, fail-safe release and Mac-to-phone session-ended notices.
-
 - Define Classic HID keyboard, restricted Back/Home consumer and mouse reports; retain a neutral ninth keyboard byte for cached composite-descriptor compatibility and eight-byte boot keyboard payloads.
 - Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
 
 ### Changed
 
+- Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE transfer window; wire formats and negotiated limits are unchanged.
+- Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.
+- Document the optional connection-check reply and compatibility with older peers.
+- Document synthetic SIM call records and revision-bound Telecom actions; the v1 wire shape is unchanged.
+- Document the LAN-only delivery rule for additive source-icon records and supported incoming call detection.
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+- Limit DND state events to phone-to-Mac over existing secured DATA; keep the v1 envelope unchanged.
+- Specify that Desk Deck DND action success means the selected Shortcut command finished, not that Focus state was read back.
 - Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
-
-## [v0.3.0]
 
 ### Fixed
 
-- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+- Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample formats.
+- Reject stale v2 app-catalog revisions and obsolete Desk Deck messages; allow unknown battery percentages without manufacturing values.
+- Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.
+- Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
 
-- Clarify file-transfer acknowledgement cadence as window-relative: a quarter-window for large LAN chunks and up to eight chunks for standard/BLE, retaining the 20-ms flush and final-chunk acknowledgement. Wire messages, capability ranges and limits are unchanged.
-
-- Document checkpoint-backed transfer resume with existing kinds 10/11 and a four-chunk BLE implementation window; framing, capability ranges, session cryptography and fixture bytes remain unchanged.
-
-- Coalesce ordinary BLE traffic into one LAN demand per channel and eligibility interval.
+## [v0.3.0] — development milestone
 
 ### Added
 
 - SMS Relay v3 defines deterministic CBOR capability negotiation, cursor-paginated conversations and history, acknowledged live message streams, multipart replies, phone-side search, active-SIM discovery and per-message subscription attribution inside authenticated DATA. Bodies are bounded to 24,576 UTF-8 bytes in up to eight fragments; records remain within 4,000 bytes and page limits are advertised per link. Composite cursors use byte-wise identifier ordering and terminal `(0, "")` pairs; incomplete provider reads and oversized timestamp groups do not advance them. Live events retry within their ten-minute pending lifetime, duplicate reply results are bounded, and `sendResult.dateMillis` carries the provider send time or phone send-queue time. Both applications must support v3 to exchange SMS.
-
 - Clipboard v1 deterministic CBOR capabilities, receive settings, bounded text assembly, ordered item identities, terminal deduplication and one safe cross-transport retry, with independent positive/negative fixtures.
-
 - Activated the reserved Local File Transfer `resume` (10) and `status` (11) messages for in-memory pause/resume after a channel change. Either side can initiate a resume: the sender proposes its acknowledged offset, or the receiver proposes the prefix it retains when the user explicitly continues over Bluetooth; the receiving side validates the offset and prefix hash and answers with states 0–4. A live LAN that becomes capable during a BLE stream runs the same handshake and upgrades the active stream in place. The verified partial is retained for 15 minutes and a resume at the final length replays the verified file result. CDDL, framing, bounds and fixture bytes are unchanged.
 - Defined automatic LAN rendezvous v1, with demand from ordinary BLE feature traffic and explicit file selection, over authenticated BLE DATA without changing existing LAN framing or session profiles.
 
 ### Changed
 
 - Document overlapping Android LAN discovery, serial resolution and endpoint authentication under the existing 15-second browse and 90-second connection bounds; framing and authentication contracts are unchanged.
-
 - Add LAN-only transfer capability 3 for 262,016-byte chunks within the existing 262,144-byte authenticated DATA record; advertise a capability-2 baseline first so older peers retain support, with standard/BLE limits unchanged.
-
 - Documented Android explicit tile focus and bounded process-local clipboard previews/Copy on both platforms as native behavior using existing clipboard messages.
-
 - Clarified that optional device-local clipboard history is separate from process-local delivery state and shares native observation without changing wire messages.
 
-## [0.2.0]
+### Fixed
+
+- Tolerate progressing encrypted LAN frames after secured readiness with a ten-second no-progress deadline and sixty-second absolute assembly cap. Partial headers and handshake frames retain ten seconds absolute; wire bytes, record authentication and socket write deadlines are unchanged.
+- Clarify file-transfer acknowledgement cadence as window-relative: a quarter-window for large LAN chunks and up to eight chunks for standard/BLE, retaining the 20-ms flush and final-chunk acknowledgement. Wire messages, capability ranges and limits are unchanged.
+- Document checkpoint-backed transfer resume with existing kinds 10/11 and a four-chunk BLE implementation window; framing, capability ranges, session cryptography and fixture bytes remain unchanged.
+- Coalesce ordinary BLE traffic into one LAN demand per channel and eligibility interval.
+
+## [0.2.0] — development milestone
 
 ### Added
 
@@ -110,7 +90,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 - **Routing & Interruption**: Define LAN-preferred file-transfer routing, channel-scoped capability, sliced-offer affinity, and generation-bound replies; interrupted batches require explicit resend and existing wire fixture bytes remain unchanged.
 - **Transfer State Validation**: Clarify transfer inventory/state validation, written ACK semantics, and unavailable resume behavior; identify coordinated LAN renewal as unimplemented without changing existing fixture bytes.
 
-## [0.1.0]
+## [0.1.0] — development milestone
 
 ### Added
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Publish only verified release artifacts; matching drafts may be resumed safely."""
+"""Prepare a verified release draft; publication remains a maintainer action."""
 import hashlib
 import json
 import os
@@ -14,6 +14,18 @@ from release_version import parse_tag
 
 MAX_BYTES = 256 * 1024 * 1024
 NAMES = ("aniCe-android.apk", "aniCe-mac.zip")
+
+
+def require_ci(repository, commit):
+    """Only the latest main-push CI run for this exact source can authorize signing."""
+    endpoint = f"repos/{repository}/actions/workflows/ci.yml/runs?head_sha={commit}&branch=main&event=push&per_page=100"
+    response = json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
+    runs = [run for run in response.get("workflow_runs", [])
+            if run.get("head_sha") == commit and run.get("head_branch") == "main"
+            and run.get("event") == "push"]
+    latest = max(runs, key=lambda run: run["id"], default=None)
+    if not latest or latest.get("status") != "completed" or latest.get("conclusion") != "success":
+        raise ValueError("The latest main-push CI run for the release commit must succeed")
 
 
 def gh(*args, **kwargs):
@@ -48,12 +60,13 @@ def main():
         raise ValueError("Invalid source commit")
     repository = os.environ["GITHUB_REPOSITORY"]
     if repository.lower() != "anisharyal09/anice":
-        raise ValueError("Publication is restricted to the aniCe repository")
+        raise ValueError("Release drafts are restricted to the aniCe repository")
     def check_tag_commit():
         ref = json.loads(subprocess.check_output(["gh", "api", f"repos/{repository}/commits/{tag}"], text=True))
         if ref.get("sha") != commit:
             raise ValueError("Remote tag no longer identifies the built commit")
     check_tag_commit()
+    require_ci(repository, commit)
     aapt = os.environ["ANICE_AAPT"]
     files = [pathlib.Path(directory) / name for name in NAMES]
     for path in files:
@@ -116,13 +129,13 @@ def main():
         if not latest.get("draft") or latest.get("tag_name") != tag or marker not in (latest.get("body") or "") \
                 or bool(latest.get("prerelease")) != prerelease or set(current_assets) != set(NAMES) \
                 or any(current_assets.get(name) != item for name, item in verified.items()):
-            raise ValueError("Draft changed before publication")
-        gh("release", "edit", tag, "--repo", repository, "--draft=false")
+            raise ValueError("Draft changed before verification completed")
+        print(f"Verified draft ready for review: https://github.com/{repository}/releases")
 
 
 if __name__ == "__main__":
     try:
         main()
     except (KeyError, OSError, ValueError, subprocess.CalledProcessError) as error:
-        print(f"Release not published: {error}", file=sys.stderr)
+        print(f"Release draft not verified: {error}", file=sys.stderr)
         sys.exit(1)

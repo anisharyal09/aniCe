@@ -8,101 +8,49 @@
 </h2>
 
 <p align="center">
-  <strong>Continuity between Android and macOS, like never before.</strong><br>
-  A native, local-first continuity bridge. Connects your phone and Mac directly over Bluetooth Low Energy and local-network TCP with authenticated, end-to-end encrypted sessions — no cloud accounts, no external relays, and zero telemetry.
+  <strong>Seamless continuity between Android and Mac.</strong>
 </p>
 
----
+A native Android–Mac bridge for file sharing, clipboard, messages and remote controls. Devices pair directly and exchange feature data over local Bluetooth or Wi-Fi; no account or relay service is required.
 
-## Security & Technical Foundation
+The first public beta is being prepared. Development metadata is **0.9.0-beta.1 · build 90021**; a version in source does not mean a release has shipped. Published downloads appear on [GitHub Releases](https://github.com/anisharyal09/aniCe/releases).
 
-aniCe is built from scratch with zero-trust, privacy-first principles:
+## Install and connect
 
-* **Built From Scratch:** Not based on KDE Connect, LocalSend, or legacy continuity stacks. Modern, standalone native architecture implemented exclusively in Swift 6, AppKit, and SwiftUI on macOS, and Kotlin, Jetpack Compose, and Material 3 on Android.
-* **Zero-Trust Security:** Local Wi-Fi networks and Bluetooth airwaves are treated as untrusted. All traffic is mutually authenticated and encrypted with forward-secret session keys; network sniffers and routers see only ciphertext.
-* **Zero Cloud & Zero Telemetry:** Purely peer-to-peer over local Wi-Fi (LAN TCP/TLS) and Bluetooth Low Energy (BLE). Data never touches an external server.
-* **Mutual Cryptographic Identity:** Persistent P-256 identity key pairs per device. Discovery uses fingerprint-derived service data.
-* **Secure Mutual Pairing:** Visual QR code bootstrap or zero-knowledge OPAQUE PIN exchange.
-* **End-to-End Encryption:** RFC 9528 EDHOC key exchange deriving ephemeral session keys; all messages protected by AES-256-GCM authenticated encryption.
-* **Strict Local Boundary:** Files, clipboard data, notifications, SMS messages, and telemetry remain strictly on your local hardware.
-
-For low-level protocol schemas and transport state machines, see [ARCHITECTURE.md](ARCHITECTURE.md).
-
----
+- **Mac:** Apple Silicon, macOS 14 or newer. Intel Macs are not supported.
+- **Android:** Android 10 / API 29 or newer; some background features require Android 12 / API 31 or newer. Minimum-version device acceptance remains pending.
+- Follow [installation, pairing and updates](docs/GETTING_STARTED.md). Feature permissions are requested when needed.
 
 ## Features
 
-#### Seamless File Transfer (Zero-Window AirDrop Alternative)
-- **Mac Edge Drop:** Drag files directly from Finder to your screen edge (left, right, or top) to send instantly.
-- **Menu Bar File Picker:** Select and send files from the macOS status bar without bringing any app forward.
-- **Android Direct Share:** Share photos, videos, or documents directly from the Android system share sheet with background transfer completion.
-- **Zero-Window Auto-Receive:** Inbound files save silently to your custom directory (`~/Downloads/aniCe` default) without prompt fatigue.
+| Feature | What it does |
+| --- | --- |
+| [File transfer](docs/features/FILE_TRANSFER.md) | Send files in either direction through Finder drops, optional Mac Edge Drop and Android’s Share sheet. Choose save folders and automatic receiving per trusted sender; interrupted transfers retain verified progress for up to 15 minutes. |
+| [Clipboard](docs/features/CLIPBOARD.md) | Share text and links manually or automatically, keep optional local history, and open shared HTTP(S) links directly in the Mac browser. Android clipboard observation requires input focus; images and rich text are unsupported. |
+| [Now Playing](docs/features/NOW_PLAYING.md) | Your Mac’s playback, controlled from your phone: live track details, album artwork, automatic or manual player selection, and supported play/pause, skip and seek controls. Adjust supported player and Mac output volume, including with the phone’s volume buttons. Use the full player or Android notification/lock-screen controls when background ownership permits; optionally show playback in the Mac companion. Artwork uses LAN; audio keeps playing on the Mac. |
+| [Messages](docs/features/SMS.md) | Browse and search Android SMS conversations, receive Mac alerts and send replies, with an active SIM choice where available. RCS and MMS sending are not supported. |
+| [Notification mirroring](docs/features/NOTIFICATION_MIRRORING.md) | Act on your phone’s notifications from native Mac alerts: send inline replies, use supported app actions, open the source app on Android, and dismiss alerts across both devices. Selected apps stay under your control; source icons arrive over LAN. Incoming-call alerts support Answer/Decline where available, with optional caller names or numbers after permission setup. Call audio stays on the phone; available content and actions depend on Android and the source app. |
+| [Control Android](docs/features/KEYBOARD_TRACKPAD.md) | Use the Mac keyboard and trackpad through system Bluetooth HID, including Android Home/Back/Recents controls. Option–Command–K toggles the floating control; native Bluetooth pairing and an explicit device link are required. |
+| [Control Mac](docs/features/PHONE_TO_MAC.md) | Type, move the pointer, click, drag and scroll using the phone keyboard and trackpad over an authenticated Bluetooth session. Mac input permission is required. |
+| [Mac Desk Deck](docs/features/MAC_DESK_DECK.md) | View CPU, memory, thermal pressure and power status; request Mac lock, open screenshot controls, adjust supported audio controls and launch Mac-approved apps. Screenshots stay on the Mac; controls depend on permissions and hardware. |
+| [DND sync](docs/features/DND_SYNC.md) | Relay phone DND changes to configured Mac Shortcuts. |
+| [Find Device](docs/features/FIND_DEVICE.md) | Ring a connected phone or notify a connected Mac. Uses an existing trusted connection; it does not track location or bypass DND. |
 
-#### Remote Control & Workspace Input
-- **Control Mac (Phone as Remote):** Use your phone screen as a wireless trackpad and keyboard to navigate, click, and type on your Mac.
-- **Control Android (Mac Keyboard & Trackpad):** Control your phone with your Mac's physical keyboard and trackpad via Bluetooth HID, with a draggable floating controller for Android Home, Back, and Recents (global shortcut `⌥⌘K`).
-- **macOS Menu Bar Companion:** Quick-access status bar companion for device connectivity, pinned actions, and the Quick Paste Tray (`⌥⌘V`).
+The Mac menu-bar companion keeps device status, current activity and send controls available when the main window is closed. Both apps show the connected peer’s battery and charging state without starting a new connection.
 
-#### Desk Deck (Mac Control & Telemetry from Phone)
-- **Remote Mac Controls:** Lock Mac, mute/unmute audio, adjust volume, and switch Mac audio output devices right from your phone.
-- **One-Tap App Launcher:** Launch approved macOS applications directly from your phone screen.
-- **Live Mac Telemetry:** Real-time monitoring of Mac CPU load, memory utilization, thermal pressure, and battery percentage.
-- **Remote Screenshots:** Trigger and capture macOS screenshots directly from your device deck.
+The **Quick Paste Tray** (Option–Command–V) searches and filters optional Mac clipboard history, with previews, pins and keyboard selection. Return copies the selection for ordinary paste; it does not inject text into another app. See [tray controls and history retention](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos).
 
-#### Communication, Alerts & Media
-- **Notification Mirroring:** Real-time phone notifications on Mac with synchronized cross-device dismissal.
-- **Call Handling:** View caller ID and answer, decline, or silence incoming SIM phone calls directly from Mac notification banners.
-- **Messages (SMS Relay):** Browse full SMS threads with multi-SIM origin chips and send inline replies from macOS notifications.
-- **Now Playing:** Synchronized media playback controls and album artwork between phone and Mac.
-- **Do Not Disturb Sync:** Sync phone DND state with macOS Focus modes via native Shortcuts.
-- **Find Device:** Remotely ring a misplaced phone or ping your Mac with one tap.
+Choose System, Light or Dark appearance and adjust text size. Features and Favourites keep their saved order. Automatic connections can be paused for a preset/custom duration or until manually resumed; see [connection controls](docs/GETTING_STARTED.md#manage-connections).
 
-#### Clipboard Sync & Direct Link Forwarding
-- **Encrypted Clipboard Sync:** Real-time, bidirectional clipboard sharing with sensitive text detection (passwords and tokens stay local unless confirmed).
-- **Direct Browser Forwarding:** Share links from Android to open immediately in your Mac's default browser without cluttering your clipboard history.
-- **Quick Paste Tray:** Instant clipboard history access with global shortcut (`⌥⌘V`).
+## Security and privacy
 
----
+Pairing uses QR authentication or an OPAQUE six-digit code exchange, with approval on both devices. Trusted BLE and LAN sessions use EDHOC and directional AES-256-GCM records. Discovery is unauthenticated and does not advertise device identities or fingerprints. LAN uses framed TCP with aniCe's encrypted session protocol.
 
-## Repository Structure
+Android identity keys use Android Keystore and report the actual protection available. Current Mac builds use the development Keychain backend; they do not claim Secure Enclave isolation. System Bluetooth HID uses its own OS-managed security. The Mac app is unsandboxed to support native integrations.
 
-```text
-ARCHITECTURE.md         Shared identity, trust, sessions and transport ownership
-apps/
-  android/              Android app and tests (Kotlin, Jetpack Compose, Material 3)
-  macos/                Mac app, Xcode project, and tests (Swift 6, SwiftUI, AppKit)
-protocol/
-  bluetooth/            BLE discovery and independent Classic Bluetooth HID contracts
-  lan/                  Local network stream framing and mDNS discovery contract
-  pairing/              Authenticated bootstrap and control-pipe contract (QR & OPAQUE PIN)
-  session/              EDHOC, encrypted records, controls and session envelopes
-  media/                Now Playing DATA contract and bounded artwork
-  desk-deck/            Mac telemetry, approved apps and remote controls
-  device-power/         Peer battery and charging status
-  dnd-sync/             Phone-to-Mac Do Not Disturb changes
-  notifications/        Android alerts, call controls and LAN source-icon contract
-  transfer/             Local file transfer protocol and CDDL schema
-  schemas/              Shared public identity contract (JSON Schema v1)
-  test-vectors/         Cryptographic verification cases (identity, pairing, session, LAN, media, transfer)
-  fixtures/             Sample public identities
-scripts/                Identity/session/LAN interchange and native pairing builds
-docs/
-  design/               Shared design guide
-  decisions/            App-wide ADRs and features/<feature>/ decisions
-  features/             Feature usage and limitations
-  BACKGROUND_CONNECTIONS.md Background BLE lifecycle and gates
-  LAN_CONNECTIONS.md    Independent authenticated LAN connections
-  PERFORMANCE.md        Authenticated record performance budget and cost model
-  ROADMAP.md            Implemented capabilities and planned work
-.agents/                Operational coding context
-core/rust/              Pinned ephemeral OPAQUE bridge (JNI & C ABI)
-```
+Feature content travels between devices. Update checks and downloads contact GitHub. aniCe has no analytics service. See [architecture and trust boundaries](ARCHITECTURE.md) and [security reporting](SECURITY.md).
 
----
-
-## Development & Architecture Decisions
-
-Build, install and launch a development app from the repository root:
+## Build and contribute
 
 ```sh
 ./scripts/dev.sh mac
@@ -110,21 +58,11 @@ Build, install and launch a development app from the repository root:
 ./scripts/dev.sh android --serial DEVICE_SERIAL
 ```
 
-See the platform setup guides below for prerequisites and local Mac signing settings.
+See [Mac setup](apps/macos/README.md), [Android setup](apps/android/README.md), [Rust prerequisites](core/rust/pairing/README.md) and [contributing](CONTRIBUTING.md).
 
-- **Architecture Overview:** [Identity, trust, sessions and transports](ARCHITECTURE.md)
-- **Architecture Decisions:** [Shared foundations and feature decisions](docs/decisions/README.md)
-- **Setup & Building:** [Android app setup](apps/android/README.md) · [macOS app setup](apps/macos/README.md) · [Native Rust toolchain](core/rust/pairing/README.md)
-- **Protocol & Design:** [Shared Contracts](protocol/README.md) · [Design Guide](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md)
-- **Features:** [Mac Desk Deck](docs/features/MAC_DESK_DECK.md) · [Do Not Disturb sync](docs/features/DND_SYNC.md) · [Now Playing](docs/features/NOW_PLAYING.md) · [Local File Transfer](docs/features/FILE_TRANSFER.md) · [Find Device](docs/features/FIND_DEVICE.md) · [Clipboard](docs/features/CLIPBOARD.md) · [Messages (SMS relay)](docs/features/SMS.md) · [Notification mirroring](docs/features/NOTIFICATION_MIRRORING.md) · [Control Android (Keyboard & Trackpad)](docs/features/KEYBOARD_TRACKPAD.md) · [Control Mac](docs/features/PHONE_TO_MAC.md)
-- **Transport Specifications:** [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md) · [Local Network Connections](docs/LAN_CONNECTIONS.md) · [LAN bulk benchmark](protocol/lan/BENCHMARK.md) · [Performance Guide](docs/PERFORMANCE.md)
-
-Android compiles/targets API 36 with `minSdk = 29`; the Mac deployment target is macOS 14 and Swift language mode is 6. Current Mac app builds use development Keychain storage; configured signing alone does not select the protected backend.
-
----
-
-## License & Changelogs
+- [Architecture](ARCHITECTURE.md) · [Decisions](docs/decisions/README.md) · [Protocol contracts](protocol/README.md)
+- [Design](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md) · [Performance](docs/PERFORMANCE.md)
+- [Background Bluetooth](docs/BACKGROUND_CONNECTIONS.md) · [LAN ownership](docs/LAN_CONNECTIONS.md)
+- [Changelog](CHANGELOG.md) · [Android changes](apps/android/CHANGELOG.md) · [Mac changes](apps/macos/CHANGELOG.md) · [Protocol changes](protocol/CHANGELOG.md)
 
 Licensed under [GPL-3.0-or-later](LICENSE).
-
-Changelogs: [Repository](CHANGELOG.md) · [Android](apps/android/CHANGELOG.md) · [macOS](apps/macos/CHANGELOG.md) · [Protocol](protocol/CHANGELOG.md).

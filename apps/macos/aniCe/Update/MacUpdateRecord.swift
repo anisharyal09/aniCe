@@ -80,6 +80,21 @@ struct MacUpdateRecord: Codable, Equatable {
 }
 
 enum MacUpdateRecovery {
+  // Persist failure before relaunch so the restored app can report it on its first window.
+  static func restorePreviousBundle(_ record: MacUpdateRecord,
+    recordURL: URL = MacUpdateRecord.recordURL,
+    swap: (URL, URL) -> Bool, launch: (URL) -> Bool) -> Bool {
+    let destination = URL(fileURLWithPath: record.destination, isDirectory: true)
+    guard swap(record.bundleURL, destination) else { return false }
+    var failed = record
+    failed.phase = .failed
+    if (try? failed.write(to: recordURL)) == nil {
+      MacUpdateRecord.remove(ifOwnedBy: failed.nonce, from: recordURL)
+    }
+    _ = launch(destination)
+    return true
+  }
+
   // The helper declares .installing before an atomic exchange; a record older than this is abandoned.
   static let abandonedAfter: TimeInterval = 300
 

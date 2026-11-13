@@ -68,6 +68,38 @@ final class MacUpdateRecordTests: XCTestCase {
     }
   }
 
+  func testRollbackMarksFailureBeforeRelaunchingTheRestoredBundle() throws {
+    let fixture = try recoveryFixture(.installed)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let record = try XCTUnwrap(MacUpdateRecord.load(from: fixture.record))
+    var events: [String] = []
+    XCTAssertTrue(MacUpdateRecovery.restorePreviousBundle(record, recordURL: fixture.record,
+      swap: { previous, destination in
+        XCTAssertEqual(previous, record.bundleURL)
+        XCTAssertEqual(destination, fixture.destination)
+        events.append("swap")
+        return true
+      }, launch: { destination in
+        XCTAssertEqual(destination, fixture.destination)
+        XCTAssertEqual(MacUpdateRecord.load(from: fixture.record)?.phase, .failed)
+        events.append("launch")
+        return false
+      }))
+    XCTAssertEqual(events, ["swap", "launch"])
+    XCTAssertEqual(MacUpdateRecovery.confirmStartup(version: "0.3.0", destination: fixture.destination,
+      recordURL: fixture.record), "The previous update did not complete. aniCe kept the installed version.")
+  }
+
+  func testFailedRollbackPreservesRecoveryStateAndDoesNotLaunch() throws {
+    let fixture = try recoveryFixture(.installed)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let record = try XCTUnwrap(MacUpdateRecord.load(from: fixture.record))
+    XCTAssertFalse(MacUpdateRecovery.restorePreviousBundle(record, recordURL: fixture.record,
+      swap: { _, _ in false }, launch: { _ in XCTFail("No bundle was restored"); return true }))
+    XCTAssertEqual(MacUpdateRecord.load(from: fixture.record), record)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.staging.path))
+  }
+
   private func recoveryFixture(_ phase: MacUpdateRecord.Phase, created: Double = 1) throws
     -> (root: URL, destination: URL, staging: URL, record: URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
