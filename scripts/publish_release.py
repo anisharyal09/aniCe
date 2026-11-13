@@ -53,6 +53,19 @@ def apk_code(path, aapt):
     return int(match.group(2)), match.group(3)
 
 
+def find_release(repository, tag, release_id=None):
+    endpoint = f"repos/{repository}/releases/{release_id}" if release_id else f"repos/{repository}/releases/tags/{tag}"
+    try:
+        return json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
+    except subprocess.CalledProcessError:
+        raw = subprocess.check_output(["gh", "api", "--paginate", "--slurp", f"repos/{repository}/releases?per_page=100"], text=True)
+        for page in json.loads(raw):
+            for item in page:
+                if item.get("tag_name") == tag:
+                    return item
+        raise
+
+
 def check_release_state(repository, tag, commit):
     """Reject conflicting release state before builds and recheck before mutation."""
     _, code, prerelease = parse_tag(tag)
@@ -117,11 +130,13 @@ def main():
                 if old.stat().st_size != asset["size"] or apk_code(old, aapt)[0] >= code:
                     raise ValueError("Candidate Android versionCode is not greater than a published APK")
         if existing is None:
-            args = ["release", "create", tag, "--repo", repository, "--verify-tag", "--draft", "--title", tag, "--notes", marker, "--generate-notes"]
+            args = ["release", "create", tag, "--repo", repository, "--verify-tag", "--draft", "--title", tag, "--notes", marker]
             if prerelease:
                 args.append("--prerelease")
             gh(*args)
-        release = json.loads(subprocess.check_output(["gh", "api", f"repos/{repository}/releases/tags/{tag}"], text=True))
+        release_id = existing.get("id") if existing else None
+        release = find_release(repository, tag, release_id)
+        release_id = release.get("id", release_id)
         if not release.get("draft") or release.get("tag_name") != tag or marker not in (release.get("body") or "") or bool(release.get("prerelease")) != prerelease:
             raise ValueError("Draft changed before assets could be verified")
         extra = unexpected_assets(release)
@@ -133,7 +148,7 @@ def main():
             asset = assets.get(path.name)
             if asset is None:
                 gh("release", "upload", tag, str(path), "--repo", repository)
-                release = json.loads(subprocess.check_output(["gh", "api", f"repos/{repository}/releases/tags/{tag}"], text=True))
+                release = find_release(repository, tag, release_id)
                 assets = {item["name"]: item for item in release.get("assets", [])}
                 asset = assets.get(path.name)
             if not asset or not isinstance(asset.get("id"), int) or asset.get("size") != path.stat().st_size:
@@ -145,7 +160,7 @@ def main():
                 raise ValueError(f"Draft asset digest mismatch: {path.name}")
             verified[path.name] = (asset["id"], asset["size"])
         check_tag_commit()
-        latest = json.loads(subprocess.check_output(["gh", "api", f"repos/{repository}/releases/tags/{tag}"], text=True))
+        latest = find_release(repository, tag, release_id)
         current_assets = {item.get("name"): (item.get("id"), item.get("size")) for item in latest.get("assets", [])}
         if not latest.get("draft") or latest.get("tag_name") != tag or marker not in (latest.get("body") or "") \
                 or bool(latest.get("prerelease")) != prerelease or set(current_assets) != set(NAMES) \
