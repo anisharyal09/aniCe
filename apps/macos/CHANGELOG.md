@@ -35,6 +35,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
+
 - Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.
 - **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
 - **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.

@@ -24,6 +24,78 @@ class PublishReleaseTest(unittest.TestCase):
         self.require_ci = ci.start()
         self.addCleanup(ci.stop)
 
+    def test_release_preflight_handles_pagination_conflicts_and_matching_drafts(self):
+        marker = f'<!-- anice-source:{self.commit} -->'
+        good = {'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                'body': marker, 'assets': []}
+        for draft, accepted in ((good, True), ({**good, 'draft': False}, False),
+                ({**good, 'body': '<!-- anice-source:wrong -->'}, False),
+                ({**good, 'prerelease': True}, False),
+                ({**good, 'assets': [{'name': 'extra.txt'}]}, False),
+                ({**good, 'assets': [None]}, False)):
+            with self.subTest(draft=draft), mock.patch.object(publish_release.subprocess, 'check_output',
+                    return_value=json.dumps([[], [draft]])) as api, mock.patch.object(publish_release, 'gh') as gh:
+                if accepted:
+                    releases, existing, actual_marker = publish_release.check_release_state(
+                        'anisharyal09/aniCe', 'v0.4.0', self.commit)
+                    self.assertEqual(existing, draft)
+                    self.assertEqual(actual_marker, marker)
+                else:
+                    with self.assertRaises(ValueError):
+                        publish_release.check_release_state('anisharyal09/aniCe', 'v0.4.0', self.commit)
+                gh.assert_not_called()
+                self.assertIn('--paginate', api.call_args.args[0])
+
+    def test_rejects_missing_empty_oversized_or_wrong_version_assets_before_mutation(self):
+        for kind in ('missing', 'empty', 'oversized', 'wrong-version'):
+            with self.subTest(kind=kind):
+                path = Path(self.temp.name) / publish_release.NAMES[0]
+                path.write_bytes(b'apk')
+                if kind == 'missing':
+                    path.unlink()
+                elif kind == 'empty':
+                    path.write_bytes(b'')
+                elif kind == 'oversized':
+                    with path.open('wb') as file:
+                        file.truncate(publish_release.MAX_BYTES + 1)
+                with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
+                        mock.patch.object(publish_release.subprocess, 'check_output', return_value=json.dumps({'sha': self.commit})), \
+                        mock.patch.object(publish_release, 'apk_code', return_value=(1, 'wrong')), \
+                        mock.patch.object(publish_release, 'gh') as gh:
+                    with self.assertRaises(ValueError):
+                        publish_release.main()
+                    gh.assert_not_called()
+
+    def test_corrupt_download_or_moved_tag_never_reports_verified_draft(self):
+        assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
+        draft = {'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                 'body': f'<!-- anice-source:{self.commit} -->', 'assets': assets}
+        for corrupt in (True, False):
+            outputs = [json.dumps({'sha': self.commit}), json.dumps([[draft]]), json.dumps(draft),
+                       json.dumps({'sha': 'b' * 40})]
+            def download(*args, **kwargs):
+                kwargs['stdout'].write(b'bad' if corrupt else b'apk')
+            with self.subTest(corrupt=corrupt), mock.patch.object(sys, 'argv', self.argv), \
+                    mock.patch.dict(os.environ, self.env), \
+                    mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs), \
+                    mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
+                    mock.patch.object(publish_release, 'gh', side_effect=download) as gh:
+                with self.assertRaisesRegex(ValueError, 'digest mismatch' if corrupt else 'tag no longer'):
+                    publish_release.main()
+                self.assertFalse(any(call.args[0] == 'release' for call in gh.call_args_list))
+
+    def test_preflight_rejects_non_increasing_published_versions_but_ignores_drafts(self):
+        for previous, draft, accepted in (('v0.3.0', False, True), ('v0.4.0', False, False),
+                ('v0.4.1-alpha.1', False, False), ('v1.0.0', True, True), ('legacy', False, True)):
+            release = {'tag_name': previous, 'draft': draft, 'assets': [{'name': publish_release.NAMES[0]}]}
+            with self.subTest(previous=previous, draft=draft), mock.patch.object(
+                    publish_release.subprocess, 'check_output', return_value=json.dumps([[release]])):
+                if accepted:
+                    publish_release.check_release_state('anisharyal09/aniCe', 'v0.4.0-beta.1', self.commit)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'not greater'):
+                        publish_release.check_release_state('anisharyal09/aniCe', 'v0.4.0-beta.1', self.commit)
+
     def test_requires_ci_before_creating_or_uploading_a_draft(self):
         self.require_ci.side_effect = ValueError('CI did not succeed')
         with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \

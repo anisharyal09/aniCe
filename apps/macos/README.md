@@ -29,6 +29,7 @@ aniCe/
   Assets.xcassets/             aniCe development app icon, based on Android launcher artwork
   App/                         Assembly, navigation, window and companion
   Features/                    Identity, discovery, pairing and session presentation
+    DeskDeck/                  Session model, wire codec, native system access, Shortcuts and device power
     Clipboard/                 Clipboard model, pasteboard observation, manual/auto text sync
     FindDevice/                Peer ring request actions, sound player and notification setup
     KeyboardTrackpad/          Native input model/views, floating panel and Objective-C HID adapter

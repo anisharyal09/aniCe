@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   metadata:
+    environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -59,6 +60,9 @@ jobs:
             commit="$(git rev-parse HEAD)"
           fi
           [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$commit" == "$(git rev-parse HEAD)" ]] || {
+            echo 'Selected workflow source differs from the release tag. Run on the matching tag or update the unreleased tag explicitly.' >&2; exit 1;
+          }
           git merge-base --is-ancestor "$commit" refs/remotes/origin/main
           PYTHONPATH=scripts python3 - "$commit" <<'PY'
           import os, sys
@@ -66,6 +70,41 @@ jobs:
           require_ci(os.environ['GITHUB_REPOSITORY'], sys.argv[1])
           PY
           printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Check signing configuration and release state before builds
+        shell: bash
+        env:
+          HAS_ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+          HAS_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD != '' }}
+          HAS_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS != '' }}
+          HAS_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD != '' }}
+          HAS_MAC_CERTIFICATE: ${{ secrets.MAC_CERT_P12_BASE64 != '' }}
+          HAS_MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD != '' }}
+          MAC_SIGNING_IDENTITY: ${{ vars.MAC_SIGNING_IDENTITY }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+          MAC_UPDATE_PIN_CURRENT: ${{ vars.MAC_UPDATE_PIN_CURRENT }}
+          MAC_UPDATE_PIN_NEXT: ${{ vars.MAC_UPDATE_PIN_NEXT }}
+          RELEASE_COMMIT: ${{ steps.version.outputs.commit }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          PREPARE_DRAFT: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for name in HAS_ANDROID_KEYSTORE HAS_ANDROID_STORE_PASSWORD HAS_ANDROID_KEY_ALIAS HAS_ANDROID_KEY_PASSWORD HAS_MAC_CERTIFICATE HAS_MAC_CERT_PASSWORD; do
+            [[ "${!name}" == true ]] || { echo "Missing release secret: $name" >&2; exit 1; }
+          done
+          : "${MAC_SIGNING_IDENTITY:?Missing Mac signing identity}"
+          for name in ANDROID_CERT_SHA256 MAC_UPDATE_PIN_CURRENT; do
+            [[ "${!name}" =~ ^[0-9a-f]{64}$ ]] || { echo "Invalid certificate pin: $name" >&2; exit 1; }
+          done
+          [[ -z "$MAC_UPDATE_PIN_NEXT" || "$MAC_UPDATE_PIN_NEXT" =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid next Mac pin' >&2; exit 1; }
+          if [[ "$PREPARE_DRAFT" == true ]]; then
+            PYTHONPATH=scripts python3 - "$RELEASE_TAG" "$RELEASE_COMMIT" <<'PY'
+          import os, sys
+          from publish_release import check_release_state
+          check_release_state(os.environ['GITHUB_REPOSITORY'], sys.argv[1], sys.argv[2])
+          PY
+          fi
 
   android:
     needs: metadata
@@ -195,7 +234,7 @@ jobs:
           RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
         run: |
           if [[ ! "$VERIFIED_COMMIT" =~ ^[0-9a-f]{40}$ || "$VERIFIED_COMMIT" != "$RELEASE_COMMIT" ]]; then
-            echo 'Set RELEASE_DEVICE_VERIFIED_COMMIT after the signed device and recovery checks pass for this commit.' >&2
+            echo 'After testing these signed artifacts, set RELEASE_DEVICE_VERIFIED_COMMIT to this commit and rerun only this job to prepare the draft without rebuilding.' >&2
             exit 1
           fi
       - name: Install APK inspection tools

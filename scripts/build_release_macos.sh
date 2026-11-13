@@ -20,9 +20,29 @@ work="$(mktemp -d "$RUNNER_TEMP/anice-signing.XXXXXXXX")"
 keychain="$work/signing.keychain-db"
 password="$(openssl rand -hex 24)"
 cleanup() {
-  sudo security remove-trusted-cert -d "$work/certificate.pem" >/dev/null 2>&1 || true
-  security delete-keychain "$keychain" >/dev/null 2>&1 || true
-  rm -rf "$work"
+  local status=$?
+  trap - EXIT
+  python3 - "$work" "$keychain" <<'CLEANUP' || { [[ "$status" -ne 0 ]] || status=1; }
+import subprocess, sys
+work, keychain = sys.argv[1:]
+failed = False
+for label, command, timeout in (
+    ('certificate trust', ['sudo', '-n', 'security', 'remove-trusted-cert', '-d', work + '/certificate.pem'], 15),
+    ('signing keychain', ['security', 'delete-keychain', keychain], 15),
+    ('temporary signing files', ['rm', '-rf', work], 30),
+):
+    print('Cleaning up ' + label, flush=True)
+    try:
+        subprocess.run(command, check=True, timeout=timeout,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    except (subprocess.SubprocessError, OSError) as error:
+        print('::warning::Cleanup failed for %s: %s' % (label, error), flush=True)
+        # Trust and keychain registration die with the ephemeral runner; private files must be removed.
+        if label == 'temporary signing files':
+            failed = True
+sys.exit(1 if failed else 0)
+CLEANUP
+  exit "$status"
 }
 trap cleanup EXIT
 umask 077
@@ -32,19 +52,28 @@ openssl pkcs12 -in "$work/certificate.p12" -clcerts -nokeys -passin env:MAC_CERT
 pin="$(openssl x509 -in "$work/certificate.pem" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
 [[ "$pin" == "$MAC_UPDATE_PIN_CURRENT" ]] || { echo 'Mac certificate does not match the configured pin' >&2; exit 1; }
 security create-keychain -p "$password" "$keychain"
+security set-keychain-settings -lut 7200 "$keychain"
+security default-keychain -s "$keychain"
 security unlock-keychain -p "$password" "$keychain"
-security import "$work/certificate.p12" -k "$keychain" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
-security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
-security list-keychains -d user -s "$keychain"
+security import "$work/certificate.p12" -k "$keychain" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/xcodebuild
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+keychains=()
+while IFS= read -r entry; do
+  entry="${entry#"${entry%%[![:space:]]*}"}"
+  entry="${entry#\"}"; entry="${entry%\"}"
+  keychains+=("$entry")
+done < <(security list-keychains -d user)
+security list-keychains -d user -s "$keychain" "${keychains[@]}"
 sudo security add-trusted-cert -d -r trustRoot -k "$keychain" "$work/certificate.pem"
 sudo chown "$(id -un):$(id -gn)" "$keychain"
 cd "$root"
 python3 scripts/build-pairing-native.py macos
+security unlock-keychain -p "$password" "$keychain"
 pins="$MAC_UPDATE_PIN_CURRENT"
 if [[ -n "$next_pin" ]]; then pins="$pins,$next_pin"; fi
 xcodebuild -project apps/macos/aniCe.xcodeproj -scheme aniCe -configuration Release \
   -derivedDataPath "$work/DerivedData" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-  CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$MAC_SIGNING_IDENTITY" \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$MAC_SIGNING_IDENTITY" \
   "OTHER_CODE_SIGN_FLAGS=--keychain $keychain" "MARKETING_VERSION=$RELEASE_VERSION" \
   "CURRENT_PROJECT_VERSION=$RELEASE_CODE" "ANICE_UPDATE_PINS=$pins" build
 app="$work/DerivedData/Build/Products/Release/aniCe.app"
@@ -82,7 +111,11 @@ codesign -d --entitlements :- "$app" > "$work/entitlements.plist" 2>/dev/null
 python3 - "$root/apps/macos/aniCe/aniCe.entitlements" "$work/entitlements.plist" <<'PYCODE'
 import plistlib, sys
 with open(sys.argv[1], 'rb') as source, open(sys.argv[2], 'rb') as signed:
-    if plistlib.load(source) != plistlib.load(signed):
+    expected, actual = plistlib.load(source), plistlib.load(signed)
+    if expected != actual:
+        for key in sorted(expected.keys() | actual.keys()):
+            if key not in expected or key not in actual or expected[key] != actual[key]:
+                print('%s: expected %r, signed %r' % (key, expected.get(key), actual.get(key)), file=sys.stderr)
         raise SystemExit('Signed Mac entitlements differ from the project entitlements')
 PYCODE
 [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Contents/Info.plist")" == 'io.github.anisharyal09.anice' ]]

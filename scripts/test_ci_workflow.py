@@ -468,6 +468,118 @@ PY
                         self.assertEqual(command[command.index('--serial') + 1], serial)
                     self.assertFalse((root / 'injected').exists())
 
+    def test_mac_release_rejects_injected_or_changed_entitlements(self):
+        script = (ROOT / 'scripts/build_release_macos.sh').read_text()
+        self.assertIn('CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO', script)
+        code = script.split("<<'PYCODE'\n", 1)[1].split('\nPYCODE', 1)[0]
+        import plistlib
+        expected = plistlib.loads((ROOT / 'apps/macos/aniCe/aniCe.entitlements').read_bytes())
+        with tempfile.TemporaryDirectory() as directory:
+            source, signed = Path(directory) / 'source.plist', Path(directory) / 'signed.plist'
+            source.write_bytes(plistlib.dumps(expected))
+            cases = [expected, {**expected, 'com.apple.security.get-task-allow': True},
+                     {**expected, 'com.apple.security.network.client': False}, {}]
+            for index, actual in enumerate(cases):
+                signed.write_bytes(plistlib.dumps(actual))
+                result = subprocess.run([sys.executable, '-c', code, str(source), str(signed)],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0 if index == 0 else 1, result.stderr)
+                if index:
+                    self.assertIn('expected', result.stderr)
+                    self.assertIn('signed', result.stderr)
+
+    def test_mac_release_cleanup_continues_after_timeout_and_preserves_failure(self):
+        from unittest.mock import patch
+        script = (ROOT / 'scripts/build_release_macos.sh').read_text()
+        code = script.split("<<'CLEANUP'", 1)[1].split('\n', 1)[1].split('\nCLEANUP', 1)[0]
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append((command, kwargs))
+            if len(calls) == 1:
+                raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+            if len(calls) == 2:
+                raise subprocess.CalledProcessError(1, command)
+
+        with patch.object(sys, 'argv', ['cleanup', '/tmp/isolated-signing', '/tmp/keychain']), \
+                patch('subprocess.run', side_effect=run):
+            with self.assertRaises(SystemExit) as raised:
+                exec(compile(code, '<release-cleanup>', 'exec'), {})
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0][0][:2], ['sudo', '-n'])
+        self.assertEqual([kwargs['timeout'] for _, kwargs in calls], [15, 15, 30])
+        self.assertEqual(calls[-1][0], ['rm', '-rf', '/tmp/isolated-signing'])
+        with patch.object(sys, 'argv', ['cleanup', '/tmp/isolated-signing', '/tmp/keychain']), \
+                patch('subprocess.run', side_effect=OSError('injected cleanup failure')):
+            with self.assertRaises(SystemExit) as raised:
+                exec(compile(code, '<release-cleanup>', 'exec'), {})
+        self.assertEqual(raised.exception.code, 1)
+        cleanup = script[script.index('cleanup() {'):script.index('trap cleanup EXIT')]
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / 'python3'
+            executable.write_text('#!/bin/sh\nexit 1\n')
+            executable.chmod(0o755)
+            for original, expected in ((0, 1), (7, 7)):
+                result = subprocess.run(['/bin/bash', '-c', cleanup + '\ntrap cleanup EXIT\nexit ' + str(original)],
+                                        env={**os.environ, 'PATH': directory}, timeout=5)
+                self.assertEqual(result.returncode, expected)
+
+    def test_release_source_selection_rejects_mismatched_tag_before_ci_or_builds(self):
+        step = next(s for s in workflow_documents()['release.yml']['jobs']['metadata']['steps']
+                    if s.get('id') == 'version')
+        source_check = step['run'].split('PYTHONPATH=scripts', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            git = Path(directory) / 'git'
+            git.write_text('#!/bin/sh\nif [ "$1" = rev-parse ]; then\n'
+                           '  if [ "$2" = HEAD ]; then echo "$TEST_HEAD"; else echo "$TEST_TAG"; fi\nfi\n')
+            git.chmod(0o755)
+            for event, dry_run, head, tag, accepted in (
+                    ('push', '', 'a' * 40, 'a' * 40, True),
+                    ('push', '', 'a' * 40, 'b' * 40, False),
+                    ('workflow_dispatch', 'false', 'a' * 40, 'b' * 40, False),
+                    ('workflow_dispatch', 'false', 'a' * 40, 'a' * 40, True),
+                    ('workflow_dispatch', 'true', 'a' * 40, 'b' * 40, True)):
+                with self.subTest(event=event, dry_run=dry_run, tag=tag):
+                    result = subprocess.run(['/bin/bash', '-c', source_check], cwd=ROOT,
+                        env={**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH'],
+                             'RELEASE_TAG': 'v0.9.0-beta.1', 'EVENT_NAME': event, 'DRY_RUN': dry_run,
+                             'TEST_HEAD': head, 'TEST_TAG': tag, 'GITHUB_OUTPUT': directory + '/output'},
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+    def test_release_preflight_rejects_configuration_before_builds_without_device_gate(self):
+        job = workflow_documents()['release.yml']['jobs']['metadata']
+        self.assertEqual(job['environment'], 'release')
+        step = next(s for s in job['steps'] if s.get('name', '').startswith('Check signing configuration'))
+        self.assertNotIn('VERIFIED_COMMIT', step['env'])
+        self.assertNotIn('VERIFIED_COMMIT', step['run'])
+        values = {key: 'true' for key in step['env'] if key.startswith('HAS_')}
+        values.update(MAC_SIGNING_IDENTITY='test signer', ANDROID_CERT_SHA256='a' * 64,
+                      MAC_UPDATE_PIN_CURRENT='b' * 64, MAC_UPDATE_PIN_NEXT='',
+                      RELEASE_COMMIT='c' * 40,
+                      RELEASE_TAG='v0.9.0-beta.1', PREPARE_DRAFT='true')
+        with tempfile.TemporaryDirectory() as directory:
+            python = Path(directory) / 'python3'
+            python.write_text('#!/bin/sh\ncat >/dev/null\nprintf checked > "$PREFLIGHT_MARKER"\n')
+            python.chmod(0o755)
+            marker_path = Path(directory) / 'checked'
+            cases = [({}, True, True), ({'PREPARE_DRAFT': 'false'}, True, False),
+                     ({'MAC_UPDATE_PIN_CURRENT': 'bad'}, False, False),
+                     ({'ANDROID_CERT_SHA256': ''}, False, False),
+                     ({'MAC_UPDATE_PIN_NEXT': 'bad'}, False, False),
+                     ({'MAC_SIGNING_IDENTITY': ''}, False, False)]
+            cases.extend(({name: 'false'}, False, False) for name in values if name.startswith('HAS_'))
+            for changes, accepted, called in cases:
+                with self.subTest(changes=changes):
+                    marker_path.unlink(missing_ok=True)
+                    result = subprocess.run(['/bin/bash', '-c', step['run']],
+                        env={**os.environ, **values, **changes, 'PREFLIGHT_MARKER': str(marker_path),
+                             'PATH': directory + os.pathsep + os.environ['PATH']},
+                        capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                    self.assertEqual(marker_path.exists(), called)
+
     def test_release_and_ci_share_arm64_toolchain_and_release_jobs_are_bounded(self):
         documents = workflow_documents()
         release = documents['release.yml']['jobs']
@@ -497,6 +609,21 @@ PY
         self.assertLess(names.index('Require device verification for this commit'),
                         names.index('Prepare and verify release draft'))
         self.assertNotIn('--draft=false', '\n'.join(step_runs(draft)))
+
+    def test_release_device_gate_allows_only_the_tested_commit_at_publication(self):
+        draft = workflow_documents()['release.yml']['jobs']['publish']
+        gate = next(step for step in draft['steps'] if step.get('name') == 'Require device verification for this commit')
+        for verified, accepted in (('a' * 40, True), ('', False), ('b' * 40, False), ('not-a-commit', False)):
+            with self.subTest(verified=verified):
+                result = subprocess.run(
+                    ['bash', '-e', '-o', 'pipefail', '-c', gate['run']],
+                    cwd=ROOT,
+                    env=os.environ | {'VERIFIED_COMMIT': verified, 'RELEASE_COMMIT': 'a' * 40},
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+                if not accepted:
+                    self.assertIn('rerun only this job', result.stderr)
 
     def test_security_workflow_policies(self):
         document = workflow_documents()["security.yml"]

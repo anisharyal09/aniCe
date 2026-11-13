@@ -41,7 +41,7 @@ def digest(path):
 
 
 def unexpected_assets(release):
-    return sorted(str(item.get("name")) for item in release.get("assets", [])
+    return sorted(str(item.get("name")) if isinstance(item, dict) else repr(item) for item in release.get("assets", [])
                   if not isinstance(item, dict) or item.get("name") not in NAMES)
 
 
@@ -51,6 +51,32 @@ def apk_code(path, aapt):
     if not match or match.group(1) != "io.github.anisharyal09.anice":
         raise ValueError("APK package metadata is invalid")
     return int(match.group(2)), match.group(3)
+
+
+def check_release_state(repository, tag, commit):
+    """Reject conflicting release state before builds and recheck before mutation."""
+    _, code, prerelease = parse_tag(tag)
+    raw = subprocess.check_output(["gh", "api", "--paginate", "--slurp", f"repos/{repository}/releases?per_page=100"], text=True)
+    releases = [release for page in json.loads(raw) for release in page]
+    marker = f"<!-- anice-source:{commit} -->"
+    existing = next((item for item in releases if item.get("tag_name") == tag), None)
+    if existing and (not existing.get("draft") or marker not in (existing.get("body") or "") or bool(existing.get("prerelease")) != prerelease):
+        raise ValueError("Release already exists or draft does not match this source commit")
+    if existing:
+        extra = unexpected_assets(existing)
+        if extra:
+            raise ValueError("Draft contains unexpected assets: " + ", ".join(extra))
+    for release in releases:
+        if release.get("draft") or not any(isinstance(asset, dict) and asset.get("name") == NAMES[0]
+                                           for asset in release.get("assets", [])):
+            continue
+        try:
+            previous_code = parse_tag(release.get("tag_name", ""))[1]
+        except ValueError:
+            continue  # Nonstandard historical tags still receive the APK check before mutation.
+        if previous_code >= code:
+            raise ValueError("Candidate release version is not greater than a published Android release")
+    return releases, existing, marker
 
 
 def main():
@@ -74,12 +100,7 @@ def main():
             raise ValueError(f"Missing or oversized release asset: {path.name}")
     if apk_code(files[0], aapt) != (code, version):
         raise ValueError("Candidate APK does not match its tag")
-    raw = subprocess.check_output(["gh", "api", "--paginate", "--slurp", f"repos/{repository}/releases?per_page=100"], text=True)
-    releases = [release for page in json.loads(raw) for release in page]
-    marker = f"<!-- anice-source:{commit} -->"
-    existing = next((item for item in releases if item.get("tag_name") == tag), None)
-    if existing and (not existing.get("draft") or marker not in (existing.get("body") or "") or bool(existing.get("prerelease")) != prerelease):
-        raise ValueError("Release already exists or draft does not match this source commit")
+    releases, existing, marker = check_release_state(repository, tag, commit)
     with tempfile.TemporaryDirectory(prefix="anice-release-check-") as temporary:
         temp = pathlib.Path(temporary)
         for release in releases:

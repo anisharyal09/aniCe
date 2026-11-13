@@ -34,7 +34,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
-- Clarify the Android–Mac continuity introduction, Now Playing controls/background presentation and actionable notification mirroring; preserve setup, privacy, recovery and platform limitations in linked guides.
+- Restore grouped README features, the native technical foundation and repository overview; clarify Now Playing, actionable notifications and the maintainer-beta-to-public-release sequence while retaining setup, privacy, recovery and platform limits.
 - Require successful CI for the exact main commit before release signing, verify both draft assets, and leave final publication to the maintainer. Extend ownership review to release scripts and Android update code.
 - Consolidate installation and update guidance, correct architecture/security claims, remove public maintainer/UX audit notes, and organize changelogs under Added, Changed and Fixed while retaining development history.
 - **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
@@ -72,6 +72,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Disable injected debugger entitlements in signed Mac releases and bound signing cleanup so validation failures exit promptly.
+- Check signing configuration, device-verification source and conflicting release state before signed builds; retain final publication checks.
 - **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).
 - Stop excluding clearable incoming-call alerts with explicit Answer/Decline controls.
 - Recognize supported ongoing system call notifications, deliver live mirrors as active alerts, and send source-app icons only over LAN.

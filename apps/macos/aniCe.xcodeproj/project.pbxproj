@@ -168,6 +168,10 @@
 		B10100000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000012; };
 		B10100000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000013; };
 		B10100000000000000000014 /* aniCe/Features/Transfer/EdgeDropShelf.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10200000000000000000014; };
+		D51000000000000000000001 /* MacDeskDeckWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000002; };
+		D51000000000000000000003 /* MacDeskDeckNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000004; };
+		D51000000000000000000005 /* MacDeskDeckShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000006; };
+		D51000000000000000000007 /* MacDevicePower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000008; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -343,13 +347,17 @@
 		D40000000000000000000008 /* MacPhoneInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PhoneInput/MacPhoneInputView.swift"; sourceTree = SOURCE_ROOT; };
 		D50000000000000000000002 /* MacDeskDeck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeck.swift"; sourceTree = SOURCE_ROOT; };
 		D60000000000000000000002 /* DeskDeckWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/DeskDeckWireTests.swift"; sourceTree = SOURCE_ROOT; };
-		D50000000000000000000003 /* DeskDeck */ = {isa = PBXGroup; children = (D50000000000000000000002,); path = DeskDeck; sourceTree = "<group>"; };
+		D50000000000000000000003 /* DeskDeck */ = {isa = PBXGroup; children = (D51000000000000000000002, D51000000000000000000004, D51000000000000000000006, D51000000000000000000008, D50000000000000000000002,); path = DeskDeck; sourceTree = "<group>"; };
 		B30200000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Sms/MacSmsReceiving.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000B /* aniCe/Features/Transfer/TransferStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferStorage.swift"; sourceTree = SOURCE_ROOT; };
 		B1020000000000000000000C /* aniCe/Features/Transfer/TransferRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferRecovery.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000012 /* aniCe/Features/Transfer/TransferSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferSender.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000013 /* aniCe/Features/Transfer/TransferReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/TransferReceiver.swift"; sourceTree = SOURCE_ROOT; };
 		B10200000000000000000014 /* aniCe/Features/Transfer/EdgeDropShelf.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/Transfer/EdgeDropShelf.swift"; sourceTree = SOURCE_ROOT; };
+		D51000000000000000000002 /* MacDeskDeckWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeckWire.swift"; sourceTree = SOURCE_ROOT; };
+		D51000000000000000000004 /* MacDeskDeckNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeckNative.swift"; sourceTree = SOURCE_ROOT; };
+		D51000000000000000000006 /* MacDeskDeckShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeckShortcuts.swift"; sourceTree = SOURCE_ROOT; };
+		D51000000000000000000008 /* MacDevicePower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDevicePower.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -902,6 +910,10 @@
 				D40000000000000000000002 /* MacPhoneInputModel.swift in Sources */,
 				D40000000000000000000007 /* MacPhoneInputView.swift in Sources */,
 				D50000000000000000000001 /* MacDeskDeck.swift in Sources */,
+				D51000000000000000000007 /* MacDevicePower.swift in Sources */,
+				D51000000000000000000005 /* MacDeskDeckShortcuts.swift in Sources */,
+				D51000000000000000000003 /* MacDeskDeckNative.swift in Sources */,
+				D51000000000000000000001 /* MacDeskDeckWire.swift in Sources */,
                 D70000000000000000000001 /* MacDndSync.swift in Sources */,
 				B30100000000000000000009 /* aniCe/Features/Sms/MacSmsReceiving.swift in Sources */,
 			);
