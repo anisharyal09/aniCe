@@ -15,7 +15,9 @@ struct MacUpdateRecord: Codable, Equatable {
   var phase: Phase
 
   static let directory: URL = {
-    #if ANICE_PREVIEW
+    #if ANICE_TRANSFER_PREVIEW
+    let path = "Library/Application Support/aniCe Transfer Preview/Update"
+    #elseif ANICE_PREVIEW
     let path = "Library/Application Support/aniCe Preview/Update"
     #else
     let path = "Library/Application Support/aniCe/Update"

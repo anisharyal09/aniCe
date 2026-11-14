@@ -10,6 +10,45 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  @MainActor func testPackagedAppIconIsDarkAndDockKeepsSystemVariants() throws {
+    let packagedURL = try XCTUnwrap(Bundle.main.url(forResource: "AppIcon", withExtension: "icns"))
+    let packaged = try XCTUnwrap(NSImage(contentsOf: packagedURL))
+    let dock = try XCTUnwrap(NSImage(named: "DockIcon"))
+    let appearances: [NSAppearance.Name] = [.aqua, .darkAqua]
+    XCTAssertEqual(appearances.count, 2)
+
+    func background(_ image: NSImage, appearance: NSAppearance.Name) throws -> NSColor {
+      let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 128, pixelsHigh: 128,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0))
+      let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+      let drawingAppearance = try XCTUnwrap(NSAppearance(named: appearance))
+      drawingAppearance.performAsCurrentDrawingAppearance {
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = context
+        image.draw(in: NSRect(x: 0, y: 0, width: 128, height: 128))
+      }
+      return try XCTUnwrap(bitmap.colorAt(x: 64, y: 16)?.usingColorSpace(.sRGB))
+    }
+
+    let dark = try background(dock, appearance: .darkAqua)
+    for appearance in appearances {
+      let color = try background(packaged, appearance: appearance)
+      XCTAssertGreaterThan(color.alphaComponent, 0.95)
+      XCTAssertLessThan(max(color.redComponent, color.greenComponent, color.blueComponent), 0.22,
+        "The packaged Finder icon uses the near-black Dock tile, not the gray tile")
+      XCTAssertEqual(color.redComponent, dark.redComponent, accuracy: 0.01)
+      XCTAssertEqual(color.greenComponent, dark.greenComponent, accuracy: 0.01)
+      XCTAssertEqual(color.blueComponent, dark.blueComponent, accuracy: 0.01)
+    }
+    let light = try background(dock, appearance: .aqua)
+    XCTAssertGreaterThan(min(light.redComponent, light.greenComponent, light.blueComponent), 0.8)
+    XCTAssertLessThan(max(dark.redComponent, dark.greenComponent, dark.blueComponent), 0.3)
+    XCTAssertGreaterThan(light.alphaComponent, 0.95)
+    XCTAssertGreaterThan(dark.alphaComponent, 0.95)
+  }
+
   func testIssueReportEncodesOnlyAppAndOSVersions() throws {
     let cases = [
       ("0.9.0-beta.1", "macOS 27.1"),
@@ -337,6 +376,41 @@ extension SessionTests {
 
 private final class FlippedSettingsDocument: NSView {
   override var isFlipped: Bool { true }
+}
+
+@MainActor final class MainWindowSizingTests: XCTestCase {
+  func testRoomierWindowAndExactSidebarIconDefaults() {
+    XCTAssertEqual(MainWindowSizing.defaultSize, CGSize(width: 960, height: 640))
+    XCTAssertEqual(MainWindowSizing.sidebarIconSize, 27)
+    XCTAssertEqual(MainWindowSizing.sidebarBreathingRoom, 12)
+    XCTAssertEqual(MainWindowSizing.sidebarMaximumWidth, 250)
+  }
+
+  func testCompactSidebarFitsAllLabelsAndBrandingAtSupportedTextSizes() {
+    let scales = [0.8, 1.0, 1.2]
+    XCTAssertEqual(scales.count, 3)
+    XCTAssertEqual(AppDestination.primary.count, 6)
+    for scale in scales {
+      let minimum = MainWindowSizing.sidebarMinimumWidth(fontScale: scale)
+      let preferred = minimum + MainWindowSizing.sidebarBreathingRoom
+      let insets = 4 * MainWindowSizing.sidebarInset
+      let wordmark = NSAttributedString(string: "aniCe", attributes: [
+        .font: NSFont.systemFont(ofSize: 21 * scale, weight: .semibold)
+      ]).size().width
+      XCTAssertGreaterThanOrEqual(minimum, insets + 27 + 8 + wordmark)
+      for destination in AppDestination.primary {
+        for weight in [NSFont.Weight.regular, .medium] {
+          let label = NSAttributedString(string: destination.rawValue, attributes: [
+            .font: NSFont.systemFont(ofSize: 13 * scale, weight: weight)
+          ]).size().width
+          XCTAssertGreaterThanOrEqual(minimum, insets + 18 + 12 + label, destination.rawValue)
+        }
+      }
+      XCTAssertEqual(minimum.truncatingRemainder(dividingBy: 4), 0)
+      XCTAssertLessThan(preferred, 210, "The initial sidebar stays narrower than the previous default")
+      XCTAssertLessThan(preferred, MainWindowSizing.sidebarMaximumWidth, "Native widening remains available")
+    }
+  }
 }
 
 final class BetaUpdatePreferenceTests: XCTestCase {

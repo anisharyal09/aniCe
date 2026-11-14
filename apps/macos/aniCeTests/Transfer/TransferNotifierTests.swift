@@ -43,10 +43,11 @@ final class TransferNotifierTests: XCTestCase {
 
     let downloadFolder = tempDir.appendingPathComponent("Downloads")
     let completedContent = TransferNotificationContent.completed(fileCount: 2, totalBytes: batch.totalBytes, folder: downloadFolder)
-    XCTAssertEqual(completedContent.title, "Transfer complete")
+    XCTAssertEqual(completedContent.title, "Files received")
     XCTAssertTrue(completedContent.body.contains("2 files"))
     XCTAssertTrue(completedContent.body.contains("saved to Downloads."))
     XCTAssertEqual(completedContent.categoryIdentifier, MacTransferNotifier.Category.result)
+    XCTAssertEqual(completedContent.userInfo["receivedFolder"], downloadFolder.absoluteString)
 
     let failedContent = TransferNotificationContent.failed(reason: "Hash mismatch")
     XCTAssertEqual(failedContent.title, "Transfer failed")
@@ -185,7 +186,7 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(pausedSender.actions.last).options.contains(.destructive))
   }
 
-  func testPauseAndTerminalTransitionsNeverPostAlertsEvenWhenOffersAreEnabled() {
+  func testPauseFailureAndUnverifiedCompletionNeverPostAlerts() {
     let model = MacTransferModel()
     XCTAssertFalse(model.notificationPreferences.enabled)
     model.notificationPreferences.enabled = true
@@ -201,6 +202,118 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertFalse(center.requestedAuthorization)
     XCTAssertTrue(center.added.isEmpty)
     XCTAssertEqual(model.state, .idle)
+  }
+
+  func testBackgroundReceiveWaitsForPermissionAndKeepsItsOriginalFolder() async throws {
+    let folder = tempDir.appendingPathComponent("Received")
+    let nextFolder = tempDir.appendingPathComponent("Next batch")
+    let model = completedReceive(folder: folder)
+    let center = SpyNotificationCenter()
+    center.holdAuthorization = true
+    var revealed: [URL] = []
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { false }, revealReceivedFolder: { revealed.append($0) })
+    notifier.handle(.completed(fileCount: 1, totalBytes: 1024))
+    notifier.handle(.completed(fileCount: 1, totalBytes: 1024))
+    XCTAssertTrue(center.requestedAuthorization)
+    XCTAssertEqual(center.pendingAuthorization.count, 1, "A repeated completion cannot queue another notice")
+    XCTAssertTrue(center.added.isEmpty, "Do not publish before notification permission resolves")
+
+    model.receiveFolder = nextFolder
+    center.resolveAuthorization(granted: true)
+    await waitForDelivery(center)
+    let notice = try XCTUnwrap(center.added.first)
+    XCTAssertEqual(center.added.count, 1)
+    XCTAssertEqual(notice.content.title, "Files received")
+    XCTAssertEqual(notice.content.userInfo["receivedFolder"] as? String, folder.absoluteString)
+    notifier.handleAction(MacTransferNotifier.Action.showInFinder, identifier: notice.identifier,
+      receivedFolder: notice.content.userInfo["receivedFolder"] as? String)
+    XCTAssertEqual(revealed, [folder], "An old result must not open the next batch's folder")
+    notifier.handleAction(MacTransferNotifier.Action.showInFinder, identifier: notice.identifier,
+      receivedFolder: "https://example.invalid")
+    XCTAssertEqual(revealed, [folder])
+  }
+
+  func testCompletionIsDroppedWhenTheAppReturnsWhilePermissionResolves() async {
+    let model = completedReceive(folder: tempDir)
+    let center = SpyNotificationCenter()
+    center.holdAuthorization = true
+    var active = false
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { active })
+    notifier.handle(.completed(fileCount: 1, totalBytes: 1024))
+    XCTAssertEqual(center.pendingAuthorization.count, 1)
+    active = true
+    center.resolveAuthorization(granted: true)
+    await Task.yield()
+    XCTAssertTrue(center.added.isEmpty)
+  }
+
+  func testReceiveNoticeRespectsForegroundOptOutAndDeniedPermission() async {
+    let cases = [(false, false, true), (true, true, true), (true, false, false)]
+    XCTAssertEqual(cases.count, 3)
+    for (enabled, active, granted) in cases {
+      let model = completedReceive(folder: tempDir)
+      model.notificationPreferences.enabled = enabled
+      let center = SpyNotificationCenter()
+      center.authorizationGranted = granted
+      let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+        applicationIsActive: { active })
+      notifier.handle(.completed(fileCount: 1, totalBytes: 1024))
+      await Task.yield()
+      XCTAssertTrue(center.added.isEmpty)
+      XCTAssertEqual(center.requestedAuthorization, enabled && !active)
+    }
+  }
+
+  func testTurningNotificationsOffCancelsACompletionWaitingForPermission() async {
+    let model = completedReceive(folder: tempDir)
+    let center = SpyNotificationCenter()
+    center.holdAuthorization = true
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { false })
+    notifier.handle(.completed(fileCount: 1, totalBytes: 1024))
+    XCTAssertEqual(center.pendingAuthorization.count, 1)
+    model.notificationPreferences.enabled = false
+    model.notificationPreferences.enabled = true
+    center.resolveAuthorization(granted: true)
+    await Task.yield()
+    XCTAssertTrue(center.added.isEmpty)
+  }
+
+  func testExpiredOfferCannotPostAfterDelayedPermissionApproval() async {
+    let model = MacTransferModel()
+    model.notificationPreferences.enabled = true
+    let batch = makeBatch(count: 1)
+    model.state = .incomingOffer(batch: batch)
+    let center = SpyNotificationCenter()
+    center.holdAuthorization = true
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { false })
+    notifier.handle(.incomingOffer(batch))
+    XCTAssertEqual(center.pendingAuthorization.count, 1)
+    model.state = .idle
+    center.resolveAuthorization(granted: true)
+    await Task.yield()
+    XCTAssertTrue(center.added.isEmpty)
+  }
+
+  private func completedReceive(folder: URL) -> MacTransferModel {
+    let model = MacTransferModel()
+    model.notificationPreferences.enabled = true
+    model.receiving = true
+    model.receiveFolder = folder
+    model.publishedURLs = [folder.appendingPathComponent("received.bin")]
+    model.state = .completed(batchId: UUID(), fileCount: 1, totalBytes: 1024)
+    return model
+  }
+
+  private func waitForDelivery(_ center: SpyNotificationCenter) async {
+    for _ in 0..<50 {
+      if !center.added.isEmpty { return }
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    XCTFail("Receive notification was not delivered after approval")
   }
 
   func testPausedActionsAreIgnoredUnlessTheBatchIsStillPaused() {
@@ -260,13 +373,23 @@ final class TransferNotifierTests: XCTestCase {
 
 private final class SpyNotificationCenter: TransferNotificationCenter, @unchecked Sendable {
   var requestedAuthorization = false
+  var authorizationGranted = true
+  var holdAuthorization = false
+  var pendingAuthorization: [@Sendable (Bool, Error?) -> Void] = []
   var added: [UNNotificationRequest] = []
   var removedDelivered: [String] = []
   var removedPending: [String] = []
 
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void) {
     requestedAuthorization = true
-    completionHandler(true, nil)
+    if holdAuthorization { pendingAuthorization.append(completionHandler) }
+    else { completionHandler(authorizationGranted, nil) }
+  }
+
+  func resolveAuthorization(granted: Bool) {
+    let pending = pendingAuthorization
+    pendingAuthorization.removeAll()
+    for completion in pending { completion(granted, nil) }
   }
 
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?) {

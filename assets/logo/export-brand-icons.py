@@ -62,8 +62,7 @@ def export():
             name = "StatusBarMark" + ("" if scale == 1 else f"@{scale}x") + ".png"
             white_glyph(mask, pixels, status_set / name)
 
-        # AppIcon fills its native rounded-square tile; the Dock tile is inset so
-        # its visible background matches neighboring Dock icons without shrinking the mark.
+        # Packaged icons reuse the inset dark Dock tile without shrinking the mark.
         app_mask = temp / "mac-app-rounded-mask.png"
         magick("-size", "1024x1024", "xc:black", "-fill", "white",
                "-draw", "roundrectangle 0,0 1023,1023 160,160", "-alpha", "off", app_mask)
@@ -73,12 +72,6 @@ def export():
         android_mask = temp / "android-launcher-mask.png"
         magick("-size", "1024x1024", "xc:black", "-fill", "white",
                "-draw", "roundrectangle 0,0 1023,1023 160,160", "-alpha", "off", android_mask)
-        android_preview_rim = temp / "android-dark-preview-rim.png"
-        magick("-size", "1024x1024", "xc:none",
-               "-fill", "none", "-stroke", "rgba(245,247,248,0.22)",
-               "-strokewidth", "10",
-               "-draw", "roundrectangle 9,9 1014,1014 151,151",
-               android_preview_rim)
         mac_mark = temp / "mac-mark-standard-size.png"
         magick(master, "-resize", "78%", "-gravity", "center", "-background", "none",
                "-extent", "1024x1024", mac_mark)
@@ -94,19 +87,13 @@ def export():
                "-stroke", "none", "-fill", "rgba(245,247,248,0.22)",
                "-draw", "roundrectangle 220,76 803,84 4,4 roundrectangle 220,939 803,947 4,4",
                dark_dock_rim)
-        magick(dark_dock_gradient, "-depth", "8", ANDROID_DARK_BACKGROUND)
-        for appearance, color in (("light", "#F1F0EC"), ("dark", "#454C4F")):
-            tile = temp / f"mac-app-icon-{appearance}.png"
+        for appearance in ("light", "dark"):
             app_icon = temp / f"mac-app-icon-{appearance}-rounded.png"
-            magick("-size", "1024x1024", f"xc:{color}", mac_mark,
-                   "-compose", "Over", "-composite", tile)
-            magick(tile, app_mask, "-compose", "CopyOpacity", "-composite", app_icon)
             if appearance == "light":
-                app_icons = MAC / "AppIcon.appiconset"
-                app_catalog = json.loads((app_icons / "Contents.json").read_text())
-                for entry in app_catalog["images"]:
-                    pixels = round(int(entry["size"].split("x")[0]) * int(entry["scale"][0]))
-                    magick(app_icon, "-resize", f"{pixels}x{pixels}", app_icons / entry["filename"])
+                tile = temp / "mac-app-icon-light.png"
+                magick("-size", "1024x1024", "xc:#F1F0EC", mac_mark,
+                       "-compose", "Over", "-composite", tile)
+                magick(tile, app_mask, "-compose", "CopyOpacity", "-composite", app_icon)
 
             dock_background = temp / f"mac-dock-background-{appearance}.png"
             dock_icon = temp / f"mac-dock-icon-{appearance}.png"
@@ -117,14 +104,24 @@ def export():
                 magick(dock_background, dark_dock_rim,
                        "-compose", "Over", "-composite", highlighted_background)
                 dock_background = highlighted_background
+                # Android applies its own mask, so crop Dock padding and fill transparent corners.
+                magick(dock_background, "-crop", "880x880+72+72", "+repage",
+                       "-background", "#171A1C", "-alpha", "remove", "-alpha", "off",
+                       "-resize", "1024x1024", "-depth", "8", ANDROID_DARK_BACKGROUND)
             else:
-                magick("-size", "1024x1024", f"xc:{color}", dock_mask,
+                magick("-size", "1024x1024", "xc:#F1F0EC", dock_mask,
                        "-compose", "CopyOpacity", "-composite", dock_background)
             magick(dock_background, mac_mark, "-compose", "Over", "-composite", dock_icon)
             dock_set = MAC / "DockIcon.imageset"
             name = f"DockIcon-{appearance}.png"
             if appearance == "dark":
                 magick(dock_icon, "-depth", "8", dock_set / name)
+                app_icon = dock_set / name
+                app_icons = MAC / "AppIcon.appiconset"
+                app_catalog = json.loads((app_icons / "Contents.json").read_text())
+                for entry in app_catalog["images"]:
+                    pixels = round(int(entry["size"].split("x")[0]) * int(entry["scale"][0]))
+                    magick(app_icon, "-resize", f"{pixels}x{pixels}", app_icons / entry["filename"])
             else:
                 magick(dock_icon, dock_set / name)
 
@@ -158,11 +155,6 @@ def export():
                        "-compose", "Over", "-composite", adaptive)
             # Preview with the same restrained mask; Android itself chooses the device mask.
             magick(adaptive, android_mask, "-compose", "CopyOpacity", "-composite", rounded)
-            if appearance == "dark":
-                rounded_with_rim = temp / "android-icon-dark-with-rim.png"
-                magick(rounded, android_preview_rim,
-                       "-compose", "Over", "-composite", rounded_with_rim)
-                rounded = rounded_with_rim
             magick("-size", "1224x1224", "xc:#858B92", rounded,
                    "-gravity", "center", "-compose", "Over", "-composite",
                    REVIEW / f"android-app-icon-{appearance}-review.png")

@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func handleNotificationAction(category: String, action: String, identifier: String, userText: String = "",
-        mirrorEpoch: String? = nil, mirrorSequence: Int64? = nil) {
+        mirrorEpoch: String? = nil, mirrorSequence: Int64? = nil, receivedFolder: String? = nil) {
         if category == MacFindDeviceNotifier.category {
             findNotifier?.handleAction(action, identifier: identifier)
         } else if category == MacSmsNotifier.category {
@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 userText: userText, sourceEpoch: mirrorEpoch, sourceSequence: mirrorSequence)
         } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result ||
             category == MacTransferNotifier.Category.paused || category == MacTransferNotifier.Category.pausedSender {
-            notifier?.handleAction(action, identifier: identifier)
+            notifier?.handleAction(action, identifier: identifier, receivedFolder: receivedFolder)
         }
     }
 
@@ -88,10 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let userInfo = response.notification.request.content.userInfo
         let mirrorEpoch = userInfo["anice.mirror.epoch"] as? String
         let mirrorSequence = (userInfo["anice.mirror.sequence"] as? NSNumber)?.int64Value
+        let receivedFolder = userInfo["receivedFolder"] as? String
         Task { @MainActor [weak self] in
             defer { completionHandler() }
             self?.handleNotificationAction(category: category, action: action, identifier: identifier,
-                userText: userText, mirrorEpoch: mirrorEpoch, mirrorSequence: mirrorSequence)
+                userText: userText, mirrorEpoch: mirrorEpoch, mirrorSequence: mirrorSequence,
+                receivedFolder: receivedFolder)
         }
     }
 
@@ -148,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             for _ in 0..<10 {
                 guard let self else { return }
                 if let window = NSApp.windows.first(where: {
-                    $0.identifier?.rawValue == "main" || $0.title == "aniCe"
+                    $0.identifier?.rawValue == "main" || $0.title == "aniCe" || $0.title == MacAppStorage.applicationName
                 }) {
                     if window.isMiniaturized { window.deminiaturize(nil) }
                     window.makeKeyAndOrderFront(nil)
@@ -164,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var hasVisibleMainWindow: Bool {
         NSApp.windows.contains {
-            $0.isVisible && ($0.identifier?.rawValue == "main" || $0.title == "aniCe")
+            $0.isVisible && ($0.identifier?.rawValue == "main" || $0.title == "aniCe" || $0.title == MacAppStorage.applicationName)
         }
     }
 }

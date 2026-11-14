@@ -43,6 +43,7 @@ enum EdgeDropEdge: String, CaseIterable, Identifiable {
 enum EdgeDropGeometry {
   static let edgeBand: CGFloat = 48
   static let shelfSize = NSSize(width: 360, height: 152)
+  static let feedbackSize = NSSize(width: 320, height: 112)
 
   static func qualifies(
     point: NSPoint, edge: EdgeDropEdge, screenFrame: NSRect, visibleFrame: NSRect,
@@ -61,10 +62,11 @@ enum EdgeDropGeometry {
   }
 
   static func shelfFrame(
-    edge: EdgeDropEdge, point: NSPoint, screenFrame: NSRect, visibleFrame: NSRect
+    edge: EdgeDropEdge, point: NSPoint, screenFrame: NSRect, visibleFrame: NSRect,
+    size: NSSize = shelfSize
   ) -> NSRect {
-    let width = min(shelfSize.width, visibleFrame.width)
-    let height = min(shelfSize.height, visibleFrame.height)
+    let width = min(size.width, visibleFrame.width)
+    let height = min(size.height, visibleFrame.height)
     switch edge {
     case .right:
       return NSRect(x: screenFrame.maxX - width,
@@ -100,6 +102,7 @@ enum EdgeDropGeometry {
   private(set) var draggedFileCount = 0
   private(set) var hasFileURLs = false
   private(set) var hasPromisedFiles = false
+  private(set) var sentFeedback: TransferBatch?
 
   @ObservationIgnored private var started = false
   @ObservationIgnored private var sleeping = false
@@ -116,6 +119,8 @@ enum EdgeDropGeometry {
   @ObservationIgnored private var selectionHasUnsupportedItems = false
   @ObservationIgnored private var shelf: NSPanel?
   @ObservationIgnored private var shelfFrame: NSRect?
+  @ObservationIgnored private(set) var pendingDropID: UUID?
+  @ObservationIgnored private var feedbackPoint: NSPoint?
 
   init(model: MacTransferModel, preferences: EdgeDropPreferences = EdgeDropPreferences()) {
     self.model = model
@@ -143,6 +148,8 @@ enum EdgeDropGeometry {
 
   func shutdown() {
     started = false
+    pendingDropID = nil
+    feedbackPoint = nil
     stopMonitoring()
     deactivate()
   }
@@ -174,6 +181,9 @@ enum EdgeDropGeometry {
   }
 
   var shelfTitle: String {
+    if let sentFeedback {
+      return "Sent \(sentFeedback.files.count) file\(sentFeedback.files.count == 1 ? "" : "s") to"
+    }
     if hasPromisedFiles { return "Save files before sending" }
     if selectionHasUnsupportedItems { return "Drop files only" }
     if !hasFileURLs { return "Drop a file to send" }
@@ -186,9 +196,12 @@ enum EdgeDropGeometry {
     return "Send \(draggedFileCount) file\(draggedFileCount == 1 ? "" : "s") to"
   }
 
-  var edgeHint: String { "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" }
+  var edgeHint: String {
+    sentFeedback == nil ? "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" : "Edge Drop"
+  }
 
   var shelfDetail: String {
+    if let sentFeedback { return sentFeedback.peerName }
     if hasPromisedFiles { return "Promised files aren’t supported." }
     if selectionHasUnsupportedItems { return "Every item in the drop must be a local file." }
     if !hasFileURLs { return "Drag saved files from Finder." }
@@ -199,6 +212,7 @@ enum EdgeDropGeometry {
   }
 
   var shelfSymbol: String {
+    if sentFeedback != nil { return "checkmark.circle" }
     if hasPromisedFiles || draggedFileCount > 128 { return "doc.badge.ellipsis" }
     if model.preparing { return "arrow.triangle.2.circlepath" }
     if model.isBusy { return "hourglass" }
@@ -207,8 +221,10 @@ enum EdgeDropGeometry {
   }
 
   var shelfColorScheme: ColorScheme { selectedColorScheme }
+  var presentationSize: NSSize { sentFeedback == nil ? EdgeDropGeometry.shelfSize : EdgeDropGeometry.feedbackSize }
 
   func updateNativeDrag(_ pasteboard: NSPasteboard) -> NSDragOperation {
+    sentFeedback = nil
     refreshCandidate(from: pasteboard)
     return canAcceptCurrentDrag ? .copy : []
   }
@@ -219,10 +235,28 @@ enum EdgeDropGeometry {
   }
 
   func finishDrop(_ urls: [URL]) -> Bool {
+    let point = shelfFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
     let accepted = TransferDropSubmission.receive(urls: urls, model: model)
+    if accepted, let reservation = model.dropReservation {
+      pendingDropID = reservation
+      feedbackPoint = point
+    }
     dismissShelf()
     resetCandidate()
     return accepted
+  }
+
+  func handle(_ event: TransferEvent) {
+    guard case .sentFromDrop(let reservation, let batch) = event,
+      pendingDropID == reservation, !model.receiving,
+      case .completed(let batchId, let count, let bytes) = model.state,
+      batchId == batch.id, count == batch.files.count, bytes == batch.totalBytes else { return }
+    pendingDropID = nil
+    guard preferences.enabled, !sleeping else { return }
+    sentFeedback = batch
+    guard started, let point = feedbackPoint,
+      let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main else { return }
+    showShelf(on: screen, near: point)
   }
 
   func draggingExitedShelf() {
@@ -282,6 +316,7 @@ enum EdgeDropGeometry {
 
   private func observe(_ event: NSEvent) {
     if event.type == .leftMouseDown {
+      if sentFeedback != nil { dismissShelf() }
       // A drag pasteboard can retain its previous contents; snapshot it before the new gesture.
       pasteboardBaseline = NSPasteboard(name: .drag).changeCount
       observedPasteboardCount = nil
@@ -356,7 +391,7 @@ enum EdgeDropGeometry {
 
   private func showShelf(on screen: NSScreen, near point: NSPoint) {
     let target = EdgeDropGeometry.shelfFrame(edge: preferences.edge, point: point,
-      screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
+      screenFrame: screen.frame, visibleFrame: screen.visibleFrame, size: presentationSize)
     dismissTimer?.invalidate(); dismissTimer = nil
     if let shelf {
       shelfFrame = target
@@ -407,6 +442,7 @@ enum EdgeDropGeometry {
   }
 
   private func scheduleDismiss(after interval: TimeInterval) {
+    guard sentFeedback == nil else { return }
     dismissTimer?.invalidate()
     dismissTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
       MainActor.assumeIsolated { self?.dismissShelf() }
@@ -420,6 +456,7 @@ enum EdgeDropGeometry {
     shelf?.close()
     shelf = nil
     shelfFrame = nil
+    sentFeedback = nil
   }
 
   private func resetCandidate() {
@@ -485,8 +522,8 @@ private struct EdgeDropShelfView: View {
     HStack(spacing: 14) {
       Image(systemName: controller.shelfSymbol)
         .font(.system(size: 28, weight: .medium))
-        .foregroundStyle(controller.canAcceptCurrentDrag
-          ? AniCePalette.accent(scheme) : AniCePalette.warning(scheme))
+        .foregroundStyle(controller.sentFeedback != nil ? AniCePalette.success(scheme) :
+          controller.canAcceptCurrentDrag ? AniCePalette.accent(scheme) : AniCePalette.warning(scheme))
         .frame(width: 38)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
@@ -506,7 +543,7 @@ private struct EdgeDropShelfView: View {
       Spacer(minLength: 0)
     }
     .padding(.horizontal, 20)
-    .frame(width: EdgeDropGeometry.shelfSize.width, height: EdgeDropGeometry.shelfSize.height)
+    .frame(width: controller.presentationSize.width, height: controller.presentationSize.height)
     .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 16))
     .overlay {
       RoundedRectangle(cornerRadius: 16).stroke(AniCePalette.separator(scheme), lineWidth: 1)

@@ -32,11 +32,14 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Add Android-to-Mac text and trackpad control over authenticated BLE, using the phone's normal keyboard and a Mac receiver gated by Event Posting permission.
 - Add macOS Keyboard & Trackpad controls for trusted Android phones, including an optional floating control.
 - Add per-peer automatic receiving and saved default/custom destinations on both platforms.
+- Confirm verified Edge Drop sends in the shelf, post optional Mac receive-completion notifications, and keep Android receive progress visible in the ongoing notification while the app is open.
 
 ### Changed
 
-- Refine native beta opt-in confirmation, About contact/report actions and Mac Settings readability; highlight window-free sharing and clarify Bluetooth HID setup.
-- Add isolated Mac and emulator UI-preview modes without replacing production app installations or their storage.
+- Reuse near-black Dock artwork for packaged/default app icons while keeping Mac Dock and Android launcher variants tied to system Light/Dark appearance.
+- Refine Mac window and sidebar sizing while preserving native resizing and window restoration.
+- Refine native beta opt-in confirmation, Android Updates spacing, About contact/report actions and Mac Settings readability; highlight window-free sharing and clarify Bluetooth HID setup.
+- Add isolated Mac, emulator UI and transfer-preview modes without replacing production app installations or their storage.
 - Restore grouped README features, the native technical foundation and repository overview; clarify Now Playing, actionable notifications and the maintainer-beta-to-public-release sequence while retaining setup, privacy, recovery and platform limits.
 - Require successful CI for the exact main commit before release signing, verify both draft assets, and leave final publication to the maintainer. Extend ownership review to release scripts and Android update code.
 - Consolidate installation and update guidance, correct architecture/security claims, remove public maintainer/UX audit notes, and organize changelogs under Added, Changed and Fixed while retaining development history.

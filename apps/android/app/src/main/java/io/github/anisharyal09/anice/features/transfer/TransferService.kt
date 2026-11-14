@@ -34,6 +34,7 @@ class TransferService : Service() {
             .setSmallIcon(R.drawable.ic_file_send)
             .setContentTitle("Local file transfer")
             .setContentText(status)
+            .setProgress(0, 0, true)
             .setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build()
         try {
             ServiceCompat.startForeground(this, TransferNotification.NOTIFICATION_ID, notification,

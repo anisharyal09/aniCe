@@ -27,6 +27,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Add a saved drag handle below the pointer pad to resize its height in both feature and floating controls; keep keyboard height fixed.
 - Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
 - Add Home and File transfer drop targets, an optional right/left/top Edge Drop shelf, and saved receive destinations with per-phone automatic-receive consent.
+- Confirm a verified Edge Drop send in the shelf, and optionally post a background notification when received files finish saving, including automatic receives, with a batch-bound Show in Finder action.
 - Add Keyboard & Trackpad with native keyboard capture, pointer input, two-finger up/down scrolling and left/right pointer dragging, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
 - Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
 - Review selected files and their recipient before sending; reject sends when the reviewed device changes.
@@ -35,10 +36,12 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.
+- Use a roomier 960 × 640 pt initial window, a content-fitting resizable sidebar and a 27 pt sidebar brand mark.
 - Require confirmation before enabling beta updates and use compact, scalable text across Settings, including embedded feature preferences.
 - Use Reach out for About contacts, keep the name/social actions together at the trailing edge, and open a user-reviewed GitHub report form with app and OS versions.
 - Clarify aniCe trust versus system Bluetooth pairing in Control Android setup and device selection.
-- Add an isolated UI-preview bundle with separate identity/runtime storage and no production-update recovery or installation.
+- Add isolated UI and transfer-preview bundles with separate identity/runtime storage; the transfer preview keeps notification permissions realistic without touching production updates.
 - Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
 
 - Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.

@@ -314,7 +314,18 @@ final class MacIdentityStorage: IdentityStorage, @unchecked Sendable {
 /// Sandbox removal must not redirect identity/trust reads to a fresh application-support directory.
 enum MacAppStorage {
     static let productionBundleIdentifier = "io.github.anisharyal09.anice"
-    static let previewBundleIdentifier = "io.github.anisharyal09.anice.preview"
+    static let interfacePreviewBundleIdentifier = "io.github.anisharyal09.anice.preview"
+    static let transferPreviewBundleIdentifier = "io.github.anisharyal09.anice.preview.transfer"
+    static var isTransferPreview: Bool {
+        #if ANICE_TRANSFER_PREVIEW
+        true
+        #else
+        false
+        #endif
+    }
+    static var previewBundleIdentifier: String {
+        isTransferPreview ? transferPreviewBundleIdentifier : interfacePreviewBundleIdentifier
+    }
     static var isPreview: Bool {
         #if ANICE_PREVIEW
         true
@@ -325,14 +336,19 @@ enum MacAppStorage {
     static var bundleIdentifier: String {
         isPreview ? previewBundleIdentifier : productionBundleIdentifier
     }
-    static var applicationName: String { isPreview ? "aniCe Preview" : "aniCe" }
+    static var applicationName: String {
+        isPreview ? (isTransferPreview ? "aniCe Transfer Preview" : "aniCe Preview") : "aniCe"
+    }
 
-    static func directory(home: URL, preview: Bool = isPreview) -> URL {
-        let identifier = preview ? previewBundleIdentifier : productionBundleIdentifier
+    static func directory(home: URL, preview: Bool = isPreview, transferPreview: Bool = isTransferPreview) -> URL {
+        let identifier = preview
+            ? (transferPreview ? transferPreviewBundleIdentifier : interfacePreviewBundleIdentifier)
+            : productionBundleIdentifier
         return home.appendingPathComponent("Library/Containers/\(identifier)/Data/Library/Application Support/aniCe", isDirectory: true)
     }
-    static func applicationSupport(home: URL, preview: Bool = isPreview) -> URL {
-        home.appendingPathComponent(preview ? "Library/Application Support/aniCe Preview" : "Library/Application Support/aniCe", isDirectory: true)
+    static func applicationSupport(home: URL, preview: Bool = isPreview, transferPreview: Bool = isTransferPreview) -> URL {
+        let name = preview ? (transferPreview ? "aniCe Transfer Preview" : "aniCe Preview") : "aniCe"
+        return home.appendingPathComponent("Library/Application Support/\(name)", isDirectory: true)
     }
     static var applicationSupport: URL {
         applicationSupport(home: FileManager.default.homeDirectoryForCurrentUser)

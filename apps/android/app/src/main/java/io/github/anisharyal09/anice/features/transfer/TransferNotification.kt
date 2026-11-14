@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Delivers one silent background offer notice while TransferService owns the required foreground notice.
+// Delivers one silent offer notice and a live progress notice while TransferService owns foreground work.
 package io.github.anisharyal09.anice.features.transfer
 
 import android.annotation.SuppressLint
@@ -113,7 +113,9 @@ class TransferNotification(
     }
 
     private fun activeProgressNotice(): ProgressNotice? {
-        if (!controller.backgroundAllowed || !controller.isBusy) return null
+        // An active transfer is visible even while the app is open; the ongoing notice is the only
+        // progress surface when the screen is covered, and mirrors the in-app bar otherwise.
+        if (!controller.isBusy) return null
         if (controller.preparing) return ProgressNotice("Preparing files", "Getting files ready to send", null)
         return when (val state = controller.state) {
             is TransferState.Transferring -> {

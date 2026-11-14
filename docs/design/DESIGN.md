@@ -12,8 +12,8 @@ Version 0.3. This guide defines visual direction, interaction behavior, standard
 ## Brand mark
 
 Use the transparent path-only ringless silver interlocking ribbon ([final SVG](../../assets/logo/anice-mark-final.svg)) on app brand surfaces.
-- **macOS**: Full rounded warm-light tile in Light appearance; inset dark graphite tile with subtle inner glow and fine rim highlights in Dark appearance. The menu-bar template uses a 21.5 pt template icon with shaded alpha.
-- **Android**: Adaptive icon with foreground ribbon and toned background with dark graphite glow in Dark appearance.
+- **macOS**: The packaged app/Finder icon reuses the same inset near-black artwork as the dark Dock icon, including in downloaded ZIPs. The running Dock follows system appearance: warm-light tile in Light mode, near-black tile with subtle inner glow and fine rim highlights in Dark mode. The menu-bar template uses a 21.5 pt template icon with shaded alpha.
+- **Android**: The adaptive launcher reuses the near-black Dock background and edge highlights as an opaque tile, without Mac padding; Android retains its own mask and foreground sizing. Explicit system Light mode uses the warm-light tile. Launcher appearance follows the device theme, independently of aniCe's in-app Appearance setting.
 
 ## Visual system
 
@@ -74,6 +74,7 @@ Shared information architecture mapped into platform-native navigation:
 
 ### macOS layout
 - **Main window**: Resizable window with traffic lights and Back/Forward history navigation on the left of the split header; aniCe branding in the window titlebar. Sidebar holds navigation destinations; workspace content is centered with a maximum of two columns.
+- **Initial size and sidebar**: A new main window defaults to 960 × 640 pt; native resizing and restored window sizes remain in control. The sidebar uses a 27 pt brand mark and fits the wordmark and full destination labels at the current text size, with 12 pt of additional width. It remains resizable.
 - **Menu-bar companion**: Compact popover (max 520 pt height) showing active device state, Now Playing, file transfers, quick actions, and pinned favorite shortcuts.
 - **Quick Paste Tray**: Non-activating floating panel toggled via `⌥⌘V` with real-time clip filtering and smart previews.
 

@@ -83,6 +83,8 @@ enum TransferEvent: Equatable {
   case paused(batch: TransferBatch, reason: String, canResumeOverBle: Bool)
   case resumed
   case completed(fileCount: Int, totalBytes: Int64)
+  /// A verified send that started from Edge Drop, scoped to its reservation for shelf feedback.
+  case sentFromDrop(reservation: UUID, batch: TransferBatch)
   case failed(reason: String)
 }
 
@@ -113,10 +115,12 @@ enum TransferEvent: Equatable {
   var automaticReceiveTask: Task<Void, Never>?
   var pendingAutomaticReceive: MacPendingAutomaticReceive?
   var dropReservation: UUID?
+  var dropSourceID: UUID?
   var dropFileAccess: TransferFileAccessLease?
   var pendingRouteSelection: PendingTransferRouteSelection?
   var preferBluetoothForCurrentTransfer = false
-  /// External event sink for native notification bridges. Emits completed and failed only when receiving.
+  /// External event sink for native notification and Edge Drop bridges. Completed and failed are
+  /// emitted only when receiving; a verified send emits sentFromDrop instead.
   var onEvent: ((TransferEvent) -> Void)?
   /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
   var onLanRequired: () -> Bool = { false }
@@ -165,6 +169,7 @@ enum TransferEvent: Equatable {
     }
     let reservation = UUID()
     dropReservation = reservation
+    dropSourceID = reservation
     preparing = true
     dropStatus = nil
     return reservation
@@ -173,6 +178,7 @@ enum TransferEvent: Equatable {
   func failDrop(reservation: UUID, message: String) {
     guard dropReservation == reservation else { return }
     dropReservation = nil
+    dropSourceID = nil
     preparing = false
     dropStatus = message
   }
@@ -827,6 +833,7 @@ extension MacTransferModel {
     progressTask?.cancel(); progressTask = nil; progressEpoch = nil
     preparation?.cancel(); preparation = nil; preparing = false
     dropReservation = nil
+    dropSourceID = nil
     pendingRouteSelection?.fileAccess?.release(); pendingRouteSelection = nil
     preferBluetoothForCurrentTransfer = false
     dropFileAccess?.release(); dropFileAccess = nil

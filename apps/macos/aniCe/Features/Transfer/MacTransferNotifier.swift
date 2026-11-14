@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Delivers optional background offer notices while keeping transfer progress and results in the app.
+// Delivers optional background offer and verified receive-completion notices.
 import AppKit
 import Foundation
 import Observation
@@ -146,7 +146,7 @@ protocol TransferNotificationCenter: AnyObject {
 
 extension UNUserNotificationCenter: TransferNotificationCenter {}
 
-// Builds transfer notification payloads; current delivery posts only background offers.
+// Builds transfer notification payloads without exposing incoming file names.
 struct TransferNotificationContent: Equatable {
   let identifier: String
   let categoryIdentifier: String
@@ -170,16 +170,16 @@ struct TransferNotificationContent: Equatable {
   }
 
   // Reports the verified destination folder where files were published on disk.
-  static func completed(fileCount: Int, totalBytes: Int64, folder: URL?) -> TransferNotificationContent {
+  static func completed(fileCount: Int, totalBytes: Int64, folder: URL?, batchId: UUID = UUID()) -> TransferNotificationContent {
     let countStr = "\(fileCount) file\(fileCount == 1 ? "" : "s")"
     let sizeStr = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
     let folderName = folder?.lastPathComponent ?? "Downloads"
     return TransferNotificationContent(
-      identifier: "transfer-result-\(UUID().uuidString.prefix(8))",
+      identifier: "transfer-received-\(batchId.uuidString.lowercased())",
       categoryIdentifier: MacTransferNotifier.Category.result,
-      title: "Transfer complete",
+      title: "Files received",
       body: "\(countStr) (\(sizeStr)) saved to \(folderName).",
-      userInfo: [:]
+      userInfo: folder.map { ["receivedFolder": $0.absoluteString] } ?? [:]
     )
   }
 
@@ -240,13 +240,21 @@ struct TransferNotificationContent: Equatable {
   private let openMainWindow: () -> Void
   private let center: any TransferNotificationCenter
   private let preferences: TransferNotificationPreferences
-  private var hasRequestedAuth = false
+  private let applicationIsActive: () -> Bool
+  private let revealReceivedFolder: (URL) -> Void
+  private var deliveryGeneration = 0
   private var activeOfferIdentifier: String?
+  private var announcedCompletion: UUID?
 
-  init(model: MacTransferModel, openMainWindow: @escaping () -> Void, center: any TransferNotificationCenter = UNUserNotificationCenter.current()) {
+  init(model: MacTransferModel, openMainWindow: @escaping () -> Void,
+    center: any TransferNotificationCenter = UNUserNotificationCenter.current(),
+    applicationIsActive: @escaping () -> Bool = { NSApp.isActive },
+    revealReceivedFolder: @escaping (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }) {
     self.model = model
     self.openMainWindow = openMainWindow
     self.center = center
+    self.applicationIsActive = applicationIsActive
+    self.revealReceivedFolder = revealReceivedFolder
     preferences = model.notificationPreferences
     super.init()
     if let native = center as? UNUserNotificationCenter {
@@ -260,11 +268,13 @@ struct TransferNotificationContent: Equatable {
     }
     preferences.changed = { [weak self] in
       guard let self, !self.preferences.enabled else { return }
+      self.deliveryGeneration += 1
+      self.announcedCompletion = nil
       self.clearActiveOffer()
     }
   }
 
-  // Keep legacy result/pause categories registered while new delivery posts background offers only.
+  // Pause categories remain registered for cleanup and actions from earlier builds.
   static func notificationCategories() -> Set<UNNotificationCategory> {
     let acceptAction = UNNotificationAction(
       identifier: Action.accept,
@@ -329,13 +339,24 @@ struct TransferNotificationContent: Equatable {
   func handle(_ event: TransferEvent) {
     switch event {
     case .incomingOffer(let batch):
-      guard preferences.enabled, !NSApp.isActive else { return }
+      guard preferences.enabled, !applicationIsActive() else { return }
       let content = TransferNotificationContent.offer(batch: batch)
       guard activeOfferIdentifier != content.identifier else { return }
       activeOfferIdentifier = content.identifier
       post(content)
 
-    case .paused, .resumed, .completed, .failed:
+    case .completed(let count, let bytes):
+      clearActiveOffer()
+      guard preferences.enabled, !applicationIsActive(), let model, model.receiving,
+        case .completed(let batchId, let savedCount, let savedBytes) = model.state,
+        savedCount == count, savedBytes == bytes, count > 0,
+        model.publishedURLs.count == count, let folder = model.receiveFolder,
+        announcedCompletion != batchId else { return }
+      announcedCompletion = batchId
+      post(TransferNotificationContent.completed(fileCount: count, totalBytes: bytes,
+        folder: folder, batchId: batchId))
+
+    case .paused, .resumed, .failed, .sentFromDrop:
       // Reconnection and progress transitions belong to the activity panel, not repeated system alerts.
       clearActiveOffer()
     }
@@ -349,17 +370,31 @@ struct TransferNotificationContent: Equatable {
     }
   }
 
-  // Request authorization only when an enabled background offer reaches the posting path.
-  // Permission denial must never gate transfer execution, falling back to companion activity and main window.
-  private func requestAuthIfNeeded() {
-    guard !hasRequestedAuth else { return }
-    hasRequestedAuth = true
-    center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-  }
-
   private func post(_ notification: TransferNotificationContent) {
     guard preferences.enabled else { return }
-    requestAuthIfNeeded()
+    let generation = deliveryGeneration
+    // Authorization is asynchronous; publishing before approval can lose the first notice.
+    center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+      Task { @MainActor in
+        guard let self, granted, self.preferences.enabled, self.deliveryGeneration == generation else { return }
+        if notification.categoryIdentifier == Category.offer {
+          guard let offer = self.model?.pendingOffer,
+            notification.identifier == "transfer-offer-\(offer.idString)",
+            self.activeOfferIdentifier == notification.identifier, !self.applicationIsActive() else { return }
+        } else if notification.identifier.hasPrefix("transfer-received-") {
+          // The completed batch must still own the published result, and background-only delivery
+          // is rechecked because authorization may resolve after the user returns to aniCe.
+          guard let model = self.model, model.receiving,
+            case .completed(let batchId, _, _) = model.state,
+            notification.identifier == "transfer-received-\(batchId.uuidString.lowercased())",
+            !self.applicationIsActive() else { return }
+        }
+        self.deliver(notification)
+      }
+    }
+  }
+
+  private func deliver(_ notification: TransferNotificationContent) {
     let content = UNMutableNotificationContent()
     content.title = notification.title
     content.body = notification.body
@@ -380,7 +415,7 @@ struct TransferNotificationContent: Equatable {
   }
 
   // Banner identifiers bind destructive actions to their original pending or paused batch.
-  func handleAction(_ actionIdentifier: String, identifier: String? = nil) {
+  func handleAction(_ actionIdentifier: String, identifier: String? = nil, receivedFolder: String? = nil) {
     if let identifier {
       center.removeDeliveredNotifications(withIdentifiers: [identifier])
       // An old banner must never approve, decline or cancel a successor batch.
@@ -418,6 +453,10 @@ struct TransferNotificationContent: Equatable {
       }
 
     case Action.showInFinder:
+      if identifier?.hasPrefix("transfer-received-") == true {
+        revealCompletionFolder(receivedFolder)
+        return
+      }
       if let urls = model?.publishedURLs, !urls.isEmpty {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
       } else if let folder = model?.receiveFolder {
@@ -434,10 +473,19 @@ struct TransferNotificationContent: Equatable {
       model.cancelTransfer()
 
     case UNNotificationDefaultActionIdentifier:
-      openMainWindow()
+      if identifier?.hasPrefix("transfer-received-") == true {
+        revealCompletionFolder(receivedFolder)
+      } else {
+        openMainWindow()
+      }
 
     default:
       break
     }
+  }
+
+  private func revealCompletionFolder(_ value: String?) {
+    guard let value, let folder = URL(string: value), folder.isFileURL else { return }
+    revealReceivedFolder(folder)
   }
 }

@@ -10,20 +10,26 @@ final class IdentityTests: XCTestCase, @unchecked Sendable {
     func testPreviewStorageDoesNotRedirectOrShareProductionFiles() {
         let home = URL(fileURLWithPath: "/Users/Fixture", isDirectory: true)
         let production = MacAppStorage.directory(home: home, preview: false)
-        let preview = MacAppStorage.directory(home: home, preview: true)
+        let preview = MacAppStorage.directory(home: home, preview: true, transferPreview: false)
+        let transferPreview = MacAppStorage.directory(home: home, preview: true, transferPreview: true)
         XCTAssertEqual(production.path,
             "/Users/Fixture/Library/Containers/io.github.anisharyal09.anice/Data/Library/Application Support/aniCe")
         XCTAssertEqual(preview.path,
             "/Users/Fixture/Library/Containers/io.github.anisharyal09.anice.preview/Data/Library/Application Support/aniCe")
         XCTAssertNotEqual(production, preview)
+        XCTAssertEqual(transferPreview.path,
+            "/Users/Fixture/Library/Containers/io.github.anisharyal09.anice.preview.transfer/Data/Library/Application Support/aniCe")
+        XCTAssertEqual(Set([production, preview, transferPreview]).count, 3)
         XCTAssertEqual(MacAppStorage.applicationSupport(home: home, preview: false).path,
             "/Users/Fixture/Library/Application Support/aniCe")
-        XCTAssertEqual(MacAppStorage.applicationSupport(home: home, preview: true).path,
+        XCTAssertEqual(MacAppStorage.applicationSupport(home: home, preview: true, transferPreview: false).path,
             "/Users/Fixture/Library/Application Support/aniCe Preview")
+        XCTAssertEqual(MacAppStorage.applicationSupport(home: home, preview: true, transferPreview: true).path,
+            "/Users/Fixture/Library/Application Support/aniCe Transfer Preview")
         #if ANICE_PREVIEW
         XCTAssertTrue(MacAppStorage.isPreview)
-        XCTAssertEqual(MacAppStorage.bundleIdentifier, "io.github.anisharyal09.anice.preview")
-        XCTAssertEqual(MacAppStorage.directory(home: home), preview)
+        XCTAssertEqual(MacAppStorage.bundleIdentifier, MacAppStorage.previewBundleIdentifier)
+        XCTAssertEqual(MacAppStorage.directory(home: home), MacAppStorage.isTransferPreview ? transferPreview : preview)
         #else
         XCTAssertFalse(MacAppStorage.isPreview)
         XCTAssertEqual(MacAppStorage.bundleIdentifier, "io.github.anisharyal09.anice")

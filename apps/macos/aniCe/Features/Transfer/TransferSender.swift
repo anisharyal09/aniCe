@@ -520,8 +520,10 @@ extension MacTransferModel {
     let count = batch.files.count
     let bytes = batch.totalBytes
     let wasReceiving = receiving
+    let dropSource = dropSourceID
     cleanupActiveTransfer()
     if wasReceiving { onEvent?(.completed(fileCount: count, totalBytes: bytes)) }
+    else if let dropSource { onEvent?(.sentFromDrop(reservation: dropSource, batch: batch)) }
   }
 
   func handleAck(_ message: TransferMessage) {

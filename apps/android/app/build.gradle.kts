@@ -12,7 +12,8 @@ val releaseStorePassword = providers.environmentVariable("ANICE_ANDROID_STORE_PA
 val releaseKeyAlias = providers.environmentVariable("ANICE_ANDROID_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("ANICE_ANDROID_KEY_PASSWORD").orNull
 val releaseSigningReady = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
-val previewBuild = providers.gradleProperty("anicePreview").orNull == "true"
+val transferPreviewBuild = providers.gradleProperty("aniceTransferPreview").orNull == "true"
+val previewBuild = providers.gradleProperty("anicePreview").orNull == "true" || transferPreviewBuild
 
 android {
     signingConfigs {
@@ -28,8 +29,8 @@ android {
     buildTypes {
         debug {
             if (previewBuild) {
-                applicationIdSuffix = ".preview"
-                manifestPlaceholders["aniceAppLabel"] = "aniCe Preview"
+                applicationIdSuffix = if (transferPreviewBuild) ".preview.transfer" else ".preview"
+                manifestPlaceholders["aniceAppLabel"] = if (transferPreviewBuild) "aniCe Transfer Preview" else "aniCe Preview"
             }
         }
         release { if (releaseSigningReady) signingConfig = signingConfigs.getByName("production") }

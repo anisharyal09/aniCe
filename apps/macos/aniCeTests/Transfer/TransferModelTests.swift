@@ -434,6 +434,86 @@ final class TransferModelTests: XCTestCase {
     XCTAssertTrue(owner.dropStatus?.contains("phone changed") == true)
   }
 
+  func testCompletedDropSendEmitsItsReservationOnlyAfterVerification() async throws {
+    let owner = MacTransferModel(), channel = MockSecuredChannel(peer: try androidPeer())
+    owner.available(channel)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: channel.descriptor)
+    let recipient = TransferRecipient(peer: channel.descriptor.peer)
+    let source = tempDir.appendingPathComponent("edge-drop.bin")
+    try Data([1, 2, 3, 4]).write(to: source)
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: recipient))
+    var events: [TransferEvent] = []
+    owner.onEvent = { events.append($0) }
+    defer { owner.dismiss() }
+
+    await owner.sendFiles(urls: [source], recipient: recipient, transportPolicy: .preferAvailable,
+      dropReservation: reservation, fileAccess: TransferFileAccessLease(urls: [source]))
+    guard case .waitingForPeerApproval(let batch) = owner.state else {
+      return XCTFail("Drop did not start an offer")
+    }
+    _ = await owner.handle(try TransferMessage.accept(batch: batch.idString, files: []).encode(),
+      on: channel.descriptor)
+    for _ in 0..<200 {
+      if channel.sentData.compactMap({ try? TransferMessage.decode($0) }).contains(where: { $0.kind == 5 }) {
+        break
+      }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(events.isEmpty, "A drop cannot report success before the receiver verifies the file")
+    _ = await owner.handle(try TransferMessage.fileResult(batch: batch.idString,
+      file: batch.files[0].idString, result: 0, hash: batch.files[0].sha256).encode(),
+      on: channel.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = owner.state else { return XCTFail("Drop did not complete") }
+    XCTAssertEqual(events.count, 1)
+    guard case .sentFromDrop(let sourceID, let verified) = events[0] else {
+      return XCTFail("Expected one verified drop event")
+    }
+    XCTAssertEqual(sourceID, reservation)
+    XCTAssertEqual(verified, batch)
+    XCTAssertFalse(owner.receiving, "A send must never emit a receive-completion event")
+  }
+
+  func testEdgeDropFeedbackRequiresTheMatchingReservationAndCompletedState() throws {
+    let suite = "aniCe.edge-drop-feedback.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = EdgeDropPreferences(storage: defaults)
+    preferences.setEnabled(true)
+    let owner = MacTransferModel()
+    let controller = MacEdgeDropController(model: owner, preferences: preferences)
+    let channel = MockSecuredChannel(peer: try androidPeer())
+    owner.activeChannel = channel
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let source = tempDir.appendingPathComponent("feedback.bin")
+    try Data([9]).write(to: source)
+    XCTAssertTrue(controller.finishDrop([source]))
+    let reservation = try XCTUnwrap(controller.pendingDropID)
+    owner.cancelTransfer(local: false)
+    let batch = TransferBatch(id: UUID(), files: [
+      TransferFile(id: UUID(), name: "feedback.bin", size: 1,
+        sha256: Data(repeating: 0, count: 32), localURL: nil)
+    ], totalBytes: 1, peerName: "Pixel 9")
+
+    controller.handle(.sentFromDrop(reservation: UUID(), batch: batch))
+    XCTAssertNil(controller.sentFeedback, "A different drop cannot reuse an old result")
+    controller.handle(.sentFromDrop(reservation: reservation, batch: batch))
+    XCTAssertNil(controller.sentFeedback, "Success cannot appear before the completed state")
+
+    owner.state = .completed(batchId: batch.id, fileCount: 1, totalBytes: 1)
+    controller.handle(.sentFromDrop(reservation: reservation, batch: batch))
+    XCTAssertEqual(controller.sentFeedback, batch)
+    XCTAssertEqual(controller.shelfTitle, "Sent 1 file to")
+    XCTAssertEqual(controller.shelfDetail, "Pixel 9")
+    XCTAssertEqual(controller.shelfSymbol, "checkmark.circle")
+    XCTAssertEqual(controller.edgeHint, "Edge Drop")
+    XCTAssertEqual(controller.presentationSize, EdgeDropGeometry.feedbackSize)
+  }
+
   func testCancelledDropReservationCannotSendAfterProviderLoadCompletes() async throws {
     let owner = MacTransferModel(), channel = MockSecuredChannel(peer: try androidPeer())
     owner.activeChannel = channel

@@ -13,9 +13,9 @@ fi
 branch_slug="$(printf '%s' "$branch" | sed 's/_/_5F/g; s/%/_25/g; s|/|_2F|g')"
 checkout="${ROOT##*/}"
 usage() {
-    echo "Usage: $0 mac [--preview] | android [--preview] [--serial DEVICE_SERIAL]"
+    echo "Usage: $0 mac [--preview|--transfer-preview] | android [--preview|--transfer-preview] [--serial DEVICE_SERIAL]"
     echo "Mac requires ANICE_DEVELOPMENT_TEAM; optional ANICE_CODE_SIGN_IDENTITY."
-    echo "Preview mode uses isolated app/data identities; Android previews require an explicit emulator serial."
+    echo "Preview modes use isolated app/data identities; Android UI previews require an explicit emulator serial."
     echo "Local settings may be saved in scripts/dev.local.sh."
 }
 case "${1:-}" in
@@ -25,11 +25,15 @@ case "${1:-}" in
 esac
 serial=""
 preview=false
+transfer_preview=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --preview)
-            [[ "$preview" == false ]] || { usage >&2; exit 1; }
+            [[ "$preview" == false && "$transfer_preview" == false ]] || { usage >&2; exit 1; }
             preview=true; shift ;;
+        --transfer-preview)
+            [[ "$preview" == false && "$transfer_preview" == false ]] || { usage >&2; exit 1; }
+            transfer_preview=true; shift ;;
         --serial)
             [[ "$platform" == android && -z "$serial" && -n "${2:-}" && "${2:-}" != --* ]] || { usage >&2; exit 1; }
             serial="$2"; shift 2 ;;
@@ -37,11 +41,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 if [[ "$platform" == android && "$preview" == true && ! "$serial" =~ ^emulator-[0-9]+$ ]]; then
-    fail "Preview mode requires --serial emulator-PORT; it never installs on a physical phone."
+    fail "UI preview mode requires --serial emulator-PORT; it never installs on a physical phone."
 fi
 
 # This ignored file is shell code owned by the developer, never shared signing settings.
-if [[ "$preview" == false && -f "$ROOT/scripts/dev.local.sh" ]]; then
+if [[ "$platform" == mac && ( "$preview" == false || "$transfer_preview" == true ) && -f "$ROOT/scripts/dev.local.sh" ]]; then
     source "$ROOT/scripts/dev.local.sh"
 fi
 
@@ -57,7 +61,7 @@ if [[ "$platform" == mac ]]; then
     fi
     export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
     command -v xcodebuild >/dev/null || fail "Install Xcode."
-    if [[ "$preview" == false ]]; then
+    if [[ "$preview" == false && "$transfer_preview" == false ]]; then
         # Branch copies share one bundle identity and persisted device state.
         osascript <<'APPLESCRIPT'
 tell application "System Events"
@@ -89,6 +93,13 @@ APPLESCRIPT
             "PRODUCT_BUNDLE_IDENTIFIER=io.github.anisharyal09.anice.preview"
             'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG ANICE_DEVELOPMENT_KEYCHAIN ANICE_PREVIEW'
             "INFOPLIST_KEY_CFBundleDisplayName=aniCe Preview")
+    elif [[ "$transfer_preview" == true ]]; then
+        derived="$ROOT/build/transfer-preview-mac/$checkout-$branch_slug"
+        product="aniCeTransferPreview"
+        build_options+=("DEVELOPMENT_TEAM=$ANICE_DEVELOPMENT_TEAM" "PRODUCT_NAME=$product" "PRODUCT_MODULE_NAME=aniCe"
+            "PRODUCT_BUNDLE_IDENTIFIER=io.github.anisharyal09.anice.preview.transfer"
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG ANICE_DEVELOPMENT_KEYCHAIN ANICE_PREVIEW ANICE_TRANSFER_PREVIEW'
+            "INFOPLIST_KEY_CFBundleDisplayName=aniCe Transfer Preview")
     else
         build_options+=("DEVELOPMENT_TEAM=$ANICE_DEVELOPMENT_TEAM" "INFOPLIST_KEY_CFBundleDisplayName=aniCe ($branch)")
     fi
@@ -101,10 +112,13 @@ APPLESCRIPT
     codesign --verify --deep --strict "$app"
     signature="$(codesign -dv --verbose=4 "$app" 2>&1)"
     if [[ "$preview" == true ]]; then
-        grep -Fxq "Identifier=io.github.anisharyal09.anice.preview" <<< "$signature" || fail "Built app is not an isolated preview."
+        grep -Fxq "Identifier=io.github.anisharyal09.anice.preview" <<< "$signature" || fail "Built app is not an isolated UI preview."
     else
         [[ "$signature" == *"Authority=Apple Development:"* ]] || fail "Built app is not Apple Development signed."
         grep -Fxq "TeamIdentifier=$ANICE_DEVELOPMENT_TEAM" <<< "$signature" || fail "Built app has an unexpected signing team."
+        if [[ "$transfer_preview" == true ]]; then
+            grep -Fxq "Identifier=io.github.anisharyal09.anice.preview.transfer" <<< "$signature" || fail "Built app is not an isolated transfer preview."
+        fi
     fi
     open -n "$app"
     echo "Launched: $app"
@@ -149,26 +163,35 @@ else
     fi
     if [[ "$preview" == true ]]; then
         hardware="$("$adb" -s "$serial" shell getprop ro.hardware | tr -d '\r')"
-        [[ "$hardware" == ranchu || "$hardware" == goldfish ]] || fail "Selected preview target is not an Android emulator."
+        [[ "$hardware" == ranchu || "$hardware" == goldfish ]] || fail "Selected UI preview target is not an Android emulator."
     fi
     if [[ -z "${JAVA_HOME:-}" && -d '/Applications/Android Studio.app/Contents/jbr/Contents/Home' ]]; then
         export JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home'
     fi
     gradle_options=(:app:assembleDebug)
     component="io.github.anisharyal09.anice/.MainActivity"
+    preview_package=""
     if [[ "$preview" == true ]]; then
         gradle_options+=("-PanicePreview=true")
-        component="io.github.anisharyal09.anice.preview/io.github.anisharyal09.anice.MainActivity"
+        preview_package="io.github.anisharyal09.anice.preview"
+    elif [[ "$transfer_preview" == true ]]; then
+        gradle_options+=("-PaniceTransferPreview=true")
+        preview_package="io.github.anisharyal09.anice.preview.transfer"
+    fi
+    if [[ -n "$preview_package" ]]; then
+        component="$preview_package/io.github.anisharyal09.anice.MainActivity"
     fi
     (cd "$ROOT/apps/android" && ./gradlew "${gradle_options[@]}")
-    if [[ "$preview" == true ]]; then
+    if [[ -n "$preview_package" ]]; then
         aapt="$sdk_root/build-tools/36.0.0/aapt"
         [[ -x "$aapt" ]] || fail "Android build-tools 36.0.0 aapt is required to verify the preview package."
         metadata="$("$aapt" dump badging "$ROOT/apps/android/app/build/outputs/apk/debug/app-debug.apk")"
-        [[ "$metadata" == "package: name='io.github.anisharyal09.anice.preview' "* ]] || fail "Refusing to install an APK without the preview package ID."
+        [[ "$metadata" == "package: name='$preview_package' "* ]] || fail "Refusing to install an APK without the $preview_package package ID."
     fi
     if [[ "$preview" == true ]]; then
         echo "Installing isolated aniCe Preview on $serial"
+    elif [[ "$transfer_preview" == true ]]; then
+        echo "Installing isolated aniCe Transfer Preview on $serial"
     else
         echo "Updating aniCe on $serial"
     fi

@@ -33,10 +33,11 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
-- Use the shared checkbox row and explicit confirmation for beta updates; group available/busy status with a minimal trailing check action and reflow at narrow widths or larger text without an extra divider.
+- Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
+- Use the shared checkbox row, matching Connection's padding, and explicit confirmation for beta updates; group available/busy status with a minimal trailing check action and reflow at narrow widths or larger text without an extra divider.
 - Rename the About contact row to Reach out, with the label leading and the name/social actions kept together at the trailing edge, including larger text sizes.
 - Open a user-reviewed GitHub report form with app and OS versions from About.
-- Add a Debug-only preview package with isolated app data and emulator-only launcher deployment.
+- Add Debug-only UI and transfer preview packages with isolated app data; UI previews remain emulator-only and transfer previews verify their package before installing on a selected test phone.
 - Restore Android app entry points, Share/Quick Settings guidance, permission distinctions and background-connection limits in the platform README.
 - **Navigation & Icons:** Outlined icons for inactive bottom destinations and filled icons for the active destination.
 - **Reordering:** Long-press context menu to reorder Features and Favourites.
@@ -69,7 +70,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Highlight the selected QR or six-digit code method and clarify the next pairing action.
 - Guide first-launch users to add their Mac from Home with clear QR and six-digit code instructions.
 - Preserve the highest supported Desk Deck action mask while older compatibility capabilities arrive.
-- Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification.
+- Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification, including while the app is open.
 - Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.
 - Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
 - Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.

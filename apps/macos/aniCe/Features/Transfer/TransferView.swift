@@ -10,12 +10,12 @@ struct TransferNotificationControls: View {
   @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Toggle("Background offer notifications", isOn: Binding(get: { preferences.enabled }, set: { preferences.enabled = $0 }))
+      Toggle("Background transfer notifications", isOn: Binding(get: { preferences.enabled }, set: { preferences.enabled = $0 }))
         .aniCeControlFeedback(feedbackPadding: 3)
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
         .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
-      Text("Notifies when incoming files arrive while aniCe is in the background.")
+      Text("Shows incoming offers and successful receives while aniCe is in the background, including automatic receives.")
         .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
     .toggleStyle(.checkbox).controlSize(settingsFontScale == nil ? .small : .regular).tint(AniCePalette.accent(scheme))

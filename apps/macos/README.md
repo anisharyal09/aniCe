@@ -102,6 +102,16 @@ This builds **aniCe Preview** with bundle ID `io.github.anisharyal09.anice.previ
 
 The preview is ad-hoc signed for UI work. It does not start automatic connections, clipboard lifecycle observers, global hotkeys or the menu-bar companion, and it cannot run release-update installation/recovery. Use normal certificate-signed releases for permission persistence and beta-to-beta update testing.
 
+### Isolated transfer preview
+
+```sh
+./scripts/dev.sh mac --transfer-preview
+```
+
+This builds **aniCe Transfer Preview** with bundle ID `io.github.anisharyal09.anice.preview.transfer`, separate preferences, identity keys, runtime files and update recovery. It leaves installed aniCe copies and the UI preview untouched. The output is `build/transfer-preview-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCeTransferPreview.app`.
+
+The transfer preview is Apple Development signed so notification permission behaves like a normal build. Automatic connections, clipboard lifecycle observers, hotkeys and the menu-bar companion stay off; pair and connect from the app. Its Edge Drop shelf starts disabled on the left edge; enable it and choose a different edge from production before testing.
+
 Opening the project in Xcode and pressing Command-R uses its own DerivedData copy. The shared project defaults to ad-hoc signing; use the script for repeat permission testing.
 
 ## Archive and distribution

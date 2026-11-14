@@ -289,11 +289,12 @@ import AppKit
     keyboardTrackpad.refreshPairedDevices()
     XCTAssertTrue(keyboardTrackpad.link(linkedBluetooth))
     defer { keyboardTrackpad.shutdown() }
-    let widths = [620.0, 720.0, 1240.0]
+    let widths = [620.0, 720.0, MainWindowSizing.defaultSize.width, 1240.0]
     for appearance in ["Light", "Dark"] {
       preferences.set(appearance, forKey: "window.appearance")
       preferences.set("playback,files", forKey: "ui.favouriteFeatures")
       for width in widths {
+        let height = width == MainWindowSizing.defaultSize.width ? MainWindowSizing.defaultSize.height : 800
         let routes: [(AppDestination, AppFeature?, String?)] =
           AppDestination.primary.map { ($0, nil, nil) } + AppFeature.allCases.map { (.features, $0, nil) } + [
             (.home, nil, "first-run"), (.devices, nil, "pairing"), (.devices, nil, "pairing-code"),
@@ -327,13 +328,13 @@ import AppKit
             onInitialRender: {}, dndSync: MacDndSyncModel(defaults: preferences), deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
-            .frame(width: width, height: 800)
+            .frame(width: width, height: height)
           let host = NSHostingView(rootView: view)
-          let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 800),
+          let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless], backing: .buffered, defer: false)
           window.appearance = NSAppearance(named: appearance == "Light" ? .aqua : .darkAqua)
           window.contentView = host
-          host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
+          host.frame = NSRect(x: 0, y: 0, width: width, height: height)
           try await Task.sleep(for: .milliseconds(50))
           host.layoutSubtreeIfNeeded()
           XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)

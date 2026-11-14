@@ -29,19 +29,17 @@ Keep aniCe running in the menu bar; closing the window does not quit it.
 
 - **[Edge Drop](docs/features/FILE_TRANSFER.md#sending):** On by default at the right edge. Drag regular Finder files to the Mac screen edge to send them to the selected compatible phone; change the edge or turn the shelf off in Settings → File transfer.
 - **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** `⌥⌘V` opens searchable local clipboard history with previews, filters and pins. Copy a selection for ordinary paste, even without a connected phone.
-- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` opens a compact control for typing on Android from your Mac; expand it for trackpad and navigation actions. aniCe trust, system Bluetooth pairing and a confirmed device link are required.
-- **Menu-bar sharing:** Choose **Send files…** or **Send clipboard**, and follow current transfer activity from the companion.
+- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles a floating button to send input directly to your phone from your Mac keyboard in a click—with an expandable trackpad.
+- **Menu Bar Companion:** Click the menu bar icon to check phone battery and connection state, control active media playback, track transfer progress, access pinned features directly and quickly send files or clipboard text.
 
 **Command-Q quits aniCe**, including its companion and floating controls.
 
 ### File sharing and clipboard
 
 - **[File transfer](docs/features/FILE_TRANSFER.md):**
-  - **Mac → Android:** Drop regular Finder files into aniCe, use the native picker, or send through the menu bar and Edge Drop, which is on by default.
-  - **Android → Mac:** Choose files in another app and use **Share → Send to Mac**.
+  - **Send instantly:** Drag files to the screen edge (Edge Drop), drop them into the app window, or share from Android via **Share → Send to Mac**.
   - **Receiving:** Choose a local save folder and enable automatic receiving per trusted sender. Incoming files are verified and saved without overwriting existing files.
-  - **Recovery:** Interrupted transfers retain verified progress for up to 15 minutes. Reconnect to the same trusted peer over LAN to resume, or explicitly continue over Bluetooth.
-  - Folders and unavailable cloud-only files are unsupported. The feature guide explains approval, background behavior and Bluetooth fallback.
+  - **Resilient recovery:** Interrupted transfers keep verified progress for up to 15 minutes and resume automatically over Wi-Fi or Bluetooth.
 - **[Clipboard sync](docs/features/CLIPBOARD.md):** Share text and links manually or enable automatic sharing separately on each device. Keep optional local history and open shared HTTP(S) links directly in the Mac browser. Android clipboard observation requires input focus; images and rich text are unsupported.
 - **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** Option–Command–V opens searchable Mac clipboard history with filters, previews, pins and keyboard selection. Return copies the selection for ordinary paste; the tray does not inject text into another app.
 
@@ -49,7 +47,7 @@ Keep aniCe running in the menu bar; closing the window does not quit it.
 
 - **[Control Mac](docs/features/PHONE_TO_MAC.md):** Use your phone as a keyboard and trackpad to type, move the pointer, click, drag and scroll over an authenticated Bluetooth session. Mac input permission is required.
 - **[Control Android](docs/features/KEYBOARD_TRACKPAD.md):** Use your Mac keyboard and trackpad through system Bluetooth HID, including Android Home, Back and Recents controls. Option–Command–K toggles the floating control; native Bluetooth pairing and an explicit device link are required.
-- **[Mac Desk Deck](docs/features/MAC_DESK_DECK.md):** See CPU, memory, thermal pressure and power status on your phone. Request Mac lock, open screenshot controls, toggle DND, adjust supported audio controls, switch output devices and launch Mac-approved apps. Screenshots stay on the Mac; controls depend on permissions and hardware.
+- **[Mac Desk Deck](docs/features/MAC_DESK_DECK.md):** See CPU, memory, thermal pressure and power status on your phone. Request Mac lock, open screenshot controls, toggle DND, adjust volume, switch audio output devices and launch Mac-approved apps. Screenshots stay on the Mac; controls depend on permissions and hardware.
 
 ### Playback, messages and notifications
 
@@ -76,8 +74,6 @@ Beta updates are opt-in and require confirmation before enabling. **About → Re
 - **Mac:** Swift 6, SwiftUI and AppKit, with native windows, menu-bar controls, clipboard access, Bluetooth HID, audio controls and Shortcuts integration.
 - **Shared foundation:** Versioned protocol contracts and test vectors define pairing, encrypted sessions and feature messages. A small Rust bridge supplies OPAQUE PIN pairing; identity storage, connections and feature owners remain native to each platform.
 - **Direct connections:** Bluetooth Low Energy and local Wi-Fi carry authenticated feature data between trusted devices. LAN transfer profile 4 supports chunks up to 512 KiB and up to 4 MiB outstanding; these are negotiated limits, not promised transfer rates.
-
-aniCe uses open-source libraries; the Mac Now Playing adapter includes code adapted from Vorssaint with [upstream attribution](apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md).
 
 See [architecture](ARCHITECTURE.md), [protocol contracts](protocol/README.md) and [performance](docs/PERFORMANCE.md) for the system design and its limits.
 
@@ -116,5 +112,6 @@ docs/               Feature guides, design, decisions and roadmap
 - [Design](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md) · [Performance](docs/PERFORMANCE.md)
 - [Background Bluetooth](docs/BACKGROUND_CONNECTIONS.md) · [LAN ownership](docs/LAN_CONNECTIONS.md)
 - [Changelog](CHANGELOG.md) · [Android changes](apps/android/CHANGELOG.md) · [Mac changes](apps/macos/CHANGELOG.md) · [Protocol changes](protocol/CHANGELOG.md)
+- [Third-party notices](apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md)
 
 Licensed under [GPL-3.0-or-later](LICENSE).

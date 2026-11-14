@@ -18,6 +18,8 @@ python3 assets/logo/export-brand-icons.py
 
 Generates macOS app/Dock/status icons, Android adaptive launcher icons, and previews in [`review/`](review/).
 
+The packaged Mac app/Finder icon uses the same near-black artwork as the dark Dock icon, including after extracting the release ZIP. Android reuses that Dock background without Mac padding, retaining its native adaptive mask and foreground sizing. The running Dock and Android launcher follow system Light/Dark appearance; Android uses the near-black tile when no appearance is specified. In-app branding keeps its existing Appearance behavior.
+
 ## Previews
 
 - [Transparent Master](review/anice-mark-transparent-review.png)

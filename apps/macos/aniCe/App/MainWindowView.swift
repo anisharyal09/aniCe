@@ -58,23 +58,27 @@ struct MainWindowView: View {
   }
 
   var body: some View {
-    NavigationSplitView {
+    let sidebarMinimumWidth = MainWindowSizing.sidebarMinimumWidth(fontScale: fontScale)
+    return NavigationSplitView {
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 8) {
           Image("BrandMark")
-            .resizable().scaledToFit().frame(width: 22, height: 22)
+            .resizable().scaledToFit()
+            .frame(width: MainWindowSizing.sidebarIconSize, height: MainWindowSizing.sidebarIconSize)
             .accessibilityHidden(true)
           AniCeWordmark(size: 21 * fontScale, weight: .semibold)
         }.foregroundStyle(AniCePalette.primaryText(colorScheme))
-          .padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 24)
+          .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.top, 28).padding(.bottom, 24)
         Text("Workspace").font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          .padding(.horizontal, 14).padding(.bottom, 12)
+          .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 12)
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
         Spacer(minLength: 24)
         sidebarItem(.settings)
         sidebarItem(.about)
-      }.padding(.horizontal, 14).padding(.bottom, 24)
-        .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
+      }.padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 24)
+        .navigationSplitViewColumnWidth(min: sidebarMinimumWidth,
+          ideal: sidebarMinimumWidth + MainWindowSizing.sidebarBreathingRoom,
+          max: MainWindowSizing.sidebarMaximumWidth)
         .background(AniCePalette.secondarySurface(colorScheme))
         .overlay(alignment: .trailing) { AniCePalette.separator(colorScheme).frame(width: 0.5) }
         .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
@@ -202,7 +206,7 @@ struct MainWindowView: View {
         Spacer(minLength: 0)
       }
       .foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
-      .padding(.horizontal, 14).padding(.vertical, 8)
+      .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.vertical, 8)
       .frame(minHeight: 34)
       .background(selected ? AniCePalette.subtleAccent(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
       .overlay {
@@ -217,6 +221,27 @@ struct MainWindowView: View {
     .padding(.bottom, 4)
   }
 
+}
+
+@MainActor enum MainWindowSizing {
+  static let defaultSize = CGSize(width: 960, height: 640)
+  static let sidebarIconSize: CGFloat = 27
+  static let sidebarInset: CGFloat = 14
+  static let sidebarBreathingRoom: CGFloat = 12
+  static let sidebarMaximumWidth: CGFloat = 250
+
+  static func sidebarMinimumWidth(fontScale: Double) -> CGFloat {
+    let wordmark = ("aniCe" as NSString).size(withAttributes: [
+      .font: NSFont.systemFont(ofSize: 21 * fontScale, weight: .semibold)
+    ]).width
+    let labelFont = NSFont.systemFont(ofSize: 13 * fontScale, weight: .medium)
+    let labelWidth = AppDestination.primary.map {
+      ($0.rawValue as NSString).size(withAttributes: [.font: labelFont]).width
+    }.max() ?? 0
+    let contentWidth = max(sidebarIconSize + 8 + wordmark, 18 + 12 + labelWidth)
+    // Branding and rows each have an inner inset inside the sidebar's outer inset.
+    return ceil((contentWidth + 4 * sidebarInset) / 4) * 4
+  }
 }
 
 struct ClickableDisclosureStyle: DisclosureGroupStyle {

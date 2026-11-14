@@ -38,10 +38,18 @@ struct AniCeApp: App {
   init() {
     precondition(MacAppStorage.isPreview == (Bundle.main.bundleIdentifier == MacAppStorage.previewBundleIdentifier),
       "The preview compilation flag and isolated bundle identifier must agree.")
+    precondition(!MacAppStorage.isTransferPreview || MacAppStorage.isPreview,
+      "The transfer preview requires the isolated preview compilation flag.")
     UserDefaults.standard.register(defaults: [
       "ui.favouriteFeatures": AppFeature.defaultFavourites,
       "ui.companionPinnedFeatures": AppFeature.defaultPinnedToCompanion
     ])
+    if MacAppStorage.isTransferPreview {
+      UserDefaults.standard.register(defaults: [
+        "fileTransfer.edgeDrop.enabled": false,
+        "fileTransfer.edgeDrop.edge": EdgeDropEdge.left.rawValue
+      ])
+    }
     let assemblyStarted = ProcessInfo.processInfo.systemUptime
     let clipboard = MacClipboardModel(native: MacClipboard(), history: ClipboardHistory(storage: ClipboardHistoryFile(url: MacAppStorage.applicationSupport.appendingPathComponent("Clipboard/history.json")), preferences: .standard), preferences: ClipboardPreferences(storage: .standard))
     _clipboard = State(initialValue: clipboard)
@@ -64,7 +72,7 @@ struct AniCeApp: App {
     let transferNotifier = MacTransferNotifier(
       model: transfer,
       openMainWindow: {
-        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
+        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" || window.title == MacAppStorage.applicationName {
           window.deminiaturize(nil)
           window.makeKeyAndOrderFront(nil)
         }
@@ -72,8 +80,9 @@ struct AniCeApp: App {
       }
     )
     _transferNotifier = State(initialValue: transferNotifier)
-    transfer.onEvent = { [weak transferNotifier] event in
+    transfer.onEvent = { [weak transferNotifier, weak edgeDrop] event in
       transferNotifier?.handle(event)
+      edgeDrop?.handle(event)
     }
     let navigation = ConnectionNavigation()
     _navigation = State(initialValue: navigation)
@@ -112,7 +121,7 @@ struct AniCeApp: App {
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     smsNotifier.onOpenMessages = { [weak navigation] in
       navigation?.openFeature(.messages)
-      for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" {
+      for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" || window.title == MacAppStorage.applicationName {
         window.deminiaturize(nil)
         window.makeKeyAndOrderFront(nil)
       }
@@ -204,8 +213,6 @@ struct AniCeApp: App {
   @MainActor private func startDeferredServices() {
     guard !servicesStarted else { return }
     servicesStarted = true
-    // UI previews must not register competing hotkeys, clipboard observers or background connections.
-    guard !MacAppStorage.isPreview else { return }
     clipboard.installLifecycle()
     session.restoreAutomatic()
     guard !IdentityView.isTesting else { return }
@@ -262,7 +269,7 @@ struct AniCeApp: App {
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
         onInitialRender: { startDeferredServices() }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
     }
-    .defaultSize(width: 800, height: 560)
+    .defaultSize(width: MainWindowSizing.defaultSize.width, height: MainWindowSizing.defaultSize.height)
     .windowResizability(.contentMinSize)
 
   }

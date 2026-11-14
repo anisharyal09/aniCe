@@ -90,7 +90,15 @@ For an isolated emulator preview, run from the repository root:
 ./scripts/dev.sh android --preview --serial emulator-5554
 ```
 
-Preview mode verifies the target is an emulator and the APK package is `io.github.anisharyal09.anice.preview` before installing. **aniCe Preview** has its own app data and Keystore identity; it does not replace the normal aniCe package. Preview builds are Debug-only.
+UI preview mode verifies the target is an emulator and the APK package is `io.github.anisharyal09.anice.preview` before installing. **aniCe Preview** has its own app data and Keystore identity; it does not replace the normal aniCe package. Preview builds are Debug-only.
+
+For an isolated transfer preview on an explicitly selected test phone, run:
+
+```sh
+./scripts/dev.sh android --transfer-preview --serial DEVICE_SERIAL
+```
+
+This builds **aniCe Transfer Preview** as `io.github.anisharyal09.anice.preview.transfer`, verifies the package ID and installs alongside the normal aniCe app. It never uninstalls or replaces production; remember that a fresh package starts with its own data and permissions.
 
 For the strict aggregate gate, run from the repository root:
 
