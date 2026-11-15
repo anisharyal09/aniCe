@@ -837,6 +837,61 @@ final class ClipboardTests: XCTestCase {
     model.invalidate()
   }
 
+  @MainActor func testPauseFencesAutomaticPreparationAndBlockedDelivery() async throws {
+    for blocked in [false, true] {
+      let h = ClipboardHarness(), c = ClipboardChannel()
+      try await h.ready(c)
+      defer { h.owner.invalidate() }
+      c.blocked = blocked
+      let attempts = c.attempts
+      h.owner.setAutomatic(true)
+      XCTAssertTrue(h.owner.busy)
+      if blocked { try await until { c.attempts > attempts } }
+      h.owner.pause(for: .untilTurnedOn)
+      XCTAssertFalse(h.owner.busy)
+      XCTAssertNil(h.native.observer)
+      c.blocked = false; h.owner.capacityAvailable(c.descriptor)
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertFalse(c.sent.contains { $0.kind == 3 })
+      h.owner.resume()
+      h.native.observer?()
+      XCTAssertFalse(h.owner.busy)
+      XCTAssertFalse(c.sent.contains { $0.kind == 3 })
+    }
+  }
+
+  @MainActor func testPauseDropsQueuedAutomaticCopyButPreservesManualSend() async throws {
+    let h = ClipboardHarness(), c = ClipboardChannel()
+    try await h.ready(c)
+    defer { h.owner.invalidate() }
+    h.native.sample = ClipboardSample(text: "excluded", excluded: true, token: "1")
+    h.owner.setAutomatic(true)
+    h.owner.send(pasted: "manual")
+    try await until { c.sent.contains { $0.kind == 5 } }
+    let begin = try XCTUnwrap(c.sent.first { $0.kind == 3 })
+    h.native.sample = ClipboardSample(text: "queued", token: "2"); h.native.observer?()
+    h.owner.pause(for: .untilTurnedOn)
+    XCTAssertTrue(h.owner.busy)
+    _ = await h.owner.handle(try ClipboardMessage.result(begin.text(2), 0).encode(), on: c.descriptor)
+    try await until { !h.owner.busy }
+    XCTAssertEqual(h.owner.status, "Clipboard delivered")
+    XCTAssertEqual(c.sent.filter { $0.kind == 3 }.count, 1)
+
+    h.owner.send(pasted: "explicit while paused")
+    try await until { c.sent.filter { $0.kind == 5 }.count == 2 }
+    XCTAssertEqual(c.sent.last { $0.kind == 3 }?.number(3), 0)
+    let manual = try XCTUnwrap(c.sent.last { $0.kind == 3 })
+    _ = await h.owner.handle(try ClipboardMessage.result(manual.text(2), 0).encode(), on: c.descriptor)
+    try await until { !h.owner.busy }
+    h.native.sample = ClipboardSample(text: "copied during pause", token: "3")
+    h.owner.resume(); h.native.observer?()
+    XCTAssertFalse(h.owner.busy)
+    h.native.sample = ClipboardSample(text: "fresh copy", token: "4"); h.native.observer?()
+    try await until { c.sent.filter { $0.kind == 5 }.count == 3 }
+    XCTAssertEqual(c.sent.last { $0.kind == 3 }?.number(3), 1)
+    XCTAssertEqual(c.sent.filter { $0.kind == 3 }.count, 3)
+  }
+
   @MainActor func testMultiDeleteAndCopyText() async throws {
     let native = ClipboardNativeFake(), history = ClipboardHistory()
     history.setEnabled(true); try await until { history.enabled }

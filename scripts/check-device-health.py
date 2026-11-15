@@ -48,7 +48,7 @@ def find_adb():
 
 def parse_battery_info(dumpsys_output):
     level_match = re.search(r"\blevel:\s*(\d+)", dumpsys_output)
-    temp_match = re.search(r"\btemperature:\s*(\d+)", dumpsys_output)
+    temp_match = re.search(r"\btemperature:\s*(-?\d+)", dumpsys_output)
     scale_match = re.search(r"\bscale:\s*(\d+)", dumpsys_output)
 
     if not level_match or not temp_match:
@@ -60,7 +60,7 @@ def parse_battery_info(dumpsys_output):
 
     # Android reports temperature in tenths of a degree Celsius (e.g., 272 = 27.2°C)
     raw_temp = int(temp_match.group(1))
-    temp_celsius = raw_temp / 10.0 if raw_temp > 100 else float(raw_temp)
+    temp_celsius = raw_temp / 10.0
 
     return {
         "level_percent": battery_pct,

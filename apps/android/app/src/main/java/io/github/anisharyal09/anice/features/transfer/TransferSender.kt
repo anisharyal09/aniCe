@@ -35,6 +35,7 @@ internal fun TransferController.sendUrisFlow(uris: List<Uri>, reviewedPeerDevice
         }
         val reviewedPeer = if (reviewedPeerDeviceId != null && reviewedPeerFingerprint != null)
             reviewedPeerDeviceId to reviewedPeerFingerprint else null
+        if (!isBusy && failedRecovery != null) cleanupTransfer()
         val operation = epoch
         prepareSources(uris, reviewedPeer = reviewedPeer) { uri ->
             if (resolver.getType(uri) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
@@ -80,6 +81,7 @@ internal fun <T> TransferController.prepareSources(
         prepare: suspend (T) -> TransferFile
     ) {
         if (isBusy) return
+        if (failedRecovery != null) cleanupTransfer()
         if (state !is TransferState.Connecting) selectPreferredChannel()
         if (sources.isEmpty() || sources.size > 128) {
             updateState(TransferState.Failed("Transfer batch must contain 1 to 128 files"))

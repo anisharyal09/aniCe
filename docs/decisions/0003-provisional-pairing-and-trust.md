@@ -14,4 +14,4 @@ GATT writes and indications use bounded framing at every MTU, including 23. Larg
 
 References: https://github.com/facebook/opaque-ke/tree/v4.0.1 and https://docs.rs/opaque-ke/4.0.1/opaque_ke/ . Independent integration review is required before production security claims.
 
-The peripheral publication lifecycle is refined by [ADR 0004](0004-stable-ble-attribute-layout.md): a stable public characteristic layout with invitation-gated application access replaces conditional characteristic publication.
+The peripheral publication lifecycle is refined by [ADR 0004](0004-stable-ble-attribute-layout.md): a stable public characteristic layout with invitation-gated application access replaces conditional characteristic publication. Ongoing secure sessions (deferred in the initial bootstrap design above) are established in [ADR 0005](0005-edhoc-secure-sessions.md).

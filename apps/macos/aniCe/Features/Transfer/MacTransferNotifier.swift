@@ -183,40 +183,6 @@ struct TransferNotificationContent: Equatable {
     )
   }
 
-  static func failed(reason: String) -> TransferNotificationContent {
-    return TransferNotificationContent(
-      identifier: "transfer-failed-\(UUID().uuidString.prefix(8))",
-      categoryIdentifier: MacTransferNotifier.Category.result,
-      title: "Transfer failed",
-      body: reason,
-      userInfo: [:]
-    )
-  }
-
-  // Reports a paused batch with its progress context. Either side may continue over Bluetooth when
-  // the retained batch offers it, so the category changes with that availability.
-  static func paused(batch: TransferBatch, reason: String, canResumeOverBle: Bool) -> TransferNotificationContent {
-    let countStr = "\(batch.files.count) file\(batch.files.count == 1 ? "" : "s")"
-    let sizeStr = ByteCountFormatter.string(fromByteCount: batch.totalBytes, countStyle: .file)
-    return TransferNotificationContent(
-      identifier: "transfer-paused-\(batch.idString)",
-      categoryIdentifier: canResumeOverBle ? MacTransferNotifier.Category.pausedSender : MacTransferNotifier.Category.paused,
-      title: "Transfer paused",
-      body: "\(batch.peerName) · \(countStr) (\(sizeStr)) · \(reason)",
-      userInfo: ["batchId": batch.idString]
-    )
-  }
-
-  // Legacy payload; current stale offer actions return without posting a new notice.
-  static func staleOfferNotice() -> TransferNotificationContent {
-    return TransferNotificationContent(
-      identifier: "transfer-stale-\(UUID().uuidString.prefix(8))",
-      categoryIdentifier: MacTransferNotifier.Category.result,
-      title: "Transfer unavailable",
-      body: "The offer is no longer available.",
-      userInfo: [:]
-    )
-  }
 }
 
 @MainActor final class MacTransferNotifier: NSObject {

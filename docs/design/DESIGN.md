@@ -102,7 +102,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Home and Overview
 - Single device row showing connected device name, readiness status, and battery percentage when authenticated.
-- Session control: Wrapped Pause button with duration menu (15m, 1h, 8h, Until tomorrow) and Resume now when paused.
+- Session control: Wrapped Pause button with duration menu (11m, 21m, 45m, 3h, 9h, Until turned back on) and Resume now when paused.
 - Quick actions: Compact Send Files and Send Clipboard buttons.
 - Active work (transfers, current playback) displays prominently above secondary recent activity.
 

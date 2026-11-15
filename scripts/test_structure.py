@@ -79,6 +79,8 @@ class StructureTests(unittest.TestCase):
             self.assertEqual(len(structure.documentation_errors(root, [doc])), 1)
             doc.write_text('[ok](valid.md#part)')
             self.assertEqual(structure.documentation_errors(root, [doc]), [])
+            with patch.object(structure, 'is_git_ignored', return_value=True):
+                self.assertTrue(any('ignored link target' in err for err in structure.documentation_errors(root, [doc])))
 
     def test_missing_and_duplicate_membership(self):
         with tempfile.TemporaryDirectory() as directory:

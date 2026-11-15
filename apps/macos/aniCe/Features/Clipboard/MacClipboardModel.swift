@@ -153,12 +153,13 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     return "Paused until turned on"
   }
 
-  /// Temporarily halts clipboard observation for the given duration.
-  /// Drops idle CPU consumption to 0% by tearing down the native pasteboard observer.
+  /// Stops observation and future automatic submissions without cancelling explicit manual sends.
   func pause(for duration: ClipboardPauseDuration) {
     pauseTimer?.cancel()
     pauseTimer = nil
     isPaused = true
+    pending = nil
+    if preparingAutomatic || outgoing?.begin.number(3) == 1 { cancel() }
     if let seconds = duration.seconds {
       let deadline = Date().addingTimeInterval(seconds)
       pauseDeadline = deadline
@@ -178,6 +179,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   func resume() {
     pauseTimer?.cancel()
     pauseTimer = nil
+    if isPaused { observedToken = native.token() }
     isPaused = false
     pauseDeadline = nil
     updateObservation()
@@ -279,6 +281,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     submit(sample, auto: false)
   }
   private func submit(_ sample: ClipboardSample, auto: Bool) {
+    guard !auto || !isPaused else { return }
     guard let peer = selected else { return }
     guard candidates(peer).contains(where: { !auto || $0.remoteAutomatic }) else { status = "Connect first, or enable automatic sharing on both devices"; return }
     if busy { if auto { pending = sample }; return }
@@ -286,7 +289,8 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     busy = true; preparingAutomatic = auto; sampling += 1; let generation = sampling
     Task { [weak self] in
       let pair = await Task.detached { let data = Data(sample.text.utf8); return (data, Data(SHA256.hash(data: data))) }.value
-      guard let self, generation == self.sampling, self.selected.map(self.key) == self.key(peer), !auto || self.automatic else { return }
+      guard let self, generation == self.sampling, self.selected.map(self.key) == self.key(peer),
+        !auto || self.automatic && !self.isPaused else { return }
       self.preparingAutomatic = false
       guard self.revision < 4294967295 else { self.busy = false; self.status = "Clipboard revision limit reached"; return }
       self.revision += 1
@@ -348,12 +352,13 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
         if item.result == 0 { recordActivity(item.sample, received: false, peer: item.peer) }
         outgoing = nil; busy = false; preview = nil
         let next = pending; pending = nil
-        if let next, automatic, !sleeping { submit(next, auto: true) }
+        if let next, automatic, !sleeping, !isPaused { submit(next, auto: true) }
         schedule()
       }
     }
     for _ in 0..<2 {
       guard outgoing === item, now() < item.deadline, !Task.isCancelled,
+        item.begin.number(3) != 1 || !isPaused,
         let link = candidates(item.peer).first(where: { l in !item.attempted.contains { $0.transport == l.channel.descriptor.transport } && (item.begin.number(3) == 0 || l.remoteAutomatic) }) else { return }
       item.attempted.append(link.channel.descriptor)
       do {

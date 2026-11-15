@@ -48,6 +48,12 @@ class DeviceHealthTests(unittest.TestCase):
         self.assertEqual(metrics["level_percent"], 90.0)
         self.assertEqual(metrics["temperature_celsius"], 31.0)
 
+    def test_cold_zero_and_negative_readings_remain_tenths_of_a_degree(self):
+        for raw, celsius in ((101, 10.1), (100, 10.0), (99, 9.9), (0, 0.0), (-50, -5.0)):
+            with self.subTest(raw=raw):
+                metrics = device_health.parse_battery_info(f"level: 80\nscale: 100\ntemperature: {raw}\n")
+                self.assertEqual(metrics["temperature_celsius"], celsius)
+
     def test_parse_battery_info_missing_fields(self):
         with self.assertRaises(ValueError):
             device_health.parse_battery_info("no data")

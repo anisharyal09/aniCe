@@ -49,14 +49,6 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertEqual(completedContent.categoryIdentifier, MacTransferNotifier.Category.result)
     XCTAssertEqual(completedContent.userInfo["receivedFolder"], downloadFolder.absoluteString)
 
-    let failedContent = TransferNotificationContent.failed(reason: "Hash mismatch")
-    XCTAssertEqual(failedContent.title, "Transfer failed")
-    XCTAssertEqual(failedContent.body, "Hash mismatch")
-    XCTAssertEqual(failedContent.categoryIdentifier, MacTransferNotifier.Category.result)
-
-    let staleContent = TransferNotificationContent.staleOfferNotice()
-    XCTAssertEqual(staleContent.title, "Transfer unavailable")
-    XCTAssertEqual(staleContent.body, "The offer is no longer available.")
   }
 
   func testEventSinkFiresIncomingOfferCompletedAndFailedOnlyWhenReceiving() async throws {
@@ -161,22 +153,7 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertTrue(windowOpened)
   }
 
-  func testPausedContentAndActionsFollowContinuationAvailability() throws {
-    let batch = makeBatch(count: 2)
-    let waitingContent = TransferNotificationContent.paused(
-      batch: batch, reason: "Local network connection lost", canResumeOverBle: false)
-    XCTAssertEqual(waitingContent.identifier, "transfer-paused-\(batch.idString)")
-    XCTAssertEqual(waitingContent.categoryIdentifier, MacTransferNotifier.Category.paused)
-    XCTAssertEqual(waitingContent.title, "Transfer paused")
-    XCTAssertTrue(waitingContent.body.contains("Pixel 9"))
-    XCTAssertTrue(waitingContent.body.contains("2 files"))
-    XCTAssertTrue(waitingContent.body.contains("Local network connection lost"))
-    XCTAssertEqual(waitingContent.userInfo["batchId"], batch.idString)
-
-    let continuableContent = TransferNotificationContent.paused(
-      batch: batch, reason: "Local network connection lost", canResumeOverBle: true)
-    XCTAssertEqual(continuableContent.categoryIdentifier, MacTransferNotifier.Category.pausedSender)
-
+  func testLegacyPausedCategoriesRetainTheirActions() throws {
     let categories = MacTransferNotifier.notificationCategories()
     let paused = try XCTUnwrap(categories.first { $0.identifier == MacTransferNotifier.Category.paused })
     XCTAssertEqual(paused.actions.map(\.identifier), [MacTransferNotifier.Action.cancelTransfer])

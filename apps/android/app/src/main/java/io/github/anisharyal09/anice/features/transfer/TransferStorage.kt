@@ -129,6 +129,10 @@ internal class TransferReceiveStorage(
         partial?.let { identity(it) } ?: ""
     }
 
+    suspend fun hasVerifiedPartial(): Boolean = onStorage("hasVerifiedPartial") {
+        preservePartial && (partial != null || document != null)
+    }
+
     companion object {
         private fun identity(file: File): String = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java,
             LinkOption.NOFOLLOW_LINKS).fileKey()?.toString() ?: ""

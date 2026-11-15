@@ -4,11 +4,6 @@ import Foundation
 
 enum MacDeskDeckWireError: Error { case malformed }
 
-struct MacDeskDeckShortcut: Equatable {
-  let id: String
-  let name: String
-}
-
 struct MacDeskDeckMessage {
   let version: Int64
   let kind: Int64

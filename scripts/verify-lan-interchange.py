@@ -80,7 +80,7 @@ def benchmark_deadline_result(progress, total, window):
     return progress
 
 
-def main():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--serial', required=True)
     parser.add_argument('--family', choices=('ipv4', 'link-local'), default='ipv4')
@@ -88,13 +88,18 @@ def main():
     parser.add_argument('--mac-binary', type=Path, help='Use an already-built native interchange helper')
     parser.add_argument('--benchmark-mib', type=int, choices=(4, 16, 100, 1024))
     parser.add_argument('--window', type=int, choices=(4, 8, 32, 64))
-    parser.add_argument('--profile', choices=('standard', 'bulk-probe', 'lan-transfer'), default='standard')
-    args = parser.parse_args()
+    parser.add_argument('--profile', choices=('standard', 'bulk-probe', 'lan-transfer', 'lan-transfer-512'), default='standard')
+    args = parser.parse_args(argv)
     args.window = args.window or (32 if args.profile == 'standard' else 4)
     if args.window not in ((32, 64) if args.profile == 'standard' else (4, 8)):
         parser.error('window does not belong to the selected profile')
     if args.profile != 'standard' and not args.benchmark_mib:
-        parser.error('bulk-probe requires --benchmark-mib')
+        parser.error('nonstandard profiles require --benchmark-mib')
+    return args
+
+
+def main():
+    args = parse_args()
     output = args.output or Path(tempfile.mkdtemp(prefix='anice-lan-native-'))
     output.mkdir(parents=True, exist_ok=True)
     adb = ['adb', '-s', args.serial]

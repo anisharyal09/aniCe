@@ -606,24 +606,35 @@ PY
         self.assertEqual(set(draft['needs']), {'metadata', 'android', 'macos'})
         self.assertEqual(draft['permissions'], {'contents': 'write', 'actions': 'read'})
         names = [step.get('name') for step in draft['steps']]
-        self.assertLess(names.index('Require device verification for this commit'),
+        self.assertLess(names.index('Require device verification for these artifacts'),
                         names.index('Prepare and verify release draft'))
         self.assertNotIn('--draft=false', '\n'.join(step_runs(draft)))
 
-    def test_release_device_gate_allows_only_the_tested_commit_at_publication(self):
+    def test_release_device_gate_binds_the_tag_source_and_both_artifacts_before_publication(self):
         draft = workflow_documents()['release.yml']['jobs']['publish']
-        gate = next(step for step in draft['steps'] if step.get('name') == 'Require device verification for this commit')
-        for verified, accepted in (('a' * 40, True), ('', False), ('b' * 40, False), ('not-a-commit', False)):
-            with self.subTest(verified=verified):
-                result = subprocess.run(
-                    ['bash', '-e', '-o', 'pipefail', '-c', gate['run']],
-                    cwd=ROOT,
-                    env=os.environ | {'VERIFIED_COMMIT': verified, 'RELEASE_COMMIT': 'a' * 40},
-                    capture_output=True, text=True, timeout=5,
-                )
-                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
-                if not accepted:
-                    self.assertIn('rerun only this job', result.stderr)
+        gate = next(step for step in draft['steps'] if step.get('name') == 'Require device verification for these artifacts')
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scripts').symlink_to(ROOT / 'scripts', target_is_directory=True)
+            (root / 'dist').mkdir()
+            for name in ('aniCe-android.apk', 'aniCe-mac.zip'):
+                (root / 'dist' / name).write_bytes(b'signed')
+            digest = hashlib.sha256(b'signed').hexdigest()
+            values = {'VERIFIED_COMMIT': 'a' * 40, 'RELEASE_COMMIT': 'a' * 40,
+                      'VERIFIED_TAG': 'v0.9.0-beta.1', 'RELEASE_TAG': 'v0.9.0-beta.1',
+                      'VERIFIED_ANDROID_SHA256': digest, 'VERIFIED_MACOS_SHA256': digest}
+            for name in ('VERIFIED_TAG', 'VERIFIED_COMMIT', 'VERIFIED_ANDROID_SHA256', 'VERIFIED_MACOS_SHA256'):
+                self.assertIn('${{ vars.RELEASE_DEVICE_' + name + ' }}', draft['env'][name])
+            for change in ({}, {'VERIFIED_COMMIT': ''}, {'VERIFIED_COMMIT': 'b' * 40},
+                           {'VERIFIED_TAG': 'v0.9.0-beta.2'}, {'VERIFIED_ANDROID_SHA256': 'b' * 64},
+                           {'VERIFIED_MACOS_SHA256': 'b' * 64}):
+                with self.subTest(change=change):
+                    result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', gate['run']], cwd=root,
+                        env=os.environ | values | change, capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode == 0, not change, result.stdout + result.stderr)
+                    if change:
+                        self.assertIn('rerun only this job', result.stderr)
 
     def test_security_workflow_policies(self):
         document = workflow_documents()["security.yml"]

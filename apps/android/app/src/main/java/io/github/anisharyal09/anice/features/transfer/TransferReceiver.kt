@@ -514,7 +514,11 @@ internal suspend fun TransferController.finalizeReceiverFileOwned(batch: Transfe
             if (operation != epoch || receiverStorage !== storage) return
             storage.finish(file.name, file.sha256)
         } catch (error: Exception) {
-            if (operation == epoch) { finalizing = false; failTransfer("File verification or finalization failed: ${error.message}") }
+            val retained = storage.hasVerifiedPartial()
+            if (operation == epoch) {
+                finalizing = false
+                failTransfer("File verification or finalization failed: ${error.message}", preserveRecovery = retained)
+            }
             return
         }
         if (operation != epoch || receiverStorage !== storage) return

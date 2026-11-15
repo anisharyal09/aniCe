@@ -37,8 +37,12 @@ import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionException
+import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -205,6 +209,11 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         var remoteCapability: Boolean = false,
         val sendLock: Mutex = Mutex(),
         val sentIconPackages: LinkedHashSet<String> = linkedSetOf(),
+        var capabilityPending: Boolean = false,
+        var snapshotPending: Boolean = false,
+        var wakeRevision: Long = 0,
+        var retryJob: Job? = null,
+        val pendingResults: LinkedHashMap<String, NotificationWireMessage> = linkedMapOf(),
     )
     private data class Completed(val result: Long, val expiry: Long)
     private val app = context.applicationContext
@@ -246,12 +255,17 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         val link = links[descriptor.transport] ?: return
         if (link.channel.descriptor != descriptor) return
         links.remove(descriptor.transport)
+        link.retryJob?.cancel()
         if (links.values.none { peerKey(it.channel.descriptor.peer) == peerKey(descriptor.peer) }) {
             clearPeerState(peerKey(descriptor.peer))
         }
     }
 
-    override fun capacityAvailable(descriptor: io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor) = Unit
+    override fun capacityAvailable(descriptor: io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor) {
+        val link = links[descriptor.transport]?.takeIf { it.channel.descriptor == descriptor } ?: return
+        link.wakeRevision++
+        retryPending(link)
+    }
 
     override suspend fun handle(
         descriptor: io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor,
@@ -700,18 +714,48 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     }
 
     private fun sendSnapshot(link: Link) {
+        link.snapshotPending = true
+        link.wakeRevision++
+        retryPending(link)
+    }
+
+    private fun retryPending(link: Link) {
+        if (links[link.channel.descriptor.transport] !== link || link.retryJob?.isActive == true) return
+        val retry = scope.launch(start = CoroutineStart.LAZY) {
+            do {
+                val revision = link.wakeRevision
+                if (link.capabilityPending) sendNow(link, NotificationWireMessage.of(1, number(NotificationWireMessage.MAX_ACTIONS)))
+                for ((id, message) in link.pendingResults.toMap()) {
+                    val cached = completed["${peerKey(link.channel.descriptor.peer)}:$id"]
+                    if (cached == null || cached.expiry <= now) link.pendingResults.remove(id)
+                    else if (!sendNow(link, message)) break
+                }
+                if (link.remoteCapability && link.snapshotPending) {
+                    link.snapshotPending = false
+                    if (!sendSnapshotNow(link)) link.snapshotPending = true
+                }
+                // A capacity event during submission must not be lost; otherwise wait for the next event.
+            } while (links[link.channel.descriptor.transport] === link && revision != link.wakeRevision)
+        }
+        link.retryJob = retry
+        retry.start()
+    }
+
+    private suspend fun sendSnapshotNow(link: Link): Boolean {
         val snapshotEpoch = epoch
         val highWater = sequence
         val peer = peerKey(link.channel.descriptor.peer)
         val rows = active.values.filter { it.sequence <= highWater && !isDismissedPhoneCall(peer, it) }.toList()
         val token = UUID.randomUUID().toString()
-        scope.launch {
-            sendNow(link, NotificationWireMessage.of(4, text(token), text(snapshotEpoch), number(highWater)))
-            for (entry in rows) {
-                sendEntry(link, entry, token)
-            }
-            sendNow(link, NotificationWireMessage.of(5, text(token)))
+        if (!sendNow(link, NotificationWireMessage.of(4, text(token), text(snapshotEpoch), number(highWater)))) return false
+        for (entry in rows) {
+            if (!sendEntry(link, entry, token)) return false
         }
+        if (!sendNow(link, NotificationWireMessage.of(5, text(token)))) return false
+        deliveredRevisions[peer]?.keys?.removeAll { id ->
+            active[id]?.let { isDismissedPhoneCall(peer, it) } != false
+        }
+        return true
     }
 
     private fun sendUpsert(entry: NotificationEntry) {
@@ -722,24 +766,24 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     private fun isDismissedPhoneCall(peer: String, entry: NotificationEntry) =
         entry.statusBar == null && "$peer:${entry.id}" in dismissedPhoneCalls
 
-    private suspend fun sendEntry(link: Link, entry: NotificationEntry, snapshotToken: String) {
+    private suspend fun sendEntry(link: Link, entry: NotificationEntry, snapshotToken: String): Boolean =
         link.sendLock.withLock {
-            if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return
-            if (isDismissedPhoneCall(peerKey(link.channel.descriptor.peer), entry)) return
+            if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return@withLock true
+            if (isDismissedPhoneCall(peerKey(link.channel.descriptor.peer), entry)) return@withLock true
             if (sendsSourceIcons(link.channel.descriptor.transport) && entry.appPackage !in link.sentIconPackages) {
                 val sourceIcon = sourceIconFor(entry.appPackage)
                 val icon = sourceIcon?.let { NotificationWireMessage.of(9, text(entry.appPackage), Cbor.Bytes(it)) }
-                if (icon != null && sendNow(link, icon)) {
+                if (icon != null) {
+                    if (!sendNow(link, icon)) return@withLock false
                     link.sentIconPackages += entry.appPackage
                     if (link.sentIconPackages.size > MAX_ICON_CACHE_ENTRIES) {
                         link.sentIconPackages.remove(link.sentIconPackages.first())
                     }
                 }
             }
-            if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return
+            if (active[entry.id]?.let { it.epoch == entry.epoch && it.sequence == entry.sequence } != true) return@withLock true
             sendNow(link, notificationRecord(entry, snapshotToken))
         }
-    }
 
     private fun notificationRecord(entry: NotificationEntry, snapshotToken: String) = NotificationWireMessage.of(
         2, text(snapshotToken), text(entry.id), text(entry.epoch), number(entry.sequence), text(entry.appPackage),
@@ -763,10 +807,13 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         if (message.kind == 2L && active[message.text(1)]?.let {
             isDismissedPhoneCall(peerKey(link.channel.descriptor.peer), it)
         } == true) return false
+        val revision = link.wakeRevision
         try {
             link.channel.sendData(message.encode())
+            if (links[link.channel.descriptor.transport] !== link) return false
             val peer = peerKey(link.channel.descriptor.peer)
             when (message.kind) {
+                1L -> link.capabilityPending = false
                 2L -> {
                     val id = message.text(1)
                     val revision = DeliveredRevision(message.text(2), message.number(3))
@@ -782,9 +829,21 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
                         deliveredRevisions[peer]?.remove(id)
                     }
                 }
+                7L -> if (link.pendingResults[message.text(0)] == message) link.pendingResults.remove(message.text(0))
             }
             return true
-        } catch (_: Exception) { /* Active state is sent again on the next secure connection. */ }
+        } catch (error: CancellationException) { throw error }
+        catch (_: SessionBackpressure) {
+            when (message.kind) {
+                1L -> link.capabilityPending = true
+                7L -> {
+                    link.pendingResults[message.text(0)] = message
+                    while (link.pendingResults.size > MAX_RESULTS_PER_PEER) link.pendingResults.remove(link.pendingResults.keys.first())
+                }
+                else -> link.snapshotPending = true
+            }
+            if (revision != link.wakeRevision) retryPending(link)
+        } catch (_: Exception) { /* Channel replacement sends a fresh active-state snapshot. */ }
         return false
     }
 

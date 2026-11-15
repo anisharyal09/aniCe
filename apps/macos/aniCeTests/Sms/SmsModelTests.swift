@@ -855,11 +855,33 @@ final class SmsModelTests: XCTestCase {
 
   // MARK: - Outgoing replies
 
+  @MainActor func testOversizedRepliesNeverSendAndNotificationDraftsPreserveExistingText() async throws {
+    let spy = SmsNotifierSpy(), model = make(spy, SmsClock())
+    let channel = MockSecuredChannel()
+    let peer = try await ready(model, channel)
+    let address = "+15551234567"
+    for text in [String(repeating: "a", count: 24577), String(repeating: "😀", count: 6145)] {
+      model.send(peer, address: address, text: text)
+      XCTAssertFalse(model.sending(peer))
+      XCTAssertTrue(sent(channel, 11).isEmpty)
+      XCTAssertTrue(model.status(peer).contains("exceeds"))
+      model.saveDraft("Existing draft", peer: peer, address: address)
+      await model.reply(SmsReplyRequest(peerKey: key(peer), peerName: peer.deviceName,
+        address: address, threadId: "sms:42", text: text))
+      XCTAssertEqual(model.draft(peer, address: address), "Existing draft\n\n" + text)
+      XCTAssertEqual(model.selectedPhoneKey, key(peer))
+      XCTAssertEqual(model.selectedConversation(peer), address)
+      XCTAssertTrue(sent(channel, 11).isEmpty)
+      XCTAssertTrue(spy.notes.isEmpty)
+    }
+    model.invalidate()
+  }
+
   @MainActor func testSendStreamsAtBoundsAndEchoesProviderIdentity() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let channel = MockSecuredChannel(transport: "lan")
     let peer = try await ready(model, channel)
-    model.send(peer, address: "+1 (555) 123-4567", text: String(repeating: "a", count: 30000))
+    model.send(peer, address: "+1 (555) 123-4567", text: String(repeating: "a", count: 24576))
     await until("send stream") { self.sent(channel, 13).count == 1 }
     let begin = try XCTUnwrap(try lastSent(channel, 11))
     XCTAssertEqual(begin.text(1), "addr:+15551234567")
@@ -1180,7 +1202,7 @@ final class SmsModelTests: XCTestCase {
     XCTAssertEqual(channel.sentData.count, before)
   }
 
-  @MainActor func testNotificationReplyFastFailsWithoutChannelAndClampsText() async throws {
+  @MainActor func testNotificationReplyFastFailsWithoutChannelAndSendsAtTheByteLimit() async throws {
     let spy = SmsNotifierSpy(), clock = SmsClock(), model = make(spy, clock)
     let peer = MockSecuredChannel().descriptor.peer
     let target = SmsReplyRequest(peerKey: key(peer), peerName: peer.deviceName, address: "+15551234567",
@@ -1191,7 +1213,7 @@ final class SmsModelTests: XCTestCase {
     let channel = MockSecuredChannel(transport: "lan", peer: peer)
     _ = try await ready(model, channel)
     await model.reply(SmsReplyRequest(peerKey: key(peer), peerName: peer.deviceName, address: "+15551234567",
-      threadId: "sms:42", text: String(repeating: "😀", count: 7000)))
+      threadId: "sms:42", text: String(repeating: "😀", count: 6144)))
     await until("reply stream") { self.sent(channel, 13).count == 1 }
     let begin = try XCTUnwrap(try lastSent(channel, 11))
     XCTAssertEqual(begin.text(1), "sms:42")

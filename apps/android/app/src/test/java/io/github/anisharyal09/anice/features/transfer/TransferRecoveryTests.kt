@@ -11,8 +11,130 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.UUID
 import java.nio.ByteBuffer
+import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 
 class TransferRecoveryTests {
+    @Test fun statusRepliesMustMatchTheRequestChannelEpochBatchAndFile() = runBlocking {
+        val serial = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as CoroutineDispatcher
+        val owner = TransferController(dispatcher = serial)
+        val lan = MockAndroidSecuredChannel()
+        val ble = MockAndroidSecuredChannel(transport = "ble")
+        val file = TransferFile(UUID.randomUUID().toString(), "file.bin", 4, ByteArray(32))
+        val batch = TransferBatch(UUID.randomUUID().toString(), listOf(file), 4, "Mac")
+        try {
+            owner.available(lan); owner.available(ble)
+            owner.activeChannel = ble
+            owner.currentBatch = batch
+            owner.state = TransferState.Transferring(batch, 1, file.name, 0, 4, 0, 0.0)
+            val request = TransferMessage.resume(batch.id, file.id, 0, ByteArray(32)).encode()
+            val pending = async(start = CoroutineStart.UNDISPATCHED) { owner.requestStatus(lan, request) }
+            val reply = TransferMessage.status(batch.id, file.id, 2, 0)
+            assertNotNull(owner.statusWaiter)
+            assertEquals(DataHandling.DISCARDED, owner.handle(ble.descriptor, reply.encode()))
+            for (wrong in listOf(TransferMessage.status(UUID.randomUUID().toString(), file.id, 2, 0),
+                    TransferMessage.status(batch.id, UUID.randomUUID().toString(), 2, 0),
+                    TransferMessage.status(batch.id, file.id, 5, 0))) {
+                assertEquals(DataHandling.DISCARDED, owner.handle(lan.descriptor, wrong.encode()))
+            }
+            assertFalse(pending.isCompleted)
+            assertEquals(0L, owner.sentBytes)
+            assertEquals(DataHandling.HANDLED, owner.handle(lan.descriptor, reply.encode()))
+            assertEquals(reply, pending.await())
+            assertEquals(2L, owner.sentBytes)
+            assertNull(owner.statusWaiter)
+            assertEquals(DataHandling.DISCARDED, owner.handle(lan.descriptor, reply.encode()))
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun standbyRetirementCancellationAndEpochChangeReleaseStatusWaiters() = runBlocking {
+        val serial = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as CoroutineDispatcher
+        val owner = TransferController(dispatcher = serial, resumeTimeoutMillis = 50)
+        val lan = MockAndroidSecuredChannel()
+        val ble = MockAndroidSecuredChannel(transport = "ble")
+        val file = TransferFile(UUID.randomUUID().toString(), "file.bin", 4, ByteArray(32))
+        val batch = TransferBatch(UUID.randomUUID().toString(), listOf(file), 4, "Mac")
+        try {
+            owner.available(lan); owner.available(ble); owner.activeChannel = ble
+            owner.currentBatch = batch
+            owner.state = TransferState.Transferring(batch, 1, file.name, 0, 4, 0, 0.0)
+            val request = TransferMessage.resume(batch.id, file.id, 0, ByteArray(32)).encode()
+            val retired = async(start = CoroutineStart.UNDISPATCHED) { owner.requestStatus(lan, request) }
+            owner.retired(lan.descriptor)
+            assertNull(withTimeout(1000) { retired.await() })
+            assertNull(owner.statusWaiter)
+            val cancelled = async(start = CoroutineStart.UNDISPATCHED) { owner.requestStatus(ble, request) }
+            cancelled.cancelAndJoin()
+            assertNull(owner.statusWaiter)
+            val stale = async(start = CoroutineStart.UNDISPATCHED) { owner.requestStatus(ble, request) }
+            owner.epoch = UUID.randomUUID()
+            assertEquals(DataHandling.DISCARDED, owner.handle(ble.descriptor,
+                TransferMessage.status(batch.id, file.id, 2, 0).encode()))
+            assertNull(withTimeout(1000) { stale.await() })
+            assertNull(owner.statusWaiter)
+            assertEquals(0L, owner.sentBytes)
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun publicationFailureRetainsItsCheckpointUntilRestartOrExplicitDiscard() = runBlocking {
+        val serial = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as CoroutineDispatcher
+        for (restart in listOf(false, true)) {
+            val folder = Files.createTempDirectory("anice-failed-publication-").toFile()
+            val journal = File(folder, "private/checkpoint")
+            val base = snapshot(folder)
+            val file = base.batch.files.single()
+            val owner = TransferController(dispatcher = serial, receiveDispatcher = serial,
+                recoveryFile = journal, recoveryIdentity = { local })
+            var restored: TransferController? = null
+            try {
+                owner.recoveryReady.await()
+                val channel = MockAndroidSecuredChannel()
+                owner.available(channel)
+                val storage = TransferReceiveStorage(folder, null, ioDispatcher = serial, link = { target, _ ->
+                    throw java.nio.file.AccessDeniedException(target.path)
+                })
+                val partial = storage.create(base.batch.id, file.id).first!!
+                storage.write(ByteArray(4))
+                owner.currentBatch = base.batch; owner.receiving = true
+                owner.transferPeerDeviceId = base.peerId; owner.transferPeerFingerprint = base.peerFingerprint
+                owner.destinationDirectory = folder; owner.receiverStorage = storage; owner.receiverPartFile = partial
+                owner.receiverWrittenBytes = 4; owner.receiverTotalTransferred = 4
+                owner.state = TransferState.Transferring(base.batch, 1, file.name, 4, 4, 4, 0.0)
+                owner.finalizeReceiverFile(base.batch)
+                owner.receiveCleanup?.join()
+                assertTrue(owner.state is TransferState.Failed)
+                val saved = TransferRecoveryStore(journal).load()!!
+                assertEquals(4, saved.stage); assertEquals(4L, saved.offset)
+                assertEquals(partial.path, saved.partial)
+                assertArrayEquals(ByteArray(4), partial.readBytes())
+                assertFalse(File(folder, file.name).exists())
+                assertFalse(channel.sentData.mapNotNull { TransferMessage.decode(it) }.any { it.kind == 7L && it.number(2) == 0L })
+                owner.retired(channel.descriptor)
+                assertNotNull(TransferRecoveryStore(journal).load())
+                if (restart) {
+                    owner.scope.cancel()
+                    restored = TransferController(dispatcher = serial, receiveDispatcher = serial,
+                        recoveryFile = journal, recoveryIdentity = { local })
+                    restored.recoveryReady.await()
+                    assertTrue(restored.state is TransferState.Paused)
+                    restored.available(channel)
+                    restored.handle(channel.descriptor, TransferMessage.resume(base.batch.id, file.id, 4, file.sha256).encode())
+                    withTimeout(2000) { while (restored.state !is TransferState.Completed) delay(5) }
+                    assertArrayEquals(ByteArray(4), File(folder, file.name).readBytes())
+                } else {
+                    owner.cancelTransfer()
+                    owner.receiveCleanup?.join()
+                    withTimeout(2000) { while (journal.exists()) delay(5) }
+                    assertFalse(partial.exists())
+                    assertTrue(File(base.partial).exists())
+                }
+            } finally {
+                restored?.dismiss(); owner.dismiss()
+                owner.receiveCleanup?.join(); restored?.receiveCleanup?.join()
+                folder.deleteRecursively()
+            }
+        }
+    }
+
     private val local = "a".repeat(64)
     private fun snapshot(folder: File, expires: Long = System.currentTimeMillis() + 60_000): TransferCheckpoint {
         val batchId = UUID.randomUUID().toString(); val fileId = UUID.randomUUID().toString()
@@ -22,6 +144,44 @@ class TransferRecoveryTests {
         return TransferCheckpoint(local, peer.deviceId, peer.fingerprint,
             TransferBatch(batchId, listOf(file), 4, "Mac"), true, 0, 1, folder.absolutePath,
             "", part.absolutePath, "", "lan", expires)
+    }
+
+    @Test fun returningLanRequiresAFreshResumeBeforeAnyDataUsesTheNewRoute() = runBlocking {
+        val serial = coroutineContext[kotlin.coroutines.ContinuationInterceptor] as CoroutineDispatcher
+        val folder = Files.createTempDirectory("anice-resume-route-").toFile()
+        val base = snapshot(folder)
+        val source = File(folder, "source.bin").apply { writeBytes(ByteArray(4)) }
+        val file = base.batch.files.single().copy(sourceFile = source)
+        val saved = base.copy(receiving = false, folder = "", partial = "", offset = 0, transport = "ble",
+            batch = base.batch.copy(files = listOf(file)))
+        val journal = File(folder, "private/checkpoint")
+        TransferRecoveryStore(journal).save(saved)
+        val owner = TransferController(dispatcher = serial, receiveDispatcher = serial,
+            recoveryFile = journal, recoveryIdentity = { local })
+        try {
+            owner.recoveryReady.await()
+            val ble = MockAndroidSecuredChannel(instance = "old-ble", transport = "ble")
+            owner.available(ble); owner.handle(ble.descriptor, TransferMessage.capability().encode())
+            withTimeout(2000) { while (owner.statusWaiter?.channel != ble.descriptor) delay(5) }
+            val lan = MockAndroidSecuredChannel(instance = "returning-lan")
+            lan.onSendData = { bytes ->
+                val message = TransferMessage.decode(bytes)!!
+                if (message.kind == 10L) owner.handle(lan.descriptor, TransferMessage.status(saved.batch.id, file.id, 0, 0).encode())
+                if (message.kind == 5L) owner.handle(lan.descriptor, TransferMessage.fileResult(saved.batch.id, file.id, 0, file.sha256).encode())
+            }
+            owner.available(lan); owner.handle(lan.descriptor, TransferMessage.capability().encode())
+            assertEquals(lan.descriptor, owner.activeChannel?.descriptor)
+            assertEquals(ble.descriptor, owner.statusWaiter?.channel)
+            owner.handle(ble.descriptor, TransferMessage.status(saved.batch.id, file.id, 0, 0).encode())
+            withTimeout(2000) { while (owner.state !is TransferState.Completed) delay(5) }
+            assertFalse(ble.sentData.any { TransferMessage.decode(it)?.kind == 5L })
+            val kinds = lan.sentData.mapNotNull { TransferMessage.decode(it)?.kind }
+            assertTrue(kinds.indexOf(10L) >= 0)
+            assertTrue(kinds.indexOf(5L) > kinds.indexOf(10L))
+        } finally {
+            owner.dismiss(); owner.receiveCleanup?.join(); owner.scope.cancel()
+            folder.deleteRecursively()
+        }
     }
 
     @Test fun restartedReceiverVerifiesAndContinuesOnlyItsCheckpointedPrefix() = runBlocking {

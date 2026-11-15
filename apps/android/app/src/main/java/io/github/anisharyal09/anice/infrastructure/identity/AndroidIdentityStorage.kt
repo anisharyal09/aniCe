@@ -7,9 +7,8 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
-import android.util.AtomicFile
+import io.github.anisharyal09.anice.infrastructure.storage.AtomicJournal
 import java.io.File
-import java.io.FileNotFoundException
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -21,12 +20,10 @@ import org.json.JSONObject
 
 /** Atomic, backup-excluded identity metadata. */
 class AndroidIdentityMetadata(context: Context, filename: String = "identity-v1.json") : IdentityMetadataStore {
-    private val file = AtomicFile(File(context.noBackupFilesDir, filename))
+    private val file = AtomicJournal(File(context.noBackupFilesDir, filename))
     override fun read(): IdentityJournal? {
-        val bytes = try { file.readFully() } catch (error: FileNotFoundException) {
-            if (!file.baseFile.exists()) return null
-            throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE, error)
-        } catch (error: Exception) { throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE, error) }
+        val bytes = try { file.read() ?: return null }
+        catch (error: Exception) { throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE, error) }
         try {
             val json = JSONObject(bytes.toString(Charsets.UTF_8))
             require(json.get("storageVersion") is Int && json.getInt("storageVersion") == 1)
@@ -53,13 +50,9 @@ class AndroidIdentityMetadata(context: Context, filename: String = "identity-v1.
         val json = JSONObject().put("storageVersion", 1).put("cleanup", JSONArray(journal.cleanup))
         journal.active?.let { json.put("active", JSONObject().put("alias", it.alias).put("identity", it.identity.toJson())) }
         journal.pending?.let { json.put("pending", JSONObject().put("alias", it.alias).put("deviceId", it.deviceId)) }
-        var stream: java.io.FileOutputStream? = null
         try {
-            stream = file.startWrite()
-            stream.write(json.toString().toByteArray(Charsets.UTF_8))
-            file.finishWrite(stream)
+            file.write(json.toString().toByteArray(Charsets.UTF_8))
         } catch (error: Exception) {
-            file.failWrite(stream)
             throw IdentityException(IdentityErrorKind.STORAGE_UNAVAILABLE, error)
         }
     }

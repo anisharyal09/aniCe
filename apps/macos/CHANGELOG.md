@@ -89,6 +89,11 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
+- Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.
+- Bind transfer status waiters to their issuing channel and job epoch; retain publication checkpoints after a verified file fails to save.
+- Bound notification inventories and removal tombstones, prune unused native action categories, and preserve first-alert presentation through pending revisions.
+- Move ordered playback-helper input writes off MainActor with bounded pending bytes and nonblocking cancellation.
 - Use explicit closures in SMS phone/conversation selection to avoid Swift Release compiler crashes.
 - Relaunch the restored app after an immediate update-launch failure, and persist the failure before relaunch so recovery is reported in its first window. Preserve recovery state if rollback cannot exchange bundles.
 - **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).

@@ -627,7 +627,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     onLanRequired()
     let state = state(k)
     let normalized = smsNormalizedAddress(address)
-    let body = smsTruncate(smsSanitizeText(text), maxBytes: Int(SmsMessage.maxBodyBytes))
+    let body = smsSanitizeText(text)
+    guard body.utf8.count <= Int(SmsMessage.maxBodyBytes) else {
+      state.status = "Message exceeds 24 KiB. Shorten it before sending."
+      return
+    }
     guard !normalized.isEmpty else { state.status = "Choose a conversation first"; return }
     guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { state.status = "Write a message first"; return }
     guard state.send == nil else { state.status = "A reply is already in flight"; return }
@@ -672,6 +676,15 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   /** Notification replies fast-fail without a live capable channel instead of queueing forever. */
   func reply(_ request: SmsReplyRequest) async {
     let state = state(request.peerKey)
+    if smsSanitizeText(request.text).utf8.count > Int(SmsMessage.maxBodyBytes) {
+      if let peer = links(for: request.peerKey).first?.channel.descriptor.peer {
+        let existing = draft(peer, address: request.address)
+        saveDraft(existing.isEmpty ? request.text : existing + "\n\n" + request.text, peer: peer, address: request.address)
+        selectConversation(peer, address: request.address)
+      }
+      state.status = "Message exceeds 24 KiB. Shorten it before sending."
+      return
+    }
     guard let link = capableLink(request.peerKey), state.send == nil else {
       state.status = state.send == nil ? "Connect your phone to send replies" : "A reply is already in flight"
       await notifier.post(failureNote(request.peerKey, request.peerName, request.address, request.threadId))

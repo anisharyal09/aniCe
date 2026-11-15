@@ -4,6 +4,8 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import contextlib
+import io
 
 spec = importlib.util.spec_from_file_location(
     'lan_interchange', Path(__file__).with_name('verify-lan-interchange.py'))
@@ -72,6 +74,24 @@ class LanDeadlineInventoryTests(unittest.TestCase):
 
 
 class LanBenchmarkGateTests(unittest.TestCase):
+    def test_profile_four_is_selectable_and_retains_bulk_window_bounds(self):
+        for window in (None, 4, 8):
+            arguments = ['--serial', 'test-phone', '--profile', 'lan-transfer-512', '--benchmark-mib', '16']
+            if window:
+                arguments += ['--window', str(window)]
+            args = harness.parse_args(arguments)
+            self.assertEqual(args.profile, 'lan-transfer-512')
+            self.assertEqual(args.window, window or 4)
+        for arguments in (
+            ['--profile', 'lan-transfer-512'],
+            ['--profile', 'lan-transfer-512', '--benchmark-mib', '16', '--window', '32'],
+            ['--profile', 'unknown', '--benchmark-mib', '16'],
+        ):
+            with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    harness.parse_args(['--serial', 'test-phone', *arguments])
+                self.assertEqual(error.exception.code, 2)
+
     def metrics(self):
         common = dict(bytes=100 * 1048576, window=32)
         return (dict(common, androidSendMiBs=8.1, androidReceiveMiBs=8.2),

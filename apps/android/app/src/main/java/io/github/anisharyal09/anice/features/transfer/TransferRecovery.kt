@@ -250,6 +250,7 @@ internal fun TransferController.checkpoint(force: Boolean = false, publishingIde
             receiverPartFile?.absolutePath ?: "", receiverPartDocument?.toString() ?: "",
             pausedTransport ?: peer.transport, expires, stage, publishingIdentity ?: "", documentDestination?.ownedModes ?: 0,
             documentDestination?.backend ?: "file")
+        latestCheckpoint = snapshot
         val done = if (force) CompletableDeferred<Unit>() else null
         recoveryWrites.trySend(TransferController.RecoveryWrite(snapshot, if (receiving) receiverStorage else null, done))
         return done
@@ -470,7 +471,7 @@ internal fun TransferController.pauseTransfer(descriptor: ChannelDescriptor, pre
         resumeCredit()
         resumeJob?.cancel(); resumeJob = null
         upgradeJob?.cancel(); upgradeJob = null
-        statusDeferred?.cancel(); statusDeferred = null
+        abandonStatus()
         // Old-channel callbacks must not touch the retained batch after the channel is gone.
         epoch = UUID.randomUUID()
         val reason = if (descriptor.transport == "lan") "Local network connection lost" else "Bluetooth connection lost"
@@ -568,9 +569,16 @@ internal fun TransferController.attemptResume() {
                     channel,
                     TransferMessage.resume(batch.id, file.id, offset, prefix).encode(chunkLimit(channel.descriptor))
                 ) ?: run {
+                    if (operation == epoch && activeChannel?.descriptor != channel.descriptor) {
+                        resumeJob = null; attemptResume()
+                    }
                     return@launch
                 }
                 if (operation != epoch) return@launch
+                if (activeChannel?.descriptor != channel.descriptor) {
+                    resumeJob = null; attemptResume()
+                    return@launch
+                }
                 when (status.number(3)) {
                     0L -> { offset = status.number(2).coerceIn(0L, file.size); break }
                     1L -> {
@@ -703,11 +711,13 @@ internal fun TransferController.requestPeerContinuation() {
     }
 
 internal suspend fun TransferController.requestStatus(channel: SecuredChannel, request: ByteArray): TransferMessage? {
-        val deferred = CompletableDeferred<TransferMessage>()
-        statusDeferred = deferred
+        if (statusWaiter != null || channels[channel.descriptor.transport]?.descriptor != channel.descriptor) return null
+        val waiter = TransferController.StatusWaiter(channel.descriptor, epoch, CompletableDeferred())
+        statusWaiter = waiter
         return try {
             sendWithBackpressure(request, channel)
-            withTimeout(resumeTimeoutMillis) { deferred.await() }
+            val reply = withTimeout(resumeTimeoutMillis) { waiter.result.await() }
+            if (waiter.epoch == epoch && channels[channel.descriptor.transport]?.descriptor == channel.descriptor) reply else null
         } catch (error: TimeoutCancellationException) {
             null
         } catch (error: CancellationException) {
@@ -715,26 +725,36 @@ internal suspend fun TransferController.requestStatus(channel: SecuredChannel, r
         } catch (_: Exception) {
             null
         } finally {
-            if (statusDeferred === deferred) statusDeferred = null
+            if (statusWaiter === waiter) statusWaiter = null
         }
     }
 
-internal fun TransferController.handleStatus(message: TransferMessage) {
-        val batch = currentBatch ?: return
-        if (message.string(0) != batch.id) return
+internal fun TransferController.abandonStatus() {
+        val waiter = statusWaiter
+        statusWaiter = null
+        waiter?.result?.complete(null)
+    }
+
+internal fun TransferController.handleStatus(message: TransferMessage, descriptor: ChannelDescriptor): Boolean {
+        val waiter = statusWaiter ?: return false
+        if (waiter.channel != descriptor || waiter.epoch != epoch ||
+            channels[descriptor.transport]?.descriptor != descriptor) return false
+        if (state !is TransferState.Paused && state !is TransferState.Transferring) return false
+        val batch = currentBatch ?: return false
+        if (message.string(0) != batch.id) return false
         // The waiter belongs to whichever side initiated the handshake: the sender after its own
         // resume, or the receiver after a receiver-initiated Bluetooth continuation.
         val index = if (receiving) receiverCurrentFileIndex else senderFileIndex
-        val file = batch.files.getOrNull(index) ?: return
-        if (message.string(1) != file.id) return
-        if (message.number(2) !in 0..file.size) return
-        val deferred = statusDeferred ?: return
+        val file = batch.files.getOrNull(index) ?: return false
+        if (message.string(1) != file.id) return false
+        if (message.number(2) !in 0..file.size) return false
         if (!receiving && message.number(3) == 0L && message.number(2) in 0..file.size) {
             sendingFile = file
             sentBytes = message.number(2)
         }
-        statusDeferred = null
-        deferred.complete(message)
+        statusWaiter = null
+        waiter.result.complete(message)
+        return true
     }
 
 internal suspend fun TransferController.handleResume(message: TransferMessage, descriptor: ChannelDescriptor) {
@@ -899,7 +919,7 @@ internal suspend fun TransferController.handlePeerResume(
         transferJob?.cancel(); transferJob = null
         resumeJob?.cancel(); resumeJob = null
         upgradeJob?.cancel(); upgradeJob = null
-        statusDeferred?.cancel(); statusDeferred = null
+        abandonStatus()
         fileResultDeferred?.cancel(); fileResultDeferred = null
         resumeCredit()
         pauseTimerJob?.cancel(); pauseTimerJob = null
@@ -945,7 +965,7 @@ internal fun TransferController.maybeUpgradeToLan(descriptor: ChannelDescriptor)
         if (active.descriptor.transport != "ble") return
         val lan = channels["lan"] ?: return
         if (lan.descriptor != descriptor || capabilities["lan"] == null) return
-        if (upgradeJob?.isActive == true || resumeJob?.isActive == true || statusDeferred != null) return
+        if (upgradeJob?.isActive == true || resumeJob?.isActive == true || statusWaiter != null) return
         val batch = currentBatch ?: return
         val fileIndex = senderFileIndex
         val file = batch.files.getOrNull(fileIndex) ?: return

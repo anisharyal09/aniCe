@@ -134,7 +134,7 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertEqual(center.added.count, 2)
   }
 
-  @MainActor func testReplyActionRoutesClampedTextAndUnknownIdentifiersAreIgnored() async throws {
+  @MainActor func testReplyActionRoutesTextAndUnknownIdentifiersAreIgnored() async throws {
     let center = SpySmsNotificationCenter(), prefs = preferences(), peer = phone()
     let notifier = MacSmsNotifier(preferences: prefs, center: center)
     var replies: [SmsReplyRequest] = []
@@ -161,22 +161,26 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertEqual(opened, 1)
   }
 
-  @MainActor func testReplyTextClampsOnCodepointBoundaries() async throws {
+  @MainActor func testOversizedReplyPreservesTextAndOpensMessagesForReview() async throws {
     let center = SpySmsNotificationCenter(), prefs = preferences(), peer = phone()
     let notifier = MacSmsNotifier(preferences: prefs, center: center)
     var replies: [SmsReplyRequest] = []
+    var opened = 0
     notifier.onReply = { replies.append($0) }
+    notifier.onOpenMessages = { opened += 1 }
     await notifier.post(note(peer))
     let identifier = smsNotificationPrefix + "sms:1"
-    _ = notifier.handleAction(category: "ANICE_SMS", action: "ANICE_SMS_REPLY", identifier: identifier, userText: String(repeating: "a", count: 30_000))
-    XCTAssertEqual(replies[0].text.utf8.count, 24576)
-    replies.removeAll()
-    _ = notifier.handleAction(category: "ANICE_SMS", action: "ANICE_SMS_REPLY", identifier: identifier, userText: String(repeating: "😀", count: 7000))
-    XCTAssertEqual(replies[0].text.utf8.count, 24576)
-    XCTAssertEqual(replies[0].text, String(repeating: "😀", count: 6144))
-    replies.removeAll()
+    for text in [String(repeating: "a", count: 24577), String(repeating: "😀", count: 6145)] {
+      _ = notifier.handleAction(category: "ANICE_SMS", action: "ANICE_SMS_REPLY", identifier: identifier, userText: text)
+      XCTAssertEqual(replies.last?.text, text)
+    }
+    XCTAssertEqual(opened, 2)
+    let maximum = String(repeating: "😀", count: 6144)
+    _ = notifier.handleAction(category: "ANICE_SMS", action: "ANICE_SMS_REPLY", identifier: identifier, userText: maximum)
+    XCTAssertEqual(replies.last?.text, maximum)
+    XCTAssertEqual(opened, 2)
     _ = notifier.handleAction(category: "ANICE_SMS", action: "ANICE_SMS_REPLY", identifier: identifier, userText: "a\u{0}b")
-    XCTAssertEqual(replies[0].text, "a\u{FFFD}b")
+    XCTAssertEqual(replies.last?.text, "a\u{FFFD}b")
   }
 
   @MainActor func testFailedReplyAlertCarriesOnlyTheAddress() async throws {

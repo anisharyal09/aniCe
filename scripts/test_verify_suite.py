@@ -709,11 +709,11 @@ class AggregateGateTests(unittest.TestCase):
 
     def test_interchange_execution_records_harnesses_and_manual_acceptance_metadata(self):
         with patch.object(suite, 'find_adb', return_value='/adb'), \
-             patch.object(suite, 'selected_device', return_value='RZCW916NELW'), \
+             patch.object(suite, 'selected_device', return_value='TEST_PHONE_SERIAL'), \
              patch.object(suite, 'run_step') as mock_step, \
              contextlib.redirect_stdout(io.StringIO()):
             result = suite.run_interchange_checks(
-                SimpleNamespace(serial='RZCW916NELW', allow_no_device=False, session_mac_binary=Path('/mock/helper')),
+                SimpleNamespace(serial='TEST_PHONE_SERIAL', allow_no_device=False, session_mac_binary=Path('/mock/helper')),
                 {}, self.root)
         self.assertEqual(result, {
             'harnesses': 3,

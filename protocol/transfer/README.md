@@ -80,6 +80,8 @@ Every transfer message uses the four-element envelope `["aniCe transfer", 1, kin
 
 Pausing retains the receiver's verified partial, the sender's acknowledged offset, the batch identity and both peers' progress. The retained state is checkpointed privately for up to 15 minutes after interruption. Explicit cancel or expiry cleans up only the job-owned partial; a temporary resume failure keeps the job pending. Either side can initiate a resume with kind 10: the sender proposes its acknowledged offset and source prefix, or the receiver proposes the prefix it already holds when the user explicitly continues over Bluetooth. The receiving side always validates and answers with kind 11.
 
+Each status waiter is bound to the issuing authenticated channel instance and local job epoch, as well as the current batch/file. Status from another live transport or a retired generation cannot resolve it. Retirement, cancellation and timeout release the waiter without changing the retained offset. If the preferred route changes during a paused sender's request, it starts a fresh resume on that route before streaming DATA.
+
 | Status state | Meaning |
 | :--- | :--- |
 | 0 | Accepted; `bytesTransferred` is the receiver's retained length |
@@ -94,7 +96,7 @@ Sender flow:
 2. State 0 continues at `bytesTransferred`, which may exceed the proposed offset.
 3. State 1 recomputes the digest at the reported length and retries once; a second state 1 fails the batch.
 4. State 2 restarts the current file from zero after the receiver recreates its partial.
-5. State 3/4 or a status timeout fails the batch with a readable reason.
+5. State 3/4 or a status timeout retains the paused batch until its original expiry.
 6. A live LAN that becomes capable during a BLE stream runs the same handshake over LAN while BLE keeps streaming. On state 0/2 the sender fences the BLE stream and continues on LAN at the reported offset; state 1/3/4 keeps BLE, and a timeout pauses the batch so the normal preferred-channel policy resumes it.
 
 Receiver flow accepts a resume for the retained batch while paused or, after an asymmetrical disconnect, while the receiver still considers the batch transferring. It rebinds to the channel that carried the resume, flushes the partial, checks the requested offset and then the prefix digest, and answers with kind 11. A resume at the full file length after the last chunk was acknowledged but its result was not seen replays the retained verified file result instead of failing.

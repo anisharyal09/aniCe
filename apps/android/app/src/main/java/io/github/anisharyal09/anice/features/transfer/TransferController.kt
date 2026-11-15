@@ -243,7 +243,9 @@ class TransferController(
     internal var pauseTimerJob: Job? = null
     internal var resumeJob: Job? = null
     internal var upgradeJob: Job? = null
-    internal var statusDeferred: CompletableDeferred<TransferMessage>? = null
+    internal data class StatusWaiter(val channel: ChannelDescriptor, val epoch: UUID,
+        val result: CompletableDeferred<TransferMessage?>)
+    internal var statusWaiter: StatusWaiter? = null
     internal var allowBleResume = false
 
     internal data class RetainedResult(
@@ -347,6 +349,7 @@ class TransferController(
     internal var receiptExpiry: Job? = null
     internal var receiptDeadline: Long? = null
     internal var failedRecovery: TransferCheckpoint? = null
+    internal var latestCheckpoint: TransferCheckpoint? = null
 
     init {
         if (recoveryStore == null) recoveryReady.complete(Unit) else startRecoveryWorkers()
@@ -420,6 +423,7 @@ class TransferController(
         ingress.invalidate(descriptor)
         channels.remove(descriptor.transport)
         capabilities.remove(descriptor.transport)
+        if (statusWaiter?.channel == descriptor) abandonStatus()
         clearCapacityWaiters()
         if (descriptor != activeChannel?.descriptor) {
             refreshPausedCapability()
@@ -439,14 +443,14 @@ class TransferController(
                 // A resume attempt lost its channel before it completed; keep the retained prefix.
                 epoch = UUID.randomUUID()
                 resumeJob?.cancel(); resumeJob = null
-                statusDeferred?.cancel(); statusDeferred = null
+                abandonStatus()
                 startPauseTimer()
             }
             isBusy -> {
                 updateState(TransferState.Failed("Connection closed. Send the files again using the remaining connection."))
                 cleanupTransfer()
             }
-            else -> cleanupTransfer()
+            else -> if (failedRecovery == null) cleanupTransfer()
         }
         selectPreferredChannel()
     }
@@ -531,8 +535,7 @@ class TransferController(
             return DataHandling.HANDLED
         }
         if (message.kind == 11L) {
-            if (message.string(0) == currentBatch?.id) handleStatus(message)
-            return DataHandling.HANDLED
+            return if (handleStatus(message, descriptor)) DataHandling.HANDLED else DataHandling.DISCARDED
         }
         if (message.kind == 9L && message.string(0) == currentBatch?.id) {
             processMessage(message, descriptor.peer.deviceName, descriptor)
@@ -755,8 +758,9 @@ internal fun TransferController.invalidateFlow() {
         }
     }
 
-internal fun TransferController.failTransfer(reason: String) {
+internal fun TransferController.failTransfer(reason: String, preserveRecovery: Boolean = false) {
         if (state is TransferState.Completed || state is TransferState.Cancelled) return
+        if (state is TransferState.Failed && failedRecovery != null) return
         val batch = currentBatch
         val channel = activeChannel
         val file = batch?.files?.getOrNull(receiverCurrentFileIndex)
@@ -766,11 +770,12 @@ internal fun TransferController.failTransfer(reason: String) {
             scope.launch { if (channels[channel.descriptor.transport] === channel) runCatching { sendWithBackpressure(result.encode(), channel, jobBound = false) } }
         }
         retainedFileResult = null
+        if (preserveRecovery) failedRecovery = latestCheckpoint
         updateState(TransferState.Failed(reason))
-        cleanupTransfer()
+        cleanupTransfer(preserveRecovery = preserveRecovery)
     }
 
-internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
+internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true, preserveRecovery: Boolean = false) {
         pendingAutomaticReceive = null
         automaticReceiveNeedsApp = false
         restoredSender = false
@@ -780,12 +785,13 @@ internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
         finalizationResumed = false
         receiptExpiry?.cancel(); receiptExpiry = null
         receiptDeadline = null
-        val failed = failedRecovery
-        failedRecovery = null
+        val failed = if (preserveRecovery) null else failedRecovery
+        if (!preserveRecovery) failedRecovery = null
+        latestCheckpoint = null
         val grants = (ownedSourceGrants + (failed?.batch?.files?.filter { it.ownsReadGrant }?.mapNotNull { it.sourceUri } ?: emptyList())).distinct()
         ownedSourceGrants.clear()
         interruptedOffer = null
-        if (recoveryStore != null) recoveryWrites.trySend(TransferController.RecoveryWrite(null, null))
+        if (recoveryStore != null && !preserveRecovery) recoveryWrites.trySend(TransferController.RecoveryWrite(null, null))
         pauseExpiresAt = null; pauseDeadline = null
         resumeAttemptChannel = null; nextResumeAttemptAt = 0
         recoveryPeer = null
@@ -802,7 +808,7 @@ internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
         pauseTimerJob?.cancel(); pauseTimerJob = null
         resumeJob?.cancel(); resumeJob = null
         upgradeJob?.cancel(); upgradeJob = null
-        statusDeferred?.cancel(); statusDeferred = null
+        abandonStatus()
         allowBleResume = false
         pausedTransport = null
         pausedFileIndex = 0
@@ -846,7 +852,8 @@ internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true) {
             }
             catch (error: Exception) { System.err.println("Transfer partial cleanup failed: ${error.javaClass.simpleName}") }
             finally {
-                try { destination?.close() }
+                // Publication recovery retains its persisted destination grant until explicit discard.
+                try { if (!preserveRecovery) destination?.close() }
                 catch (error: SecurityException) { System.err.println("Transfer destination grant cleanup failed: ${error.javaClass.simpleName}") }
                 for (uri in grants) {
                     try { context?.contentResolver?.releasePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }

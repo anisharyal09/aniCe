@@ -40,6 +40,30 @@ def digest(path):
     return sha.hexdigest()
 
 
+def require_device_verification(tag, commit, directory):
+    """Bind maintainer device approval to the tag, source and both signed artifact bytes."""
+    parse_tag(tag)
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("Invalid source commit")
+    files = [pathlib.Path(directory) / name for name in NAMES]
+    for path in files:
+        if not path.is_file() or not 0 < path.stat().st_size <= MAX_BYTES:
+            raise ValueError(f"Missing or oversized release asset: {path.name}")
+    expected = {
+        "VERIFIED_TAG": tag,
+        "VERIFIED_COMMIT": commit,
+        "VERIFIED_ANDROID_SHA256": digest(files[0]),
+        "VERIFIED_MACOS_SHA256": digest(files[1]),
+    }
+    if any(os.environ.get(name) != value for name, value in expected.items()):
+        settings = "\n".join(f"RELEASE_DEVICE_{name}={value}" for name, value in expected.items())
+        raise ValueError(
+            "Device approval does not match these signed artifacts. After testing them, "
+            "set the release environment variables below and rerun only this job without rebuilding:\n" + settings
+        )
+    return files
+
+
 def unexpected_assets(release):
     return sorted(str(item.get("name")) if isinstance(item, dict) else repr(item) for item in release.get("assets", [])
                   if not isinstance(item, dict) or item.get("name") not in NAMES)
@@ -107,10 +131,7 @@ def main():
     check_tag_commit()
     require_ci(repository, commit)
     aapt = os.environ["ANICE_AAPT"]
-    files = [pathlib.Path(directory) / name for name in NAMES]
-    for path in files:
-        if not path.is_file() or not 0 < path.stat().st_size <= MAX_BYTES:
-            raise ValueError(f"Missing or oversized release asset: {path.name}")
+    files = require_device_verification(tag, commit, directory)
     if apk_code(files[0], aapt) != (code, version):
         raise ValueError("Candidate APK does not match its tag")
     releases, existing, marker = check_release_state(repository, tag, commit)
@@ -148,6 +169,7 @@ def main():
         assets = {item["name"]: item for item in release.get("assets", [])}
         verified = {}
         for path in files:
+            approved_digest = os.environ["VERIFIED_ANDROID_SHA256" if path.name == NAMES[0] else "VERIFIED_MACOS_SHA256"]
             asset = assets.get(path.name)
             if asset is None:
                 gh("release", "upload", tag, str(path), "--repo", repository)
@@ -159,7 +181,7 @@ def main():
             downloaded = temp / path.name
             with downloaded.open("wb") as output:
                 gh("api", "-H", "Accept: application/octet-stream", f"repos/{repository}/releases/assets/{asset['id']}", stdout=output)
-            if digest(downloaded) != digest(path):
+            if digest(downloaded) != approved_digest:
                 raise ValueError(f"Draft asset digest mismatch: {path.name}")
             verified[path.name] = (asset["id"], asset["size"])
         def check_verified_draft(release):

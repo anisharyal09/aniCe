@@ -202,15 +202,16 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
     return .submitted
   }
 
-  // Reply text is clamped on codepoint boundaries; the composer enforces the same bound inline.
+  // Oversized replies go to the existing composer without sending a truncated prefix.
   func handleAction(category: String, action: String, identifier: String, userText: String = "") -> Bool {
     guard category == Self.category else { return false }
     switch action {
     case Self.replyAction:
       guard let target = targets[identifier] else { return true }
-      let text = smsTruncate(smsSanitizeText(userText), maxBytes: Int(SmsMessage.maxBodyBytes))
+      let text = smsSanitizeText(userText)
       guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
       onReply(SmsReplyRequest(peerKey: target.peerKey, peerName: target.peerName, address: target.address, threadId: target.threadId, text: text))
+      if text.utf8.count > Int(SmsMessage.maxBodyBytes) { onOpenMessages() }
       return true
     case UNNotificationDefaultActionIdentifier:
       onOpenMessages()

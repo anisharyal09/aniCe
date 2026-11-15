@@ -81,6 +81,60 @@ final class MediaTests: XCTestCase {
     XCTAssertTrue(pipe.append(Data([97,10])))
     XCTAssertEqual(pipe.take(),[Data([97])])
   }
+
+  func testInputPipePreservesWriteOrderAndRejectsClosedOrOversizedRequests() async throws {
+    let pipe = Pipe()
+    let writer = try PlaybackInputPipe(pipe.fileHandleForWriting, failed: { XCTFail("Unexpected pipe failure") })
+    defer { writer.close(); try? pipe.fileHandleForReading.close() }
+    XCTAssertFalse(writer.send(Data()))
+    XCTAssertFalse(writer.send(Data(repeating: 1, count: 2050)))
+    let expected = Data("first\nsecond\n".utf8)
+    let received = expectation(description: "ordered helper input")
+    let reading = Task.detached {
+      defer { received.fulfill() }
+      var bytes = Data()
+      while bytes.count < expected.count,
+        let next = try pipe.fileHandleForReading.read(upToCount: expected.count - bytes.count), !next.isEmpty {
+        bytes.append(next)
+      }
+      return bytes
+    }
+    XCTAssertTrue(writer.send(Data("first\n".utf8)))
+    XCTAssertTrue(writer.send(Data("second\n".utf8)))
+    await fulfillment(of: [received], timeout: 2)
+    writer.close()
+    let bytes = try await reading.value
+    XCTAssertEqual(bytes, expected)
+    XCTAssertFalse(writer.send(Data("after stop\n".utf8)))
+  }
+
+  @MainActor func testUnreadHelperInputIsBoundedAndDoesNotBlockMainActorOrStop() async throws {
+    let pipe = Pipe()
+    let writer = try PlaybackInputPipe(pipe.fileHandleForWriting, failed: {})
+    defer { writer.close(); try? pipe.fileHandleForReading.close() }
+    let bytes = Data(repeating: 97, count: 2049)
+    var refused = 0
+    for _ in 0..<1024 { if !writer.send(bytes) { refused += 1 } }
+    XCTAssertGreaterThan(refused, 0)
+    let responsive = expectation(description: "main actor remains responsive")
+    Task { @MainActor in responsive.fulfill() }
+    await fulfillment(of: [responsive], timeout: 1)
+    writer.close()
+    XCTAssertFalse(writer.send(bytes))
+  }
+
+  func testBrokenInputPipeReportsFailureAndNeverAcceptsMoreWrites() async throws {
+    let pipe = Pipe()
+    let failed = expectation(description: "broken helper input")
+    failed.assertForOverFulfill = true
+    let writer = try PlaybackInputPipe(pipe.fileHandleForWriting, failed: { failed.fulfill() })
+    defer { writer.close() }
+    try pipe.fileHandleForReading.close()
+    XCTAssertTrue(writer.send(Data("command\n".utf8)))
+    await fulfillment(of: [failed], timeout: 2)
+    XCTAssertFalse(writer.send(Data("late command\n".utf8)))
+  }
+
   @MainActor func testPipeDrainStopsWhenAReplyRetiresTheHelperGeneration() {
     let bridge=MediaProcessBridge(),pipe=PlaybackPipe(),generation=bridge.generation
     var received: [Data]=[]

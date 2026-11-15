@@ -87,6 +87,9 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Commit identity and trust journals with checked file sync, atomic replacement and directory sync; restore legacy backup-only journals without resetting trust.
+- Bind transfer status waiters to their channel and job epoch; retain verified partial checkpoints and destination grants after publication failure.
+- Resynchronize notifications on capacity restoration, retain bounded capability/action-result retries, and leave incomplete snapshots open rather than dropping current state.
 - Pin NDK r27d to match the native pairing build and import saveable settings state needed for compilation.
 - Compact the six-digit pairing field and align Find Device permission and peer actions with the standard outlined controls.
 - Show sent or received Bluetooth and LAN check feedback in Diagnostics while the transport is secured.

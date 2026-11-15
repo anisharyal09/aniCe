@@ -980,7 +980,7 @@ final class TransferModelTests: XCTestCase {
     guard case .completed = owner.state else { return XCTFail("Credited BLE transfer did not complete") }
   }
 
-  private func checkpointFixture(receiving: Bool = true, stage: Int = 0) async throws -> (TransferCheckpoint, IdentityService, MockSecuredChannel, URL) {
+  private func checkpointFixture(receiving: Bool = true, stage: Int = 0, transport: String = "lan") async throws -> (TransferCheckpoint, IdentityService, MockSecuredChannel, URL) {
     let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Recovery Mac", tagPrefix: "checkpoint.test.")
     let local = try await identity.publicIdentity(), channel = MockSecuredChannel()
     let source = tempDir.appendingPathComponent("source.bin")
@@ -993,8 +993,172 @@ final class TransferModelTests: XCTestCase {
     let saved = TransferCheckpoint(localFingerprint: local.fingerprint, peerId: channel.descriptor.peer.deviceId,
       peerFingerprint: channel.descriptor.peer.fingerprint, batch: batch, receiving: receiving, index: 0,
       offset: receiving ? 1 : 0, folder: receiving ? tempDir : nil, partial: receiving ? part : nil,
-      transport: "lan", expiresAt: Date().addingTimeInterval(60), stage: stage)
+      transport: transport, expiresAt: Date().addingTimeInterval(60), stage: stage)
     return (saved, identity, channel, tempDir.appendingPathComponent("private/checkpoint-\(UUID().uuidString).json"))
+  }
+
+  func testStatusRepliesAreBoundToTheIssuingChannelEpochAndFile() async throws {
+    let owner = MacTransferModel(resumeTimeout: .milliseconds(100))
+    let lan = MockSecuredChannel()
+    let ble = MockSecuredChannel(transport: "ble", peer: lan.descriptor.peer)
+    let file = TransferFile(id: UUID(), name: "file.bin", size: 4, sha256: Data(repeating: 0, count: 32), localURL: nil)
+    let batch = TransferBatch(id: UUID(), files: [file], totalBytes: 4, peerName: "Phone")
+    owner.channels = ["lan": lan, "ble": ble]; owner.activeChannel = ble
+    owner.currentBatch = batch
+    owner.state = .transferring(batch: batch, fileIndex: 1, fileName: file.name, fileBytes: 0, fileSize: 4, totalBytes: 0, speedBps: 0)
+    defer { owner.dismiss() }
+    let request = try TransferMessage.resume(batch: batch.idString, file: file.idString, offset: 0, prefixHash: file.sha256).encode()
+    let pending = Task { await owner.requestStatus(request, on: lan) }
+    for _ in 0..<200 {
+      if owner.statusRequest != nil { break }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    XCTAssertNotNil(owner.statusRequest)
+    let reply = TransferMessage.status(batch: batch.idString, file: file.idString, bytesTransferred: 2, state: 0)
+    let wrongChannel = await owner.handle(try reply.encode(), on: ble.descriptor)
+    XCTAssertEqual(wrongChannel, .discarded)
+    for wrong in [
+      TransferMessage.status(batch: UUID().uuidString.lowercased(), file: file.idString, bytesTransferred: 2, state: 0),
+      TransferMessage.status(batch: batch.idString, file: UUID().uuidString.lowercased(), bytesTransferred: 2, state: 0),
+      TransferMessage.status(batch: batch.idString, file: file.idString, bytesTransferred: 5, state: 0)
+    ] {
+      let result = await owner.handle(try wrong.encode(), on: lan.descriptor)
+      XCTAssertEqual(result, .discarded)
+    }
+    XCTAssertNotNil(owner.statusWaiter)
+    XCTAssertEqual(owner.sentBytes, 0)
+    let accepted = await owner.handle(try reply.encode(), on: lan.descriptor)
+    XCTAssertEqual(accepted, .handled)
+    let answer = await pending.value
+    XCTAssertEqual(answer, reply)
+    XCTAssertEqual(owner.sentBytes, 2)
+    XCTAssertNil(owner.statusRequest)
+    let duplicate = await owner.handle(try reply.encode(), on: lan.descriptor)
+    XCTAssertEqual(duplicate, .discarded)
+  }
+
+  func testReturningLanRequiresAFreshResumeBeforeStreamingOnTheNewRoute() async throws {
+    let (saved, identity, peer, journal) = try await checkpointFixture(receiving: false, transport: "ble")
+    try await TransferRecoveryStore(journal).save(saved)
+    let owner = MacTransferModel(recoveryURL: journal, identity: identity)
+    defer { owner.dismiss() }
+    for _ in 0..<200 {
+      if owner.recoveryReady { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let ble = MockSecuredChannel(instance: "old-ble", transport: "ble", peer: peer.descriptor.peer)
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    for _ in 0..<200 {
+      if owner.statusRequest?.channel == ble.descriptor { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertEqual(owner.statusRequest?.channel, ble.descriptor)
+    let file = saved.batch.files[0]
+    let lan = MockSecuredChannel(instance: "returning-lan", peer: peer.descriptor.peer)
+    lan.onSendData = { bytes in
+      let message = try XCTUnwrap(TransferMessage.decode(bytes))
+      if message.kind == 10 {
+        _ = await owner.handle(try TransferMessage.status(batch: saved.batch.idString, file: file.idString,
+          bytesTransferred: 0, state: 0).encode(), on: lan.descriptor)
+      }
+      if message.kind == 5 {
+        _ = await owner.handle(try TransferMessage.fileResult(batch: saved.batch.idString, file: file.idString,
+          result: 0, hash: file.sha256).encode(), on: lan.descriptor)
+      }
+    }
+    defer { lan.onSendData = nil }
+    owner.available(lan)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: lan.descriptor)
+    XCTAssertEqual(owner.activeChannel?.descriptor, lan.descriptor)
+    XCTAssertEqual(owner.statusRequest?.channel, ble.descriptor)
+    _ = await owner.handle(try TransferMessage.status(batch: saved.batch.idString, file: file.idString,
+      bytesTransferred: 0, state: 0).encode(), on: ble.descriptor)
+    for _ in 0..<200 {
+      if case .completed = owner.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = owner.state else { return XCTFail("The returning LAN did not complete its own resume") }
+    XCTAssertFalse(ble.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 5 })
+    let kinds = lan.sentData.compactMap { try? TransferMessage.decode($0)?.kind }
+    let resume = try XCTUnwrap(kinds.firstIndex(of: 10))
+    let chunk = try XCTUnwrap(kinds.firstIndex(of: 5))
+    XCTAssertGreaterThan(chunk, resume)
+  }
+
+  func testStatusWaitersReleaseOnStandbyRetirementCancellationAndStaleEpochTimeout() async throws {
+    let owner = MacTransferModel(resumeTimeout: .milliseconds(50))
+    let lan = MockSecuredChannel()
+    let ble = MockSecuredChannel(transport: "ble", peer: lan.descriptor.peer)
+    owner.channels = ["lan": lan, "ble": ble]; owner.activeChannel = ble
+    defer { owner.dismiss() }
+    let request = try TransferMessage.resume(batch: UUID().uuidString.lowercased(), file: UUID().uuidString.lowercased(),
+      offset: 0, prefixHash: Data(repeating: 0, count: 32)).encode()
+    for mode in ["retire", "cancel", "epoch"] {
+      let channel = mode == "retire" ? lan : ble
+      let pending = Task { await owner.requestStatus(request, on: channel) }
+      for _ in 0..<200 {
+        if owner.statusRequest != nil { break }
+        try await Task.sleep(for: .milliseconds(1))
+      }
+      XCTAssertNotNil(owner.statusRequest)
+      if mode == "retire" { owner.retired(lan.descriptor) }
+      else if mode == "cancel" { pending.cancel() }
+      else { owner.epoch = UUID() }
+      let result = await pending.value
+      XCTAssertNil(result)
+      XCTAssertNil(owner.statusWaiter); XCTAssertNil(owner.statusRequest)
+      XCTAssertNil(owner.statusSubmissionTask); XCTAssertNil(owner.statusTimeoutTask)
+    }
+  }
+
+  func testPublicationFailureRetainsCheckpointAcrossRetirementAndRestart() async throws {
+    let (saved, identity, channel, journal) = try await checkpointFixture()
+    try await TransferRecoveryStore(journal).save(saved)
+    let owner = MacTransferModel(recoveryURL: journal, identity: identity)
+    defer { owner.dismiss() }
+    for _ in 0..<200 {
+      if owner.recoveryReady { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertTrue(owner.recoveryReady)
+    owner.channels["lan"] = channel; owner.activeChannel = channel
+    let storage = try XCTUnwrap(owner.receiverStorage)
+    try await storage.write(Data(repeating: 0, count: 3))
+    owner.receiverWrittenBytes = 4; owner.receiverTotalTransferred = 4
+    owner.state = .transferring(batch: saved.batch, fileIndex: 1, fileName: saved.batch.files[0].name,
+      fileBytes: 4, fileSize: 4, totalBytes: 4, speedBps: 0)
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: tempDir.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tempDir.path) }
+    await owner.finalizeReceiverFile(saved.batch)
+    await owner.recoveryWrite?.value
+    guard case .failed = owner.state else { return XCTFail("Publication denial was not reported") }
+    let retained = try await TransferRecoveryStore(journal).load()
+    XCTAssertEqual(retained?.stage, 4); XCTAssertEqual(retained?.offset, 4)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(saved.partial)), Data(repeating: 0, count: 4))
+    XCTAssertFalse(channel.sentData.compactMap { try? TransferMessage.decode($0) }.contains { $0.kind == 7 && $0.number(2) == 0 })
+    owner.retired(channel.descriptor)
+    let afterRetirement = try await TransferRecoveryStore(journal).load()
+    XCTAssertEqual(afterRetirement?.stage, 4)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tempDir.path)
+    let restored = MacTransferModel(recoveryURL: journal, identity: identity)
+    defer { restored.dismiss() }
+    for _ in 0..<200 {
+      if restored.recoveryReady { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .paused = restored.state else { return XCTFail("Failed publication was not recoverable") }
+    restored.channels["lan"] = channel; restored.activeChannel = channel
+    _ = await restored.handle(try TransferMessage.resume(batch: saved.batch.idString, file: saved.batch.files[0].idString,
+      offset: 4, prefixHash: saved.batch.files[0].sha256).encode(), on: channel.descriptor)
+    for _ in 0..<200 {
+      if case .completed = restored.state { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard case .completed = restored.state else { return XCTFail("Retained publication did not complete") }
+    let target = tempDir.appendingPathComponent(saved.batch.files[0].name)
+    XCTAssertEqual(try Data(contentsOf: target), Data(repeating: 0, count: 4))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(saved.partial).path))
   }
 
   func testCrashAfterPublicationReplaysAReceiptWithoutPublishingAnotherFile() async throws {

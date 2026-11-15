@@ -119,6 +119,7 @@ extension MacTransferModel {
       partial: receiverPartFileURL, transport: pausedTransport ?? peer.transport,
       expiresAt: pauseExpiresAt ?? Date().addingTimeInterval(Double(pauseTimeout.components.seconds)),
       stage: stage, fileIdentity: publishingIdentity ?? "", destinationBackend: "localFolder")
+    latestCheckpoint = snapshot
     let previous = recoveryWrite, storage = receiving ? receiverStorage : nil
     recoveryWrite = Task { [weak self] in
       await previous?.value
@@ -404,7 +405,12 @@ extension MacTransferModel {
 
     resumeTask = Task { [weak self] in
       guard let self else { return }
-      defer { if self.epoch == operation { self.resumeTask = nil } }
+      defer {
+        if self.epoch == operation {
+          self.resumeTask = nil
+          if self.isPaused, self.activeChannel?.descriptor != channel.descriptor { self.attemptResume() }
+        }
+      }
       var offset = initialOffset
       var retriedOffset = false
       var restarted = false
@@ -423,6 +429,7 @@ extension MacTransferModel {
             return
           }
           guard self.epoch == operation, !Task.isCancelled else { return }
+          guard self.activeChannel?.descriptor == channel.descriptor else { return }
           switch status.number(3) {
           case 0:
             offset = max(0, min(status.number(2), file.size))
@@ -554,48 +561,61 @@ extension MacTransferModel {
   }
 
   func requestStatus(_ request: Data, on channel: any SecuredChannel) async -> TransferMessage? {
+    guard statusWaiter == nil, channels[channel.descriptor.transport]?.descriptor == channel.descriptor,
+      !Task.isCancelled else { return nil }
     let operation = epoch
     let token = UUID()
-    return await withCheckedContinuation { (continuation: CheckedContinuation<TransferMessage?, Never>) in
-      let finish: (TransferMessage?) -> Void = { [weak self] message in
-        guard let self, self.statusWaiterToken == token else { return }
-        self.statusWaiter = nil
-        self.statusWaiterToken = nil
-        self.statusTimeoutTask?.cancel()
-        self.statusTimeoutTask = nil
-        // An accepted reply may precede local send completion; only abandonment cancels submission.
-        if message == nil { self.statusSubmissionTask?.cancel() }
-        self.statusSubmissionTask = nil
-        continuation.resume(returning: message)
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { (continuation: CheckedContinuation<TransferMessage?, Never>) in
+        guard !Task.isCancelled else { continuation.resume(returning: nil); return }
+        let finish: (TransferMessage?) -> Void = { [weak self] message in
+          guard let self, self.statusWaiterToken == token else { return }
+          self.statusWaiter = nil
+          self.statusWaiterToken = nil
+          self.statusRequest = nil
+          self.statusTimeoutTask?.cancel()
+          self.statusTimeoutTask = nil
+          // An accepted reply may precede local send completion; only abandonment cancels submission.
+          if message == nil { self.statusSubmissionTask?.cancel() }
+          self.statusSubmissionTask = nil
+          continuation.resume(returning: message)
+        }
+        statusWaiter = finish
+        statusWaiterToken = token
+        statusRequest = (channel.descriptor, operation)
+        statusTimeoutTask = Task { [weak self] in
+          do { try await Task.sleep(for: self?.resumeTimeout ?? .seconds(15)) } catch { return }
+          finish(nil)
+        }
+        statusSubmissionTask = Task { [weak self] in
+          guard let self else { return }
+          do { try await self.sendWithBackpressure(request, on: channel, jobBound: false) }
+          catch { finish(nil) }
+        }
       }
-      statusWaiter = finish
-      statusWaiterToken = token
-      statusTimeoutTask = Task { [weak self] in
-        do { try await Task.sleep(for: self?.resumeTimeout ?? .seconds(15)) } catch { return }
-        guard let self, self.epoch == operation else { return }
-        finish(nil)
-      }
-      statusSubmissionTask = Task { [weak self] in
-        guard let self else { return }
-        do { try await self.sendWithBackpressure(request, on: channel, jobBound: false) }
-        catch { finish(nil) }
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        if self?.statusWaiterToken == token { self?.abandonStatus() }
       }
     }
   }
 
-  func handleStatus(_ message: TransferMessage) {
-    guard let batch = currentBatch, message.string(0) == batch.idString else { return }
+  func handleStatus(_ message: TransferMessage, on descriptor: ChannelDescriptor) -> Bool {
+    guard let request = statusRequest, request.channel == descriptor, request.epoch == epoch,
+      channels[descriptor.transport]?.descriptor == descriptor, isPaused || isTransferring,
+      let batch = currentBatch, message.string(0) == batch.idString else { return false }
     // The waiter belongs to whichever side initiated the handshake: the sender after its own
     // resume, or the receiver after a receiver-initiated Bluetooth continuation.
     let index = receiving ? receiverCurrentFileIndex : senderFileIndex
     guard batch.files.indices.contains(index),
       message.string(1) == batch.files[index].idString,
-      (0...batch.files[index].size).contains(message.number(2)) else { return }
+      (0...batch.files[index].size).contains(message.number(2)) else { return false }
     if statusWaiter != nil, !receiving, message.number(3) == 0,
       (0...batch.files[index].size).contains(message.number(2)) {
       sendingFile = batch.files[index]; sentBytes = message.number(2)
     }
     statusWaiter?(message)
+    return true
   }
 
   func abandonStatus() {
@@ -604,6 +624,7 @@ extension MacTransferModel {
     waiter?(nil)
     statusWaiter = nil
     statusWaiterToken = nil
+    statusRequest = nil
     statusTimeoutTask?.cancel(); statusTimeoutTask = nil
     statusSubmissionTask?.cancel(); statusSubmissionTask = nil
   }

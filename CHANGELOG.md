@@ -37,6 +37,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Bind release device approval to the tag, source commit and SHA-256 of both signed artifacts; add current 512-KiB LAN benchmark selection and keep Play Protect enabled in installation guidance.
 - Reuse near-black Dock artwork for packaged/default app icons while keeping Mac Dock and Android launcher variants tied to system Light/Dark appearance.
 - Refine Mac window and sidebar sizing while preserving native resizing and window restoration.
 - Refine native beta opt-in confirmation, Android Updates spacing, About contact/report actions and Mac Settings readability; highlight window-free sharing and clarify Bluetooth HID setup.
@@ -80,6 +81,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Preserve transfer publication recovery and correlate resume replies with their issuing channel and job epoch on both platforms.
+- Correct device-lab temperature conversion, replace the public hardware serial with a placeholder, and remove unused resources and legacy notification builders.
 - Create tagged release drafts through the Releases API, capture their IDs for verification, and fill marker-only drafts with generated notes while preserving maintainer descriptions.
 - Disable injected debugger entitlements in signed Mac releases and bound signing cleanup so validation failures exit promptly.
 - Check signing configuration, device-verification source and conflicting release state before signed builds; retain final publication checks.

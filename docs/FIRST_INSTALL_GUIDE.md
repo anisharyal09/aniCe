@@ -46,22 +46,15 @@ When opening `aniCe-android.apk` from Chrome or your file manager, Android displ
 ---
 
 ### 2. Google Play Protect Warning ("Blocked by Play Protect")
-Because aniCe is an independent release not yet indexed in Google's cloud catalog, Google Play Protect may show an orange or red warning:
+Google Play Protect may ask to scan a sideloaded APK, show an unfamiliar-app warning, or block installation. Read the exact warning; an independent release is not evidence that every warning is harmless.
 > *"Blocked by Play Protect"* or *"Unrecognized app"*.
 
-* **Method A (Standard Bypass)**:
-  1. On the Play Protect dialog, tap **More details** (or the small downward arrow).
-  2. Tap **Install anyway**.
+1. Download `aniCe-android.apk` only from the [official GitHub Releases](https://github.com/anisharyal09/aniCe/releases) page and confirm the selected version.
+2. Keep Play Protect scanning enabled. If Android offers a scan, let it finish and review the result.
+3. For an unfamiliar-app warning with **More details → Install anyway**, proceeding is an explicit decision to trust that release, not a guarantee of safety.
+4. If the warning identifies harmful behavior, or no **Install anyway** option is offered, stop. Report the exact warning and release version through [GitHub Issues](https://github.com/anisharyal09/aniCe/issues); on a managed device, ask its administrator.
 
-* **Method B (If installation is blocked without an "Install anyway" button)**:
-  Some devices (e.g. Samsung One UI, Xiaomi HyperOS, or strict enterprise profiles) may disable the "Install anyway" button. To install:
-  1. Open the **Google Play Store** app.
-  2. Tap your **Profile avatar** in the top-right corner.
-  3. Tap **Play Protect**.
-  4. Tap the **Settings gear icon (⚙️)** in the top-right corner.
-  5. Temporarily toggle OFF **Scan apps with Play Protect**.
-  6. Return to your downloaded `aniCe-android.apk` file and tap **Install** (it will install immediately).
-  7. *(Optional)* Return to Play Store and re-enable Play Protect after installation.
+Do not disable Play Protect or bypass an organization’s installation policy. See [Google’s Play Protect guidance](https://support.google.com/googleplay/answer/2812853).
 
 ---
 
@@ -168,4 +161,3 @@ Once installed on both devices:
 4. Verify the device names on both screens and tap **Approve**.
 
 Both devices now share cryptographic trust and will automatically discover and reconnect whenever they are nearby!
-

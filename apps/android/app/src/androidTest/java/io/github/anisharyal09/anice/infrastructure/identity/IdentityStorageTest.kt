@@ -18,6 +18,29 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class IdentityStorageTest {
+    @Test fun backupOnlyIdentityJournalRecoversWithoutReplacingKeys() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val testId = DeviceIdentity.newId()
+        val filename = "identity-test-$testId.json"
+        val prefix = "anice.test.$testId."
+        val keys = AndroidIdentityKeys()
+        val file = File(context.noBackupFilesDir, filename)
+        val backup = File(file.path + ".bak")
+        fun service() = IdentityService(AndroidIdentityMetadata(context, filename), keys, { "Backup recovery" }, prefix)
+        try {
+            val initial = service().getOrCreateIdentity()
+            val aliases = keys.aliases().filter { it.startsWith(prefix) }
+            assertTrue(file.renameTo(backup))
+            assertFalse(file.exists())
+            assertEquals(initial, service().getOrCreateIdentity())
+            assertEquals(aliases, keys.aliases().filter { it.startsWith(prefix) })
+            assertFalse(backup.exists())
+        } finally {
+            keys.aliases().filter { it.startsWith(prefix) }.forEach(keys::delete)
+            listOf(file, backup, File(file.path + ".new")).forEach { it.delete() }
+        }
+    }
+
     @Test fun nativeProviderReuseDetectsExternalKeyReplacementAndDeletion() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val testId = DeviceIdentity.newId()

@@ -13,7 +13,7 @@ Incoming offers need a discovery path while aniCe is backgrounded. Approval, pro
 - Post one `FILE_TRANSFER_OFFER` notice per batch only while aniCe is inactive. Show authenticated peer name, file count and total size; omit peer-supplied filenames.
 - **Accept** saves through the transfer owner to Downloads. **Choose folder…** activates the main window for destination selection. **Decline** rejects the offer.
 - Accept and Decline validate the notification identifier against the current pending batch. Stale actions cannot approve or reject a successor offer. Choose folder opens the window without applying approval to another batch.
-- Pause, resume, completion and failure clear the active offer notice and remain in the app; they post no new system banners. Startup removes legacy transfer notices without clearing Messages or Find Device notices. Legacy result and pause categories retain their action handlers.
+- Pause, resume, completion and failure clear the active offer notice and remain in the app; they post no new system banners. Startup removes legacy transfer notices without clearing Messages or Find Device notices. Legacy result and pause categories retain their action handlers. *(Superseded in part: verified receive-completion notifications are now delivered when incoming files are published to the destination folder; see [File Transfer](../../../features/FILE_TRANSFER.md)).*
 
 ### Companion activity
 

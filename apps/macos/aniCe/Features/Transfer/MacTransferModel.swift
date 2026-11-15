@@ -237,6 +237,7 @@ enum TransferEvent: Equatable {
   var upgradeTask: Task<Void, Never>?
   var statusWaiter: ((TransferMessage?) -> Void)?
   var statusWaiterToken: UUID?
+  var statusRequest: (channel: ChannelDescriptor, epoch: UUID)?
   var statusTimeoutTask: Task<Void, Never>?
   var statusSubmissionTask: Task<Void, Never>?
   var allowBleResume = false
@@ -278,6 +279,7 @@ enum TransferEvent: Equatable {
   var receiptExpiry: Task<Void, Never>?
   var receiptDeadline: ContinuousClock.Instant?
   var failedRecovery: TransferCheckpoint?
+  var latestCheckpoint: TransferCheckpoint?
 
   init(pauseTimeout: Duration = .seconds(900), recoveryURL: URL? = nil, identity: IdentityService? = nil,
        resumeTimeout: Duration = .seconds(15), confirmationTimeout: Duration = .seconds(30),
@@ -402,6 +404,7 @@ enum TransferEvent: Equatable {
     ingress.invalidate(descriptor)
     channels.removeValue(forKey: descriptor.transport)
     capabilities.removeValue(forKey: descriptor.transport)
+    if statusRequest?.channel == descriptor { abandonStatus() }
     rendezvousWait?()
     clearCapacityWaiters()
     guard descriptor == activeChannel?.descriptor else {
@@ -434,7 +437,7 @@ enum TransferEvent: Equatable {
     } else if isBusy {
       state = .failed(reason: "Connection closed. Send the files again using the remaining connection.")
       cleanupActiveTransfer()
-    } else {
+    } else if failedRecovery == nil {
       cleanupActiveTransfer()
     }
     selectPreferredChannel()
@@ -523,8 +526,7 @@ enum TransferEvent: Equatable {
       return .handled
     }
     if message.kind == 11 {
-      if message.string(0) == currentBatch?.idString { handleStatus(message) }
-      return .handled
+      return handleStatus(message, on: descriptor) ? .handled : .discarded
     }
     if message.kind == 9, message.string(0) == currentBatch?.idString {
       await processMessage(message, peerName: descriptor.peer.deviceName, on: descriptor)
@@ -777,10 +779,11 @@ extension MacTransferModel {
     }
   }
 
-  func failTransfer(reason: String) {
+  func failTransfer(reason: String, preserveRecovery: Bool = false) {
     if case .completed = state { return }
     if case .cancelled = state { return }
-    // A paused batch has no channel to report through; the retained prefix is discarded below.
+    if case .failed = state, failedRecovery != nil { return }
+    // A paused batch has no channel to report through.
     if !isPaused,
       let batch = currentBatch, receiverPartFileURL != nil,
       batch.files.indices.contains(receiverCurrentFileIndex), let channel = activeChannel {
@@ -792,20 +795,22 @@ extension MacTransferModel {
       }
     }
     retainedFileResult = nil
+    if preserveRecovery { failedRecovery = latestCheckpoint }
     state = .failed(reason: reason)
     let wasReceiving = receiving
-    cleanupActiveTransfer()
+    cleanupActiveTransfer(preserveRecovery: preserveRecovery)
     if wasReceiving { onEvent?(.failed(reason: reason)) }
   }
 
-  func cleanupActiveTransfer(selectChannel: Bool = true) {
+  func cleanupActiveTransfer(selectChannel: Bool = true, preserveRecovery: Bool = false) {
     automaticReceiveTask?.cancel(); automaticReceiveTask = nil
     autoReceivePreparing = false
     pendingAutomaticReceive = nil
     rendezvousWait?()
     retainedBatch = nil; offerReplayed = false; restoredSender = false
-    let failed = failedRecovery
-    failedRecovery = nil
+    let failed = preserveRecovery ? nil : failedRecovery
+    if !preserveRecovery { failedRecovery = nil }
+    latestCheckpoint = nil
     if let failed, failed.receiving, failed.stage == 0 || failed.stage == 4,
       let folder = failed.folder, let partial = failed.partial {
       Task.detached {
@@ -820,7 +825,7 @@ extension MacTransferModel {
     receiptExpiry?.cancel(); receiptExpiry = nil
     receiptDeadline = nil
     interruptedOffer = nil
-    if let store = recoveryStore {
+    if let store = recoveryStore, !preserveRecovery {
       let previous = recoveryWrite
       recoveryWrite = Task {
         await previous?.value

@@ -15,8 +15,8 @@
 
 Drag files directly to your screen edge to share them, sync clipboards instantly, reply to phone messages from your Mac keyboard, and monitor your Mac from your phone—all over secure, direct Bluetooth and local-network connections.
 
-- **🔒 100% Private & Local:** Zero accounts, zero relay servers, zero analytics. Your files, clipboard, notifications and messages stay on your local devices.
-- **⚡ Built Natively:** Crafted from scratch in native Swift 6 and SwiftUI on macOS, and Kotlin with Jetpack Compose (Material 3) on Android.
+- **🔒 100% Private & Local:** Zero accounts, zero relay servers, zero analytics. Your feature data stays strictly local; in-app update checks contact GitHub Releases directly.
+- **⚡ Built Natively:** Built in native Swift 6 and SwiftUI on macOS, and Kotlin with Jetpack Compose (Material 3) on Android.
 - **🛡️ Secure by Design:** Mutual P-256 ECDSA authentication and encrypted transport protect every interaction between paired devices.
 
 ## Features
@@ -55,7 +55,7 @@ Drag files directly to your screen edge to share them, sync clipboards instantly
 ## Technical foundation & security
 
 - **Native platform stacks:** Swift 6, SwiftUI & AppKit on macOS; modern Kotlin, Jetpack Compose & Material 3 on Android.
-- **Direct peer-to-peer transport:** Bluetooth Low Energy (BLE) and framed local-network TCP streams. Zero cloud relays or external routing.
+- **Direct peer-to-peer transport:** Bluetooth Low Energy (BLE) and framed local-network TCP streams. Zero cloud relays or external routing; update checks contact GitHub Releases directly, and Mac-to-Android control uses system Bluetooth HID.
 - **Cryptographic security:** Mutual P-256 ECDSA authentication, OPAQUE PIN pairing, an EDHOC handshake with ChaCha20-Poly1305, and directional AES-256-GCM record encryption.
 - **Platform key storage:** Cryptographic identities use Android Keystore and the macOS Login Keychain; current Mac builds do not claim Secure Enclave isolation.
 - **Zero telemetry:** No analytics, no tracking, and no telemetry uploads.

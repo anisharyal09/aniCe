@@ -70,6 +70,7 @@ extension MacTransferModel {
       failTransfer(reason: "Connect the selected phone before sending files.")
       return
     }
+    if failedRecovery != nil { cleanupActiveTransfer(selectChannel: false) }
     let operation = epoch
     // Reserve the job and its peer before rendezvous or identity reads can suspend.
     preparing = true

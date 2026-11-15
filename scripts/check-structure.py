@@ -59,6 +59,20 @@ def dependency_errors(root):
     return errors
 
 
+def is_git_ignored(root, target_path):
+    try:
+        resolved = target_path.resolve()
+        rel = resolved.relative_to(root.resolve())
+        res = subprocess.run(
+            ['git', 'check-ignore', '-q', str(rel)],
+            cwd=str(root),
+            capture_output=True
+        )
+        return res.returncode == 0
+    except (subprocess.SubprocessError, ValueError, OSError):
+        return False
+
+
 def documentation_errors(root, paths):
     errors = []
     for path in paths:
@@ -67,8 +81,13 @@ def documentation_errors(root, paths):
             if re.match(r'[a-zA-Z][\w+.-]*:|#', target):
                 continue
             target = unquote(target.split('#')[0])
-            if target and not (path.parent / target).exists():
+            if not target:
+                continue
+            target_path = path.parent / target
+            if not target_path.exists():
                 errors.append(f'{path.relative_to(root)}: missing link {target}')
+            elif is_git_ignored(root, target_path):
+                errors.append(f'{path.relative_to(root)}: ignored link target {target}')
     return errors
 
 

@@ -2,9 +2,9 @@
 // Persists bounded trust journals and invalidates session access before explicit revocation.
 package io.github.anisharyal09.anice.infrastructure.pairing
 
-import android.util.AtomicFile
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityCrypto
+import io.github.anisharyal09.anice.infrastructure.storage.AtomicJournal
 import java.io.File
 import java.util.Base64
 import org.json.JSONArray
@@ -46,28 +46,13 @@ interface TrustPersistence {
 }
 
 private class AndroidTrustPersistence(file: File) : TrustPersistence {
-    private val file = AtomicFile(file)
+    private val journal = AtomicJournal(file)
 
-    override fun read(): ByteArray? =
-        if (file.baseFile.exists()) file.openRead().use { it.readBytes() } else null
+    override fun read(): ByteArray? = journal.read()
 
-    override fun quarantine() {
-        val suffix = ".quarantined-" + java.util.UUID.randomUUID()
-        for (source in listOf(file.baseFile, File(file.baseFile.path + ".bak"))) {
-            if (source.exists()) check(source.renameTo(File(source.path + suffix)))
-        }
-    }
+    override fun quarantine() = journal.quarantine()
 
-    override fun write(bytes: ByteArray) {
-        val stream = file.startWrite()
-        try {
-            stream.write(bytes)
-            file.finishWrite(stream)
-        } catch (e: Exception) {
-            file.failWrite(stream)
-            throw e
-        }
-    }
+    override fun write(bytes: ByteArray) = journal.write(bytes)
 }
 
 class PeerTrustStore(private val persistence: TrustPersistence) {

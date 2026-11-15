@@ -19,7 +19,10 @@ class PublishReleaseTest(unittest.TestCase):
             (Path(self.temp.name) / name).write_bytes(b'apk')
         self.commit = 'a' * 40
         self.argv = ['publish_release.py', 'v0.4.0', self.commit, self.temp.name]
-        self.env = {'GITHUB_REPOSITORY': 'anisharyal09/aniCe', 'ANICE_AAPT': '/test/aapt'}
+        self.env = {'GITHUB_REPOSITORY': 'anisharyal09/aniCe', 'ANICE_AAPT': '/test/aapt',
+                    'VERIFIED_TAG': self.argv[1], 'VERIFIED_COMMIT': self.commit,
+                    'VERIFIED_ANDROID_SHA256': publish_release.digest(Path(self.temp.name) / publish_release.NAMES[0]),
+                    'VERIFIED_MACOS_SHA256': publish_release.digest(Path(self.temp.name) / publish_release.NAMES[1])}
         ci = mock.patch.object(publish_release, 'require_ci')
         self.require_ci = ci.start()
         self.addCleanup(ci.stop)
@@ -95,6 +98,21 @@ class PublishReleaseTest(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(ValueError, 'not greater'):
                         publish_release.check_release_state('anisharyal09/aniCe', 'v0.4.0-beta.1', self.commit)
+
+    def test_local_artifact_replacement_after_approval_cannot_be_blessed_as_a_verified_draft(self):
+        assets = [{'name': name, 'id': index + 1, 'size': 3} for index, name in enumerate(publish_release.NAMES)]
+        draft = {'tag_name': 'v0.4.0', 'draft': True, 'prerelease': False,
+                 'body': f'<!-- anice-source:{self.commit} -->\n\nDescription', 'assets': assets}
+        outputs = [json.dumps({'sha': self.commit}), json.dumps([[draft]]), json.dumps(draft)]
+        def download(*args, **kwargs):
+            (Path(self.temp.name) / publish_release.NAMES[0]).write_bytes(b'bad')
+            kwargs['stdout'].write(b'bad')
+        with mock.patch.object(sys, 'argv', self.argv), mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(publish_release.subprocess, 'check_output', side_effect=outputs), \
+                mock.patch.object(publish_release, 'apk_code', return_value=(40099, '0.4.0')), \
+                mock.patch.object(publish_release, 'gh', side_effect=download):
+            with self.assertRaisesRegex(ValueError, 'digest mismatch'):
+                publish_release.main()
 
     def test_requires_ci_before_creating_or_uploading_a_draft(self):
         self.require_ci.side_effect = ValueError('CI did not succeed')
@@ -177,6 +195,7 @@ class PublishReleaseTest(unittest.TestCase):
 
     def test_first_beta_creates_and_verifies_a_draft_without_publishing(self):
         self.argv[1] = 'v0.4.0-beta.1'
+        self.env['VERIFIED_TAG'] = self.argv[1]
         assets = [{'name': name, 'id': i + 1, 'size': 3} for i, name in enumerate(publish_release.NAMES)]
         draft = {'tag_name': self.argv[1], 'draft': True, 'prerelease': True,
                  'body': f'<!-- anice-source:{self.commit} -->\n\n## What\'s Changed\n\n* First beta.',
@@ -342,6 +361,31 @@ class PublishReleaseTest(unittest.TestCase):
                 self.assertEqual(gh.call_args_list[0].args[0], 'api')
                 self.assertEqual(gh.call_args_list[1].args[0], 'api')
                 self.assertFalse(any('--method' in call.args[0] for call in api.call_args_list))
+
+
+class DeviceArtifactApprovalTest(unittest.TestCase):
+    def test_approval_requires_the_exact_tag_commit_and_both_artifact_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in publish_release.NAMES]
+            for index, path in enumerate(paths):
+                path.write_bytes(bytes([index + 1]))
+            env = {'VERIFIED_TAG': 'v0.9.0-beta.1', 'VERIFIED_COMMIT': 'a' * 40,
+                   'VERIFIED_ANDROID_SHA256': publish_release.digest(paths[0]),
+                   'VERIFIED_MACOS_SHA256': publish_release.digest(paths[1])}
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(publish_release.require_device_verification('v0.9.0-beta.1', 'a' * 40, directory), paths)
+            for name in env:
+                for value in ('', 'wrong'):
+                    with self.subTest(name=name, value=value), mock.patch.dict(os.environ, {**env, name: value}, clear=True):
+                        with self.assertRaisesRegex(ValueError, 'does not match'):
+                            publish_release.require_device_verification('v0.9.0-beta.1', 'a' * 40, directory)
+            for path in paths:
+                original = path.read_bytes()
+                path.write_bytes(b'rebuilt')
+                with self.subTest(artifact=path.name), mock.patch.dict(os.environ, env, clear=True):
+                    with self.assertRaisesRegex(ValueError, 'does not match'):
+                        publish_release.require_device_verification('v0.9.0-beta.1', 'a' * 40, directory)
+                path.write_bytes(original)
 
 
 class ReleaseCITest(unittest.TestCase):

@@ -370,14 +370,14 @@ final class NotificationMirrorTests: XCTestCase {
     await waitFor("first revision") { center.added.count == 1 }
     let first = try XCTUnwrap(center.added.first)
 
-    // Hold category registration so the newer model record exists while the old OS target is still live.
+    // Hold category registration while the old system banner remains visible.
     center.delayNextCategoryRead = true
     let secondAction: [[SessionCBOR]] = [[.integer(0), .text("Reply"), .text("Message")]]
     let update = try notification(sequence: 2, title: "Second", actions: secondAction)
     let updateTask = Task { await model.handle(update, on: channel.descriptor) }
     await waitFor("category registration pause") { center.pendingCategoryRead != nil }
 
-    XCTAssertTrue(notifier.handleAction(category: first.content.categoryIdentifier,
+    XCTAssertFalse(notifier.handleAction(category: first.content.categoryIdentifier,
       action: UNNotificationDefaultActionIdentifier, identifier: first.identifier, userText: "",
       sourceEpoch: epoch, sourceSequence: 1))
     XCTAssertFalse(channel.sentData.contains { (try? NotificationWireMessage.decode($0)?.kind) == 6 },
@@ -402,6 +402,98 @@ final class NotificationMirrorTests: XCTestCase {
     center.resumeCategoryRead()
     await pending.value
     XCTAssertTrue(center.added.isEmpty, "disconnect must invalidate posts that have not reached Notification Center")
+    XCTAssertFalse(center.registered.contains { $0.identifier.hasPrefix(MacNotificationMirrorNotifier.categoryPrefix) })
+  }
+
+  func testCategoryChurnPrunesUnusedShapesButPreservesSharedAndOtherFeatureCategories() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let sms = MacSmsNotifier.notificationCategory
+    center.registered = [sms]
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let peer = "peer"
+    for revision in 1...256 {
+      let value = MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: Int64(revision),
+        packageName: "com.example.chat", appName: "Chat", title: "Alert", body: "",
+        sourceIcon: nil, actions: [.init(index: 0, title: "Open \(revision)", replyPlaceholder: "")])
+      await notifier.post(peerKey: peer, value: value)
+      XCTAssertEqual(center.registered.filter { $0.identifier.hasPrefix(MacNotificationMirrorNotifier.categoryPrefix) }.count, 1)
+      XCTAssertTrue(center.registered.contains(sms))
+    }
+    let second = String(repeating: "b", count: 64)
+    await notifier.post(peerKey: peer, value: MirroredNotification(snapshotToken: "", id: second,
+      epoch: epoch, sequence: 257, packageName: "com.example.chat", appName: "Chat", title: "", body: "",
+      sourceIcon: nil, actions: [.init(index: 0, title: "Open 256", replyPlaceholder: "")]))
+    notifier.clear(peerKey: peer, sourceId: id)
+    await waitFor("shared category retained") { center.registered.count == 2 }
+    notifier.clear(peerKey: peer, sourceId: second)
+    await waitFor("unused mirror categories removed") { center.registered == [sms] }
+  }
+
+  func testPendingFirstAlertDoesNotSilenceItsNewerReplacement() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    center.delayNextCategoryRead = true
+    func value(_ revision: Int64) -> MirroredNotification {
+      MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: revision,
+        packageName: "com.example.chat", appName: "Chat", title: "Revision \(revision)", body: "",
+        sourceIcon: nil, actions: [])
+    }
+    let first = Task { await notifier.post(peerKey: "peer", value: value(1)) }
+    await waitFor("first pending category") { center.pendingCategoryRead != nil }
+    let second = Task { await notifier.post(peerKey: "peer", value: value(2)) }
+    for _ in 0..<8 { await Task.yield() }
+    center.resumeCategoryRead()
+    await first.value; await second.value
+    XCTAssertEqual(center.added.count, 1)
+    XCTAssertEqual(center.added.first?.content.title, "Revision 2")
+    XCTAssertEqual(center.added.first?.content.interruptionLevel, .active)
+    XCTAssertNotNil(center.added.first?.content.sound)
+  }
+
+  func testRemovalChurnCompactsWithoutResurrectingOldRevisions() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let model = MacNotificationMirrorModel(notifier: MacNotificationMirrorNotifier(center: center))
+    let channel = MockSecuredChannel(peer: try androidPeer())
+    try await ready(model, channel)
+    try await incoming(model, channel: channel, id: id, sequence: 1, token: "", title: "Old")
+    _ = await model.handle(try wire(3, [.text(id), .text(epoch), .integer(2)]), on: channel.descriptor)
+    for revision in 3...512 {
+      let removedId = String(format: "%064x", revision)
+      _ = await model.handle(try wire(3, [.text(removedId), .text(epoch), .integer(Int64(revision))]), on: channel.descriptor)
+      XCTAssertLessThanOrEqual(model.removals.count, 128)
+    }
+    try await incoming(model, channel: channel, id: id, sequence: 1, token: "", title: "Stale")
+    XCTAssertEqual(center.added.count, 1)
+    try await incoming(model, channel: channel, id: id, sequence: 513, token: "", title: "New")
+    XCTAssertEqual(center.added.count, 2)
+    let token = UUID().uuidString.lowercased()
+    _ = await model.handle(try wire(4, [.text(token), .text(epoch), .integer(514)]), on: channel.descriptor)
+    _ = await model.handle(try wire(5, [.text(token)]), on: channel.descriptor)
+    XCTAssertTrue(model.removals.isEmpty)
+  }
+
+  func testActiveInventoryKeepsNewestAlertsWhenRemovalDeliveryLags() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let channel = MockSecuredChannel(peer: try androidPeer())
+    try await ready(model, channel)
+    for revision in 1...128 {
+      try await incoming(model, channel: channel, id: String(format: "%064x", revision),
+        sequence: Int64(revision), token: "", title: "Current")
+    }
+    XCTAssertEqual(center.added.count, 128)
+    let overflow = await model.handle(try notification(String(format: "%064x", 129),
+      sequence: 129, title: "Overflow"), on: channel.descriptor)
+    XCTAssertEqual(overflow, .handled)
+    XCTAssertEqual(center.added.count, 129)
+    let first = try XCTUnwrap(center.added.first)
+    XCTAssertTrue(center.removedDelivered.flatMap { $0 }.contains(first.identifier))
+    XCTAssertFalse(notifier.handleAction(category: first.content.categoryIdentifier,
+      action: UNNotificationDefaultActionIdentifier, identifier: first.identifier, userText: "",
+      sourceEpoch: epoch, sourceSequence: 1))
+    try await incoming(model, channel: channel, id: String(format: "%064x", 1), sequence: 1, token: "", title: "Late")
+    XCTAssertEqual(center.added.count, 129)
   }
 
   func testProgrammaticCleanupDoesNotDismissAndDeniedSubmissionHasNoActionTarget() async throws {

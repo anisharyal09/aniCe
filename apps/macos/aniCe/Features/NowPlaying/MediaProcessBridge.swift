@@ -32,9 +32,58 @@ final class PlaybackPipe: @unchecked Sendable {
     return true
   }
 }
+
+// DispatchIO owns ordered pipe writes; queued bytes are bounded independently of helper consumption.
+final class PlaybackInputPipe: @unchecked Sendable {
+  private let lock = NSLock()
+  private let queue = DispatchQueue(label: "aniCe playback pipe writes")
+  private let channel: DispatchIO
+  private let failed: @Sendable () -> Void
+  private var pendingBytes = 0
+  private var closed = false
+
+  init(_ input: FileHandle, failed: @escaping @Sendable () -> Void) throws {
+    guard fcntl(input.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    self.failed = failed
+    channel = DispatchIO(type: .stream, fileDescriptor: input.fileDescriptor, queue: queue) { _ in
+      try? input.close()
+    }
+  }
+
+  func send(_ bytes: Data) -> Bool {
+    lock.lock()
+    guard !closed, (1...2049).contains(bytes.count), pendingBytes <= 65536 - bytes.count else {
+      lock.unlock(); return false
+    }
+    pendingBytes += bytes.count
+    lock.unlock()
+    let data = bytes.withUnsafeBytes { DispatchData(bytes: $0) }
+    channel.write(offset: 0, data: data, queue: queue) { [self] done, _, error in
+      guard done else { return }
+      lock.lock()
+      pendingBytes -= bytes.count
+      let notify = error != 0 && !closed
+      if notify { closed = true }
+      lock.unlock()
+      if notify { channel.close(flags: .stop); failed() }
+    }
+    return true
+  }
+
+  func close() {
+    lock.lock()
+    let wasClosed = closed
+    closed = true
+    lock.unlock()
+    if !wasClosed { channel.close(flags: .stop) }
+  }
+}
+
 @MainActor final class MediaProcessBridge {
   private var process: Process?
-  private var input: FileHandle?
+  private var input: PlaybackInputPipe?
   private var output: FileHandle?
   private(set) var generation = UUID()
   var running: Bool { process != nil }
@@ -46,11 +95,16 @@ final class PlaybackPipe: @unchecked Sendable {
     guard let root=Bundle.main.resourceURL?.appendingPathComponent("NowPlaying") else { failure("Playback adapter unavailable"); return }
     let child=Process(), incoming=Pipe(), outgoing=Pipe(), reader=PlaybackPipe(), gen=UUID()
     generation=gen
-    guard fcntl(incoming.fileHandleForWriting.fileDescriptor,F_SETNOSIGPIPE,1) != -1 else { failure("Playback pipe unavailable"); return }
+    let writer: PlaybackInputPipe
+    do {
+      writer = try PlaybackInputPipe(incoming.fileHandleForWriting) { [weak self] in
+        Task { @MainActor in if self?.generation == gen { self?.failure("Playback adapter input failed") } }
+      }
+    } catch { failure("Playback pipe unavailable"); return }
     child.executableURL=URL(fileURLWithPath:"/usr/bin/perl")
     child.arguments=[root.appendingPathComponent("now-playing.pl").path,root.appendingPathComponent("libaniCeNowPlaying.dylib").path,"watch_all"]
     child.standardInput=incoming; child.standardOutput=outgoing; child.standardError=FileHandle.nullDevice
-    process=child; input=incoming.fileHandleForWriting; output=outgoing.fileHandleForReading
+    process=child; input=writer; output=outgoing.fileHandleForReading
     outgoing.fileHandleForReading.readabilityHandler = { [weak self] file in
       let data=file.availableData
       if data.isEmpty { file.readabilityHandler=nil; return }
@@ -76,11 +130,11 @@ final class PlaybackPipe: @unchecked Sendable {
   }
   func stop() {
     generation=UUID()
-    output?.readabilityHandler=nil; try? input?.close(); try? output?.close(); input=nil; output=nil
+    output?.readabilityHandler=nil; input?.close(); try? output?.close(); input=nil; output=nil
     if process?.isRunning==true { process?.terminate() }; process=nil
   }
   func write(_ request: PlaybackRequest) -> Bool {
     guard let message=request.message, message.utf8.count<=2048, let input, process?.isRunning==true else { return false }
-    do { try input.write(contentsOf:Data((message+"\n").utf8)); return true } catch { return false }
+    return input.send(Data((message+"\n").utf8))
   }
 }

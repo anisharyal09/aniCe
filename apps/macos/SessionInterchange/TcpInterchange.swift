@@ -15,7 +15,8 @@ import Darwin
     let server = try NWListener(using: LanTcpTransport.parameters(), on: .any)
     server.service = NWListener.Service(
       name: "aniCe-" + UUID().uuidString.lowercased(),
-      type: profile == .bulkProbe ? "_anicebulk._tcp" : "_anice._tcp", txtRecord: NWTXTRecord(["v": profile == .lanTransfer ? "2" : "1"]))
+      type: profile == .bulkProbe ? "_anicebulk._tcp" : "_anice._tcp",
+      txtRecord: NWTXTRecord(["v": profile == .lanTransfer512 ? "3" : profile == .lanTransfer ? "2" : "1"]))
     listener = server
     return try await withCheckedThrowingContinuation { continuation in
       portReady = continuation
@@ -302,7 +303,9 @@ private func benchmarkRun(engine: SessionConnection, tcp: InterchangeTcpPeer,
 
 @MainActor func tcpInterchange(identity: IdentityService) async throws {
   try await benchmarkSelfCheck()
-  let profile: SessionProfile = CommandLine.arguments.contains("--bulk-probe") ? .bulkProbe : CommandLine.arguments.contains("--lan-transfer") ? .lanTransfer : .standard
+  let profile: SessionProfile = CommandLine.arguments.contains("--lan-transfer-512") ? .lanTransfer512
+    : CommandLine.arguments.contains("--bulk-probe") ? .bulkProbe
+    : CommandLine.arguments.contains("--lan-transfer") ? .lanTransfer : .standard
   let server = InterchangeTcpServer(profile: profile)
   defer { server.close() }
   let port = try await server.listen()
@@ -324,9 +327,17 @@ private func benchmarkRun(engine: SessionConnection, tcp: InterchangeTcpPeer,
   let reply = InterchangeMailbox()
   let benchmarkMiB = bootstrap["benchmarkMiB"] as? Int ?? 0
   let window = bootstrap["window"] as? Int ?? 32
-  guard (bootstrap["profile"] as? String ?? "standard") == (profile == .standard ? "standard" : profile == .lanTransfer ? "lan-transfer" : "bulk-probe") else { throw SessionFailure.unsupportedProfile }
+  let profileName: String
+  let chunkBytes: Int
+  switch profile {
+  case .standard: profileName = "standard"; chunkBytes = 3072
+  case .lanTransfer: profileName = "lan-transfer"; chunkBytes = 131072
+  case .lanTransfer512: profileName = "lan-transfer-512"; chunkBytes = 524288
+  case .bulkProbe: profileName = "bulk-probe"; chunkBytes = profile.maximumPlaintext - 5
+  }
+  guard (bootstrap["profile"] as? String ?? "standard") == profileName else { throw SessionFailure.unsupportedProfile }
   guard [0, 4, 16, 100, 1024].contains(benchmarkMiB), (profile == .standard ? [32, 64] : [4, 8]).contains(window) else { throw SessionFailure.malformed }
-  let benchmark = LanBenchmarkState(total: benchmarkMiB * 1048576, window: window, chunkBytes: profile == .standard ? 3072 : profile == .lanTransfer ? 131072 : profile.maximumPlaintext - 5)
+  let benchmark = LanBenchmarkState(total: benchmarkMiB * 1048576, window: window, chunkBytes: chunkBytes)
   let expected = Data((0..<4000).map { UInt8($0 % 128) })
   let engine = SessionConnection(
     handshake: handshake, responder: true,

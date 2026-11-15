@@ -14,15 +14,15 @@ Reuse transport-independent SessionConnection, handshake and record implementati
 
 Permit one BLE and one LAN session to the same trusted peer. A shared reservation binds full peer credentials and the current local fingerprint before work starts. Mac unresolved Any-phone BLE admission remains exclusive until it resolves; concrete selections allow concurrent transports. Each channel has fresh keys and counters. Explicit controls determine which transport receives a diagnostic; feature routing and mutual endpoint bootstrap remain deferred.
 
-LAN is manual and foreground-owned on Android. Native BLE companion ownership does not grant LAN background lifetime. Mac retains explicit availability through its existing companion and closes on sleep/Quit. Keep failure, disconnection and admission state independent per transport; trust revocation and identity reset retire both.
+LAN is manual and foreground-owned on Android. Native BLE companion ownership does not grant LAN background lifetime. Mac retains explicit availability through its existing companion and closes on sleep/Quit. Keep failure, disconnection and admission state independent per transport; trust revocation and identity reset retire both. *(Superseded in part: automatic background LAN discovery, admission and demand-driven upgrades for paired peers are described in [LAN Connections](../LAN_CONNECTIONS.md)).*
 
 ## Consequences
 
 IPv6 destinations must preserve their selected interface scope in addition to socket network binding. Legacy Android resolutions remain serialized until native completion, even after timeout; a stalled native operation can prevent immediate Retry. Modern resolution subscriptions are explicitly unregistered.
 
-The sandboxed Mac app enables client/server network entitlements and declares its Bonjour type and local-network purpose. Build verification inspects the packaged plist and signed entitlements. Terminal interchange does not prove packaged-app privacy or sandbox behavior.
+The sandboxed Mac app enables client/server network entitlements and declares its Bonjour type and local-network purpose. Build verification inspects the packaged plist and signed entitlements. Terminal interchange does not prove packaged-app privacy or sandbox behavior. *(Superseded: Current macOS distribution builds operate outside the Mac App Store sandbox under Hardened Runtime; see [Architecture](../../ARCHITECTURE.md)).*
 
-The initial LAN record size remains bounded to the existing 4,000-byte plaintext maximum. Bulk streaming, synchronization, automatic recovery, handover and mutual transport bootstrap require subsequent contracts. Existing BLE and minimum-OS verification gaps remain independent release gates.
+The initial LAN record size remains bounded to the existing 4,000-byte plaintext maximum. Bulk streaming, synchronization, automatic recovery, handover and mutual transport bootstrap require subsequent contracts. Existing BLE and minimum-OS verification gaps remain independent release gates. *(Superseded: File transfer uses 512 KiB profile 4 streaming records with SHA-256 resumption checkpoints; see [LAN Benchmark](../../protocol/lan/BENCHMARK.md) and [Transfer Protocol](../../protocol/transfer/README.md)).*
 
 ## References
 

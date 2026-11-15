@@ -182,7 +182,7 @@ Run repository-relative commands from the repository root.
 | macOS host | `python3 scripts/verify-suite.py --only macos` | arm64 Release build, architecture/signature checks and hosted tests |
 | Interchange | `python3 scripts/verify-suite.py --only interchange --serial PHONE_SERIAL` | Cross-platform identity, LAN and session agreement with disposable test credentials |
 | Structure | `python3 scripts/check-structure.py` | Dependency direction, documentation links, Xcode membership |
-| Physical | `python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL --benchmark-mib 16\|100\|1024 --window 32\|64` | Socket throughput, process CPU, Mac peak RSS and Android allocation/GC counters |
+| Physical | `python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL --profile lan-transfer-512 --benchmark-mib 16\|100\|1024 --window 4\|8` | Profile-4 socket throughput, process CPU, Mac peak RSS and Android allocation/GC counters; omit the profile for standard records with window 32/64 |
 
 Physical runs are the only tier that may be cited for the 8 MiB/s gate. Debug instrumentation is the only configuration measured so far. Release, battery, minimum-OS and responsiveness acceptance remain separate requirements. Intel is unsupported.
 

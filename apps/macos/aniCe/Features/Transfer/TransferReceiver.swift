@@ -468,6 +468,7 @@ extension MacTransferModel {
       guard operation == epoch, receiverStorage === storage else { return }
       publishedURLs.append(finished.url)
     } catch {
+      let retained = await storage.hasVerifiedPartial
       if operation == epoch {
         finalizing = false
         // Verification and publication fail for different reasons; the receiver is told which one,
@@ -476,7 +477,7 @@ extension MacTransferModel {
         if let failure = error as? SessionFailure, failure == .authentication {
           reason = "Hash mismatch"
         }
-        failTransfer(reason: reason)
+        failTransfer(reason: reason, preserveRecovery: retained)
       }
       return
     }

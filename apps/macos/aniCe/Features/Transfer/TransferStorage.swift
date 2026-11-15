@@ -56,6 +56,8 @@ actor TransferReceiveStorage {
     return try Self.identity(partial)
   }
 
+  var hasVerifiedPartial: Bool { preservePartial && partial != nil }
+
   private static func identity(_ url: URL) throws -> String {
     let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
     guard let device = attributes[.systemNumber] as? NSNumber,

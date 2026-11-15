@@ -157,8 +157,13 @@ class LanNativeTest {
             val peer = DeviceIdentity.fromJson(config.getJSONObject("identity"))
             val local = identity.getOrCreateIdentity().identity
             val profileName = config.optString("profile", "standard")
-            require(profileName in listOf("standard", "bulk-probe", "lan-transfer"))
-            val profile = when (profileName) { "standard" -> SessionProfile.STANDARD; "lan-transfer" -> SessionProfile.LAN_TRANSFER; else -> SessionProfile.BULK_PROBE }
+            val profile = when (profileName) {
+                "standard" -> SessionProfile.STANDARD
+                "lan-transfer" -> SessionProfile.LAN_TRANSFER
+                "lan-transfer-512" -> SessionProfile.LAN_TRANSFER_512
+                "bulk-probe" -> SessionProfile.BULK_PROBE
+                else -> error("Unsupported benchmark profile")
+            }
             val benchmarkMiB = config.optInt("benchmarkMiB", 0)
             if (benchmarkMiB != 0) {
                 // Instrumentation restarts the target process; foreground acceptance needs a manual reopen.
@@ -180,7 +185,13 @@ class LanNativeTest {
             }
             val window = config.optInt("window", 32)
             require(benchmarkMiB in listOf(0, 4, 16, 100, 1024) && window in (if (profile == SessionProfile.STANDARD) listOf(32, 64) else listOf(4, 8)))
-            val bulk = LanNativeBenchmark(benchmarkMiB * 1048576, window, if (profile == SessionProfile.STANDARD) 3072 else if (profile == SessionProfile.LAN_TRANSFER) 131072 else profile.maximumPlaintext - 5)
+            val chunkBytes = when (profile) {
+                SessionProfile.STANDARD -> 3072
+                SessionProfile.LAN_TRANSFER -> 131072
+                SessionProfile.LAN_TRANSFER_512 -> 524288
+                SessionProfile.BULK_PROBE -> profile.maximumPlaintext - 5
+            }
+            val bulk = LanNativeBenchmark(benchmarkMiB * 1048576, window, chunkBytes)
             File(directory, "client.json")
                 .writeText(JSONObject().put("identity", local.toJson())
                     .put("benchmarkMiB", benchmarkMiB).put("window", window).put("profile", profileName).toString())

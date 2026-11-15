@@ -1,6 +1,6 @@
 # Production LAN benchmark
 
-`scripts/verify-lan-interchange.py` uses disposable protected identities, native discovery, the production LAN transports and `SessionConnection`. Its default invocation retains the 4,000-byte bidirectional conformance check. `--benchmark-mib 16|100|1024 --window 32|64` additionally measures sequential bulk traffic in both directions. Production identity/trust journals are checked for unchanged bytes.
+`scripts/verify-lan-interchange.py` uses disposable protected identities, native discovery, the production LAN transports and `SessionConnection`. Its default invocation retains the 4,000-byte bidirectional conformance check. `--benchmark-mib 4|16|100|1024 --window 32|64` additionally measures sequential bulk traffic in both directions under standard records. `--profile lan-transfer-512 --benchmark-mib 16|100|1024 --window 4|8` selects current record profile 4, Bonjour TXT `v=3` and 524,288-byte bodies. `--profile lan-transfer` retains legacy profile 3/TXT `v=2` with 131,072-byte bodies. Production identity/trust journals are checked for unchanged bytes.
 
 ## Isolated DATA payloads
 
@@ -8,10 +8,10 @@ These payloads are test-only; applications do not advertise or dispatch them as 
 
 | Kind | Layout | Validation |
 | --- | --- | --- |
-| Chunk | `0x42 || offset:u32be || body` | Exact next offset; body length `min(3072, total-offset)`; every body byte equals `(offset/3072) % 251` |
+| Chunk | `0x42 || offset:u32be || body` | Exact next offset; body length `min(chunkBytes, total-offset)`; every body byte equals `(offset/chunkBytes) % 251` |
 | Written ACK | `0x41 || offset:u32be` | Exactly five bytes; cumulative offset strictly increases and does not exceed total |
 
-The configured total is exactly 16 MiB, 100 MiB or 1 GiB; 16 MiB is a short diagnostic. Android sends first, then Mac. Credit bounds unacknowledged bytes to `window × 3072`; receivers coalesce cumulative ACKs every 16 chunks and at EOF. One pending ACK and one unsent chunk are retained. Benchmark writers serialize their own submissions and wait for actual session availability rather than spinning on refusal notifications. Capacity refusal is retried only before sealing, following session/transport events; submitted records are never replayed. This benchmark does not write files or implement durable checkpoints, resume or session renewal.
+The configured total is exactly 4 MiB, 16 MiB, 100 MiB or 1 GiB; 4/16 MiB are short diagnostics. Android sends first, then Mac. Credit bounds unacknowledged bytes to `window × chunkBytes`; receivers coalesce cumulative ACKs within that window and at EOF. Standard records use 3,072-byte bodies, profile 3 uses 131,072, profile 4 uses 524,288, and the isolated bulk probe uses `maximumPlaintext − 5`. One pending ACK and one unsent chunk are retained. Benchmark writers serialize their own submissions and wait for actual session availability rather than spinning on refusal notifications. Capacity refusal is retried only before sealing, following session/transport events; submitted records are never replayed. This benchmark does not write files or implement durable checkpoints, resume or session renewal.
 
 ## Measurements and gate
 
@@ -19,7 +19,7 @@ The configured total is exactly 16 MiB, 100 MiB or 1 GiB; 16 MiB is a short diag
 
 Concurrent Now Playing latency, the 100-ms control RTT/25-ms added-latency gates, Mac allocation profiling and controlled-network acceptance remain independent requirements. Throughput success alone does not permit feature integration. No File Transfer capability, UI or background ownership is enabled by the benchmark.
 
-`--profile bulk-probe --window 4|8` selects the isolated [bulk profile](BULK_PROBE.md). Debug instrumentation holds a Wi-Fi high-performance lock only for the benchmark, releasing it on success or failure; Release permissions remain unchanged. Socket buffer hints are set before connection and effective sizes are reported. `socketReadMs` and `recordDeliveryMs` separate cumulative socket waiting from authenticated delivery across both directions. Engine reads size the buffer to one whole record (`profile.maximumEnvelope + 5`: 4,101 bytes standard, 262,180 for profile 3, 4,194,340 for the bulk probe) rather than a fixed 64 KiB.
+`--profile bulk-probe --window 4|8` selects the isolated [bulk profile](BULK_PROBE.md). Debug instrumentation holds a Wi-Fi high-performance lock only for the benchmark, releasing it on success or failure; Release permissions remain unchanged. Socket buffer hints are set before connection and effective sizes are reported. `socketReadMs` and `recordDeliveryMs` separate cumulative socket waiting from authenticated delivery across both directions. Engine reads size the buffer to one whole record (`profile.maximumEnvelope + 5`: 4,101 bytes standard, 262,180 for profile 3, 524,452 for profile 4, 4,194,340 for the bulk probe) rather than a fixed 64 KiB.
 
 Keep aniCe visible and the phone unlocked during foreground acceptance. On the API-36 test phone, Android maps the high-performance lock to low-latency mode and ignores it for a background UID even when `isHeld` is true. Verify effective lock state separately; process importance at start/end is recorded and does not itself prove radio mode. Background-service acceptance requires its own measurement.
 

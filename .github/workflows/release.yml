@@ -218,6 +218,13 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+      VERIFIED_TAG: ${{ vars.RELEASE_DEVICE_VERIFIED_TAG }}
+      VERIFIED_COMMIT: ${{ vars.RELEASE_DEVICE_VERIFIED_COMMIT }}
+      VERIFIED_ANDROID_SHA256: ${{ vars.RELEASE_DEVICE_VERIFIED_ANDROID_SHA256 }}
+      VERIFIED_MACOS_SHA256: ${{ vars.RELEASE_DEVICE_VERIFIED_MACOS_SHA256 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -228,20 +235,16 @@ jobs:
           pattern: anice-*
           merge-multiple: true
           path: dist
-      - name: Require device verification for this commit
-        env:
-          VERIFIED_COMMIT: ${{ vars.RELEASE_DEVICE_VERIFIED_COMMIT }}
-          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+      - name: Require device verification for these artifacts
         run: |
-          if [[ ! "$VERIFIED_COMMIT" =~ ^[0-9a-f]{40}$ || "$VERIFIED_COMMIT" != "$RELEASE_COMMIT" ]]; then
-            echo 'After testing these signed artifacts, set RELEASE_DEVICE_VERIFIED_COMMIT to this commit and rerun only this job to prepare the draft without rebuilding.' >&2
-            exit 1
-          fi
+          PYTHONPATH=scripts python3 - <<'PY'
+          import os
+          from publish_release import require_device_verification
+          require_device_verification(os.environ['RELEASE_TAG'], os.environ['RELEASE_COMMIT'], 'dist')
+          PY
       - name: Install APK inspection tools
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "build-tools;36.0.0"'
       - name: Prepare and verify release draft
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
-          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
         run: ANICE_AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt" python3 scripts/publish_release.py "$RELEASE_TAG" "$RELEASE_COMMIT" dist

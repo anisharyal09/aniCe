@@ -1,27 +1,24 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Documentation Directory
 
-A complete index of documentation, architectural specifications, feature guides, and technical decisions for aniCe.
+A complete, categorized index of all user setup guides, feature notes, architectural specifications, wire protocol contracts, developer setups, and technical decision records for aniCe.
 
 ---
 
 ## 🚀 Getting Started & Setup
 
-* **[First Installation & Permissions Guide](docs/FIRST_INSTALL_GUIDE.md)** — Step-by-step walkthrough for Google Play Protect, Unknown Apps, Android 13+ restricted settings, battery optimization, and macOS Keychain / Gatekeeper.
-* **[Getting Started](docs/GETTING_STARTED.md)** — App installation, device pairing (QR & 6-digit code), connection management, and in-app updates.
-* **[Android Development Setup](apps/android/README.md)** — Gradle setup, build targets, preview builds, and local testing.
-* **[macOS Development Setup](apps/macos/README.md)** — Xcode project structure, Swift 6 compiler requirements, and code signing.
-* **[Rust Pairing Bridge](core/rust/pairing/README.md)** — OPAQUE pairing protocol shared library and cross-compilation.
+* **[First Installation & Permissions Guide](docs/FIRST_INSTALL_GUIDE.md)** — Step-by-step walkthrough for Google Play Protect ("Install anyway" / scan toggle), Unknown Apps, Android 13+ restricted settings (⋮ menu unlock), battery optimization, and macOS Keychain / Gatekeeper approval.
+* **[Getting Started](docs/GETTING_STARTED.md)** — Device pairing (QR code & 6-digit PIN), everyday connection controls, and update configuration.
 
 ---
 
 ## ✨ Feature Guides
 
-* **[File Transfer](docs/features/FILE_TRANSFER.md)** — Peer-to-peer file sharing, Edge Drop desktop shelf, automatic receiving, and 15-minute interrupted transfer recovery.
-* **[Clipboard Sync](docs/features/CLIPBOARD.md)** — Bidirectional clipboard sharing, link opening, and the macOS Quick Paste Tray (`⌥⌘V`).
+* **[File Transfer](docs/features/FILE_TRANSFER.md)** — Peer-to-peer file sharing, Edge Drop desktop shelf, automatic receiving per sender, and 15-minute interrupted transfer recovery.
+* **[Clipboard Sync](docs/features/CLIPBOARD.md)** — Bidirectional clipboard sharing, link handoff to Mac browser, and the macOS Quick Paste Tray (`⌥⌘V`).
 * **[Phone to Mac Remote Control](docs/features/PHONE_TO_MAC.md)** — Turn your phone into an encrypted trackpad and keyboard for your Mac.
 * **[Control Android from Mac](docs/features/KEYBOARD_TRACKPAD.md)** — Control Android with your Mac keyboard and trackpad over Bluetooth HID, with the Floating Key (`⌥⌘K`).
-* **[Mac Desk Deck](docs/features/MAC_DESK_DECK.md)** — Monitor Mac CPU, memory, battery, and thermals; lock Mac, trigger DND, control audio output, and launch apps from Android.
+* **[Mac Desk Deck](docs/features/MAC_DESK_DECK.md)** — Monitor Mac CPU, memory, battery, and thermals; lock Mac, trigger DND, control audio output, and launch approved apps from Android.
 * **[Notification Mirroring & Call Alerts](docs/features/NOTIFICATION_MIRRORING.md)** — Mirror notifications with inline replies, action buttons, icon caching, and incoming call alerts.
 * **[SMS & Messaging](docs/features/SMS.md)** — Read and reply to SMS conversations from your Mac with dual-SIM selection.
 * **[Now Playing Media Controls](docs/features/NOW_PLAYING.md)** — Remote media controls, live track artwork, player selection, and volume synchronization.
@@ -30,15 +27,34 @@ A complete index of documentation, architectural specifications, feature guides,
 
 ---
 
-## 🏛️ Architecture & Technical Foundation
+## 🏛️ Architecture & System Design
 
 * **[Architecture Overview](ARCHITECTURE.md)** — Layered architecture, subsystem boundaries, trust model, and transport topology.
-* **[Security & Trust Model](SECURITY.md)** — Cryptographic primitives, key management, security policy, and vulnerability reporting.
-* **[Design & UI Principles](docs/design/DESIGN.md)** — Design language, typography, color palette, dark mode, and desktop layout guidelines.
-* **[Performance Profile & Limits](docs/PERFORMANCE.md)** — Resource usage targets, frame rate budgets, transfer chunk sizes, and wire latency expectations.
+* **[Security Policy & Trust Model](SECURITY.md)** — Cryptographic primitives, key management (Android Keystore / Mac Keychain), and vulnerability reporting.
+* **[Performance Profile & Limits](docs/PERFORMANCE.md)** — Hot-path allocation discipline, throughput gates, and wire resource budgets.
 * **[Background Bluetooth Connections](docs/BACKGROUND_CONNECTIONS.md)** — BLE advertising intervals, companion scan states, battery trade-offs, and reconnection state machines.
 * **[LAN Connection Ownership](docs/LAN_CONNECTIONS.md)** — Wi-Fi peer discovery, TCP framing, encrypted session handoff, and automatic reconnection.
-* **[Wire Protocol & Schemas](protocol/README.md)** — Framing contracts, CBOR schemas, and test vector verification.
+* **[Design & UI Principles](docs/design/DESIGN.md)** — Design language, typography, semantic color palette, dark mode, and desktop layout guidelines.
+
+---
+
+## 📡 Protocol Specifications & Wire Contracts
+
+* **[Protocol Specification Overview](protocol/README.md)** — Master framing contracts, CBOR schemas, and test vector verification.
+* **[Pairing Protocol](protocol/pairing/README.md)** — QR bootstrap (P-256 ECDH) and PIN exchange (OPAQUE over Ristretto255).
+* **[Session Handshake & Records](protocol/session/README.md)** — RFC 9528 EDHOC method 0, cipher suite 5, and directional AES-256-GCM records.
+* **[Bluetooth Transport & Framing](protocol/bluetooth/README.md)** — Stable GATT attribute layout, fragmentation v2, and MTU negotiation.
+* **[Local Network (LAN) Transport](protocol/lan/README.md)** — Framed TCP streaming, bulk probe discovery, and 512 KiB transfer profile.
+* **[File Transfer Protocol](protocol/transfer/README.md)** — Sequential batch chunking, SHA-256 prefix commitments, and 15-minute resumption.
+
+---
+
+## 🛠️ Development & Testing
+
+* **[Contributing & Verification Suite](CONTRIBUTING.md)** — Pre-commit verification (`verify-suite.py`), multi-lane test matrix, coding standards, and pull request workflow.
+* **[Android App Development](apps/android/README.md)** — Gradle configuration, JVM test execution (`cleanTestDebugUnitTest`), Compose previews, and build variants.
+* **[macOS App Development](apps/macos/README.md)** — Xcode workspace configuration, Swift 6 compiler settings, hosted test suites, and code signing.
+* **[Rust Pairing Engine](core/rust/pairing/README.md)** — OPAQUE pairing core library, Cargo unit tests, and cross-platform compilation targets.
 
 ---
 
@@ -59,23 +75,10 @@ A complete index of documentation, architectural specifications, feature guides,
 
 ---
 
-## 🧪 Testing & Verification
+## 🗺️ Project & Releases
 
-* **[Verification Status](docs/A&V/VERIFICATION_STATUS.md)** — Current status of automated suites across platforms.
-* **[Test Audit](docs/A&V/TEST_AUDIT.md)** — Breakdown of unit, integration, and platform test suites.
-* **[Session Verification](docs/A&V/SESSION_VERIFICATION.md)** — End-to-end cryptographic handshake validation.
-* **[Background Connection Verification](docs/A&V/BACKGROUND_CONNECTION_VERIFICATION.md)** — Reconnection and lifecycle persistence checks.
-* **[Idle Connection Performance](docs/A&V/IDLE_CONNECTION_PERFORMANCE.md)** — Standby power, CPU, and memory audits.
-* **[macOS Code Signing Guide](docs/testing/MAC_SIGNING.md)** — Self-signing and notarization requirements.
-
----
-
-## 🗺️ Project, Releases & Community
-
-* **[Project Roadmap](docs/ROADMAP.md)** — Planned milestones, beta release phases, and feature roadmap.
-* **[Contributing Guidelines](CONTRIBUTING.md)** — Code style, pull request checklist, and pre-commit verification suites.
-* **[Root Changelog](CHANGELOG.md)** — Cumulative project change history.
+* **[Project Roadmap](docs/ROADMAP.md)** — Milestone sequence, beta release phases, and upcoming capabilities.
+* **[Root Changelog](CHANGELOG.md)** — Cumulative project change history across Android, macOS, and protocol releases.
   * [Android Changelog](apps/android/CHANGELOG.md)
   * [macOS Changelog](apps/macos/CHANGELOG.md)
   * [Protocol Changelog](protocol/CHANGELOG.md)
-

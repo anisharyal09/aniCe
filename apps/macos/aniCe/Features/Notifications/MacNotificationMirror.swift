@@ -75,6 +75,7 @@ final class MacNotificationMirrorNotifier: NSObject {
     let sequence: Int64
     let category: String
     let actions: [Int: MirroredNotificationAction]
+    var presented = false
     var consumedActions: Set<String> = []
   }
   enum UserAction {
@@ -86,6 +87,7 @@ final class MacNotificationMirrorNotifier: NSObject {
   private let center: any MacMirrorNotificationCenter
   private var targets: [String: Target] = [:]
   private var registeredCategories: [String: UNNotificationCategory] = [:]
+  private var categoryUpdate: Task<Void, Never>?
   private var generations: [String: (peerKey: String, token: String)] = [:]
   private let startupCleanup: Task<Void, Never>
 
@@ -109,15 +111,18 @@ final class MacNotificationMirrorNotifier: NSObject {
 
   func post(peerKey: String, value: MirroredNotification) async {
     let identifier = Self.identifier(peerKey: peerKey, sourceId: value.id)
+    guard generations[identifier] != nil || generations.values.filter({ $0.peerKey == peerKey }).count < 128 else { return }
     let generation = UUID().uuidString.lowercased()
     generations[identifier] = (peerKey, generation)
     await startupCleanup.value
+    guard generations[identifier]?.token == generation else { return }
     let category = categoryFor(value.actions)
+    let updating = targets[identifier]?.presented == true
+    targets[identifier] = Target(peerKey: peerKey, sourceId: value.id, epoch: value.epoch,
+      sequence: value.sequence, category: category, actions: Dictionary(uniqueKeysWithValues: value.actions.map { ($0.index, $0) }),
+      presented: updating)
     await register(category: category, actions: value.actions)
     guard generations[identifier]?.token == generation else { return }
-    let updating = targets[identifier] != nil
-    targets[identifier] = Target(peerKey: peerKey, sourceId: value.id, epoch: value.epoch,
-      sequence: value.sequence, category: category, actions: Dictionary(uniqueKeysWithValues: value.actions.map { ($0.index, $0) }))
     if !updating {
       center.removeDeliveredNotifications(withIdentifiers: [identifier])
       center.removePendingNotificationRequests(withIdentifiers: [identifier])
@@ -135,12 +140,13 @@ final class MacNotificationMirrorNotifier: NSObject {
     let iconAttachment = sourceIconAttachment(value.sourceIcon)
     if let iconAttachment { content.attachments = [iconAttachment.value] }
     let iconFileURL = iconAttachment?.url
+    targets[identifier]?.presented = true
     center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { [weak self] error in
       if let iconFileURL { try? FileManager.default.removeItem(at: iconFileURL) }
       guard error != nil else { return }
       Task { @MainActor in
         guard let self, self.generations[identifier]?.token == generation else { return }
-        self.targets[identifier] = nil
+        self.clear(identifier: identifier)
       }
     }
   }
@@ -194,7 +200,7 @@ final class MacNotificationMirrorNotifier: NSObject {
     guard category.hasPrefix(Self.categoryPrefix), var target = targets[identifier], target.category == category,
           target.epoch == sourceEpoch, target.sequence == sourceSequence else { return false }
     if action == UNNotificationDismissActionIdentifier {
-      targets[identifier] = nil
+      clear(identifier: identifier)
       onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .dismiss)
       return true
     }
@@ -217,6 +223,7 @@ final class MacNotificationMirrorNotifier: NSObject {
   private func clear(identifier: String) {
     generations[identifier] = nil
     targets[identifier] = nil
+    updateCategories()
     center.removeDeliveredNotifications(withIdentifiers: [identifier])
     center.removePendingNotificationRequests(withIdentifiers: [identifier])
   }
@@ -228,21 +235,36 @@ final class MacNotificationMirrorNotifier: NSObject {
   }
 
   private func register(category identifier: String, actions: [MirroredNotificationAction]) async {
-    guard registeredCategories[identifier] == nil else { return }
-    let nativeActions: [UNNotificationAction] = actions.map { item in
-      let actionId = "ANICE_MIRROR_ACTION_\(item.index)"
-      if !item.replyPlaceholder.isEmpty {
-        return UNTextInputNotificationAction(identifier: actionId, title: item.title, options: [],
-          textInputButtonTitle: "Send", textInputPlaceholder: item.replyPlaceholder)
+    if registeredCategories[identifier] == nil {
+      let nativeActions: [UNNotificationAction] = actions.map { item in
+        let actionId = "ANICE_MIRROR_ACTION_\(item.index)"
+        if !item.replyPlaceholder.isEmpty {
+          return UNTextInputNotificationAction(identifier: actionId, title: item.title, options: [],
+            textInputButtonTitle: "Send", textInputPlaceholder: item.replyPlaceholder)
+        }
+        return UNNotificationAction(identifier: actionId, title: item.title, options: [])
       }
-      return UNNotificationAction(identifier: actionId, title: item.title, options: [])
+      registeredCategories[identifier] = UNNotificationCategory(identifier: identifier,
+        actions: nativeActions, intentIdentifiers: [], options: [.customDismissAction])
     }
-    let next = UNNotificationCategory(identifier: identifier, actions: nativeActions, intentIdentifiers: [], options: [.customDismissAction])
-    let existing = await withCheckedContinuation { continuation in
-      center.mirrorCategories { continuation.resume(returning: $0) }
+    updateCategories()
+    await categoryUpdate?.value
+  }
+
+  private func updateCategories() {
+    guard categoryUpdate == nil else { return }
+    categoryUpdate = Task { @MainActor [weak self] in
+      guard let self else { return }
+      let existing = await withCheckedContinuation { continuation in
+        self.center.mirrorCategories { continuation.resume(returning: $0) }
+      }
+      // Re-read targets after suspension so removed and superseded action shapes cannot return.
+      let used = Set(self.targets.values.map(\.category))
+      self.registeredCategories = self.registeredCategories.filter { used.contains($0.key) }
+      let other = existing.values.filter { !$0.identifier.hasPrefix(Self.categoryPrefix) }
+      self.center.setMirrorCategories(Set(other).union(self.registeredCategories.values))
+      self.categoryUpdate = nil
     }
-    registeredCategories[identifier] = next
-    center.setMirrorCategories(existing.values.union(registeredCategories.values))
   }
 
   private static let identifierPrefix = "anice-mirror-"
@@ -262,7 +284,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private var epochs: [String: String] = [:]
   private var snapshots: [String: NotificationSnapshot] = [:]
   private var records: [String: StoredNotification] = [:]
-  private var removals: [String: Int64] = [:]
+  private(set) var removals: [String: Int64] = [:]
   private var snapshotFloors: [String: Int64] = [:]
   private var sourceIcons: [String: Data] = [:]
   private let notifier: MacNotificationMirrorNotifier
@@ -365,6 +387,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
     if !token.isEmpty {
       guard var snapshot = snapshots[token], snapshot.peerKey == peerKey, snapshot.epoch == value.epoch else { throw NotificationWireError.malformed }
       guard value.sequence <= snapshot.highWater else { throw NotificationWireError.malformed }
+      guard snapshot.seen.contains(value.id) || snapshot.seen.count < 128 else { throw NotificationWireError.malformed }
       snapshot.seen.insert(value.id)
       snapshots[token] = snapshot
     }
@@ -384,6 +407,15 @@ final class MacNotificationMirrorModel: FeatureHandler {
     }
     guard value.sequence > (snapshotFloors[peerKey] ?? 0),
           value.sequence > (removals[recordKey] ?? 0) else { return }
+    if records[recordKey] == nil {
+      let current = records.filter { $0.value.peerKey == peerKey }
+      if current.count >= 128, let oldest = current.min(by: { $0.value.value.sequence < $1.value.value.sequence }) {
+        guard value.sequence > oldest.value.value.sequence else { return }
+        records[oldest.key] = nil
+        rememberRemoval(peerKey: peerKey, id: oldest.value.value.id, sequence: oldest.value.value.sequence)
+        notifier.clear(peerKey: peerKey, sourceId: oldest.value.value.id)
+      }
+    }
     records[recordKey] = StoredNotification(peerKey: peerKey, value: value)
     await notifier.post(peerKey: peerKey, value: value)
   }
@@ -392,12 +424,21 @@ final class MacNotificationMirrorModel: FeatureHandler {
     let id = try message.text(0), epoch = try message.text(1), sequence = try message.number(2)
     guard epochs[peerKey] == epoch else { return }
     let recordKey = peerKey + ":" + id
-    if sequence > (snapshotFloors[peerKey] ?? 0) {
-      removals[recordKey] = max(removals[recordKey] ?? 0, sequence)
-    }
+    rememberRemoval(peerKey: peerKey, id: id, sequence: sequence)
     guard let current = records[recordKey], current.value.epoch == epoch, sequence >= current.value.sequence else { return }
     records[recordKey] = nil
     notifier.clear(peerKey: peerKey, sourceId: id)
+  }
+
+  private func rememberRemoval(peerKey: String, id: String, sequence: Int64) {
+    guard sequence > (snapshotFloors[peerKey] ?? 0) else { return }
+    let recordKey = peerKey + ":" + id
+    removals[recordKey] = max(removals[recordKey] ?? 0, sequence)
+    let retained = removals.filter { $0.key.hasPrefix(peerKey + ":") }
+    guard retained.count > 128 else { return }
+    let floor = max(snapshotFloors[peerKey] ?? 0, retained.values.sorted()[retained.count - 129])
+    snapshotFloors[peerKey] = floor
+    removals = removals.filter { !$0.key.hasPrefix(peerKey + ":") || $0.value > floor }
   }
 
   private func finishSnapshot(_ message: NotificationWireMessage, peerKey: String) async throws {
@@ -437,7 +478,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
         .text(requestId), .text(id), .text(epoch), .integer(sequence),
       ])
       records[peerKey + ":" + id] = nil
-      removals[peerKey + ":" + id] = sequence
+      rememberRemoval(peerKey: peerKey, id: id, sequence: sequence)
     }
     send(message, on: channel)
   }

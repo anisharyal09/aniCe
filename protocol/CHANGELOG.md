@@ -20,6 +20,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Clarify transfer status channel/job binding, bounded notification revision retention and current profile-4 benchmark selection; wire layouts and cryptographic parameters are unchanged.
 - Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE transfer window; wire formats and negotiated limits are unchanged.
 - Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.
 - Document the optional connection-check reply and compatibility with older peers.
