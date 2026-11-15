@@ -8,16 +8,35 @@
 </h2>
 
 <p align="center">
-  <strong>Seamless continuity between Android and Mac.</strong>
+  <strong>Seamless, private continuity between Android and Mac.</strong>
 </p>
 
-**aniCe** brings seamless, ecosystem-level continuity between your Android phone and Mac without walled gardens, cloud relays, or subscriptions.
+**aniCe** connects your Android phone and Mac directly over peer-to-peer connections.
 
-Drag files directly to your screen edge to share them, sync clipboards instantly, reply to phone messages from your Mac keyboard, and monitor your Mac from your phone—all over secure, direct Bluetooth and local-network connections.
+Drop files to your screen edge to share them, sync clipboards instantly, reply to phone notifications and SMS from your Mac, control your phone with your Mac keyboard and trackpad (`⌥⌘K`), and control Mac playback or view live system stats from your phone (Desk Deck).
+
+<p align="center">
+  <a href="https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.3/aniCe-android.apk">
+    <img src="https://img.shields.io/badge/Download-Android_APK-47534D?style=for-the-badge&amp;logo=android&amp;logoColor=FFFDF9&amp;labelColor=282E2A" alt="Download Android APK">
+  </a>
+  &nbsp;
+  <a href="https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.3/aniCe-mac.zip">
+    <img src="https://img.shields.io/badge/Download-Mac_ZIP-47534D?style=for-the-badge&amp;logo=apple&amp;logoColor=FFFDF9&amp;labelColor=282E2A" alt="Download Mac ZIP (Apple Silicon)">
+  </a>
+</p>
+
+<p align="center">
+  <sub>Homebrew (macOS):</sub>
+  <br> <code>brew install anisharyal09/tap/anice</code>
+</p>
+
+<p align="center">
+  <strong>v0.9.0-beta.3</strong> (Apple Silicon macOS 14+ · Android 10+) <br> <a href="docs/FIRST_INSTALL_GUIDE.md">First Installation Guide</a> · <a href="docs/GETTING_STARTED.md">Getting Started</a>
+</p>
 
 - **🔒 100% Private & Local:** Zero accounts, zero relay servers, zero analytics. Your feature data stays strictly local; in-app update checks contact GitHub Releases directly.
-- **⚡ Built Natively:** Built in native Swift 6 and SwiftUI on macOS, and Kotlin with Jetpack Compose (Material 3) on Android.
-- **🛡️ Secure by Design:** Mutual P-256 ECDSA authentication and encrypted transport protect every interaction between paired devices.
+- **⚡ Built from Scratch:** Built in native Swift 6 and SwiftUI on macOS, and Kotlin with Jetpack Compose (Material 3) on Android.
+- **🛡️ Secure by Design:** Mutual P-256 ECDSA authentication, OPAQUE pairing, and encrypted transport protect every interaction between paired devices.
 
 ## Features
 
@@ -61,21 +80,6 @@ Drag files directly to your screen edge to share them, sync clipboards instantly
 - **Zero telemetry:** No analytics, no tracking, and no telemetry uploads.
 
 For full wire specifications, threat models, and architectural boundaries, see [Architecture](ARCHITECTURE.md), [Security Policy](SECURITY.md), and [Protocol Contracts](protocol/README.md).
-
-## Install and connect
-
-- **Mac:** Apple Silicon, macOS 14 Sonoma or newer.
-- **Android:** Android 10 (API 29) or newer; background continuity features require Android 12 (API 31) or newer.
-
-### Installation
-* **Mac (Homebrew):**
-  ```bash
-  brew install anisharyal09/tap/anice
-  ```
-* **Direct Downloads:** Available on [GitHub Releases](https://github.com/anisharyal09/aniCe/releases).
-* **Setup Guides:**
-  - Follow the [First Installation & Permissions Guide](docs/FIRST_INSTALL_GUIDE.md) for step-by-step help with Google Play Protect, Unknown Apps, Android 13+ restricted settings, battery optimization, and macOS Keychain / Gatekeeper.
-  - Follow [Getting Started](docs/GETTING_STARTED.md) for device pairing, everyday controls, and update configuration.
 
 ## Build and contribute
 
