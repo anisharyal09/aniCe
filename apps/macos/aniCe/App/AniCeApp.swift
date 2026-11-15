@@ -132,6 +132,7 @@ struct AniCeApp: App {
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
     session.automaticPauseEnded = { [weak lan] in lan?.resumeAfterTimedPause() }
+    lan.onNetworkReturn = { [weak session] in session?.reconcileConnectionPause() }
     let features=FeatureDispatch()
     features.applicationActivity = { [weak lan] descriptor, bytes in lan?.onApplicationActivity(descriptor, bytes) }
     features.register(lan.rendezvous)

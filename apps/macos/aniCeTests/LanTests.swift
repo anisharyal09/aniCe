@@ -95,7 +95,9 @@ final class LanTests: XCTestCase {
   }
   @MainActor func testAutomaticLANRequiresBothPreferencesAndDisconnectPausesRetries() async throws {
     let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "isolated")
-    let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation()) {
+    let owner = MacLanSessionModel(
+      identity: identity, peers: SessionPeerReservation(), recoveryDelays: [0.02, 0.02]
+    ) {
       XCTFail("Unavailable identity must fail before accessing trust")
       throw SessionFailure.state
     }
@@ -116,22 +118,27 @@ final class LanTests: XCTestCase {
     XCTAssertEqual(owner.state, "Failed")
     let failedLoads = await identity.identityLoads
     XCTAssertEqual(failedLoads, 1)
-    _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(1), on: channel.descriptor)
-    try await Task.sleep(for: .milliseconds(2100))
+    let recoveryDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+    while await identity.identityLoads < 3, ContinuousClock.now < recoveryDeadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let recoveredLoads = await identity.identityLoads
+    XCTAssertEqual(recoveredLoads, 3, "The initial attempt and two bounded retries must run")
+    try await Task.sleep(for: .milliseconds(100))
     let idleLoads = await identity.identityLoads
-    XCTAssertEqual(idleLoads, 1, "A failed LAN attempt must not create a timed retry")
+    XCTAssertEqual(idleLoads, 3, "Automatic recovery must stop after three attempts")
     for state: Int64 in 0...4 { owner.onApplicationActivity(channel.descriptor, try LanRendezvousWire.encode(state)) }
     let stale = MockSecuredChannel(instance: "retired", transport: "ble")
     owner.onApplicationActivity(stale.descriptor, try SessionCbor.encode(.text("feature activity")))
     try await Task.sleep(for: .milliseconds(30))
     let controlLoads = await identity.identityLoads
-    XCTAssertEqual(controlLoads, 1, "Coordination and stale traffic must not initiate LAN")
+    XCTAssertEqual(controlLoads, 3, "Coordination and stale traffic must not initiate LAN")
     let activity = try SessionCbor.encode(.text("feature activity"))
     for _ in 0..<10 { owner.onApplicationActivity(channel.descriptor, activity) }
     let requestDeadline = ContinuousClock.now.advanced(by: .seconds(1))
-    while await identity.identityLoads < 2, ContinuousClock.now < requestDeadline { try await Task.sleep(for: .milliseconds(5)) }
+    while await identity.identityLoads < 4, ContinuousClock.now < requestDeadline { try await Task.sleep(for: .milliseconds(5)) }
     let requestedLoads = await identity.identityLoads
-    XCTAssertEqual(requestedLoads, 2)
+    XCTAssertEqual(requestedLoads, 4)
     let failureDeadline = ContinuousClock.now.advanced(by: .seconds(1))
     while owner.state != "Failed", ContinuousClock.now < failureDeadline { try await Task.sleep(for: .milliseconds(5)) }
     XCTAssertEqual(owner.state, "Failed")
@@ -149,7 +156,7 @@ final class LanTests: XCTestCase {
     }
     try await Task.sleep(for: .milliseconds(30))
     let repeatedLoads = await identity.identityLoads
-    XCTAssertEqual(repeatedLoads, 2, "Ordinary BLE activity restarted a failed LAN attempt")
+    XCTAssertEqual(repeatedLoads, 4, "Ordinary BLE activity restarted a failed LAN attempt")
     XCTAssertEqual(channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 4 }.count, requestsBefore,
       "Ordinary activity repeatedly published explicit LAN demand")
     owner.disconnect()
@@ -207,6 +214,58 @@ final class LanTests: XCTestCase {
     owner.setAutomatic(true)
     XCTAssertTrue(owner.requestAutomaticConnection())
     owner.rendezvous.retired(channel.descriptor)
+  }
+
+  func testAutomaticRecoveryIsBoundedPerEventAndRearmsOnAppOpen() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
+    gate.release()
+    XCTAssertTrue(gate.claimRecovery())
+    gate.release()
+    XCTAssertTrue(gate.claimRecovery())
+    gate.release()
+    XCTAssertFalse(gate.claimRecovery(), "The initial attempt plus two retries exhaust the budget")
+    XCTAssertFalse(gate.claim())
+    for _ in 0..<20 {
+      gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+      XCTAssertFalse(gate.claim())
+    }
+    gate.rearm()
+    XCTAssertTrue(gate.claim())
+  }
+
+  func testExplicitDemandKeepsOneOpportunityAfterRecoveryIsExhausted() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
+    for _ in 0..<2 { gate.release(); XCTAssertTrue(gate.claimRecovery()) }
+    gate.release()
+    XCTAssertFalse(gate.claimRecovery())
+    gate.trigger()
+    XCTAssertTrue(gate.claim())
+    XCTAssertFalse(gate.claim())
+  }
+
+  func testNewChannelOrEligibilityIntervalRearmsRecoveryButDuplicateCallbacksDoNot() {
+    var gate = LanAttemptGate()
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
+    for _ in 0..<2 { gate.release(); XCTAssertTrue(gate.claimRecovery()) }
+    gate.release()
+    XCTAssertFalse(gate.claimRecovery())
+    for _ in 0..<20 {
+      gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+      XCTAssertFalse(gate.claimRecovery())
+    }
+    gate.update(channel: "ble", eligible: false, remoteEligible: true, ready: false, requests: 0)
+    gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
+    for _ in 0..<2 { gate.release(); XCTAssertTrue(gate.claimRecovery()) }
+    gate.release()
+    XCTAssertFalse(gate.claimRecovery())
+    gate.update(channel: "replacement", eligible: true, remoteEligible: true, ready: true, requests: 0)
+    XCTAssertTrue(gate.claim())
   }
 
   func testRepeatedFeatureTrafficDoesNotRearmFailedConnectionAttempts() {
@@ -279,13 +338,17 @@ final class LanTests: XCTestCase {
     _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(1), on: channel.descriptor)
     try await Task.sleep(for: .milliseconds(30))
     let first = await identity.identityLoads
+    var networkReturns = 0
+    owner.onNetworkReturn = { networkReturns += 1 }
     for _ in 0..<20 { owner.localPathChanged(true) }
+    XCTAssertEqual(networkReturns, 0, "Only an unavailable-to-available edge is a network return")
     try await Task.sleep(for: .milliseconds(30))
     let duplicate = await identity.identityLoads
     XCTAssertEqual(first, duplicate)
     owner.localPathChanged(false)
     try await Task.sleep(for: .milliseconds(20))
     owner.localPathChanged(true)
+    XCTAssertEqual(networkReturns, 1)
     try await Task.sleep(for: .milliseconds(30))
     let returned = await identity.identityLoads
     XCTAssertGreaterThan(returned, duplicate)

@@ -115,10 +115,13 @@ final class MacNotificationMirrorNotifier: NSObject {
     let category = categoryFor(value.actions)
     await register(category: category, actions: value.actions)
     guard generations[identifier]?.token == generation else { return }
+    let updating = targets[identifier] != nil
     targets[identifier] = Target(peerKey: peerKey, sourceId: value.id, epoch: value.epoch,
       sequence: value.sequence, category: category, actions: Dictionary(uniqueKeysWithValues: value.actions.map { ($0.index, $0) }))
-    center.removeDeliveredNotifications(withIdentifiers: [identifier])
-    center.removePendingNotificationRequests(withIdentifiers: [identifier])
+    if !updating {
+      center.removeDeliveredNotifications(withIdentifiers: [identifier])
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+    }
     let content = UNMutableNotificationContent()
     content.title = value.title.isEmpty ? value.appName : value.title
     content.subtitle = value.title.isEmpty ? "" : value.appName
@@ -126,8 +129,9 @@ final class MacNotificationMirrorNotifier: NSObject {
     content.categoryIdentifier = category
     content.threadIdentifier = value.packageName
     content.userInfo = ["anice.mirror.epoch": value.epoch, "anice.mirror.sequence": value.sequence]
-    content.sound = value.snapshotToken.isEmpty ? .default : nil
-    content.interruptionLevel = value.snapshotToken.isEmpty ? .active : .passive
+    // Only the first live revision may alert; snapshots and later revisions update in place.
+    content.sound = value.snapshotToken.isEmpty && !updating ? .default : nil
+    content.interruptionLevel = value.snapshotToken.isEmpty && !updating ? .active : .passive
     let iconAttachment = sourceIconAttachment(value.sourceIcon)
     if let iconAttachment { content.attachments = [iconAttachment.value] }
     let iconFileURL = iconAttachment?.url

@@ -54,6 +54,7 @@ struct SessionStartupRecovery {
   private let preferences: UserDefaults?
   var beforeAllow: () -> Void = {}
   private let now: () -> TimeInterval
+  private let wallNow: () -> Date
   private let wait: (TimeInterval) async throws -> Void
   private let peers: SessionPeerReservation
   private(set) var authenticatedPeer: DeviceIdentity?
@@ -111,10 +112,12 @@ struct SessionStartupRecovery {
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
     preferences: UserDefaults? = nil,
     peers: SessionPeerReservation? = nil,
+    wallNow: @escaping () -> Date = Date.init,
     wait: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
   ) {
     self.peers = peers ?? SessionPeerReservation()
     self.now = now
+    self.wallNow = wallNow
     self.identity = identity
     self.adapter = adapter
     self.store = store
@@ -146,6 +149,11 @@ struct SessionStartupRecovery {
       NotificationCenter.default.addObserver(
         forName: NSApplication.willTerminateNotification, object: nil, queue: .main
       ) { [weak self] _ in MainActor.assumeIsolated { self?.quit() } })
+    for name in [NSApplication.didBecomeActiveNotification, NSNotification.Name.NSSystemClockDidChange] {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+        [weak self] _ in MainActor.assumeIsolated { self?.reconcileConnectionPause() }
+      })
+    }
   }
   func restoreAutomatic() {
     guard preferences?.bool(forKey: "session.automatic") == true else { return }
@@ -159,7 +167,7 @@ struct SessionStartupRecovery {
       }
       automatic = true
       updateConnectionPauseStatus()
-      if let deadline = automaticPauseDeadline, deadline > Date() { schedulePauseResume() }
+      if let deadline = automaticPauseDeadline, deadline > wallNow() { schedulePauseResume() }
       else if automaticPauseDeadline != nil { resumeAutomaticPause() }
       return
     }
@@ -191,7 +199,7 @@ struct SessionStartupRecovery {
   func resumeAutomatic() {
     suspended = false
     if automatic, preferences?.bool(forKey: "session.paused") == true,
-      let deadline = automaticPauseDeadline, deadline <= Date() {
+      let deadline = automaticPauseDeadline, deadline <= wallNow() {
       resumeAutomaticPause()
       return
     }
@@ -230,7 +238,7 @@ struct SessionStartupRecovery {
   }
   func allow() {
     if automatic, preferences?.bool(forKey: "session.paused") == true,
-      let deadline = automaticPauseDeadline, deadline <= Date() {
+      let deadline = automaticPauseDeadline, deadline <= wallNow() {
       resumeAutomaticPause()
       return
     }
@@ -698,7 +706,7 @@ struct SessionStartupRecovery {
     preferences?.set(true, forKey: "session.automatic")
     preferences?.set(true, forKey: "session.paused")
     if let duration {
-      preferences?.set(Date().addingTimeInterval(duration).timeIntervalSince1970, forKey: Self.pauseUntilKey)
+      preferences?.set(wallNow().addingTimeInterval(duration).timeIntervalSince1970, forKey: Self.pauseUntilKey)
     } else {
       preferences?.set(0.0, forKey: Self.pauseUntilKey)
     }
@@ -719,6 +727,16 @@ struct SessionStartupRecovery {
     if !suspended && !sleeping && !quitting { allow() }
   }
 
+  func reconcileConnectionPause() {
+    if automatic, preferences?.bool(forKey: "session.paused") == true,
+      let deadline = automaticPauseDeadline, deadline <= wallNow() {
+      resumeAutomaticPause()
+      return
+    }
+    updateConnectionPauseStatus()
+    if automatic && isAutomaticPauseActive { schedulePauseResume() }
+  }
+
   private var automaticPauseDeadline: Date? {
     guard let timestamp = preferences?.object(forKey: Self.pauseUntilKey) as? Double, timestamp > 0 else { return nil }
     return Date(timeIntervalSince1970: timestamp)
@@ -727,7 +745,7 @@ struct SessionStartupRecovery {
   private var isAutomaticPauseActive: Bool {
     guard preferences?.bool(forKey: "session.paused") == true,
       preferences?.object(forKey: Self.pauseUntilKey) != nil else { return false }
-    return automaticPauseDeadline.map { $0 > Date() } ?? true
+    return automaticPauseDeadline.map { $0 > wallNow() } ?? true
   }
 
   private func updateConnectionPauseStatus() {
@@ -736,7 +754,7 @@ struct SessionStartupRecovery {
       connectionPauseStatus = nil
       return
     }
-    if let deadline = automaticPauseDeadline, deadline > Date() {
+    if let deadline = automaticPauseDeadline, deadline > wallNow() {
       connectionPauseStatus = "Paused until \(deadline.formatted(date: .omitted, time: .shortened))"
     } else {
       connectionPauseStatus = "Paused"
@@ -749,12 +767,13 @@ struct SessionStartupRecovery {
     let expected = deadline.timeIntervalSince1970
     pauseResumeTask = Task { [weak self] in
       guard let self else { return }
-      try? await self.wait(max(0, deadline.timeIntervalSinceNow))
+      do { try await self.wait(max(0, deadline.timeIntervalSince(self.wallNow()))) } catch { return }
       guard !Task.isCancelled,
         self.preferences?.bool(forKey: "session.automatic") == true,
         self.preferences?.bool(forKey: "session.paused") == true,
         self.preferences?.double(forKey: Self.pauseUntilKey) == expected else { return }
-      self.resumeAutomaticPause()
+      if deadline > self.wallNow() { self.schedulePauseResume() }
+      else { self.resumeAutomaticPause() }
     }
   }
 

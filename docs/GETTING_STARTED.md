@@ -3,7 +3,7 @@
 
 ## Install
 
-Download published builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/releases). Betas appear under pre-releases; enable **Include beta releases** in Settings → Updates to receive later betas. Use the [development setup](../CONTRIBUTING.md) to build from source.
+Download published builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/releases). Use the [development setup](../CONTRIBUTING.md) to build from source. For a detailed step-by-step walkthrough covering Play Protect, Android 13+ restricted settings, background battery optimization, and macOS Gatekeeper/Keychain approval, see the [First Installation & Permissions Guide](FIRST_INSTALL_GUIDE.md).
 
 - **Mac:** Apple Silicon and macOS 14 or newer. Extract `aniCe-mac.zip`, move `aniCe.app` to Applications and open it. The current release pipeline uses a self-signed certificate, without Apple notarization; macOS may require explicit approval in System Settings → Privacy & Security. Do not disable Gatekeeper globally.
 - **Android:** Android 10 or newer. Open `aniCe-android.apk` and approve installation from the app used to download it. Development builds use a different signer; Android cannot update them in place with a production APK. Preserve anything needed before deliberately removing a development installation, since uninstalling removes app data and trust.

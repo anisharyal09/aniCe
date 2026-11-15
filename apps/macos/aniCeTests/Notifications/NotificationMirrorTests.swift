@@ -135,9 +135,14 @@ final class NotificationMirrorTests: XCTestCase {
 
     try await incoming(model, channel: channel, id: id, sequence: 1, token: "", title: "Duplicate")
     XCTAssertEqual(center.added.count, 1)
+    let removalsBeforeUpdate = center.removedDelivered.flatMap { $0 }.count
     try await incoming(model, channel: channel, id: id, sequence: 2, token: "", title: "Updated")
     XCTAssertEqual(center.added.count, 2)
     XCTAssertEqual(center.added.last?.content.title, "Updated")
+    XCTAssertNil(center.added.last?.content.sound, "a later live revision must update silently")
+    XCTAssertEqual(center.added.last?.content.interruptionLevel, .passive)
+    XCTAssertEqual(center.removedDelivered.flatMap { $0 }.count, removalsBeforeUpdate,
+      "an update must not remove the delivered alert before replacing it")
 
     let stale = center.added[0]
     XCTAssertFalse(notifier.handleAction(category: stale.content.categoryIdentifier,
@@ -230,6 +235,8 @@ final class NotificationMirrorTests: XCTestCase {
     try await incoming(model, channel: channel, id: id, sequence: 2, token: "", title: "Live update")
     await waitFor("live update") { center.added.count == 1 }
     let request = try XCTUnwrap(center.added.first)
+    XCTAssertEqual(request.content.interruptionLevel, .active)
+    XCTAssertNotNil(request.content.sound, "the first live revision must alert")
     let removalsBeforeSnapshot = center.removedDelivered.flatMap { $0 }.count
 
     let token = UUID().uuidString.lowercased()

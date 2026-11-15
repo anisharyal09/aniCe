@@ -261,14 +261,20 @@ struct BetaUpdatePreference: View {
 
 struct MacUpdateNotice: View {
   @Bindable var model: MacUpdateModel
+  @Environment(\.colorScheme) private var scheme
   var body: some View {
     if let release = model.release {
       PendingRequestRow(title: "Update \(release.version.tag) available", detail: "Review release notes and install") { model.review() }
         .sheet(isPresented: $model.reviewing) {
           VStack(alignment: .leading, spacing: 16) {
             Text("Update \(release.version.tag)").font(.title3.weight(.semibold))
-            ScrollView { ReleaseNotesView(notes: release.notes) }
-              .frame(minHeight: 100, maxHeight: 300)
+            ScrollView {
+              ReleaseNotesView(notes: release.notes, version: release.version.tag).padding(12)
+            }
+            .frame(height: 280)
+            .background(RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(scheme)).allowsHitTesting(false))
+            .scrollIndicators(.visible)
             HStack {
               Button("Skip version") { model.skip(release.version) }.buttonStyle(AniCeButtonStyle())
                 .disabled(model.installing || model.checking)

@@ -105,6 +105,10 @@ internal fun notificationPackageEligible(
 
 internal fun hasRingingPhoneCall(states: Collection<Int>, ringingState: Int): Boolean = states.any { it == ringingState }
 
+/** Routine ongoing updates are noise; an incoming call is the one ongoing alert worth mirroring. */
+internal fun routineOngoingNotification(ongoing: Boolean, incomingCall: Boolean): Boolean =
+    ongoing && !incomingCall
+
 private fun isCallStyleTemplate(template: String?): Boolean =
     template == "android.app.Notification\$CallStyle" ||
         template == "androidx.core.app.NotificationCompat\$CallStyle"
@@ -344,6 +348,11 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
         val simCaller = callerLabelFromSimCallNotification(sbn)
         simCaller?.let(::updatePhoneCallEntry)
         val caller = if (incomingCall) callerLabelFromNotification(sbn) ?: simCaller else simCaller
+        if (routineOngoingNotification(sbn.isOngoing, incomingCall)) {
+            // A timer or foreground service may re-post every second; drop it and any earlier copy.
+            active.remove(id)?.let { sendRemoval(it) }
+            return
+        }
         if (!eligible(packageName, incomingCall)) {
             active.remove(id)?.let { sendRemoval(it) }
             return

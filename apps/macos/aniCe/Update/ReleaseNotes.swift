@@ -9,10 +9,20 @@ struct ReleaseNoteBlock: Equatable {
   var marker: String?
   var indent = 0
   var literal = false
+  var divider = false
 }
 
 enum ReleaseNotes {
-  static func blocks(_ raw: String) -> [ReleaseNoteBlock] {
+  static func blocks(_ raw: String, version: String? = nil) -> [ReleaseNoteBlock] {
+    var result = parse(raw)
+    if let version, let first = result.first, first.heading == 1,
+       first.text.localizedCaseInsensitiveContains(version) {
+      result.removeFirst()
+    }
+    return result.isEmpty ? [ReleaseNoteBlock(text: "No release notes provided.")] : result
+  }
+
+  private static func parse(_ raw: String) -> [ReleaseNoteBlock] {
     let clean = String(raw.prefix(32_768))
       .replacingOccurrences(of: #"<!--\s*anice-source:[\s\S]*?(?:-->|$)"#, with: "", options: .regularExpression)
       .replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
@@ -39,7 +49,10 @@ enum ReleaseNotes {
         continue
       }
       if trimmed.isEmpty { flush(); continue }
-      if let match = trimmed.firstMatch(of: #/^(#{1,6})\s+(.+?)(?:\s+#+)?$/#) {
+      if trimmed.firstMatch(of: #/^ {0,3}([-*_])(?: *\1){2,}$/#) != nil {
+        flush()
+        result.append(ReleaseNoteBlock(text: "", divider: true))
+      } else if let match = trimmed.firstMatch(of: #/^(#{1,6})\s+(.+?)(?:\s+#+)?$/#) {
         flush()
         result.append(ReleaseNoteBlock(text: String(match.2), heading: match.1.count))
       } else if let match = line.firstMatch(of: #/^(\s*)([-*+]|\d+[.)])\s+(.+)$/#) {
@@ -53,7 +66,7 @@ enum ReleaseNotes {
       }
     }
     flush(literal: fence != nil)
-    return result.isEmpty ? [ReleaseNoteBlock(text: "No release notes provided.")] : result
+    return result
   }
 
   static func attributed(_ text: String) -> AttributedString {
@@ -71,25 +84,31 @@ struct ReleaseNotesView: View {
   @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var scheme
 
-  init(notes: String) { blocks = ReleaseNotes.blocks(notes) }
+  init(notes: String, version: String? = nil) { blocks = ReleaseNotes.blocks(notes, version: version) }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 6) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-        if let marker = block.marker {
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
+        if block.divider {
+          Rectangle()
+            .fill(AniCePalette.separator(scheme))
+            .frame(height: 1)
+            .padding(.vertical, 4)
+            .accessibilityHidden(true)
+        } else if let marker = block.marker {
+          HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(marker).frame(minWidth: 12, alignment: .leading)
             Text(ReleaseNotes.attributed(block.text)).frame(maxWidth: .infinity, alignment: .leading)
           }
-          .font(.system(size: 14 * fontScale))
-          .padding(.leading, CGFloat(block.indent * 16))
+          .font(.system(size: 12 * fontScale))
+          .padding(.leading, CGFloat(block.indent * 14))
         } else if block.heading > 0 {
           Text(ReleaseNotes.attributed(block.text))
-            .font(.system(size: (block.heading == 1 ? 20 : block.heading == 2 ? 16 : 14) * fontScale, weight: .semibold))
-            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+            .font(.system(size: (block.heading == 1 ? 16 : block.heading == 2 ? 13 : 12) * fontScale, weight: .semibold))
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
             .accessibilityAddTraits(.isHeader)
         } else {
-          Text(block.literal ? AttributedString(block.text) : ReleaseNotes.attributed(block.text)).font(.system(size: 14 * fontScale))
+          Text(block.literal ? AttributedString(block.text) : ReleaseNotes.attributed(block.text)).font(.system(size: 12 * fontScale))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
       }

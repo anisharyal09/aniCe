@@ -66,6 +66,49 @@ class LanRendezvousTests {
         gate.update("ble-2", true, true, true, 1)
         assertTrue(gate.claim()); assertFalse(gate.claim())
     }
+    @Test fun automaticRecoveryIsBoundedPerEventAndRearmsOnAppOpen() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, true, 0)
+        assertTrue(gate.claim())
+        gate.release()
+        assertTrue(gate.claimRecovery())
+        gate.release()
+        assertTrue(gate.claimRecovery())
+        gate.release()
+        assertFalse("The initial attempt plus two retries exhaust the budget", gate.claimRecovery())
+        assertFalse(gate.claim())
+        repeat(20) { gate.update("ble", true, true, true, 0); assertFalse(gate.claim()) }
+        gate.rearm()
+        assertTrue(gate.claim())
+    }
+    @Test fun explicitDemandKeepsOneOpportunityAfterRecoveryIsExhausted() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, true, 0)
+        assertTrue(gate.claim())
+        repeat(2) { gate.release(); assertTrue(gate.claimRecovery()) }
+        gate.release()
+        assertFalse(gate.claimRecovery())
+        gate.trigger()
+        assertTrue(gate.claim())
+        assertFalse(gate.claim())
+    }
+    @Test fun newChannelOrEligibilityIntervalRearmsRecoveryButDuplicateCallbacksDoNot() {
+        val gate = LanAttemptGate()
+        gate.update("ble", true, true, true, 0)
+        assertTrue(gate.claim())
+        repeat(2) { gate.release(); assertTrue(gate.claimRecovery()) }
+        gate.release()
+        assertFalse(gate.claimRecovery())
+        repeat(20) { gate.update("ble", true, true, true, 0); assertFalse(gate.claimRecovery()) }
+        gate.update("ble", false, true, false, 0)
+        gate.update("ble", true, true, true, 0)
+        assertTrue(gate.claim())
+        repeat(2) { gate.release(); assertTrue(gate.claimRecovery()) }
+        gate.release()
+        assertFalse(gate.claimRecovery())
+        gate.update("replacement", true, true, true, 0)
+        assertTrue(gate.claim())
+    }
     @Test fun capacityDuringSuspendedRefusalWakesRendezvousWithoutAnotherEvent() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         try {

@@ -20,6 +20,20 @@ final class ReleaseNotesTests: XCTestCase {
     XCTAssertTrue(raw.contains("anice-source"))
   }
 
+  func testHorizontalRulesBecomeDividersAndDuplicateVersionTitleIsSuppressed() {
+    let raw = "# aniCe v0.9.0-beta.2\n\n## What’s changed\n- Fixed downloads\n---\n* More polish"
+    let blocks = ReleaseNotes.blocks(raw, version: "v0.9.0-beta.2")
+    XCTAssertEqual(blocks.map(\.heading), [2, 0, 0, 0])
+    XCTAssertEqual(blocks.filter(\.divider).count, 1)
+    XCTAssertEqual(blocks[1].marker, "•")
+    XCTAssertEqual(blocks[3].marker, "•")
+    XCTAssertEqual(ReleaseNotes.blocks(raw).first?.heading, 1)
+    XCTAssertEqual(ReleaseNotes.blocks("# Other notes", version: "v0.9.0-beta.2").first?.text, "Other notes")
+    XCTAssertEqual(
+      ReleaseNotes.blocks("# aniCe v0.9.0-beta.2", version: "v0.9.0-beta.2").first?.text,
+      "No release notes provided.")
+  }
+
   func testNativeInlineBoldAndLinksDiscardUnsafeSchemes() {
     let value = ReleaseNotes.attributed("A **bold title** and [release](https://github.com/anisharyal09/aniCe).")
     XCTAssertEqual(String(value.characters), "A bold title and release.")
@@ -53,11 +67,12 @@ final class ReleaseNotesTests: XCTestCase {
     defer { preferences.removePersistentDomain(forName: name) }
     let notes = """
     <!-- anice-source:abcdef -->
+    # aniCe v0.9.0-beta.2
     ## What’s changed
     - **Update review:** Read release notes while installation actions remain available.
     - **Scheduling:** Check at 7:30 PM Nepal time, or afterward when the network is available.
       - Your settings and trusted devices stay unchanged.
-
+    ---
     [View the release](https://github.com/anisharyal09/aniCe/releases)
     """
     var renders = 0
@@ -66,7 +81,7 @@ final class ReleaseNotesTests: XCTestCase {
         for width in [360.0, 520.0] {
           preferences.set(scale, forKey: "ui.fontScale")
           let scheme: ColorScheme = dark ? .dark : .light
-          let view = ReleaseNotesView(notes: notes).padding(24)
+          let view = ReleaseNotesView(notes: notes, version: "v0.9.0-beta.2").padding(24)
             .frame(width: width, alignment: .topLeading)
             .background(AniCePalette.surface(scheme))
             .environment(\.colorScheme, scheme).defaultAppStorage(preferences)

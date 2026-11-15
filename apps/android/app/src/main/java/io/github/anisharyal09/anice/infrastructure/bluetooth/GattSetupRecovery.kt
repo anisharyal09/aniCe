@@ -14,10 +14,10 @@ internal class GattSetupRecovery {
     return true
   }
 
-  // A stale CCCD handle can alias a read-only attribute (0x03) or another service (0xF5).
+  // A stale CCCD handle can alias a read-only attribute (0x03), CCCD configuration error (0xF2), or another service (0xF5).
   // Share the single layout refresh budget; this runs only before authentication.
   fun retrySubscriptionLayout(status: Int): Boolean =
-    (status == 0x01 || status == 0x03 || status == 0xF5) && retryMissingLayout()
+    (status == 0x01 || status == 0x03 || status == 0xF2 || status == 0xF5) && retryMissingLayout()
 
   // A successful read with the wrong payload also identifies a stale handle alias.
   fun retryProfileRead(status: Int): Boolean =

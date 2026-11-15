@@ -18,7 +18,8 @@ class LanSessionController(private val app: AniCeApplication,
     private val backgroundTimeoutMillis: () -> Long = {
         app.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE)
             .getInt("lan_background_timeout_minutes", 0).toLong() * 60_000L
-    }
+    },
+    private val recoveryDelays: List<Long> = listOf(2_000L, 5_000L),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val discovery = AndroidLanDiscovery(app)
@@ -47,6 +48,10 @@ class LanSessionController(private val app: AniCeApplication,
     private var automaticPaused = false
     private var automaticAttempt = false
     private var automaticJob: Job? = null
+    private var recoveryJob: Job? = null
+    private var recoveryStep = 0
+    private var recoveryGeneration = 0
+    private var recoveryChannel: String? = null
     private val automaticGate = LanAttemptGate()
     internal val rendezvous = LanRendezvous(scope, ::scheduleAutomatic)
     private val power = app.getSystemService(android.os.PowerManager::class.java)
@@ -70,21 +75,71 @@ class LanSessionController(private val app: AniCeApplication,
         val previous = automaticNetworks[network].orEmpty()
         if (addresses == previous) return
         if (addresses.isEmpty()) automaticNetworks.remove(network) else automaticNetworks[network] = addresses
+        val restored = addresses.any { it !in previous }
+        // A network return is a lifecycle event: an elapsed timed pause must end even before eligibility.
+        if (restored) CompanionProbe.reconcileIfPresent()
         scheduleAutomatic()
         // IP reprovisioning can restore a usable address without a new Network/onAvailable.
-        if (automaticEligible && addresses.any { it !in previous }) requestAutomaticConnection()
+        if (automaticEligible && restored) {
+            rearmRecovery()
+            requestAutomaticConnection()
+        }
     }
 
     fun setAutomaticEnabled(enabled: Boolean) {
         automatic = enabled
         preferences.edit().putBoolean("automatic_lan", enabled).apply()
         automaticPaused = false
+        if (enabled) rearmRecovery() else cancelRecovery()
         automaticGate.trigger()
         if (!enabled && automaticAttempt && state != ConnectionState.SECURED) end()
         scheduleAutomatic()
     }
 
+    private fun cancelRecovery() {
+        recoveryGeneration++
+        recoveryJob?.cancel(); recoveryJob = null
+        recoveryStep = 0
+    }
+
+    private fun rearmRecovery() {
+        cancelRecovery()
+        automaticGate.rearm()
+    }
+
+    private fun noteRecoveryChannel() {
+        val channel = rendezvous.channel?.descriptor?.instance
+        if (channel == recoveryChannel) return
+        recoveryChannel = channel
+        if (channel == null) cancelRecovery() else rearmRecovery()
+    }
+
+    /**
+     * A failed automatic attempt may retry twice at two and five seconds. The budget is per
+     * app-open/connection event, so repeated state callbacks cannot create an endless loop.
+     */
+    private fun scheduleRecovery() {
+        if (recoveryJob?.isActive == true) return
+        if (!automatic || automaticPaused || state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) return
+        if (rendezvous.channel == null || rendezvous.remote != 2) return
+        val delayMillis = recoveryDelays.getOrNull(recoveryStep) ?: return
+        recoveryStep++
+        val generation = recoveryGeneration
+        recoveryJob = scope.launch {
+            delay(delayMillis)
+            if (generation != recoveryGeneration) return@launch
+            recoveryJob = null
+            if (!automatic || automaticPaused || state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) return@launch
+            if (!automaticEligible || rendezvous.remote != 2) return@launch
+            val target = rendezvous.channel?.descriptor?.peer ?: return@launch
+            automaticGate.release()
+            if (!automaticGate.claimRecovery()) return@launch
+            connect(target, automatically = true)
+        }
+    }
+
     private fun scheduleAutomatic() {
+        noteRecoveryChannel()
         automaticJob?.cancel()
         automaticJob = scope.launch {
             yield()
@@ -96,8 +151,12 @@ class LanSessionController(private val app: AniCeApplication,
                 if (automaticAttempt && state != ConnectionState.SECURED) end()
                 return@launch
             }
-            if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) {
-                automaticGate.claim(connected = state == ConnectionState.SECURED)
+            if (state == ConnectionState.SECURED) {
+                automaticGate.claim(connected = true)
+                return@launch
+            }
+            if (state == ConnectionState.CONNECTING) {
+                automaticGate.hold()
                 return@launch
             }
             if (rendezvous.remote != 2) return@launch
@@ -177,6 +236,7 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     internal fun dispose() {
+        cancelRecovery()
         end()
         app.unregisterReceiver(screenReceiver)
         networks.unregisterNetworkCallback(automaticNetworkCallback)
@@ -244,7 +304,7 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     fun connect(peer: DeviceIdentity? = null, automatically: Boolean = false) {
-        if (!automatically) { automaticPaused = false; automaticGate.trigger() }
+        if (!automatically) { cancelRecovery(); automaticPaused = false; automaticGate.trigger() }
 
         if (peer != null && !app.sessionPeers.permits(peer)) {
             status = "Disconnect the other device before connecting to this Mac."
@@ -569,14 +629,19 @@ class LanSessionController(private val app: AniCeApplication,
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    if (op == generation)
-                        failed(error.message ?: "Local-network connection failed. Retry.")
+                    if (op == generation) {
+                        val failure = (error as? SessionException)?.reason
+                        val retry = failure == null || failure !in setOf(
+                            SessionFailure.CANCELLED, SessionFailure.UNTRUSTED_PEER, SessionFailure.AUTHENTICATION)
+                        failed(error.message ?: "Local-network connection failed. Retry.", retry)
+                    }
                 }
             }
     }
 
     private fun finish(error: Exception, engine: SessionConnection) {
         android.util.Log.i("aniCe-lan", "session ended type=${error.javaClass.simpleName} reason=${(error as? SessionException)?.reason} expiry=${engine.expiration} peerClosed=${engine.closedByPeer}")
+        val wasAutomatic = automaticAttempt
         val notice =
             sessionNotice(
                 (error as? SessionException)?.reason,
@@ -589,17 +654,24 @@ class LanSessionController(private val app: AniCeApplication,
             else error.message ?: "Local-network connection ended. Connect again."
         )
         if (error is SessionException) state = notice.state
+        val failure = (error as? SessionException)?.reason
+        val retryable = failure == null || failure !in setOf(
+            SessionFailure.CANCELLED, SessionFailure.UNTRUSTED_PEER, SessionFailure.AUTHENTICATION)
+        if (wasAutomatic && retryable && !engine.closedByPeer && engine.expiration == null) scheduleRecovery()
     }
 
-    private fun failed(message: String) {
+    private fun failed(message: String, retry: Boolean = true) {
+        val wasAutomatic = automaticAttempt
         end(message)
         state = ConnectionState.FAILED
         onDemandFailure?.invoke(message)
+        if (wasAutomatic && retry) scheduleRecovery()
     }
 
     internal fun securityInvalidated() {
         // Retire keys synchronously even when the mutation originates outside a presentation.
         val op = generation
+        cancelRecovery()
         connection?.retire()
         scope.launch { automaticPaused = true; scheduleAutomatic() }
         scope.launch { if (op == generation) this@LanSessionController.end("Trust or identity changed. Connect again.") }
@@ -633,6 +705,7 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     fun disconnect() {
+        cancelRecovery()
         automaticPaused = true
         automaticAttempt = false
         automaticJob?.cancel(); automaticJob = null
@@ -661,11 +734,13 @@ class LanSessionController(private val app: AniCeApplication,
     fun resumeAfterTimedPause() {
         if (!automatic) return
         automaticPaused = false
+        rearmRecovery()
         automaticGate.trigger()
         scheduleAutomatic()
     }
 
     fun cancel(message: String = "Allow local-network connections on your Mac to reconnect.") {
+        cancelRecovery()
         automaticPaused = true
         end(message)
     }
@@ -709,7 +784,9 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     fun foreground(presentation: Any) {
+        val wasEmpty = presentations.isEmpty()
         presentations.add(presentation)
+        if (wasEmpty) rearmRecovery()
         scheduleAutomatic()
         backgroundTimeoutJob?.cancel()
         backgroundTimeoutJob = null
@@ -722,6 +799,7 @@ class LanSessionController(private val app: AniCeApplication,
             if (pickerLease || workLease || mediaLease) {
                 return
             }
+            cancelRecovery()
             if (onUnleasedBackgroundWork()) {
                 end("Background transfer service is unavailable; keep aniCe open during transfer.")
             } else startBackgroundDisconnectTimer()

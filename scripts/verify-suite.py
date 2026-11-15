@@ -747,7 +747,7 @@ def run_android_jvm(env, artifacts):
         # Dependency caches remain usable, but cached task outputs must not replace test execution.
         [
             ANDROID / "gradlew", "--console=plain", "--no-build-cache",
-            "testDebugUnitTest", "lintDebug", "assembleDebugAndroidTest",
+            "cleanTestDebugUnitTest", "testDebugUnitTest", "lintDebug", "assembleDebugAndroidTest",
         ],
         artifacts, cwd=ANDROID, env=env, timeout=2400,
     )

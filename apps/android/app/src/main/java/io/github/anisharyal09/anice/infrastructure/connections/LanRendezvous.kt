@@ -93,7 +93,7 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
     }
 }
 
-internal class LanAttemptGate {
+internal class LanAttemptGate(private val recoveryLimit: Int = 3) {
     private var channel: String? = null
     private var eligible = false
     private var remoteEligible = false
@@ -101,10 +101,12 @@ internal class LanAttemptGate {
     private var requests = 0L
     private var attempted = false
     private var activityDemanded = false
+    private var recovery = recoveryLimit
+    private var demand = false
     fun update(channel: String?, eligible: Boolean, remoteEligible: Boolean, ready: Boolean, requests: Long) {
-        if (this.channel != channel || (eligible && !this.eligible) || (remoteEligible && !this.remoteEligible)) activityDemanded = false
-        if (this.channel != channel || this.requests != requests || (eligible && !this.eligible) ||
-            (remoteEligible && !this.remoteEligible) || (ready && !this.ready)) attempted = false
+        val renewed = this.channel != channel || (eligible && !this.eligible) || (remoteEligible && !this.remoteEligible)
+        if (renewed) { activityDemanded = false; recovery = recoveryLimit }
+        if (renewed || this.requests != requests || (ready && !this.ready)) attempted = false
         this.channel = channel; this.eligible = eligible; this.remoteEligible = remoteEligible
         this.ready = ready; this.requests = requests
     }
@@ -113,6 +115,24 @@ internal class LanAttemptGate {
         activityDemanded = true
         return true
     }
-    fun trigger() { attempted = false }
-    fun claim(connected: Boolean = false): Boolean { if (connected || attempted) return false; attempted = true; return true }
+    /** An explicit request or preference change gets one attempt, even after recovery is exhausted. */
+    fun trigger() { demand = true; attempted = false }
+    fun claim(connected: Boolean = false): Boolean {
+        if (connected || attempted) return false
+        if (demand) { demand = false; attempted = true; if (recovery > 0) recovery--; return true }
+        if (recovery <= 0) return false
+        recovery--; attempted = true
+        return true
+    }
+    /** Marks an in-flight attempt without spending another recovery slot. */
+    fun hold() { attempted = true }
+    /** Releases the event latch after a failed attempt so a bounded retry can run. */
+    fun release() { attempted = false }
+    fun claimRecovery(): Boolean {
+        if (attempted || recovery <= 0) return false
+        demand = false; recovery--; attempted = true
+        return true
+    }
+    /** App open, wake, pause expiry or a new BLE channel restores the bounded recovery budget. */
+    fun rearm() { recovery = recoveryLimit; attempted = false; demand = false }
 }

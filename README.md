@@ -11,35 +11,29 @@
   <strong>Seamless continuity between Android and Mac.</strong>
 </p>
 
-A native Android–Mac bridge for file sharing, clipboard, messages and remote controls. Devices pair directly and exchange feature data over local Bluetooth or Wi-Fi; no account or relay service is required.
+**aniCe** brings seamless, ecosystem-level continuity between your Android phone and Mac without walled gardens, cloud relays, or subscriptions.
 
-Maintainer testing starts with **0.9.0-beta.1 · build 90021**, followed by in-app update testing before the public beta. Available builds appear on [GitHub Releases](https://github.com/anisharyal09/aniCe/releases); see the [release plan](docs/ROADMAP.md) for the planned sequence.
+Drag files directly to your screen edge to share them, sync clipboards instantly, reply to phone messages from your Mac keyboard, and monitor your Mac from your phone—all over secure, direct Bluetooth and local-network connections.
 
-## Install and connect
-
-- **Mac:** Apple Silicon, macOS 14 or newer. Intel Macs are not supported.
-- **Android:** Android 10 / API 29 or newer; some background features require Android 12 / API 31 or newer. Minimum-version device acceptance remains pending.
-- Follow [installation, pairing and updates](docs/GETTING_STARTED.md). Feature permissions are requested when needed.
+- **🔒 100% Private & Local:** Zero accounts, zero relay servers, zero analytics. Your files, clipboard, notifications and messages stay on your local devices.
+- **⚡ Built Natively:** Crafted from scratch in native Swift 6 and SwiftUI on macOS, and Kotlin with Jetpack Compose (Material 3) on Android.
+- **🛡️ Secure by Design:** Mutual P-256 ECDSA authentication and encrypted transport protect every interaction between paired devices.
 
 ## Features
 
-### Use the Mac without opening its main window
-
-Keep aniCe running in the menu bar; closing the window does not quit it.
+#### Use the Mac without opening its main window
 
 - **[Edge Drop](docs/features/FILE_TRANSFER.md#sending):** On by default at the right edge. Drag regular Finder files to the Mac screen edge to send them to the selected compatible phone; change the edge or turn the shelf off in Settings → File transfer.
 - **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** `⌥⌘V` opens searchable local clipboard history with previews, filters and pins. Copy a selection for ordinary paste, even without a connected phone.
-- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles a floating button to send input directly to your phone from your Mac keyboard in a click—with an expandable trackpad.
+- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles a floating button to send input directly to your phone from your Mac keyboard in a click—with an expandable trackpad control.
 - **Menu Bar Companion:** Click the menu bar icon to check phone battery and connection state, control active media playback, track transfer progress, access pinned features directly and quickly send files or clipboard text.
-
-**Command-Q quits aniCe**, including its companion and floating controls.
 
 ### File sharing and clipboard
 
 - **[File transfer](docs/features/FILE_TRANSFER.md):**
   - **Send instantly:** Drag files to the screen edge (Edge Drop), drop them into the app window, or share from Android via **Share → Send to Mac**.
   - **Receiving:** Choose a local save folder and enable automatic receiving per trusted sender. Incoming files are verified and saved without overwriting existing files.
-  - **Resilient recovery:** Interrupted transfers keep verified progress for up to 15 minutes and resume automatically over Wi-Fi or Bluetooth.
+  - **Resilient recovery:** Interrupted transfers keep verified progress for up to 15 minutes and resume automatically over the local network or Bluetooth.
 - **[Clipboard sync](docs/features/CLIPBOARD.md):** Share text and links manually or enable automatic sharing separately on each device. Keep optional local history and open shared HTTP(S) links directly in the Mac browser. Android clipboard observation requires input focus; images and rich text are unsupported.
 - **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** Option–Command–V opens searchable Mac clipboard history with filters, previews, pins and keyboard selection. Return copies the selection for ordinary paste; the tray does not inject text into another app.
 
@@ -58,32 +52,30 @@ Keep aniCe running in the menu bar; closing the window does not quit it.
 - **[Do Not Disturb sync](docs/features/DND_SYNC.md):** Relay phone DND changes to configured Mac Shortcuts.
 - **[Find Device](docs/features/FIND_DEVICE.md):** Ring a connected phone or notify a connected Mac through an existing trusted connection.
 
-### System integration and everyday access
+## Technical foundation & security
 
-Both apps show the connected peer’s battery and charging state without starting a new connection.
+- **Native platform stacks:** Swift 6, SwiftUI & AppKit on macOS; modern Kotlin, Jetpack Compose & Material 3 on Android.
+- **Direct peer-to-peer transport:** Bluetooth Low Energy (BLE) and framed local-network TCP streams. Zero cloud relays or external routing.
+- **Cryptographic security:** Mutual P-256 ECDSA authentication, OPAQUE PIN pairing, an EDHOC handshake with ChaCha20-Poly1305, and directional AES-256-GCM record encryption.
+- **Platform key storage:** Cryptographic identities use Android Keystore and the macOS Login Keychain; current Mac builds do not claim Secure Enclave isolation.
+- **Zero telemetry:** No analytics, no tracking, and no telemetry uploads.
 
-Choose System, Light or Dark appearance and adjust text size. Features and Favourites keep their saved order. Automatic connections can be paused for a preset/custom duration or until manually resumed; see [connection controls](docs/GETTING_STARTED.md#manage-connections).
+For full wire specifications, threat models, and architectural boundaries, see [Architecture](ARCHITECTURE.md), [Security Policy](SECURITY.md), and [Protocol Contracts](protocol/README.md).
 
-Beta updates are opt-in and require confirmation before enabling. **About → Report an issue** opens a user-reviewed GitHub form with app and OS versions; submitting requires a GitHub account.
+## Install and connect
 
-## Native technical foundation
+- **Mac:** Apple Silicon, macOS 14 Sonoma or newer.
+- **Android:** Android 10 (API 29) or newer; background continuity features require Android 12 (API 31) or newer.
 
-**Built from scratch:** aniCe has its own native Android and Mac apps and continuity protocol.
-
-- **Android:** Kotlin, Jetpack Compose and Material 3, with Android Keystore, system notifications, media controls, the Share sheet and companion-device APIs.
-- **Mac:** Swift 6, SwiftUI and AppKit, with native windows, menu-bar controls, clipboard access, Bluetooth HID, audio controls and Shortcuts integration.
-- **Shared foundation:** Versioned protocol contracts and test vectors define pairing, encrypted sessions and feature messages. A small Rust bridge supplies OPAQUE PIN pairing; identity storage, connections and feature owners remain native to each platform.
-- **Direct connections:** Bluetooth Low Energy and local Wi-Fi carry authenticated feature data between trusted devices. LAN transfer profile 4 supports chunks up to 512 KiB and up to 4 MiB outstanding; these are negotiated limits, not promised transfer rates.
-
-See [architecture](ARCHITECTURE.md), [protocol contracts](protocol/README.md) and [performance](docs/PERFORMANCE.md) for the system design and its limits.
-
-## Security and privacy
-
-Pairing uses QR authentication or an OPAQUE six-digit code exchange, with approval on both devices. Trusted BLE and LAN sessions use EDHOC and directional AES-256-GCM records. Discovery is unauthenticated and does not advertise device identities or fingerprints. LAN uses framed TCP with aniCe's encrypted session protocol.
-
-Android identity keys use Android Keystore and report the actual protection available. Current Mac builds use the development Keychain backend; they do not claim Secure Enclave isolation. System Bluetooth HID uses its own OS-managed security. The Mac app is unsandboxed to support native integrations.
-
-Feature content travels between devices. Update checks and downloads contact GitHub. aniCe has no analytics service. See [architecture and trust boundaries](ARCHITECTURE.md) and [security reporting](SECURITY.md).
+### Installation
+* **Mac (Homebrew):**
+  ```bash
+  brew install anisharyal09/tap/anice
+  ```
+* **Direct Downloads:** Available on [GitHub Releases](https://github.com/anisharyal09/aniCe/releases).
+* **Setup Guides:**
+  - Follow the [First Installation & Permissions Guide](docs/FIRST_INSTALL_GUIDE.md) for step-by-step help with Google Play Protect, Unknown Apps, Android 13+ restricted settings, battery optimization, and macOS Keychain / Gatekeeper.
+  - Follow [Getting Started](docs/GETTING_STARTED.md) for device pairing, everyday controls, and update configuration.
 
 ## Build and contribute
 
@@ -97,7 +89,9 @@ Install the prerequisites in [Mac setup](apps/macos/README.md), [Android setup](
 
 See [contributing](CONTRIBUTING.md) for development checks and contribution guidance.
 
-## Repository structure
+## Documentation and repository structure
+
+For the complete directory of guides, feature walkthroughs, and architecture specs, see **[Documentation Directory (DOCS.md)](DOCS.md)**.
 
 ```text
 apps/android/       Native Android app and tests
@@ -113,5 +107,11 @@ docs/               Feature guides, design, decisions and roadmap
 - [Background Bluetooth](docs/BACKGROUND_CONNECTIONS.md) · [LAN ownership](docs/LAN_CONNECTIONS.md)
 - [Changelog](CHANGELOG.md) · [Android changes](apps/android/CHANGELOG.md) · [Mac changes](apps/macos/CHANGELOG.md) · [Protocol changes](protocol/CHANGELOG.md)
 - [Third-party notices](apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md)
+
+## Support and feedback
+
+If you run into any issues, have feedback, or want to reach out directly:
+- Open an issue on [GitHub Issues](https://github.com/anisharyal09/aniCe/issues)
+- Or reach out via email: [anish.creations.hq@gmail.com](mailto:anish.creations.hq@gmail.com?subject=%5BaniCe%5D%20Feedback%20%26%20Support)
 
 Licensed under [GPL-3.0-or-later](LICENSE).

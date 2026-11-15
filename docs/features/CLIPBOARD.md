@@ -12,7 +12,7 @@ On Mac, enabled local history or an eligible opted-in connection enables one 500
 
 ## Delivery
 
-A send requires an already-secured clipboard-capable peer. LAN is preferred; BLE is used immediately when LAN is unavailable. Normal BLE feature activity may request LAN through existing automation without delaying delivery or clearing a manual Disconnect pause. No additional connection retry timer exists.
+A send requires an already-secured clipboard-capable peer. LAN is preferred; BLE is used immediately when LAN is unavailable. Normal BLE feature activity may request LAN through existing automation without delaying delivery or clearing a manual Disconnect pause. Clipboard adds no connection retry timer of its own.
 
 Items are limited to 65,536 UTF-8 bytes with fragments of at most 3,072 bytes. Oversized items are rejected rather than truncated. An item has a fixed 30-second submission deadline. On channel loss or a missing result two seconds after commit, one retry can use the other already-secured transport. Shared UUID results and sender revisions prevent duplicate application and stale overwrites. Delivery unconfirmed means no conclusive native-write acknowledgement was received; it does not mean the clipboard was unchanged. Cancel cannot undo an already-applied write.
 

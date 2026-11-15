@@ -6,7 +6,7 @@ aniCe connects Android and macOS over local Bluetooth and LAN. Report suspected 
 
 The first public beta is being prepared. Security fixes target `main` and the latest published beta or stable release; older builds are not maintained. A development version in source is not a published release.
 
-Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer. Intel Macs are not supported.
+Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer.
 
 ## Security Architecture & Scope
 
@@ -38,7 +38,7 @@ If you discover a security vulnerability in aniCe, please **do not open a public
 Instead, report it through one of the following private channels:
 
 1. **GitHub Private Vulnerability Reporting:** Use the [Security Advisories form](https://github.com/anisharyal09/aniCe/security/advisories/new) if it is available for this repository.
-2. **Security Contact:** If the form is unavailable, email the maintainer at `anish.creations.hq@gmail.com` with the subject `[SECURITY] aniCe Vulnerability Report`.
+2. **Security Contact:** If the form is unavailable, email the maintainer at [anish.creations.hq@gmail.com](mailto:anish.creations.hq@gmail.com?subject=%5BSECURITY%5D%20aniCe%20Vulnerability%20Report) with the subject `[SECURITY] aniCe Vulnerability Report`.
 
 Please include:
 
@@ -52,6 +52,6 @@ Include the affected version and platform, impact, and reproduction steps. The m
 
 ### Current limits
 
-Discovery is unauthenticated; trust is established during pairing and authenticated session setup. System Bluetooth HID uses OS-managed authentication and encryption. The Mac app is unsandboxed, uses development Keychain storage and does not claim Secure Enclave isolation. Its current release pipeline uses a self-signed certificate, without Apple notarization. Peer feature content stays local; update checks and downloads contact GitHub.
+Discovery is unauthenticated; trust is established during pairing and authenticated session setup. The Mac app is unsandboxed, uses development Keychain storage and does not claim Secure Enclave isolation. Its current release pipeline uses a self-signed certificate, without Apple notarization. Peer feature content stays local; update checks and downloads contact GitHub.
 
 Automated security analysis is one check, not evidence of an independent cryptographic audit. See [architecture](ARCHITECTURE.md) for ownership and trust boundaries.

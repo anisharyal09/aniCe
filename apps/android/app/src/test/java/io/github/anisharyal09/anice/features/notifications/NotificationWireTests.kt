@@ -87,6 +87,13 @@ class NotificationWireTests {
         assertEquals(apps, filterNotificationAppChoices(apps, "  "))
     }
 
+    @Test fun routineOngoingNotificationsAreIgnoredUnlessIncomingCall() {
+        assertTrue(routineOngoingNotification(ongoing = true, incomingCall = false))
+        assertFalse(routineOngoingNotification(ongoing = true, incomingCall = true))
+        assertFalse(routineOngoingNotification(ongoing = false, incomingCall = false))
+        assertFalse(routineOngoingNotification(ongoing = false, incomingCall = true))
+    }
+
     @Test fun incomingCallOptInIncludesCallStyleFromUnselectedSystemSourcesOnly() {
         val selected = setOf("com.example.chat")
         assertTrue(notificationPackageEligible(

@@ -50,10 +50,11 @@ class GattSetupRecoveryTests {
     assertTrue(recovery.subscriptionFailure(1)!!.message.contains("GATT status 1"))
   }
   @Test fun staleHandleAliasingAnotherServiceSharesOneRefreshBudget() {
-    for (first in listOf(1, 3, 245)) {
+    for (first in listOf(1, 3, 242, 245)) {
       val recovery = GattSetupRecovery()
       assertTrue(recovery.retrySubscriptionLayout(first))
       assertFalse(recovery.retrySubscriptionLayout(245))
+      assertFalse(recovery.retrySubscriptionLayout(242))
       assertFalse(recovery.retrySubscriptionLayout(1))
       assertFalse(recovery.retrySubscriptionLayout(3))
       assertFalse(recovery.retryMissingLayout())
@@ -62,6 +63,7 @@ class GattSetupRecoveryTests {
     val missing = GattSetupRecovery()
     assertTrue(missing.retryMissingLayout())
     assertFalse(missing.retrySubscriptionLayout(245))
+    assertFalse(missing.retrySubscriptionLayout(242))
   }
   @Test fun invalidDescriptorHandleSharesTheSingleLayoutRetry() {
     val recovery = GattSetupRecovery()

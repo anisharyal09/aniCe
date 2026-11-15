@@ -65,6 +65,117 @@ import AppKit
   func release() { continuation?.resume(); continuation = nil }
 }
 @MainActor final class SessionLifecycleTests: XCTestCase {
+  func testActivationClearsAnOverdueTimedPauseWhileExclusiveWorkRemainsSuspended() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "pause.test.")
+    let name = "aniCe.PauseTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    preferences.set(true, forKey: "session.automatic")
+    preferences.set(true, forKey: "session.paused")
+    preferences.set(Date().addingTimeInterval(3600).timeIntervalSince1970, forKey: "session.pausedUntil")
+    let radio = SessionRadioFake(), timer = SessionRecoveryWait()
+    let model = MacSessionModel(identity: identity, adapter: radio, store: { trust },
+      preferences: preferences, wait: { await timer.pause($0) })
+    defer { model.setAutomatic(false); timer.release() }
+    model.suspendAutomatic()
+    model.restoreAutomatic()
+    var resumed = 0
+    model.automaticPauseEnded = { resumed += 1 }
+    preferences.set(Date().addingTimeInterval(-3600).timeIntervalSince1970, forKey: "session.pausedUntil")
+    NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    XCTAssertFalse(preferences.bool(forKey: "session.paused"))
+    XCTAssertNil(preferences.object(forKey: "session.pausedUntil"))
+    XCTAssertNil(model.connectionPauseStatus)
+    XCTAssertEqual(resumed, 1)
+    XCTAssertTrue(model.automatic)
+    XCTAssertFalse(model.allowing, "Pause expiry must not steal the radio from exclusive work")
+  }
+
+  func testNetworkReturnClearsAnOverdueTimedPauseWithoutEnablingADisabledChoice() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "pause.test.")
+    let name = "aniCe.PauseTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    preferences.set(true, forKey: "session.automatic")
+    preferences.set(true, forKey: "session.paused")
+    preferences.set(Date().addingTimeInterval(3600).timeIntervalSince1970, forKey: "session.pausedUntil")
+    let model = MacSessionModel(identity: identity, adapter: SessionRadioFake(), store: { trust }, preferences: preferences)
+    defer { model.setAutomatic(false) }
+    model.suspendAutomatic()
+    model.restoreAutomatic()
+    var resumed = 0
+    model.automaticPauseEnded = { resumed += 1 }
+    preferences.set(Date().addingTimeInterval(-60).timeIntervalSince1970, forKey: "session.pausedUntil")
+    model.reconcileConnectionPause()
+    XCTAssertFalse(preferences.bool(forKey: "session.paused"))
+    XCTAssertNil(preferences.object(forKey: "session.pausedUntil"))
+    XCTAssertEqual(resumed, 1)
+    XCTAssertFalse(model.allowing, "Expiry must still respect suspended exclusive work")
+
+    preferences.set(false, forKey: "session.automatic")
+    preferences.set(true, forKey: "session.paused")
+    preferences.set(Date().addingTimeInterval(-60).timeIntervalSince1970, forKey: "session.pausedUntil")
+    let disabled = MacSessionModel(identity: identity, adapter: SessionRadioFake(), store: { trust }, preferences: preferences)
+    disabled.restoreAutomatic()
+    disabled.reconcileConnectionPause()
+    XCTAssertTrue(preferences.bool(forKey: "session.paused"), "A disabled choice stays paused")
+    XCTAssertNotNil(preferences.object(forKey: "session.pausedUntil"))
+  }
+
+  func testActivationPreservesAnIndefiniteAutomaticPause() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "pause.test.")
+    let name = "aniCe.PauseTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    preferences.set(true, forKey: "session.automatic")
+    preferences.set(true, forKey: "session.paused")
+    preferences.set(0.0, forKey: "session.pausedUntil")
+    let model = MacSessionModel(identity: identity, adapter: SessionRadioFake(), store: { trust }, preferences: preferences)
+    defer { model.setAutomatic(false) }
+    model.suspendAutomatic()
+    model.restoreAutomatic()
+    NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    XCTAssertTrue(preferences.bool(forKey: "session.paused"))
+    XCTAssertEqual(preferences.double(forKey: "session.pausedUntil"), 0)
+    XCTAssertEqual(model.connectionPauseStatus, "Paused")
+    XCTAssertFalse(model.allowing)
+  }
+
+  func testPauseTimerRechecksWallClockAfterRollback() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "pause.test.")
+    let name = "aniCe.PauseTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    var wall = Date(timeIntervalSince1970: 1_800_000_000)
+    let deadline = wall.addingTimeInterval(300)
+    preferences.set(true, forKey: "session.automatic")
+    preferences.set(true, forKey: "session.paused")
+    preferences.set(deadline.timeIntervalSince1970, forKey: "session.pausedUntil")
+    let timer = SessionRecoveryWait()
+    let model = MacSessionModel(identity: identity, adapter: SessionRadioFake(), store: { trust },
+      preferences: preferences, wallNow: { wall }, wait: { await timer.pause($0) })
+    defer { model.setAutomatic(false); timer.release() }
+    model.suspendAutomatic()
+    model.restoreAutomatic()
+    try await waitFor { timer.delays.count == 1 }
+    XCTAssertEqual(timer.delays, [300])
+    wall = wall.addingTimeInterval(-3600)
+    timer.release()
+    try await waitFor { timer.delays.count == 2 }
+    XCTAssertEqual(timer.delays, [300, 3900])
+    XCTAssertTrue(preferences.bool(forKey: "session.paused"))
+    XCTAssertEqual(preferences.double(forKey: "session.pausedUntil"), deadline.timeIntervalSince1970)
+    XCTAssertFalse(model.allowing)
+  }
+
   func testStartupBackoffRequiresUninterruptedAuthenticatedStability() {
     var recovery = SessionStartupRecovery()
     XCTAssertEqual((0..<8).map { _ in recovery.nextDelay() }, [2, 5, 15, 30, 60, 90, 90, 90])

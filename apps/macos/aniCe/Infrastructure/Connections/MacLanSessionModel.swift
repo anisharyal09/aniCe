@@ -33,12 +33,20 @@ import OSLog
   private var localPathAvailable = true
   @ObservationIgnored private var pathMonitor: NWPathMonitor?
   private var automaticTask: Task<Void, Never>?
+  private var recoveryTask: Task<Void, Never>?
+  private var recoveryStep = 0
+  private var recoveryGeneration = 0
+  private var recoveryChannel: String?
+  private let recoveryDelays: [TimeInterval]
   private var automaticGate = LanAttemptGate()
+  /// A local-network return can also finish an elapsed connection pause owned by the session model.
+  var onNetworkReturn: () -> Void = {}
 
   func setAutomatic(_ enabled: Bool) {
     automatic = enabled
     preferences?.set(enabled, forKey: "lan.automatic")
     automaticPaused = false
+    if enabled { rearmRecovery() } else { cancelRecovery() }
     automaticGate.trigger()
     if !enabled, automaticAttempt, state != "Secured" { end() }
     scheduleAutomatic()
@@ -46,8 +54,46 @@ import OSLog
   func resumeAfterTimedPause() {
     guard automatic else { return }
     automaticPaused = false
+    rearmRecovery()
     automaticGate.trigger()
     scheduleAutomatic()
+  }
+  private func cancelRecovery() {
+    recoveryGeneration += 1
+    recoveryTask?.cancel(); recoveryTask = nil
+    recoveryStep = 0
+  }
+  private func rearmRecovery() {
+    cancelRecovery()
+    automaticGate.rearm()
+  }
+  private func noteRecoveryChannel() {
+    let channel = rendezvous.channel?.descriptor.instance
+    guard channel != recoveryChannel else { return }
+    recoveryChannel = channel
+    if channel == nil { cancelRecovery() } else { rearmRecovery() }
+  }
+  /// A failed automatic attempt may retry twice at two and five seconds. The budget is per
+  /// app-open/connection event, so repeated callbacks cannot create an endless loop.
+  private func scheduleRecovery() {
+    guard recoveryTask == nil, automatic, !automaticPaused, !sleeping, !quitting, localPathAvailable,
+      state != "Secured", !allowing, recoveryStep < recoveryDelays.count,
+      rendezvous.channel != nil, rendezvous.remote != nil, rendezvous.remote != 0 else { return }
+    let delay = recoveryDelays[recoveryStep]
+    recoveryStep += 1
+    let generation = recoveryGeneration
+    recoveryTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(delay))
+      guard let self, !Task.isCancelled, generation == self.recoveryGeneration else { return }
+      self.recoveryTask = nil
+      guard self.automatic, !self.automaticPaused, !self.sleeping, !self.quitting,
+        self.localPathAvailable, self.state != "Secured", !self.allowing,
+        let channel = self.rendezvous.channel,
+        let remote = self.rendezvous.remote, remote != 0 else { return }
+      self.automaticGate.release()
+      guard self.automaticGate.claimRecovery() else { return }
+      self.allow(selected: channel.descriptor.peer, bluetoothAllowing: false, automatically: true)
+    }
   }
   func onApplicationActivity(_ descriptor: ChannelDescriptor, _ bytes: Data) {
     guard automatic, !automaticPaused, !sleeping, !quitting,
@@ -66,6 +112,7 @@ import OSLog
     return true
   }
   private func scheduleAutomatic() {
+    noteRecoveryChannel()
     automaticTask?.cancel()
     automaticTask = Task { [weak self] in
       await Task.yield()
@@ -78,11 +125,15 @@ import OSLog
       if !self.localPathAvailable, self.automatic, !self.automaticPaused, !self.sleeping, !self.quitting { return }
       guard eligible, let channel = self.rendezvous.channel, let remote = self.rendezvous.remote,
         remote != 0 else {
+        self.cancelRecovery()
         if self.automaticAttempt, self.state != "Secured" { self.end() }
         return
       }
-      if self.state == "Secured" || self.allowing {
-        _ = self.automaticGate.claim(connected: self.state == "Secured"); return
+      if self.state == "Secured" {
+        _ = self.automaticGate.claim(connected: true); return
+      }
+      if self.allowing {
+        self.automaticGate.hold(); return
       }
       guard self.automaticGate.claim() else { return }
       self.allow(selected: channel.descriptor.peer, bluetoothAllowing: false, automatically: true)
@@ -133,10 +184,12 @@ import OSLog
   init(
     identity: IdentityService, peers: SessionPeerReservation,
     preferences: UserDefaults? = nil,
+    recoveryDelays: [TimeInterval] = [2, 5],
     startListener: @escaping @MainActor (NWListener) -> Void = { $0.start(queue: DispatchQueue(label: "aniCe LAN listener")) },
     store: @escaping @MainActor () async throws -> PeerTrustStore
   ) {
     self.preferences = preferences
+    self.recoveryDelays = recoveryDelays
     self.startListener = startListener
     // Absent means the user never chose; an explicit stored false still disables automation.
     self.automatic = preferences.map { ($0.object(forKey: "lan.automatic") as? Bool) ?? true } ?? false
@@ -164,13 +217,27 @@ import OSLog
         { [weak self] _ in
           MainActor.assumeIsolated {
             self?.sleeping = true
+            self?.cancelRecovery()
             self?.end()
           }
         })
     }
     observers.append(NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { self?.sleeping = false; self?.scheduleAutomatic() }
+        MainActor.assumeIsolated {
+          self?.sleeping = false
+          self?.rearmRecovery()
+          self?.scheduleAutomatic()
+        }
+      })
+    observers.append(
+      NotificationCenter.default.addObserver(
+        forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          self?.rearmRecovery()
+          self?.scheduleAutomatic()
+        }
       })
     observers.append(
       NotificationCenter.default.addObserver(
@@ -180,7 +247,7 @@ import OSLog
       })
   }
   func allow(selected: DeviceIdentity?, bluetoothAllowing: Bool, automatically: Bool = false) {
-    if !automatically { automaticPaused = false; automaticGate.trigger() }
+    if !automatically { cancelRecovery(); automaticPaused = false; automaticGate.trigger() }
     guard !bluetoothAllowing || peers.peer != nil else {
       status =
         "Finish or stop the current Bluetooth admission before allowing a local-network connection."
@@ -364,6 +431,7 @@ import OSLog
   }
   private func peerClosed(_ op: Int, _ attempt: Int) {
     guard op == generation, attempt == candidate else { return }
+    cancelRecovery()
     retireSession(reason: "Your Android ended the local-network session.")
   }
   private func capacity(_ size: Int, _ op: Int, _ attempt: Int) async -> Bool {
@@ -457,7 +525,14 @@ import OSLog
   }
   private func failCandidate(_ error: Error) {
     Self.logger.notice("LAN session ended: \(String(describing: error), privacy: .public)")
+    let wasAutomatic = automaticAttempt
     let secured = state == "Secured"
+    let retryable: Bool
+    if let failure = error as? SessionFailure {
+      retryable = ![.cancelled, .untrustedPeer, .authentication].contains(failure)
+    } else {
+      retryable = true
+    }
     let resume = admission.retire(ProcessInfo.processInfo.systemUptime)
     candidate += 1
     handshakeDeadline = nil
@@ -469,9 +544,10 @@ import OSLog
     connection = nil
     if secured || !resume || error is IdentityError {
       if error is IdentityError {
-        failWindow("Identity access changed. Check access before reconnecting.")
+        failWindow("Identity access changed. Check access before reconnecting.", retry: false)
       } else {
         retireSession(reason: "Local-network session ended: \(error.localizedDescription).")
+        if wasAutomatic, secured, retryable { scheduleRecovery() }
       }
       Task { await old?.close() }
     } else {
@@ -489,11 +565,14 @@ import OSLog
       }
     }
   }
-  private func failWindow(_ message: String) {
+  private func failWindow(_ message: String, retry: Bool = true) {
+    let wasAutomatic = automaticAttempt
     end(message: message)
     state = "Failed"
+    if wasAutomatic, retry { scheduleRecovery() }
   }
   func retireSession(reason: String) {
+    // Retire the transport but preserve the automatic recovery step so a failing retry cannot loop.
     // A retained listening socket is not an open admission window or permission to re-advertise.
     end(message: reason, preserveListener: automatic && !automaticPaused && !sleeping && !quitting)
   }
@@ -517,7 +596,10 @@ import OSLog
     guard localPathAvailable != available else { return }
     localPathAvailable = available
     // Only an external unavailable-to-available edge rearms the attempt gate, never registration.
-    if available { automaticGate.trigger() }
+    if available {
+      onNetworkReturn()
+      rearmRecovery()
+    } else { cancelRecovery() }
     scheduleAutomatic()
   }
   func checkConnection() {
@@ -545,6 +627,7 @@ import OSLog
     }
   }
   func disconnect() {
+    cancelRecovery()
     automaticPaused = true
     scheduleAutomatic()
     let old = connection
@@ -561,6 +644,7 @@ import OSLog
     }
   }
   func cancel(message: String = "Disconnected. Allow local-network connections to reconnect.") {
+    cancelRecovery()
     automaticPaused = true
     end(message: message)
   }
