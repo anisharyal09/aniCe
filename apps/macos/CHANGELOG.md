@@ -10,6 +10,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
+- Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive once-per-version release notifications respecting beta preferences.
 - **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on menu bar companion and main window.
 - **Live Phone Power:** Inline peer battery percentage and charging indicator beside connection status on menu bar companion and main window.
 - **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in settings.
@@ -36,6 +37,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.
 - Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.
 - Use a roomier 960 × 640 pt initial window, a content-fitting resizable sidebar and a 27 pt sidebar brand mark.
 - Require confirmation before enabling beta updates and use compact, scalable text across Settings, including embedded feature preferences.

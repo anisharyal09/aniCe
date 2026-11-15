@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         startupApp.startupMark("activity_super")
         mediaNavigation(intent)
+        updateNavigation(intent)
         startupApp.startupMark("media_navigation")
         enableEdgeToEdge()
         startupApp.startupMark("edge_to_edge")
@@ -110,6 +111,13 @@ class MainActivity : ComponentActivity() {
         }
     }
     private val remoteVolumeKeys=mutableSetOf<Int>()
+    private fun updateNavigation(intent: Intent?) {
+        if (intent?.getBooleanExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW, false) == true) {
+            (application as AniCeApplication).updates.review()
+            intent.removeExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW)
+        }
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val direction=when(keyCode) { KeyEvent.KEYCODE_VOLUME_UP->1;KeyEvent.KEYCODE_VOLUME_DOWN->-1;else->0 }
         val owner=(application as AniCeApplication).nowPlaying
@@ -123,7 +131,7 @@ class MainActivity : ComponentActivity() {
         if(remoteVolumeKeys.remove(keyCode)) return true
         return super.onKeyUp(keyCode,event)
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);mediaNavigation(intent) }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);mediaNavigation(intent);updateNavigation(intent) }
 
     override fun onStart() {
         super.onStart()

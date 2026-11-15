@@ -15,6 +15,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
+- Add daily 19:30 Nepal-time update refresh with overdue catch-up, silent once-per-version release notices and native formatted release-note review.
 - **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on Mac menu bar and Android Home.
 - **Live Device Power:** Inline peer battery percentage and charging indicator beside connection status on Mac menu bar companion and Android Home/Devices.
 - **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in settings across both platforms.

@@ -8,6 +8,8 @@ import android.util.Xml
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
@@ -73,27 +75,73 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
         set(value) { preferences.edit().putBoolean("include_beta", value).apply() }
     fun skip(tag: String) { preferences.edit().putString("skipped_tag", tag).apply() }
 
-    suspend fun check(current: UpdateVersion, force: Boolean = false, now: Long = System.currentTimeMillis()): DiscoveryResult = withContext(Dispatchers.IO) {
-        val last = preferences.getLong("last_attempt", 0L)
+    fun nextAutomaticCheck(now: Long = System.currentTimeMillis()): Long {
         val failures = preferences.getInt("failures", 0).coerceIn(0, 7)
-        val interval = if (failures == 0) 86_400_000L else (900_000L shl (failures - 1)).coerceAtMost(86_400_000L)
-        if (!force && last > 0 && now >= last && now - last < interval) {
-            val cached = try { cachedRelease(current) } catch (_: Exception) { null }
-            return@withContext if (cached != null && cached.version.tag != preferences.getString("skipped_tag", null))
-                DiscoveryResult.Available(cached) else DiscoveryResult.Deferred
+        val last = preferences.getLong("last_attempt", 0L)
+        val success = preferences.getLong("last_success", 0L)
+        return UpdateSchedule.nextCheck(now, success, last, failures)
+    }
+
+    fun isEligible(release: AvailableRelease): Boolean =
+        release.version.tag != preferences.getString("skipped_tag", null) && (includeBeta || !release.version.prerelease)
+
+    fun shouldNotify(release: AvailableRelease): Boolean {
+        if (!isEligible(release)) return false
+        val previous = UpdateVersion.parse(preferences.getString(notificationKey(release), "").orEmpty())
+        return previous == null || release.version > previous
+    }
+
+    fun markNotified(release: AvailableRelease) {
+        preferences.edit().putString(notificationKey(release), release.version.tag).apply()
+    }
+
+    private fun notificationKey(release: AvailableRelease) =
+        if (release.version.prerelease) "notified_prerelease" else "notified_stable"
+
+    suspend fun cachedNotice(current: UpdateVersion): AvailableRelease? = withContext(Dispatchers.IO) {
+        try {
+            cachedRelease(current)?.takeIf(::isEligible)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun check(current: UpdateVersion, force: Boolean = false, now: Long = System.currentTimeMillis()): DiscoveryResult = withContext(Dispatchers.IO) {
+        val failures = preferences.getInt("failures", 0).coerceIn(0, 7)
+        if (!force && now < nextAutomaticCheck(now)) {
+            try {
+                val cached = cachedRelease(current)
+                if (cached != null) return@withContext if (isEligible(cached))
+                    DiscoveryResult.Available(cached) else DiscoveryResult.Deferred
+                val source = preferences.getString("last_source", null)
+                if (failures == 0 && preferences.getLong("last_success", 0L) > 0L &&
+                    (source == "atom" || (source == "api" && preferences.contains("cached_releases")))) {
+                    return@withContext DiscoveryResult.UpToDate
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return@withContext DiscoveryResult.Deferred
+            }
+            return@withContext DiscoveryResult.Deferred
         }
         preferences.edit().putLong("last_attempt", now).apply()
         try {
             val endpoint = "https://api.github.com/repos/anisharyal09/aniCe/releases?per_page=100"
             var response = transport.request(endpoint, "GET", preferences.getString("etag", null))
+            currentCoroutineContext().ensureActive()
             if (response.status == HttpURLConnection.HTTP_NOT_MODIFIED && preferences.getString("cached_releases", null) == null) {
                 preferences.edit().remove("etag").apply()
                 response = transport.request(endpoint, "GET", null)
+                currentCoroutineContext().ensureActive()
             }
             val release = when (response.status) {
                 HttpURLConnection.HTTP_OK -> {
                     // Validate metadata before replacing the conditional-request cache.
                     val selected = ReleaseCatalog.fromJson(response.body, current, includeBeta)
+                    currentCoroutineContext().ensureActive()
                     preferences.edit().putString("cached_releases", response.body).putString("etag", response.etag).putString("last_source", "api").apply()
                     selected
                 }
@@ -102,11 +150,13 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
                     ReleaseCatalog.fromJson(cached, current, includeBeta).also { preferences.edit().putString("last_source", "api").apply() }
                 }
                 HttpURLConnection.HTTP_FORBIDDEN, 429 -> fromAtom(current).also {
+                    currentCoroutineContext().ensureActive()
                     preferences.edit().putString("last_source", "atom").putString("atom_tag", it?.version?.tag).apply()
                 }
                 else -> error("GitHub returned HTTP ${response.status}")
             }
-            preferences.edit().putInt("failures", 0).apply()
+            currentCoroutineContext().ensureActive()
+            preferences.edit().putInt("failures", 0).putLong("last_success", now).apply()
             if (release != null && release.version.tag != preferences.getString("skipped_tag", null)) DiscoveryResult.Available(release)
             else DiscoveryResult.UpToDate
         } catch (cancelled: CancellationException) {
@@ -126,8 +176,9 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
         return AvailableRelease(version, "Release notes are available on GitHub.", ReleaseCatalog.assetUrl(version), null)
     }
 
-    private fun fromAtom(current: UpdateVersion): AvailableRelease? {
+    private suspend fun fromAtom(current: UpdateVersion): AvailableRelease? {
         val response = transport.request("$RELEASE_ROOT.atom", "GET", null)
+        currentCoroutineContext().ensureActive()
         check(response.status == HttpURLConnection.HTTP_OK) { "Update feed unavailable (HTTP ${response.status})" }
         require(!response.body.contains("<!DOCTYPE", ignoreCase = true) && !response.body.contains("<!ENTITY", ignoreCase = true) &&
             !response.body.contains('\u0000')) { "Unsupported update feed." }
@@ -146,9 +197,12 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
             event = parser.next()
         }
         for (version in versions.sortedDescending()) {
+            currentCoroutineContext().ensureActive()
             if (version <= current || (!includeBeta && version.prerelease)) continue
             val asset = ReleaseCatalog.assetUrl(version)
-            if (transport.request(asset, "HEAD", null).status == HttpURLConnection.HTTP_OK)
+            val status = transport.request(asset, "HEAD", null).status
+            currentCoroutineContext().ensureActive()
+            if (status == HttpURLConnection.HTTP_OK)
                 return AvailableRelease(version, "Release notes are available on GitHub.", asset, null)
         }
         return null

@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F40200000000000000000001 /* UpdateSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000002 /* UpdateSchedule.swift */; };
+		F40200000000000000000003 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000004 /* ReleaseNotes.swift */; };
+		F40200000000000000000005 /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000006 /* ReleaseNotesTests.swift */; };
 		F40100000000000000000017 /* MacUpdateStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40100000000000000000018 /* MacUpdateStaging.swift */; };
 		F4010000000000000000001B /* MacUpdateRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000001C /* MacUpdateRecord.swift */; };
 		F4010000000000000000001D /* MacUpdateInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4010000000000000000001E /* MacUpdateInstall.swift */; };
@@ -186,6 +189,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F40200000000000000000002 /* UpdateSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/UpdateSchedule.swift; sourceTree = SOURCE_ROOT; };
+		F40200000000000000000004 /* ReleaseNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseNotes.swift; sourceTree = SOURCE_ROOT; };
+		F40200000000000000000006 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseNotesTests.swift; sourceTree = SOURCE_ROOT; };
 		F40100000000000000000018 /* MacUpdateStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateStaging.swift; sourceTree = SOURCE_ROOT; };
 		F4010000000000000000001C /* MacUpdateRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateRecord.swift; sourceTree = SOURCE_ROOT; };
 		F4010000000000000000001E /* MacUpdateInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/MacUpdateInstall.swift; sourceTree = SOURCE_ROOT; };
@@ -509,6 +515,7 @@
 				F40100000000000000000016 /* MacUpdateSignatureTests.swift */,
 				F40100000000000000000014 /* MacUpdateArchiveTests.swift */,
 				F4010000000000000000000C /* ReleaseDiscoveryTests.swift */,
+				F40200000000000000000006 /* ReleaseNotesTests.swift */,
 				F40100000000000000000008 /* ReleaseCatalogTests.swift */,
 				F40100000000000000000004 /* UpdateVersionTests.swift */,
 				000000000000000000000201 /* IdentityTests.swift */,
@@ -520,6 +527,8 @@
 		000000000000000000000300 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				F40200000000000000000002 /* UpdateSchedule.swift */,
+				F40200000000000000000004 /* ReleaseNotes.swift */,
 				F40100000000000000000018 /* MacUpdateStaging.swift */,
 				F4010000000000000000001E /* MacUpdateInstall.swift */,
 				F4010000000000000000001C /* MacUpdateRecord.swift */,
@@ -820,6 +829,8 @@
 				F40100000000000000000011 /* MacUpdateSignature.swift in Sources */,
 				F4010000000000000000000F /* MacUpdateArchive.swift in Sources */,
 				F4010000000000000000000D /* MacUpdateModel.swift in Sources */,
+				F40200000000000000000001 /* UpdateSchedule.swift in Sources */,
+				F40200000000000000000003 /* ReleaseNotes.swift in Sources */,
 				F41100000000000000000001 /* IssueReport.swift in Sources */,
 				F40100000000000000000009 /* ReleaseDiscovery.swift in Sources */,
 				F40100000000000000000005 /* ReleaseCatalog.swift in Sources */,
@@ -945,6 +956,7 @@
 				F40100000000000000000015 /* MacUpdateSignatureTests.swift in Sources */,
 				F40100000000000000000013 /* MacUpdateArchiveTests.swift in Sources */,
 				F4010000000000000000000B /* ReleaseDiscoveryTests.swift in Sources */,
+				F40200000000000000000005 /* ReleaseNotesTests.swift in Sources */,
 				F40100000000000000000007 /* ReleaseCatalogTests.swift in Sources */,
 				F40100000000000000000003 /* UpdateVersionTests.swift in Sources */,
 				000000000000000000000202 /* IdentityTests.swift in Sources */,

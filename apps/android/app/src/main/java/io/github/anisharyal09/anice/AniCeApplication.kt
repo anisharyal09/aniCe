@@ -26,6 +26,15 @@ class AniCeApplication : Application() {
     override fun onCreate() {
         startupMark("application_on_create")
         super.onCreate()
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) { updates.foregroundStarted() }
+            override fun onActivityStopped(activity: android.app.Activity) { updates.foregroundStopped() }
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
         startupMark("application_super")
         transfer.restoreOnLaunch()
         startupMark("transfer_restore_scheduled")

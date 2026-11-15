@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Owns user-initiated update checks, private downloads and Android installer sessions.
+// Owns release checks, private downloads and Android installer sessions independently of review presentation.
 package io.github.anisharyal09.anice.update
 
 import android.app.PendingIntent
@@ -32,11 +32,14 @@ internal sealed interface UpdateStatus {
     data class Failed(val message: String) : UpdateStatus
 }
 
-internal class AndroidUpdateManager(context: Context) {
+internal class AndroidUpdateManager(context: Context, private val discovery: ReleaseDiscovery = ReleaseDiscovery(context)) {
     private val app = context.applicationContext
-    private val discovery = ReleaseDiscovery(app)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var checkJob: Job? = null
+    private var checkAgain = false
+    // Cached reads cannot replace results from newer checks or preference changes.
+    private var selectionGeneration = 0L
+    private var foregroundActivities = 0
     private var downloadJob: Job? = null
     private var downloaded: File? = null
     private val _status = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
@@ -45,48 +48,137 @@ internal class AndroidUpdateManager(context: Context) {
     val available: StateFlow<AvailableRelease?> = _available.asStateFlow()
     private val _includeBeta = MutableStateFlow(discovery.includeBeta)
     val includeBeta: StateFlow<Boolean> = _includeBeta.asStateFlow()
+    private val _reviewing = MutableStateFlow(false)
+    val reviewing: StateFlow<Boolean> = _reviewing.asStateFlow()
     private val prefs = app.getSharedPreferences("update_preferences", Context.MODE_PRIVATE)
     private val directory = File(app.cacheDir, "updates")
+    private val notification by lazy { UpdateNotification(app) }
+    private val currentVersion = UpdateVersion.parse("v${app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty()}")
 
     init {
         // Remove downloads from prior processes; installer sessions own their copied bytes.
         directory.listFiles()?.forEach { it.delete() }
     }
 
-    fun check(force: Boolean = false) {
-        if (checkJob?.isActive == true || downloadJob?.isActive == true || _status.value == UpdateStatus.Installing ||
-            _status.value is UpdateStatus.AwaitingConfirmation || _status.value == UpdateStatus.PermissionRequired) return
-        checkJob = scope.launch {
-            val currentName = app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty()
-            val current = UpdateVersion.parse("v$currentName")
-            if (current == null) { _status.value = UpdateStatus.Failed("Installed version is not supported for update checks."); return@launch }
-            _status.value = UpdateStatus.Checking
-            when (val result = discovery.check(current, force)) {
-                is DiscoveryResult.Available -> { _available.value = result.release; _status.value = UpdateStatus.Idle }
-                DiscoveryResult.UpToDate -> { _available.value = null; _status.value = UpdateStatus.UpToDate }
-                DiscoveryResult.Deferred -> { _available.value = null; _status.value = UpdateStatus.Idle }
-                is DiscoveryResult.Failed -> _status.value = UpdateStatus.Failed(result.message)
-            }
+    fun foregroundStarted() {
+        foregroundActivities++
+        if (app.packageName != "io.github.anisharyal09.anice") return
+        scope.launch {
+            restoreCachedRelease()
+            if (discovery.nextAutomaticCheck() <= System.currentTimeMillis()) check()?.join()
+            scheduleNextCheck()
         }
     }
+
+    private suspend fun restoreCachedRelease() {
+        if (_available.value != null) return
+        val generation = selectionGeneration
+        val cached = currentVersion?.let { discovery.cachedNotice(it) }
+        if (generation == selectionGeneration && _available.value == null) {
+            _available.value = cached?.takeIf(discovery::isEligible)
+        }
+    }
+
+    fun foregroundStopped() { foregroundActivities = (foregroundActivities - 1).coerceAtLeast(0) }
+    fun review(): Job? {
+        notification.clear()
+        _reviewing.value = true
+        if (_available.value != null) return null
+        return scope.launch {
+            val generation = selectionGeneration
+            restoreCachedRelease()
+            if (generation == selectionGeneration && _available.value == null) _reviewing.value = false
+        }
+    }
+    fun dismissReview() {
+        _reviewing.value = false
+        scope.launch { check()?.join(); scheduleNextCheck() }
+    }
+
+    fun stopBackgroundCheck(job: Job?) {
+        if (foregroundActivities == 0 && job != null && job === checkJob) { checkAgain = false; job.cancel() }
+    }
+
+    fun scheduleNextCheck() {
+        if (currentVersion == null) return
+        val now = System.currentTimeMillis()
+        val busy = (_reviewing.value && _available.value != null) || downloadJob?.isActive == true || _status.value == UpdateStatus.Installing ||
+            _status.value is UpdateStatus.AwaitingConfirmation || _status.value == UpdateStatus.PermissionRequired
+        scheduleUpdateCheck(app, if (busy) UpdateSchedule.latestEvening(now) + UpdateSchedule.DAY else discovery.nextAutomaticCheck(now))
+    }
+
+    fun check(force: Boolean = false): Job? {
+        checkJob?.takeIf { !it.isCompleted }?.let {
+            if (force) checkAgain = true
+            return it
+        }
+        if ((!force && _reviewing.value && _available.value != null) || downloadJob?.isActive == true || _status.value == UpdateStatus.Installing ||
+            _status.value is UpdateStatus.AwaitingConfirmation || _status.value == UpdateStatus.PermissionRequired) return null
+        selectionGeneration++
+        checkJob = scope.launch {
+            try {
+                val current = currentVersion
+                if (current == null) { _status.value = UpdateStatus.Failed("Installed version is not supported for update checks."); return@launch }
+                restoreCachedRelease()
+                if (!force && _reviewing.value && _available.value != null) { _status.value = UpdateStatus.Idle; return@launch }
+                _status.value = UpdateStatus.Checking
+                val result = discovery.check(current, force)
+                selectionGeneration++
+                if (!force && _reviewing.value && _available.value != null && result !is DiscoveryResult.Failed) {
+                    _status.value = UpdateStatus.Idle
+                    return@launch
+                }
+                when (result) {
+                    is DiscoveryResult.Available -> {
+                        val found = result.release.takeIf(discovery::isEligible)
+                        _available.value = found
+                        if (found == null) _reviewing.value = false
+                        _status.value = UpdateStatus.Idle
+                        if (found != null && foregroundActivities == 0 && app.packageName == "io.github.anisharyal09.anice" &&
+                            discovery.shouldNotify(found) && notification.post(found)) discovery.markNotified(found)
+                    }
+                    DiscoveryResult.UpToDate -> {
+                        _available.value = null; _reviewing.value = false
+                        _status.value = UpdateStatus.UpToDate; notification.clear()
+                    }
+                    DiscoveryResult.Deferred -> _status.value = UpdateStatus.Idle
+                    is DiscoveryResult.Failed -> _status.value = UpdateStatus.Failed(result.message)
+                }
+            } finally {
+                if (_status.value == UpdateStatus.Checking) _status.value = UpdateStatus.Idle
+                checkJob = null
+                if (checkAgain) { checkAgain = false; check(force = true) }
+                else if (foregroundActivities > 0) scheduleNextCheck()
+            }
+        }
+        return checkJob
+    }
     fun setIncludeBeta(value: Boolean) {
+        selectionGeneration++
         discovery.includeBeta = value; _includeBeta.value = value
+        if (!value) notification.clear()
         if (!value && _available.value?.version?.prerelease == true && _status.value != UpdateStatus.Installing &&
             _status.value !is UpdateStatus.AwaitingConfirmation) {
-            cancel(); _available.value = null
+            cancel(); _available.value = null; _reviewing.value = false; notification.clear()
         }
         check(force = true)
     }
-    fun skip() {
+    fun skip(version: UpdateVersion) {
+        if (_available.value?.version != version) return
         if (_status.value == UpdateStatus.Installing || _status.value is UpdateStatus.AwaitingConfirmation) return
+        selectionGeneration++
         _available.value?.let { discovery.skip(it.version.tag) }
-        cancel(); _available.value = null
+        cancel(); _available.value = null; _reviewing.value = false; notification.clear()
+        scheduleNextCheck()
     }
-    fun cancel() { downloadJob?.cancel(); downloadJob = null; downloaded?.delete(); downloaded = null; _status.value = UpdateStatus.Idle }
+    fun cancel() {
+        downloadJob?.cancel(); downloadJob = null; downloaded?.delete(); downloaded = null
+        _status.value = UpdateStatus.Idle; scheduleNextCheck()
+    }
 
-    fun downloadAndInstall() {
-        val release = _available.value ?: return
-        if (downloadJob?.isActive == true || checkJob?.isActive == true) return
+    fun downloadAndInstall(version: UpdateVersion) {
+        val release = _available.value?.takeIf { it.version == version } ?: return
+        if (downloadJob?.isActive == true || checkJob?.isCompleted == false) return
         downloadJob = scope.launch {
             var file: File? = null
             try {
@@ -101,6 +193,11 @@ internal class AndroidUpdateManager(context: Context) {
             } catch (error: Exception) {
                 file?.delete(); if (downloaded == file) downloaded = null
                 _status.value = UpdateStatus.Failed(error.message ?: "Could not prepare the update.")
+            } finally {
+                if (downloadJob === currentCoroutineContext().job) {
+                    downloadJob = null
+                    scheduleNextCheck()
+                }
             }
         }
     }
@@ -139,7 +236,10 @@ internal class AndroidUpdateManager(context: Context) {
                                 val now = SystemClock.elapsedRealtime()
                                 if (now - lastProgress >= 250 || bytes == (release.assetBytes ?: length)) {
                                     lastProgress = now
-                                    _status.value = UpdateStatus.Downloading(bytes, release.assetBytes ?: length)
+                                    withContext(Dispatchers.Main.immediate) {
+                                        ensureActive()
+                                        _status.value = UpdateStatus.Downloading(bytes, release.assetBytes ?: length)
+                                    }
                                 }
                             }
                         } }
@@ -230,8 +330,10 @@ internal class AndroidUpdateManager(context: Context) {
                 _status.value = if (action != null) UpdateStatus.AwaitingConfirmation(action) else UpdateStatus.Failed("Android did not provide an installation confirmation.")
             }
             PackageInstaller.STATUS_SUCCESS -> {
+                selectionGeneration++
                 prefs.edit().remove("installer_session").apply()
-                downloaded?.delete(); downloaded = null; _available.value = null
+                downloaded?.delete(); downloaded = null; _available.value = null; _reviewing.value = false
+                notification.clear()
                 _status.value = UpdateStatus.Idle
             }
             else -> {
@@ -240,6 +342,7 @@ internal class AndroidUpdateManager(context: Context) {
                 _status.value = UpdateStatus.Failed(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Android could not install the update.")
             }
         }
+        scheduleNextCheck()
     }
 }
 

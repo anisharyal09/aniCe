@@ -3,7 +3,12 @@
 package io.github.anisharyal09.anice.update
 
 import android.content.SharedPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -66,5 +71,140 @@ class ReleaseDiscoveryTest {
         assertTrue(discovery.check(current, true, 100) is DiscoveryResult.Available)
         assertTrue(discovery.check(current, true, 200) is DiscoveryResult.Failed)
         assertTrue(discovery.check(current, false, 201) is DiscoveryResult.Available)
+    }
+
+    private fun time(value: String) = Instant.parse(value).toEpochMilli()
+
+    @Test fun nepalDeadlineIsFixedAndMorningSuccessDoesNotSuppressEvening() = runBlocking {
+        val morning = time("2026-11-14T07:00:00Z")
+        val evening = time("2026-11-14T13:45:00Z")
+        assertEquals(evening - UpdateSchedule.DAY, UpdateSchedule.latestEvening(evening - 1))
+        assertEquals(evening, UpdateSchedule.latestEvening(evening))
+        val preferences = MemoryPreferences()
+        val calls = mutableListOf<String?>()
+        val responses = ArrayDeque(listOf(ReleaseResponse(200, body, "tag1"), ReleaseResponse(304)))
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, etag -> calls.add(etag); responses.removeFirst() })
+        assertTrue(discovery.check(current, true, morning) is DiscoveryResult.Available)
+        assertEquals(evening, discovery.nextAutomaticCheck(morning + 1))
+        assertTrue(discovery.check(current, false, evening - 1) is DiscoveryResult.Available)
+        assertEquals(1, calls.size)
+        assertTrue(discovery.check(current, false, evening) is DiscoveryResult.Available)
+        assertEquals(listOf(null, "tag1"), calls)
+        assertEquals(evening, preferences.getLong("last_success", 0))
+        assertEquals(evening + UpdateSchedule.DAY, discovery.nextAutomaticCheck(evening + 1))
+        assertTrue(discovery.check(current, false, evening + 1) is DiscoveryResult.Available)
+        assertEquals(2, calls.size)
+    }
+
+    @Test fun failedEveningRemainsDueAndCanSucceedAnytimeAfterBackoff() = runBlocking {
+        val evening = time("2026-11-14T13:45:00Z")
+        val preferences = MemoryPreferences()
+        var calls = 0
+        val responses = ArrayDeque(listOf(ReleaseResponse(500), ReleaseResponse(200, body, "new")))
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> calls++; responses.removeFirst() })
+        assertTrue(discovery.check(current, false, evening) is DiscoveryResult.Failed)
+        assertEquals(0, preferences.getLong("last_success", 0))
+        assertEquals(evening + 900_000, discovery.nextAutomaticCheck(evening + 1))
+        assertEquals(DiscoveryResult.Deferred, discovery.check(current, false, evening + 899_999))
+        assertEquals(1, calls)
+        val later = evening + 3_600_000
+        assertTrue(discovery.check(current, false, later) is DiscoveryResult.Available)
+        assertEquals(2, calls)
+        assertEquals(later, preferences.getLong("last_success", 0))
+        assertEquals(evening + UpdateSchedule.DAY, discovery.nextAutomaticCheck(later))
+    }
+
+    @Test fun completedEmptyCacheRemainsUpToDateWithoutAnotherRequest() = runBlocking {
+        val evening = time("2026-11-15T13:45:00Z")
+        val preferences = MemoryPreferences()
+        val responses = ArrayDeque(listOf(ReleaseResponse(200, "[]", "empty"), ReleaseResponse(500)))
+        var calls = 0
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> calls++; responses.removeFirst() })
+        assertEquals(DiscoveryResult.UpToDate, discovery.check(current, false, evening))
+        assertEquals(DiscoveryResult.UpToDate, discovery.check(current, false, evening + 1))
+        assertEquals(1, calls)
+        assertTrue(discovery.check(current, true, evening + 2) is DiscoveryResult.Failed)
+        assertEquals(DiscoveryResult.Deferred, discovery.check(current, false, evening + 3))
+    }
+
+    @Test fun missingAndInvalidCachesCannotClaimUpToDate() = runBlocking {
+        val evening = time("2026-11-15T13:45:00Z")
+        val preferences = MemoryPreferences().apply {
+            data["last_success"] = evening
+            data["last_attempt"] = evening
+            data["last_source"] = "api"
+        }
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> error("No request is due") })
+        assertEquals(DiscoveryResult.Deferred, discovery.check(current, false, evening + 1))
+        preferences.data["cached_releases"] = "invalid"
+        assertEquals(DiscoveryResult.Deferred, discovery.check(current, false, evening + 2))
+    }
+
+    @Test fun overdueChecksAndClockRollbackDoNotWaitForAnotherEvening() {
+        val now = time("2026-11-14T17:00:00Z")
+        val evening = time("2026-11-14T13:45:00Z")
+        assertEquals(now, UpdateSchedule.nextCheck(now, evening - 1, 0, 0))
+        assertEquals(now, UpdateSchedule.nextCheck(now, now + UpdateSchedule.DAY, now + UpdateSchedule.DAY, 1))
+        val delays = (1..7).map(UpdateSchedule::retryDelay)
+        assertEquals(7, delays.size)
+        assertTrue(delays.zipWithNext().all { (first, next) -> next > first })
+        assertEquals(delays.last(), UpdateSchedule.retryDelay(100))
+        assertEquals(0, UpdateSchedule.retryDelay(-1))
+    }
+
+    @Test fun notificationsArePersistentOncePerChannelVersionAndRespectBetaAndSkip() {
+        fun release(tag: String) = AvailableRelease(requireNotNull(UpdateVersion.parse(tag)), "Notes",
+            "$RELEASE_ROOT/download/$tag/aniCe-android.apk", 50)
+        val stable = release("v0.3.1")
+        val beta = release("v0.4.0-beta.2")
+        val preferences = MemoryPreferences()
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> error("No network needed") })
+        assertTrue(discovery.shouldNotify(stable))
+        assertFalse(discovery.shouldNotify(beta))
+        discovery.markNotified(stable)
+        assertFalse(discovery.shouldNotify(stable))
+        discovery.includeBeta = true
+        assertTrue(discovery.shouldNotify(beta))
+        discovery.markNotified(beta)
+        discovery.includeBeta = false
+        assertTrue(discovery.shouldNotify(release("v0.3.2")))
+        assertFalse(discovery.shouldNotify(beta))
+        discovery.includeBeta = true
+        assertFalse(discovery.shouldNotify(beta))
+        val restored = ReleaseDiscovery(preferences)
+        assertFalse(restored.shouldNotify(beta))
+        assertFalse(restored.shouldNotify(stable))
+        discovery.markNotified(release("v0.4.0"))
+        assertFalse(discovery.shouldNotify(release("v0.3.2")))
+        discovery.skip("v0.5.0")
+        assertFalse(discovery.shouldNotify(release("v0.5.0")))
+    }
+
+    @Test fun cancelledMetadataDoesNotReplaceTheCacheOrCompleteTheEvening() = runBlocking {
+        val started = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val evening = time("2026-11-15T13:45:00Z")
+        val preferences = MemoryPreferences()
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+            started.countDown()
+            check(resume.await(5, TimeUnit.SECONDS))
+            ReleaseResponse(200, body, "cancelled")
+        })
+        val job = launch(Dispatchers.Default) {
+            discovery.check(current, true, evening)
+        }
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            job.cancel()
+        } finally {
+            resume.countDown()
+            job.join()
+        }
+        assertFalse(preferences.contains("cached_releases"))
+        assertFalse(preferences.contains("last_success"))
+        assertFalse(preferences.contains("etag"))
+        val later = evening + 60_000
+        assertEquals(later, discovery.nextAutomaticCheck(later))
+        assertEquals(later, ReleaseDiscovery(preferences).nextAutomaticCheck(later))
     }
 }

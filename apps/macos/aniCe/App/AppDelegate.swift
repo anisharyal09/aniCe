@@ -48,12 +48,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     static var notificationCategories: Set<UNNotificationCategory> {
-        MacTransferNotifier.notificationCategories().union([MacFindDeviceNotifier.notificationCategory, MacSmsNotifier.notificationCategory])
+        MacTransferNotifier.notificationCategories().union([MacFindDeviceNotifier.notificationCategory, MacSmsNotifier.notificationCategory,
+            UNNotificationCategory(identifier: MacUpdateModel.notificationCategory, actions: [], intentIdentifiers: [])])
     }
 
     func handleNotificationAction(category: String, action: String, identifier: String, userText: String = "",
         mirrorEpoch: String? = nil, mirrorSequence: Int64? = nil, receivedFolder: String? = nil) {
-        if category == MacFindDeviceNotifier.category {
+        if category == MacUpdateModel.notificationCategory {
+            if action == UNNotificationDefaultActionIdentifier {
+                MacUpdateModel.shared.review()
+                openMainFromCompanion()
+            }
+        } else if category == MacFindDeviceNotifier.category {
             findNotifier?.handleAction(action, identifier: identifier)
         } else if category == MacSmsNotifier.category {
             _ = smsNotifier?.handleAction(category: category, action: action, identifier: identifier, userText: userText)

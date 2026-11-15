@@ -107,7 +107,6 @@ struct MainWindowView: View {
       // Let SwiftUI present the first window before loading saved identity or starting radios.
       await Task.yield()
       onInitialRender()
-      if !IdentityView.isTesting { Task { await updates.check() } }
       if !IdentityView.isTesting {
         await identity.load()
         if identity.local != nil { await pairing.refresh() }

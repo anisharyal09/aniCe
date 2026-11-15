@@ -753,7 +753,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     let transport = FakeKeyboardTrackpadTransport()
     transport.devices = [paired(peer)]
     transport.completeWrites = false
-    let model = readyModel(peer: peer, transport: transport)
+    let model = readyModel(peer: peer, transport: transport, lifecycleCenter: NotificationCenter())
     defer { model.shutdown() }
     model.connect()
     model.requestControl(on: .pad)
@@ -766,6 +766,23 @@ final class KeyboardTrackpadTests: XCTestCase {
     }
     XCTAssertEqual(transport.writes, [.mouse(1, 0, 0, 0), .mouse(1, 127, 0, 0),
       .mouse(1, 127, 0, 0), .mouse(1, 46, 0, 0), .mouse(0, 0, 0, 0)])
+  }
+
+  @MainActor func testLifecycleCenterIsIsolatedAndStillReleasesInterruptedInput() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let center = NotificationCenter()
+    let model = readyModel(peer: peer, transport: transport, lifecycleCenter: center)
+    defer { model.shutdown() }
+    model.connect()
+    model.requestControl(on: .pad)
+    model.pointerButtonDown()
+    NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: nil)
+    XCTAssertTrue(model.isControlling)
+    center.post(name: NSApplication.didResignActiveNotification, object: nil)
+    XCTAssertFalse(model.isControlling)
+    XCTAssertEqual(transport.writes.last, .mouse(0, 0, 0, 0))
   }
 
   @MainActor func testOldTransportEventsCannotReviveOrChangeANewConnection() throws {
@@ -955,9 +972,10 @@ final class KeyboardTrackpadTests: XCTestCase {
 
   @MainActor private func readyModel(
     peer: DeviceIdentity,
-    transport: FakeKeyboardTrackpadTransport
+    transport: FakeKeyboardTrackpadTransport,
+    lifecycleCenter: NotificationCenter = .default
   ) -> MacKeyboardTrackpadModel {
-    let model = MacKeyboardTrackpadModel(transport: transport, preferences: testDefaults())
+    let model = MacKeyboardTrackpadModel(transport: transport, preferences: testDefaults(), lifecycleCenter: lifecycleCenter)
     model.updateTargets([peer], connectedPeerIDs: [peer.deviceId], peerContextID: nil)
     model.refreshPairedDevices()
     XCTAssertTrue(model.link(paired(peer)))

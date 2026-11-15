@@ -260,7 +260,7 @@ final class SmsNotifierTests: XCTestCase {
     XCTAssertEqual(replies[0].text, "from the delegate")
     let categories = AppDelegate.notificationCategories
     XCTAssertEqual(Set(categories.map(\.identifier)), [MacFindDeviceNotifier.category, MacSmsNotifier.category,
-      MacTransferNotifier.Category.offer, MacTransferNotifier.Category.result,
+      MacUpdateModel.notificationCategory, MacTransferNotifier.Category.offer, MacTransferNotifier.Category.result,
       MacTransferNotifier.Category.paused, MacTransferNotifier.Category.pausedSender])
     delegate.handleNotificationAction(category: "unknown", action: UNNotificationDefaultActionIdentifier, identifier: "unrelated")
     XCTAssertEqual(replies.count, 1)

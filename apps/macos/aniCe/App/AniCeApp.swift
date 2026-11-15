@@ -216,6 +216,7 @@ struct AniCeApp: App {
     clipboard.installLifecycle()
     session.restoreAutomatic()
     guard !IdentityView.isTesting else { return }
+    MacUpdateModel.shared.startAutomaticChecks()
     PasteTrayController.shared.setup(model: clipboard)
     edgeDrop.start()
     let hotkey = GlobalHotkeyManager()
@@ -223,6 +224,7 @@ struct AniCeApp: App {
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
     delegate.onTerminate = {
+      MacUpdateModel.shared.stopAutomaticChecks()
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
       floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
       PasteTrayController.shared.hide()

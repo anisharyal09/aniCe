@@ -420,7 +420,8 @@ extension MainWindowView {
                         Button("Cancel") { updates.cancelInstall() }
                       }
                     } else if updates.installProblem == nil, let release = updates.release {
-                      Button("Install \(release.version.tag)") { updates.install() }
+                      Button("Install \(release.version.tag)") { updates.install(release.version) }
+                        .disabled(updates.checking)
                     }
                     if let error = updates.installError {
                       Text(error).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.error(colorScheme))

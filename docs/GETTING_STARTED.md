@@ -38,7 +38,9 @@ Automatic receiving is enabled for new pairings. Review each sender's file-trans
 
 ## Updates
 
-aniCe checks GitHub Releases while open and also offers **Settings → Updates → Check for updates**. Stable releases are selected by default, including on beta installations. Enable **Include beta releases** and confirm **Enable beta updates** to receive subsequent betas. Beta builds may contain bugs or need recovery; ordinary updates are intended to retain settings and trusted devices. Turning beta updates off does not downgrade an installed beta. Skip version hides that release; Later leaves it available.
+aniCe checks GitHub Releases on launch when due and refreshes daily at **7:30 PM Nepal time (NPT, UTC+05:45)**. If internet is unavailable, the refresh stays due and runs afterward when connectivity returns, subject to retry backoff and OS background scheduling. The Mac app or menu-bar companion must remain running; missed checks catch up on the next launch. **Settings → Updates → Check for updates** remains available for manual checks.
+
+Stable public releases are selected by default, including on beta installations. Enable **Include beta releases** and confirm **Enable beta updates** to receive subsequent betas. Beta builds may contain bugs or need recovery; ordinary updates are intended to retain settings and trusted devices. Turning beta updates off does not downgrade an installed beta. Skip version hides that release; closing the review leaves it available and does not cancel a download. Android keeps installation and download-cancellation actions below scrollable, formatted release notes. Background release notices are silent, require existing notification permission and are shown once per newer version; notification taps open review without installing.
 
 Android verifies the downloaded APK's package, version and signing lineage before handing it to the system installer. Installation requires confirmation, and Android may ask you to allow aniCe to install apps. Updates retain app data when Android accepts the signing identity.
 

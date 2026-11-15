@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Checks beta consent and About layout on isolated emulators without submitting reports or changing live connections.
+// Checks update ownership, review, beta consent and About layout on isolated emulators.
 package io.github.anisharyal09.anice.app
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
@@ -23,12 +24,24 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
+import io.github.anisharyal09.anice.update.AndroidUpdateManager
+import io.github.anisharyal09.anice.update.AvailableRelease
 import io.github.anisharyal09.anice.update.BetaUpdatePreference
+import io.github.anisharyal09.anice.update.DiscoveryResult
+import io.github.anisharyal09.anice.update.ReleaseDiscovery
+import io.github.anisharyal09.anice.update.ReleaseResponse
+import io.github.anisharyal09.anice.update.ReleaseTransport
+import io.github.anisharyal09.anice.update.UpdateReviewSheet
 import io.github.anisharyal09.anice.update.UpdateSettingsContent
 import io.github.anisharyal09.anice.update.UpdateStatus
+import io.github.anisharyal09.anice.update.UpdateVersion
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.net.URI
 import java.net.URLDecoder
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -182,6 +195,280 @@ class SettingsRefinementTests {
         }
     }
 
+    @Test fun updateReviewKeepsActionsVisibleAndDismissalDoesNotCancelDownloads() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val release = AvailableRelease(requireNotNull(UpdateVersion.parse("v0.9.0-beta.2")),
+            "<!-- anice-source:fixture -->\n## What’s changed\n" +
+                (1..40).joinToString("\n") { "- **Change $it:** A readable release note with enough text to wrap." },
+            "https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.2/aniCe-android.apk", 3_000_000)
+        var captures = 0
+        for (dark in listOf(false, true)) {
+            var previousTextHeight = 0
+            var previousMenuTextHeight = 0
+            for (scale in listOf(0.8f, 1f, 1.2f, 2f)) {
+                val activity = runner.startActivitySync(
+                    Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ) as MainActivity
+                val showing = mutableStateOf(true)
+                val status = mutableStateOf<UpdateStatus>(UpdateStatus.Downloading(1_500_000, 3_000_000))
+                val cancellations = AtomicInteger()
+                val installs = AtomicInteger()
+                val skips = AtomicInteger()
+                val links = AtomicInteger()
+                try {
+                    runner.runOnMainSync {
+                        activity.setContent {
+                            fixture(dark, scale) {
+                                Column {
+                                    Text("Home fixture")
+                                    Button(onClick = { showing.value = true }) { Text("Review update") }
+                                }
+                                if (showing.value) UpdateReviewSheet(release, status.value,
+                                    onDismiss = { showing.value = false },
+                                    onSkip = { skips.incrementAndGet(); showing.value = false },
+                                    onCancel = { cancellations.incrementAndGet(); status.value = UpdateStatus.Idle },
+                                    onInstall = { installs.incrementAndGet() },
+                                    onGitHub = { links.incrementAndGet() })
+                            }
+                        }
+                    }
+                    idle()
+                    awaitLabel("Cancel download")
+                    awaitLabel("What’s changed")
+                    assertNull(find(root(), "anice-source"))
+                    val textHeight = bounds(find(root(), "Cancel download")).height()
+                    assertTrue("Sheet text must grow with the requested $scale scale", textHeight > previousTextHeight)
+                    previousTextHeight = textHeight
+                    val close = clickable(find(root(), "Close update review"))
+                    assertNotNull(close)
+                    assertTrue(bounds(close).height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                    val before = bounds(clickable(find(root(), "Cancel download")))
+                    assertTrue(before.bottom <= bounds(root()).bottom)
+                    val scroll = scrollable(root())
+                    assertNotNull("Release notes have their own scroll region", scroll)
+                    assertTrue(scroll!!.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD))
+                    awaitNoLabel("Change 1:")
+                    awaitLabel("Cancel download")
+                    assertEquals("The footer must not move with release notes", before,
+                        bounds(clickable(find(root(), "Cancel download"))))
+                    capture("update-sheet-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}")
+                    captures++
+                    click("Close update review")
+                    awaitLabel("Home fixture")
+                    assertEquals(UpdateStatus.Downloading(1_500_000, 3_000_000), status.value)
+                    assertEquals(0, cancellations.get())
+                    click("Review update")
+                    awaitLabel("Cancel download")
+                    pressBack()
+                    awaitLabel("Home fixture")
+                    assertEquals(0, cancellations.get())
+                    click("Review update")
+                    awaitLabel("Cancel download")
+                    click("Cancel download")
+                    awaitLabel("Install update")
+                    assertEquals(1, cancellations.get())
+                    click("More")
+                    awaitLabel("Skip version")
+                    val menuTextHeight = bounds(find(root(), "Skip version")).height()
+                    assertTrue("Menu text must grow with the requested $scale scale", menuTextHeight > previousMenuTextHeight)
+                    previousMenuTextHeight = menuTextHeight
+                    click("View on GitHub")
+                    assertEquals(1, links.get())
+                    assertEquals(0, skips.get())
+                    runner.runOnMainSync { status.value = UpdateStatus.PermissionRequired }
+                    awaitLabel("Open Settings")
+                    click("Open Settings")
+                    assertEquals(1, installs.get())
+                    runner.runOnMainSync { status.value = UpdateStatus.AwaitingConfirmation(Intent()) }
+                    awaitLabel("Continue installation")
+                    click("Continue installation")
+                    assertEquals(2, installs.get())
+                    runner.runOnMainSync { status.value = UpdateStatus.Failed("This update could not be prepared. Try again.") }
+                    awaitLabel("This update could not be prepared.")
+                    awaitLabel("Install update")
+                    runner.runOnMainSync { status.value = UpdateStatus.Downloading(1_500_000, null) }
+                    awaitLabel("Cancel download")
+                    awaitNoLabel(" of ")
+                    assertTrue(bounds(clickable(find(root(), "Cancel download"))).bottom <= bounds(root()).bottom)
+                } finally {
+                    runner.runOnMainSync { activity.finish() }
+                    runner.waitForIdleSync()
+                }
+            }
+        }
+        assertEquals(8, captures)
+    }
+
+    @Test fun updateOwnerKeepsReviewStableAndRejectsActionsForAnotherVersion() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val calls = AtomicInteger()
+        val installed = runner.targetContext.packageManager.getPackageInfo(runner.targetContext.packageName, 0).versionName.orEmpty()
+        val tag = "v${installed.substringBefore(".").toInt() + 1}.0.0"
+        val body = """[{"tag_name":"$tag","draft":false,"prerelease":false,"body":"Notes","assets":[{"name":"aniCe-android.apk","state":"uploaded","size":50,"browser_download_url":"https://github.com/anisharyal09/aniCe/releases/download/$tag/aniCe-android.apk"}]}]"""
+        val nextTag = tag.replace(".0.0", ".1.0")
+        lateinit var manager: AndroidUpdateManager
+        var check: Job? = null
+        try {
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                    ReleaseResponse(200, if (calls.incrementAndGet() == 1) body else body.replace(tag, nextTag), "fixture")
+                }))
+                check = manager.check(force = true)
+            }
+            withTimeout(5000) { check!!.join() }
+            val release = requireNotNull(manager.available.value)
+            assertEquals(tag, release.version.tag)
+            lateinit var restarted: AndroidUpdateManager
+            runner.runOnMainSync {
+                restarted = AndroidUpdateManager(runner.targetContext,
+                    ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> error("Cached review must work offline") }))
+                restarted.review()
+                check = restarted.check()
+            }
+            withTimeout(5000) { check!!.join() }
+            assertEquals(release, restarted.available.value)
+            assertTrue(restarted.reviewing.value)
+            runner.runOnMainSync {
+                manager.review()
+                assertNull(manager.check())
+                val stale = requireNotNull(UpdateVersion.parse("v0.8.0"))
+                manager.downloadAndInstall(stale)
+                manager.skip(stale)
+                assertEquals(release, manager.available.value)
+                assertEquals(UpdateStatus.Idle, manager.status.value)
+                assertTrue(manager.reviewing.value)
+                check = manager.check(force = true)
+            }
+            withTimeout(5000) { check!!.join() }
+            runner.runOnMainSync {
+                val refreshed = requireNotNull(manager.available.value)
+                assertEquals(nextTag, refreshed.version.tag)
+                assertTrue(manager.reviewing.value)
+                manager.downloadAndInstall(release.version)
+                manager.skip(release.version)
+                assertEquals(refreshed, manager.available.value)
+                manager.dismissReview()
+                manager.skip(refreshed.version)
+                assertNull(manager.available.value)
+            }
+            assertEquals(2, calls.get())
+        } finally {
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
+    @Test fun automaticChecksKeepAReviewOpenedWhileTheRequestWasRunning() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val installed = runner.targetContext.packageManager.getPackageInfo(runner.targetContext.packageName, 0).versionName.orEmpty()
+        val major = installed.substringBefore(".").toInt() + 1
+        fun response(tag: String) = ReleaseResponse(200,
+            """[{"tag_name":"$tag","draft":false,"prerelease":false,"body":"Notes for $tag","assets":[{"name":"aniCe-android.apk","state":"uploaded","size":50,"browser_download_url":"https://github.com/anisharyal09/aniCe/releases/download/$tag/aniCe-android.apk"}]}]""", tag)
+        val initial = response("v$major.0.0")
+        val newer = response("v$major.1.0")
+        val replies = listOf(newer, ReleaseResponse(200, "[]"), ReleaseResponse(500))
+        assertEquals(3, replies.size)
+        for (reply in replies) {
+            val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+            val started = CountDownLatch(1)
+            val resume = CountDownLatch(1)
+            val calls = AtomicInteger()
+            lateinit var manager: AndroidUpdateManager
+            var check: Job? = null
+            try {
+                runner.runOnMainSync {
+                    manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                        if (calls.incrementAndGet() == 1) initial else {
+                            started.countDown()
+                            check(resume.await(5, TimeUnit.SECONDS))
+                            reply
+                        }
+                    }))
+                    check = manager.check(force = true)
+                }
+                withTimeout(5000) { check!!.join() }
+                val reviewed = requireNotNull(manager.available.value)
+                assertTrue(preferences.edit().putLong("last_success", 0).putLong("last_attempt", 0).commit())
+                runner.runOnMainSync { check = manager.check() }
+                assertTrue(started.await(5, TimeUnit.SECONDS))
+                runner.runOnMainSync { manager.review() }
+                resume.countDown()
+                withTimeout(5000) { check!!.join() }
+                assertEquals(reviewed, manager.available.value)
+                assertTrue(manager.reviewing.value)
+                if (reply.status == 500) assertTrue(manager.status.value is UpdateStatus.Failed)
+                else assertEquals(UpdateStatus.Idle, manager.status.value)
+                runner.runOnMainSync {
+                    manager.dismissReview()
+                    check = manager.check()
+                }
+                withTimeout(5000) { check!!.join() }
+                val expected = when (reply) {
+                    newer -> "v$major.1.0"
+                    else -> if (reply.status == 500) reviewed.version.tag else null
+                }
+                assertEquals(expected, manager.available.value?.version?.tag)
+                assertFalse(manager.reviewing.value)
+                assertEquals("Closing review must reuse the completed check's cache", 2, calls.get())
+            } finally {
+                resume.countDown()
+                check?.join()
+                assertTrue(preferences.edit().clear().commit())
+            }
+        }
+    }
+
+    @Test fun aLateCachedReviewCannotRestoreAReleaseRemovedByANewerCheck() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val installed = runner.targetContext.packageManager.getPackageInfo(runner.targetContext.packageName, 0).versionName.orEmpty()
+        val tag = "v${installed.substringBefore(".").toInt() + 1}.0.0"
+        val body = """[{"tag_name":"$tag","draft":false,"prerelease":false,"body":"Old cached notes","assets":[{"name":"aniCe-android.apk","state":"uploaded","size":50,"browser_download_url":"https://github.com/anisharyal09/aniCe/releases/download/$tag/aniCe-android.apk"}]}]"""
+        val started = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val reads = AtomicInteger()
+        val delayed = object : SharedPreferences by preferences {
+            override fun getString(key: String?, default: String?): String? {
+                val value = preferences.getString(key, default)
+                if (key == "cached_releases" && reads.incrementAndGet() == 1) {
+                    started.countDown()
+                    check(resume.await(5, TimeUnit.SECONDS))
+                }
+                return value
+            }
+        }
+        lateinit var manager: AndroidUpdateManager
+        var review: Job? = null
+        var check: Job? = null
+        try {
+            assertTrue(ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> ReleaseResponse(200, body) })
+                .check(requireNotNull(UpdateVersion.parse("v$installed")), force = true) is DiscoveryResult.Available)
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(delayed, ReleaseTransport { _, _, _ ->
+                    ReleaseResponse(200, "[]")
+                }))
+                review = manager.review()
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            runner.runOnMainSync { check = manager.check(force = true) }
+            withTimeout(5000) { check!!.join() }
+            assertNull(manager.available.value)
+            resume.countDown()
+            withTimeout(5000) { review!!.join() }
+            assertNull("A cached completion must not resurrect a removed release", manager.available.value)
+            assertFalse(manager.reviewing.value)
+        } finally {
+            resume.countDown()
+            review?.join()
+            check?.join()
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
     @Test fun aboutContactReflowsAndReportLinkContainsOnlyVersionInformation() {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
@@ -306,6 +593,12 @@ class SettingsRefinementTests {
             if (current.isClickable) return current
             current = current.parent
         }
+        return null
+    }
+    private fun scrollable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (node.isScrollable) return node
+        for (i in 0 until node.childCount) { scrollable(node.getChild(i))?.let { return it } }
         return null
     }
     private fun click(label: String) {

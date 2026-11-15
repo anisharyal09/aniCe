@@ -226,6 +226,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   @ObservationIgnored private let transport: any KeyboardTrackpadTransport
   @ObservationIgnored private let preferences: UserDefaults
   @ObservationIgnored private let associations: KeyboardTrackpadAssociations
+  @ObservationIgnored private let lifecycleCenter: NotificationCenter
   @ObservationIgnored private var observers: [NSObjectProtocol] = []
   @ObservationIgnored private var sleepObserver: NSObjectProtocol?
   @ObservationIgnored private var typingTimer: Task<Void, Never>?
@@ -296,10 +297,12 @@ enum ClipboardTypingValidationError: Error, Equatable {
 
   init(
     transport: any KeyboardTrackpadTransport = ClassicHIDTransport(),
-    preferences: UserDefaults = .standard
+    preferences: UserDefaults = .standard,
+    lifecycleCenter: NotificationCenter = .default
   ) {
     self.transport = transport
     self.preferences = preferences
+    self.lifecycleCenter = lifecycleCenter
     associations = KeyboardTrackpadAssociations(storage: preferences)
     if let raw = preferences.string(forKey: "keyboardTrackpad.scrollSpeed"),
        let stored = KeyboardTrackpadSpeed(rawValue: raw) {
@@ -772,7 +775,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     isShuttingDown = true
     motionTimer?.cancel()
     typingTimer?.cancel()
-    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    for observer in observers { lifecycleCenter.removeObserver(observer) }
     observers.removeAll()
     if let sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver) }
     sleepObserver = nil
@@ -1365,7 +1368,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   private func installLifecycleObservers() {
-    let center = NotificationCenter.default
+    let center = lifecycleCenter
     let stopNames: [Notification.Name] = [
       NSApplication.didResignActiveNotification,
       NSMenu.didBeginTrackingNotification,

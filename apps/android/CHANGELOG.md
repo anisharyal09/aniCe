@@ -9,6 +9,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 ### Added
 
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
+- Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
 - **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.
 - **Live Mac Power:** Inline Mac battery percentage and charging indicator beside connection status on Home and Devices.
 - **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) matching Mac's Appearance row layout.
@@ -34,6 +35,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 ### Changed
 
 - Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
+- Present update review in a dismissible bottom sheet with scalable native Markdown, rectangular themed actions, sticky progress and secondary actions under More; retain the reviewed version during automatic refreshes.
 - Use the shared checkbox row, matching Connection's padding, and explicit confirmation for beta updates; group available/busy status with a minimal trailing check action and reflow at narrow widths or larger text without an extra divider.
 - Rename the About contact row to Reach out, with the label leading and the name/social actions kept together at the trailing edge, including larger text sizes.
 - Open a user-reviewed GitHub report form with app and OS versions from About.
