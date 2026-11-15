@@ -6,7 +6,7 @@ Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keysto
 
 Android 10 / API 29 or newer; compile/target API 36, JDK 21 and NDK r27d (`27.3.13750724`). Kotlin/Java target JVM 17. Background companion ownership requires API 31 or newer.
 
-The development version is **0.9.0-beta.1 · build 90021**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
+The development version is **0.9.0-beta.3 · build 90023**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
 
 ## Using the Android app
 
@@ -115,7 +115,7 @@ The gate parses the JUnit reports and fails on zero tests, failures, crashes, tr
 
 Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. The minimum remains provisional. Key protection is reported from the actual device, not assumed.
 
-[Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
+[Design](../../docs/design/DESIGN.md) · [Changelog](CHANGELOG.md)
 
 ## Native build
 

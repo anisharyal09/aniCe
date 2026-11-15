@@ -163,4 +163,3 @@ See the [decision index](docs/decisions/README.md) for shared foundations and fe
 - [Notification Mirroring Feature Guide](docs/features/NOTIFICATION_MIRRORING.md)
 - [Authenticated Record Performance & Cost Model](docs/PERFORMANCE.md)
 - [Design Guide & Palette](docs/design/DESIGN.md)
-- [Project Roadmap & Verification Gates](docs/ROADMAP.md)

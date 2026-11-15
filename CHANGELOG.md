@@ -37,6 +37,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Set the Android and macOS development version to `0.9.0-beta.3` (build `90023`) and update current-version documentation.
 - Bind release device approval to the tag, source commit and SHA-256 of both signed artifacts; add current 512-KiB LAN benchmark selection and keep Play Protect enabled in installation guidance.
 - Reuse near-black Dock artwork for packaged/default app icons while keeping Mac Dock and Android launcher variants tied to system Light/Dark appearance.
 - Refine Mac window and sidebar sizing while preserving native resizing and window restoration.

@@ -77,7 +77,6 @@ A complete, categorized index of all user setup guides, feature notes, architect
 
 ## 🗺️ Project & Releases
 
-* **[Project Roadmap](docs/ROADMAP.md)** — Milestone sequence, beta release phases, and upcoming capabilities.
 * **[Root Changelog](CHANGELOG.md)** — Cumulative project change history across Android, macOS, and protocol releases.
   * [Android Changelog](apps/android/CHANGELOG.md)
   * [macOS Changelog](apps/macos/CHANGELOG.md)

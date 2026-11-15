@@ -99,11 +99,11 @@ apps/macos/         Native Mac app, Xcode project and tests
 core/rust/pairing/  Shared OPAQUE pairing bridge
 protocol/           Wire contracts, schemas and test vectors
 scripts/            Build, release and verification tools
-docs/               Feature guides, design, decisions and roadmap
+docs/               Feature guides, design, decisions and architecture
 ```
 
 - [Architecture](ARCHITECTURE.md) · [Decisions](docs/decisions/README.md) · [Protocol contracts](protocol/README.md)
-- [Design](docs/design/DESIGN.md) · [Roadmap](docs/ROADMAP.md) · [Performance](docs/PERFORMANCE.md)
+- [Design](docs/design/DESIGN.md) · [Performance](docs/PERFORMANCE.md)
 - [Background Bluetooth](docs/BACKGROUND_CONNECTIONS.md) · [LAN ownership](docs/LAN_CONNECTIONS.md)
 - [Changelog](CHANGELOG.md) · [Android changes](apps/android/CHANGELOG.md) · [Mac changes](apps/macos/CHANGELOG.md) · [Protocol changes](protocol/CHANGELOG.md)
 - [Third-party notices](apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md)

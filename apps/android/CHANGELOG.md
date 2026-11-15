@@ -34,6 +34,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
 - Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
 - Present update review in a dismissible bottom sheet with scalable native Markdown, rectangular themed actions, sticky progress and secondary actions under More; retain the reviewed version during automatic refreshes.
 - Use the shared checkbox row, matching Connection's padding, and explicit confirmation for beta updates; group available/busy status with a minimal trailing check action and reflow at narrow widths or larger text without an extra divider.

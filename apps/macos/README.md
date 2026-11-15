@@ -6,7 +6,7 @@ Swift 6 and SwiftUI provide persistent device identity, a main window, and a men
 
 Apple Silicon and macOS 14 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
-The development version is **0.9.0-beta.1 · build 90021**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
+The development version is **0.9.0-beta.3 · build 90023**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
 
 ## Using the Mac app
 
@@ -142,7 +142,7 @@ The storage backend remains the development login Keychain, without hardware iso
 
 The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Official builds, releases and updates support Apple Silicon (`arm64`) only; Intel Macs are not supported. macOS 14 is the deployment target.
 
-[Design](../../docs/design/DESIGN.md) · [Roadmap](../../docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
+[Design](../../docs/design/DESIGN.md) · [Changelog](CHANGELOG.md)
 
 Signing diagnostics log only operation counts under `identity-signing`; repeated UI prompts still require physical observation.
 

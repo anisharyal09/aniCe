@@ -37,6 +37,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers to `90023`.
 - Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.
 - Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.
 - Use a roomier 960 × 640 pt initial window, a content-fitting resizable sidebar and a 27 pt sidebar brand mark.
