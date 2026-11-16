@@ -46,15 +46,25 @@ When opening `aniCe-android.apk` from Chrome or your file manager, Android displ
 ---
 
 ### 2. Google Play Protect Warning ("Blocked by Play Protect")
-Google Play Protect may ask to scan a sideloaded APK, show an unfamiliar-app warning, or block installation. Read the exact warning; an independent release is not evidence that every warning is harmless.
+Because aniCe is an independent release not yet distributed via the Play Store, Google Play Protect may show a warning:
 > *"Blocked by Play Protect"* or *"Unrecognized app"*.
 
-1. Download `aniCe-android.apk` only from the [official GitHub Releases](https://github.com/anisharyal09/aniCe/releases) page and confirm the selected version.
-2. Keep Play Protect scanning enabled. If Android offers a scan, let it finish and review the result.
-3. For an unfamiliar-app warning with **More details → Install anyway**, proceeding is an explicit decision to trust that release, not a guarantee of safety.
-4. If the warning identifies harmful behavior, or no **Install anyway** option is offered, stop. Report the exact warning and release version through [GitHub Issues](https://github.com/anisharyal09/aniCe/issues); on a managed device, ask its administrator.
+> [!IMPORTANT]
+> Ensure you download `aniCe-android.apk` only from the [official GitHub Releases](https://github.com/anisharyal09/aniCe/releases) page or officially distributed channels before proceeding.
 
-Do not disable Play Protect or bypass an organization’s installation policy. See [Google’s Play Protect guidance](https://support.google.com/googleplay/answer/2812853).
+* **Case A: "More details" is visible**
+  1. On the Play Protect prompt, tap **More details** (or the downward arrow).
+  2. Tap **Install anyway**.
+
+* **Case B: If NO "Install anyway" button is shown (completely blocked)**
+  On newer Android versions or certain devices (Samsung One UI, Xiaomi HyperOS, Pixel), Play Protect may completely block installation with only an "OK" button and no "Install anyway" option. To install:
+  1. Open the **Google Play Store** app.
+  2. Tap your **Profile avatar** in the top-right corner.
+  3. Tap **Play Protect**.
+  4. Tap the **Settings gear icon (⚙️)** in the top-right corner.
+  5. Temporarily toggle OFF **"Scan apps with Play Protect"**.
+  6. Return to your downloaded `aniCe-android.apk` and tap **Install** (it will now install without being blocked).
+  7. Return to the Play Store and turn **"Scan apps with Play Protect"** back ON.
 
 ---
 
