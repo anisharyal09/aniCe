@@ -493,8 +493,9 @@ extension MacTransferModel {
         if let pending = receivedFileResult { fileResult = pending; receivedFileResult = nil }
         else {
           let operation = epoch
+          guard let resultChannel = activeChannel else { throw SessionFailure.cancelled }
           let deadline = Task { [weak self] in
-            do { try await Task.sleep(for: self?.confirmationTimeout ?? .seconds(30)) } catch { return }
+            do { try await waitForChannelDeadline(self?.confirmationTimeout ?? .seconds(30), on: resultChannel) } catch { return }
             guard let self, self.epoch == operation else { return }
             self.fileResultContinuation?.resume(throwing: SessionFailure.expired)
             self.fileResultContinuation = nil

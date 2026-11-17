@@ -39,8 +39,20 @@ internal object LanAddress {
             !address.isLoopbackAddress &&
             !address.isMulticastAddress &&
             links.routes.any {
-                !it.hasGateway() && it.destination.prefixLength > 0 && it.matches(address)
-            }
+                 !it.hasGateway() && it.destination.prefixLength > 0 && it.matches(address) &&
+                     unicastOnPrefix(address, it.destination.prefixLength)
+             }
+
+    internal fun unicastOnPrefix(address: InetAddress, prefix: Int): Boolean {
+        if (address !is Inet4Address) return true
+        val first = address.address[0].toInt() and 255
+        if (first == 0 || first == 127 || first >= 224 || prefix !in 1..32) return false
+        if (prefix >= 31) return true
+        val value = address.address.fold(0L) { accumulated, byte -> (accumulated shl 8) or (byte.toLong() and 255) }
+        val mask = (1L shl (32 - prefix)) - 1
+        val host = value and mask
+        return host != 0L && host != mask
+    }
 }
 
 internal class AndroidLanDiscovery(context: Context, private val profile: SessionProfile = SessionProfile.STANDARD) {

@@ -51,11 +51,12 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ---
 
-## Encrypted Liveness & BLE Session Renewal
+## Encrypted Liveness & Session Renewal
 
 - **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG after 60 seconds without authenticated activity, with monotonic deadlines.
 - **Event-Driven Idle:** Connection maintenance replaced earlier periodic 1-second polling loops with absolute monotonic deadline waits and transport events. Quiet deadline evaluation performs zero storage or Keystore/Keychain reads; full native identity and active-trust validation are enforced on authenticated operations.
-- **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed. Manual LAN requires another Connect after expiry; automatic LAN waits for a connection event or feature demand before establishing another session through authenticated BLE rendezvous.
+- **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed.
+- **LAN Fast-Path and Renewal:** Authenticated BLE rendezvous v2 supplies a numeric IPv4 locator before Bonjour registration, with bounded mDNS fallback. Mutually capable LAN peers use authenticated directional drain barriers and fresh EDHOC/readiness at the same renewal thresholds without closing TCP or replacing the feature-channel instance. Old cryptographic material is retired, not updated or resumed. Transfer waits account for the bounded maintenance interval; native owner/job work leases survive it. Legacy LAN peers retain hard expiry.
 - **Specifications & Decisions:** Keepalive envelopes, event-driven scheduling, and renewal thresholds are specified in the [Session Protocol Contract](protocol/session/README.md) and recorded in [ADR 0005 (EDHOC Secure Sessions)](docs/decisions/0005-edhoc-secure-sessions.md).
 
 ---
@@ -91,7 +92,7 @@ App registers media and transfer FeatureHandlers before DATA delivery. Android f
 
 Native navigation types and Features destination content are separated from app shells. MacPlaybackModel is the sole playback authority; its owned process bridge fences native delivery by launch generation, and its session link coalesces logical snapshots before sealing. The fixture generator lives beside the media fixture; native and interchange scripts remain supported entry points. `python3 scripts/check-structure.py` checks dependency direction, local documentation links and explicit Xcode membership.
 
-Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Feature-owned recovery journals retain prepared jobs and verified prefixes across app restarts for 15 minutes. Native hard-link publication can be reconciled by file identity and SHA-256; ambiguous provider/copy publication requires confirmation. Coordinated LAN renewal remains unimplemented.
+Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Feature-owned recovery journals retain prepared jobs and verified prefixes across app restarts for 15 minutes. Native hard-link publication can be reconciled by file identity and SHA-256; ambiguous provider/copy publication requires confirmation. Negotiated LAN renewal preserves the active batch and uses no checkpoint restart; transport loss retains existing feature-owned recovery.
 
 ## Messages (SMS relay)
 

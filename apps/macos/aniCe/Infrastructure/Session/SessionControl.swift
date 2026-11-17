@@ -52,11 +52,58 @@ struct SessionControl: Equatable, Sendable {
   }
   /// Valid arrays with other tags and non-array application payloads retain their existing dispatcher.
   static func application(_ bytes: Data, maximumBytes: Int = SessionCbor.maxBytes) throws -> Self? {
+    if case .session(let value) = try classifyApplication(bytes, maximumBytes: maximumBytes) { return value }
+    return nil
+  }
+  static func classifyApplication(_ bytes: Data, maximumBytes: Int, lanRenewal: Bool = false) throws -> ApplicationControl? {
     guard let first = bytes.first, first & 0xe0 == 0x80 else { return nil }
     let parsed = try SessionCbor.decode(bytes, maximumBytes: maximumBytes, materializeBytes: false)
-    guard case .array(let row) = parsed, row.first == .text(tag) else { return nil }
+    guard case .array(let row) = parsed else { return nil }
+    if lanRenewal, row.first == .text(LanRenewalControl.tag) {
+      // Materialize only the bounded renewal identifier; ordinary bulk DATA is classified once.
+      return .lanRenewal(try LanRenewalControl.decode(bytes))
+    }
+    guard row.first == .text(tag) else { return nil }
     guard bytes.count <= 128 else { throw SessionFailure.malformed }
-    return try fromCbor(parsed)
+    return .session(try fromCbor(parsed))
+  }
+}
+
+enum ApplicationControl: Sendable {
+  case session(SessionControl)
+  case lanRenewal(LanRenewalControl)
+}
+
+/// LAN-only DATA extension defined by protocol/lan/renewal.cddl.
+struct LanRenewalControl: Equatable, Sendable {
+  let kind: Int64
+  var id = Data()
+  var reason: Int64 = 1
+  static let tag = "aniCe LAN renewal"
+  func encode() throws -> Data {
+    guard (1...3).contains(kind), id.count == (kind == 1 ? 0 : 16), (1...2).contains(reason)
+    else { throw SessionFailure.malformed }
+    let fields: [SessionCBOR] = kind == 1 ? [] : [.bytes(id)] + (kind == 2 ? [.integer(reason)] : [])
+    return try SessionCbor.encode(.array([.text(Self.tag), .integer(1), .integer(kind), .array(fields)]))
+  }
+  static func decode(_ bytes: Data) throws -> Self {
+    guard bytes.count <= 128, case .array(let row) = try SessionCbor.decode(bytes), row.count == 4,
+      row[0] == .text(tag), case .integer(let version) = row[1], case .integer(let kind) = row[2]
+    else { throw SessionFailure.malformed }
+    guard version == 1, (1...3).contains(kind) else { throw SessionFailure.unsupportedProfile }
+    guard case .array(let fields) = row[3], fields.count == (kind == 1 ? 0 : kind == 2 ? 2 : 1)
+    else { throw SessionFailure.malformed }
+    var id = Data()
+    var reason: Int64 = 1
+    if kind != 1 {
+      guard case .bytes(let value) = fields[0], value.count == 16 else { throw SessionFailure.malformed }
+      id = value
+    }
+    if kind == 2 {
+      guard case .integer(let value) = fields[1], (1...2).contains(value) else { throw SessionFailure.malformed }
+      reason = value
+    }
+    return Self(kind: kind, id: id, reason: reason)
   }
 }
 
@@ -72,6 +119,10 @@ struct SessionLiveness {
   private var helloIssued = false
   private var outstanding: Int64?
   private var pongDeadline: Int64?
+  var pendingPongDeadline: Int64? { pongDeadline }
+  func checkPongDeadline(_ now: Int64) throws {
+    if let pongDeadline, now >= pongDeadline { throw SessionFailure.controlTimeout }
+  }
   private var expectedPing: Int64 = 0
   private(set) var renewalReason: Int64?
   private var renewalSubmitted = false
@@ -88,7 +139,7 @@ struct SessionLiveness {
     if !responder { pending = SessionControl(kind: .hello) }
   }
   mutating func activity(_ now: Int64) { lastActivity = now }
-  mutating func receive(_ message: SessionControl, _ now: Int64) throws {
+  mutating func receive(_ message: SessionControl, _ now: Int64, allowRenewalPing: Bool = false) throws {
     guard started, support != false else { throw SessionFailure.state }
     activity(now)
     switch message.kind {
@@ -99,7 +150,9 @@ struct SessionLiveness {
       guard !responder, support == nil, helloIssued, now < compatibilityDeadline else { throw SessionFailure.state }
       support = true
     case .ping:
-      guard responder, support == true, pending == nil, message.value == expectedPing else { throw SessionFailure.state }
+      guard responder, support == true,
+        pending == nil || allowRenewalPing && pending?.kind == .renewalRequest,
+        message.value == expectedPing else { throw SessionFailure.state }
       expectedPing += 1 // Int64 storage prevents uint32 request IDs from wrapping.
       pending = SessionControl(kind: .pong, value: message.value)
     case .pong:
@@ -111,6 +164,10 @@ struct SessionLiveness {
       guard !responder, support == true else { throw SessionFailure.state }
       try requestRenewal(message.value) // Coalesce local and remote threshold races.
     }
+  }
+  mutating func quiesceForLanBarrier() {
+    if pending?.kind == .renewalRequest || pending?.kind == .ping && outstanding == nil { pending = nil }
+    renewalSubmitted = true
   }
   var nextDeadline: Int64? {
     guard started else { return nil }

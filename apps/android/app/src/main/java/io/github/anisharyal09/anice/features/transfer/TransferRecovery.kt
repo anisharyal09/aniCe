@@ -716,7 +716,7 @@ internal suspend fun TransferController.requestStatus(channel: SecuredChannel, r
         statusWaiter = waiter
         return try {
             sendWithBackpressure(request, channel)
-            val reply = withTimeout(resumeTimeoutMillis) { waiter.result.await() }
+            val reply = awaitTransferResult(channel, resumeTimeoutMillis) { waiter.result.await() }
             if (waiter.epoch == epoch && channels[channel.descriptor.transport]?.descriptor == channel.descriptor) reply else null
         } catch (error: TimeoutCancellationException) {
             null

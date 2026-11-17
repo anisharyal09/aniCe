@@ -54,9 +54,16 @@ actor SessionDataAdmission {
   }
 }
 
+/// Cumulative monotonic maintenance accounting survives coalesced callbacks across cryptographic epochs.
+struct SessionMaintenanceSnapshot: Sendable {
+  var sinceMillis: Int64?
+  var elapsedMillis: Int64 = 0
+  var revision: Int64 = 0
+}
+
 /// Owns EDHOC/envelope ordering and readiness; DATA admission precedes sealing.
 actor SessionConnection {
-  private let handshake: SessionHandshakeEngine
+  private var handshake: SessionHandshakeEngine
   private let responder: Bool
   private let profile: SessionProfile
   private let capacity: @Sendable (Int) async -> Bool
@@ -77,6 +84,21 @@ actor SessionConnection {
   private var liveness: SessionLiveness?
   private let now: @Sendable () -> Int64
   private var renew: Bool
+  private let renewalHandshake: (@Sendable () async throws -> SessionHandshakeEngine)?
+  private enum RenewalPhase { case none, request, begin, waitDrained, drained, switching, handshake, readiness }
+  private var renewalPhase = RenewalPhase.none
+  private var renewalDeadline: Int64?
+  private var creatingHandshake = false
+  private var advertisedRenewal = false
+  private var peerRenewal = false
+  private var renewalID = Data()
+  private var drainedReceived = false
+  private var sendingRenewalControl = false
+  private var renewalBlocked = false
+  private var switchWaiter: CheckedContinuation<Void, Error>?
+  private(set) var maintenanceSnapshot = SessionMaintenanceSnapshot()
+  var isRenewing: Bool { renewalPhase != .none }
+  private var mutualRenewal: Bool { renewalHandshake != nil && advertisedRenewal && peerRenewal }
   private let drain: @Sendable () async -> Void
   private let changed: @Sendable () -> Void
   private var deadline: Int64?
@@ -94,7 +116,8 @@ actor SessionConnection {
     renew: Bool = false,
     changed: @escaping @Sendable () -> Void = {},
     profile: SessionProfile = .standard,
-    drain: @escaping @Sendable () async -> Void = {}
+    drain: @escaping @Sendable () async -> Void = {},
+    renewalHandshake: (@Sendable () async throws -> SessionHandshakeEngine)? = nil
   ) {
     self.drain = drain
     self.profile = profile
@@ -106,6 +129,7 @@ actor SessionConnection {
     self.secured = secured
     self.now = now
     self.renew = renew
+    self.renewalHandshake = renewalHandshake
     self.changed = changed
     deadline = now() + 30000
     liveness = controls ? SessionLiveness(responder: responder) : nil
@@ -114,15 +138,26 @@ actor SessionConnection {
   private func ensure(_ op: Int) throws {
     guard !closed, op == generation else { throw SessionFailure.cancelled }
   }
-  func nextDeadline() async -> Int64? {
-    guard !closed, !processing else { return nil }
+  func nextDeadline(includeMaintenance: Bool = true) async -> Int64? {
+    guard !closed, !closedByPeer else { return nil }
     let op = generation
+    let policy = includeMaintenance && !processing
     let channelDeadline = await channel?.nextDeadline(
-      renew: renew && liveness?.support == true && liveness?.renewalReason == nil)
+      renew: policy && renew && (renewalHandshake == nil || mutualRenewal) &&
+        liveness?.support == true && liveness?.renewalReason == nil && !isRenewing)
     let handshakeDeadline = await handshake.nextDeadline
     guard op == generation, !closed else { return nil }
-    return [handshakeDeadline.map { Int64($0 * 1000) }, deadline, channelDeadline.map { Int64($0 * 1000) }, liveness?.nextDeadline]
+    let ready = renewalHandshake != nil && !renewalBlocked && !sendingData && !sendingControl && !sendingRenewalControl &&
+      ((!advertisedRenewal && !isRenewing && liveness?.support == true) ||
+        renewalPhase == .begin || renewalPhase == .drained || drainedReceived ||
+        renewalPhase == .request && liveness?.pending != nil)
+    return [handshakeDeadline.map { Int64($0 * 1000) }, deadline, renewalDeadline,
+      channelDeadline.map { Int64($0 * 1000) }, policy ? liveness?.nextDeadline : liveness?.pendingPongDeadline,
+      policy && ready ? now() : nil]
       .compactMap { $0 }.min()
+  }
+  func capacityAvailable() {
+    if renewalBlocked { renewalBlocked = false; changed() }
   }
   func start() async throws {
     defer { changed() }
@@ -152,6 +187,11 @@ actor SessionConnection {
     do {
       try ensure(op)
       let (kind, payload) = try SessionEnvelope.decode(envelope, profile: profile)
+      if kind == 1, responder, renewalPhase == .switching {
+        // The peer can receive drained before its native write callback and post-write validation finish.
+        try await withCheckedThrowingContinuation { switchWaiter = $0 }
+        try ensure(op)
+      }
       if kind == 5 { try await handshake.receiveError(payload) }
       if kind == 6 {
         guard let channel else { throw SessionFailure.state }
@@ -165,24 +205,36 @@ actor SessionConnection {
           try await channel.send(.readyAck)
           try ensure(op)
           deadline = nil
-          await secured()
+          if !isRenewing { await secured() }
           try ensure(op)
           try liveness?.start(now())
+          if renewalPhase == .readiness { renewalPhase = .none; finishMaintenance() }
         case .readyAck:
           deadline = nil
-          await secured()
+          if !isRenewing { await secured() }
           try ensure(op)
           try liveness?.start(now())
+          if renewalPhase == .readiness { renewalPhase = .none; finishMaintenance() }
         case .data:
-          if liveness != nil, let control = try SessionControl.application(result.1, maximumBytes: min(524416, max(4096, profile.maximumPlaintext))) {
-            try liveness?.receive(control, now())
-          } else { delivery = result.1 }
+          guard !(responder && [.drained, .switching].contains(renewalPhase)), !drainedReceived
+          else { throw SessionFailure.state }
+          let control = liveness == nil ? nil : try SessionControl.classifyApplication(result.1,
+            maximumBytes: min(524416, max(4096, profile.maximumPlaintext)), lanRenewal: renewalHandshake != nil)
+          switch control {
+          case .session(let message):
+            if message.kind == .renewalRequest, renewalHandshake != nil, !mutualRenewal {
+              guard !responder, liveness?.support == true else { throw SessionFailure.state }
+            } else { try liveness?.receive(message, now(), allowRenewalPing: renewalHandshake != nil && isRenewing) }
+            if message.kind == .renewalRequest, mutualRenewal { try beginRenewal(message.value) }
+          case .lanRenewal(let message): try receiveRenewal(message)
+          case nil: delivery = result.1
+          }
         case .close:
           closedByPeer = true
           await drain()
           await close()
         }
-        if !closed { try await flushControl(op) }
+        if !closed { try await flushControl(op); try await flushRenewal(op) }
       } else {
         guard channel == nil, kind == expected else { throw SessionFailure.state }
         switch kind {
@@ -229,6 +281,7 @@ actor SessionConnection {
       try ensure(op)
       channel = ch
       deadline = now() + 10000
+      if renewalPhase == .handshake { renewalPhase = .readiness }
     } catch {
       await ch.close()
       throw error
@@ -241,7 +294,7 @@ actor SessionConnection {
     try ensure(op)
     return peer
   }
-  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && liveness?.renewalReason == nil }
+  var applicationAvailable: Bool { !closed && channel != nil && deadline == nil && liveness?.renewalReason == nil && !isRenewing }
   func sendData(_ bytes: Data) async throws {
     let admissionStart = SessionTiming.start()
     try await dataAdmission.run(bulk: bytes.count > SessionProfile.standard.maximumPlaintext) {
@@ -251,16 +304,22 @@ actor SessionConnection {
   }
   private func sendAdmittedData(_ bytes: Data) async throws {
     guard !sendingData else { throw SessionBackpressure() }
-    sendingData = true
+    var trackedSend = false
     var refused = false
-    defer { sendingData = false; if !refused { changed() } }
+    defer {
+      if trackedSend { sendingData = false }
+      if !refused || trackedSend && isRenewing { changed() }
+    }
     let op = generation
     do {
       try ensure(op)
-      if liveness?.renewalReason != nil { throw SessionBackpressure() }
+      if liveness?.renewalReason != nil || isRenewing { throw SessionBackpressure() }
       try await flushControl(op)
+      try await flushRenewal(op)
+      try ensure(op)
+      if liveness?.pending != nil || sendingControl || sendingRenewalControl || isRenewing { throw SessionBackpressure() }
       guard let channel else { throw SessionFailure.state }
-      if liveness?.pending != nil || sendingControl { throw SessionBackpressure() }
+      sendingData = true; trackedSend = true
       try await channel.send(.data, plaintext: bytes)
       try ensure(op)
       liveness?.activity(now())
@@ -271,10 +330,24 @@ actor SessionConnection {
     }
   }
   private(set) var maintenanceRuns = 0
+  func checkDeadlines() async throws {
+    if closedByPeer, !closed { return }
+    let op = generation
+    do {
+      try ensure(op)
+      if let deadline, now() >= deadline { throw SessionFailure.expired }
+      if let channel { try await channel.checkDeadlines() }
+      else if !creatingHandshake { try await handshake.checkTime() }
+      try ensure(op)
+      try liveness?.checkPongDeadline(now())
+      if let renewalDeadline, now() >= renewalDeadline { throw SessionFailure.controlTimeout }
+    } catch { await close(); throw error }
+  }
   func tick() async throws {
     defer { changed() }
+    try await checkDeadlines()
     // Actor reentrancy must not let a health check race a suspended authenticated close.
-    if processing { return }
+    if processing || creatingHandshake || sendingControl || sendingRenewalControl { return }
     maintenanceRuns += 1
     let op = generation
     do {
@@ -284,21 +357,27 @@ actor SessionConnection {
       try ensure(op)
       if renew, let reason = await channel?.renewalReason() {
         try ensure(op)
-        try liveness?.requestRenewal(reason)
+        if renewalHandshake == nil { try liveness?.requestRenewal(reason) }
+        else if mutualRenewal { try beginRenewal(reason) }
       }
       try liveness?.poll(now())
       try await flushControl(op)
+      try await flushRenewal(op)
     } catch {
       await close()
       throw error
     }
   }
   private func flushControl(_ op: Int) async throws {
-    guard !sendingControl, let message = liveness?.pending, let channel else { return }
+    guard !sendingControl, !sendingRenewalControl, !(isRenewing && sendingData),
+      let message = liveness?.pending, let channel else { return }
     sendingControl = true
     defer { if op == generation { sendingControl = false } }
     let bytes = try message.encode()
-    guard await capacity(bytes.count + 31) else { return }
+    guard await capacity(bytes.count + 31) else {
+      if isRenewing { renewalBlocked = true }
+      return
+    }
     try ensure(op)
     // Actor reentrancy may deliver the response before submit returns; issue before awaiting it.
     try liveness?.issuing(message, now())
@@ -306,7 +385,109 @@ actor SessionConnection {
       try await channel.send(.data, plaintext: bytes)
       try ensure(op)
       liveness?.submitted(message, now())
-    } catch is SessionBackpressure { /* No nonce consumed; retain the single pending control. */ }
+      if renewalHandshake != nil, isRenewing { try liveness?.poll(now()) }
+    } catch is SessionBackpressure { if isRenewing { renewalBlocked = true } }
+  }
+  private func beginRenewal(_ reason: Int64) throws {
+    guard mutualRenewal, !isRenewing else { return }
+    try liveness?.requestRenewal(reason)
+    renewalDeadline = now() + 10000
+    renewalPhase = responder ? .request : .begin
+    maintenanceSnapshot = SessionMaintenanceSnapshot(sinceMillis: now(), elapsedMillis: maintenanceSnapshot.elapsedMillis,
+      revision: maintenanceSnapshot.revision + 1)
+    renewalBlocked = false
+    if !responder {
+      var random = SystemRandomNumberGenerator()
+      renewalID = Data((0..<16).map { _ in UInt8.random(in: .min ... .max, using: &random) })
+      liveness?.quiesceForLanBarrier()
+    }
+    changed()
+  }
+  private func receiveRenewal(_ message: LanRenewalControl) throws {
+    guard liveness?.support == true else { throw SessionFailure.state }
+    switch message.kind {
+    case 1: peerRenewal = true
+    case 2:
+      guard responder, mutualRenewal else { throw SessionFailure.state }
+      guard renewalPhase == .none || renewalPhase == .request else { throw SessionFailure.state }
+      renewalDeadline = renewalDeadline ?? (now() + 10000)
+      if !isRenewing {
+        maintenanceSnapshot = SessionMaintenanceSnapshot(sinceMillis: now(), elapsedMillis: maintenanceSnapshot.elapsedMillis,
+          revision: maintenanceSnapshot.revision + 1)
+      }
+      renewalID = message.id
+      try liveness?.requestRenewal(message.reason)
+      liveness?.quiesceForLanBarrier()
+      renewalPhase = .drained
+      renewalBlocked = false
+    case 3:
+      guard !responder, renewalPhase == .waitDrained, renewalID == message.id, !drainedReceived
+      else { throw SessionFailure.state }
+      drainedReceived = true
+    default: throw SessionFailure.state
+    }
+  }
+  private func flushRenewal(_ op: Int) async throws {
+    guard let channel, renewalHandshake != nil, !sendingData, !sendingControl,
+      !sendingRenewalControl, liveness?.pending == nil, liveness?.support == true else { return }
+    if drainedReceived, renewalPhase == .waitDrained { try await switchHandshake(op); return }
+    let message: LanRenewalControl
+    if !advertisedRenewal, !isRenewing { message = LanRenewalControl(kind: 1) }
+    else if renewalPhase == .begin { message = LanRenewalControl(kind: 2, id: renewalID, reason: liveness?.renewalReason ?? 1) }
+    else if renewalPhase == .drained { message = LanRenewalControl(kind: 3, id: renewalID) }
+    else { return }
+    let bytes = try message.encode()
+    guard await capacity(bytes.count + 31) else { renewalBlocked = true; return }
+    try ensure(op)
+    sendingRenewalControl = true
+    defer { if op == generation { sendingRenewalControl = false } }
+    if message.kind == 2 { renewalPhase = .waitDrained }
+    if message.kind == 3 { renewalPhase = .switching }
+    do { try await channel.send(.data, plaintext: bytes) }
+    catch is SessionBackpressure {
+      renewalBlocked = true
+      if message.kind == 2 { renewalPhase = .begin }
+      if message.kind == 3 { renewalPhase = .drained }
+      return
+    }
+    try ensure(op)
+    sendingRenewalControl = false
+    if message.kind == 1 { advertisedRenewal = true }
+    if message.kind == 3 || message.kind == 2 && drainedReceived { try await switchHandshake(op) }
+    try await flushControl(op)
+    changed()
+  }
+  private func finishMaintenance() {
+    if let start = maintenanceSnapshot.sinceMillis {
+      maintenanceSnapshot = SessionMaintenanceSnapshot(elapsedMillis: maintenanceSnapshot.elapsedMillis + max(0, now() - start),
+        revision: maintenanceSnapshot.revision + 1)
+    }
+  }
+  private func switchHandshake(_ op: Int) async throws {
+    guard let factory = renewalHandshake else { throw SessionFailure.state }
+    renewalPhase = .switching
+    creatingHandshake = true
+    renewalDeadline = nil
+    deadline = now() + 30000
+    let old = handshake
+    await channel?.close()
+    channel = nil
+    await old.close()
+    try ensure(op)
+    liveness = SessionLiveness(responder: responder)
+    advertisedRenewal = false; peerRenewal = false; drainedReceived = false; renewalBlocked = false
+    let created = try await factory()
+    do { try ensure(op) } catch { await created.close(); throw error }
+    handshake = created
+    creatingHandshake = false
+    expected = responder ? 1 : 2
+    renewalPhase = .handshake
+    let waiting = switchWaiter
+    switchWaiter = nil
+    waiting?.resume()
+    if !responder { try await submit(SessionEnvelope.encode(1, created.initiate())) }
+    try ensure(op)
+    changed()
   }
   func disconnect() async throws {
     do { if let channel, await channel.stage == .secured { try await channel.send(.close) } } catch
@@ -318,6 +499,10 @@ actor SessionConnection {
   }
   func close() async {
     closed = true
+    finishMaintenance()
+    let waiting = switchWaiter
+    switchWaiter = nil
+    waiting?.resume(throwing: SessionFailure.cancelled)
     await dataAdmission.close()
     generation += 1
     processing = false

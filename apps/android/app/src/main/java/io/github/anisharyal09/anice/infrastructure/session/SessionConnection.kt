@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -69,9 +70,12 @@ internal class SessionDataAdmission {
   }
 }
 
+/** Cumulative monotonic maintenance accounting survives coalesced callbacks across cryptographic epochs. */
+data class SessionMaintenanceSnapshot(val sinceMillis: Long? = null, val elapsedMillis: Long = 0, val revision: Long = 0)
+
 /** BLE-independent ordering owner; sealed record queues remain in the transport. */
 class SessionConnection(
-  private val handshake: SessionHandshakeEngine,
+  handshake: SessionHandshakeEngine,
   private val responder: Boolean,
   private val capacity: suspend (Int) -> Boolean,
   private val submit: suspend (ByteArray) -> Unit,
@@ -83,8 +87,23 @@ class SessionConnection(
   private val changed: () -> Unit = {},
   private val profile: SessionProfile = SessionProfile.STANDARD,
   private val drain: suspend () -> Unit = {},
+  private val renewalHandshake: (suspend () -> SessionHandshakeEngine)? = null,
 ) {
-  private val liveness = if (controls) SessionLiveness(responder) else null
+  @Volatile private var handshake = handshake
+  private var liveness = if (controls) SessionLiveness(responder) else null
+  private enum class RenewalPhase { NONE, REQUEST, BEGIN, WAIT_DRAINED, DRAINED, SWITCHING, HANDSHAKE, READINESS }
+  @Volatile private var renewalPhase = RenewalPhase.NONE
+  @Volatile private var renewalDeadline: Long? = null
+  @Volatile private var creatingHandshake = false
+  @Volatile private var sendingData = false
+  private var advertisedRenewal = false
+  private var peerRenewal = false
+  private var renewalId: ByteArray? = null
+  private var drainedReceived = false
+  @Volatile var maintenanceSnapshot = SessionMaintenanceSnapshot()
+    private set
+  val isRenewing get() = renewalPhase != RenewalPhase.NONE
+  private val mutualRenewal get() = renewalHandshake != null && advertisedRenewal && peerRenewal
   val controlSupport get() = liveness?.support
   val renewalReason get() = if (responder) null else liveness?.renewalReason
   fun disableRenewal() { if (!closed) { renew = false; changed() } }
@@ -116,8 +135,10 @@ class SessionConnection(
     try {
       return listOfNotNull(
         deadline.takeIf { it != 0L },
+        renewalDeadline,
         handshake.nextDeadline(),
-        channel?.nextDeadline(policy && renew && liveness?.support == true && liveness.renewalReason == null),
+        channel?.nextDeadline(policy && renew && (renewalHandshake == null || mutualRenewal) &&
+          liveness?.support == true && liveness?.renewalReason == null && !isRenewing),
         if (policy) liveness?.nextDeadline() else liveness?.pendingPongDeadline,
       ).minOrNull()
     } finally { if (available) operation.unlock() }
@@ -158,26 +179,41 @@ class SessionConnection(
             RecordKind.READY -> {
               ch.send(RecordKind.READY_ACK)
               deadline = 0
-              secured()
+              if (!isRenewing) secured()
               requireOpen()
               liveness?.start(now())
+              if (renewalPhase == RenewalPhase.READINESS) { renewalPhase = RenewalPhase.NONE; finishMaintenance() }
             }
             RecordKind.READY_ACK -> {
               deadline = 0
-              secured()
+              if (!isRenewing) secured()
               requireOpen()
               liveness?.start(now())
+              if (renewalPhase == RenewalPhase.READINESS) { renewalPhase = RenewalPhase.NONE; finishMaintenance() }
             }
             RecordKind.DATA -> {
-              val control = if (liveness != null) SessionControl.application(result.second, minOf(524416, maxOf(4096, profile.maximumPlaintext))) else null
-              if (control != null) liveness!!.receive(control, now()) else delivery = result.second
+              if (responder && renewalPhase in setOf(RenewalPhase.DRAINED, RenewalPhase.SWITCHING) || drainedReceived)
+                throw SessionException(SessionFailure.STATE)
+              val control = if (liveness != null) SessionControl.classifyApplication(result.second,
+                minOf(524416, maxOf(4096, profile.maximumPlaintext)), renewalHandshake != null) else null
+              when (control) {
+                is ApplicationControl.Session -> {
+                  if (control.value.kind == ControlKind.RENEWAL_REQUEST && renewalHandshake != null && !mutualRenewal) {
+                    if (responder || liveness?.support != true) throw SessionException(SessionFailure.STATE)
+                  } else liveness!!.receive(control.value, now(), renewalHandshake != null && isRenewing)
+                  if (control.value.kind == ControlKind.RENEWAL_REQUEST && mutualRenewal)
+                    beginRenewal(control.value.value)
+                }
+                is ApplicationControl.LanRenewal -> receiveRenewal(control.value)
+                null -> delivery = result.second
+              }
             }
             RecordKind.CLOSE -> {
               closedByPeer = true
               peerDrain = true
             }
           }
-          if (!closed && !closedByPeer) flushControl()
+          if (!closed && !closedByPeer) { flushControl(); flushRenewal() }
         } else {
           if (channel != null || kind != expected) throw SessionException(SessionFailure.STATE)
           when (kind) {
@@ -238,11 +274,13 @@ class SessionConnection(
       }
       channel = created
     }
+    if (renewalPhase == RenewalPhase.HANDSHAKE) renewalPhase = RenewalPhase.READINESS
   }
 
   private val dataAdmission = SessionDataAdmission()
 
-  val applicationAvailable get() = !closed && !closedByPeer && channel != null && deadline == 0L && liveness?.renewalReason == null
+  val applicationAvailable get() = !closed && !closedByPeer && channel != null && deadline == 0L &&
+    liveness?.renewalReason == null && !isRenewing
   suspend fun sendData(bytes: ByteArray) {
     val admissionStart = SessionTiming.start()
     dataAdmission.run(bytes.size > SessionProfile.STANDARD.maximumPlaintext) {
@@ -253,14 +291,16 @@ class SessionConnection(
 
   private suspend fun sendAdmittedData(bytes: ByteArray) {
     var refused = false
+    var trackedSend = false
     try {
       // Receive and maintenance also flush controls; pending/issuing/submitted share their serializer.
       val ch = operation.withLock {
         requireOpen()
-        if (liveness?.renewalReason != null) throw SessionBackpressure()
+        if (liveness?.renewalReason != null || isRenewing) throw SessionBackpressure()
         flushControl()
+        flushRenewal()
         if (liveness?.pending != null) throw SessionBackpressure()
-        channel ?: throw SessionException(SessionFailure.STATE)
+        (channel ?: throw SessionException(SessionFailure.STATE)).also { sendingData = true; trackedSend = true }
       }
       ch.send(RecordKind.DATA, bytes)
       operation.withLock { requireOpen(); liveness?.activity(now()) }
@@ -273,7 +313,13 @@ class SessionConnection(
     } catch (e: Exception) {
       if (!closedByPeer) close()
       throw e
-    } finally { if (!refused) changed() }
+    } finally {
+      if (trackedSend) {
+        // Sealing admission and its drain flag share the operation serializer, including cancelled producers.
+        withContext(kotlinx.coroutines.NonCancellable) { operation.withLock { sendingData = false } }
+      }
+      if (!refused || trackedSend && isRenewing) changed()
+    }
   }
 
   @Volatile internal var maintenanceRuns = 0L
@@ -285,8 +331,9 @@ class SessionConnection(
     try {
       requireOpen()
       if (timedOut()) throw SessionException(SessionFailure.EXPIRED)
-      channel?.checkDeadlines() ?: handshake.checkTime()
+      channel?.checkDeadlines() ?: if (!creatingHandshake) handshake.checkTime() else Unit
       liveness?.checkPongDeadline(now())
+      renewalDeadline?.let { if (now() >= it) throw SessionException(SessionFailure.CONTROL_TIMEOUT) }
     } catch (e: SessionException) { retire(); throw e }
   }
 
@@ -299,9 +346,13 @@ class SessionConnection(
       try {
         if (timedOut()) throw SessionException(SessionFailure.EXPIRED)
         channel?.checkDeadlines() ?: handshake.checkTime()
-        if (renew) channel?.renewalReason()?.let { liveness?.requestRenewal(it) }
+        if (renew) channel?.renewalReason()?.let {
+          if (renewalHandshake == null) liveness?.requestRenewal(it)
+          else if (mutualRenewal) beginRenewal(it)
+        }
         liveness?.poll(now())
         flushControl()
+        flushRenewal()
       } catch (e: Exception) {
         close()
         throw e
@@ -309,18 +360,112 @@ class SessionConnection(
     } finally { operation.unlock() }
   }
 
+  private fun beginRenewal(reason: Long) {
+    if (!mutualRenewal || isRenewing) return
+    liveness?.requestRenewal(reason)
+    renewalDeadline = now() + 10000
+    renewalPhase = if (responder) RenewalPhase.REQUEST else RenewalPhase.BEGIN
+    maintenanceSnapshot = SessionMaintenanceSnapshot(now(), maintenanceSnapshot.elapsedMillis, maintenanceSnapshot.revision + 1)
+    if (!responder) {
+      renewalId = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+      liveness?.quiesceForLanBarrier()
+    }
+    changed()
+  }
+
+  private suspend fun receiveRenewal(message: LanRenewalControl) {
+    if (liveness?.support != true) throw SessionException(SessionFailure.STATE)
+    when (message.kind) {
+      1 -> peerRenewal = true
+      2 -> {
+        if (!responder || !mutualRenewal) throw SessionException(SessionFailure.STATE)
+        if (renewalPhase !in setOf(RenewalPhase.NONE, RenewalPhase.REQUEST)) throw SessionException(SessionFailure.STATE)
+        renewalDeadline = renewalDeadline ?: (now() + 10000)
+        if (!isRenewing) maintenanceSnapshot = SessionMaintenanceSnapshot(now(), maintenanceSnapshot.elapsedMillis, maintenanceSnapshot.revision + 1)
+        renewalId = message.id
+        liveness?.requestRenewal(message.reason)
+        liveness?.quiesceForLanBarrier()
+        renewalPhase = RenewalPhase.DRAINED
+      }
+      3 -> {
+        if (responder || renewalPhase != RenewalPhase.WAIT_DRAINED ||
+          renewalId?.contentEquals(message.id) != true) throw SessionException(SessionFailure.STATE)
+        drainedReceived = true
+        switchHandshake()
+      }
+    }
+    changed()
+  }
+
+  private fun finishMaintenance() {
+    val snapshot = maintenanceSnapshot
+    snapshot.sinceMillis?.let {
+      maintenanceSnapshot = SessionMaintenanceSnapshot(elapsedMillis = snapshot.elapsedMillis + (now() - it).coerceAtLeast(0),
+        revision = snapshot.revision + 1)
+    }
+  }
+
+  private suspend fun flushRenewal() {
+    val ch = channel ?: return
+    if (renewalHandshake == null || sendingData || liveness?.pending != null || liveness?.support != true) return
+    val message = when {
+      !advertisedRenewal && !isRenewing -> LanRenewalControl(1)
+      renewalPhase == RenewalPhase.BEGIN -> LanRenewalControl(2, requireNotNull(renewalId), liveness?.renewalReason ?: 1)
+      renewalPhase == RenewalPhase.DRAINED -> LanRenewalControl(3, requireNotNull(renewalId))
+      else -> return
+    }
+    val bytes = message.encode()
+    if (!capacity(bytes.size + 31)) return
+    requireOpen()
+    try { ch.send(RecordKind.DATA, bytes) } catch (_: SessionBackpressure) { return }
+    requireOpen()
+    when (message.kind) {
+      1 -> advertisedRenewal = true
+      2 -> renewalPhase = RenewalPhase.WAIT_DRAINED
+      3 -> switchHandshake()
+    }
+    changed()
+  }
+
+  private suspend fun switchHandshake() {
+    val factory = renewalHandshake ?: throw SessionException(SessionFailure.STATE)
+    renewalPhase = RenewalPhase.SWITCHING
+    creatingHandshake = true
+    renewalDeadline = null
+    deadline = now() + 30000
+    val old = handshake
+    channel?.close()
+    channel = null
+    old.invalidate()
+    old.close()
+    liveness = SessionLiveness(responder)
+    advertisedRenewal = false; peerRenewal = false; drainedReceived = false
+    val created = factory()
+    synchronized(ownership) {
+      if (!closed) handshake = created
+    }
+    if (closed) { created.close(); throw SessionException(SessionFailure.CANCELLED) }
+    creatingHandshake = false
+    expected = if (responder) 1 else 2
+    renewalPhase = RenewalPhase.HANDSHAKE
+    if (!responder) submit(SessionEnvelope.encode(1, created.initiate()))
+    requireOpen()
+    changed()
+  }
+
   private suspend fun flushControl() {
-    val message = liveness?.pending ?: return
+    val policy = liveness ?: return
+    val message = policy.pending ?: return
     val ch = channel ?: return
     val bytes = message.encode()
     // Queue refusal is recoverable only before sealing; retain one logical control for a capacity event.
     if (!capacity(bytes.size + 31)) return
     requireOpen()
-    liveness.issuing(message, now())
+    policy.issuing(message, now())
     try {
       ch.send(RecordKind.DATA, bytes)
       requireOpen()
-      liveness.submitted(message, now())
+      policy.submitted(message, now())
     } catch (_: SessionBackpressure) { /* No sequence consumed; the pending control remains bounded. */ }
   }
 
@@ -336,6 +481,7 @@ class SessionConnection(
   fun retire() =
     synchronized(ownership) {
       closed = true
+      finishMaintenance()
       dataAdmission.close()
       expiration = expiration ?: channel?.expiration
       channel?.close()

@@ -677,10 +677,27 @@ internal suspend fun TransferController.sendWithBackpressure(data: ByteArray, ch
                 channel.sendData(data)
                 return
             } catch (_: SessionBackpressure) {
-                if (revision == capacityRevision) withTimeout(10000) { waiter.await() }
+                if (revision == capacityRevision) awaitTransferResult(channel, 10000) { waiter.await() }
             } finally { capacityWaiters.remove(waiter) }
         }
     }
+
+// Only transport-dependent waits exclude negotiated maintenance; offer/recovery security bounds stay absolute.
+internal suspend fun <T> awaitTransferResult(
+    channel: SecuredChannel, timeoutMillis: Long, wait: suspend () -> T,
+): T {
+    val started = kotlin.time.TimeSource.Monotonic.markNow()
+    val excluded = channel.maintenance?.elapsedMillis ?: 0
+    while (true) {
+        coroutineContext.ensureActive()
+        val paused = (channel.maintenance?.elapsedMillis ?: 0) - excluded
+        val remaining = timeoutMillis - (started.elapsedNow().inWholeMilliseconds - paused).coerceAtLeast(0)
+        if (remaining <= 0) return withTimeout(0) { wait() }
+        val outcome = withTimeoutOrNull(remaining) { Result.success(wait()) }
+        if (outcome != null) return outcome.getOrThrow()
+        if (channel.maintenance?.active == true) channel.maintenance?.awaitAvailable()
+    }
+}
 
 internal suspend fun TransferController.processMessage(message: TransferMessage, peerName: String, descriptor: ChannelDescriptor) {
         when (message.kind) {

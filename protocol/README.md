@@ -20,7 +20,8 @@ Contracts define required behavior.
 | **Mac Desk Deck** | `1`–`5` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
 | **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Peer battery and charging status on existing device surfaces over authenticated DATA, with no new connection lease |
 | **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
-| **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
+| **Automatic LAN rendezvous** | `2` (legacy `1`) | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Authenticated BLE direct locators and event/demand-triggered LAN admission |
+| **In-flight LAN renewal** | `1` | Implemented | [`lan/RENEWAL.md`](lan/RENEWAL.md) | Authenticated drain barriers and fresh EDHOC over a retained socket |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
@@ -99,7 +100,7 @@ Full specification, record framing, CBOR definitions, and keepalive controls are
 
 - **Handshake:** RFC 9528 EDHOC method 0, cipher suite 5 (P-256, SHA-256, ChaCha20-Poly1305), mandatory message 4.
 - **Application Records:** AES-256-GCM with directional 64-bit counters; standard/BLE plaintext is bounded to 4,000 bytes. Negotiated LAN profiles use the larger bounds in the [LAN profile](lan/TRANSFER_PROFILE.md).
-- **Liveness & Renewal:** Encrypted HELLO/ACK and PING/PONG; automatic BLE reconnects with fresh sessions before lifetime/record limits. Manual LAN requires another Connect after expiry; automatic LAN waits for an eligible event or feature demand.
+- **Liveness & Renewal:** Encrypted HELLO/ACK and PING/PONG; automatic BLE reconnects with fresh sessions before lifetime/record limits. Mutually capable LAN peers renew through fresh EDHOC on the same socket; unsupported peers retain hard expiry. Discovery/reconnection remains separately owned.
 - **BLE Transport:** Session v2 fragmentation header, 10-second reassembly deadline, 32 KiB queue limit.
 
 ---

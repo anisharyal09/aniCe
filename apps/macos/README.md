@@ -66,6 +66,8 @@ aniCe.xcodeproj/               Target membership, build inputs and shared scheme
 
 The window and companion share identity, connection state and the allowed-device selection. Connect freezes one selected Android credential or accepts any trusted Android, with only one admitted candidate at a time. The authenticated phone name is shown after readiness. The full nearby-discovery label toggles its content. When adding or moving Swift files, update Xcode target membership and any interchange compiler paths. Shared contracts and vectors live in the root [`protocol/`](../../protocol/).
 
+Eligible authenticated BLE peers receive the Mac's numeric IPv4 locator when TCP admission is ready, independently of Bonjour registration. Capable LAN sessions renew through fresh EDHOC on the same socket without replacing active feature channels or transfers; old cryptographic material is never resumed. [LAN behavior](../../docs/LAN_CONNECTIONS.md) defines fallback, ownership and legacy-peer expiry.
+
 ## Build and run
 
 From the repository root:

@@ -41,6 +41,19 @@ class SessionTests {
 
   internal fun engineIdentity(v: JSONObject, server: Boolean) = identity(v, if (server) "responder" else "initiator")
 
+  internal fun freshEngine(v: JSONObject, server: Boolean, now: () -> Long): SessionHandshakeEngine {
+    val local = engineIdentity(v, server)
+    val peer = engineIdentity(v, !server)
+    val public = io.github.anisharyal09.anice.infrastructure.identity.IdentityCrypto.publicKey(Base64.getDecoder().decode(local.publicKey))
+    val key = java.security.KeyFactory.getInstance("EC").generatePrivate(java.security.spec.ECPrivateKeySpec(
+      java.math.BigInteger(1, b(v.getJSONObject(if (server) "responder" else "initiator"), "private")),
+      (public as java.security.interfaces.ECPublicKey).params))
+    return SessionHandshakeEngine(local, server, { listOf(peer) }, { local }, {
+      val signer = java.security.Signature.getInstance("SHA256withECDSA")
+      signer.initSign(key); signer.update(it); SessionProof(local, signer.sign())
+    }, if (server) null else peer, now = now)
+  }
+
   internal fun engine(
     v: JSONObject,
     server: Boolean,

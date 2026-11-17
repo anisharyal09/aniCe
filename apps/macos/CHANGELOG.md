@@ -8,6 +8,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
 - Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive once-per-version release notifications respecting beta preferences.
@@ -37,6 +38,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Keep transfer channels and transport-dependent waits intact across bounded LAN maintenance; retain cryptographic, frame and recovery deadlines.
 - Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers to `90023`.
 - Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.
 - Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.

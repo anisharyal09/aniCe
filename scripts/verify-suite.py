@@ -688,6 +688,7 @@ def run_vector_checks(interpreter, artifacts):
         ("Session control vectors", ROOT / "protocol/test-vectors/session/generate_control_vectors.py", ["--check"]),
         ("Session record vectors", ROOT / "protocol/test-vectors/session/generate_record_vectors.py", ["--check"]),
         ("LAN framing vectors", ROOT / "protocol/test-vectors/lan/generate_lan_vectors.py", ["--check"]),
+        ("LAN rendezvous and renewal vectors", ROOT / "protocol/test-vectors/lan/generate_lan_control_vectors.py", ["--check"]),
         ("Bulk probe vectors", ROOT / "protocol/test-vectors/lan/generate_bulk_probe_vectors.py", ["--check"]),
         ("LAN transfer vectors", ROOT / "protocol/test-vectors/lan/generate_bulk_probe_vectors.py", ["--check", "--lan-transfer"]),
         ("SMS vectors", ROOT / "protocol/test-vectors/sms/generate_sms_vectors.py", ["--check"]),

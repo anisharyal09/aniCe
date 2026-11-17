@@ -6,8 +6,67 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.*
 
 class TransferLeasePolicyTests {
+    @Test fun concurrentProducerReleaseCannotLoseOrReviveWork() = runBlocking {
+        val changes = java.util.concurrent.atomic.AtomicInteger()
+        val leases = ConnectionWorkLeases { changes.incrementAndGet() }
+        val owner = Any()
+        leases.updateOwner(owner, true)
+        (0..<64).map { index ->
+            async(Dispatchers.Default) {
+                val lease = leases.acquire(owner, "job-$index")
+                yield()
+                lease.close(); lease.close()
+            }
+        }.awaitAll()
+        assertEquals(0, leases.count)
+        assertEquals(128, changes.get())
+    }
+
+    @Test fun workIsReferenceCountedByNativeOwnerAndStaleReleaseCannotAffectReplacement() {
+        var changes = 0
+        val leases = ConnectionWorkLeases { changes++ }
+        val transfer = Any(); val streaming = Any()
+        try { leases.acquire(transfer, "unapproved"); org.junit.Assert.fail("Unowned work was accepted") }
+        catch (_: IllegalStateException) {}
+        leases.updateOwner(transfer, true); leases.updateOwner(streaming, true)
+        val first = leases.acquire(transfer, "job")
+        val second = leases.acquire(transfer, "job")
+        val media = leases.acquire(streaming, "stream")
+        assertEquals(3, leases.count)
+        first.close(); first.close()
+        assertEquals(2, leases.count)
+        leases.updateOwner(transfer, false)
+        assertEquals(1, leases.count); assertTrue(leases.held)
+        leases.updateOwner(transfer, true)
+        val replacement = leases.acquire(transfer, "job")
+        second.close()
+        assertEquals(2, leases.count)
+        media.close()
+        assertTrue(leases.held)
+        replacement.close()
+        assertFalse(leases.held)
+        assertEquals(8, changes)
+    }
+
+    @Test fun workOwnerIdentityAndInventoryAreBounded() {
+        data class Owner(val id: Int)
+        val owner = Owner(1)
+        val leases = ConnectionWorkLeases {}
+        leases.updateOwner(owner, true)
+        try { leases.acquire(Owner(1), "copy"); org.junit.Assert.fail("Value-equal owner manufactured ownership") }
+        catch (_: IllegalStateException) {}
+        val active = (0..<128).map { leases.acquire(owner, "job-$it") }
+        assertEquals(128, leases.count)
+        try { leases.acquire(owner, "overflow"); org.junit.Assert.fail("Unbounded work ownership") }
+        catch (_: IllegalStateException) {}
+        leases.clear()
+        active.forEach { it.close() }
+        assertEquals(0, leases.count)
+    }
+
     @Test fun pickerLeasesEverySecuredTransportRegardlessOfActiveChannel() {
         for (transport in listOf(null, "lan", "ble")) {
             val leases = transferLeases(transport, connecting = false, backgroundAllowed = false,

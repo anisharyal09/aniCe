@@ -8,6 +8,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
 - Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
 - **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.
@@ -34,6 +35,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.
 - Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
 - Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
 - Present update review in a dismissible bottom sheet with scalable native Markdown, rectangular themed actions, sticky progress and secondary actions under More; retain the reviewed version during automatic refreshes.

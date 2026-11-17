@@ -162,6 +162,9 @@ struct AniCeApp: App {
     }
     session.channelCapacityChanged = { features.capacityAvailable("ble") }
     lan.channelCapacityChanged = { features.capacityAvailable("lan") }
+    lan.channelMaintenanceChanged = { [weak lan] snapshot in
+      features.maintenance("lan", instance: lan?.channelToken, snapshot: snapshot)
+    }
     session.applicationDataDrained = { [weak session] in await features.drain("ble", instance: session?.channelToken) }
     lan.applicationDataDrained = { [weak lan] in await features.drain("lan", instance: lan?.channelToken) }
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }

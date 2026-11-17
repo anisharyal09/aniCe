@@ -85,7 +85,7 @@ Local session owners additionally retain readiness/idle/lifetime/record-limit ex
 
 Typed local failures: `malformed`, `unsupportedProfile`, `untrustedPeer`, `authentication`, `state`, `cancelled`, `expired`, `controlTimeout`. Native identity/storage/provider errors retain their original typed failure and retire the handshake.
 
-Accepted EDHOC error sequences: `(1, tstr <= 64 UTF-8 bytes)`, `(2, 5)`, `(3, true)`. Error code zero, unknown codes and extra data are rejected. Received errors are fatal with no suite retry. Outgoing generic error is `(1, "Handshake failed")`; callers do not emit credential identifiers in errors. During an established application session, handshake envelopes/errors are invalid.
+Accepted EDHOC error sequences: `(1, tstr <= 64 UTF-8 bytes)`, `(2, 5)`, `(3, true)`. Error code zero, unknown codes and extra data are rejected. Received errors are fatal with no suite retry. Outgoing generic error is `(1, "Handshake failed")`; callers do not emit credential identifiers in errors. On an established socket, handshake envelopes are accepted only in the expected phase of negotiated [LAN renewal](../lan/RENEWAL.md); unsolicited handshakes remain invalid.
 
 Credentials are protected against passive handshake observation. This is not anonymity: an active initiator can obtain responder credential information, and radio identifiers, lengths and timing remain observable. No stable identity appears in discovery or advertising. No handshake/application key is persisted or logged. Buffer overwrite and object release are best effort on Swift/JVM.
 
@@ -136,11 +136,13 @@ CBOR arrays reserve the application dispatcher framing: they must decode determi
 
 Independent cbor2 fixtures contain eight valid and 26 invalid encodings in [control-vectors.json](../test-vectors/session/control-vectors.json). Regenerate or verify with `generate_control_vectors.py [--check]` using the pinned session oracle requirements. Native tests exercise authenticated controls, legacy fallback, queue saturation, timeout/order failures and hard lifetime enforcement with injected monotonic clocks. Native interchange additionally exchanges encrypted HELLO/ACK, PING/PONG and RENEWAL_REQUEST; it does not exercise BLE or OS background scheduling.
 
-## Coordinated renewal
+## BLE renewal and consecutive LAN sessions
 
-Automatic owners initiate renewal at 55 minutes of record-channel age or when either directional counter reaches `2^20 − 1024`. Mac submits one RENEWAL_REQUEST; Android initiates every new handshake. A manual Android owner receiving the request retires its session and exposes explicit Connect. Manual sessions otherwise retain their hard limits.
+Automatic BLE owners initiate renewal at 55 minutes of record-channel age or when either directional counter reaches `2^20 − 1024`. Mac submits one RENEWAL_REQUEST; Android initiates every new handshake. A manual BLE owner receiving the request retires its session and exposes explicit Connect. Manual BLE sessions otherwise retain their hard limits.
 
 A renewal flag blocks new application submissions before sealing. One pending Mac request observes ordinary queue backpressure and nonce burn rules. Android coalesces local/remote thresholds, submits encrypted close within two seconds, retires transport and keys, then revalidates its automatic policy, trust and OS ownership before fresh EDHOC/readiness. A close-submission failure still retires the old channel; bounded recovery may reconnect. Stop/Disconnect invalidates generations and pauses policy before suspended cleanup can finish. Sessions do not overlap or reuse keys, IV bases, counters, connection IDs or ephemeral keys. Hard one-hour/`2^20` limits are unchanged.
+
+LAN independently negotiates a bounded DATA extension before enabling those same thresholds. Authenticated directional drain barriers retire the old cryptographic channel without closing TCP or replacing the application-channel descriptor. Android then performs fresh EDHOC/readiness with new keys, IV bases, session ID, ephemerals and connection IDs. The [LAN renewal contract](../lan/RENEWAL.md) owns exact envelopes, role/order validation, ten-second quiescence, thirty-second handshake and ten-second readiness bounds. This applies to negotiated manual and automatic LAN, independently of Bluetooth or discovery preferences. Peers without mutual support retain original LAN hard expiry. No cryptographic session, key or counter is resumed.
 
 ## Application diagnostic
 

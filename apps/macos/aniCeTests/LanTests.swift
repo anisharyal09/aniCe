@@ -67,18 +67,36 @@ final class LanTests: XCTestCase {
     let savedTrust = try Data(contentsOf: trust.location), reservation = SessionPeerReservation()
     var starts = 0
     // Native callbacks are injected without opening a socket or publishing a physical Bonjour service.
-    let owner = MacLanSessionModel(identity: identity, peers: reservation, startListener: { _ in starts += 1 }, store: { trust })
+    let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
+    let owner = MacLanSessionModel(identity: identity, peers: reservation,
+      startListener: { _ in starts += 1 }, endpointProvider: { _, _ in endpoint }, store: { trust })
+    @MainActor final class Channel: SecuredChannel {
+      let descriptor: ChannelDescriptor
+      var sent = [Data]()
+      init(_ peer: DeviceIdentity) { descriptor = ChannelDescriptor(instance: "endpoint", transport: "ble", peer: peer) }
+      func sendData(_ bytes: Data) async throws { sent.append(bytes) }
+    }
+    let ble = Channel(peer)
     defer { owner.cancel() }
     owner.setAutomatic(true)
     owner.allow(selected: peer, bluetoothAllowing: false)
+    owner.rendezvous.available(ble)
+    _ = try await owner.rendezvous.handle(LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 1)),
+      on: ble.descriptor)
     for _ in 0..<200 where owner.listener == nil { try await Task.sleep(for: .milliseconds(2)) }
     let listener = try XCTUnwrap(owner.listener)
     XCTAssertEqual(starts, 1)
     let registered = try XCTUnwrap(listener.serviceRegistrationUpdateHandler)
     listener.stateUpdateHandler?(.ready)
+    try await Task.sleep(for: .milliseconds(20))
+    XCTAssertTrue(try ble.sent.contains { try LanRendezvousWire.decodeMessage($0)?.endpoint == endpoint },
+      "Direct admission must not wait for a Bonjour registration callback")
+    let admissionDeadline = owner.maintenanceDeadline
+    XCTAssertNotNil(admissionDeadline)
     registered(.add(.service(name: "test", type: "_anice._tcp", domain: "local.", interface: nil)))
     try await Task.sleep(for: .milliseconds(20))
     XCTAssertTrue(owner.allowing); XCTAssertNotNil(reservation.peer)
+    XCTAssertEqual(owner.maintenanceDeadline, admissionDeadline)
     owner.retireSession(reason: "injected EOF")
     XCTAssertTrue(owner.listener === listener)
     XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service); XCTAssertNil(reservation.peer)
@@ -368,7 +386,7 @@ final class LanTests: XCTestCase {
     XCTAssertEqual(link.remote, 0); XCTAssertEqual(link.requests, 1)
     link.request()
     for _ in 0..<10 { await Task.yield() }
-    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [1, 4])
+    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [1, 1, 4])
     link.retired(channel.descriptor)
   }
   func testRendezvousIndependentWireAndMalformedStates() throws {
@@ -383,6 +401,51 @@ final class LanTests: XCTestCase {
     XCTAssertNil(try LanRendezvousWire.decode(SessionCbor.encode(.text("other"))))
     XCTAssertNil(try LanRendezvousWire.decode(Data(repeating: 0, count: 65)))
   }
+  func testRendezvousVersion2IndependentFixtures() throws {
+    let rows = try helper.root("automatic-vectors")
+    let valid = try XCTUnwrap(rows["valid"] as? [[String: Any]])
+    let invalid = try XCTUnwrap(rows["invalid"] as? [[String: Any]])
+    XCTAssertGreaterThanOrEqual(valid.count, 15); XCTAssertGreaterThanOrEqual(invalid.count, 30)
+    for row in valid {
+      let bytes = try helper.hex(XCTUnwrap(row["payloadHex"] as? String))
+      XCTAssertEqual(try LanRendezvousWire.encode(XCTUnwrap(LanRendezvousWire.decodeMessage(bytes))), bytes)
+    }
+    for row in invalid {
+      if row["name"] as? String == "wrong-tag" {
+        XCTAssertNil(try LanRendezvousWire.decodeMessage(helper.hex(XCTUnwrap(row["payloadHex"] as? String))))
+        continue
+      }
+      XCTAssertThrowsError(try LanRendezvousWire.decodeMessage(helper.hex(XCTUnwrap(row["payloadHex"] as? String))))
+    }
+  }
+  @MainActor func testRendezvousVersion2EndpointSurvivesDelayedLegacyStateAndRetiresWithBLE() async throws {
+    let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
+    let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
+    link.available(channel); link.update(1)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decodeMessage($0)?.version }, [2, 1])
+    let ready = try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 2, endpoint: endpoint))
+    _ = await link.handle(ready, on: channel.descriptor)
+    for _ in 0..<10 { await Task.yield() }
+    let count = channel.sentData.count
+    for _ in 0..<10 {
+      _ = await link.handle(ready, on: channel.descriptor)
+      _ = try await link.handle(LanRendezvousWire.encode(0), on: channel.descriptor)
+    }
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(link.remote, 2); XCTAssertEqual(link.remoteEndpoint, endpoint)
+    XCTAssertEqual(channel.sentData.count, count)
+    link.request()
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(try channel.sentData.filter { try LanRendezvousWire.decode($0) == 4 }.count, 1)
+    link.retired(channel.descriptor)
+    XCTAssertNil(link.remoteEndpoint)
+    let replacement = MockSecuredChannel(instance: "replacement", transport: "ble")
+    link.available(replacement)
+    let stale = await link.handle(ready, on: channel.descriptor)
+    XCTAssertEqual(stale, .unrecognized); XCTAssertNil(link.remoteEndpoint)
+    link.retired(replacement.descriptor)
+  }
   @MainActor func testRendezvousBindsBLEGenerationAndDoesNotEcho() async throws {
     let link = LanRendezvous()
     var changes = 0
@@ -395,13 +458,13 @@ final class LanTests: XCTestCase {
     let first = MockSecuredChannel(transport: "ble")
     link.available(first); link.update(1)
     for _ in 0..<10 { await Task.yield() }
-    XCTAssertEqual(first.sentData.count, 1)
+    XCTAssertEqual(first.sentData.count, 2)
     let result = try await link.handle(LanRendezvousWire.encode(2), on: first.descriptor)
     XCTAssertEqual(result, .handled)
     XCTAssertEqual(link.remote, 2)
     _ = try await link.handle(LanRendezvousWire.encode(2), on: first.descriptor)
     for _ in 0..<10 { await Task.yield() }
-    XCTAssertEqual(first.sentData.count, 1)
+    XCTAssertEqual(first.sentData.count, 2)
     link.retired(first.descriptor)
     XCTAssertNil(link.remote)
     let replacement = MockSecuredChannel(instance: "replacement", transport: "ble")
@@ -425,7 +488,7 @@ final class LanTests: XCTestCase {
     channel.onSendData = nil
     link.capacityAvailable(channel.descriptor)
     for _ in 0..<10 { await Task.yield() }
-    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0])
+    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0, 0])
     link.retired(channel.descriptor)
   }
   @MainActor func testRendezvousRetainsCapacityWakeDuringSubmission() async throws {
@@ -440,13 +503,13 @@ final class LanTests: XCTestCase {
       }
     }
     link.available(channel)
-    for _ in 0..<100 where attempts < 2 { await Task.yield() }
-    XCTAssertEqual(attempts, 2)
-    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0, 1])
+    for _ in 0..<100 where attempts < 3 { await Task.yield() }
+    XCTAssertEqual(attempts, 3)
+    XCTAssertEqual(try channel.sentData.map { try LanRendezvousWire.decode($0) }, [0, 1, 1])
     link.retired(channel.descriptor)
     link.capacityAvailable(channel.descriptor)
     await Task.yield()
-    XCTAssertEqual(attempts, 2)
+    XCTAssertEqual(attempts, 3)
   }
 
   @MainActor func testTCPPeerLossDetectionDoesNotWaitForDefaultIdleTimeouts() throws {

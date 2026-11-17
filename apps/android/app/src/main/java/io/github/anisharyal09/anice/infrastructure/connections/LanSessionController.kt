@@ -180,26 +180,38 @@ class LanSessionController(private val app: AniCeApplication,
     private var checkPending = false
 
     private var backgroundTimeoutJob: Job? = null
-    private var workLease = false
+    private val workLeases = ConnectionWorkLeases { scope.launch { reconcileLeases() } }
+    private val transferWorkOwner = Any()
+    private var transferWorkLease: ConnectionWorkLeases.Lease? = null
+    private var transferWorkAvailable = false
+    private val workLease get() = workLeases.held
     private var pickerLease = false
     private var mediaLease = false
     var onUnleasedBackgroundWork: () -> Boolean = { false }
     var onDemandFailure: ((String) -> Unit)? = null
+    private val backgroundedOrLocked get() = presentations.isEmpty() || !power.isInteractive
+
+    // App/native lifecycle callbacks provide eligibility; a job tag cannot manufacture OS ownership.
+    internal fun updateWorkOwner(owner: Any, eligible: Boolean) = workLeases.updateOwner(owner, eligible)
+    internal fun acquireWorkLease(tag: String, owner: Any = transferWorkOwner) = workLeases.acquire(owner, tag)
 
     fun updateWorkLease(approved: Boolean, picking: Boolean) {
         val withdrawingPicker = pickerLease && !picking
-        val withdrawingWork = workLease && !approved
-        workLease = approved
         pickerLease = picking
+        transferWorkAvailable = approved
+        updateWorkOwner(transferWorkOwner, approved)
+        if (approved && transferWorkLease == null) transferWorkLease = acquireWorkLease("approved-transfer")
+        if (!approved) { transferWorkLease?.close(); transferWorkLease = null }
+        if (withdrawingPicker && backgroundedOrLocked && !workLease && !mediaLease && onUnleasedBackgroundWork()) {
+            end("File selection ended without background work ownership. Reconnect to continue.")
+        } else reconcileLeases()
+    }
+
+    private fun reconcileLeases() {
         scheduleAutomatic()
         if (workLease || pickerLease || mediaLease) {
             backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
-        } else if (withdrawingPicker && presentations.isEmpty()) {
-            onUnleasedBackgroundWork()
-            end("File selection ended while aniCe was background. Reconnect to continue.")
-        } else if (withdrawingWork && presentations.isEmpty()) {
-            startBackgroundDisconnectTimer()
-        }
+        } else if (backgroundedOrLocked) startBackgroundDisconnectTimer()
     }
 
     /**
@@ -209,13 +221,8 @@ class LanSessionController(private val app: AniCeApplication,
     fun updateMediaLease(active: Boolean) {
         if (mediaLease == active) return
         mediaLease = active
-        if (active) {
-            requestAutomaticConnection()
-            scheduleAutomatic()
-        } else {
-            scheduleAutomatic()
-            if (presentations.isEmpty() && !workLease && !pickerLease) startBackgroundDisconnectTimer()
-        }
+        if (active) requestAutomaticConnection()
+        reconcileLeases()
     }
 
     private val screenReceiver = object : BroadcastReceiver() {
@@ -223,6 +230,8 @@ class LanSessionController(private val app: AniCeApplication,
             scheduleAutomatic()
             if (intent?.action == Intent.ACTION_SCREEN_OFF && !workLease && !pickerLease && !mediaLease) {
                 startBackgroundDisconnectTimer("Local-network connection ended after screen lock.")
+            } else if (intent?.action == Intent.ACTION_SCREEN_ON && !backgroundedOrLocked) {
+                backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
             }
         }
     }
@@ -237,6 +246,7 @@ class LanSessionController(private val app: AniCeApplication,
 
     internal fun dispose() {
         cancelRecovery()
+        workLeases.clear()
         end()
         app.unregisterReceiver(screenReceiver)
         networks.unregisterNetworkCallback(automaticNetworkCallback)
@@ -244,29 +254,31 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     private fun startBackgroundDisconnectTimer(reason: String = "Local-network disconnected after being inactive in the background.") {
-        backgroundTimeoutJob?.cancel()
         val timeoutMillis = backgroundTimeoutMillis()
-        if (timeoutMillis <= 0) return
+        if (timeoutMillis <= 0) { backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null; return }
+        if (backgroundTimeoutJob?.isActive == true) return
         val op = generation
         backgroundTimeoutJob = scope.launch {
             delay(timeoutMillis)
-            if (op == generation && presentations.isEmpty() && !workLease && !pickerLease && !mediaLease) {
+            if (op == generation && backgroundedOrLocked && !workLease && !pickerLease && !mediaLease) {
                 this@LanSessionController.end(reason)
             }
         }
     }
 
     fun onWorkServiceStopped() {
-        if (!workLease) return
-        workLease = false
-        if (presentations.isEmpty() && !pickerLease && !mediaLease) {
+        if (!transferWorkAvailable) return
+        transferWorkAvailable = false
+        updateWorkOwner(transferWorkOwner, false)
+        transferWorkLease?.close(); transferWorkLease = null
+        if (backgroundedOrLocked) {
             onUnleasedBackgroundWork()
-            end("Background transfer ownership ended. Reconnect to transfer again.")
+            if (!workLease && !pickerLease && !mediaLease) end("Background transfer ownership ended. Reconnect to transfer again.")
         }
     }
 
     fun onWorkIdle() {
-        if (presentations.isEmpty() && !workLease && !pickerLease && !mediaLease) {
+        if (backgroundedOrLocked && !workLease && !pickerLease && !mediaLease) {
             startBackgroundDisconnectTimer()
         }
     }
@@ -403,15 +415,25 @@ class LanSessionController(private val app: AniCeApplication,
                     )
                     watching = callback
                     val deadline = SystemClock.elapsedRealtime() + 90000
-                    discovery.endpoints(network) { networks.getLinkProperties(network) }.consumeLanEndpoints { endpoints ->
-                        var lastError: Exception? = null
-                        var foundEndpoint = false
-                        for (endpoint in endpoints) {
+                    var lastError: Exception? = null
+                    var foundEndpoint = false
+                    val direct = rendezvous.remoteEndpoint?.takeIf {
+                        rendezvous.remote == 2 && rendezvous.channel?.descriptor?.peer?.let { pinned ->
+                            pinned.deviceId == target.deviceId && pinned.fingerprint == target.fingerprint &&
+                                pinned.publicKey == target.publicKey
+                        } == true
+                    }?.let { locator ->
+                        val address = java.net.InetAddress.getByAddress(requireNotNull(LanDirectEndpoint.ipv4(locator.ip)))
+                        networks.getLinkProperties(network)?.takeIf { LanAddress.local(address, it) }?.let {
+                            LanEndpoint(network, address, locator.port, locator.profile)
+                        }
+                    }
+                    suspend fun attempt(endpoint: LanEndpoint, directLocator: Boolean): Boolean {
                             foundEndpoint = true
                             ensureActive()
-                            if (op != generation) return@consumeLanEndpoints
+                            if (op != generation) throw SessionException(SessionFailure.CANCELLED)
                             val remaining = deadline - SystemClock.elapsedRealtime()
-                            if (remaining <= 0) break
+                            if (remaining <= 0) return false
                             val maintenanceEvents = SessionMaintenance()
                             val tcp = AndroidLanTransport(scope, endpoint.profile) { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } }
                             transport = tcp
@@ -423,13 +445,13 @@ class LanSessionController(private val app: AniCeApplication,
                             } catch (error: TimeoutCancellationException) {
                                 tcp.close()
                                 lastError = error
-                                continue
+                                return false
                             } catch (error: CancellationException) {
                                 throw error
                             } catch (error: java.io.IOException) {
                                 tcp.close()
                                 lastError = error
-                                continue
+                                return false
                             }
                             // Identity/storage/signing failures terminate discovery instead of probing
                             // more peers.
@@ -444,7 +466,7 @@ class LanSessionController(private val app: AniCeApplication,
                                 }
                             if (op != generation) {
                                 handshake.close()
-                                return@consumeLanEndpoints
+                                throw SessionException(SessionFailure.CANCELLED)
                             }
                             val signal = CompletableDeferred<Unit>()
                             val terminal = CompletableDeferred<Exception>()
@@ -511,11 +533,23 @@ class LanSessionController(private val app: AniCeApplication,
                                     },
                                     controls = true,
                                     now = { SystemClock.elapsedRealtime() },
-                                    changed = { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } },
+                                    renew = true,
+                                    changed = { maintenanceEvents.request(); scope.launch {
+                                        if (op == generation && transport === tcp) {
+                                            connection?.let { app.features.maintenance("lan", channelToken, it.maintenanceSnapshot) }
+                                            app.features.capacityAvailable("lan")
+                                        }
+                                    } },
                                     profile = endpoint.profile,
                                     drain = { withContext(Dispatchers.Main.immediate) {
                                         if (op == generation) app.features.drain("lan", channelToken)
                                     } },
+                                    renewalHandshake = {
+                                        withContext(Dispatchers.IO) {
+                                            SessionHandshakeEngine.initiator(app.identityService, app.trustStore,
+                                                target, SystemClock::elapsedRealtime)
+                                        }
+                                    },
                                 )
                             connection = engine
                             receiver =
@@ -588,7 +622,7 @@ class LanSessionController(private val app: AniCeApplication,
                                     withContext(Dispatchers.IO) { engine.start() }
                                     signal.await()
                                 }
-                                if (op != generation) return@consumeLanEndpoints
+                                if (op != generation) throw SessionException(SessionFailure.CANCELLED)
                                 if (terminal.isCompleted) throw terminal.await()
                                 if (engine.isClosed)
                                     throw java.io.EOFException(
@@ -597,14 +631,14 @@ class LanSessionController(private val app: AniCeApplication,
                                 state = ConnectionState.SECURED
                                 publishChannel()
                                 status = ""
-                                // Resolution is anonymous; selected-peer readiness releases any remaining browse.
-                                endpoints.cancel()
-                                awaitCancellation()
+                                return true
                             } catch (error: TimeoutCancellationException) {
                                 lastError = error
                             } catch (error: CancellationException) {
                                 throw error
                             } catch (error: SessionException) {
+                                if (directLocator && error.reason in setOf(
+                                        SessionFailure.CANCELLED, SessionFailure.UNTRUSTED_PEER, SessionFailure.AUTHENTICATION)) throw error
                                 lastError = error
                             } catch (error: java.io.IOException) {
                                 lastError = error
@@ -616,13 +650,17 @@ class LanSessionController(private val app: AniCeApplication,
                             withContext(NonCancellable + Dispatchers.IO) { engine.close() }
                             app.features.retired("lan")
                             connection = null
-                        }
-                        throw lastError
+                            return false
+                    }
+                    val connected = consumeLanCandidates(direct,
+                        discover = { discovery.endpoints(network) { networks.getLinkProperties(network) } },
+                        key = { "${it.address.hostAddress}:${it.port}" }, attempt = ::attempt)
+                    if (connected) awaitCancellation()
+                    throw lastError
                             ?: IllegalStateException(
                                 if (foundEndpoint) "No endpoint authenticated as your selected Mac. Retry."
                                 else "No local-network connection was found. Check Allow connections, network permissions and the shared Wi-Fi network."
                             )
-                    }
                 } catch (error: TimeoutCancellationException) {
                     if (op == generation)
                         failed("Local-network discovery or authentication timed out. Retry.")
@@ -752,7 +790,6 @@ class LanSessionController(private val app: AniCeApplication,
         automaticAttempt = false
         backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
         if (!preserveLeases) {
-            workLease = false
             pickerLease = false
         }
         generation++
@@ -788,8 +825,10 @@ class LanSessionController(private val app: AniCeApplication,
         presentations.add(presentation)
         if (wasEmpty) rearmRecovery()
         scheduleAutomatic()
-        backgroundTimeoutJob?.cancel()
-        backgroundTimeoutJob = null
+        if (power.isInteractive) {
+            backgroundTimeoutJob?.cancel()
+            backgroundTimeoutJob = null
+        } else reconcileLeases()
     }
 
     fun background(presentation: Any, changingConfigurations: Boolean) {

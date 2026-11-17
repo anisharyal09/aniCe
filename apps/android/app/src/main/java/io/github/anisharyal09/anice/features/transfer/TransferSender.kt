@@ -451,7 +451,8 @@ internal suspend fun TransferController.streamBatchFrom(
                 pending
             }
             if (pendingResult != null) resultWaiter.complete(pendingResult)
-            val fileResult = withTimeout(confirmationTimeoutMillis) { resultWaiter.await() }
+            val resultChannel = activeChannel ?: throw SessionException(SessionFailure.CANCELLED)
+            val fileResult = awaitTransferResult(resultChannel, confirmationTimeoutMillis) { resultWaiter.await() }
             if (operation != epoch) return
             if (fileResult.number(2) != 0L) {
                 failTransfer("Receiver reported error for file ${file.name}")

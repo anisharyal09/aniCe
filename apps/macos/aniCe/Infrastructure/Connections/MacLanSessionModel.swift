@@ -30,6 +30,8 @@ import OSLog
   private var registered = false
   private var serviceRegistered = false
   private var listenerReady = false
+  private var localInterfaces = [Int]()
+  private var localEndpoint: LanDirectEndpoint?
   private var localPathAvailable = true
   @ObservationIgnored private var pathMonitor: NWPathMonitor?
   private var automaticTask: Task<Void, Never>?
@@ -121,7 +123,8 @@ import OSLog
       self.automaticGate.update(channel: self.rendezvous.channel?.descriptor.instance, eligible: eligible,
         remoteEligible: self.rendezvous.remote != nil && self.rendezvous.remote != 0,
         ready: false, requests: self.rendezvous.requests)
-      self.rendezvous.update(!eligible ? 0 : self.state == "Secured" ? 3 : self.registered ? 2 : 1)
+      self.rendezvous.update(!eligible ? 0 : self.state == "Secured" ? 3 : self.registered ? 2 : 1,
+        endpoint: eligible && self.allowing && !self.admission.admitted && !self.retiring ? self.localEndpoint : nil)
       if !self.localPathAvailable, self.automatic, !self.automaticPaused, !self.sleeping, !self.quitting { return }
       guard eligible, let channel = self.rendezvous.channel, let remote = self.rendezvous.remote,
         remote != 0 else {
@@ -144,11 +147,13 @@ import OSLog
   private let store: @MainActor () async throws -> PeerTrustStore
   private let peers: SessionPeerReservation
   private let startListener: @MainActor (NWListener) -> Void
+  private let endpointProvider: @MainActor (NWListener, [Int]) -> LanDirectEndpoint?
   private(set) var listener: NWListener?
   private var transport: LanTcpTransport?
   private var trustLocation: URL?
   var channelStateChanged: () -> Void = {}
   var channelCapacityChanged: () -> Void = {}
+  var channelMaintenanceChanged: (SessionMaintenanceSnapshot) -> Void = { _ in }
   var applicationDataDrained: () async -> Void = {}
   var applicationDataReceived: (Data) async -> Bool = { _ in false }
   var channelToken: String? { state == "Secured" && connection != nil ? "\(generation)-\(candidate)":nil }
@@ -186,11 +191,16 @@ import OSLog
     preferences: UserDefaults? = nil,
     recoveryDelays: [TimeInterval] = [2, 5],
     startListener: @escaping @MainActor (NWListener) -> Void = { $0.start(queue: DispatchQueue(label: "aniCe LAN listener")) },
+    endpointProvider: @escaping @MainActor (NWListener, [Int]) -> LanDirectEndpoint? = { server, interfaces in
+      guard let port = server.port, let ip = LanLocalAddress.ipv4(interfaceIndices: interfaces) else { return nil }
+      return try? LanDirectEndpoint(ip: ip, port: port.rawValue, profile: .lanTransfer512)
+    },
     store: @escaping @MainActor () async throws -> PeerTrustStore
   ) {
     self.preferences = preferences
     self.recoveryDelays = recoveryDelays
     self.startListener = startListener
+    self.endpointProvider = endpointProvider
     // Absent means the user never chose; an explicit stored false still disables automation.
     self.automatic = preferences.map { ($0.object(forKey: "lan.automatic") as? Bool) ?? true } ?? false
     self.identity = identity
@@ -308,6 +318,7 @@ import OSLog
             switch state {
             case .waiting(let error) where Self.waitsForNetwork(error):
               self.listenerReady = false
+              self.localEndpoint = nil
               self.registered = false
               self.startupDeadline = nil
               self.status = "Waiting for network…"
@@ -316,7 +327,10 @@ import OSLog
             case .ready:
               self.listenerReady = true
               self.registered = self.serviceRegistered && self.allowing && !self.admission.admitted
+              self.refreshEndpoint()
+              self.beginAvailabilityIfReady(target)
               self.scheduleAutomatic()
+              self.maintain()
             case .failed(let error), .waiting(let error):
               self.failWindow(
                 "Local-network listener unavailable: \(error). Check network access and retry.")
@@ -330,16 +344,9 @@ import OSLog
             defer { self.maintain() }
             if case .add = change {
               self.serviceRegistered = true
-              self.registered = self.listenerReady
+              self.registered = self.listenerReady && self.allowing && !self.admission.admitted
+              self.beginAvailabilityIfReady(target)
               self.scheduleAutomatic()
-              self.startupDeadline = nil
-              self.admission.open(ProcessInfo.processInfo.systemUptime)
-              if !self.admission.admitted {
-                self.state = "Disconnected"
-                self.status = self.automaticAttempt
-                  ? "Waiting for \(target.deviceName) to connect automatically…"
-                  : "Waiting for \(target.deviceName). On that phone, connect over local network."
-              }
             } else {
               self.serviceRegistered = false
               self.registered = false
@@ -358,9 +365,26 @@ import OSLog
         }
         startupDeadline = ProcessInfo.processInfo.systemUptime + 10
         if !reused { startListener(server) }
+        else {
+          refreshEndpoint()
+          beginAvailabilityIfReady(target)
+          scheduleAutomatic()
+        }
         maintain()
       } catch { if op == generation { failWindow(error.localizedDescription) } }
     }
+  }
+  private func refreshEndpoint() {
+    localEndpoint = listenerReady && localPathAvailable ? listener.flatMap { endpointProvider($0, localInterfaces) } : nil
+  }
+  private func beginAvailabilityIfReady(_ target: DeviceIdentity) {
+    guard allowing, !admission.admitted, registered || localEndpoint != nil else { return }
+    startupDeadline = nil
+    // TCP and Bonjour callbacks share the original admission deadline; neither can renew it.
+    admission.open(ProcessInfo.processInfo.systemUptime)
+    state = "Disconnected"
+    status = automaticAttempt ? "Waiting for \(target.deviceName) to connect automatically…"
+      : "Waiting for \(target.deviceName). On that phone, connect over local network."
   }
   private func admit(_ socket: NWConnection, target: DeviceIdentity, trust: PeerTrustStore, op: Int)
   {
@@ -393,16 +417,22 @@ import OSLog
           },
           data: { [weak self] bytes in await self?.received(bytes, op, attempt) },
           secured: { [weak self] in await self?.secured(op, attempt) }, controls: true,
+          renew: true,
           changed: { [weak self] in Task { @MainActor in
             guard let self, op == self.generation, attempt == self.candidate else { return }
+            if let snapshot = await self.connection?.maintenanceSnapshot,
+              op == self.generation, attempt == self.candidate { self.channelMaintenanceChanged(snapshot) }
             self.maintain(); self.channelCapacityChanged()
-          } }, profile: .lanTransfer512, drain: { [weak self] in await self?.drainApplication(op, attempt) })
+          } }, profile: .lanTransfer512, drain: { [weak self] in await self?.drainApplication(op, attempt) },
+          renewalHandshake: { [identity] in
+            try await SessionHandshakeEngine.responder(identity: identity, trust: trust, selectedPeer: target)
+          })
         connection = engine
         maintain()
         await tcp.start(
           deliver: { [weak self] bytes in
             try await engine.receive(bytes)
-            if bytes.first == 3 { await self?.handshakeReceived(op, attempt) }
+            if bytes.first == 3, await !engine.isRenewing { await self?.handshakeReceived(op, attempt) }
             if await engine.isClosed { await self?.peerClosed(op, attempt) }
           },
           ended: { [weak self] error in
@@ -413,6 +443,7 @@ import OSLog
           }, drained: { [weak self] in await self?.drainApplication(op, attempt) }, changed: { [weak self] in
             Task { @MainActor in
               guard let self, op == self.generation, attempt == self.candidate else { return }
+              await self.connection?.capacityAvailable()
               self.channelCapacityChanged()
               self.maintain()
             }
@@ -488,7 +519,7 @@ import OSLog
     deadlineWait.schedule(now: { ProcessInfo.processInfo.systemUptime }, deadline: { [weak self] in
       guard let self, op == self.generation, attempt == self.candidate else { return nil }
       let session: Int64?
-      if self.checking { session = nil } else { session = await self.connection?.nextDeadline() }
+      session = await self.connection?.nextDeadline(includeMaintenance: !self.checking)
       guard op == self.generation, attempt == self.candidate else { return nil }
       return [self.startupDeadline, self.admission.admitted ? self.handshakeDeadline : self.admission.deadline,
         session.map { Double($0) / 1000 }].compactMap { $0 }.min()
@@ -512,15 +543,22 @@ import OSLog
       failCandidate(SessionFailure.expired)
       return
     }
-    guard !checking, let connection else { return }
-    checking = true
+    guard let connection else { return }
+    let runControls = !checking
+    if runControls { checking = true }
     let op = generation
     let attempt = candidate
     Task { [weak self] in
-      do { try await connection.tick() } catch {
+      do {
+        try await connection.checkDeadlines()
+        if runControls { try await connection.tick() }
+      } catch {
         if let self, op == self.generation, attempt == self.candidate { self.failCandidate(error) }
       }
-      if let self, op == self.generation, attempt == self.candidate { self.checking = false; self.maintain() }
+      if let self, op == self.generation, attempt == self.candidate {
+        if runControls { self.checking = false }
+        self.maintain()
+      }
     }
   }
   private func failCandidate(_ error: Error) {
@@ -561,6 +599,7 @@ import OSLog
         guard let self, op == self.generation, attempt == self.candidate else { return }
         self.retiring = false
         self.listener?.service = self.advertisement
+        self.scheduleAutomatic()
         self.maintain()
       }
     }
@@ -588,7 +627,20 @@ import OSLog
       let available = path.status == .satisfied && path.availableInterfaces.contains {
         $0.type == .wifi || $0.type == .wiredEthernet
       }
-      Task { @MainActor in self?.localPathChanged(available) }
+      let interfaces = path.availableInterfaces.filter { $0.type == .wifi || $0.type == .wiredEthernet }
+        .sorted { left, right in
+          if left.type != right.type { return left.type == .wifi }
+          return left.index < right.index
+        }.map(\.index)
+      Task { @MainActor in
+        guard let self else { return }
+        self.localInterfaces = available ? interfaces : []
+        self.localPathChanged(available)
+        self.refreshEndpoint()
+        if let peer = self.peers.peer { self.beginAvailabilityIfReady(peer) }
+        self.scheduleAutomatic()
+        self.maintain()
+      }
     }
     monitor.start(queue: DispatchQueue(label: "aniCe LAN availability"))
   }
@@ -653,6 +705,7 @@ import OSLog
     automaticAttempt = false
     registered = false
     serviceRegistered = false
+    localEndpoint = nil
     generation += 1
     candidate += 1
     allowing = false

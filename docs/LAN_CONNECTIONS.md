@@ -16,7 +16,7 @@ With several Macs on the network, Android tries anonymous endpoints in discovery
 
 ## Platform boundaries
 
-Discovery uses `_anice._tcp` with anonymous random service-instance names and protocol version only. The app does not advertise device identity, exchange LAN endpoints over BLE or grant trust to discovered endpoints. Network multicast isolation, firewall policy or local-network permission denial can prevent discovery even when both devices use the same router. Connection details expose failure and Retry.
+Bonjour discovery uses `_anice._tcp` with anonymous random service-instance names and protocol version only. Eligible authenticated BLE peers also exchange a numeric Mac IPv4 address, bound port and LAN record profile through rendezvous v2. Android tries that locator before creating an NSD browse; missing/v1 endpoints or socket failures use bounded mDNS fallback. A TCP-ready listener can publish direct readiness before Bonjour registration. Endpoints never grant trust: fresh EDHOC pins the selected full credential, and an authenticated direct-peer credential mismatch is terminal. Firewall policy, routed-network isolation and local-network permission denial still apply. Connection details expose failure and Retry.
 
 Android legacy resolution is serialized. After a native resolution timeout, another attempt remains blocked until its original callback arrives. API 34+ uses service-update subscriptions with bounded lifetime. TCP sockets bind to the selected Wi-Fi network before connect; IPv6 link-local addresses retain a matching interface scope.
 
@@ -38,7 +38,11 @@ Returning to aniCe Home, opening automatic connection setup settings or closing 
 
 Opening Bluetooth discovery preserves both transports; starting Scan suspends/cancels only Bluetooth and leaves LAN active. Configuration recreation preserves the owner. A retained service cannot preserve an unusable Wi-Fi socket or bypass same-peer reservations. BLE companion ownership remains independent of the user-approved transfer lease.
 
-Transfer profiles negotiate larger LAN records independently of BLE. Feature-owned checkpoints retain prepared jobs across process death for 15 minutes; resumed connections authenticate afresh and verify retained prefixes. Manual IP entry and coordinated renewal remain deferred.
+Transfer profiles negotiate larger LAN records independently of BLE. Feature-owned checkpoints retain prepared jobs across process death for 15 minutes; resumed connections authenticate afresh and verify retained prefixes. Manual IP entry remains excluded.
+
+Mutually capable manual and automatic LAN sessions renew at 55 minutes or the `2^20 - 1024` record margin through authenticated drain barriers and fresh EDHOC/readiness over the existing socket. The connected peer, feature channel, subscriptions and transfer batch remain intact while new DATA is briefly backpressured. All keys, IV bases, session IDs, counters and handshake ephemerals are fresh. Transfer capacity, resume and confirmation waits exclude the bounded maintenance interval; offer/recovery and cryptographic deadlines stay absolute. Legacy peers retain hard expiry. See [LAN renewal](../protocol/lan/RENEWAL.md).
+
+Android counts job-scoped work under eligible native owners, up to 128 active leases. Duplicate release cannot affect a replacement job, service loss invalidates only that owner's tokens, and renewal never clears work demand. The last eligible lease release starts a fresh configured idle interval when backgrounded or screen-locked. Picker, transfer-service and companion-media ownership retain their existing authorization and limits; job tags alone cannot authorize background execution.
 
 Mac path updates retain a connection while the path is satisfied, uses Wi-Fi/Ethernet and retains an original local interface; unrelated interface inventory changes do not retire TCP. Write deadlines and cancellation callbacks retire only their outstanding submission, never a completed one. Native socket failures and actual local path loss still retire the channel.
 

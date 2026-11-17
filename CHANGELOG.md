@@ -12,6 +12,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).

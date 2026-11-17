@@ -5,6 +5,20 @@ import Foundation
 import Observation
 import IOKit.pwr_mgt
 
+// Only transport-dependent waits exclude negotiated maintenance; offer/recovery security bounds stay absolute.
+@MainActor func waitForChannelDeadline(_ timeout: Duration, on channel: any SecuredChannel) async throws {
+  let start = ContinuousClock.now
+  let excluded = channel.maintenance?.elapsedMillis ?? 0
+  while true {
+    try Task.checkCancellation()
+    let paused = (channel.maintenance?.elapsedMillis ?? 0) - excluded
+    let remaining = timeout - start.duration(to: ContinuousClock.now) + .milliseconds(paused)
+    if remaining <= .zero { return }
+    try await Task.sleep(for: remaining)
+    if channel.maintenance?.active == true { try await channel.maintenance?.awaitAvailable() }
+  }
+}
+
 struct TransferFile: Identifiable, Equatable, Hashable, Codable, Sendable {
   let id: UUID
   let name: String
@@ -701,7 +715,7 @@ extension MacTransferModel {
           }
           capacityWaiters[id] = resumeOnce
           timeout = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            do { try await waitForChannelDeadline(.seconds(10), on: channel) } catch { return }
             guard !resumed else { return }
             resumed = true
             // Remove only this suspended submission; no periodic capacity polling.
