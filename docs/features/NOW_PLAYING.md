@@ -1,65 +1,46 @@
 # Now Playing
 
-## Using playback controls
+Android Home and **Features → Now Playing** control playback on the connected trusted Mac. The full player shows artwork, player selection, play/pause, previous/next and seeking when the selected source supports them. Audio stays on the Mac.
 
-Android Home shows playback from the connected trusted Mac, including Auto/player selection and supported play/pause, previous/next and seek controls. Features → Now Playing opens the dedicated full player with artwork and the originating Mac. Device summaries stay above playback.
+## Player selection and controls
 
-The full player adapts to available width: phones stack centered artwork, metadata, timeline and transport; wider layouts place artwork beside the controls. The phone play/pause face is compact within its 48-dp touch target. Mac keeps player selection above the track and balances artwork with timeline and transport, falling back to a vertical layout when the content area is narrow.
+**Auto** prefers playing sources and retains the current source among equally eligible players. A manual selection remains until that player exits or observation stops. Missing metadata does not silently select another player.
 
-Mac Features → Now Playing → Playback setup shows the active subscription and explicit permission actions. Full Now Playing exposes Auto/manual player selection directly. Its options retain refresh and existing permission/verification actions. Settings → Show Now Playing on this Mac optionally adds playback to Mac Overview and the companion; it is off by default and does not affect phone controls.
+Seeking previews the slider and elapsed time together, then sends on release. A matching position sample confirms the preview; failure, track replacement or a six-second deadline clears it. Unknown duration and live streams omit seeking. Progress advances locally without per-second network updates.
 
-Auto follows playing sources before paused ones, retains the current source among equals, then prefers system current and stable PID order. Manual selection lasts until the player exits or observation stops. Temporary metadata gaps disable controls without changing the selection. Available actions depend on the selected player; metadata alone does not establish control support.
+The available actions belong to the selected running player. Metadata alone does not establish control support. Expired unsent actions report that they were not sent; a missing result after submission reports an uncertain outcome and is never automatically replayed.
 
-Seeking previews the slider and elapsed label together and sends once on release. A matching position sample confirms the preview; failure, track replacement or a six-second deadline clears it with feedback. Unknown duration and live streams omit seeking. Recording-bound position samples can restore a duration when it becomes available. Progress advances locally without per-second network updates.
+## Volume and permissions
 
-### Volume and permissions
+- **Player volume** changes the selected application's volume. Music and Spotify are candidates; the Mac must grant the required permission and complete the explicit player-control check. Browsers, wrappers and unsupported targets do not expose this slider.
+- **Mac output volume** changes the default output device. Phone volume buttons and system media controls use five-point steps while playback is active and the output device has writable volume. Fixed-volume devices remain unavailable.
 
-**Player volume** changes the selected application's volume. Music and Spotify are candidates; support requires explicit Mac permission and packaged read/write/read verification. Unverified players, browsers and wrappers do not offer this slider. Refresh player controls preserves selection and can recover temporarily unavailable support without prompting or retrying writes.
+Native playback controls use their available native route. Scripting controls require an explicit Mac permission action; phone commands cannot open approval prompts. **Refresh player controls** preserves selection and can recover available support without replaying writes.
 
-**Mac output volume** changes the Mac's default audio output. Phone volume buttons and native system media controls adjust it in five-point steps when Now Playing is active and the output device exposes a writable volume property. This needs no Automation permission. When unavailable, foreground volume buttons keep their normal Android behavior.
+Mac **Features → Now Playing → Playback setup** contains subscription information and setup actions. **Settings → Show Now Playing on this Mac** optionally adds playback to Overview and the companion. It defaults off and does not affect phone controls.
 
-Supported native playback controls are automatic. Scripting controls require an explicit Mac permission action; phone commands cannot trigger approval prompts. Features explains discovering, unsupported, permission-needed and temporarily unavailable controls.
+## Notifications and background use
 
-### Notifications and background use
+Android uses a silent media notification and lock-screen controls. Tapping the notification opens Now Playing. Pausing starts a fixed 90-second grace period, after which compact cards and system media controls disappear; the explicit full player retains paused controls.
 
-Android uses a silent native media notification and lock-screen controls. Tapping opens Now Playing. Pausing starts a fixed 90-second grace period, after which compact cards and system media presentation disappear; explicit Now Playing access retains paused controls. Resuming restores presentation. Android keeps the existing system media session for up to six seconds during a connected LAN/BLE subscription handoff, with commands still gated by the current subscription. A failed handoff or full disconnect removes it.
+Background presentation requires existing companion ownership. Playing state and paused-grace presentation can retain eligible LAN or request it through authenticated BLE coordination. Without eligible LAN, controls use an already-secured BLE channel. Without companion ownership, including API 29–30, background presentation stops.
 
-Foreground Android subscribes automatically. Background controls require existing companion ownership and an already-secured BLE connection. Without that ownership, including API 29–30, background playback presentation stops. Disconnect, player exit, trust removal or identity/session replacement clears remote state.
+A connected LAN/BLE handoff keeps Android's system media session for up to six seconds while commands remain tied to the current subscription. A failed handoff or full disconnection removes it.
 
-## Implementation
+## Connection behavior
 
-Mac code lives under `apps/macos/aniCe/Features/NowPlaying/`, with packaged helper sources in `Adapter/` and tests in `apps/macos/aniCeTests/NowPlaying/`. Android implementation and matching tests use `features/nowplaying/`; the installed media receiver retains its original component namespace.
+Each subscription uses one compatible secured channel, preferring LAN and otherwise BLE. Changing channels requires a fresh subscription and snapshot; submitted commands never migrate or replay. Successful retained-socket LAN renewal preserves the existing channel and subscription.
 
-One application-scoped `MacPlaybackModel` owns selection, revisions, permissions, commands and observation leases. `MediaProcessBridge` drains packaged-helper replies in pipe order through one MainActor FIFO, with 17 MiB shared by partial framing and queued replies. Ordered `DispatchIO` input writes run off MainActor with at most 64 KiB pending; a full queue rejects new submissions, pipe failure retires the helper, and stop cancels queued input without blocking presentation. `MediaSessionLink` handles subscriptions and bounded submissions. Observation runs while a Mac media surface or remote subscription needs it, with a 30-second inactive grace for navigation and channel handoffs. Shared Connections dispatches authenticated DATA without owning playback.
+Artwork travels only over LAN. It belongs to the current recording and subscription; track or subscription replacement releases it, and missing artwork shows a placeholder. There is no artwork history or remote image fetching.
 
-Commands validate the selected process/recording and never fall back to global playback commands.
+Controls share the ordered LAN stream with file transfers. Already-submitted transfer bytes cannot be reprioritized behind a later media command. Repeated continuous controls retain only their latest unsent intent, with bounded feedback and deadlines.
 
-The helper waits at most 200 ms for command discovery before publishing metadata, so promptly resolved controls arrive in the initial snapshot. Playback commands use a separate queue. Later capability replies remain generation/recording-bound. Capability discovery timeouts and failed queries retain previously known controls for the selected source. Missing capability fields are unknown, not disabled; explicit negative replies remove support. Recording-bound late replies cannot update a replacement recording. Partial metadata retains previously known timing only for the same native recording and process identity. Explicit invalid/zero durations remove seeking; a new recording never inherits the old timeline. Both Mac presentation and Android snapshots use this resolved action set; seeking still requires a positive known duration.
+Disconnect, player exit, trust removal or channel replacement clears remote state. Audio streaming, shuffle, lyrics, queues and a separate media background service are not provided.
 
-Playback and volume actions that expire before submission report that they were not sent. Once submission begins, a missing result is reported as an unknown outcome and the command is never automatically replayed. Controls and artwork do not use separate simultaneous subscriptions: LAN controls share the ordered stream with file transfers, so already-submitted transfer bytes cannot be reprioritized behind a later control command.
+## Implementation and attribution
 
-Android submits one media operation at a time. Routine command feedback appears only when an action is still pending after 300 ms, reducing layout flashing without changing command deadlines. While it is pending, seek, player volume and Mac output volume each retain their latest unsubmitted target; Play/Pause, Previous and Next share one additional intent slot. Retained intents preserve acceptance order and expire six seconds after acceptance. Target/revision changes, channel retirement and unsuccessful or uncertain results clear them. Controls expose pending or full-queue feedback instead of disabling the whole playback surface. Submitted commands never replay.
+One Mac playback owner manages selection, observation and commands through the packaged native adapter and the shared authenticated DATA dispatcher. Android uses one playback/presentation owner. Code lives in the platforms' `features/nowplaying/` and `Features/NowPlaying/` directories.
 
-Each subscription uses one already-secured channel, preferring compatible LAN and otherwise BLE. Channel changes require a fresh subscription and snapshot; submitted commands never replay. Artwork bytes are LAN-only; snapshot hashes also travel over BLE. The displayed thumbnail belongs only to the current recording and subscription. Control-only revisions keep it; track or subscription replacement releases it, and returning to a previous track requires fresh artwork. Unknown artwork on a new track shows a placeholder. Artwork is bounded to 256 pixels/64 KiB with 2 KiB chunks and a ten-second assembly deadline. Companion-owned background playback holds a bounded media demand lease while it is playing or inside the paused grace, so LAN may be requested and retained in the background; the lease is released when playback stops, the grace expires, or companion ownership is lost.
+The adapter incorporates attributed [Vorssaint source](https://github.com/vorssaint/vorssaint-utils/tree/b0599423cbf38dd0e28415ccd3f9874a2548668f); [packaged notices](../../apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md) identify the adapted files and licenses.
 
-Detailed contracts and decisions:
-
-- [Media messages and lifecycle](../../protocol/media/README.md), [player volume](../../protocol/media/PLAYER_VOLUME.md) and [Mac output volume](../../protocol/media/OUTPUT_VOLUME.md).
-- [Mac process boundary and signing](../decisions/0007-macos-unsandboxed-playback-prototype.md), [feature DATA boundaries](../decisions/0008-application-data-feature-boundaries.md) and [seek, notification and volume behavior](../decisions/features/now-playing/0009-remote-playback-presentation.md).
-- [Presentation guidance](../design/DESIGN.md#now-playing).
-
-## References and attribution
-
-[Vorssaint](https://github.com/vorssaint/vorssaint-utils/tree/b0599423cbf38dd0e28415ccd3f9874a2548668f) supplied the reference architecture for a Perl-loaded MediaRemote adapter. Six files incorporate adapted upstream code: the native adapter, native selection, source inventory, command framing, playback scripting support and Perl loader. This is code reuse, beyond architectural inspiration. Their original copyright/SPDX headers remain; the [packaged attribution](../../apps/macos/aniCe/Features/NowPlaying/Adapter/THIRD_PARTY_NOTICES.md) maps each file and records its modifications.
-
-aniCe implements the application-scoped playback owner, authenticated transport integration, media contracts, Android controls, notification lifecycle and Mac output-volume extension around that adapter.
-
-## Verification
-
-Manual application testing exercises playback controls, player selection and presentation on the current phone/Mac setup, including playback alongside Phone→Mac transfer. Packaged WebKit controls, native API checks and Mac output writes have also been exercised on Apple Silicon macOS. Current automated build and test evidence is recorded by `scripts/verify-suite.py`. Earlier universal-build results are historical; official Mac builds and the packaged adapter now target arm64 only.
-
-## Known limitations
-
-The remaining matrix includes extended phone-button/lock-screen lifecycle, Music/Spotify permission and volume combinations, simultaneous-player isolation, broader browser targeting, sleep/wake and CPU/battery measurements. Optional Mac Home/companion display correlates with approximately 15–20% app CPU during playback and peaks around 35% with concurrent Phone→Mac transfer; profiling is still required to identify the cause and quantify control latency. macOS 14 and certificate-signed Debug coverage remain open; compilation does not establish runtime support. Intel Macs are outside the supported platform matrix.
-
-Audio streaming, a separate media background service, shuffle, lyrics and queues are outside this feature. Discovery-disconnect recovery remains separate.
+See [media messages](../../protocol/media/README.md), [player volume](../../protocol/media/PLAYER_VOLUME.md), [output volume](../../protocol/media/OUTPUT_VOLUME.md), [architecture](../../ARCHITECTURE.md) and [the playback decision](../decisions/features/now-playing/0009-remote-playback-presentation.md).

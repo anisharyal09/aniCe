@@ -109,9 +109,10 @@ Full specification, record framing, CBOR definitions, and keepalive controls are
 
 Full specification, DNS-SD locator rules, and TCP stream framing are documented in [`lan/README.md`](lan/README.md).
 
-- **Discovery:** `_anice._tcp` DNS-SD registration with an anonymous `aniCe-<UUID>` instance and current `v=3` TXT revision; legacy revisions are `1` and `2`. Locators confer no trust.
+- **Discovery:** Direct IPv4 locators from authenticated BLE rendezvous v2 precede `_anice._tcp` DNS-SD fallback with an anonymous `aniCe-<UUID>` instance and current `v=3` TXT revision; legacy revisions are `1` and `2`. Manual LAN remains available without BLE. Locators confer no trust.
 - **Stream Framing:** A five-byte version/length header precedes each session envelope. Current profile 4 uses frame version 4 and a 2–524,447-byte envelope; legacy profile 3 and standard profile 1 retain their own negotiated limits. Handshakes remain bounded to 4,096 bytes.
 - **Transport Security:** Independent fresh EDHOC session and directional AES-GCM records over TCP.
+- **Renewal:** Mutually capable peers exchange authenticated directional drain barriers before fresh EDHOC/readiness on the same TCP socket; feature descriptors and work ownership remain intact.
 - **Coexistence:** Shared peer reservation permits concurrent BLE and LAN sessions only to the same pinned peer.
 
 ---
@@ -133,7 +134,12 @@ protocol/
 ├── fixtures/
 │   └── identity/                  # Sample valid JSON records (android.json, macos.json)
 ├── lan/
-│   ├── README.md                  # Local network stream framing and mDNS discovery contract
+│   ├── README.md                  # Local network framing, direct locators and mDNS fallback
+│   ├── AUTOMATIC.md               # Authenticated BLE rendezvous v2 and bounded admission
+│   ├── automatic.cddl             # Rendezvous v1/v2 state and endpoint envelopes
+│   ├── RENEWAL.md                 # Directional drain barriers and consecutive fresh sessions
+│   ├── renewal.cddl               # Bounded LAN support/begin/drained controls
+│   ├── TRANSFER_PROFILE.md        # Legacy profile 3 and current profile 4 record bounds
 │   ├── BENCHMARK.md               # Production LAN throughput benchmark harness & gates
 │   └── BULK_PROBE.md              # Isolated bulk record profiling specification
 ├── pairing/
@@ -163,7 +169,10 @@ protocol/
     │   ├── bulk-probe-vectors.json # Positive & negative bulk probe framing vectors
     │   ├── generate_bulk_probe_vectors.py # Bulk probe fixture generator
     │   ├── lan-vectors.json       # Positive & negative TCP stream envelope framing vectors
-    │   └── generate_lan_vectors.py # Independent Python oracle and fixture generator
+    │   ├── generate_lan_vectors.py # Independent Python oracle and fixture generator
+    │   ├── automatic-vectors.json # Rendezvous v1/v2 and invalid routing hints
+    │   ├── renewal-vectors.json   # LAN support/begin/drained controls and invalid encodings
+    │   └── generate_lan_control_vectors.py # Independent CBOR and numeric-IP control oracle
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
     ├── phone-input/

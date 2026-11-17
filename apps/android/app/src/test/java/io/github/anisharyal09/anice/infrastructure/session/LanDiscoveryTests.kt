@@ -13,6 +13,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanDiscoveryTests {
+    @Test fun missingAuthenticatedEndpointStartsOnlyBoundedDiscovery() = runBlocking {
+        for (ready in listOf(true, false)) {
+            var browses = 0
+            val attempts = mutableListOf<Pair<String, Boolean>>()
+            val discovered = (0..20).map { "discovered-$it" }
+            assertEquals(ready, consumeLanCandidates<String>(null, discover = {
+                browses++; kotlinx.coroutines.flow.flowOf(*discovered.toTypedArray())
+            }, key = { it }) { endpoint, direct -> attempts.add(endpoint to direct); ready })
+            assertEquals(1, browses)
+            assertEquals(discovered.take(if (ready) 1 else 8).map { it to false }, attempts)
+        }
+    }
+
     @Test fun directReadinessNeverCreatesDiscovery() = runBlocking {
         var browses = 0
         val attempts = mutableListOf<Pair<String, Boolean>>()

@@ -25,7 +25,7 @@ Device identity uses the following contracts:
 
 3. **Platform Protected Storage:**
    - **Android:** Android Keystore (`AndroidKeyStore` provider). Keys are generated without interactive authentication or biometric prompts (`setUserAuthenticationRequired(false)`) to permit background and proximity reconnection without UI interruption. Metadata is stored atomically under `context.noBackupFilesDir` to prevent cloud backup duplication.
-   - **macOS:** Security framework `SecKey` references. Current builds explicitly select a development login Keychain backend with atomic public metadata in the app container. It provides neither hardware isolation nor a guarantee against Keychain migration. The separate signed backend uses data-protection Keychain, synchronization disabled, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, and Secure Enclave when available. Its native verification requires configured signing and entitlements. Application code never exports or serializes private keys; software-backed storage is not a claim that key bytes never enter system memory.
+   - **macOS:** Security framework `SecKey` references. Current builds select a development login Keychain backend with atomic public metadata in the app container; it provides no hardware isolation or guarantee against Keychain migration. The separate signed backend uses data-protection Keychain, synchronization disabled, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` and Secure Enclave when available. It requires configured signing and entitlements. Application code does not export private keys; software-backed storage is not a claim that key bytes never enter system memory.
 
 4. **Lifecycle & Atomic Reset:**
    - Key aliases are immutable (Android: `anice.identity.v1.<uuid>`; Mac: the selected backend namespace plus a generation UUID). Aliases are never renamed.
@@ -37,7 +37,7 @@ Device identity uses the following contracts:
 
 ### Positive
 - **No Third-Party Crypto Dependencies:** Signing and verification use native platform frameworks. Hardware protection is preferred and reported from the actual backend; platform-protected fallback remains supported.
-- **Deterministic Cross-Platform Verification:** Public key normalization and ASN.1 DER signatures verify cleanly between Android Keystore and macOS Keychain.
+- **Interoperable encoding:** Both platforms use normalized public points and ASN.1 DER signatures.
 - **Auditability & Safety:** Serialized lifecycle operations and an atomic active-record switch preserve the committed identity through interruption. Retired-key cleanup is retryable; interrupted cleanup may temporarily leave an older key stored.
 
 ### Trade-offs & Future Revisions
@@ -49,4 +49,4 @@ Device identity uses the following contracts:
 
 ## Development signing and access
 
-Shared Mac Debug and Release builds default to ad-hoc signing so contributors need no Apple account. Use a stable Apple Development identity locally when checking Event Posting persistence; keep personal Team settings out of shared project files. Signing changes do not change the development Keychain namespace or migrate its private key. Existing identity loads validate metadata, public key and protection policy without a private signing challenge. Creation and reset prove signing access before commit; requested signatures are verified, and denial preserves the committed identity. Signed Secure Enclave storage remains separate pending runtime evidence.
+Shared Mac Debug and Release builds default to ad-hoc signing. A stable Apple Development identity supports repeat permission testing; personal Team settings stay out of shared project files. Signing changes do not migrate the development Keychain namespace or private key. Existing reads validate metadata, public key and protection policy; creation/reset prove signing access before commit. Denial preserves the committed identity.

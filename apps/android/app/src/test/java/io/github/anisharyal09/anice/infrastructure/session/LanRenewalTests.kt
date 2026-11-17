@@ -14,6 +14,7 @@ class LanRenewalTests {
         clientRenewal: Boolean = true,
         serverRenewal: Boolean = true,
         private val clientFactory: (suspend () -> Unit)? = null,
+        clientClock: ((AtomicLong) -> Long)? = null,
     ) {
         val clock = AtomicLong()
         val helper = SessionTests()
@@ -30,9 +31,10 @@ class LanRenewalTests {
         val factoriesR = AtomicInteger()
         var hold: (suspend (ByteArray) -> Unit)? = null
         var replyHold: (suspend (ByteArray) -> Unit)? = null
+        private val clientNow = { clientClock?.invoke(clock) ?: clock.get() }
         val client = SessionConnection(helper.freshEngine(fixture, false, clock::get), false,
             { true }, { bytes -> hold?.invoke(bytes); historyI.add(bytes); outgoing.add(bytes) },
-            { dataI.add(it) }, { securedI.incrementAndGet() }, controls = true, now = clock::get,
+            { dataI.add(it) }, { securedI.incrementAndGet() }, controls = true, now = clientNow,
             renew = true, profile = SessionProfile.LAN_TRANSFER_512,
             renewalHandshake = if (!clientRenewal) null else {
                 { factoriesI.incrementAndGet(); clientFactory?.invoke(); helper.freshEngine(fixture, false, clock::get) }
@@ -160,6 +162,58 @@ class LanRenewalTests {
             assertTrue(pair.client.isClosed)
             assertEquals(1, pair.dataI.size)
         } finally { pair.close() }
+    }
+
+    @Test fun retiredEpochDeadlineCannotCloseItsFreshSuccessor() = runBlocking {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val gated = java.util.concurrent.atomic.AtomicBoolean()
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor {
+            Thread(it, "retired-epoch-deadline")
+        }
+        val pair = Pairing(clientClock = { clock ->
+            val checkingRecord = Thread.currentThread().name == "retired-epoch-deadline" &&
+                Thread.currentThread().stackTrace.any {
+                    it.className == SecureSession::class.java.name && it.methodName == "checkTime"
+                }
+            if (checkingRecord && gated.compareAndSet(false, true)) {
+                entered.countDown()
+                check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            }
+            clock.get()
+        })
+        try {
+            pair.ready()
+            // Keep the original channel active without requesting renewal until its hard-age margin.
+            repeat(59) {
+                pair.clock.addAndGet(60000)
+                pair.client.sendData(byteArrayOf(1))
+                pair.server.sendData(byteArrayOf(2))
+                pair.pump()
+            }
+            pair.clock.set(3595000)
+            val checking = executor.submit<SessionFailure?> {
+                try { pair.client.checkDeadlines(); null }
+                catch (error: SessionException) { error.reason }
+            }
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            pair.client.tick()
+            pair.pump()
+            assertEquals(1, pair.factoriesI.get())
+            assertFalse(pair.client.isRenewing)
+            pair.clock.set(3600000)
+            release.countDown()
+            assertNull("A delayed old-channel check retired the successor",
+                checking.get(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse(pair.client.isClosed)
+            pair.client.sendData(byteArrayOf(9))
+            pair.pump()
+            assertArrayEquals(byteArrayOf(9), pair.dataR.last())
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            pair.close()
+        }
     }
 
     @Test fun quiescenceAndHardLifetimeRemainAbsolute() = runBlocking {

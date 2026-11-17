@@ -35,6 +35,10 @@ Quiescence and drain acknowledgement share one ten-second absolute monotonic dea
 
 ## Feature and work ownership
 
-The same authenticated channel publishes a bounded maintenance interval without changing its descriptor or availability. Transport-dependent transfer capacity, credit, resume and confirmation waits exclude only that interval; fixed offer-assembly, recovery-retention and security deadlines remain absolute. No feature queue or full transfer is drained as a prerequisite to rekeying. Pending ACKs and unsealed DATA resume on the same channel.
+The same authenticated channel publishes a bounded maintenance interval without changing its descriptor or availability. Transfer capacity, resume and file-confirmation timeout budgets exclude only that interval; credit waiters retain their existing correlated progress. Fixed offer-assembly, recovery-retention and security deadlines remain absolute. No feature queue or full transfer is drained as a prerequisite to rekeying. Pending ACKs and unsealed DATA resume on the same channel.
 
 Android work leases remain owner/job-scoped and independent of cryptographic epochs. Only existing approved service, bounded picker or companion-media ownership permits background work. Final lease release starts the configured idle timeout when backgrounded or locked. Explicit Disconnect, invalid trust, unusable network and process retirement remain terminal independently of work demand.
+
+## Fixtures
+
+[Renewal fixtures](../test-vectors/lan/renewal-vectors.json) cover support, begin, drained and rejected encodings. The adjacent `generate_lan_control_vectors.py --check` command uses an independent CBOR oracle.

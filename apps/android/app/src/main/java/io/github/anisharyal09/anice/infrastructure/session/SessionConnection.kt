@@ -328,13 +328,26 @@ class SessionConnection(
   internal fun checkDeadlines() {
     if (closedByPeer && !closed) return
     // Authentication may suspend in a signer; retirement and hard deadlines cannot wait for it.
-    try {
-      requireOpen()
-      if (timedOut()) throw SessionException(SessionFailure.EXPIRED)
-      channel?.checkDeadlines() ?: if (!creatingHandshake) handshake.checkTime() else Unit
-      liveness?.checkPongDeadline(now())
-      renewalDeadline?.let { if (now() >= it) throw SessionException(SessionFailure.CONTROL_TIMEOUT) }
-    } catch (e: SessionException) { retire(); throw e }
+    while (true) {
+      val checkedChannel = channel
+      val checkedHandshake = handshake
+      try {
+        requireOpen()
+        if (timedOut()) throw SessionException(SessionFailure.EXPIRED)
+        // Directional barriers have completed; only the fresh-handshake deadline remains active.
+        if (creatingHandshake) return
+        checkedChannel?.checkDeadlines() ?: checkedHandshake.checkTime()
+        // A retained socket can replace its cryptographic owner while this check is in progress.
+        if (checkedChannel !== channel || checkedHandshake !== handshake) continue
+        liveness?.checkPongDeadline(now())
+        renewalDeadline?.let { if (now() >= it) throw SessionException(SessionFailure.CONTROL_TIMEOUT) }
+        return
+      } catch (e: SessionException) {
+        if (!closed && !closedByPeer && (checkedChannel !== channel || checkedHandshake !== handshake)) continue
+        retire()
+        throw e
+      }
+    }
   }
 
   suspend fun tick() {
@@ -430,15 +443,16 @@ class SessionConnection(
   private suspend fun switchHandshake() {
     val factory = renewalHandshake ?: throw SessionException(SessionFailure.STATE)
     renewalPhase = RenewalPhase.SWITCHING
-    creatingHandshake = true
     renewalDeadline = null
     deadline = now() + 30000
+    creatingHandshake = true
     val old = handshake
-    channel?.close()
+    val oldChannel = channel
+    liveness = SessionLiveness(responder)
     channel = null
+    oldChannel?.close()
     old.invalidate()
     old.close()
-    liveness = SessionLiveness(responder)
     advertisedRenewal = false; peerRenewal = false; drainedReceived = false
     val created = factory()
     synchronized(ownership) {

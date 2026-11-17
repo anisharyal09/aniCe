@@ -9,7 +9,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 ## Platform-Native Device Identity
 
 - **Android:** P-256 signing keys in `AndroidKeyStore`, with actual hardware/software protection reported and metadata excluded from backup.
-- **macOS:** Actor-isolated P-256 lifecycle through Security and Keychain. Current app builds select development Keychain storage; the separate signed backend prefers Secure Enclave when available and still requires verification.
+- **macOS:** Actor-isolated P-256 lifecycle through Security and Keychain. Current app builds select development Keychain storage. The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements.
 - **Boundary Format:** Signatures use ASN.1 DER at the native identity boundary. Identity reset retires sessions and automatic connection setup; trust bound to the previous identity no longer authorizes connections, so devices must pair again. It does not erase the other device's stored records.
 - **Specifications & Decisions:** Defined in [ADR 0001 (Device Identity)](docs/decisions/0001-provisional-device-identity.md) and enforced by the [Identity Schema](protocol/schemas/identity.schema.json) with test cases in [`identity-vectors.json`](protocol/test-vectors/identity-vectors.json).
 
@@ -40,7 +40,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
   - Vectors: [`discovery-vectors.json`](protocol/test-vectors/discovery-vectors.json)
-- **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android streams resolved Wi-Fi discovery candidates into selected-peer authentication during a bounded browse; Mac accepts local connections. LAN carries connection checks, subscribed media DATA and preferred file-transfer DATA, with a 4,000-byte standard plaintext bound or a 524,416-byte plaintext bound under negotiated profile 4 (legacy profile 3: 262,144 bytes). BLE retains standard records.
+- **LAN Transport:** Authenticated BLE IPv4 locators precede bounded anonymous Bonjour/NSD discovery (`_anice._tcp`); manual LAN remains available without BLE. A five-byte TCP frame header carries bounded envelopes. Android authenticates direct and resolved Wi-Fi candidates against the selected peer; Mac accepts local connections. LAN carries connection checks, subscribed media DATA and preferred file-transfer DATA, with a 4,000-byte standard plaintext bound or a 524,416-byte plaintext bound under negotiated profile 4 (legacy profile 3: 262,144 bytes). BLE retains standard records.
   - Mac frame assembly, submission accounting and watchdogs run in a transport actor; Android socket work runs on IO dispatchers. Frame parsing samples time once per receive buffer, retaining queue/nonce bounds. Secured encrypted-frame assembly allows ten seconds without byte progress, capped at sixty seconds total; pre-readiness assembly remains bounded to ten seconds.
   - Contract: [LAN Binding Contract](protocol/lan/README.md)
   - Lifecycle: [Independent LAN Connections](docs/LAN_CONNECTIONS.md)
@@ -63,7 +63,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ## Now Playing
 
-One application-scoped MacPlaybackModel owns playback state, selection and observation leases; its MediaProcessBridge owns the packaged native adapter and MediaSessionLink owns subscriptions. Android controls this owner through one existing secured channel, preferring foreground LAN and using BLE otherwise. Background requires existing companion ownership. Artwork stays on LAN; channel replacement requires fresh state and never replays commands.
+One application-scoped MacPlaybackModel owns playback state, selection and observation leases; its MediaProcessBridge owns the packaged native adapter and MediaSessionLink owns subscriptions. Android controls this owner through one existing secured channel, preferring compatible LAN and using BLE otherwise. Background requires existing companion ownership; bounded active-playback demand can retain LAN. Artwork stays on LAN; channel replacement requires fresh state and never replays commands, while successful retained-socket renewal preserves the channel and subscription.
 
 Mac output volume and verified selected-player volume are independently negotiated controls. See [feature behavior](docs/features/NOW_PLAYING.md), [media contracts](protocol/media/README.md) and the [playback decision](docs/decisions/features/now-playing/0009-remote-playback-presentation.md).
 

@@ -333,15 +333,29 @@ actor SessionConnection {
   func checkDeadlines() async throws {
     if closedByPeer, !closed { return }
     let op = generation
-    do {
-      try ensure(op)
-      if let deadline, now() >= deadline { throw SessionFailure.expired }
-      if let channel { try await channel.checkDeadlines() }
-      else if !creatingHandshake { try await handshake.checkTime() }
-      try ensure(op)
-      try liveness?.checkPongDeadline(now())
-      if let renewalDeadline, now() >= renewalDeadline { throw SessionFailure.controlTimeout }
-    } catch { await close(); throw error }
+    while true {
+      let checkedChannel = channel
+      let checkedHandshake = handshake
+      do {
+        try ensure(op)
+        if let deadline, now() >= deadline { throw SessionFailure.expired }
+        // Directional barriers have completed; only the fresh-handshake deadline remains active.
+        if creatingHandshake { return }
+        if let checkedChannel { try await checkedChannel.checkDeadlines() }
+        else { try await checkedHandshake.checkTime() }
+        try ensure(op)
+        // Re-evaluate the successor instead of retiring it for an old actor's delayed result.
+        if checkedChannel !== channel || checkedHandshake !== handshake { continue }
+        try liveness?.checkPongDeadline(now())
+        if let renewalDeadline, now() >= renewalDeadline { throw SessionFailure.controlTimeout }
+        return
+      } catch {
+        if !closed, op == generation,
+          checkedChannel !== channel || checkedHandshake !== handshake { continue }
+        await close()
+        throw error
+      }
+    }
   }
   func tick() async throws {
     defer { changed() }
@@ -353,10 +367,10 @@ actor SessionConnection {
     do {
       try ensure(op)
       if let deadline, now() >= deadline { throw SessionFailure.expired }
-      if let channel { try await channel.checkDeadlines() } else { try await handshake.checkTime() }
-      try ensure(op)
-      if renew, let reason = await channel?.renewalReason() {
+      let checkedChannel = channel
+      if renew, let reason = await checkedChannel?.renewalReason() {
         try ensure(op)
+        guard checkedChannel === channel, !processing, !creatingHandshake else { return }
         if renewalHandshake == nil { try liveness?.requestRenewal(reason) }
         else if mutualRenewal { try beginRenewal(reason) }
       }
@@ -466,15 +480,16 @@ actor SessionConnection {
   private func switchHandshake(_ op: Int) async throws {
     guard let factory = renewalHandshake else { throw SessionFailure.state }
     renewalPhase = .switching
-    creatingHandshake = true
     renewalDeadline = nil
     deadline = now() + 30000
+    creatingHandshake = true
     let old = handshake
-    await channel?.close()
+    let oldChannel = channel
+    liveness = SessionLiveness(responder: responder)
     channel = nil
+    await oldChannel?.close()
     await old.close()
     try ensure(op)
-    liveness = SessionLiveness(responder: responder)
     advertisedRenewal = false; peerRenewal = false; drainedReceived = false; renewalBlocked = false
     let created = try await factory()
     do { try ensure(op) } catch { await created.close(); throw error }

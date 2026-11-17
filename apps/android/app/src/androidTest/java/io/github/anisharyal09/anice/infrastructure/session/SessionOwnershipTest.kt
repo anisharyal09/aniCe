@@ -48,6 +48,8 @@ class SessionOwnershipTest {
     val policy = CompanionProbe.get(app)
     withContext(Dispatchers.Main) {
       assumeTrue("Requires native companion setup", policy.available && policy.address != null && policy.peerId != null)
+      // This fixture toggles the saved automatic choice; never spend a user's existing pause.
+      assumeTrue("Requires enabled, unpaused automatic setup", policy.armed)
       val wasArmed = policy.armed
       val wasAutomatic = app.getSharedPreferences("companion_feasibility", Context.MODE_PRIVATE)
         .getBoolean("automatic", false)

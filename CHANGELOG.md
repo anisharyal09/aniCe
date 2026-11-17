@@ -8,8 +8,6 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
-Preparing the first public beta. Entries remain unreleased until publication.
-
 ### Added
 
 - Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.
@@ -38,6 +36,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Document direct-first LAN discovery, retained-socket renewal and native background work.
+- Separate behavior guides, wire contracts and developer instructions; remove public test-run diaries.
 - Streamline README introduction with direct download badges, Homebrew instructions, and consolidated setup guide links.
 - Set the Android and macOS development version to `0.9.0-beta.3` (build `90023`) and update current-version documentation.
 - Bind release device approval to the tag, source commit and SHA-256 of both signed artifacts; add current 512-KiB LAN benchmark selection and keep Play Protect enabled in installation guidance.
@@ -119,7 +119,7 @@ Application release v0.3.0, build 3.
 - Shared session DATA admission keeps feature requests unsealed while waiting, bounds admission callers and schedules small requests ahead of large chunks with bounded bulk fairness. Cancellation remains effective until nonce ownership; session-owned completion protects sealed records while transfer cleanup cancels queued producers. Opt-in record timings correlate validation, encryption and submission by local generation, direction, profile and sequence.
 - Connection diagnostics distinguish incomplete LAN frames by profile, byte counts and read age. Opt-in timings separate socket reads, Mac callback scheduling and Android writer admission, dispatch and blocking writes; Android recovery retains retry history across owner handoffs and validates the live BLE discovery payload before subscription.
 - Linux CI for shared protocol and Android host checks, with pinned actions, dependency caches and failure artifacts. Verification writes isolated run reports under `build/reports/verification/` and emits GitHub error annotations; structure and Android native-build checks support Linux hosts.
-- Updated implementation summaries to remove outdated blanket acceptance-pending labels.
+- Keep implementation summaries focused on behavior and limits.
 - SMS relay v3 connects Android Messages with Mac notifications, inline replies, paged conversations, history, phone-side search and per-reply SIM selection over secured LAN/Bluetooth. Content stays in memory on the Mac. Live receipts and sends retain local observation order across provider refreshes; thread scans complete timestamp groups and continue past unreadable rows. Native composers expose SIM choice beside Send, with per-phone Mac notification, sound and preview controls.
 - Native Quick Paste Tray on macOS: lightweight floating card carousel invoked via global hotkey (`⌥⌘V`), menu-bar companion button, or in-app button, featuring instant real-time search, category filters (All, Pinned, Mac, Phone), smart card previews (live hex color swatches, URL link summaries, monospace code formatting), Space to expand full text in the tray, contiguous multi-selection via Shift + Click / Shift + Arrow, individual toggle via Command + Click, Backspace/Delete to delete selected items, and Return to copy (joining multi-selections with newlines). History capacity is configurable on both platforms (20 default, 50, 100); pausing collection, app restart, Forget device and Reset identity preserve saved items, with explicit Clear/Delete controls. Pinned snippets survive recent-item eviction within the 100-item absolute bound, and clear options offer unpinned or all deletion.
 - Pause clipboard observation on macOS for timed intervals (11m, 21m, 45m, 3h, 9h) or indefinitely until re-enabled, with instant Resume controls accessible from the menu-bar status item right-click menu, the companion popover (organized into logical sections with dividers), the Quick Paste Tray, and the Clipboard panel settings.
@@ -225,7 +225,7 @@ Development milestone: 0.2.0-dev, build 2.
 
 - Architecture overview (`ARCHITECTURE.md`) documenting shared identity, mutual trust bootstrap, secure session profiles, and independent native BLE/LAN transport ownership.
 - Independent authenticated LAN sessions alongside BLE, with explicit transport controls, pinned same-peer ownership and bounded native TCP framing.
-- Automatic nearby BLE recovery, shared Mac availability and coordinated fresh-session renewal. Notification-free Android companion ownership is enabled on API 31+; physical endurance and minimum-OS acceptance remain pending.
+- Automatic nearby BLE recovery, shared Mac availability and coordinated fresh-session renewal. Notification-free Android companion ownership is enabled on API 31+.
 - Negotiated encrypted BLE keepalive with legacy manual fallback and independent application-control conformance fixtures.
 - Trusted-device BLE session integration with encrypted readiness, replay-protected directional AES-GCM records, lifecycle cleanup, shared GATT framing and explicit connection controls.
 - Independent Python conformance oracle for record framing and test vectors covering directional AES-GCM traffic.

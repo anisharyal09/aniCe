@@ -1,37 +1,41 @@
 # Independent LAN sessions
 
-Status: accepted for the manual LAN increment.
+Status: accepted.
 
 ## Context
 
-Trusted-device sessions already use native EDHOC and directional AES-GCM records over BLE. LAN adds a higher-bandwidth local path without changing pairing, protected identity storage or trust. Android API 29 and macOS 14 remain provisional minimum baselines.
+Trusted-device sessions use native EDHOC and directional AES-GCM over BLE. LAN adds a higher-bandwidth local path without changing pairing, protected identity storage or trust.
 
 ## Decision
 
-Use native TCP with Android as client/EDHOC initiator and Mac as listener/responder. Bonjour/Android NSD advertise and resolve anonymous ephemeral service locators. Authenticate each socket independently against existing active trust. The [LAN contract](../../protocol/lan/README.md) owns byte framing, discovery bounds and admission.
+- Use native TCP: Android is client/EDHOC initiator and Mac is listener/responder.
+- Advertise anonymous ephemeral Bonjour/NSD locators. Every socket independently authenticates the selected full credential.
+- Reuse the shared handshake, session, record and DATA implementations. Do not add TLS, Rust networking, BLE-derived LAN keys or resumed counters.
+- Permit BLE and LAN concurrently only for the same pinned peer and local identity. An unresolved Mac Any-phone BLE window remains exclusive.
+- Keep transport failure, disconnection and admission independent; trust removal and identity reset retire both.
 
-Reuse transport-independent SessionConnection, handshake and record implementations. Preserve the existing profile, hard bounds and application diagnostics. No TLS layer, additional crypto/runtime dependency, Rust networking layer, key resumption or BLE-derived LAN keys are introduced.
+The [LAN contract](../../protocol/lan/README.md) owns framing, profile limits and bounded admission/discovery.
 
-Authenticated [BLE rendezvous v2](../../protocol/lan/AUTOMATIC.md) supplies direct IPv4 locators before Bonjour registration, retaining bounded mDNS fallback and pinned authentication. [LAN renewal](../../protocol/lan/RENEWAL.md) negotiates directional drain barriers before retiring the old cryptographic session and performing fresh EDHOC/readiness on the same TCP socket. Feature descriptors, queues and work leases survive successful renewal; old key material, counters and ephemerals do not.
+## Extensions
 
-Permit one BLE and one LAN session to the same trusted peer. A shared reservation binds full peer credentials and the current local fingerprint before work starts. Mac unresolved Any-phone BLE admission remains exclusive until it resolves; concrete selections allow concurrent transports. Each channel has fresh keys and counters. Explicit controls determine which transport receives a diagnostic; feature routing and mutual endpoint bootstrap remain deferred.
+[Rendezvous v2](../../protocol/lan/AUTOMATIC.md) exchanges authenticated IPv4 locators over live BLE before Bonjour registration, with bounded mDNS fallback. Locators are routing hints, never identity or key material.
 
-LAN is manual and foreground-owned on Android. Native BLE companion ownership does not grant LAN background lifetime. Mac retains explicit availability through its existing companion and closes on sleep/Quit. Keep failure, disconnection and admission state independent per transport; trust revocation and identity reset retire both. *(Superseded in part: automatic background LAN discovery, admission and demand-driven upgrades for paired peers are described in [LAN Connections](../LAN_CONNECTIONS.md)).*
+[LAN renewal](../../protocol/lan/RENEWAL.md) drains both old record directions before fresh EDHOC/readiness on the retained socket. Feature descriptors, queues and eligible work ownership survive; all cryptographic material is replaced.
+
+The initial increment used foreground/manual LAN and standard 4,000-byte records. [LAN ownership](../LAN_CONNECTIONS.md), [shared feature routing](0008-application-data-feature-boundaries.md) and [transfer profiles](../../protocol/lan/TRANSFER_PROFILE.md) define the subsequent behavior.
 
 ## Consequences
 
-IPv6 destinations must preserve their selected interface scope in addition to socket network binding. Legacy Android resolutions remain serialized until native completion, even after timeout; a stalled native operation can prevent immediate Retry. Modern resolution subscriptions are explicitly unregistered.
-
-The sandboxed Mac app enables client/server network entitlements and declares its Bonjour type and local-network purpose. Build verification inspects the packaged plist and signed entitlements. Terminal interchange does not prove packaged-app privacy or sandbox behavior. *(Superseded: Current macOS distribution builds operate outside the Mac App Store sandbox under Hardened Runtime; see [Architecture](../../ARCHITECTURE.md)).*
-
-The initial LAN record size remains bounded to the existing 4,000-byte plaintext maximum. Bulk streaming, synchronization, automatic recovery, handover and mutual transport bootstrap require subsequent contracts. Existing BLE and minimum-OS verification gaps remain independent release gates. *(Superseded: File transfer uses 512 KiB profile 4 streaming records with SHA-256 resumption checkpoints; see [LAN Benchmark](../../protocol/lan/BENCHMARK.md) and [Transfer Protocol](../../protocol/transfer/README.md)).*
+- IPv6 scope and socket network binding remain separate inputs.
+- A timed-out legacy NSD resolution still owns its native lane until the callback completes. Modern subscriptions are explicitly unregistered.
+- Admission callbacks share the original window and failure budget; late callbacks cannot reopen it.
+- Native OS permission, firewall and route policy still govern reachability.
+- Mac retains its Bonjour declarations and network entitlements. Its current unsandboxed process/signing boundary is defined in [ADR 0007](0007-macos-unsandboxed-playback-prototype.md).
 
 ## References
 
-- [RFC 6763 — DNS-Based Service Discovery](https://www.rfc-editor.org/rfc/rfc6763.html), sections 4–6: service instance naming and SRV/TXT discovery. Random instance names and identity-free TXT records are aniCe privacy choices; discovery does not authorize a peer.
-- [RFC 9293 — TCP](https://www.rfc-editor.org/rfc/rfc9293.html), section 2.2: TCP transports a byte stream. The [LAN contract](../../protocol/lan/README.md) defines envelope boundaries, length validation and assembly deadlines independently of socket read/write boundaries.
-- [Android NsdManager](https://developer.android.com/reference/android/net/nsd/NsdManager): asynchronous resolution callbacks, `FAILURE_ALREADY_ACTIVE`, and API 34 service-info subscriptions. Keeping the legacy resolution lane occupied until its terminal callback is an aniCe concurrency guard; a coroutine timeout does not establish native completion.
-- [Android Network.bindSocket](https://developer.android.com/reference/android/net/Network#bindSocket(java.net.Socket)) and [Inet6Address](https://developer.android.com/reference/java/net/Inet6Address): bind an unconnected socket to the selected network and supply an IPv6 interface scope separately. Network selection and address scope are distinct inputs.
-- [Apple network server entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.network.server): TCP sandbox entitlements govern incoming/outgoing connection initiation, not bidirectional data flow. Enabling both entitlements is this implementation's configuration, not a universal requirement for every listener.
-- [Apple TN3179 — Understanding local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy): Bonjour declarations, usage descriptions, responsible-code attribution and privacy testing. These requirements motivate packaged-app verification rather than relying on command-line interchange.
-- [ADR 0005 — EDHOC trusted-device sessions](0005-edhoc-secure-sessions.md) and the [session application profile](../../protocol/session/README.md): pinned authentication, exporter-derived directional keys, fresh handshakes and record limits reused independently by each transport.
+- [RFC 6763 — DNS-SD](https://www.rfc-editor.org/rfc/rfc6763.html)
+- [RFC 9293 — TCP](https://www.rfc-editor.org/rfc/rfc9293.html)
+- [Android NSD](https://developer.android.com/reference/android/net/nsd/NsdManager) and [network binding](https://developer.android.com/reference/android/net/Network#bindSocket(java.net.Socket))
+- [Apple local-network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
+- [Secure sessions](0005-edhoc-secure-sessions.md)

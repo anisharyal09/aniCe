@@ -7,8 +7,8 @@ import io.github.anisharyal09.anice.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.features.backgroundprobe.hasConnectionSetup
+import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
 import androidx.compose.ui.res.painterResource
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -199,9 +199,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                         automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
                                     } finally { automaticChanging = false }
                                 }
-                            } else context.startActivity(Intent().setClassName(context.packageName,
-                                "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
-                                .putExtra("peer", record.peer.deviceId).putExtra("enable", true))
+                            } else context.startActivity(companionSetupIntent(context, record.peer.deviceId, enable = true))
                         })
                 }
                 if (!compact) {
@@ -256,12 +254,11 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                             Text(if (diagnostics) "Hide diagnostics" else "Diagnostics", modifier = Modifier.fillMaxWidth())
                         }
                         if (diagnostics) {
-                            Text("Local network ends on background or screen lock.", style = MaterialTheme.typography.bodySmall)
+                            Text("Idle local network follows the background timeout in Settings. Approved active work keeps it connected.",
+                                style = MaterialTheme.typography.bodySmall)
                             if (nearby.available) {
                                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
-                                    context.startActivity(Intent().setClassName(context.packageName,
-                                        "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
-                                        .putExtra("peer", record.peer.deviceId))
+                                    context.startActivity(companionSetupIntent(context, record.peer.deviceId))
                                 }) { Text("Setup settings") }
                             } else {
                                 Text("Automatic Bluetooth connection is unavailable in this build.",

@@ -1,6 +1,6 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window, and a menu-bar companion. QR/PIN pairing includes authenticated identity proofs, mutual approval and local peer trust. Feature-specific verification and limits are recorded in the linked guides.
+Swift 6 and SwiftUI provide persistent device identity, a main window and a menu-bar companion. QR/PIN pairing uses mutual approval and local peer trust. Feature behavior and limits are documented in the linked guides.
 
 ## Requirements and user setup
 
@@ -94,6 +94,14 @@ The normal script mode quits aniCe, builds Debug, verifies the signature/team an
 
 Configure input access in **Settings → Permissions**. If an enabled permission still fails after restarting, use **Show this app in Finder** and re-add that exact copy in System Settings. See [permission recovery](../../docs/features/PHONE_TO_MAC.md#permission-recovery).
 
+For a deliberate development reset of Event Posting consent:
+
+```sh
+tccutil reset PostEvent io.github.anisharyal09.anice
+```
+
+Use the preview bundle ID for a preview. Resetting removes consent; it does not grant access. See [Apple's reset guide](https://developer.apple.com/documentation/xcode/resetting-access-to-protected-resources-in-macos).
+
 ### Isolated UI preview
 
 ```sh
@@ -102,7 +110,7 @@ Configure input access in **Settings → Permissions**. If an enabled permission
 
 This builds **aniCe Preview** with bundle ID `io.github.anisharyal09.anice.preview`, separate preferences, identity keys and runtime files. It leaves installed aniCe copies running and does not load the normal private signing settings. The output is `build/preview-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCePreview.app`.
 
-The preview is ad-hoc signed for UI work. It does not start automatic connections, clipboard lifecycle observers, global hotkeys or the menu-bar companion, and it cannot run release-update installation/recovery. Use normal certificate-signed releases for permission persistence and beta-to-beta update testing.
+The preview is ad-hoc signed for UI work and uses the app's native feature/lifecycle code under its isolated identity. Saved preview preferences and granted permissions determine which observers and automatic connections run. It cannot run release-update installation/recovery. Use the certificate-signed transfer preview for physical connection/permission testing and normal signed releases for beta-to-beta update testing.
 
 ### Isolated transfer preview
 
@@ -112,7 +120,7 @@ The preview is ad-hoc signed for UI work. It does not start automatic connection
 
 This builds **aniCe Transfer Preview** with bundle ID `io.github.anisharyal09.anice.preview.transfer`, separate preferences, identity keys, runtime files and update recovery. It leaves installed aniCe copies and the UI preview untouched. The output is `build/transfer-preview-mac/<checkout>-<branch-key>/Build/Products/Debug/aniCeTransferPreview.app`.
 
-The transfer preview is Apple Development signed so notification permission behaves like a normal build. Automatic connections, clipboard lifecycle observers, hotkeys and the menu-bar companion stay off; pair and connect from the app. Its Edge Drop shelf starts disabled on the left edge; enable it and choose a different edge from production before testing.
+The transfer preview is Apple Development signed and contains the native feature, manual connection and automatic connection controls. Pair it with the isolated Android preview and configure its own permissions/preferences; it does not reuse the normal app's trust or settings. The menu-bar companion and lifecycle code operate within that isolated app, while release-update installation/recovery remains disabled. Its Edge Drop shelf starts disabled on the left edge; enable it and choose a different edge from production before testing.
 
 Opening the project in Xcode and pressing Command-R uses its own DerivedData copy. The shared project defaults to ad-hoc signing; use the script for repeat permission testing.
 

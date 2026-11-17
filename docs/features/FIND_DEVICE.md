@@ -1,31 +1,26 @@
 # Find Device
 
-Mac and Android can request a native alert on a connected trusted peer. Features → Find Device opens peer-scoped actions, local notification permission and system-settings actions. Only connected peers are listed while any are connected; otherwise saved peers appear with connection guidance. Missing capability advertisement is distinct from being disconnected. Device summaries and the Mac companion omit the action. LAN is preferred when both secured transports advertise support; otherwise BLE is used. Find Device does not establish a connection.
+Request a native alert on a connected trusted peer from **Features → Find Device**. LAN is preferred when both channels support the feature; otherwise BLE is used. Find Device does not establish a connection or track location.
 
-The receiving alert says “Your paired device <name> is looking for you.” using localized resources and the authenticated peer name. Android rings for up to sixty seconds using its system alarm tone and current alarm volume, including while the ringer is Silent/Vibrate. Mac retains ordinary notification sound/settings. Neither platform changes system volume or sound mode, bypasses DND, or tracks location. Android alarm muting, DND and audio routing still govern audibility.
+## Alerts
 
-Android presents a Stop ringing action in its foreground notification and an alert dialog while the app is open. Stop, dialog dismissal, native notification deletion where supported, disconnect, audio-focus loss and expiry release playback, audio focus and the service. Foreground-service notifications may not be swipeable on older Android versions; Stop remains available. Background requests do not forcibly open an activity or overlay the lock screen. Mac retains Dismiss and native notification dismissal. The application delegate registers transfer and Find Device categories together and routes each native response by category; feature notifiers never replace the shared delegate.
+- **Android:** Rings for up to sixty seconds using the system alarm tone and current alarm volume. The notification and foreground dialog offer **Stop ringing**.
+- **Mac:** Shows a native notification with **Dismiss**, following macOS notification, sound and Focus settings.
 
-Duplicate requests do not restore stopped alerts or extend their fixed deadline. Android returns busy while ringing. On Mac, a fresh request replaces the previous notification so another search does not wait for the faded banner’s sixty-second lifetime; an in-flight native submission still returns busy. The service accepts only an identifier already admitted by the authenticated feature owner. Native audio startup has a four-second deadline; service-start refusal, denied audio focus, zero/muted alarm volume, unavailable tone or preparation errors report failure and clean up. The service is not restarted after process death.
+The alert identifies the authenticated paired device. Android can ring while the ringer is Silent/Vibrate, but alarm muting, DND, audio routing and audio-focus policy still apply. Neither platform changes system volume or bypasses DND.
 
-After reserving the per-peer alert and replay floor, native startup runs as feature-owned work; ordered shared DATA delivery continues without waiting for that startup. Late native completions are fenced by the channel instance and alert identifier. A successful peer result acknowledges OS alert submission; Android additionally waits for native player startup. It proves neither display nor audibility. No response after ten seconds leaves delivery unconfirmed. Missing notification permission or a blocked app/channel returns blocked. Incoming requests never open permission prompts. Features explains local ringing and provides explicit notification setup.
+Stop, dismissal, disconnection, expiry or audio-focus loss ends the Android alert and releases its service and wake lock. Duplicate requests do not restart a stopped alert or extend its deadline. Android reports busy while ringing; Mac replaces a submitted alert for a fresh request.
 
-Android uses a `mediaPlayback` foreground service only during an admitted alert and holds playback's partial wake lock while sound runs. Background BLE reception still requires existing API 31+ companion ownership. API 29–30 remain foreground/manual. LAN follows its existing foreground/approved-work lifecycle; ringing grants no networking lease. Force-stop, process death and unavailable connections can prevent receipt. Background service starts remain subject to Android policy and existing companion eligibility.
+## Permissions and background use
 
-Mac expiry runs while the application executes and is checked again when its timer resumes. Normal termination and startup remove owned notifications. An abrupt termination or suspension may leave a delivered Mac notification until native dismissal or application cleanup; macOS supplies no native local-notification expiry setting. Find Device does not wake a sleeping Mac or launch a stopped app.
+Notification permission is granted locally through the feature. Incoming requests never open permission prompts or force a background activity onto the lock screen.
 
-Channel selection and deadline scans use lazy traversal without materializing complete candidate or deadline inventories.
+Android uses a `mediaPlayback` foreground service only for an admitted alert. That service grants no connection lease. Background BLE needs existing companion ownership; LAN follows its [background timeout and native work policy](../LAN_CONNECTIONS.md). A stopped app, unavailable connection or refused service start can prevent receipt.
 
-Wire formats and replay/queue bounds are defined in [Find Device v1](../../protocol/find-device/README.md).
+Find Device does not wake a sleeping Mac or launch a stopped app. Mac alert expiry runs while aniCe executes; an abruptly stopped or suspended process can leave a delivered notification until native dismissal or app cleanup.
 
-## Verification
+## Delivery
 
-Automated suites cover independent wire fixtures, duplicates, replay after dismissal/history eviction, permission/submission failures, peer/generation/result mismatch, disconnect races, expiry, bounded response queues and no transport replay. Android tests also cover stopping during preparation, stale popup actions and late audio completion. The native suite exercises Stop/delete PendingIntents, service admission, real audio startup and the sixty-second deadline without changing sound mode or alarm volume.
+A successful result confirms native alert submission—not that the alert appeared or was heard. Missing permission reports blocked; audio/service startup errors report failure. No response within ten seconds leaves delivery unconfirmed. Requests are not automatically resent or moved to another transport.
 
-On the Samsung SM-A346E, native alarm playback while in Vibrate mode and audible output are verified. Stop/delete callbacks, preservation of sound mode/alarm volume, unadmitted-service rejection and startup checks pass. The strict uninterrupted sixty-second native test passes in both an isolated run (60.314 seconds total) and the full three-test suite (64.796 seconds total), including duplicate service starts, timeout cleanup and subsequent alert admission. Earlier runs were interrupted by manual Stop actions; the uninterrupted reruns required no runtime code change. Opt in on a controlled device with instrumentation argument `-e findDeviceTimeout true`. The bounded controller deadline is covered by JVM tests.
-
-The remaining physical matrix covers: both directions over BLE-only/LAN-only/both; foreground/background/lock and Mac sleep/wake; notification denial/channel blocking, DND and muted alarm volume; actual notification swipe gestures, audio-focus interruptions and Bluetooth audio routing. Verify long/Unicode peer names, light/dark themes, large text, keyboard/VoiceOver/TalkBack and compact Mac companion layout separately.
-
-Run `python3 scripts/verify-suite.py --only android` for JVM tests, lint and instrumentation compilation, and `python3 scripts/verify-suite.py --only macos` for the arm64 Release build and hosted tests. Each run's verification report records executed counts and documented skips; repository totals do not establish feature or OS permission UI coverage. Find Device tests distinguish connection presence from capability advertisement and reject stale channel retirement. Mac fresh-request replacement and shared notification routing are covered by hosted tests; repeated Mac requests after the replacement fix remain a specific physical retest.
-
-The normal offline Android build includes native PAKE rebuilding for all three packaged ABIs.
+Wire formats, replay bounds and native ownership are defined in [Find Device v1](../../protocol/find-device/README.md).

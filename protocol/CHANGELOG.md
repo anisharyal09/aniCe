@@ -21,6 +21,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
+- Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.
 - Exclude bounded negotiated LAN maintenance from transfer transport waits while preserving fixed offer, recovery and security deadlines.
 - Clarify transfer status channel/job binding, bounded notification revision retention and current profile-4 benchmark selection; wire layouts and cryptographic parameters are unchanged.
 - Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE transfer window; wire formats and negotiated limits are unchanged.

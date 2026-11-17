@@ -4,8 +4,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
-Preparing the first public beta. Entries remain unreleased until publication.
-
 ### Added
 
 - Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
@@ -46,7 +44,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Require confirmation before enabling beta updates and use compact, scalable text across Settings, including embedded feature preferences.
 - Use Reach out for About contacts, keep the name/social actions together at the trailing edge, and open a user-reviewed GitHub report form with app and OS versions.
 - Clarify aniCe trust versus system Bluetooth pairing in Control Android setup and device selection.
-- Add isolated UI and transfer-preview bundles with separate identity/runtime storage; the transfer preview keeps notification permissions realistic without touching production updates.
+- Add isolated UI and transfer-preview bundles with separate identity/runtime storage and native feature/lifecycle controls; the transfer preview keeps notification permissions realistic without touching production updates.
 - Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
 
 - Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.
@@ -92,6 +90,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Fence LAN deadline checks and renewal triggers to the current cryptographic session.
 - Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
 - Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.
 - Bind transfer status waiters to their issuing channel and job epoch; retain publication checkpoints after a verified file fails to save.

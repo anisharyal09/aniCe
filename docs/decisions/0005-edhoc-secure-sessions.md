@@ -20,4 +20,4 @@ Current app builds use the development Mac Keychain backend; certificate-signed 
 
 Trust journals and discovery/pairing wire contracts retain their existing formats. [ADR 0004](0004-stable-ble-attribute-layout.md) extends application access to the trusted-session mode while retaining its static attribute table.
 
-References: [RFC 9528](https://www.rfc-editor.org/rfc/rfc9528.html), [RFC 9529](https://www.rfc-editor.org/rfc/rfc9529.html), and the [session application profile](../../protocol/session/README.md). Local testing checklists and operator verification notes remain tracked in uncommitted development scratch workspaces.
+References: [RFC 9528](https://www.rfc-editor.org/rfc/rfc9528.html), [RFC 9529](https://www.rfc-editor.org/rfc/rfc9529.html) and the [session application profile](../../protocol/session/README.md).

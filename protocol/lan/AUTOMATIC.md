@@ -18,7 +18,7 @@ Deterministic CBOR, at most 64 bytes: `["aniCe LAN", 2, state, fields]`. The uns
 
 States 0, 1, 3 and 4 have empty fields `[]`. State 2 carries `[ip, port, profile]`, or `[]` when only Bonjour is ready. `ip` is canonical dotted-decimal IPv4 text, 7–15 ASCII bytes, with four minimal decimal octets in 0–255. Addresses in 0/8, 127/8 or 224/3 are rejected. `port` is 1–65535. `profile` is record profile 1, 3 or 4, not the rendezvous or Bonjour revision. Current Mac listeners use profile 4. Direct IPv6 exchange is excluded; Bonjour retains scoped IPv6 support.
 
-Version 1 remains `["aniCe LAN", 1, state]`. Its canonical state-0 bytes are `83 69 61 6e 69 43 65 20 4c 41 4e 01 00`; states 1–4 replace the final byte. Each new BLE channel publishes one v2 eligibility/readiness probe before its ordinary v1 publication. Receipt of v2 confirms support for that channel; subsequent publications use v2. Without that confirmation, v1 coordination remains active. A delayed v1 state cannot replace v2 eligibility or a direct endpoint; a request already sent as v1 remains valid. Opcode 4 is never published in both versions. Capability confirmation does not create feature demand or replenish attempt budgets.
+Version 1 remains `["aniCe LAN", 1, state]`. Its canonical state-0 bytes are `83 69 61 6e 69 43 65 20 4c 41 4e 01 00`; states 1–4 replace the final byte. Each new BLE channel publishes one v2 eligibility/readiness probe, followed by ordinary v1 publication unless v2 support is already confirmed. Receipt of v2 confirms support for that channel; subsequent publications use v2. Without that confirmation, v1 coordination remains active. A delayed v1 state cannot replace v2 eligibility or a direct endpoint; a request already sent as v1 remains valid. Opcode 4 is never published in both versions. Capability confirmation does not create feature demand or replenish attempt budgets.
 
 Unknown tags are unrecognized DATA. Invalid versions, lengths, field types, locators and state values are discarded. Only the live secured BLE channel instance can publish or change rendezvous state. LAN DATA cannot initiate rendezvous. Channel retirement clears remote state, endpoint, version support and pending publication; replacement requires a new advertisement. Receivers do not echo incoming state.
 
@@ -46,6 +46,6 @@ Manual Disconnect/Cancel pauses local automation for the current app run; manual
 
 Transfer routing and recovery remain feature-owned: a capable LAN upgrades a BLE stream, and reconnecting LAN resumes a retained transfer through kinds 10/11. Connection owners never replay commands, sealed records or session keys. [LAN renewal](RENEWAL.md) independently negotiates consecutive fresh sessions over a retained TCP socket.
 
-## Verification
+## Fixtures
 
-Native suites check the canonical bytes, malformed states, BLE-only dispatch, stale-channel rejection, retirement, no echo, coalesced capacity handling, explicit demand, one attempt per event and the bounded three-attempt recovery budget with its event rearm. Physical same-network discovery, Wi-Fi loss/return, Mac sleep/wake, phone lock/foreground, permissions and simultaneous transfer/media acceptance must be exercised with both packaged apps.
+[Rendezvous fixtures](../test-vectors/lan/automatic-vectors.json) contain v1/v2 messages and rejected endpoint/state encodings. The adjacent `generate_lan_control_vectors.py --check` command uses an independent CBOR oracle.

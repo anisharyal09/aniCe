@@ -4,8 +4,6 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
-Preparing the first public beta. Entries remain unreleased until publication.
-
 ### Added
 
 - Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
@@ -90,6 +88,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
+- Route automatic setup through the compiled activity class in normal and isolated preview packages.
+- Preserve paused setup and release synthetic work leases in native tests.
+- Correct LAN background-timeout and approved-work diagnostics.
 - Commit identity and trust journals with checked file sync, atomic replacement and directory sync; restore legacy backup-only journals without resetting trust.
 - Bind transfer status waiters to their channel and job epoch; retain verified partial checkpoints and destination grants after publication failure.
 - Resynchronize notifications on capacity restoration, retain bounded capability/action-result retries, and leave incomplete snapshots open rather than dropping current state.
@@ -229,7 +231,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 - Opt-in physical connected-idle CPU test with channel continuity, encrypted-operation validation budgets and unchanged identity/trust journal assertions.
 - Foreground LAN sessions with Wi-Fi-bound sockets, scoped IPv6, bounded NSD resolution and independent Bluetooth/local-network controls.
-- Notification-free companion auto-connect on API 31+ in Debug and Release, with pinned saved setup, a device-level preference and Disconnect pause. Physical endurance and minimum-OS acceptance remain pending.
+- Notification-free companion auto-connect on API 31+ in Debug and Release, with pinned saved setup, a device-level preference and Disconnect pause.
 - Coordinated fresh EDHOC renewal before lifetime/record limits, with encrypted backpressure, Stop and key-reuse regressions.
 - HELLO/ACK compatibility and encrypted PING/PONG in the shared session controller; legacy peers retain manual operation and unsupported background probes stop.
 - Adversarial control tests for malformed encodings, ordering, deadlines, backpressure, transport failure and hard session lifetime.

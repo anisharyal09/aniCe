@@ -22,7 +22,7 @@ Both platforms offer **Automatically receive files** per trusted sender. New pai
 
 On Android Home, a pending manual offer appears below the connected device summary and before Quick access. The file list and destination stay visible above the equal-width **Accept** and **Decline** actions.
 
-Android can receive in the background when its existing connected-device/companion ownership permits it. Otherwise the offer stays pending until aniCe opens. Background connection also requires **Connect automatically**.
+Android can automatically approve an incoming offer in the background when existing companion or approved transfer-service ownership permits it. Otherwise the offer stays pending until aniCe opens. An already-approved transfer can continue under its connected-device service without automatic Bluetooth setup; new automatic connection attempts still follow the Bluetooth/LAN preferences and native ownership rules.
 
 Files are written to job-owned partials, verified against their SHA-256 offer, then published without overwriting existing files. Android keeps default MediaStore entries pending until publication succeeds. Custom document providers are checked before use, but they do not guarantee atomic rename.
 
@@ -34,7 +34,7 @@ Back or **Continue in background** hides Android’s Share-to-Mac panel without 
 
 On either platform, connection loss pauses an active batch and retains verified partial data and a private checkpoint for up to 15 minutes. Reconnecting to the same trusted peer over LAN resumes after prefix verification. After LAN loss, either device can explicitly continue over BLE. Cancel removes the partial; already-published files remain untouched.
 
-With mutually capable peers, LAN renews its cryptographic session before the lifetime/record limit without closing TCP or replacing the active batch. New chunks and ACKs briefly wait behind authenticated drain barriers and fresh EDHOC/readiness. Transport-dependent waits exclude this bounded maintenance interval; successful renewal neither replays chunks nor restarts checkpoint recovery. Android's approved work lease remains held until the batch finishes or its native owner is lost.
+With mutually capable peers, LAN renews its cryptographic session before the lifetime/record limit without closing TCP or replacing the active batch. New chunks and ACKs briefly wait behind authenticated drain barriers and fresh EDHOC/readiness. Transfer capacity, resume and file-confirmation timeouts exclude this bounded maintenance interval; successful renewal neither replays chunks nor restarts checkpoint recovery. Android's approved work lease remains held until the batch finishes or its native owner is lost.
 
 A verified file that cannot be published retains its private partial and publication checkpoint. Restarting aniCe within the checkpoint lifetime reconciles an already-published file or restores the retained bytes for a fresh resume handshake. Cancel, dismissing the failed result or starting another batch discards that retained recovery state; published files are never removed. Hash-mismatched input is not retained for recovery.
 

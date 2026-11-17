@@ -169,6 +169,41 @@ final class LanRenewalTests: XCTestCase, @unchecked Sendable {
     await pair.close()
   }
 
+  func testConcurrentDeadlineChecksFollowFreshCryptographicEpochs() async throws {
+    let pair = try RenewalPair()
+    let checking = Task {
+      while !Task.isCancelled {
+        try await pair.client.checkDeadlines()
+        try await pair.server.checkDeadlines()
+        await Task.yield()
+      }
+    }
+    do {
+      try await pair.ready()
+      for _ in 0..<3 {
+        try await pair.age()
+        try await pair.client.tick()
+        try await pair.pump()
+        let available = await pair.client.applicationAvailable
+        XCTAssertTrue(available)
+      }
+      checking.cancel()
+      try await checking.value
+      let closedI = await pair.client.isClosed, closedR = await pair.server.isClosed
+      XCTAssertFalse(closedI); XCTAssertFalse(closedR)
+      try await pair.client.sendData(Data([9]))
+      try await pair.pump()
+      let received = await pair.replies.data
+      XCTAssertEqual(received.last, Data([9]))
+    } catch {
+      checking.cancel()
+      _ = await checking.result
+      await pair.close()
+      throw error
+    }
+    await pair.close()
+  }
+
   func testRecordMarginRequestsCoalesceIntoOneFreshEpoch() async throws {
     let pair = try RenewalPair()
     do {

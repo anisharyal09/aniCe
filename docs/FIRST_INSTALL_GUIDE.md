@@ -1,173 +1,88 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# First Installation & Permissions Guide
+# Installation and permissions
 
-Feature data moves strictly peer-to-peer over local Bluetooth and your local network (Wi-Fi or Ethernet).
-- **No accounts, relay servers, telemetry or analytics.**
-- **No cloud storage**: your clipboard, notifications, media controls, and files never leave your local physical devices.
-- **End-to-end encrypted**: all feature transport is secured locally using P-256 ECDSA authentication, an EDHOC handshake with ChaCha20-Poly1305, and AES-256-GCM record framing.
+Install aniCe on an Android 10+ phone and an Apple Silicon Mac running macOS 14+. Download `aniCe-android.apk` and `aniCe-mac.zip` from the [official releases](https://github.com/anisharyal09/aniCe/releases).
 
-Update checks and downloads contact GitHub; no feature data is sent there.
+BLE/LAN feature data stays on the local peer connection and uses authenticated encrypted sessions. Mac-to-Android HID uses system Bluetooth instead. Update checks and downloads contact GitHub; aniCe has no account, relay or telemetry service.
 
-Because aniCe is distributed directly via open-source GitHub Releases (independent of Google Play and the Mac App Store), modern operating systems (Android 13+ and macOS 14 Sonoma or newer) enforce several security verification gates.
+## Android installation
 
-This guide explains how to navigate each prompt and explains exactly why each permission is required.
+1. Open the APK in your browser or file manager.
+2. If Android blocks that source, open its **Settings** link and enable **Allow from this source**.
+3. Return to the installer and choose **Install**.
 
----
+Play Protect may warn about an independent APK. Check the download source before proceeding. If the warning offers **More details → Install anyway**, that is a per-install exception. If no exception is offered, stop and review the warning rather than disabling Play Protect globally.
 
-## Table of Contents
+For in-app updates, Android may separately request permission for aniCe to install packages. Enable **Allow from this source** for aniCe only if you want that update flow. Android still presents the installation confirmation.
 
-- [📱 Android Installation & Setup](#-android-installation--setup)
-  - [1. Allowing "Unknown Apps" (First Install)](#1-allowing-unknown-apps-first-install)
-  - [2. Google Play Protect Warning ("Blocked by Play Protect")](#2-google-play-protect-warning-blocked-by-play-protect)
-  - [3. Unlocking Android 13+ "Restricted Settings" (Crucial) ⚠️](#3-unlocking-android-13-restricted-settings-crucial-️)
-  - [4. Background Battery Optimization (Keeping Connections Alive)](#4-background-battery-optimization-keeping-connections-alive)
-  - [5. In-App Updates ("Allow aniCe to install apps")](#5-in-app-updates-allow-anice-to-install-apps)
-  - [6. Android Permission Transparency: Why Each is Needed](#6-android-permission-transparency-why-each-is-needed)
-- [💻 macOS Installation & Setup](#-macos-installation--setup)
-  - [System Requirements](#system-requirements)
-  - [1. Gatekeeper Approval (First Open)](#1-gatekeeper-approval-first-open)
-  - [2. Login Keychain Prompt ("Always Allow")](#2-login-keychain-prompt-always-allow)
-  - [3. Accessibility (Events) Access](#3-accessibility-events-access)
-- [🔗 First Pairing Walkthrough](#-first-pairing-walkthrough)
+### Restricted settings
 
----
+Some Android 13+ installers restrict sensitive access for sideloaded apps. If Notification Access or another permission is blocked:
 
-## 📱 Android Installation & Setup
+1. Open **Settings → Apps → aniCe**.
+2. Open the **⋮** menu and choose **Allow restricted settings**, if available.
+3. Authenticate and return to the permission action in aniCe.
 
-### 1. Allowing "Unknown Apps" (First Install)
-When opening `aniCe-android.apk` from Chrome or your file manager, Android displays:
-> *"For your security, your phone is not allowed to install unknown apps from this source."*
+Installer policy can also restrict SMS and call-log permissions. Grant only the access needed for features you use. A restricted-settings prompt is not an assessment of the APK's safety.
 
-* **How to proceed**:
-  1. Tap **Settings** on the prompt.
-  2. Turn on the toggle for **Allow from this source**.
-  3. Tap the back button and tap **Install**.
+### Background operation
 
----
+Enable **Connect automatically** and complete companion setup on API 31+ devices. If the OS limits background operation, review **App info → Battery** and the manufacturer's battery policy. **Unrestricted** can reduce those limits but does not prevent process termination, force-stop, network loss or expired sessions.
 
-### 2. Google Play Protect Warning ("Blocked by Play Protect")
-Because aniCe is an independent release not yet distributed via the Play Store, Google Play Protect may show a warning:
-> *"Blocked by Play Protect"* or *"Unrecognized app"*.
+Approved transfers use their own connected-device foreground service. See [Bluetooth background connections](BACKGROUND_CONNECTIONS.md) and [LAN connections](LAN_CONNECTIONS.md).
 
-> [!IMPORTANT]
-> Ensure you download `aniCe-android.apk` only from the [official GitHub Releases](https://github.com/anisharyal09/aniCe/releases) page or officially distributed channels before proceeding.
+### Permissions
 
-* **Case A: "More details" is visible**
-  1. On the Play Protect prompt, tap **More details** (or the downward arrow).
-  2. Tap **Install anyway**.
+| Access | Purpose |
+| --- | --- |
+| `INTERNET` | Local TCP connections and GitHub update checks/downloads. Feature traffic stays peer-to-peer. |
+| Nearby devices | BLE discovery and connection. API 29–30 uses fine-location permission for scanning, not location tracking. |
+| Camera | QR pairing; optional when using the six-digit code. |
+| Notifications | Transfer progress, Find Device alerts and update notices. Companion BLE ownership does not require a persistent status notification. |
+| Notification Access | Relays selected active phone notifications to the paired Mac. |
+| SMS | Reads/receives messages and sends replies for Messages. |
+| Phone state / answer calls | Detects live SIM calls and permits Answer/Decline; audio stays on the phone. |
+| Call log / contacts | Optional incoming-number and contact-name lookup. The displayed number/name can be shared with the paired Mac; aniCe keeps no call history. |
+| Do Not Disturb access | Observes phone DND for the selected Mac Shortcuts. |
+| Install packages | Hands verified in-app update downloads to Android's installer. |
 
-* **Case B: If NO "Install anyway" button is shown (completely blocked)**
-  On newer Android versions or certain devices (Samsung One UI, Xiaomi HyperOS, Pixel), Play Protect may completely block installation with only an "OK" button and no "Install anyway" option. To install:
-  1. Open the **Google Play Store** app.
-  2. Tap your **Profile avatar** in the top-right corner.
-  3. Tap **Play Protect**.
-  4. Tap the **Settings gear icon (⚙️)** in the top-right corner.
-  5. Temporarily toggle OFF **"Scan apps with Play Protect"**.
-  6. Return to your downloaded `aniCe-android.apk` and tap **Install** (it will now install without being blocked).
-  7. Return to the Play Store and turn **"Scan apps with Play Protect"** back ON.
+Permissions are requested through the relevant feature. Denying an optional permission leaves unrelated features available.
 
----
+## macOS installation
 
-### 3. Unlocking Android 13+ "Restricted Settings" (Crucial) ⚠️
-On modern Android versions (**Android 13 or newer**), Google automatically disables advanced permissions for sideloaded apps. If you try to enable **Notification Access**, **SMS or call permissions**, or another advanced access, Android shows:
-> *"Restricted setting: For your security, this setting is currently unavailable."*
+Install with Homebrew:
 
-**This does NOT mean the app is blocked or unsafe.** It is a generic Android OS security barrier applied to every APK installed from outside the Play Store.
+```sh
+brew install anisharyal09/tap/anice
+```
 
-* **How to unlock it in 10 seconds**:
-  1. Open Android **Settings → Apps → aniCe** (or long-press the `aniCe` app icon on your home screen and tap the **ℹ️ App info** icon).
-  2. Tap the **three vertical dots (⋮)** in the top-right corner of the App Info screen.
-  3. Tap **"Allow restricted settings"**.
-  4. Authenticate using your fingerprint, face unlock, or device PIN.
-  5. Return to aniCe and tap **Enable**—the permission screen will now let you toggle it ON without any block!
+Or extract `aniCe-mac.zip` and move `aniCe.app` to `/Applications`.
 
----
+### First open
 
-### 4. Background Battery Optimization (Keeping Connections Alive)
-Modern Android aggressive battery savers (Samsung One UI, Google Pixel Adaptive Battery, Xiaomi MIUI) will aggressively kill background Bluetooth listeners if left on "Optimized":
-1. Open **App Info → Battery** (or *Battery usage*).
-2. Set it to **Unrestricted**.
-3. This ensures aniCe stays armed in the background and automatically reconnects to your Mac when you sit down at your desk.
+Public releases use self-signed certificates without Apple notarization. If macOS blocks launch:
 
----
+1. Try opening the app once.
+2. Open **System Settings → Privacy & Security** and choose **Open Anyway** for that app.
+3. Authenticate and confirm the launch.
 
-### 5. In-App Updates ("Allow aniCe to install apps")
-When updating aniCe through its built-in update sheet:
-1. When the download finishes, Android may ask once: *"Allow aniCe to install apps"*.
-2. Tap **Settings** → toggle **Allow from this source** ON → return to aniCe.
-3. aniCe will immediately hand off the verified APK to Android's system package installer.
+On macOS 14, Control-click → **Open** is another first-launch path. Do not disable Gatekeeper globally. The Homebrew cask removes quarantine for its installed copy.
 
----
+### Keychain access
 
-### 6. Android Permission Transparency: Why Each is Needed
+Current Mac builds store identity signing keys in the login Keychain. If aniCe requests access, confirm the exact app copy and download source before approving. **Always Allow** remembers access for that code identity; a changed signature can prompt again. Denial leaves the committed identity intact.
 
-| Permission | Technical Name | Why aniCe Asks For It | Does it send data to the internet? |
-| :--- | :--- | :--- | :--- |
-| **Internet** | `INTERNET` | Checks GitHub Releases for updates and downloads release APKs. | **Only update traffic** to GitHub; feature data stays peer-to-peer. |
-| **Nearby Devices** | `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN` | Discovers and connects to your Mac over Bluetooth LE. Android 10–11 also uses `ACCESS_FINE_LOCATION` for BLE scanning; aniCe does not use it for location. | **No.** Local radio only. |
-| **Camera** | `CAMERA` | Scans the Mac's pairing QR code. Optional; the six-digit code works without it. | **No.** Local camera only. |
-| **Notifications** | `POST_NOTIFICATIONS` | Displays the persistent foreground-service connection status and update notices. | **No.** Local device only. |
-| **Notification Listener** | `BIND_NOTIFICATION_LISTENER_SERVICE` | Reads selected phone notifications so they can appear on your Mac. | **No.** Local encrypted peer stream only. |
-| **SMS** | `READ_SMS`, `SEND_SMS`, `RECEIVE_SMS` | Mirrors SMS threads to your Mac and sends replies typed on your Mac. | **No.** Peer-to-peer over the local link only. |
-| **Phone Calls** | `READ_PHONE_STATE`, `ANSWER_PHONE_CALLS` | Shows incoming SIM call alerts and lets you answer or decline from your Mac; call audio stays on the phone. | **No.** Peer-to-peer over the local link only. |
-| **Caller ID** | `READ_CALL_LOG`, `READ_CONTACTS` | Matches incoming numbers against your contacts so your Mac can show a caller name. Optional. | **No.** Read locally; only the resulting name goes to your paired Mac. |
-| **Do Not Disturb** | `ACCESS_NOTIFICATION_POLICY` | Observes phone DND changes so aniCe can run the Mac Shortcuts you chose. Optional. | **No.** Peer-to-peer over the local link only. |
-| **Install Packages** | `REQUEST_INSTALL_PACKAGES` | Installs verified GitHub release APKs from the in-app update sheet. | **No.** The APK download comes from GitHub. |
+### Input and system controls
 
----
+Configure **Settings → Permissions** in aniCe for phone-to-Mac input and supported Mac lock controls. Enable the exact app copy in macOS **Accessibility**; newer systems may label the pane **Device Control and Data Access**. aniCe does not require Input Monitoring.
 
-## 💻 macOS Installation & Setup
+Playback scripting controls can require separate Automation permission from an explicit Mac action. Mac notification visibility follows notification and Focus settings.
 
-### System Requirements
-* **Architecture:** Apple Silicon (M1 or newer).
-* **Operating System:** macOS 14 Sonoma or newer.
+## Pair the devices
 
----
+1. Enable Bluetooth on both devices. Use a shared local network for LAN.
+2. On Mac, choose **Add device** and show a QR invitation or six-digit code.
+3. On Android, choose **Add device** and scan or enter that invitation.
+4. Review the peer details and approve on both devices.
 
-### 1. Gatekeeper Approval (First Open)
-Because public GitHub release builds use a self-signed certificate rather than Apple notarization, macOS may block the first launch:
-* **Option A (Homebrew - Recommended)**:
-  ```bash
-  brew install anisharyal09/tap/anice
-  ```
-  The Homebrew Cask removes the quarantine attribute after installation.
-* **Option B (Manual ZIP download)**:
-  1. Extract `aniCe-mac.zip` and drag `aniCe.app` into `/Applications`.
-  2. Try to open `aniCe.app` once. If macOS says it cannot verify the app, click **Done**.
-  3. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway**. Authenticate, then confirm **Open Anyway** in the final dialog.
-  4. On macOS 14 and earlier, you can instead Control-click `aniCe.app`, choose **Open**, then click **Open** in the confirmation dialog.
-
-Do not disable Gatekeeper globally.
-
----
-
-### 2. Login Keychain Prompt ("Always Allow")
-On first launch, macOS may prompt:
-> *"aniCe wants to access key '...' in your keychain. Enter your password."*
-
-* **Why this happens**: aniCe creates a P-256 ECDSA key pair unique to your Mac so your paired phone can securely authenticate it without passwords. Current builds select the development Keychain backend with the `ANICE_DEVELOPMENT_KEYCHAIN` compile flag and store the key in your login Keychain under `io.github.anisharyal09.anice.identity.development`.
-* **Important**: Enter your Mac user password and click **"Always Allow"** (do not click only "Allow").
-  - "Always Allow" adds the app's code identity to the key's Keychain access control list. macOS remembers that choice for the same signed identity across launches and reboots.
-  - A new build with a different signature can prompt once more. Confirm "Always Allow" again for that build.
-
----
-
-### 3. Accessibility (Events) Access
-Required only if you use the phone-to-Mac trackpad/keyboard or the Mac Desk Deck lock control:
-* Open **System Settings → Privacy & Security → Accessibility** and toggle `aniCe` ON.
-* On macOS 27 or newer, this pane is named **Device Control and Data Access**.
-* aniCe does not request Input Monitoring access.
-
-The app can request this access from its phone-input screen. If the prompt does not appear, open the pane manually.
-
----
-
-## 🔗 First Pairing Walkthrough
-
-Once installed on both devices:
-1. Ensure **Bluetooth** is enabled on both devices and both are on the same local network if you use LAN features.
-2. On your Mac, click **Add device** → select **Show QR code** (or **Show six-digit code**).
-3. On your Android phone, tap **Add device** → scan the QR code with your camera (or enter the code).
-4. Verify the device names on both screens and tap **Approve**.
-
-Both devices now share cryptographic trust and will automatically discover and reconnect whenever they are nearby!
+Pairing establishes trust. Automatic connection depends on the saved choices and Android companion setup; manual connection remains available. See [Getting started](GETTING_STARTED.md).

@@ -1,86 +1,63 @@
 # Local-network connections
 
-Already-paired Android and Mac devices can establish an independent encrypted TCP session on the same local network. Android uses Wi-Fi; Mac may use Wi-Fi or Ethernet. Bluetooth is not required for LAN discovery or authentication. BLE and LAN can remain connected to the same peer simultaneously.
+Paired Android and Mac devices can establish an independent encrypted TCP session on a shared local network. Android uses Wi-Fi; Mac can use Wi-Fi or Ethernet. Bluetooth is not required for manual LAN connections, and both transports can remain connected to the same trusted peer.
 
-## Explicit controls
+## Manual connection
 
-Open Connection details on both devices. On Mac, select the trusted phone when several exist, then choose Allow local-network connections. The companion's Choose allowed phone action opens the main-window details for target selection. On Android, choose Connect local network for that trusted Mac. Availability expires after 120 seconds unless a candidate is admitted. Connection checks and received counters are separate for Bluetooth and local network inside collapsed Diagnostics.
+1. Open the trusted device's connection details on both devices.
+2. On Mac, select the phone and choose **Allow local-network connections**.
+3. On Android, choose **Connect local network** for that Mac.
 
-The device summary reads Connected when either channel has completed encrypted readiness; transport rows identify each ready channel. Pending/failed secondary-channel feedback remains separate. The primary Connect action starts Bluetooth; when automatic LAN is enabled on both devices, secured Bluetooth coordinates LAN separately. The Mac companion routes device management to Devices. Android diagnostics expand inline; Mac connection details use a native sheet.
+The Mac's Allow window lasts 120 seconds. A connection becomes ready only after pinned authentication and encrypted readiness complete. A failed secondary transport does not disconnect the other secured channel.
 
-Disconnect Bluetooth and Disconnect local network affect their respective channel. Disconnect all closes both. Manual LAN does not reconnect automatically after network loss or expiry. Android idle LAN follows its configured background timeout after its last presentation stops or the screen locks; bounded picker and approved transfer-service ownership preserve the channel. Mac retains the channel through its companion until explicit disconnection, sleep or Quit. Trust removal and identity reset retire both channels.
+Android first uses a usable endpoint from the selected peer's live authenticated BLE channel. Without that hint—including with Bluetooth disconnected—it uses bounded mDNS discovery. A retired BLE channel's hint cannot be reused. Connection details report connection state, not the discovery source. Manual IP entry is not provided.
 
-If a different peer already owns either transport, end that relationship before selecting another. An unresolved Mac Any-phone Bluetooth admission must finish or stop before allowing LAN. LAN uses full pinned credentials; cached names and network endpoints do not authorize access.
+**Disconnect Bluetooth** and **Disconnect local network** affect their respective channels; **Disconnect all** closes both. A different peer cannot take either transport while the existing peer owns a connection attempt or session.
 
-With several Macs on the network, Android tries anonymous endpoints in discovery order and accepts only the selected trusted Mac's device ID, fingerprint and public key. A wrong trusted Mac is rejected without changing the selected peer. Sharing one router/public IP does not merge local endpoints. Different ports on the same address are distinct locators; duplicate identical address/scope/port locators are deduplicated. Two physical devices claiming the same private IP on one LAN constitute an address conflict; authentication prevents credential substitution but cannot repair routing.
+## Automatic connection
 
-## Platform boundaries
+Enable **Use local network automatically** on both devices and establish secured Bluetooth. The choice defaults on when no preference has been stored; a saved off choice remains off.
 
-Bonjour discovery uses `_anice._tcp` with anonymous random service-instance names and protocol version only. Eligible authenticated BLE peers also exchange a numeric Mac IPv4 address, bound port and LAN record profile through rendezvous v2. Android tries that locator before creating an NSD browse; missing/v1 endpoints or socket failures use bounded mDNS fallback. A TCP-ready listener can publish direct readiness before Bonjour registration. Endpoints never grant trust: fresh EDHOC pins the selected full credential, and an authenticated direct-peer credential mismatch is terminal. Firewall policy, routed-network isolation and local-network permission denial still apply. Connection details expose failure and Retry.
+The Mac publishes its numeric IPv4 endpoint when its listener is ready, without waiting for Bonjour registration. Android tries that endpoint before starting discovery. Missing endpoints and retryable socket failures use bounded mDNS fallback; an authenticated direct-peer credential failure stops the attempt.
 
-Android legacy resolution is serialized. After a native resolution timeout, another attempt remains blocked until its original callback arrives. API 34+ uses service-update subscriptions with bounded lifetime. TCP sockets bind to the selected Wi-Fi network before connect; IPv6 link-local addresses retain a matching interface scope.
+Automatic setup runs on connection events and feature demand:
 
-Android targets SDK 36 and does not request ACCESS_LOCAL_NETWORK. The Mac packaged app declares Bonjour access and local-network purpose and includes client/server sandbox entitlements. Development Keychain signing policy remains unchanged.
+- A new secured BLE channel, restored eligibility, app return or usable Wi-Fi address restoration can start an attempt.
+- Eligible BLE feature traffic, file selection and companion-owned playback can request LAN.
+- A failed automatic attempt retries twice, after 2 and 5 seconds. Further work waits for a new event, explicit demand or manual connection.
+- Duplicate callbacks and an expired Allow window do not restart discovery.
 
-Wi-Fi changes retire the Android owner, socket, network watcher and peer reservation. After TCP connect, Android tracks the socket's actual local address; surviving addresses of another family cannot conceal its loss. Connection completion rechecks that the bound address remains assigned. Manual reconnection requires a new Mac Allow window; enabled automatic coordination can open bounded admission for the secured BLE peer. If discovery finds no service, confirm that Allow is open and both devices have directly connected routes; changing Wi-Fi does not imply that the new network can reach the old endpoint.
+Disconnect pauses local LAN automation for the current app run. Manual Connect/Allow or an explicit preference change resumes it. Turning automation off cancels pending setup but leaves an already-secured channel available manually.
 
-If the Mac still shows Secured after abrupt phone network loss, choose Disconnect local network before reopening Allow. Android applies its configured background timeout after foreground exit or screen lock when no picker, approved-transfer or companion media lease remains; Wi-Fi loss retires the affected channel.
+A timed **Pause** closes both transports and gates automatic work until its saved deadline or an early Resume. It does not preserve an active connection.
 
-Mac TCP requests keepalive probes after ten idle seconds, at five-second intervals, with three unanswered probes; retransmission timeout is twenty seconds. These OS probes detect an unreachable socket and do not extend authenticated session activity. Detection still depends on native TCP scheduling; abrupt peer network loss can leave controls visible briefly before failure is reported. [Network.framework options](https://developer.apple.com/documentation/network/nwprotocoltcp/options).
+## Background work and renewal
 
-The Mac transport logs Network.framework `waiting` and `failed` transitions separately with their native error before retiring the channel. Both remain terminal in the current owner; no waiting-state recovery window extends the connection or its write deadlines.
+Android's **background LAN timeout** defaults to **Never**. A saved finite timeout applies after the final activity stops or the screen locks. Never removes the app's idle timer; it does not prevent network loss, OS process retirement or explicit disconnection.
 
-## Lifecycle and transfer feasibility
+Bounded file pickers, approved transfer-service work and companion-owned playing/paused-grace media demand retain eligible LAN work. An approved paused transfer keeps its service until it resumes, is cancelled or its 15-minute retention expires. Losing the native owner releases that work; a job tag alone grants no background execution.
 
-Both TCP readers stop at the remaining frame header or body boundary before handing complete frames to the bounded ingress queue. Queue backpressure therefore waits between frames rather than consuming a later frame's assembly budget. Before secured readiness, partial frames expire after ten seconds absolute. Established encrypted-record frames may continue while bytes arrive within ten seconds of each other, bounded to sixty seconds total; partial headers and handshake envelopes retain ten seconds absolute. Byte progress does not count as authenticated activity. LAN rendezvous also retains capacity notifications received during a pending submission, so a pre-seal refusal cannot lose that wakeup.
+Opening connection setup or another aniCe activity does not release an activity that is still started. Configuration recreation preserves the owner. Opening Bluetooth discovery leaves LAN unchanged; starting Scan affects only Bluetooth.
 
-Returning to aniCe Home, opening automatic connection setup settings or closing connection details keeps a started Activity and LAN owner alive. Home and setup settings register independent presentation tokens; navigation in either direction releases only the activity that stopped. Pressing the Android Home button backgrounds the final Activity; idle LAN follows the timeout saved in Settings. Screen lock applies the same policy. A bounded picker lease and an approved connected-device transfer service preserve the channel through connection establishment, source hashing, destination preflight and streaming. A paused batch keeps the approved transfer service and its LAN eligibility until it resumes, is cancelled or the 15-minute pause expires. Service loss releases approved ownership; expiry, trust invalidation, network loss and explicit Disconnect still retire the transport. Foreground-service ownership does not require notification-drawer permission. [File-transfer ownership](features/FILE_TRANSFER.md) records lifecycle and recovery limits.
+Mutually capable LAN peers renew through fresh EDHOC before the session lifetime or record limit. Renewal retains the TCP socket, feature channel, subscriptions and active transfer batch while new DATA briefly waits. Keys, counters and handshake material are replaced, never resumed. Legacy peers retain hard expiry. Manual recovery after network loss or failed renewal requires a new Allow/Connect attempt.
 
-Opening Bluetooth discovery preserves both transports; starting Scan suspends/cancels only Bluetooth and leaves LAN active. Configuration recreation preserves the owner. A retained service cannot preserve an unusable Wi-Fi socket or bypass same-peer reservations. BLE companion ownership remains independent of the user-approved transfer lease.
+Mac window and menu-bar companion share the LAN owner. Closing the window retains the connection; sleep and Quit retire it. Wake reevaluates enabled automatic choices. Trust removal and identity reset retire both transports.
 
-Transfer profiles negotiate larger LAN records independently of BLE. Feature-owned checkpoints retain prepared jobs across process death for 15 minutes; resumed connections authenticate afresh and verify retained prefixes. Manual IP entry remains excluded.
+## Network and security limits
 
-Mutually capable manual and automatic LAN sessions renew at 55 minutes or the `2^20 - 1024` record margin through authenticated drain barriers and fresh EDHOC/readiness over the existing socket. The connected peer, feature channel, subscriptions and transfer batch remain intact while new DATA is briefly backpressured. All keys, IV bases, session IDs, counters and handshake ephemerals are fresh. Transfer capacity, resume and confirmation waits exclude the bounded maintenance interval; offer/recovery and cryptographic deadlines stay absolute. Legacy peers retain hard expiry. See [LAN renewal](../protocol/lan/RENEWAL.md).
+- Both devices need reachable local routes. Router client isolation, firewall rules and denied local-network access can prevent connection.
+- DNS-SD advertisements and numeric endpoints are locators, not credentials. Every initial or renewed session authenticates the full pinned identity.
+- Android binds TCP to the selected Wi-Fi network. IPv6 discovery retains its interface scope; direct BLE hints use IPv4.
+- Wi-Fi/interface loss retires the affected socket. An unchanged address in another family cannot conceal loss of the socket's bound address.
+- TCP keepalive detects an unreachable peer according to OS scheduling; Secured may remain visible briefly after abrupt network loss.
+- Standard and bulk transfer profiles have separate record limits. Transfer recovery remains feature-owned and does not replay encrypted records.
 
-Android counts job-scoped work under eligible native owners, up to 128 active leases. Duplicate release cannot affect a replacement job, service loss invalidates only that owner's tokens, and renewal never clears work demand. The last eligible lease release starts a fresh configured idle interval when backgrounded or screen-locked. Picker, transfer-service and companion-media ownership retain their existing authorization and limits; job tags alone cannot authorize background execution.
+For setup failures, check the shared network, the Mac's Allow window, permissions and firewall rules before retrying. With several Macs, discovery can encounter another locator first; only the selected full credential is accepted.
 
-Mac path updates retain a connection while the path is satisfied, uses Wi-Fi/Ethernet and retains an original local interface; unrelated interface inventory changes do not retire TCP. Write deadlines and cancellation callbacks retire only their outstanding submission, never a completed one. Native socket failures and actual local path loss still retire the channel.
+## Technical references
 
-## Automated verification
-
-Run `python3 protocol/test-vectors/lan/generate_lan_vectors.py --check`, `python3 scripts/verify-suite.py --only android` and `python3 scripts/verify-suite.py --only macos` (Apple Silicon only). Fixture inventory includes eight valid/ten invalid frames. Tests cover splits, coalescing, malformed lengths/versions, incomplete EOF, fixed deadlines, stale NSD completion, IPv6 scope and cross-transport peer exclusion.
-
-With test APKs installed on a Wi-Fi-connected phone, run:
-
-```sh
-python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL --family ipv4 --output /tmp/anice-lan-native
-python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL --family link-local --output /tmp/anice-lan-ipv6
-```
-
-The verifier compiles the Mac native interchange tool, creates isolated Keystore/Keychain identities, pins their public credentials, resolves its anonymous Bonjour advertisement through Android NSD, exchanges real TCP EDHOC/readiness/controls and 4,000-byte records each way, then checks cleanup. The address-family option requires IPv4 or scoped link-local IPv6 without fallback. Production identity/trust files remain unchanged.
-
-Native Android owner regressions inject Wi-Fi loss and interface change, call Disconnect, and exercise overlapping presentation stops. All four cases verify worker cancellation, network-callback release and peer-reservation release; callbacks from the retired generation cannot close a new attempt. These automated injections do not measure physical Wi-Fi-switch detection latency. Mac hosted tests additionally assert bounded keepalive/retransmission settings; actual black-hole timeout latency remains unverified.
-
-## Recorded application checks and remaining matrix
-
-Real packaged-app transfers over an external 5 GHz hotspot and a 2.4 GHz router verify authenticated application traffic in both directions. Native IPv4/scoped-IPv6 interchange and owner cleanup regressions provide additional coverage.
-
-The remaining matrix includes permission denial; simultaneous physical BLE/LAN and independent Disconnect; Bluetooth-disabled operation; locked/background Android retirement; Mac sleep/Quit; network/address changes; accessible native controls; API 29/macOS 14 runtime coverage; signed hardware identity protection; independent security review. These combinations are distinct from the completed app transfers and isolated native interchange checks. Existing BLE Release coverage gaps remain open.
-
-References: [RFC 6763 — DNS-Based Service Discovery](https://www.rfc-editor.org/rfc/rfc6763.html), [Network.framework](https://developer.apple.com/documentation/network), [Android NsdManager](https://developer.android.com/reference/android/net/nsd/NsdManager), [LAN wire contract](../protocol/lan/README.md).
-
-## Idle work
-
-LAN session maintenance waits for the earliest authentication/readiness, compatibility, liveness, idle/lifetime or partial-frame deadline. Transport reads and queue-capacity callbacks reschedule that wait. Android blocks idle TCP reads and applies a read timeout only to an assembling frame. Ten-second write retirement remains independent of the wait. Every authenticated record retains native identity/protection and active trust validation; identity reset and journal revocation retire BLE and LAN through their shared services. LAN presentation and lock obey picker/approved-work leases and the configured idle timeout; network-loss and manual Retry behavior retain independent teardown.
-
-## Automatic connection on events and demand
-
-The Mac may retain its listening socket after a session retires while automatic ownership permits it. Retention does not reopen admission: Bonjour readiness is withdrawn, new sockets are rejected and the original window/failure budget is not extended. A newly authorized attempt revalidates the pinned peer and reservation and publishes a fresh anonymous service. Native local-path unavailable-to-available transitions rearm automation; duplicate path and listener-registration callbacks do not. Confirmed socket/network failure and fatal authenticated submissions retire the owning channel before feature fallback. Reconnect requests received over authenticated BLE while a channel still appears secured remain pending until its retirement. Android treats usable Wi-Fi address restoration as a new connection event, including reprovisioning on the same Network; duplicate address notifications do not rearm it. TCP keepalive supplements detection; local write completion does not confirm remote receipt.
-
-Settings and pairing on both platforms expose **Use local network automatically**. The preference is on when no choice has been stored; an explicitly stored off still wins, and the single pairing toggle sets both the Bluetooth and LAN choices. Enable it on both devices and establish secured Bluetooth. The Mac automatically opens bounded Bonjour admission for that BLE peer; Android discovers and freshly authenticates the LAN session. Either preference change can initiate coordination. See the [rendezvous contract](../protocol/lan/AUTOMATIC.md).
-
-A new secured BLE channel, transition into eligibility, or explicit feature demand permits one bounded LAN attempt. Successful feature DATA sent or handled over secured BLE signals demand while LAN is missing; connection-control traffic is excluded. File selection on either device also signals demand through secured BLE. Android also holds a bounded media lease while companion-owned playback is playing or inside its paused grace, so background Now Playing can request and keep LAN (and therefore receive artwork); the lease ends when playback stops, the paused grace expires, or companion ownership is lost. Admission expiry and duplicate state messages do not initiate another attempt. A failed automatic LAN attempt retries twice, at 2 and 5 seconds, for at most three attempts per app-open or connection event; app activation, wake, timed-pause expiry, a new secured BLE channel, restored eligibility or restored Wi-Fi addressing rearms that budget. Retries stop on success, Disconnect, disabled automation, background ineligibility or terminal trust/authentication failure, and explicit feature demand keeps one later opportunity. BLE still owns its separate 2/5/15/30/60/90-second reconnect chain. Disconnect pauses local automation for the current app run; feature traffic, file selection and playback demand do not clear that pause. Manual Connect/Allow or a preference change resumes it earlier. The timed automatic-connection pause also gates LAN until its saved deadline expires or the user resumes early. Turning the preference off stops pending setup; an already-secured session remains available manually. Mac sleep retires LAN and wake reevaluates it. Android starts automatic LAN while the app is visible and the screen interactive, or while an existing bounded picker/approved-transfer/media lease owns work; returning to the app reevaluates it. The Android background timeout defaults to Never; saved finite choices remain in force. This removes the app idle timer while preserving network/process loss, session security limits, explicit Disconnect and approved transfer/picker/media ownership. A channel loss mid-stream pauses the batch and retains its partial with a private checkpoint for 15 minutes; a reconnected LAN to the same peer resumes automatically, while Bluetooth continuation after a LAN pause requires an explicit action on either device (the receiving device then sends the resume request). Transfer recovery owns its journal and expiry; event-triggered LAN initiation adds no unbounded discovery retry loop.
-
-Selecting files or starting a send never retires the secured BLE channel: the picker lease follows the transports that are actually secured, not the transfer's transiently selected channel, and an active or paused batch keeps a bounded BLE work lease as its continuation fallback. A LAN attempt preserves existing transfer leases. A send with an already-secured compatible channel proceeds on it without waiting for LAN; when no secured channel can accept it, a failed LAN demand fails the pending send immediately instead of waiting for the connect timeout. The active batch stays on its original channel unless that channel is lost, or unless a capable LAN becomes available while Bluetooth is streaming: the sender then upgrades in place through the resume handshake.
-
-Automated rendezvous checks cover canonical bytes, malformed input, channel retirement, stale traffic, no echo and capacity coalescing.
+- [LAN framing and admission](../protocol/lan/README.md)
+- [Automatic rendezvous](../protocol/lan/AUTOMATIC.md)
+- [Retained-socket renewal](../protocol/lan/RENEWAL.md)
+- [File-transfer behavior](features/FILE_TRANSFER.md)
+- [Architecture](../ARCHITECTURE.md) and [performance](PERFORMANCE.md)

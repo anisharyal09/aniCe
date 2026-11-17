@@ -100,6 +100,8 @@ For an isolated transfer preview on an explicitly selected test phone, run:
 
 This builds **aniCe Transfer Preview** as `io.github.anisharyal09.anice.preview.transfer`, verifies the package ID and installs alongside the normal aniCe app. It never uninstalls or replaces production; remember that a fresh package starts with its own data and permissions.
 
+The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Automatic-setup activity routing retains the compiled Kotlin namespace even though the installed application ID has a preview suffix.
+
 For the strict aggregate gate, run from the repository root:
 
 ```sh
@@ -111,9 +113,9 @@ python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
 
 `--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator.
 
-The gate parses the JUnit reports and fails on zero tests, failures, crashes, truncated reports and undocumented skips. `connectedDebugAndroidTest` alone is not an acceptance result because several native tests are environment-gated.
+The suite parses JUnit reports and rejects failures, missing/truncated results and unexpected skips. Native tests can require device setup or explicit instrumentation arguments.
 
-Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. The minimum remains provisional. Key protection is reported from the actual device, not assumed.
+Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. Key protection is reported from the actual device.
 
 [Design](../../docs/design/DESIGN.md) · [Changelog](CHANGELOG.md)
 
