@@ -20,6 +20,7 @@ import OSLog
   private(set) var receivedChecks = 0
   private var checkPending = false
   private(set) var authenticatedPeer: DeviceIdentity?
+  private(set) var selectedPeer: DeviceIdentity?
   private(set) var automatic: Bool
   private let preferences: UserDefaults?
   let rendezvous = LanRendezvous()
@@ -256,6 +257,45 @@ import OSLog
         MainActor.assumeIsolated { self?.quitting = true; self?.end() }
       })
   }
+  /// Device-level Connect asks LAN to listen alongside BLE for the selected phone.
+  func connectAlongside(_ selected: DeviceIdentity?) {
+    // Any live owner is authoritative; repeated Connect must not replace a healthy listener/session.
+    if allowing || state == "Secured" {
+      let current = authenticatedPeer ?? selectedPeer
+      if selected == nil || (current?.deviceId == selected?.deviceId &&
+          current?.fingerprint == selected?.fingerprint && current?.publicKey == selected?.publicKey) {
+        automaticPaused = false
+        cancelRecovery()
+        automaticGate.trigger()
+        scheduleAutomatic()
+      }
+      return
+    }
+    allow(selected: selected, bluetoothAllowing: false)
+  }
+
+  /// Cancels the current admission or connection without changing the automatic preference.
+  func cancelAttempt(message: String = "Connection canceled.") {
+    guard state != "Secured" else { return }
+    cancelRecovery()
+    automaticGate.cancel()
+    end(message: message)
+  }
+
+  /// Gates automatic work synchronously; the returned teardown cannot close a replacement owner.
+  func preparePause() -> @MainActor () -> Void {
+    cancelRecovery()
+    automaticPaused = true
+    automaticAttempt = false
+    if state != "Secured" { end(); return {} }
+    scheduleAutomatic()
+    let op = generation
+    return { [weak self] in
+      guard let self, op == self.generation, self.automaticPaused else { return }
+      self.disconnect()
+    }
+  }
+
   func allow(selected: DeviceIdentity?, bluetoothAllowing: Bool, automatically: Bool = false) {
     if !automatically { cancelRecovery(); automaticPaused = false; automaticGate.trigger() }
     guard !bluetoothAllowing || peers.peer != nil else {
@@ -266,6 +306,7 @@ import OSLog
     end(preserveListener: automatic && !automaticPaused && !sleeping && !quitting)
     admission.clear() // Only a newly authorized Allow event starts another bounded admission window.
     automaticAttempt = automatically
+    selectedPeer = selected
     allowing = true
     state = "Connecting"
     status = "Starting local-network availability…"
@@ -291,6 +332,7 @@ import OSLog
           failWindow("Choose one active trusted Android before allowing local-network connections.")
           return
         }
+        selectedPeer = target
         guard peers.acquire("lan", peer: target, local: local.fingerprint) else {
           failWindow("Disconnect the other device before allowing this phone.")
           return
@@ -378,7 +420,7 @@ import OSLog
     localEndpoint = listenerReady && localPathAvailable ? listener.flatMap { endpointProvider($0, localInterfaces) } : nil
   }
   private func beginAvailabilityIfReady(_ target: DeviceIdentity) {
-    guard allowing, !admission.admitted, registered || localEndpoint != nil else { return }
+    guard allowing, !automaticPaused, !admission.admitted, registered || localEndpoint != nil else { return }
     startupDeadline = nil
     // TCP and Bonjour callbacks share the original admission deadline; neither can renew it.
     admission.open(ProcessInfo.processInfo.systemUptime)
@@ -388,7 +430,7 @@ import OSLog
   }
   private func admit(_ socket: NWConnection, target: DeviceIdentity, trust: PeerTrustStore, op: Int)
   {
-    guard allowing, !retiring, admission.claim(ProcessInfo.processInfo.systemUptime) else {
+    guard allowing, !automaticPaused, !retiring, admission.claim(ProcessInfo.processInfo.systemUptime) else {
       socket.cancel()
       return
     }
@@ -681,6 +723,9 @@ import OSLog
   func disconnect() {
     cancelRecovery()
     automaticPaused = true
+    automaticAttempt = false
+    allowing = false
+    registered = false
     scheduleAutomatic()
     let old = connection
     let op = generation

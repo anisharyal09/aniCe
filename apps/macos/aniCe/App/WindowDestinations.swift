@@ -12,7 +12,7 @@ extension MainWindowView {
           Text("Overview").font(.system(size: 20 * fontScale, weight: .medium))
           if pairing.hasTrustedAndroid {
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
-              phonePower: phonePower,
+              connectionPause: connectionPause, phonePower: phonePower,
               details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
               focusedPeer: navigation.focusedPeer, discovery: discovery,
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
@@ -143,7 +143,7 @@ extension MainWindowView {
           }
           ForEach(primary) { record in
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
-              phonePower: phonePower,
+              connectionPause: connectionPause, phonePower: phonePower,
               details: Binding(get: { navigation.details && navigation.focusedPeer == record.peer.deviceId },
                 set: { navigation.focusedPeer = record.peer.deviceId; navigation.details = $0 }),
               diagnostics: $navigation.diagnostics, focusedPeer: record.peer.deviceId, discovery: discovery,

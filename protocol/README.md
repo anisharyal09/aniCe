@@ -15,6 +15,7 @@ Contracts define required behavior.
 | **Classic Bluetooth HID input** | System profile | Implemented on macOS | [`bluetooth/classic-hid.md`](bluetooth/classic-hid.md) | Local keyboard and pointer reports to a system-paired Android HID host |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
+| **Connection pause notice** | `1` | Implemented | [`connection-pause/README.md`](connection-pause/README.md) | Authenticated peer pause presentation before teardown; local preferences remain independent |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **Mac Desk Deck** | `1`–`5` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
@@ -125,6 +126,9 @@ protocol/
 ├── README.md                      # This document
 ├── bluetooth/
 │   └── README.md                  # BLE discovery wire format & lifecycle
+├── connection-pause/
+│   ├── README.md                  # Authenticated pause presentation and bounded teardown
+│   └── connection-pause.cddl      # Additive pause/resume DATA notices
 ├── desk-deck/
 │   ├── README.md                  # Mac telemetry, app approval and control behavior
 │   └── desk-deck.cddl             # Bounded Desk Deck v1–v4 messages
@@ -160,6 +164,9 @@ protocol/
 │   ├── README.md                  # Local file transfer protocol, flow control & lifecycle
 │   └── transfer.cddl              # Authoritative message and envelope CDDL definitions
 └── test-vectors/
+    ├── connection-pause/
+    │   ├── vectors.json           # Canonical pause/resume and rejected notices
+    │   └── generate.py            # Independent CBOR pause-notice oracle
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
     ├── desk-deck-vectors.json      # Desk Deck v1–v4 samples, actions and invalid records
     ├── device-power-vectors.json   # Phone power states and invalid records

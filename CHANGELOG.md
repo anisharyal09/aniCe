@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Show authenticated peer pause notices before connection teardown without changing the peer's saved automatic policy.
 - Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
@@ -36,11 +37,14 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Make Cancel invalidate pending Connect-to-Resume work, retain event-scoped recovery and close unfinished admission immediately on Pause.
+- Make Resume immediate and group pause durations, indefinite pause and custom duration in the native menus.
+- Restore the first-install Play Protect alternatives, including temporary scanning disablement and re-enablement afterward.
 - Document direct-first LAN discovery, retained-socket renewal and native background work.
 - Separate behavior guides, wire contracts and developer instructions; remove public test-run diaries.
 - Streamline README introduction with direct download badges, Homebrew instructions, and consolidated setup guide links.
 - Set the Android and macOS development version to `0.9.0-beta.3` (build `90023`) and update current-version documentation.
-- Bind release device approval to the tag, source commit and SHA-256 of both signed artifacts; add current 512-KiB LAN benchmark selection and keep Play Protect enabled in installation guidance.
+- Bind release device approval to the tag, source commit and SHA-256 of both signed artifacts; add current 512-KiB LAN benchmark selection.
 - Reuse near-black Dock artwork for packaged/default app icons while keeping Mac Dock and Android launcher variants tied to system Light/Dark appearance.
 - Refine Mac window and sidebar sizing while preserving native resizing and window restoration.
 - Refine native beta opt-in confirmation, Android Updates spacing, About contact/report actions and Mac Settings readability; highlight window-free sharing and clarify Bluetooth HID setup.

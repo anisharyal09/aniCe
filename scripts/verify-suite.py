@@ -678,6 +678,7 @@ def run_structure(artifacts):
 
 def run_vector_checks(interpreter, artifacts):
     checks = [
+        ("Connection pause vectors", ROOT / "protocol/test-vectors/connection-pause/generate.py", ["--check"]),
         ("Clipboard vectors", ROOT / "protocol/test-vectors/clipboard/generate_clipboard_vectors.py", ["--check"]),
         ("Transfer vectors", ROOT / "protocol/test-vectors/transfer/generate_transfer_vectors.py", ["--check"]),
         ("Media vectors", ROOT / "protocol/test-vectors/media/generate.py", ["--check"]),

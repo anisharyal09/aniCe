@@ -178,6 +178,7 @@
 		D51000000000000000000003 /* MacDeskDeckNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000004; };
 		D51000000000000000000005 /* MacDeskDeckShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000006; };
 		D51000000000000000000007 /* MacDevicePower.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000008; };
+		D51000000000000000000009 /* MacConnectionPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51000000000000000000010; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -370,6 +371,7 @@
 		D51000000000000000000004 /* MacDeskDeckNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeckNative.swift"; sourceTree = SOURCE_ROOT; };
 		D51000000000000000000006 /* MacDeskDeckShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDeskDeckShortcuts.swift"; sourceTree = SOURCE_ROOT; };
 		D51000000000000000000008 /* MacDevicePower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/DeskDeck/MacDevicePower.swift"; sourceTree = SOURCE_ROOT; };
+		D51000000000000000000010 /* MacConnectionPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/MacConnectionPause.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -558,6 +560,7 @@
 			children = (
 				E857BE513E82CE9FECD97811 /* aniCe/Features/Session/MacSessionView.swift */,
 				556A43D6EFF8B2A2ABA78A24 /* aniCe/Infrastructure/Connections/MacSessionModel.swift */,
+				D51000000000000000000010 /* MacConnectionPause.swift */,
 				238780C20D1AD2FB94BC0315 /* aniCe/Infrastructure/Bluetooth/GattFraming.swift */,
 				AC0100000000000000000002 /* aniCe/Infrastructure/Session/SessionControl.swift */,
 				01A286FD7D00F02DAA1BAFA1 /* aniCe/Infrastructure/Session/SessionConnection.swift */,
@@ -878,6 +881,7 @@
 				48948FCB77CE94C9E7D3009B /* aniCe/Infrastructure/Session/SessionEnvelope.swift in Sources */,
 				FE4A53421BC329779BE680E0 /* aniCe/Features/Session/MacSessionView.swift in Sources */,
 				F943A3689758A079688E15F8 /* aniCe/Infrastructure/Connections/MacSessionModel.swift in Sources */,
+				D51000000000000000000009 /* MacConnectionPause.swift in Sources */,
 				64CF98FCB6E025D6CD950B4D /* aniCe/Infrastructure/Bluetooth/GattFraming.swift in Sources */,
 				AC0100000000000000000001 /* aniCe/Infrastructure/Session/SessionControl.swift in Sources */,
 				FB516F766872DD502123AAE5 /* aniCe/Infrastructure/Session/SessionConnection.swift in Sources */,

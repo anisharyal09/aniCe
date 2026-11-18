@@ -13,6 +13,7 @@ struct AniCeApp: App {
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
+  @State private var connectionPause: MacConnectionPauseModel
   @State private var playback: MacPlaybackModel
   @State private var clipboard: MacClipboardModel
   @State private var findDevice: MacFindDeviceModel
@@ -116,6 +117,8 @@ struct AniCeApp: App {
     _deskDeck = State(initialValue: deskDeck)
     let phonePower = MacPhonePowerModel()
     _phonePower = State(initialValue: phonePower)
+    let connectionPause = MacConnectionPauseModel()
+    _connectionPause = State(initialValue: connectionPause)
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
@@ -132,9 +135,18 @@ struct AniCeApp: App {
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
     session.automaticPauseEnded = { [weak lan] in lan?.resumeAfterTimedPause() }
+    session.prepareLinkedPause = { [weak lan] in lan?.preparePause() ?? {} }
+    session.pauseNotice = { [weak connectionPause] until in await connectionPause?.announcePause(until: until) }
+    session.pauseResumed = { [weak connectionPause] in
+      connectionPause?.clear()
+      Task { await connectionPause?.announceResume() }
+    }
+    session.connectionClockChanged = { [weak connectionPause] in connectionPause?.reconcileTime() }
     lan.onNetworkReturn = { [weak session] in session?.reconcileConnectionPause() }
     let features=FeatureDispatch()
-    features.applicationActivity = { [weak lan] descriptor, bytes in lan?.onApplicationActivity(descriptor, bytes) }
+    features.applicationActivity = { [weak lan] descriptor, bytes in
+      if (try? MacConnectionPauseMessage.decode(bytes)) == nil { lan?.onApplicationActivity(descriptor, bytes) }
+    }
     features.register(lan.rendezvous)
     features.register(playback)
     features.register(transfer)
@@ -144,6 +156,7 @@ struct AniCeApp: App {
     features.register(notificationMirror)
     features.register(phoneInput)
     features.register(dndSync)
+    features.register(connectionPause)
     features.register(deskDeck)
     features.register(phonePower)
     session.channelStateChanged = { [weak session] in
@@ -183,6 +196,7 @@ struct AniCeApp: App {
       if !navigation.automaticAfterPairing { session.allow() }
     }
     pairing.trustRemoved = {
+      connectionPause.clear()
       transfer.invalidate()
       session.retireTrust(); lan.cancel(); clipboard.invalidate(); sms.invalidate()
       Task { @MainActor in
@@ -195,6 +209,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      connectionPause.clear()
       dndSync.removeSelections()
       transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()
@@ -217,9 +232,10 @@ struct AniCeApp: App {
   @MainActor private func startDeferredServices() {
     guard !servicesStarted else { return }
     servicesStarted = true
+    // Hosted tests must not restore the user's saved radio or clipboard owners.
+    guard !IdentityView.isTesting else { return }
     clipboard.installLifecycle()
     session.restoreAutomatic()
-    guard !IdentityView.isTesting else { return }
     MacUpdateModel.shared.startAutomaticChecks()
     PasteTrayController.shared.setup(model: clipboard)
     edgeDrop.start()
@@ -235,7 +251,7 @@ struct AniCeApp: App {
     }
     delegate.installCompanion(
       CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, clipboard: clipboard,
+        session: session, lan: lan, connectionPause: connectionPause, playback: playback, transfer: transfer, clipboard: clipboard,
         keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: phonePower, navigation: navigation,
         openMainWindow: { delegate.openMainFromCompanion() }),
       navigation: navigation, floatingKeyboard: floatingKeyboard)
@@ -270,7 +286,7 @@ struct AniCeApp: App {
     Window(MacAppStorage.applicationName, id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
+        session: session, lan: lan, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
         onInitialRender: { startDeferredServices() }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)

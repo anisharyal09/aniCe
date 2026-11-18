@@ -1,6 +1,6 @@
 # Native LAN benchmark
 
-`scripts/verify-lan-interchange.py` uses disposable identities, native discovery, LAN transports and `SessionConnection`. The default exchanges 4,000-byte conformance records in both directions.
+`scripts/verify-lan-interchange.py` uses disposable identities, native discovery, LAN transports and `SessionConnection`. The default exchanges 4,000-byte conformance records in both directions. `--family ipv4` (default) selects IPv4; `--family link-local` exercises scoped IPv6 addressing.
 
 | Mode | Arguments | Bodies |
 | --- | --- | --- |
@@ -37,3 +37,14 @@ Record buffers are `profile.maximumEnvelope + 5` bytes. Session authentication, 
 Reads allow ten seconds without progress; the final receiver-confirmation ACK allows sixty seconds for TCP backlog drainage. Cleanup releases the lock, closes the server and removes only the run-owned directory.
 
 Native interchange scripts target the normal Android test package. Use a prepared test installation, not an unrelated production app. See [performance](../../docs/PERFORMANCE.md) for record costs and instrumentation.
+
+## Reference measurements
+
+Earlier application-level file transfer between Mac and Android with Bluetooth disconnected, using standard records and a 200 MB batch:
+
+| Environment | Mac → phone | Phone → Mac |
+| --- | --- | --- |
+| 5 GHz external access point | 7.0–10.5 MB/s (average about 8.0 MB/s, 7.63 MiB/s) | 3.0–5.2 MB/s (average about 4.0 MB/s) |
+| 2.4 GHz router, reduced signal, 3–5 m | about 1.0 MB/s | about 1.0 MB/s |
+
+In that sample the 5 GHz Mac-to-phone average was below the 8 MiB/s target. An earlier isolated in-memory bulk probe measured about 10.8 MiB/s in both directions. These are environmental samples from earlier builds, not guaranteed throughput.

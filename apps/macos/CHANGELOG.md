@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.
 - Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
@@ -36,6 +37,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Close unfinished BLE/LAN admission immediately on Pause while retaining secured notice delivery, and emit one Resume notice per explicit paused Connect.
+- Make Resume one-click with a play icon, show the armed automatic state and group the existing native pause-menu options.
 - Keep transfer channels and transport-dependent waits intact across bounded LAN maintenance; retain cryptographic, frame and recovery deadlines.
 - Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers to `90023`.
 - Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.

@@ -4,6 +4,8 @@ Paired Android and Mac devices can establish an independent encrypted TCP sessio
 
 ## Manual connection
 
+The device-level **Connect** action starts both BLE and LAN. The individual transport controls below remain independent.
+
 1. Open the trusted device's connection details on both devices.
 2. On Mac, select the phone and choose **Allow local-network connections**.
 3. On Android, choose **Connect local network** for that Mac.
@@ -29,13 +31,15 @@ Automatic setup runs on connection events and feature demand:
 
 Disconnect pauses local LAN automation for the current app run. Manual Connect/Allow or an explicit preference change resumes it. Turning automation off cancels pending setup but leaves an already-secured channel available manually.
 
+**Cancel** stops only the current attempt and its retries, not the automatic preference. Duplicate readiness callbacks cannot restart that cancelled attempt; a new connection/eligibility event or explicit demand can authorize another.
+
 A timed **Pause** closes both transports and gates automatic work until its saved deadline or an early Resume. It does not preserve an active connection.
 
 ## Background work and renewal
 
 Android's **background LAN timeout** defaults to **Never**. A saved finite timeout applies after the final activity stops or the screen locks. Never removes the app's idle timer; it does not prevent network loss, OS process retirement or explicit disconnection.
 
-Bounded file pickers, approved transfer-service work and companion-owned playing/paused-grace media demand retain eligible LAN work. An approved paused transfer keeps its service until it resumes, is cancelled or its 15-minute retention expires. Losing the native owner releases that work; a job tag alone grants no background execution.
+Bounded file pickers, approved transfer-service work and companion-owned playing/paused-grace media demand retain eligible LAN work. Up to 128 job-scoped leases can be active; releasing one cannot end a replacement job. An approved paused transfer keeps its service until it resumes, is cancelled or its 15-minute retention expires. Losing the native owner releases that work; a job tag alone grants no background execution.
 
 Opening connection setup or another aniCe activity does not release an activity that is still started. Configuration recreation preserves the owner. Opening Bluetooth discovery leaves LAN unchanged; starting Scan affects only Bluetooth.
 
@@ -46,10 +50,12 @@ Mac window and menu-bar companion share the LAN owner. Closing the window retain
 ## Network and security limits
 
 - Both devices need reachable local routes. Router client isolation, firewall rules and denied local-network access can prevent connection.
+- Android targets SDK 36 and does not declare `ACCESS_LOCAL_NETWORK`; the Mac app declares Bonjour access and a local-network purpose. OS network policy still governs reachability.
 - DNS-SD advertisements and numeric endpoints are locators, not credentials. Every initial or renewed session authenticates the full pinned identity.
 - Android binds TCP to the selected Wi-Fi network. IPv6 discovery retains its interface scope; direct BLE hints use IPv4.
 - Wi-Fi/interface loss retires the affected socket. An unchanged address in another family cannot conceal loss of the socket's bound address.
-- TCP keepalive detects an unreachable peer according to OS scheduling; Secured may remain visible briefly after abrupt network loss.
+- Mac retains a connection while its path is satisfied, uses a Wi-Fi/Ethernet interface and overlaps an original local interface; unrelated interface changes do not retire it.
+- Mac TCP probes an idle peer after 10 seconds, every 5 seconds for three probes, and drops the connection after 20 seconds without progress. **Secured** can remain visible until then.
 - Standard and bulk transfer profiles have separate record limits. Transfer recovery remains feature-owned and does not replay encrypted records.
 
 For setup failures, check the shared network, the Mac's Allow window, permissions and firewall rules before retrying. With several Macs, discovery can encounter another locator first; only the selected full credential is accepted.

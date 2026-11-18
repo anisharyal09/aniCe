@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
 - Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
 - Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
@@ -33,6 +34,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Fence pending Resume lookups on Cancel; restore a retained companion monitor on foreground return without rearming from duplicate presence callbacks.
+- Make Resume one-click, show the armed automatic state and group the existing pause-menu options.
 - Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.
 - Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
 - Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.

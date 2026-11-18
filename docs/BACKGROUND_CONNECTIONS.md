@@ -39,6 +39,8 @@ Pairing and active discovery temporarily suspend Bluetooth admission. Cleanup re
 
 | Action | Effect |
 | --- | --- |
+| Device Connect | Starts BLE and LAN together for the selected trusted peer; already-ready channels remain connected. |
+| Cancel | Ends the current attempt and any pending Connect-to-Resume lookup without disabling the saved automatic choice; another connection event or explicit Connect can retry. |
 | Disconnect | Closes the selected transport and pauses its automatic work. |
 | Resume / explicit Connect | Revalidates remembered setup and resumes eligible work. |
 | Switch automatic connection off | Stops observation and retries; a secured foreground or approved-work channel can remain manual. |
@@ -46,6 +48,10 @@ Pairing and active discovery temporarily suspend Bluetooth admission. Cleanup re
 | Remove trust / reset identity | Retires both transports and invalidates the associated setup. |
 
 A timed **Pause** closes BLE and LAN and stores a wall-clock resume deadline, or an indefinite pause. It does not keep an active transfer connected. Expiry restores only previously enabled choices; it never enables a disabled preference. App return, wake, network/presence events and clock changes reevaluate the deadline. A newer pause or disabled choice supersedes the old deadline.
+
+Pause stops unfinished admission immediately; only already-secured channels remain briefly available for the best-effort peer notice. Duplicate native presence callbacks do not undo Cancel. Android foreground return can restart a retained companion owner's recovery without requiring another presence callback.
+
+**Resume** acts immediately; only **Pause** opens the duration menu. The Auto connect checkbox shows currently armed work, so it is unchecked during a local pause. A current secured peer can receive a [pause notice](../protocol/connection-pause/README.md) before teardown and show **Paused on &lt;device&gt;**. This does not alter that peer's saved automatic choice; fresh secured connection, expiry or local Resume/Connect clears the notice.
 
 ## Liveness and renewal
 

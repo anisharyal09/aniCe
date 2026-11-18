@@ -5,6 +5,7 @@ import Foundation
 import XCTest
 import SwiftUI
 import AppKit
+import Network
 
 @testable import aniCe
 
@@ -318,7 +319,7 @@ import AppKit
         for scheme: ColorScheme in [.light, .dark] {
           for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
           let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
-            pairing: pairing, session: session, lan: lan, playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
+            pairing: pairing, session: session, lan: lan, connectionPause: MacConnectionPauseModel(), playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
             keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: MacPhonePowerModel(), navigation: ConnectionNavigation(),
             openMainWindow: { XCTFail("Rendering opened the main window") })
             .environment(\.colorScheme, scheme)
@@ -431,7 +432,7 @@ import AppKit
           navigation.show(destination, route: scenario?.hasPrefix("pairing") == true ? .pairing : .overview)
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
-            discovery: discovery, pairing: pairing, session: session, lan: lan, playback: playback,
+            discovery: discovery, pairing: pairing, session: session, lan: lan, connectionPause: MacConnectionPauseModel(), playback: playback,
             transfer: transfer, edgeDrop: MacEdgeDropController(model: transfer),
             clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
             sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
@@ -826,6 +827,453 @@ import AppKit
     XCTAssertNil(radio.sessionAdmitted)
     XCTAssertEqual(try Data(contentsOf: url), savedTrust)
     XCTAssertEqual(try identityEncoder.encode(memory.record), savedIdentity)
+  }
+}
+
+@MainActor private final class PauseSessionFixture {
+  let directory: URL
+  let domain: String
+  let preferences: UserDefaults
+  let trust: PeerTrustStore
+  let identity: IdentityService
+  let peer: DeviceIdentity
+  let peerKey = P256.Signing.PrivateKey()
+  let reservation = SessionPeerReservation()
+  let radio = SessionRadioFake()
+  let model: MacSessionModel
+  private var peerHandshake: SessionHandshakeEngine?
+  private var peerChannel: SecureSession?
+
+  init() async throws {
+    directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac", tagPrefix: "pause.connection.test.")
+    let local = try await identity.publicIdentity(), key = peerKey
+    peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
+      "identitySchemaVersion": 1, "algorithm": "ECDSA_P256_SHA256", "platform": "android",
+      "deviceId": UUID().uuidString.lowercased(), "deviceName": "Phone",
+      "publicKey": key.publicKey.x963Representation.base64EncodedString(),
+      "fingerprint": DeviceIdentity.fingerprint(key.publicKey.x963Representation)]))
+    let hash = Data(repeating: 11, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: peer, localFingerprint: local.fingerprint,
+      method: .qr, pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: peer.deviceId, hash: hash,
+      receipt: key.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    domain = "aniCe.PauseConnectionTests." + UUID().uuidString
+    preferences = try XCTUnwrap(UserDefaults(suiteName: domain))
+    model = MacSessionModel(identity: identity, adapter: radio, store: { [trust] in trust },
+      preferences: preferences, peers: reservation)
+    model.selectedPeer = peer
+  }
+
+  func secureBluetooth() async throws {
+    func waitFor(_ condition: () -> Bool) async throws {
+      for _ in 0..<3000 {
+        if condition() { return }
+        try await Task.sleep(for: .milliseconds(1))
+      }
+      throw SessionFailure.expired
+    }
+    try await waitFor { radio.sessionAdmitted != nil }
+    let local = try await identity.publicIdentity(), peer = peer, key = peerKey
+    let client = try SessionHandshakeEngine(local: peer, responder: false,
+      trusted: { [local] }, currentIdentity: { peer },
+      signer: { SignedIdentityPayload(identity: peer, signature: try key.signature(for: $0).derRepresentation) },
+      selectedPeer: local)
+    peerHandshake = client
+    XCTAssertTrue(radio.sessionAdmitted?() ?? false)
+    let message1 = try await client.initiate()
+    XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(1, message1)) ?? false)
+    try await waitFor { !radio.sent.isEmpty }
+    let message2 = try SessionEnvelope.decode(radio.sent.removeFirst())
+    let message3 = try await client.authenticateResponder(message2.1)
+    XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(3, message3)) ?? false)
+    try await waitFor { !radio.sent.isEmpty }
+    let message4 = try SessionEnvelope.decode(radio.sent.removeFirst())
+    try await client.confirmResponder(message4.1)
+    let records = PairingBus()
+    let channel = try await SecureSession.fromHandshake(client, responder: false,
+      capacity: { _ in true }, submit: { await records.send($0) })
+    peerChannel = channel
+    try await channel.send(.ready)
+    let ready = await records.take()
+    XCTAssertTrue(radio.sessionWrite?(try SessionEnvelope.encode(6, XCTUnwrap(ready.first))) ?? false)
+    try await waitFor { model.state == "Secured" && !radio.sent.isEmpty }
+    let ack = try SessionEnvelope.decode(radio.sent.removeFirst())
+    _ = try await channel.receive(ack.1)
+  }
+
+  func close() {
+    model.setAutomatic(false)
+    let channel = peerChannel, handshake = peerHandshake
+    Task { await channel?.close(); await handshake?.close() }
+    preferences.removePersistentDomain(forName: domain)
+    try? FileManager.default.removeItem(at: directory)
+  }
+}
+
+@MainActor final class ConnectionPauseTests: XCTestCase {
+  private func waitFor(_ condition: () -> Bool) async throws {
+    for _ in 0..<3000 {
+      if condition() { return }
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    XCTFail("Pause transition did not complete")
+    throw SessionFailure.expired
+  }
+
+  func testIndependentPauseFixturesRoundTripAndRejectEveryInvalidNotice() throws {
+    let helper = SessionFixtures(), rows = try helper.root("connection-pause/vectors")
+    let valid = try XCTUnwrap(rows["valid"] as? [[String: Any]])
+    let invalid = try XCTUnwrap(rows["invalid"] as? [[String: Any]])
+    let unknown = try XCTUnwrap(rows["unrecognized"] as? [[String: Any]])
+    XCTAssertEqual(valid.count, 5); XCTAssertEqual(invalid.count, 23); XCTAssertEqual(unknown.count, 1)
+    for row in valid {
+      let bytes = try helper.b(row, "payload")
+      let decoded = try XCTUnwrap(MacConnectionPauseMessage.decode(bytes))
+      XCTAssertEqual(decoded.kind, (row["kind"] as? NSNumber)?.int64Value)
+      XCTAssertEqual(decoded.until, (row["untilMillis"] as? NSNumber)?.int64Value)
+      XCTAssertEqual(try decoded.encode(), bytes)
+    }
+    for row in invalid {
+      let name = row["name"] as? String ?? ""
+      do {
+        let decoded = try MacConnectionPauseMessage.decode(helper.b(row, "payload"))
+        XCTAssertNil(decoded, name)
+      } catch { XCTAssertEqual(error as? SessionFailure, .malformed, name) }
+    }
+    XCTAssertNil(try MacConnectionPauseMessage.decode(helper.b(unknown[0], "payload")))
+    for notice in [MacConnectionPauseMessage(kind: 0, until: 0),
+                   MacConnectionPauseMessage(kind: 1, until: -1),
+                   MacConnectionPauseMessage(kind: 1, until: MacConnectionPauseMessage.maximumUntilMillis + 1),
+                   MacConnectionPauseMessage(kind: 2, until: 1)] {
+      XCTAssertThrowsError(try notice.encode())
+    }
+  }
+
+  func testPeerNoticeSurvivesRetirementButFreshReadinessRejectsStaleTraffic() async throws {
+    let model = MacConnectionPauseModel()
+    let first = MockSecuredChannel(instance: "first", transport: "ble", deviceName: "Phone")
+    defer { model.clear() }
+    model.available(first)
+    let handled = await model.handle(try MacConnectionPauseMessage(kind: 1, until: 0).encode(), on: first.descriptor)
+    XCTAssertTrue(handled == .handled)
+    XCTAssertEqual(model.status(for: first.descriptor.peer), "Paused on Phone")
+    XCTAssertTrue(first.sentData.isEmpty, "Receiving a notice must not echo it")
+    model.retired(first.descriptor)
+    XCTAssertEqual(model.status(for: first.descriptor.peer), "Paused on Phone")
+    let replacement = MockSecuredChannel(instance: "new", transport: "ble", peer: first.descriptor.peer)
+    model.available(replacement)
+    model.retired(first.descriptor)
+    let stale = await model.handle(try MacConnectionPauseMessage(kind: 1, until: 0).encode(), on: first.descriptor)
+    XCTAssertTrue(stale == .discarded)
+    XCTAssertNil(model.status(for: replacement.descriptor.peer))
+    _ = await model.handle(try MacConnectionPauseMessage(kind: 1, until: 0).encode(), on: replacement.descriptor)
+    XCTAssertNotNil(model.status(for: replacement.descriptor.peer))
+    _ = await model.handle(try MacConnectionPauseMessage(kind: 2, until: 0).encode(), on: replacement.descriptor)
+    XCTAssertNil(model.status(for: replacement.descriptor.peer))
+  }
+
+  func testPeerDeadlineIsCredentialScopedAndClockCatchupDoesNotExtendIt() async throws {
+    var wall = Date(timeIntervalSince1970: 1_800_000_000)
+    let deadline = wall.addingTimeInterval(60), model = MacConnectionPauseModel(now: { wall })
+    let channel = MockSecuredChannel(deviceName: "Phone")
+    defer { model.clear() }
+    model.available(channel)
+    let notice = try MacConnectionPauseMessage(kind: 1, until: Int64(deadline.timeIntervalSince1970 * 1000)).encode()
+    for _ in 0..<5 { _ = await model.handle(notice, on: channel.descriptor) }
+    XCTAssertTrue(model.status(for: channel.descriptor.peer)?.hasPrefix("Paused on Phone until ") == true)
+    let other = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: "Phone",
+      publicKey: XCTUnwrap(Data(base64Encoded: channel.descriptor.peer.publicKey)))
+    XCTAssertEqual(other.fingerprint, channel.descriptor.peer.fingerprint)
+    XCTAssertNil(model.status(for: other))
+    wall = wall.addingTimeInterval(-3600)
+    model.reconcileTime()
+    XCTAssertNotNil(model.status(for: channel.descriptor.peer))
+    wall = deadline
+    model.reconcileTime()
+    XCTAssertNil(model.status(for: channel.descriptor.peer))
+    _ = await model.handle(notice, on: channel.descriptor)
+    XCTAssertNil(model.status(for: channel.descriptor.peer))
+  }
+
+  func testAnnouncementsPreferLanAndFallbackWithoutDuplicateOrRetiredReplay() async throws {
+    let model = MacConnectionPauseModel(), lan = MockSecuredChannel(instance: "lan", deviceName: "Phone")
+    let ble = MockSecuredChannel(instance: "ble", transport: "ble", peer: lan.descriptor.peer)
+    model.available(ble); model.available(lan)
+    await model.announcePause(until: nil)
+    XCTAssertEqual(lan.sentData.count, 1); XCTAssertTrue(ble.sentData.isEmpty)
+    lan.onSendData = { _ in throw SessionBackpressure() }
+    await model.announceResume()
+    XCTAssertEqual(try MacConnectionPauseMessage.decode(XCTUnwrap(ble.sentData.first)),
+      MacConnectionPauseMessage(kind: 2, until: 0))
+    model.retired(lan.descriptor); model.retired(ble.descriptor)
+    model.capacityAvailable(ble.descriptor)
+    await model.announcePause(until: nil)
+    XCTAssertEqual(lan.sentData.count, 2); XCTAssertEqual(ble.sentData.count, 1)
+  }
+
+  func testInMemoryNoticeRetentionIsBoundedAndLocalClearDropsAllPeers() async throws {
+    let model = MacConnectionPauseModel()
+    var peers = [DeviceIdentity]()
+    for index in 0..<17 {
+      let channel = MockSecuredChannel(instance: "\(index)", deviceName: "Phone \(index)")
+      peers.append(channel.descriptor.peer)
+      model.available(channel)
+      _ = await model.handle(try MacConnectionPauseMessage(kind: 1, until: 0).encode(), on: channel.descriptor)
+      model.retired(channel.descriptor)
+    }
+    XCTAssertEqual(peers.filter { model.status(for: $0) != nil }.count, 16)
+    model.clear()
+    XCTAssertTrue(peers.allSatisfy { model.status(for: $0) == nil })
+  }
+
+  func testExplicitConnectResumesSavedPauseAndCancelDoesNotDisableAutomaticChoice() async throws {
+    let fixture = try await PauseSessionFixture()
+    defer { fixture.close() }
+    let model = fixture.model
+    fixture.preferences.set(true, forKey: "session.automatic")
+    fixture.preferences.set(true, forKey: "session.paused")
+    fixture.preferences.set(0.0, forKey: "session.pausedUntil")
+    model.restoreAutomatic()
+    XCTAssertFalse(model.automaticArmed)
+    model.allow()
+    XCTAssertFalse(model.allowing, "Automatic work must still respect the pause")
+    model.allowExplicit()
+    try await waitFor { fixture.radio.started }
+    XCTAssertTrue(model.automaticArmed)
+    XCTAssertNil(model.connectionPauseStatus)
+    XCTAssertFalse(fixture.preferences.bool(forKey: "session.paused"))
+    let stopped = fixture.radio.stopped
+    for _ in 0..<10 { model.allowExplicit() }
+    XCTAssertEqual(fixture.radio.stopped, stopped, "Repeated Connect must not restart a live owner")
+    let stale = fixture.radio.sessionAdmitted
+    model.cancelAttempt()
+    XCTAssertFalse(model.allowing)
+    XCTAssertTrue(model.automaticArmed)
+    XCTAssertFalse(model.waitingAutomatically)
+    XCTAssertFalse(fixture.preferences.bool(forKey: "session.paused"))
+    XCTAssertTrue(fixture.preferences.bool(forKey: "session.automatic"))
+    XCTAssertFalse(stale?() ?? true)
+    fixture.radio.started = false
+    model.allowExplicit()
+    try await waitFor { fixture.radio.started }
+  }
+
+  func testExplicitPausedConnectPublishesExactlyOneResumeNotice() async throws {
+    for overdue in [false, true] {
+      let fixture = try await PauseSessionFixture()
+      defer { fixture.close() }
+      fixture.preferences.set(true, forKey: "session.automatic")
+      fixture.preferences.set(true, forKey: "session.paused")
+      fixture.preferences.set(0.0, forKey: "session.pausedUntil")
+      fixture.model.restoreAutomatic()
+      if overdue {
+        fixture.preferences.set(Date().addingTimeInterval(-60).timeIntervalSince1970, forKey: "session.pausedUntil")
+      }
+      var resumes = 0
+      fixture.model.pauseResumed = { resumes += 1 }
+      fixture.model.allowExplicit()
+      XCTAssertEqual(resumes, 1)
+      XCTAssertNil(fixture.model.connectionPauseStatus)
+      XCTAssertFalse(fixture.preferences.bool(forKey: "session.paused"))
+      try await waitFor { fixture.radio.started }
+    }
+  }
+
+  func testPauseRetiresUnfinishedBleAdmissionBeforeTheNoticeAndFencesQueuedCallbacks() async throws {
+    for admitted in [false, true] {
+      let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
+      defer { gate.release(); fixture.close() }
+      fixture.model.setAutomatic(true)
+      try await waitFor { fixture.radio.sessionAdmitted != nil }
+      let oldAdmission = try XCTUnwrap(fixture.radio.sessionAdmitted)
+      let oldWrite = try XCTUnwrap(fixture.radio.sessionWrite)
+      if admitted { XCTAssertTrue(oldAdmission()) }
+      fixture.model.pauseNotice = { _ in await gate.pause(0) }
+      fixture.model.pauseAutomatic(for: nil)
+      XCTAssertFalse(fixture.model.allowing, "Unfinished setup must stop before any notice await")
+      XCTAssertFalse(oldAdmission())
+      XCTAssertFalse(oldWrite(Data([1])))
+      try await waitFor { !gate.delays.isEmpty }
+      XCTAssertNotEqual(fixture.model.state, "Secured")
+      XCTAssertNil(fixture.reservation.peer)
+      fixture.model.allowExplicit()
+      try await waitFor { fixture.radio.sessionAdmitted != nil }
+      let stops = fixture.radio.stopped
+      gate.release()
+      try await Task.sleep(for: .milliseconds(30))
+      XCTAssertTrue(fixture.model.allowing)
+      XCTAssertEqual(fixture.radio.stopped, stops)
+    }
+  }
+
+  func testPauseRetiresManualLanAdmissionAndRejectsQueuedAccepts() async throws {
+    let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
+    let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
+    let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation,
+      startListener: { _ in }, endpointProvider: { _, _ in endpoint }, store: { fixture.trust })
+    defer { gate.release(); lan.cancel(); fixture.close() }
+    fixture.model.setAutomatic(true)
+    try await fixture.secureBluetooth()
+    lan.allow(selected: fixture.peer, bluetoothAllowing: false)
+    try await waitFor { lan.listener?.newConnectionHandler != nil }
+    let listener = try XCTUnwrap(lan.listener)
+    let oldAccept = try XCTUnwrap(listener.newConnectionHandler)
+    let oldReady = try XCTUnwrap(listener.stateUpdateHandler)
+    oldReady(.ready)
+    try await waitFor { lan.state == "Disconnected" }
+    fixture.model.prepareLinkedPause = { lan.preparePause() }
+    fixture.model.pauseNotice = { _ in await gate.pause(0) }
+    fixture.model.pauseAutomatic(for: nil)
+    XCTAssertFalse(lan.allowing)
+    XCTAssertNil(lan.listener)
+    XCTAssertTrue(fixture.model.allowing, "Only the already-secured BLE link remains for metadata")
+    let socket = NWConnection(host: "127.0.0.1", port: 9, using: .tcp)
+    oldAccept(socket)
+    oldReady(.ready)
+    try await waitFor { !gate.delays.isEmpty }
+    XCTAssertFalse(lan.allowing)
+    XCTAssertNotEqual(lan.state, "Connecting")
+    gate.release()
+    try await waitFor { !fixture.model.allowing }
+  }
+
+  func testPauseGatesLinkedWorkAndSubmitsNoticeBeforeEitherTeardown() async throws {
+    let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
+    defer { gate.release(); fixture.close() }
+    fixture.model.setAutomatic(true)
+    try await fixture.secureBluetooth()
+    var events = [String]()
+    fixture.model.prepareLinkedPause = { events.append("gated"); return { events.append("LAN closed") } }
+    fixture.model.pauseNotice = { until in
+      XCTAssertNil(until)
+      events.append("notice")
+      do { try await fixture.model.sendData(MacConnectionPauseMessage(kind: 1, until: 0).encode()) }
+      catch { XCTFail("Secured pause metadata could not be sent: \(error)") }
+      await gate.pause(0)
+      events.append("sent")
+    }
+    fixture.model.pauseAutomatic(for: nil)
+    XCTAssertEqual(events, ["gated"])
+    XCTAssertFalse(fixture.model.automaticArmed)
+    try await waitFor { !gate.delays.isEmpty }
+    XCTAssertTrue(fixture.model.allowing)
+    XCTAssertEqual(events, ["gated", "notice"])
+    gate.release()
+    try await waitFor { !fixture.model.allowing }
+    XCTAssertEqual(events, ["gated", "notice", "sent", "LAN closed"])
+  }
+
+  func testResumeSupersedesDelayedNoticeCompletionAndKeepsCurrentOwner() async throws {
+    let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
+    defer { gate.release(); fixture.close() }
+    fixture.model.setAutomatic(true)
+    try await fixture.secureBluetooth()
+    var closed = 0
+    fixture.model.prepareLinkedPause = { { closed += 1 } }
+    fixture.model.pauseNotice = { _ in await gate.pause(0) }
+    fixture.model.pauseAutomatic(for: 3600)
+    try await waitFor { !gate.delays.isEmpty }
+    fixture.model.allowExplicit()
+    let stops = fixture.radio.stopped
+    gate.release()
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(closed, 0)
+    XCTAssertEqual(fixture.radio.stopped, stops)
+    XCTAssertTrue(fixture.model.allowing)
+    XCTAssertTrue(fixture.model.automaticArmed)
+    XCTAssertNil(fixture.model.connectionPauseStatus)
+  }
+
+  func testNoticeBudgetClosesEvenWhenAProducerIgnoresCancellation() async throws {
+    let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
+    defer { gate.release(); fixture.close() }
+    fixture.model.setAutomatic(true)
+    try await fixture.secureBluetooth()
+    var closed = 0
+    fixture.model.prepareLinkedPause = { { closed += 1 } }
+    fixture.model.pauseNotice = { _ in await gate.pause(0) }
+    fixture.model.pauseAutomatic(for: nil)
+    try await waitFor { !gate.delays.isEmpty }
+    try await waitFor { closed == 1 }
+    XCTAssertFalse(fixture.model.allowing)
+    gate.release()
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(closed, 1)
+    XCTAssertEqual(fixture.model.connectionPauseStatus, "Paused")
+  }
+
+  func testDeviceConnectStartsBothOwnersAndLinkedCloseCannotRetireReplacementLan() async throws {
+    let fixture = try await PauseSessionFixture()
+    fixture.preferences.set(true, forKey: "lan.automatic")
+    var starts = 0
+    let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation,
+      preferences: fixture.preferences, startListener: { _ in starts += 1 }, store: { fixture.trust })
+    defer { lan.cancel(); fixture.close() }
+    let savedTrust = try Data(contentsOf: fixture.trust.location)
+    fixture.model.connectDevice(fixture.peer, alongside: lan)
+    try await waitFor { fixture.radio.started && starts == 1 }
+    XCTAssertTrue(fixture.model.allowing); XCTAssertTrue(lan.allowing)
+    XCTAssertEqual(fixture.reservation.peer, fixture.peer)
+    XCTAssertEqual(lan.selectedPeer, fixture.peer)
+    let listener = try XCTUnwrap(lan.listener)
+    for _ in 0..<10 { fixture.model.connectDevice(fixture.peer, alongside: lan) }
+    XCTAssertEqual(starts, 1)
+    XCTAssertTrue(lan.listener === listener)
+    let oldClose = lan.preparePause()
+    lan.allow(selected: fixture.peer, bluetoothAllowing: false)
+    try await waitFor { lan.listener?.stateUpdateHandler != nil }
+    oldClose()
+    XCTAssertTrue(lan.allowing, "Delayed Pause must not close a new LAN admission")
+    XCTAssertTrue(lan.automatic)
+    fixture.model.setAutomatic(true)
+    fixture.model.cancelAttempt(); lan.cancelAttempt()
+    XCTAssertTrue(fixture.model.automaticArmed)
+    XCTAssertTrue(lan.automatic)
+    XCTAssertFalse(fixture.model.allowing); XCTAssertFalse(lan.allowing)
+    XCTAssertEqual(try Data(contentsOf: fixture.trust.location), savedTrust)
+  }
+
+  func testPausedConnectionControlsRenderAcrossThemesWidthsAndTextScalesWithoutStartingWork() async throws {
+    let fixture = try await PauseSessionFixture()
+    defer { fixture.close() }
+    fixture.preferences.set(true, forKey: "session.automatic")
+    fixture.preferences.set(true, forKey: "session.paused")
+    fixture.preferences.set(0.0, forKey: "session.pausedUntil")
+    fixture.model.restoreAutomatic()
+    let local = try await fixture.identity.publicIdentity()
+    let records = fixture.trust.list(localFingerprint: local.fingerprint)
+    let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation, store: { fixture.trust })
+    defer { lan.cancel() }
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let folder = root.appendingPathComponent("build/connection-ux-validation/macos-renders")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    for scheme: ColorScheme in [.light, .dark] {
+      for width in [400.0, 720.0] {
+        for scale in [0.8, 1.2] {
+          fixture.preferences.set(scale, forKey: "ui.fontScale")
+          let view = MacSessionView(peers: records, model: fixture.model, lan: lan,
+            connectionPause: MacConnectionPauseModel(), phonePower: MacPhonePowerModel(),
+            details: .constant(false), diagnostics: .constant(false), onManageDevices: {})
+            .defaultAppStorage(fixture.preferences).environment(\.colorScheme, scheme)
+            .font(.system(size: 13 * scale)).frame(width: width)
+          let host = NSHostingView(rootView: view), size = host.fittingSize
+          XCTAssertEqual(size.width, width, accuracy: 1)
+          XCTAssertGreaterThan(size.height, 100); XCTAssertLessThan(size.height, 1000)
+          host.frame = NSRect(origin: .zero, size: size)
+          host.layoutSubtreeIfNeeded()
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          try bytes.write(to: folder.appendingPathComponent("pause-\(scheme == .light ? "light" : "dark")-\(Int(width))-\(Int(scale * 100)).png"))
+        }
+      }
+    }
+    XCTAssertFalse(fixture.radio.started)
+    XCTAssertFalse(lan.allowing)
+    XCTAssertFalse(fixture.model.automaticArmed)
   }
 }
 

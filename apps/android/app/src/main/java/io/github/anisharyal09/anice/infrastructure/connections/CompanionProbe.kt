@@ -13,6 +13,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.SystemClock
@@ -30,11 +31,14 @@ import java.util.Locale
 
 /** Foreground or OS-owned nearby connection policy; association locates candidates, EDHOC alone authenticates them. */
 @SuppressLint("UseKtx") // commit() success gates the probe; KTX edit(commit=true) discards that result.
-internal class CompanionProbe private constructor(private val app: AniCeApplication) {
-  private val preferences = app.getSharedPreferences("companion_feasibility", Context.MODE_PRIVATE)
+internal class CompanionProbe private constructor(
+  private val app: AniCeApplication,
+  private val preferences: SharedPreferences = app.getSharedPreferences("companion_feasibility", Context.MODE_PRIVATE),
+  private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+) {
   private val pauseUntilKey = "paused_until"
   private val manager get() = app.getSystemService(CompanionDeviceManager::class.java)
-  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+  private val pauseNotice = PauseNoticeTransition(scope)
   // Setup tokens are process-local; persisted association locators support a fresh attempt after restart.
   private var setupGeneration = 0
   private var armedPreference by mutableStateOf(preferences.getBoolean("armed", false)
@@ -43,8 +47,10 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   // Native binding/presence is independent of policy; pause releases work, not this OS fact.
   private var presentOwner: Any? = null
   private var monitor: Job? = null
+  private var connectResume: Job? = null
   private var timedPauseJob: Job? = null
   private var suspended = false
+  private var attemptCancelled by mutableStateOf(false)
   private val retry = NearbyRetry()
   private val radioReady = MutableStateFlow(false)
   private val pauseEvents = object : BroadcastReceiver() {
@@ -61,18 +67,31 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   init {
     app.sessionController.beforeDisconnect = { pause() }
     app.sessionController.beforeRequest = { peer ->
+      pauseNotice.cancel()
+      attemptCancelled = false
+      app.connectionPause.clear()
       if (armed && peer.deviceId != peerId) pause("Automatic connection is paused for the previously selected Mac.")
-      if (available && peerId == peer.deviceId && preferences.getBoolean("automatic", false) && !armed) {
-        scope.launch {
-          try { resume() }
-          catch (error: CancellationException) { throw error }
-          catch (_: Exception) { pause("Check device setup before enabling automatic connection again.") }
-        }
+      if (available && peerId == peer.deviceId && fingerprint == peer.fingerprint &&
+        preferences.getBoolean("automatic", false) && !armed && app.sessionController.missingPermissions().isEmpty()) {
+        resumeForExplicitConnect()
+      } else if (armed && peerId == peer.deviceId && fingerprint == peer.fingerprint) {
+        presentOwner?.let { appeared(it) } ?: reconcileForeground()
       }
     }
+    app.sessionController.beforeCancelAttempt = {
+      // Cancel also fences a Resume lookup already suspended by explicit Connect.
+      setupGeneration++
+      cancelConnectResume()
+      attemptCancelled = true
+      monitor?.cancel(); monitor = null
+      status = "Connection canceled. Auto connect remains enabled for the next connection event."
+    }
     app.sessionController.radioChanged = { radioReady.value = it }
-    app.sessionController.foregroundChanged = { reconcileForeground() }
-    app.sessionController.automaticRecoveryReserved = { suspended || (monitor?.isActive == true && armed) }
+    app.sessionController.foregroundChanged = {
+      if (app.sessionController.foreground) attemptCancelled = false
+      reconcileForeground()
+    }
+    app.sessionController.automaticRecoveryReserved = { suspended || attemptCancelled || (monitor?.isActive == true && armed) }
     ContextCompat.registerReceiver(app, pauseEvents, IntentFilter().apply {
       addAction(Intent.ACTION_TIME_CHANGED)
       addAction(Intent.ACTION_TIMEZONE_CHANGED)
@@ -81,6 +100,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     restoreTimedPause()
   }
   val armed get() = available && armedPreference
+  val waiting get() = armed && !attemptCancelled
   val associationId get() = preferences.getInt("association", -1)
   val address get() = preferences.getString("address", null)
   val peerId get() = preferences.getString("peer", null)
@@ -92,6 +112,28 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   val available get() = Build.VERSION.SDK_INT >= 31 && app.resources.getBoolean(R.bool.companion_probe_supported) &&
     app.packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP)
   init { reconcileForeground() }
+
+  private fun cancelConnectResume() {
+    connectResume?.cancel(); connectResume = null
+  }
+
+  private fun resumeForExplicitConnect() {
+    if (connectResume?.isActive == true) return
+    val generation = setupGeneration
+    val work = scope.launch(start = CoroutineStart.LAZY) {
+      try {
+        if (generation != setupGeneration || attemptCancelled) return@launch
+        resume()
+        ensureActive()
+        if (!attemptCancelled) app.lanSessionController.resumeAfterTimedPause()
+      } catch (error: CancellationException) { throw error }
+      catch (_: Exception) { pause("Check device setup before enabling automatic connection again.") }
+      finally { if (connectResume === currentCoroutineContext().job) connectResume = null }
+    }
+    // Publish ownership before dispatch: Cancel must invalidate even a not-yet-started Resume.
+    connectResume = work
+    work.start()
+  }
 
   /** Resolve exactly one active record; a restored probe must also match its original local identity. */
   suspend fun trustedPeer(id: String, fingerprint: String? = null): DeviceIdentity = withContext(Dispatchers.IO) {
@@ -106,6 +148,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   /** A new chooser receives a token that Stop invalidates before any later result can arm observation. */
   fun beginSetup(): Int {
     check(!preferences.getBoolean("armed", false))
+    pauseNotice.cancel()
     armedPreference = false
     return ++setupGeneration
   }
@@ -130,6 +173,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     timedPauseJob?.cancel(); timedPauseJob = null
     connectionPaused = false
     connectionPauseUntil = null
+    attemptCancelled = false
     retry.reset()
     armedPreference = true
     try {
@@ -150,16 +194,18 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   @SuppressLint("MissingPermission")
   fun appeared(service: Any) {
     if (owner != null && owner !== service) return
+    val newPresence = presentOwner !== service
     presentOwner = service
+    if (newPresence) attemptCancelled = false
     reconcileTimedPause()
     if (!armed) return
     if (owner == null) { monitor?.cancel(); monitor = null }
     owner = service
-    if (suspended || monitor?.isActive == true) return
+    if (suspended || attemptCancelled || monitor?.isActive == true) return
     startMonitor(service)
   }
 
-  private fun eligible(service: Any?): Boolean = armed && !suspended &&
+  private fun eligible(service: Any?): Boolean = armed && !suspended && !attemptCancelled &&
     if (service == null) owner == null && app.sessionController.foreground else owner === service
 
   private fun startMonitor(service: Any?) {
@@ -254,8 +300,12 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
 
   private fun reconcileForeground() {
     reconcileTimedPause()
-    if (owner != null) return
-    if (!armed || suspended || !app.sessionController.foreground) {
+    owner?.let {
+      // A new foreground event can rearm a retained native owner without another presence callback.
+      if (eligible(it) && monitor?.isActive != true) startMonitor(it)
+      return
+    }
+    if (!armed || suspended || attemptCancelled || !app.sessionController.foreground) {
       monitor?.cancel(); monitor = null
       app.sessionController.automaticPolicyChanged()
       return
@@ -290,21 +340,25 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   }
   fun resumeAfterOperation() {
     suspended = false
+    attemptCancelled = false
     if (armed) { owner?.let { appeared(it) } ?: reconcileForeground() }
     app.sessionController.automaticPolicyChanged()
   }
 
   /** Pause retains native observation for Resume; disable also stops observation. Disable may retain a secured foreground session as manual work. */
-  fun pause(message: String = "Automatic connection is off.", disable: Boolean = false, until: Long? = null): Boolean {
+  fun pause(message: String = "Automatic connection is off.", disable: Boolean = false, until: Long? = null,
+    preserveNoticeChannel: Boolean = false): Boolean {
+    pauseNotice.cancel()
     setupGeneration++
+    cancelConnectResume()
     timedPauseJob?.cancel(); timedPauseJob = null
     val foregroundOwned = owner == null && monitor?.isActive == true
     armedPreference = false
     connectionPaused = true
     connectionPauseUntil = if (disable) null else until
     monitor?.cancel(); monitor = null
-    owner?.let { app.sessionController.releaseCompanion(it, preserveForegroundSession = disable) }; owner = null
-    if (foregroundOwned) app.sessionController.releaseForegroundAutomatic(disable)
+    owner?.let { app.sessionController.releaseCompanion(it, preserveForegroundSession = disable || preserveNoticeChannel) }; owner = null
+    if (foregroundOwned) app.sessionController.releaseForegroundAutomatic(disable || preserveNoticeChannel)
     val edit = preferences.edit().putBoolean("paused", true).putBoolean("armed", false)
     if (disable || until == null) edit.remove(pauseUntilKey) else edit.putLong(pauseUntilKey, until)
     if (disable) {
@@ -324,14 +378,20 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
     val message = until?.let {
       "Paused until ${android.text.format.DateFormat.getTimeFormat(app).format(java.util.Date(it))}"
     } ?: "Paused"
-    val saved = pause(message, until = until)
-    app.sessionController.disconnect(skipAutomaticPause = true)
-    app.lanSessionController.disconnect()
+    val retireBluetooth = app.sessionController.preparePause()
+    val retireLan = app.lanSessionController.preparePause()
+    val saved = pause(message, until = until, preserveNoticeChannel = true)
+    pauseNotice.start(announce = { app.connectionPause.announcePause(until ?: 0L) },
+      teardown = { retireBluetooth(); retireLan() })
     if (saved) scheduleTimedPauseResume()
   }
 
   suspend fun resumeNow() {
+    cancelConnectResume()
+    pauseNotice.cancel()
     timedPauseJob?.cancel(); timedPauseJob = null
+    app.connectionPause.clear()
+    scope.launch { app.connectionPause.announceResume() }
     resume()
     app.lanSessionController.resumeAfterTimedPause()
   }
@@ -341,6 +401,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
   }
 
   private fun reconcileTimedPause() {
+    app.connectionPause.reconcileTime()
     connectionPaused = preferences.getBoolean("paused", false)
     connectionPauseUntil = preferences.getLong(pauseUntilKey, 0L).takeIf { it > 0L }
     val until = connectionPauseUntil ?: return
@@ -367,6 +428,7 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
         }
         connectionPaused = false
         connectionPauseUntil = null
+        app.connectionPause.clear()
         if (automaticEnabled) {
           app.lanSessionController.resumeAfterTimedPause()
           resume()
@@ -414,7 +476,9 @@ internal class CompanionProbe private constructor(private val app: AniCeApplicat
 
   /** Stop invalidates chooser results, retires keys, then removes only this probe's OS association. */
   fun stop(message: String = "Stopped. The probe association has been removed.") {
+    pauseNotice.cancel()
     setupGeneration++
+    cancelConnectResume()
     suspended = false
     timedPauseJob?.cancel(); timedPauseJob = null
     presentOwner = null

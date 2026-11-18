@@ -6,7 +6,9 @@ aniCe connects Android and macOS over local Bluetooth and LAN. Report suspected 
 
 Security fixes target `main` and the latest published beta or stable release; older builds are not maintained. A development version in source is not a published release.
 
-Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer.
+Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer. Android builds require Android 10 (API 29) or newer.
+
+Compatibility is defined for these minimums, but runtime validation currently exercises newer OS baselines. Minimum-OS runtime coverage and an independent security review remain open.
 
 ## Security Architecture & Scope
 

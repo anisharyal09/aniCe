@@ -6,6 +6,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown peer presentation, with independent shared fixtures and no remote preference mutation.
 - Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN renewal v1 authenticated drain barriers, retaining frame profiles, fresh-session cryptography and legacy expiry.
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
 - Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
@@ -21,6 +22,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
 - Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
 - Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.
 - Exclude bounded negotiated LAN maintenance from transfer transport waits while preserving fixed offer, recovery and security deadlines.

@@ -10,6 +10,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanRendezvousTests {
+    @Test fun cancelConsumesLateReadinessAndRetriesButNewEventsRemainEnabled() {
+        for (event in listOf("request", "channel", "eligibility", "app-open", "explicit")) {
+            val gate = LanAttemptGate()
+            gate.update("ble", true, true, false, 0)
+            assertTrue(gate.claim())
+            gate.cancel()
+            repeat(10) {
+                gate.update("ble", true, true, it % 2 == 0, 0)
+                gate.release()
+                assertFalse(gate.claim())
+                assertFalse(gate.claimRecovery())
+                assertFalse(gate.claimActivity())
+            }
+            when (event) {
+                "request" -> gate.update("ble", true, true, true, 1)
+                "channel" -> gate.update("new", true, true, true, 0)
+                "eligibility" -> { gate.update("ble", false, true, false, 0); gate.update("ble", true, true, true, 0) }
+                "app-open" -> gate.rearm()
+                "explicit" -> gate.trigger()
+            }
+            assertTrue("Cancel disabled a later $event event", gate.claim())
+            assertFalse(gate.claim())
+        }
+    }
+
     @Test fun directlyConnectedIPv4RejectsBroadcastAndNetworkAddressesButAllowsPointToPoint() {
         fun accepted(ip: String, prefix: Int) = LanAddress.unicastOnPrefix(java.net.InetAddress.getByName(ip), prefix)
         assertTrue(accepted("192.168.1.10", 24))

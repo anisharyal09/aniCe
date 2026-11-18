@@ -67,6 +67,7 @@ class SessionController(application: Application) {
     private set
   var beforeDisconnect: () -> Unit = {}
   var beforeRequest: (DeviceIdentity) -> Unit = {}
+  internal var beforeCancelAttempt: () -> Unit = {}
   var radioChanged: (Boolean) -> Unit = {}
   internal var foregroundChanged: () -> Unit = {}
   internal var automaticRecoveryReserved: () -> Boolean = { false }
@@ -154,23 +155,43 @@ class SessionController(application: Application) {
 
   fun request(peer: DeviceIdentity) {
     if (!app.sessionPeers.permits(peer)) return
-    selected = peer
     recoveryPaused = false
+    beforeRequest(peer)
     if (missingPermissions().isNotEmpty()) {
+      selected = peer
       awaitingPermissions = true
       status = "Allow Bluetooth access to connect."
       return
     }
-    beforeRequest(peer)
     connect(peer)
   }
 
   fun permissionReturned() {
+    if (!awaitingPermissions) return
     awaitingPermissions = false
     selected?.let {
       if (missingPermissions().isEmpty()) { beforeRequest(it); connect(it) }
       else fail("Bluetooth access is needed. Allow it in app settings, then retry.")
     }
+  }
+
+  /** Cancel retires only the current attempt, including a pending permission result. */
+  fun cancelAttempt() {
+    if (state == ConnectionState.SECURED) return
+    beforeCancelAttempt()
+    recoveryPaused = true
+    workRecovery?.cancel(); workRecovery = null
+    cancel("Connection canceled.")
+  }
+
+  /** Keep the secured channel usable for metadata while preventing approved-work recovery. */
+  internal fun preparePause(): () -> Unit {
+    recoveryPaused = true
+    workRecovery?.cancel(); workRecovery = null
+    awaitingPermissions = false
+    if (state != ConnectionState.SECURED) { cancel("Connection paused."); return {} }
+    val op = operation
+    return { if (op == operation) disconnect(skipAutomaticPause = true) }
   }
 
   @SuppressLint("MissingPermission")
@@ -416,6 +437,7 @@ class SessionController(application: Application) {
   }
 
   fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
+    awaitingPermissions = false
     app.features.retired("ble")
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++

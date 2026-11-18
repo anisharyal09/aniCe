@@ -176,6 +176,7 @@ struct LanAttemptGate {
   private var ready = false
   private var requests: Int64 = 0
   private var attempted = false
+  private var cancelled = false
   private var activityDemanded = false
   private var recovery: Int
   private var demand = false
@@ -185,20 +186,21 @@ struct LanAttemptGate {
   }
   mutating func update(channel: String?, eligible: Bool, remoteEligible: Bool, ready: Bool, requests: Int64) {
     let renewed = self.channel != channel || (eligible && !self.eligible) || (remoteEligible && !self.remoteEligible)
-    if renewed { activityDemanded = false; recovery = recoveryLimit }
-    if renewed || self.requests != requests || (ready && !self.ready) { attempted = false }
+    if renewed { activityDemanded = false; recovery = recoveryLimit; cancelled = false }
+    if self.requests != requests { cancelled = false }
+    if renewed || self.requests != requests || (ready && !self.ready && !cancelled) { attempted = false }
     self.channel = channel; self.eligible = eligible; self.remoteEligible = remoteEligible
     self.ready = ready; self.requests = requests
   }
   mutating func claimActivity() -> Bool {
-    guard !activityDemanded else { return false }
+    guard !cancelled, !activityDemanded else { return false }
     activityDemanded = true
     return true
   }
   /// An explicit request or preference change gets one attempt, even after recovery is exhausted.
-  mutating func trigger() { demand = true; attempted = false }
+  mutating func trigger() { cancelled = false; demand = true; attempted = false }
   mutating func claim(connected: Bool = false) -> Bool {
-    if connected || attempted { return false }
+    if connected || cancelled || attempted { return false }
     if demand {
       demand = false; attempted = true
       if recovery > 0 { recovery -= 1 }
@@ -210,13 +212,15 @@ struct LanAttemptGate {
   }
   /// Marks an in-flight attempt without spending another recovery slot.
   mutating func hold() { attempted = true }
+  /// Cancel consumes this event, including late readiness, without disabling automation.
+  mutating func cancel() { cancelled = true; attempted = true; demand = false; activityDemanded = true }
   /// Releases the event latch after a failed attempt so a bounded retry can run.
-  mutating func release() { attempted = false }
+  mutating func release() { if !cancelled { attempted = false } }
   mutating func claimRecovery() -> Bool {
-    guard !attempted, recovery > 0 else { return false }
+    guard !cancelled, !attempted, recovery > 0 else { return false }
     demand = false; recovery -= 1; attempted = true
     return true
   }
   /// App open, wake, pause expiry or a new BLE channel restores the bounded recovery budget.
-  mutating func rearm() { recovery = recoveryLimit; attempted = false; demand = false }
+  mutating func rearm() { cancelled = false; recovery = recoveryLimit; attempted = false; demand = false }
 }

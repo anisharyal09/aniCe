@@ -32,6 +32,33 @@ private actor ReceiveDrainProbe {
 }
 
 final class LanTests: XCTestCase {
+  func testCancelConsumesLateReadinessAndRetriesButNewEventsRemainEnabled() {
+    for event in ["request", "channel", "eligibility", "app-open", "explicit"] {
+      var gate = LanAttemptGate()
+      gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: false, requests: 0)
+      XCTAssertTrue(gate.claim())
+      gate.cancel()
+      for index in 0..<10 {
+        gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: index % 2 == 0, requests: 0)
+        gate.release()
+        XCTAssertFalse(gate.claim())
+        XCTAssertFalse(gate.claimRecovery())
+        XCTAssertFalse(gate.claimActivity())
+      }
+      switch event {
+      case "request": gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 1)
+      case "channel": gate.update(channel: "new", eligible: true, remoteEligible: true, ready: true, requests: 0)
+      case "eligibility":
+        gate.update(channel: "ble", eligible: false, remoteEligible: true, ready: false, requests: 0)
+        gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)
+      case "app-open": gate.rearm()
+      default: gate.trigger()
+      }
+      XCTAssertTrue(gate.claim(), "Cancel disabled a later \(event) event")
+      XCTAssertFalse(gate.claim())
+    }
+  }
+
   func testRequestWhileConnectedWaitsForRetirementAndIsConsumedOnlyOnce() {
     var gate = LanAttemptGate()
     gate.update(channel: "ble", eligible: true, remoteEligible: true, ready: true, requests: 0)

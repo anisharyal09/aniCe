@@ -80,6 +80,34 @@ private actor DeadlineValidationProbe {
   func validate() throws { loads += 1; if let fault { throw fault } }
 }
 final class SessionChannelTests: XCTestCase, @unchecked Sendable {
+  func testPeerWithoutPauseFeatureIgnoresTheAdditiveTagWithoutClosingSession() async throws {
+    let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
+    let outgoing = ChannelMailbox(), replies = ChannelMailbox()
+    let client = SessionConnection(handshake: try helper.engine(fixture, server: false), responder: false,
+      capacity: { _ in true }, submit: { await outgoing.append($0) }, data: { _ in }, secured: {})
+    let server = SessionConnection(handshake: try helper.engine(fixture, server: true), responder: true,
+      capacity: { _ in true }, submit: { await replies.append($0) }, data: { await replies.record($0) }, secured: {})
+    do {
+      try await client.start()
+      for _ in 0..<3 { try await server.receive(outgoing.take()); try await client.receive(replies.take()) }
+      let notice = try MacConnectionPauseMessage(kind: 1, until: 0).encode()
+      try await client.sendData(notice)
+      try await server.receive(outgoing.take())
+      let delivered = await replies.data
+      XCTAssertEqual(delivered, [notice])
+      let closed = await server.isClosed
+      XCTAssertFalse(closed)
+      try await client.sendData(Data([7]))
+      try await server.receive(outgoing.take())
+      let next = await replies.data
+      XCTAssertEqual(next, [notice, Data([7])])
+      await client.close(); await server.close()
+    } catch {
+      await client.close(); await server.close()
+      throw error
+    }
+  }
+
   func testCancellingAnAdmittedSendPreservesHealthyChannelAndPeerSequence() async throws {
     let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     for phase in ["capacity", "submission"] {

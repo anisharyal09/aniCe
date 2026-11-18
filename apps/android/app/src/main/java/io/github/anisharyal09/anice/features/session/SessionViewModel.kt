@@ -25,6 +25,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     val media = (application as AniCeApplication).nowPlaying
     val transfer = (application as AniCeApplication).transfer
     val lan = (application as AniCeApplication).lanSessionController
+    val connectionPause = (application as AniCeApplication).connectionPause
     val state
         get() = owner.state
 
@@ -47,6 +48,12 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     fun request(peer: DeviceIdentity) = owner.request(peer)
 
+    /** Device-level Connect asks both transports; LAN declines without disturbing an existing peer session. */
+    fun connectDevice(peer: DeviceIdentity) {
+        owner.request(peer)
+        lan.connectAlongside(peer)
+    }
+
     fun permissionReturned() = owner.permissionReturned()
 
     fun connect(peer: DeviceIdentity) = owner.connect(peer)
@@ -61,6 +68,14 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     fun disconnectBluetooth() = owner.disconnect()
 
     fun cancelBluetooth() = owner.cancel()
+
+    fun cancelBluetoothAttempt() = owner.cancelAttempt()
+
+    /** Cancel stops only the in-flight attempt; automatic preferences remain armed. */
+    fun cancelConnect() {
+        owner.cancelAttempt()
+        lan.cancelAttempt()
+    }
 
     fun cancel() {
         owner.cancel()

@@ -11,9 +11,27 @@ BLE/LAN feature data stays on the local peer connection and uses authenticated e
 2. If Android blocks that source, open its **Settings** link and enable **Allow from this source**.
 3. Return to the installer and choose **Install**.
 
-Play Protect may warn about an independent APK. Check the download source before proceeding. If the warning offers **More details → Install anyway**, that is a per-install exception. If no exception is offered, stop and review the warning rather than disabling Play Protect globally.
-
 For in-app updates, Android may separately request permission for aniCe to install packages. Enable **Allow from this source** for aniCe only if you want that update flow. Android still presents the installation confirmation.
+
+### Google Play Protect warning
+
+Play Protect may show **Blocked by Play Protect** or **Unrecognized app** for an independently distributed APK. Confirm that you downloaded aniCe from the official release before proceeding.
+
+**Method A — Install anyway**
+
+1. On the Play Protect dialog, tap **More details** or the downward arrow.
+2. Tap **Install anyway**.
+
+**Method B — If no Install anyway button is offered**
+
+1. Open the **Google Play Store**.
+2. Tap your **profile avatar → Play Protect**.
+3. Tap the **Settings gear**.
+4. Temporarily turn off **Scan apps with Play Protect**.
+5. Return to the downloaded `aniCe-android.apk` and choose **Install**.
+6. Return to Play Protect and turn scanning back on after installation.
+
+Turning scanning off reduces protection device-wide while it is disabled. Manufacturer or managed-device policy may still block installation; these steps do not override an administrator's restrictions.
 
 ### Restricted settings
 

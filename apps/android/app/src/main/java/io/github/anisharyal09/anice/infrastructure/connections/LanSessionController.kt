@@ -315,13 +315,50 @@ class LanSessionController(private val app: AniCeApplication,
         return true
     }
 
-    fun connect(peer: DeviceIdentity? = null, automatically: Boolean = false) {
-        if (!automatically) { cancelRecovery(); automaticPaused = false; automaticGate.trigger() }
+    /** Device-level Connect starts LAN alongside BLE without disturbing a live transport for the same peer. */
+    fun connectAlongside(peer: DeviceIdentity) {
+        if (selected?.deviceId == peer.deviceId && selected?.fingerprint == peer.fingerprint &&
+            selected?.publicKey == peer.publicKey &&
+            state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED)) {
+            automaticPaused = false
+            cancelRecovery()
+            automaticGate.trigger()
+            scheduleAutomatic()
+            return
+        }
+        connect(peer)
+    }
 
+    /** Cancels the current attempt while leaving the automatic preference armed for the next event. */
+    fun cancelAttempt(message: String = "Connection canceled.") {
+        if (state == ConnectionState.SECURED) return
+        cancelRecovery()
+        automaticAttempt = false
+        automaticGate.cancel()
+        end(message)
+    }
+
+    /** Gates recovery now while keeping the current channel available for a bounded pause notice. */
+    internal fun preparePause(): () -> Unit {
+        cancelRecovery()
+        automaticPaused = true
+        automaticAttempt = false
+        if (state != ConnectionState.SECURED) { end("Local-network connection paused."); return {} }
+        scheduleAutomatic()
+        val op = generation
+        return { if (op == generation && automaticPaused) disconnect() }
+    }
+
+    fun connect(peer: DeviceIdentity? = null, automatically: Boolean = false) {
         if (peer != null && !app.sessionPeers.permits(peer)) {
             status = "Disconnect the other device before connecting to this Mac."
             return
         }
+        if (!automatically) {
+            cancelRecovery(); automaticPaused = false; automaticGate.trigger()
+            app.connectionPause.clear()
+        }
+
         // Starting a replacement attempt must not drop a picker or transfer lease held while
         // discovery runs, otherwise a backgrounded selection can retire the companion transport.
         end(preserveLeases = true)

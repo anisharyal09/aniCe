@@ -51,6 +51,43 @@ Android reuses its source read buffer and per-direction provider cipher. Encrypt
 
 The socket reader and feature worker have separate bounded queues. A full queue applies backpressure without dropping accepted records. Header/control classification skips byte-string materialization; only the feature decoder owns the payload copy.
 
+## Per-record cost model
+
+Counts are payload-sized allocations and copies for one 524,288-byte profile-4 chunk. The anchor names the owning implementation.
+
+**Android send**
+
+| Stage | Allocations | Copies | Anchor |
+| --- | ---: | ---: | --- |
+| Source read into one per-file buffer | 0 | 0 | `TransferSender.kt` send loop |
+| Chunk CBOR node from the reused buffer | 1 | 1 | `TransferWire.chunkFrom`, `Cbor.Bytes` |
+| Envelope CBOR encode | 1 | 1 | `SessionCbor.Encoder` |
+| AES-GCM seal and record assembly | 1 | 0 | `RecordCipher.seal` |
+| TCP framing into transport scratch | 0 | 1 | `LanFraming.encodeInto`, `AndroidLanTransport.send` |
+| Socket write | 0 | 0 | `AndroidLanTransport.send` |
+
+**Android receive**
+
+| Stage | Allocations | Copies | Anchor |
+| --- | ---: | ---: | --- |
+| Frame assembly | 1 | 1 | `LanFraming.feed` |
+| AES-GCM open | 1 | 0 | `RecordCipher.open` |
+| Envelope CBOR decode | 1 | 1 | `SessionCbor.decodeSequence` |
+| Storage write and SHA-256 | 0 | 0 | `TransferReceiver.kt` receive path |
+
+**Mac send**
+
+| Stage | Allocations | Copies | Anchor |
+| --- | ---: | ---: | --- |
+| Full source read into owned `Data` (short reads append) | 1 | 0 | `TransferSendStorage.readChunk` |
+| Transfer envelope CBOR encode | 1 | 1 | `SessionCbor.encodeValues` |
+| AES-GCM ciphertext | 1 | 0 | `SessionRecordCodec.seal` / CryptoKit |
+| Record assembly | 1 | 1 | `SessionRecordCodec.seal` |
+| TCP framing | 1 | 1 | `LanFraming.encode` |
+| `NWConnection` submission | 0 | 0 | `LanTcpTransport.submit`; Network.framework ownership is platform-managed |
+
+Independent of payload size, each record also pays a nonce construction, one cipher init, two AAD updates, one header read/write and one budget reservation and release. Standard-profile 3,072-byte transfer chunks at 8 MiB/s need about 2,730 records and live native validations per second, which is why larger negotiated profiles exist.
+
 ## Scheduling and storage
 
 - DATA admission holds at most eight unsealed callers. Standard-sized requests take priority, with one bulk turn after four small turns when both classes wait.
@@ -80,6 +117,10 @@ Producer cancellation remains effective before nonce reservation. Once sealed, t
 LAN renewal closes sealing admission and drains nonce-owned submissions before fresh EDHOC. It retains transport/feature queues and the channel descriptor. Cumulative monotonic maintenance snapshots exclude that interval from transfer capacity, resume and file-confirmation waits. Old-epoch deadline results cannot retire the successor. Security, frame/write, offer-assembly and recovery deadlines remain absolute.
 
 Normal TCP EOF permits at most ten seconds for accepted delivery to drain. Explicit close, authentication failure and native transport failure retire immediately.
+
+## Observed costs
+
+Measured on Debug builds, the optional Mac Home/companion Now Playing display used about 15–20% of one app CPU during playback, peaking near 35% with a concurrent phone-to-Mac transfer. Treat these as observations from earlier builds, not targets.
 
 ## Instrumentation
 
