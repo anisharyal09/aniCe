@@ -10,6 +10,111 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanRendezvousTests {
+    @Test fun userDemandIsVersion2OnlyKeepsEligibilityAndCannotEchoOrReplay() = runBlocking {
+        var now = 0L
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val link = LanRendezvous(scope, { now }) {}
+            val channel = Channel()
+            link.available(channel); link.update(1); yield()
+            link.handle(channel.descriptor, LanRendezvousWire.encode(LanRendezvousMessage(2, 0)))
+            yield()
+            var userRequests = 0
+            link.transferRequested = { assertEquals(channel.descriptor, it); userRequests++ }
+            link.handle(channel.descriptor, LanRendezvousWire.encode(LanRendezvousMessage(2, 5)))
+            yield()
+            assertEquals(0, link.remote)
+            assertEquals(1, userRequests)
+            assertFalse(channel.sent.any { LanRendezvousWire.decode(it) == 5 })
+            channel.blocked = true
+            repeat(10) { link.requestTransfer() }
+            yield()
+            channel.blocked = false
+            link.capacityAvailable(channel.descriptor); yield()
+            assertEquals(1, channel.sent.count { LanRendezvousWire.decode(it) == 5 })
+            val sent = channel.sent.size
+            channel.blocked = true
+            link.requestTransfer(); yield()
+            now = 10_000
+            channel.blocked = false
+            link.capacityAvailable(channel.descriptor); yield()
+            assertEquals("An expired user action was retried", sent, channel.sent.size)
+            channel.blocked = true
+            link.requestTransfer(); yield()
+            link.cancelTransferRequest()
+            channel.blocked = false
+            link.capacityAvailable(channel.descriptor); yield()
+            assertEquals(sent, channel.sent.size)
+            channel.blocked = true
+            link.requestTransfer(); yield()
+            link.retired(channel.descriptor)
+            val replacement = Channel(instance = "replacement")
+            link.available(replacement); yield()
+            assertFalse(replacement.sent.any { LanRendezvousWire.decode(it) in listOf(4, 5) })
+            assertEquals(DataHandling.UNRECOGNIZED, link.handle(channel.descriptor,
+                LanRendezvousWire.encode(LanRendezvousMessage(2, 5))))
+        } finally { scope.cancel() }
+    }
+
+    @Test fun legacyPeerGetsAnOrdinaryRequestAndSuspendedCancellationCannotRestoreUserDemand() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val link = LanRendezvous(scope, { 0L }) {}
+            val channel = Channel()
+            link.available(channel); link.update(1); yield()
+            link.requestTransfer(); yield()
+            assertEquals(1, channel.sent.count { LanRendezvousWire.decode(it) == 4 })
+            assertFalse(channel.sent.any { LanRendezvousWire.decodeMessage(it)?.state == 5 })
+            link.handle(channel.descriptor, LanRendezvousWire.encode(LanRendezvousMessage(2, 1))); yield()
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            var attempts = 0
+            val held = object : SecuredChannel {
+                override val descriptor = channel.descriptor.copy(instance = "held")
+                override suspend fun sendData(bytes: ByteArray) {
+                    if (LanRendezvousWire.decode(bytes) == 5) {
+                        attempts++
+                        entered.complete(Unit); release.await(); throw SessionBackpressure()
+                    }
+                }
+            }
+            link.available(held)
+            link.handle(held.descriptor, LanRendezvousWire.encode(LanRendezvousMessage(2, 1)))
+            yield()
+            link.requestTransfer(); yield()
+            withTimeout(1000) { entered.await() }
+            repeat(10) { link.requestTransfer() }
+            link.cancelTransferRequest()
+            release.complete(Unit); repeat(3) { yield() }
+            link.capacityAvailable(held.descriptor); yield()
+            assertEquals(1, attempts)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun peerLossSignalsOnlyCurrentNonduplicateStateTransitionsNotLegacyOrStaleTraffic() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val link = LanRendezvous(scope) {}
+            val channel = Channel()
+            val transitions = mutableListOf<Pair<Int?, Int>>()
+            link.remoteStateChanged = { descriptor, previous, current ->
+                assertEquals(channel.descriptor, descriptor)
+                transitions.add(previous to current)
+            }
+            link.available(channel)
+            fun value(state: Int) = LanRendezvousWire.encode(LanRendezvousMessage(2, state))
+            link.handle(channel.descriptor, value(3))
+            repeat(10) { link.handle(channel.descriptor, value(3)) }
+            link.handle(channel.descriptor, value(0))
+            repeat(10) { link.handle(channel.descriptor, value(0)) }
+            link.handle(channel.descriptor, LanRendezvousWire.encode(3))
+            link.handle(channel.descriptor, value(4))
+            link.handle(channel.descriptor.copy(instance = "retired"), value(3))
+            assertEquals(listOf(null to 3, 3 to 0), transitions)
+            assertEquals(0, link.remote)
+        } finally { scope.cancel() }
+    }
+
     @Test fun cancelConsumesLateReadinessAndRetriesButNewEventsRemainEnabled() {
         for (event in listOf("request", "channel", "eligibility", "app-open", "explicit")) {
             val gate = LanAttemptGate()

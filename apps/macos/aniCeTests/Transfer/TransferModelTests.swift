@@ -2447,6 +2447,27 @@ final class TransferModelTests: XCTestCase {
     XCTAssertFalse(ble.sentData.contains { (try? TransferMessage.decode($0))?.kind == 2 })
     guard case .idle = owner.state else { return XCTFail("Dismissed send restarted") }
   }
+  func testFreshSendUsesTheUserDemandPathWithoutGivingRecoveryTheSameOverride() async throws {
+    let owner = MacTransferModel(), ble = MockSecuredChannel(transport: "ble")
+    owner.available(ble)
+    _ = await owner.handle(try TransferMessage.capability().encode(), on: ble.descriptor)
+    var sends = 0, recovery = 0
+    owner.onDemandLanConnection = { sends += 1; return false }
+    owner.onLanRequired = { recovery += 1; return false }
+    let source = tempDir.appendingPathComponent("demand-notice.bin")
+    try Data([1]).write(to: source)
+    defer { owner.dismiss() }
+    await owner.sendFiles(urls: [source])
+    XCTAssertEqual(sends, 1)
+    XCTAssertEqual(recovery, 0)
+    XCTAssertEqual(owner.activeChannel?.descriptor, ble.descriptor)
+    XCTAssertTrue(owner.routeNotice?.contains("slower") == true)
+    guard case .waitingForPeerApproval = owner.state else { return XCTFail("Bluetooth offer did not start") }
+    owner.connectLanForTransfer()
+    XCTAssertEqual(sends, 2)
+    XCTAssertEqual(recovery, 0)
+    XCTAssertTrue(owner.routeNotice?.contains("Pause") == true)
+  }
 
   func testCancelledRendezvousAndConcurrentSendCannotOffer() async throws {
     let owner = MacTransferModel()

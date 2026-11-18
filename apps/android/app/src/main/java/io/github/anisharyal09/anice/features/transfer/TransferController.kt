@@ -117,6 +117,8 @@ class TransferController(
 
     var state by mutableStateOf<TransferState>(TransferState.Idle); internal set
     var destinationMessage by mutableStateOf<String?>(null); internal set
+    var routeNotice by mutableStateOf<String?>(null); internal set
+    val usingBluetooth get() = activeChannel?.descriptor?.transport == "ble"
     internal val destinationPreferences by lazy { context?.let(::TransferDestinationPreferences) }
     val autoReceivePreferences by lazy {
         TransferAutoReceivePreferences(context?.getSharedPreferences("transfer_auto_receive", Context.MODE_PRIVATE))
@@ -127,18 +129,33 @@ class TransferController(
     var onPickerChanged: (Boolean) -> Unit = {}
     var onChannelChanged: () -> Unit = {}
     internal var pickerTimeout: Job? = null
+    internal var pickerRelease: Job? = null
     var selectingFiles = false; internal set
     internal val operationID get() = currentBatch?.id?.let(UUID::fromString) ?: epoch
     fun beginPicker() {
+        pickerRelease?.cancel(); pickerRelease = null
         selectingFiles = true
         onPickerChanged(true)
+        onDemandLanConnection?.invoke()
         pickerTimeout?.cancel()
         pickerTimeout = scope.launch { delay(60000); selectingFiles = false; pickerTimeout = null; onPickerChanged(false) }
     }
     fun endPicker() {
+        pickerRelease?.cancel(); pickerRelease = null
         val wasPicking = selectingFiles
         selectingFiles = false; pickerTimeout?.cancel(); pickerTimeout = null
         if (wasPicking) onPickerChanged(false)
+    }
+
+    /** Activity-result delivery can precede onStart; bridge that handoff with the existing bounded picker lease. */
+    internal fun endPickerAfterReturn() {
+        pickerTimeout?.cancel(); pickerTimeout = null
+        pickerRelease?.cancel()
+        val operation = epoch
+        pickerRelease = scope.launch {
+            delay(1_000)
+            if (operation == epoch) endPicker()
+        }
     }
 
     /**
@@ -149,6 +166,7 @@ class TransferController(
     fun onLanUnavailable(reason: String) {
         if (state !is TransferState.Connecting || pendingSend == null) return
         awaitingLan = false
+        routeNotice = "LAN is unavailable. Using Bluetooth, which is slower; reconnect LAN for faster transfer."
         val ble = channels["ble"]
         if (ble != null && (channels["lan"] == null || capabilities["lan"] == null)) {
             selectPreferredChannel()
@@ -201,7 +219,10 @@ class TransferController(
     internal var awaitingLan = false
     internal var connectTimeoutJob: Job? = null
 
-    fun applicationForegrounded() { startAutomaticReceiveIfEligible() }
+    fun applicationForegrounded() {
+        if (pickerRelease?.isActive == true) endPicker()
+        startAutomaticReceiveIfEligible()
+    }
     fun applicationBackgrounded() { deferAutomaticReceiveIfNeeded() }
 
     internal val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -562,6 +583,11 @@ class TransferController(
     }
 
     fun sendUris(uris: List<Uri>, reviewedPeerDeviceId: String? = null, reviewedPeerFingerprint: String? = null) { sendUrisFlow(uris, reviewedPeerDeviceId, reviewedPeerFingerprint) }
+    fun connectLanForTransfer() {
+        routeNotice = if (onDemandLanConnection?.invoke() == true)
+            "Connecting to the local network for faster transfer…"
+        else "LAN could not start. Check automatic LAN on both devices, Wi-Fi and any connection Pause."
+    }
 }
 
 // MARK: - Channel routing
@@ -616,6 +642,7 @@ internal fun TransferController.selectPreferredChannel() {
         val preferred = listOf("lan", "ble").firstOrNull { channels[it] != null && capabilities[it] != null }
             ?.let { channels[it] } ?: channels["lan"] ?: channels["ble"]
         activeChannel = preferred
+        if (preferred?.descriptor?.transport == "lan" && capabilities["lan"] != null) routeNotice = null
         peerConnected = preferred != null
         peerCompatible = false
         peerMaxChunkBytes = 3072
@@ -635,6 +662,7 @@ internal fun TransferController.selectPreferredChannel() {
 
 internal fun TransferController.applyCapability(message: TransferMessage) {
         peerCompatible = true
+        if (activeChannel?.descriptor?.transport == "lan") routeNotice = null
         peerMaxChunkBytes = message.number(1).coerceAtMost(when (message.number(0)) {
             4L -> chunkLimit(activeChannel?.descriptor).toLong()
             3L -> minOf(262016L, chunkLimit(activeChannel?.descriptor).toLong())
@@ -794,6 +822,7 @@ internal fun TransferController.failTransfer(reason: String, preserveRecovery: B
 
 internal fun TransferController.cleanupTransfer(selectChannel: Boolean = true, preserveRecovery: Boolean = false) {
         pendingAutomaticReceive = null
+        routeNotice = null
         automaticReceiveNeedsApp = false
         restoredSender = false
         retainedBatch = null; offerReplayed = false

@@ -14,10 +14,14 @@ internal fun connectionSummary(
     lan: ConnectionState,
     waitingNearby: Boolean = false,
     paused: Boolean = false,
+    checkingLan: Boolean = false,
 ): ConnectionSummary {
     return when {
         bluetooth == ConnectionState.SECURED || lan == ConnectionState.SECURED ->
-            ConnectionSummary(ConnectionState.SECURED, "Connected", "Disconnect")
+            ConnectionSummary(ConnectionState.SECURED,
+                if (checkingLan) {
+                    if (bluetooth == ConnectionState.SECURED) "Connected · Checking LAN" else "Checking LAN"
+                } else "Connected", "Disconnect")
         paused -> ConnectionSummary(ConnectionState.DISCONNECTED, "Paused", "Connect")
         bluetooth == ConnectionState.CONNECTING || lan == ConnectionState.CONNECTING ->
             ConnectionSummary(ConnectionState.CONNECTING, "Connecting", "Cancel")

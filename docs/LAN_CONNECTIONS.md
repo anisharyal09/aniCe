@@ -29,7 +29,7 @@ Automatic setup runs on connection events and feature demand:
 - A failed automatic attempt retries twice, after 2 and 5 seconds. Further work waits for a new event, explicit demand or manual connection.
 - Duplicate callbacks and an expired Allow window do not restart discovery.
 
-Disconnect pauses local LAN automation for the current app run. Manual Connect/Allow or an explicit preference change resumes it. Turning automation off cancels pending setup but leaves an already-secured channel available manually.
+Disconnect pauses local LAN automation for the current app run. Manual Connect/Allow, an explicit preference change or a new file-selection/send action from either updated peer with automatic LAN enabled resumes it. Ordinary traffic and recovery of an existing batch do not undo Disconnect. Turning automation off cancels pending setup but leaves an already-secured channel available manually.
 
 **Cancel** stops only the current attempt and its retries, not the automatic preference. Duplicate readiness callbacks cannot restart that cancelled attempt; a new connection/eligibility event or explicit demand can authorize another.
 
@@ -39,7 +39,11 @@ A timed **Pause** closes both transports and gates automatic work until its save
 
 Android's **background LAN timeout** defaults to **Never**. A saved finite timeout applies after the final activity stops or the screen locks. Never removes the app's idle timer; it does not prevent network loss, OS process retirement or explicit disconnection.
 
+**Idle LAN in background** closes only the idle LAN session, not Bluetooth or the app. Pressing Home, opening another app or locking counts as background; leaving aniCe visible does not. Duplicate callbacks and socket replacement do not restart the idle clock. A setting change uses elapsed idle time, and app return enforces an overdue deadline before resetting it. Deep sleep can defer execution until a lifecycle event or app return; aniCe does not wake the phone with periodic alarms.
+
 Bounded file pickers, approved transfer-service work and companion-owned playing/paused-grace media demand retain eligible LAN work. Up to 128 job-scoped leases can be active; releasing one cannot end a replacement job. An approved paused transfer keeps its service until it resumes, is cancelled or its 15-minute retention expires. Losing the native owner releases that work; a job tag alone grants no background execution.
+
+Settings identifies any transfer, picker or playback work retaining LAN. When that final work ends, one fresh idle interval starts. An approved Bluetooth transfer can also request/retain eligible LAN for an upgrade, without forcing a Bluetooth disconnect.
 
 Opening connection setup or another aniCe activity does not release an activity that is still started. Configuration recreation preserves the owner. Opening Bluetooth discovery leaves LAN unchanged; starting Scan affects only Bluetooth.
 
@@ -55,7 +59,8 @@ Mac window and menu-bar companion share the LAN owner. Closing the window retain
 - Android binds TCP to the selected Wi-Fi network. IPv6 discovery retains its interface scope; direct BLE hints use IPv4.
 - Wi-Fi/interface loss retires the affected socket. An unchanged address in another family cannot conceal loss of the socket's bound address.
 - Mac retains a connection while its path is satisfied, uses a Wi-Fi/Ethernet interface and overlaps an original local interface; unrelated interface changes do not retire it.
-- Mac TCP probes an idle peer after 10 seconds, every 5 seconds for three probes, and drops the connection after 20 seconds without progress. **Secured** can remain visible until then.
+- Mac TCP probes an idle peer after five seconds with two-second spacing and three probes, and requests a ten-second connection-drop budget. Android requests a ten-second TCP user timeout when supported. Authenticated LAN PING starts after ten seconds without activity with a ten-second matching-reply budget; BLE retains its separate sixty/twenty-second policy.
+- A matching peer's BLE announcement that LAN is no longer secured starts one bounded check of the current LAN socket. Presentation shows **Checking LAN** rather than a confirmed Wi-Fi indicator. A valid LAN response preserves it; failed verification retires it without disconnecting BLE. Silent network loss cannot be detected instantaneously, and OS suspension can delay visible status until execution resumes.
 - Standard and bulk transfer profiles have separate record limits. Transfer recovery remains feature-owned and does not replay encrypted records.
 
 For setup failures, check the shared network, the Mac's Allow window, permissions and firewall rules before retrying. With several Macs, discovery can encounter another locator first; only the selected full credential is accepted.

@@ -131,7 +131,7 @@ class TransferLeasePolicyTests {
         assertEquals(TransferLeases(true, false, true, false),
             transferLeases("lan", connecting = false, backgroundAllowed = true,
                 selectingFiles = false, bleSecured = true, busy = true))
-        assertEquals(TransferLeases(false, false, true, false),
+        assertEquals(TransferLeases(true, false, true, false),
             transferLeases(null, connecting = false, backgroundAllowed = true,
                 selectingFiles = false, bleSecured = true, busy = true))
         assertEquals(TransferLeases(true, false, false, false),
@@ -140,5 +140,14 @@ class TransferLeasePolicyTests {
         assertEquals(TransferLeases(false, false, false, false),
             transferLeases("lan", connecting = false, backgroundAllowed = false,
                 selectingFiles = false, bleSecured = true, busy = true))
+    }
+
+    @Test fun activeBluetoothBatchKeepsLanDemandEligibleUntilTheBatchFinishes() {
+        assertEquals(TransferLeases(true, false, true, false),
+            transferLeases("ble", connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = true, busy = true))
+        assertEquals(TransferLeases(false, false, true, false),
+            transferLeases("ble", connecting = false, backgroundAllowed = true,
+                selectingFiles = false, bleSecured = true, busy = false))
     }
 }

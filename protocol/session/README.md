@@ -122,13 +122,13 @@ Mac admission window: 120 seconds, five failed candidates maximum. With multiple
 | --- | --- | --- | --- |
 | 1 HELLO | Android | `{"version": 1}` | Sent once after verified readyAck |
 | 2 HELLO_ACK | Mac | `{"version": 1}` | Reply after readiness and valid HELLO |
-| 3 PING | Android | `{"requestId": uint32}` | Sent after 60 seconds without authenticated channel activity |
+| 3 PING | Android | `{"requestId": uint32}` | Sent after 60 seconds without authenticated BLE activity; the LAN binding uses 10 seconds |
 | 4 PONG | Mac | `{"requestId": uint32}` | Reply matching the outstanding PING |
 | 5 RENEWAL_REQUEST | Mac | `{"reason": 1 / 2}` | One request when lifetime or record margin is reached |
 
 HELLO compatibility expires ten seconds after readiness. Missing HELLO/ACK marks the peer unsupported and stops negotiation; manual DATA remains usable with the original hard limits. Android's companion automatic owner pauses on unsupported compatibility; it cannot keep a background lease indefinitely for a legacy peer. A late ACK or unexpected control closes the session with `state`. The responder enables liveness when it submits ACK; submission does not prove peer receipt.
 
-Only Android initiates PING. IDs start at zero per fresh session, increment as unsigned 32-bit values, and never wrap. There is one outstanding PING and one pending logical control. PONG must match before its 20-second deadline; wrong, duplicate or unsolicited replies close with `state`, late/missing replies with `controlTimeout`. Other authenticated traffic resets activity but cannot satisfy an outstanding PING. These timers use monotonic clocks; Android's owner supplies `SystemClock.elapsedRealtime()` so deep sleep counts toward deadlines and record age. OS suspension may miss a deadline and close the connection. Mac sleep retires its session.
+Only Android initiates PING. IDs start at zero per fresh session, increment as unsigned 32-bit values, and never wrap. There is one outstanding PING and one pending logical control. PONG must match before its 20-second BLE deadline (ten seconds under the [LAN binding](../lan/README.md)); wrong, duplicate or unsolicited replies close with `state`, late/missing replies with `controlTimeout`. Other authenticated traffic resets activity but cannot satisfy an outstanding PING. These timers use monotonic clocks; Android's owner supplies `SystemClock.elapsedRealtime()` so deep sleep counts toward deadlines and record age. OS suspension may miss a deadline and close the connection. Mac sleep retires its session.
 
 Queue capacity is checked before sealing. Pre-seal backpressure retains one pending control; it does not consume a record sequence. PONG timing starts at the first accepted submission attempt. Encryption/post-seal transport failures close the session under existing nonce-burn rules. Keepalive traffic consumes ordinary directional counters and maintains channel activity; it cannot extend one-hour lifetime, `2^20` record limits, or readiness deadlines. Control timers use no periodic wake alarms; reconnect and admission policies belong to native session owners.
 

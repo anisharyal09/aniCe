@@ -53,7 +53,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ## Encrypted Liveness & Session Renewal
 
-- **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG after 60 seconds without authenticated activity, with monotonic deadlines.
+- **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG with monotonic deadlines. BLE uses sixty seconds without activity and a twenty-second reply budget; LAN uses ten seconds for each, alongside bounded native TCP failure detection and generation-scoped checks prompted by peer BLE state.
 - **Event-Driven Idle:** Connection maintenance replaced earlier periodic 1-second polling loops with absolute monotonic deadline waits and transport events. Quiet deadline evaluation performs zero storage or Keystore/Keychain reads; full native identity and active-trust validation are enforced on authenticated operations.
 - **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed.
 - **LAN Fast-Path and Renewal:** Authenticated BLE rendezvous v2 supplies a numeric IPv4 locator before Bonjour registration, with bounded mDNS fallback. Mutually capable LAN peers use authenticated directional drain barriers and fresh EDHOC/readiness at the same renewal thresholds without closing TCP or replacing the feature-channel instance. Old cryptographic material is retired, not updated or resumed. Transfer waits account for the bounded maintenance interval; native owner/job work leases survive it. Legacy LAN peers retain hard expiry.

@@ -37,6 +37,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Preserve elapsed background LAN idle deadlines through socket replacement and lock/app handoffs; request enabled LAN for new local file actions and clarify Bluetooth fallback.
+- Shorten LAN peer-loss detection without changing BLE liveness, and fix queued-envelope and picker/MTU handoffs that can interrupt a healthy Bluetooth transfer.
 - Make Cancel invalidate pending Connect-to-Resume work, retain event-scoped recovery and close unfinished admission immediately on Pause.
 - Make Resume immediate and group pause durations, indefinite pause and custom duration in the native menus.
 - Restore the first-install Play Protect alternatives, including temporary scanning disablement and re-enablement afterward.

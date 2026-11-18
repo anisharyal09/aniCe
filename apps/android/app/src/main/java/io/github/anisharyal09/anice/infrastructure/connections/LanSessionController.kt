@@ -20,6 +20,12 @@ class LanSessionController(private val app: AniCeApplication,
             .getInt("lan_background_timeout_minutes", 0).toLong() * 60_000L
     },
     private val recoveryDelays: List<Long> = listOf(2_000L, 5_000L),
+    private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
+    private val interactive: () -> Boolean = {
+        app.getSystemService(android.os.PowerManager::class.java).isInteractive &&
+            !app.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
+    },
+    private val preferences: android.content.SharedPreferences = app.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val discovery = AndroidLanDiscovery(app)
@@ -39,22 +45,23 @@ class LanSessionController(private val app: AniCeApplication,
         get() = connectionState
         private set(value) { connectionState = value; scheduleAutomatic() }
 
-    private val preferences = app.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE)
     // Absent means the user never chose; an explicit stored false still disables automation.
     var automatic by mutableStateOf(
         if (preferences.contains("automatic_lan")) preferences.getBoolean("automatic_lan", true) else true
     )
         private set
     private var automaticPaused = false
+    private var connectionPause = false
     private var automaticAttempt = false
     private var automaticJob: Job? = null
     private var recoveryJob: Job? = null
     private var recoveryStep = 0
     private var recoveryGeneration = 0
     private var recoveryChannel: String? = null
+    private var pendingTransferDemand: Pair<ChannelDescriptor, Long>? = null
     private val automaticGate = LanAttemptGate()
-    internal val rendezvous = LanRendezvous(scope, ::scheduleAutomatic)
-    private val power = app.getSystemService(android.os.PowerManager::class.java)
+    internal val rendezvous = LanRendezvous(scope, elapsedRealtime, ::scheduleAutomatic)
+    private var screenOff = !interactive()
     private val automaticNetworks = mutableMapOf<Network, Set<java.net.InetAddress>>()
     private val automaticNetworkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
@@ -67,8 +74,9 @@ class LanSessionController(private val app: AniCeApplication,
             scope.launch { automaticNetworks.remove(network); scheduleAutomatic() }
         }
     }
-    private val automaticEligible get() = automatic && !automaticPaused && automaticNetworks.isNotEmpty() &&
-        ((foreground && power.isInteractive) || workLease || pickerLease || mediaLease)
+    private val automaticEligible get() = automatic && !automaticPaused && !connectionPause &&
+        !CompanionProbe.connectionPauseActive && automaticNetworks.isNotEmpty() &&
+        ((foreground && !screenOff && interactive()) || workLease || pickerLease || mediaLease)
 
     internal fun wifiAddressesChanged(network: Network, assigned: Set<java.net.InetAddress>) {
         val addresses = assigned.filterNot { it.isAnyLocalAddress || it.isLoopbackAddress || it.isMulticastAddress }.toSet()
@@ -84,12 +92,15 @@ class LanSessionController(private val app: AniCeApplication,
             rearmRecovery()
             requestAutomaticConnection()
         }
+        consumeTransferDemand()
     }
 
     fun setAutomaticEnabled(enabled: Boolean) {
+        if (!enabled) { rendezvous.cancelTransferRequest(); pendingTransferDemand = null }
         automatic = enabled
         preferences.edit().putBoolean("automatic_lan", enabled).apply()
         automaticPaused = false
+        connectionPause = false
         if (enabled) rearmRecovery() else cancelRecovery()
         automaticGate.trigger()
         if (!enabled && automaticAttempt && state != ConnectionState.SECURED) end()
@@ -111,6 +122,7 @@ class LanSessionController(private val app: AniCeApplication,
         val channel = rendezvous.channel?.descriptor?.instance
         if (channel == recoveryChannel) return
         recoveryChannel = channel
+        if (pendingTransferDemand?.first?.instance != channel) pendingTransferDemand = null
         if (channel == null) cancelRecovery() else rearmRecovery()
     }
 
@@ -178,8 +190,15 @@ class LanSessionController(private val app: AniCeApplication,
         private set
 
     private var checkPending = false
+    private var checkingPeerLoss by mutableStateOf(false)
+    val verifyingConnection get() = checkingPeerLoss
+    private var checkDeadline: Long? = null
+    private var checkJob: Job? = null
+    private var checkTimeoutJob: Job? = null
 
     private var backgroundTimeoutJob: Job? = null
+    private var backgroundTimeoutDeadline: Long? = null
+    private val backgroundIdle = LanBackgroundIdle()
     private val workLeases = ConnectionWorkLeases { scope.launch { reconcileLeases() } }
     private val transferWorkOwner = Any()
     private var transferWorkLease: ConnectionWorkLeases.Lease? = null
@@ -189,7 +208,15 @@ class LanSessionController(private val app: AniCeApplication,
     private var mediaLease = false
     var onUnleasedBackgroundWork: () -> Boolean = { false }
     var onDemandFailure: ((String) -> Unit)? = null
-    private val backgroundedOrLocked get() = presentations.isEmpty() || !power.isInteractive
+    var backgroundRetentionReason by mutableStateOf<String?>(null)
+        private set
+    private val backgroundedOrLocked get() = presentations.isEmpty() || screenOff || !interactive()
+    private val backgroundLeased get() = workLease || pickerLease || mediaLease
+    private val hasLanWork get() = connection != null || worker != null || state == ConnectionState.CONNECTING ||
+        state == ConnectionState.SECURED
+    private val timeoutPreferenceChanged = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "lan_background_timeout_minutes") scope.launch { reconcileLeases() }
+    }
 
     // App/native lifecycle callbacks provide eligibility; a job tag cannot manufacture OS ownership.
     internal fun updateWorkOwner(owner: Any, eligible: Boolean) = workLeases.updateOwner(owner, eligible)
@@ -207,11 +234,49 @@ class LanSessionController(private val app: AniCeApplication,
         } else reconcileLeases()
     }
 
-    private fun reconcileLeases() {
+    private fun reconcileLeases(reason: String = "Local-network disconnected after being inactive in the background.") {
+        consumeTransferDemand()
         scheduleAutomatic()
-        if (workLease || pickerLease || mediaLease) {
-            backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
-        } else if (backgroundedOrLocked) startBackgroundDisconnectTimer()
+        backgroundRetentionReason = when {
+            workLease -> "An approved transfer keeps LAN open, including a paused batch waiting to resume."
+            pickerLease -> "File selection keeps LAN open briefly."
+            mediaLease -> "Remote playback keeps LAN open."
+            else -> null
+        }
+        val deadline = backgroundIdle.update(elapsedRealtime(), backgroundedOrLocked, backgroundLeased,
+            backgroundTimeoutMillis())
+        if (deadline == null || !hasLanWork) {
+            backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null; backgroundTimeoutDeadline = null
+            return
+        }
+        if (backgroundIdle.expired(elapsedRealtime())) {
+            android.util.Log.i("aniCe-lan", "idle_timeout expired generation=$generation")
+            end(reason)
+            return
+        }
+        if (backgroundTimeoutJob?.isActive == true && backgroundTimeoutDeadline == deadline) return
+        backgroundTimeoutJob?.cancel()
+        backgroundTimeoutDeadline = deadline
+        val op = generation
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                // Coroutine delays may run late after deep sleep; the elapsed-realtime deadline stays fixed.
+                while (isActive && op == generation) {
+                    delay((deadline - elapsedRealtime()).coerceAtLeast(0))
+                    if (backgroundIdle.expired(elapsedRealtime())) break
+                }
+                if (op == generation && backgroundedOrLocked && !backgroundLeased &&
+                    backgroundIdle.deadline == deadline) end(reason)
+            } finally {
+                if (backgroundTimeoutJob === currentCoroutineContext().job) {
+                    backgroundTimeoutJob = null
+                    backgroundTimeoutDeadline = null
+                }
+            }
+        }
+        backgroundTimeoutJob = job
+        android.util.Log.d("aniCe-lan", "idle_timeout scheduled remaining_ms=${deadline - elapsedRealtime()} generation=$op")
+        job.start()
     }
 
     /**
@@ -227,21 +292,61 @@ class LanSessionController(private val app: AniCeApplication,
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            scheduleAutomatic()
-            if (intent?.action == Intent.ACTION_SCREEN_OFF && !workLease && !pickerLease && !mediaLease) {
-                startBackgroundDisconnectTimer("Local-network connection ended after screen lock.")
-            } else if (intent?.action == Intent.ACTION_SCREEN_ON && !backgroundedOrLocked) {
-                backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
+            // Unlock can otherwise clear the idle interval before a delayed background callback runs.
+            if (!backgroundLeased && backgroundIdle.expired(elapsedRealtime()) && hasLanWork) {
+                end("Local-network disconnected after being inactive in the background.")
             }
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> screenOff = true
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> screenOff = false
+                else -> return
+            }
+            reconcileLeases()
         }
     }
 
     init {
+        rendezvous.transferRequested = { descriptor ->
+            if (automatic && !connectionPause && !CompanionProbe.connectionPauseActive &&
+                rendezvous.channel?.descriptor == descriptor &&
+                (!hasLanWork || selected == null || samePeer(requireNotNull(selected), descriptor.peer)) &&
+                app.sessionPeers.permits(descriptor.peer)) {
+                // A remote send cannot invent background execution. Its short-lived demand can
+                // wait for this offer's real approved-transfer owner to become eligible.
+                if (pendingTransferDemand?.first != descriptor || pendingTransferDemand?.second?.let { elapsedRealtime() >= it } == true)
+                    pendingTransferDemand = descriptor to (elapsedRealtime() + 10_000)
+                consumeTransferDemand()
+            }
+        }
+        rendezvous.remoteStateChanged = { descriptor, previous, current ->
+            // BLE and TCP are independent ordered lanes: an old advertisement can arrive after TCP replacement.
+            // Verify the current socket instead of treating eligibility metadata as its retirement token.
+            if (previous == 3 && current != 3 && state == ConnectionState.SECURED &&
+                selected?.let { samePeer(it, descriptor.peer) } == true) checkConnection(peerLoss = true)
+        }
+        preferences.registerOnSharedPreferenceChangeListener(timeoutPreferenceChanged)
         networks.registerNetworkCallback(NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(), automaticNetworkCallback)
-        ContextCompat.registerReceiver(app, screenReceiver, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) },
+        ContextCompat.registerReceiver(app, screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
+        },
             ContextCompat.RECEIVER_EXPORTED)
+    }
+
+    private fun consumeTransferDemand() {
+        val pending = pendingTransferDemand ?: return
+        if (elapsedRealtime() >= pending.second || rendezvous.channel?.descriptor != pending.first ||
+            !automatic || connectionPause || CompanionProbe.connectionPauseActive) {
+            pendingTransferDemand = null
+            return
+        }
+        if (automaticNetworks.isEmpty() || !((foreground && !screenOff && interactive()) || backgroundLeased)) return
+        if (!app.sessionPeers.permits(pending.first.peer)) { pendingTransferDemand = null; return }
+        pendingTransferDemand = null
+        automaticPaused = false
+        automaticGate.trigger()
+        scheduleAutomatic()
     }
 
     internal fun dispose() {
@@ -250,20 +355,14 @@ class LanSessionController(private val app: AniCeApplication,
         end()
         app.unregisterReceiver(screenReceiver)
         networks.unregisterNetworkCallback(automaticNetworkCallback)
+        preferences.unregisterOnSharedPreferenceChangeListener(timeoutPreferenceChanged)
         scope.cancel()
     }
 
-    private fun startBackgroundDisconnectTimer(reason: String = "Local-network disconnected after being inactive in the background.") {
-        val timeoutMillis = backgroundTimeoutMillis()
-        if (timeoutMillis <= 0) { backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null; return }
-        if (backgroundTimeoutJob?.isActive == true) return
-        val op = generation
-        backgroundTimeoutJob = scope.launch {
-            delay(timeoutMillis)
-            if (op == generation && backgroundedOrLocked && !workLease && !pickerLease && !mediaLease) {
-                this@LanSessionController.end(reason)
-            }
-        }
+    fun setBackgroundTimeoutMinutes(minutes: Int) {
+        require(minutes in listOf(0, 1, 3, 5, 10))
+        preferences.edit().putInt("lan_background_timeout_minutes", minutes).apply()
+        reconcileLeases()
     }
 
     fun onWorkServiceStopped() {
@@ -278,9 +377,7 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     fun onWorkIdle() {
-        if (backgroundedOrLocked && !workLease && !pickerLease && !mediaLease) {
-            startBackgroundDisconnectTimer()
-        }
+        reconcileLeases()
     }
 
     internal fun onApplicationActivity(descriptor: ChannelDescriptor, bytes: ByteArray) {
@@ -294,7 +391,8 @@ class LanSessionController(private val app: AniCeApplication,
 
     fun requestAutomaticConnection(): Boolean {
         if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) return true
-        if (!automatic || automaticPaused || rendezvous.channel == null || rendezvous.remote == 0) return false
+        if (!automatic || automaticPaused || connectionPause || CompanionProbe.connectionPauseActive ||
+            rendezvous.channel == null || rendezvous.remote == 0) return false
         automaticGate.trigger()
         rendezvous.request()
         scheduleAutomatic()
@@ -302,10 +400,24 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     fun connectPreferred(): Boolean {
-        if (state == ConnectionState.SECURED || state == ConnectionState.CONNECTING) return true
-        // Explicit Disconnect stays authoritative until manual Connect or a preference change.
-        if (automaticPaused) return false
-        if (requestAutomaticConnection()) return true
+        if (connectionPause || CompanionProbe.connectionPauseActive) return false
+        val existing = state == ConnectionState.SECURED || state == ConnectionState.CONNECTING
+        // A new user file action may resume transport Disconnect, never a connection Pause or disabled choice.
+        if (!automatic) return existing
+        if (automaticPaused) {
+            automaticPaused = false
+            cancelRecovery()
+            automaticGate.trigger()
+            scheduleAutomatic()
+        }
+        if (rendezvous.channel != null) {
+            automaticGate.trigger()
+            rendezvous.requestTransfer()
+            scheduleAutomatic()
+            return true
+        }
+        if (existing) return true
+        if (backgroundedOrLocked && !backgroundLeased) return false
         val target = selected ?: app.sessionController.selected
         if (target != null) {
             connect(target)
@@ -321,6 +433,7 @@ class LanSessionController(private val app: AniCeApplication,
             selected?.publicKey == peer.publicKey &&
             state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED)) {
             automaticPaused = false
+            connectionPause = false
             cancelRecovery()
             automaticGate.trigger()
             scheduleAutomatic()
@@ -333,6 +446,8 @@ class LanSessionController(private val app: AniCeApplication,
     fun cancelAttempt(message: String = "Connection canceled.") {
         if (state == ConnectionState.SECURED) return
         cancelRecovery()
+        rendezvous.cancelTransferRequest()
+        pendingTransferDemand = null
         automaticAttempt = false
         automaticGate.cancel()
         end(message)
@@ -341,7 +456,10 @@ class LanSessionController(private val app: AniCeApplication,
     /** Gates recovery now while keeping the current channel available for a bounded pause notice. */
     internal fun preparePause(): () -> Unit {
         cancelRecovery()
+        rendezvous.cancelTransferRequest()
+        pendingTransferDemand = null
         automaticPaused = true
+        connectionPause = true
         automaticAttempt = false
         if (state != ConnectionState.SECURED) { end("Local-network connection paused."); return {} }
         scheduleAutomatic()
@@ -355,7 +473,7 @@ class LanSessionController(private val app: AniCeApplication,
             return
         }
         if (!automatically) {
-            cancelRecovery(); automaticPaused = false; automaticGate.trigger()
+            cancelRecovery(); automaticPaused = false; connectionPause = false; automaticGate.trigger()
             app.connectionPause.clear()
         }
 
@@ -369,7 +487,7 @@ class LanSessionController(private val app: AniCeApplication,
         receivedChecks = 0
         val op = generation
         worker =
-            scope.launch {
+            scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     val (local, target) =
                         withContext(Dispatchers.IO) {
@@ -518,8 +636,9 @@ class LanSessionController(private val app: AniCeApplication,
                                             throw SessionException(SessionFailure.CANCELLED)
                                         tcp.submit(bytes)
                                     },
-                                    { bytes ->
-                                        val isCheck = bytes.contentEquals(SessionController.CHECK) ||
+                                     { bytes ->
+                                         withContext(Dispatchers.Main.immediate) { authenticatedLanActivity(op) }
+                                         val isCheck = bytes.contentEquals(SessionController.CHECK) ||
                                             bytes.contentEquals(SessionController.CHECK_REPLY)
                                         val handled = if (isCheck) DataHandling.UNRECOGNIZED else
                                             if (op == generation)
@@ -554,9 +673,9 @@ class LanSessionController(private val app: AniCeApplication,
                                                                 if (op == generation) finish(error, active)
                                                             }
                                                         }
-                                                    } else {
-                                                        checkPending = false
-                                                        status = "Local-network check confirmed."
+                                                     } else {
+                                                         clearConnectionCheck()
+                                                         status = "Local-network check confirmed."
                                                     }
                                                 }
                                             }
@@ -564,15 +683,20 @@ class LanSessionController(private val app: AniCeApplication,
                                     },
                                     {
                                         withContext(Dispatchers.Main.immediate) {
-                                            if(op==generation) { tcp.markSecured(); state=ConnectionState.SECURED; checkPending = false; publishChannel() }
+                                            if(op==generation) {
+                                                tcp.markSecured(); state=ConnectionState.SECURED; checkPending = false
+                                                reconcileLeases()
+                                                if (op == generation) publishChannel()
+                                            }
                                         }
                                         signal.complete(Unit)
                                     },
                                     controls = true,
                                     now = { SystemClock.elapsedRealtime() },
                                     renew = true,
-                                    changed = { maintenanceEvents.request(); scope.launch {
-                                        if (op == generation && transport === tcp) {
+                                     changed = { maintenanceEvents.request(); scope.launch {
+                                         if (op == generation && transport === tcp) {
+                                             if (connection?.isRenewing == true) clearConnectionCheck()
                                             connection?.let { app.features.maintenance("lan", channelToken, it.maintenanceSnapshot) }
                                             app.features.capacityAvailable("lan")
                                         }
@@ -581,13 +705,15 @@ class LanSessionController(private val app: AniCeApplication,
                                     drain = { withContext(Dispatchers.Main.immediate) {
                                         if (op == generation) app.features.drain("lan", channelToken)
                                     } },
-                                    renewalHandshake = {
+                                     renewalHandshake = {
                                         withContext(Dispatchers.IO) {
                                             SessionHandshakeEngine.initiator(app.identityService, app.trustStore,
                                                 target, SystemClock::elapsedRealtime)
                                         }
-                                    },
-                                )
+                                     },
+                                     pingAfterMillis = 10_000,
+                                     pongWithinMillis = 10_000,
+                                 )
                             connection = engine
                             receiver =
                                 scope.launch(Dispatchers.IO) {
@@ -666,6 +792,8 @@ class LanSessionController(private val app: AniCeApplication,
                                         "Local-network connection ended during confirmation."
                                     )
                                 state = ConnectionState.SECURED
+                                reconcileLeases()
+                                if (op != generation) throw SessionException(SessionFailure.CANCELLED)
                                 publishChannel()
                                 status = ""
                                 return true
@@ -712,6 +840,8 @@ class LanSessionController(private val app: AniCeApplication,
                     }
                 }
             }
+        reconcileLeases()
+        worker?.start()
     }
 
     private fun finish(error: Exception, engine: SessionConnection) {
@@ -747,30 +877,47 @@ class LanSessionController(private val app: AniCeApplication,
         // Retire keys synchronously even when the mutation originates outside a presentation.
         val op = generation
         cancelRecovery()
+        rendezvous.cancelTransferRequest()
+        pendingTransferDemand = null
         connection?.retire()
         scope.launch { automaticPaused = true; scheduleAutomatic() }
+        connectionPause = true
         scope.launch { if (op == generation) this@LanSessionController.end("Trust or identity changed. Connect again.") }
     }
 
-    fun checkConnection() {
+    fun checkConnection() = checkConnection(peerLoss = false)
+
+    private fun checkConnection(peerLoss: Boolean) {
         val engine = connection ?: return
-        if (state != ConnectionState.SECURED || checkPending) return
+        if (state != ConnectionState.SECURED) return
+        if (checkPending) {
+            if (peerLoss && !checkingPeerLoss) {
+                checkingPeerLoss = true
+                checkDeadline = maxOf(checkDeadline ?: 0, elapsedRealtime() + 10_000)
+            }
+            return
+        }
+        if (engine.isRenewing) return
         val op = generation
         checkPending = true
+        checkingPeerLoss = peerLoss
+        // Eligibility metadata can be delayed or withdraw background work only; keep the legal LAN write budget.
+        val deadline = elapsedRealtime() + if (peerLoss) 10_000 else 5_000
+        checkDeadline = deadline
         status = "Checking the local-network connection…"
-        scope.launch {
+        checkTimeoutJob = scope.launch {
+            while (isActive && op == generation && checkPending) {
+                val due = checkDeadline ?: break
+                delay((due - elapsedRealtime()).coerceAtLeast(0))
+                checkExpired(op, engine)
+            }
+        }
+        checkJob = scope.launch {
             try {
                 withContext(Dispatchers.IO) { engine.sendData(SessionController.CHECK) }
-                if (op == generation && checkPending) {
-                    status = "Local-network check sent. Waiting for a reply."
-                    delay(5000)
-                    if (op == generation && checkPending) {
-                        checkPending = false
-                        status = "No reply to the local-network check. Check your Mac connection."
-                    }
-                }
+                if (op == generation && checkPending) status = "Local-network check sent. Waiting for a reply."
             } catch (_: SessionBackpressure) {
-                if (op == generation) { checkPending = false; status = "Local-network check could not be sent. Try again." }
+                // The independent deadline also bounds capacity refusal and a nonce-owned send.
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -779,8 +926,33 @@ class LanSessionController(private val app: AniCeApplication,
         }
     }
 
+    private fun checkExpired(op: Long, engine: SessionConnection) {
+        if (op != generation || connection !== engine || !checkPending || checkDeadline?.let { elapsedRealtime() >= it } != true) return
+        val lost = checkingPeerLoss
+        clearConnectionCheck()
+        if (lost) finish(java.net.SocketTimeoutException("The peer's local-network connection was lost. Reconnecting when eligible."), engine)
+        else status = "No reply to the local-network check. Check your Mac connection."
+    }
+
+    private fun samePeer(left: DeviceIdentity, right: DeviceIdentity) =
+        left.deviceId == right.deviceId && left.fingerprint == right.fingerprint && left.publicKey == right.publicKey
+
+    internal fun authenticatedLanActivity(op: Long) {
+        if (op != generation || !checkingPeerLoss) return
+        clearConnectionCheck()
+        status = "Local-network connection confirmed."
+    }
+
+    private fun clearConnectionCheck() {
+        checkPending = false; checkingPeerLoss = false; checkDeadline = null
+        checkJob?.cancel(); checkJob = null
+        checkTimeoutJob?.cancel(); checkTimeoutJob = null
+    }
+
     fun disconnect() {
         cancelRecovery()
+        rendezvous.cancelTransferRequest()
+        pendingTransferDemand = null
         automaticPaused = true
         automaticAttempt = false
         automaticJob?.cancel(); automaticJob = null
@@ -809,6 +981,7 @@ class LanSessionController(private val app: AniCeApplication,
     fun resumeAfterTimedPause() {
         if (!automatic) return
         automaticPaused = false
+        connectionPause = false
         rearmRecovery()
         automaticGate.trigger()
         scheduleAutomatic()
@@ -816,7 +989,10 @@ class LanSessionController(private val app: AniCeApplication,
 
     fun cancel(message: String = "Allow local-network connections on your Mac to reconnect.") {
         cancelRecovery()
+        rendezvous.cancelTransferRequest()
+        pendingTransferDemand = null
         automaticPaused = true
+        connectionPause = true
         end(message)
     }
 
@@ -826,12 +1002,14 @@ class LanSessionController(private val app: AniCeApplication,
     ) {
         automaticAttempt = false
         backgroundTimeoutJob?.cancel(); backgroundTimeoutJob = null
+        backgroundTimeoutDeadline = null
         if (!preserveLeases) {
             pickerLease = false
         }
         generation++
         val old = connection
         connection = null
+        clearConnectionCheck()
         old?.retire()
         transport?.close()
         transport = null
@@ -858,27 +1036,27 @@ class LanSessionController(private val app: AniCeApplication,
     }
 
     fun foreground(presentation: Any) {
+        connection?.let { checkExpired(generation, it) }
+        // Enforce an overdue idle timeout before app return can cancel the delayed callback.
+        if (!backgroundLeased && backgroundIdle.expired(elapsedRealtime()) && hasLanWork) {
+            end("Local-network disconnected after being inactive in the background.")
+        }
         val wasEmpty = presentations.isEmpty()
         presentations.add(presentation)
+        if (interactive()) screenOff = false
         if (wasEmpty) rearmRecovery()
-        scheduleAutomatic()
-        if (power.isInteractive) {
-            backgroundTimeoutJob?.cancel()
-            backgroundTimeoutJob = null
-        } else reconcileLeases()
+        reconcileLeases()
     }
 
     fun background(presentation: Any, changingConfigurations: Boolean) {
         presentations.remove(presentation)
         scheduleAutomatic()
         if (presentations.isEmpty() && !changingConfigurations) {
-            if (pickerLease || workLease || mediaLease) {
-                return
-            }
+            if (backgroundLeased) { reconcileLeases(); return }
             cancelRecovery()
             if (onUnleasedBackgroundWork()) {
                 end("Background transfer service is unavailable; keep aniCe open during transfer.")
-            } else startBackgroundDisconnectTimer()
+            } else reconcileLeases()
         }
     }
     private val channelToken get() = "${generation}-${System.identityHashCode(connection)}"

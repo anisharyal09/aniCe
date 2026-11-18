@@ -96,6 +96,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 | Unsupported capability | State unavailability clearly; do not offer non-functional controls. |
 | Disabled feature | Explain state and provide an explicit toggle to enable. |
 | Loading / Connecting | Stable layout with bounded placeholder; pending state on initiated controls. |
+| LAN verification after a peer interruption | Show Checking LAN and withdraw the confirmed Wi-Fi indicator while checking; a still-secured Bluetooth link remains independent. |
 | Interrupted operation | Explain the result and recovery path without unprompted blind retries. |
 
 ## Feature presentation standards
@@ -122,6 +123,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 ### File transfer
 - Compact entry progressing through file selection, recipient confirmation, transfer progress, and persistent result.
 - Supports native macOS drag-and-drop and Android share sheets. See [File Transfer](../features/FILE_TRANSFER.md).
+- Bluetooth fallback names its slower route and offers **Connect LAN for speed** in the existing transfer panel; no modal blocks an active batch. New local file actions request enabled automatic LAN but cannot undo a connection Pause.
 
 ### Messages (SMS relay)
 - Scoped to connected phone. Threaded conversation list with chronological messages.
@@ -135,6 +137,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Settings and About
 - Grouped preferences using native controls (toggles, sliders, pickers).
+- Android Connection labels its timeout **Idle LAN in background**, explains Home/lock and active-work exceptions, and identifies the work retaining LAN. The setting does not imply that Bluetooth or the app itself stops.
 - Android Updates uses a compact labeled checkbox row for beta inclusion, with update status and the text **Check for updates** action sharing one trailing row. At narrow widths or large text, put status above the trailing action rather than squeezing it into a thin column. Do not add a divider or a full-width bordered button between them. Mac retains its native update actions. Enabling beta updates on either platform requires a native confirmation; cancellation leaves the setting unchanged, and disabling does not require another dialog.
 - Android update review uses a native bottom sheet with a version badge and accessible Close action. Only the notes body scrolls; progress, byte counts and the current installation or cancellation action remain in the footer. More holds Skip version and View on GitHub. Close, Back and swipe dismiss review without cancelling active work. Mac keeps its notes in a bounded, bordered scroll area so the action row stays visible. Both platforms use the shared rectangular button shapes and render release-note headings, bold text, indented lists and horizontal rules in scalable native themed typography, hiding source metadata only in presentation and suppressing a leading version heading duplicated by the review title. Automatic checks retain the version in an open review; manual checks may refresh it.
 - Mac Settings uses 13 pt body/section text and 12 pt supporting text at 100%, scaled through the existing text-size preference; other destinations keep their established scale.

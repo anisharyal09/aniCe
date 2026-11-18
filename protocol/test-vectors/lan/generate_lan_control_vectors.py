@@ -30,7 +30,7 @@ def rendezvous(raw):
     if len(row) not in (3, 4) or type(row[1]) is not int or type(row[2]) is not int:
         raise ValueError("malformed")
     version, state = row[1:3]
-    if version not in (1, 2) or state not in range(5) or len(row) != version + 2:
+    if version not in (1, 2) or state not in range(5 if version == 1 else 6) or len(row) != version + 2:
         raise ValueError("malformed")
     if version == 2:
         fields = row[3]
@@ -105,7 +105,7 @@ def vectors():
     endpoint = ["192.0.2.10", 51234, 4]
     ready = ["aniCe LAN", 2, 2, endpoint]
     valid = [(f"v1-state-{state}", ["aniCe LAN", 1, state]) for state in range(5)]
-    valid += [(f"v2-state-{state}", ["aniCe LAN", 2, state, []]) for state in range(5)]
+    valid += [(f"v2-state-{state}", ["aniCe LAN", 2, state, []]) for state in range(6)]
     valid += [(f"profile-{profile}", ready[:3] + [[endpoint[0], endpoint[1], profile]])
               for profile in (1, 3, 4)]
     valid += [("port-min", ready[:3] + [[endpoint[0], 1, 4]]),
@@ -122,6 +122,9 @@ def vectors():
                          ("short-endpoint", endpoint[:2])]:
         bad.append((name, encode(ready[:3] + [fields])))
     bad += [("endpoint-in-state-1", encode(["aniCe LAN", 2, 1, endpoint])),
+            ("endpoint-in-user-demand", encode(["aniCe LAN", 2, 5, endpoint])),
+            ("v1-user-demand", encode(["aniCe LAN", 1, 5])),
+            ("v2-unknown-state", encode(["aniCe LAN", 2, 6, []])),
             ("v1-with-fields", encode(["aniCe LAN", 1, 2, []])),
             ("v2-without-fields", encode(["aniCe LAN", 2, 2]))]
     automatic = fixtures(valid, bad, rendezvous)

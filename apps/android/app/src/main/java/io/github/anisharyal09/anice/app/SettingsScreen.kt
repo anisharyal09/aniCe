@@ -263,7 +263,7 @@ fun SettingsScreen(
                                     .clickable(role = Role.Button, onClickLabel = "Choose background timeout") { timeoutExpanded = true },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Background timeout", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text("Idle LAN in background", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 Text(timeoutOptions.firstOrNull { it.first == timeoutMinutes }?.second
                                         ?: if (timeoutMinutes > 0) "$timeoutMinutes min" else "Never",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -279,11 +279,16 @@ fun SettingsScreen(
                                         onClick = {
                                             timeoutExpanded = false
                                             timeoutMinutes = minutes
-                                            lanPrefs.edit().putInt("lan_background_timeout_minutes", minutes).apply()
+                                            lan.setBackgroundTimeoutMinutes(minutes)
                                         }
                                     )
                                 }
                             }
+                        }
+                        Text("Closes idle LAN after leaving aniCe or locking the phone. Active transfers, file selection and remote playback keep it connected; Bluetooth is separate.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        lan.backgroundRetentionReason?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 

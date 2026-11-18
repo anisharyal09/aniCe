@@ -30,7 +30,7 @@ internal object LanRendezvousWire {
         return SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("aniCe LAN"), Cbor.Integer(1), Cbor.Integer(state.toLong()))))
     }
     fun encode(message: LanRendezvousMessage): ByteArray {
-        require(message.state in 0..4 && message.version in 1..2)
+        require(message.version in 1..2 && message.state in 0..(if (message.version == 1) 4 else 5))
         if (message.version == 1) { require(message.endpoint == null); return encode(message.state) }
         require(message.endpoint == null || message.state == 2)
         val fields = message.endpoint?.let {
@@ -49,7 +49,7 @@ internal object LanRendezvousWire {
         val version = (row[1] as? Cbor.Integer)?.value
         require(version != null && version in 1L..2L && row.size == version.toInt() + 2)
         val state = (row[2] as? Cbor.Integer)?.value
-        require(state != null && state in 0..4)
+        require(state != null && state in 0..(if (version == 1L) 4L else 5L))
         var endpoint: LanDirectEndpoint? = null
         if (version == 2L) {
             val fields = (row[3] as? Cbor.Array)?.value ?: throw IllegalArgumentException("Invalid LAN fields")
@@ -66,7 +66,9 @@ internal object LanRendezvousWire {
     }
 }
 
-internal class LanRendezvous(private val scope: CoroutineScope, private val changed: () -> Unit) : FeatureHandler {
+internal class LanRendezvous(private val scope: CoroutineScope,
+    private val now: () -> Long = android.os.SystemClock::elapsedRealtime,
+    private val changed: () -> Unit) : FeatureHandler {
     var channel: SecuredChannel? = null
         private set
     var remote: Int? = null
@@ -78,8 +80,27 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
     private var probePending = true
     var requests = 0L
         private set
+    var remoteStateChanged: (ChannelDescriptor, Int?, Int) -> Unit = { _, _, _ -> }
+    var transferRequested: (ChannelDescriptor) -> Unit = {}
     private var requestPending = false
     fun request() { requestPending = true; flush() }
+    private var transferRequestUntil: Long? = null
+    private var transferRevision = 0
+    private var transferRequestInFlight: Int? = null
+    fun requestTransfer() {
+        if (channel == null || transferRequestInFlight == transferRevision) return
+        // Repeated clicks while unsent cannot extend or duplicate this one bounded demand.
+        if (transferRequestUntil == null) transferRequestUntil = now() + 10_000
+        flush()
+    }
+    fun cancelTransferRequest() {
+        transferRevision++; transferRequestUntil = null
+        if (transferRequestInFlight != null) {
+            // Cancel unsealed work; an already nonce-owned record still follows shared session rules.
+            sending?.cancel(); sending = null; wake = false
+            transferRequestInFlight = null
+        }
+    }
     private var local = 0
     private var endpoint: LanDirectEndpoint? = null
     private var sent: LanRendezvousMessage? = null
@@ -96,13 +117,16 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
         if (channel.descriptor.transport != "ble") return
         sending?.cancel(); sending = null; wake = false
         this.channel = channel; remote = null; remoteEndpoint = null; remoteVersion = 0
-        version2 = false; probePending = true; sent = null; requestPending = false
+        version2 = false; probePending = true; sent = null; requestPending = false; transferRequestUntil = null
+        transferRevision++; transferRequestInFlight = null
         changed(); flush()
     }
     override fun retired(descriptor: ChannelDescriptor) {
         if (channel?.descriptor != descriptor) return
         sending?.cancel(); sending = null; wake = false; channel = null; remote = null
         remoteEndpoint = null; remoteVersion = 0; version2 = false; probePending = true; sent = null; requestPending = false
+        transferRequestUntil = null
+        transferRevision++; transferRequestInFlight = null
         changed()
     }
     override fun capacityAvailable(descriptor: ChannelDescriptor) {
@@ -116,8 +140,13 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
         catch (_: SessionException) { return DataHandling.DISCARDED }
         if (value == null) return DataHandling.UNRECOGNIZED
         if (value.version == 2) version2 = true
-        if (value.state == 4) requests++ else if (value.version >= remoteVersion) {
+        if (value.state == 4 || value.state == 5) {
+            requests++
+            if (value.state == 5) transferRequested(descriptor)
+        } else if (value.version >= remoteVersion) {
+            val previous = remote
             remoteVersion = value.version; remote = value.state; remoteEndpoint = value.endpoint
+            if (previous != value.state) remoteStateChanged(descriptor, previous, value.state)
         }
         changed()
         flush()
@@ -125,27 +154,43 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
     }
     private fun flush() {
         val target = channel ?: return
-        if ((!probePending && !requestPending && sent == publication()) || sending?.isActive == true) return
+        if (transferRequestUntil?.let { now() >= it } == true) transferRequestUntil = null
+        if ((!probePending && !requestPending && transferRequestUntil == null && sent == publication()) || sending?.isActive == true) return
         val work = scope.launch(start = CoroutineStart.LAZY) {
             var requested = false
             var probing = false
+            var transferUntil: Long? = null
+            var transferOp = transferRevision
+            val sender = currentCoroutineContext().job
             try {
-                while (channel === target && (probePending || requestPending || sent != publication())) {
+                while (channel === target && (probePending || requestPending || transferRequestUntil != null || sent != publication())) {
+                    if (transferRequestUntil?.let { now() >= it } == true) transferRequestUntil = null
+                    if (!probePending && !requestPending && transferRequestUntil == null && sent == publication()) break
                     probing = probePending
-                    val value = if (probing) publication(2) else if (requestPending)
-                        LanRendezvousMessage(if (version2) 2 else 1, 4) else publication()
-                    requested = value.state == 4
+                    transferUntil = if (!probing) transferRequestUntil else null
+                    val value = if (probing) publication(2) else if (transferUntil != null)
+                        LanRendezvousMessage(if (version2) 2 else 1, if (version2) 5 else 4)
+                    else if (requestPending) LanRendezvousMessage(if (version2) 2 else 1, 4) else publication()
+                    requested = value.state == 4 && transferUntil == null
                     if (probing) probePending = false
                     if (requested) requestPending = false
+                    if (transferUntil != null) {
+                        transferOp = transferRevision
+                        transferRequestUntil = null; requestPending = false; transferRequestInFlight = transferOp
+                    }
                     target.sendData(LanRendezvousWire.encode(value))
                     probing = false
                     requested = false
-                    if (channel === target && value.state != 4) sent = value
+                    transferUntil = null
+                    if (sending === sender) transferRequestInFlight = null
+                    if (channel === target && value.state < 4) sent = value
                 }
             } catch (_: SessionBackpressure) {
-                if (channel === target) {
+                if (channel === target && sending === sender) {
                     requestPending = requestPending || requested
                     probePending = probePending || probing
+                    if (transferOp == transferRevision && transferUntil?.let { now() < it } == true && transferRequestUntil == null)
+                        transferRequestUntil = transferUntil
                 }
                 // A transport capacity event retries the latest state before sealing.
             } catch (error: CancellationException) {
@@ -153,7 +198,8 @@ internal class LanRendezvous(private val scope: CoroutineScope, private val chan
             } catch (_: Exception) {
                 // Failed submissions close the session; retirement clears this advertisement.
             } finally {
-                if (channel === target && currentCoroutineContext().isActive) {
+                if (channel === target && sending === sender) {
+                    transferRequestInFlight = null
                     sending = null
                     if (wake) { wake = false; flush() }
                 }

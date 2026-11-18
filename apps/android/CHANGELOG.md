@@ -34,6 +34,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
+- Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.
 - Fence pending Resume lookups on Cancel; restore a retained companion monitor on foreground return without rearming from duplicate presence callbacks.
 - Make Resume one-click, show the armed automatic state and group the existing pause-menu options.
 - Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.

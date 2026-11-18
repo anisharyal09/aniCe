@@ -19,12 +19,18 @@ import OSLog
   private(set) var allowing = false
   private(set) var receivedChecks = 0
   private var checkPending = false
+  private var checkingPeerLoss = false
+  var verifyingConnection: Bool { checkingPeerLoss }
+  private var checkDeadline: TimeInterval?
+  @ObservationIgnored private var checkTask: Task<Void, Never>?
   private(set) var authenticatedPeer: DeviceIdentity?
   private(set) var selectedPeer: DeviceIdentity?
   private(set) var automatic: Bool
   private let preferences: UserDefaults?
   let rendezvous = LanRendezvous()
   private var automaticPaused = false
+  private var connectionPaused = false
+  var isConnectionPaused: () -> Bool = { false }
   private var automaticAttempt = false
   private var sleeping = false
   private var quitting = false
@@ -46,9 +52,11 @@ import OSLog
   var onNetworkReturn: () -> Void = {}
 
   func setAutomatic(_ enabled: Bool) {
+    if !enabled { rendezvous.cancelTransferRequest() }
     automatic = enabled
     preferences?.set(enabled, forKey: "lan.automatic")
     automaticPaused = false
+    connectionPaused = false
     if enabled { rearmRecovery() } else { cancelRecovery() }
     automaticGate.trigger()
     if !enabled, automaticAttempt, state != "Secured" { end() }
@@ -57,6 +65,7 @@ import OSLog
   func resumeAfterTimedPause() {
     guard automatic else { return }
     automaticPaused = false
+    connectionPaused = false
     rearmRecovery()
     automaticGate.trigger()
     scheduleAutomatic()
@@ -107,10 +116,28 @@ import OSLog
   }
   func requestAutomaticConnection() -> Bool {
     if state == "Secured" || allowing { return true }
-    guard automatic, !automaticPaused, !sleeping, !quitting,
+    guard automatic, !automaticPaused, !connectionPaused, !isConnectionPaused(), !sleeping, !quitting,
       rendezvous.channel != nil, rendezvous.remote != 0 else { return false }
     automaticGate.trigger()
     rendezvous.request()
+    scheduleAutomatic()
+    return true
+  }
+  /// A fresh local file action can resume transport Disconnect without undoing Pause or disabled automation.
+  func requestTransferConnection() -> Bool {
+    guard !connectionPaused, !isConnectionPaused() else { return false }
+    let existing = state == "Secured" || allowing
+    guard !sleeping, !quitting else { return false }
+    guard automatic else { return existing }
+    if automaticPaused {
+      automaticPaused = false
+      cancelRecovery()
+      automaticGate.trigger()
+      scheduleAutomatic()
+    }
+    guard rendezvous.channel != nil else { return existing }
+    automaticGate.trigger()
+    rendezvous.requestTransfer()
     scheduleAutomatic()
     return true
   }
@@ -120,7 +147,8 @@ import OSLog
     automaticTask = Task { [weak self] in
       await Task.yield()
       guard let self, !Task.isCancelled else { return }
-      let eligible = self.automatic && !self.automaticPaused && !self.sleeping && !self.quitting && self.localPathAvailable
+      let eligible = self.automatic && !self.automaticPaused && !self.connectionPaused && !self.isConnectionPaused() &&
+        !self.sleeping && !self.quitting && self.localPathAvailable
       self.automaticGate.update(channel: self.rendezvous.channel?.descriptor.instance, eligible: eligible,
         remoteEligible: self.rendezvous.remote != nil && self.rendezvous.remote != 0,
         ready: false, requests: self.rendezvous.requests)
@@ -208,6 +236,25 @@ import OSLog
     self.peers = peers
     self.store = store
     rendezvous.changed = { [weak self] in self?.scheduleAutomatic() }
+    rendezvous.transferRequested = { [weak self] descriptor in
+      guard let self, self.automatic, !self.connectionPaused, !self.isConnectionPaused(),
+        !self.sleeping, !self.quitting, self.rendezvous.channel?.descriptor == descriptor else { return }
+      if let peer = self.peers.peer {
+        guard peer.deviceId == descriptor.peer.deviceId, peer.fingerprint == descriptor.peer.fingerprint,
+          peer.publicKey == descriptor.peer.publicKey else { return }
+      }
+      self.automaticPaused = false
+      self.automaticGate.trigger()
+      self.scheduleAutomatic()
+    }
+    rendezvous.remoteStateChanged = { [weak self] descriptor, previous, current in
+      guard let self, self.state == "Secured",
+        let peer = self.authenticatedPeer,
+        peer.deviceId == descriptor.peer.deviceId, peer.fingerprint == descriptor.peer.fingerprint,
+        peer.publicKey == descriptor.peer.publicKey else { return }
+      // A delayed BLE state belongs to its BLE lane, not necessarily this TCP generation.
+      if previous == 3, current != 3 { self.checkConnection(peerLoss: true) }
+    }
     for (name, object) in [(IdentityService.invalidated, identity as AnyObject?),
                            (PeerTrustStore.invalidated, nil)] {
       observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) {
@@ -265,6 +312,7 @@ import OSLog
       if selected == nil || (current?.deviceId == selected?.deviceId &&
           current?.fingerprint == selected?.fingerprint && current?.publicKey == selected?.publicKey) {
         automaticPaused = false
+        connectionPaused = false
         cancelRecovery()
         automaticGate.trigger()
         scheduleAutomatic()
@@ -278,6 +326,7 @@ import OSLog
   func cancelAttempt(message: String = "Connection canceled.") {
     guard state != "Secured" else { return }
     cancelRecovery()
+    rendezvous.cancelTransferRequest()
     automaticGate.cancel()
     end(message: message)
   }
@@ -285,7 +334,9 @@ import OSLog
   /// Gates automatic work synchronously; the returned teardown cannot close a replacement owner.
   func preparePause() -> @MainActor () -> Void {
     cancelRecovery()
+    rendezvous.cancelTransferRequest()
     automaticPaused = true
+    connectionPaused = true
     automaticAttempt = false
     if state != "Secured" { end(); return {} }
     scheduleAutomatic()
@@ -297,7 +348,7 @@ import OSLog
   }
 
   func allow(selected: DeviceIdentity?, bluetoothAllowing: Bool, automatically: Bool = false) {
-    if !automatically { cancelRecovery(); automaticPaused = false; automaticGate.trigger() }
+    if !automatically { cancelRecovery(); automaticPaused = false; connectionPaused = false; automaticGate.trigger() }
     guard !bluetoothAllowing || peers.peer != nil else {
       status =
         "Finish or stop the current Bluetooth admission before allowing a local-network connection."
@@ -463,12 +514,15 @@ import OSLog
           changed: { [weak self] in Task { @MainActor in
             guard let self, op == self.generation, attempt == self.candidate else { return }
             if let snapshot = await self.connection?.maintenanceSnapshot,
-              op == self.generation, attempt == self.candidate { self.channelMaintenanceChanged(snapshot) }
+              op == self.generation, attempt == self.candidate {
+                if snapshot.sinceMillis != nil { self.clearConnectionCheck() }
+                self.channelMaintenanceChanged(snapshot)
+              }
             self.maintain(); self.channelCapacityChanged()
           } }, profile: .lanTransfer512, drain: { [weak self] in await self?.drainApplication(op, attempt) },
           renewalHandshake: { [identity] in
             try await SessionHandshakeEngine.responder(identity: identity, trust: trust, selectedPeer: target)
-          })
+          }, pingAfterMillis: 10000, pongWithinMillis: 10000)
         connection = engine
         maintain()
         await tcp.start(
@@ -536,6 +590,11 @@ import OSLog
   }
   private func received(_ bytes: Data, _ op: Int, _ attempt: Int) async {
     guard op == generation, attempt == candidate else { return }
+    // Authenticated traffic on this socket proves it survived an eligibility-only withdrawal.
+    if checkingPeerLoss {
+      clearConnectionCheck()
+      status = "Local-network connection confirmed."
+    }
     if bytes == SessionConnectionCheck.request {
       receivedChecks += 1
       status = "Local-network check received."
@@ -549,7 +608,10 @@ import OSLog
         }
       }
     } else if bytes == SessionConnectionCheck.reply {
-      if checkPending { checkPending = false; status = "Local-network check confirmed." }
+      if checkPending {
+        clearConnectionCheck()
+        status = "Local-network check confirmed."
+      }
     } else {
       _ = await applicationDataReceived(bytes)
     }
@@ -564,7 +626,7 @@ import OSLog
       session = await self.connection?.nextDeadline(includeMaintenance: !self.checking)
       guard op == self.generation, attempt == self.candidate else { return nil }
       return [self.startupDeadline, self.admission.admitted ? self.handshakeDeadline : self.admission.deadline,
-        session.map { Double($0) / 1000 }].compactMap { $0 }.min()
+        session.map { Double($0) / 1000 }, self.checkDeadline].compactMap { $0 }.min()
     }, fire: { [weak self] in
       guard let self, op == self.generation, attempt == self.candidate else { return }
       self.tick()
@@ -573,6 +635,12 @@ import OSLog
   private func tick() {
     defer { maintain() }
     let now = ProcessInfo.processInfo.systemUptime
+    if let checkDeadline, now >= checkDeadline, checkPending {
+      let lost = checkingPeerLoss
+      clearConnectionCheck()
+      if lost { failCandidate(NWError.posix(.ETIMEDOUT)); return }
+      status = "No reply to the local-network check. Check the Android connection."
+    }
     if let startupDeadline, now >= startupDeadline {
       failWindow("Local-network advertising timed out. Check permissions and retry.")
       return
@@ -696,23 +764,42 @@ import OSLog
     } else { cancelRecovery() }
     scheduleAutomatic()
   }
-  func checkConnection() {
-    guard state == "Secured", let connection, !checkPending else { return }
+  func checkConnection() { checkConnection(peerLoss: false) }
+  private func checkConnection(peerLoss: Bool) {
+    guard state == "Secured", let connection else { return }
+    if checkPending {
+      if peerLoss, !checkingPeerLoss {
+        checkingPeerLoss = true
+        checkDeadline = max(checkDeadline ?? 0, ProcessInfo.processInfo.systemUptime + 10)
+        maintain()
+      }
+      return
+    }
     let op = generation
     let attempt = candidate
     checkPending = true
+    checkingPeerLoss = peerLoss
     status = "Checking the local-network connection…"
-    Task {
+    checkTask = Task { [weak self] in
+      guard let self else { return }
+      let renewing = await connection.isRenewing
+      guard op == generation, attempt == candidate, checkPending else { return }
+      if renewing {
+        checkPending = false; checkingPeerLoss = false
+        return
+      }
+      let deadline = ProcessInfo.processInfo.systemUptime + (checkingPeerLoss ? 10 : 5)
+      checkDeadline = deadline
+      maintain()
       do {
         try await connection.sendData(SessionConnectionCheck.request)
         guard op == generation, attempt == candidate, checkPending else { return }
         status = "Local-network check sent. Waiting for a reply."
-        try await Task.sleep(for: .seconds(5))
+        try await Task.sleep(for: .seconds(max(0, deadline - ProcessInfo.processInfo.systemUptime)))
         guard op == generation, attempt == candidate, checkPending else { return }
-        checkPending = false
-        status = "No reply to the local-network check. Check the Android connection."
+        tick()
       } catch is SessionBackpressure {
-        if op == generation, attempt == candidate { checkPending = false; status = "Local-network check could not be sent. Try again." }
+        // The absolute deadline remains armed; capacity refusal is not proof that LAN is alive.
       } catch is CancellationError {
         return
       } catch {
@@ -722,6 +809,7 @@ import OSLog
   }
   func disconnect() {
     cancelRecovery()
+    rendezvous.cancelTransferRequest()
     automaticPaused = true
     automaticAttempt = false
     allowing = false
@@ -742,8 +830,14 @@ import OSLog
   }
   func cancel(message: String = "Disconnected. Allow local-network connections to reconnect.") {
     cancelRecovery()
+    rendezvous.cancelTransferRequest()
     automaticPaused = true
+    connectionPaused = true
     end(message: message)
+  }
+  private func clearConnectionCheck() {
+    checkPending = false; checkingPeerLoss = false; checkDeadline = nil
+    checkTask?.cancel(); checkTask = nil
   }
   private func end(message: String = "Disconnected. Allow local-network connections to reconnect.", preserveListener: Bool = false) {
     Self.logger.notice("LAN owner ended: \(message, privacy: .public) state=\(self.state, privacy: .public) allowing=\(self.allowing)")
@@ -758,6 +852,7 @@ import OSLog
     retiring = false
     startupDeadline = nil
     handshakeDeadline = nil
+    clearConnectionCheck()
     deadlineWait.cancel()
     if preserveListener { listener?.newConnectionHandler = { socket in socket.cancel() } }
     else { listener?.newConnectionHandler = nil }

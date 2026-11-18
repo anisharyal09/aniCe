@@ -90,7 +90,8 @@ class ConnectionCancelRegressionTest {
     private suspend fun fixture(armed: Boolean = false): Fixture = withContext(Dispatchers.Main) {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
         assumeTrue("Run only against an isolated preview package",
-            app.packageName in setOf("io.github.anisharyal09.anice.preview", "io.github.anisharyal09.anice.preview.transfer"))
+            app.packageName in setOf("io.github.anisharyal09.anice.preview", "io.github.anisharyal09.anice.preview.transfer",
+                "io.github.anisharyal09.anice.preview.transfer.regression"))
         assumeTrue("Requires native companion support", Build.VERSION.SDK_INT >= 31 &&
             app.resources.getBoolean(R.bool.companion_probe_supported) &&
             app.packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP))

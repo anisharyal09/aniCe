@@ -424,6 +424,45 @@ final class SessionChannelTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(client.nextDeadline, 80001)
     XCTAssertThrowsError(try client.poll(80001)) { XCTAssertEqual($0 as? SessionFailure, .controlTimeout) }
   }
+  func testLanProbesInTenSecondsAndRequiresItsOwnPongWithinTenWithoutChangingBle() throws {
+    var client = SessionLiveness(responder: false, pingAfterMillis: 10000, pongWithinMillis: 10000)
+    var server = SessionLiveness(responder: true)
+    try client.start(0); try server.start(0)
+    let hello = try XCTUnwrap(client.pending)
+    try client.issuing(hello, 0); client.submitted(hello, 0); try server.receive(hello, 0)
+    let ack = try XCTUnwrap(server.pending)
+    try server.issuing(ack, 0); server.submitted(ack, 0); try client.receive(ack, 0)
+    XCTAssertEqual(client.nextDeadline, 10000)
+    try client.poll(9999); XCTAssertNil(client.pending)
+    try client.poll(10000)
+    let ping = try XCTUnwrap(client.pending)
+    XCTAssertEqual(ping, SessionControl(kind: .ping, value: 0))
+    try client.issuing(ping, 10000); client.submitted(ping, 10000)
+    client.activity(19999)
+    XCTAssertEqual(client.nextDeadline, 20000)
+    XCTAssertThrowsError(try client.checkPongDeadline(20000)) {
+      XCTAssertEqual($0 as? SessionFailure, .controlTimeout)
+    }
+    let (ble, _) = try controlPair()
+    XCTAssertEqual(ble.nextDeadline, 60000)
+  }
+
+  func testEarlyLanPingIsCompatibleWithTheExistingResponder() throws {
+    var client = SessionLiveness(responder: false, pingAfterMillis: 10000, pongWithinMillis: 10000)
+    var server = SessionLiveness(responder: true)
+    try client.start(0); try server.start(0)
+    let hello = try XCTUnwrap(client.pending)
+    try client.issuing(hello, 0); client.submitted(hello, 0); try server.receive(hello, 0)
+    let ack = try XCTUnwrap(server.pending)
+    try server.issuing(ack, 0); server.submitted(ack, 0); try client.receive(ack, 0)
+    try client.poll(10000)
+    let ping = try XCTUnwrap(client.pending)
+    try client.issuing(ping, 10000); client.submitted(ping, 10000); try server.receive(ping, 10100)
+    let pong = try XCTUnwrap(server.pending)
+    try server.issuing(pong, 10100); server.submitted(pong, 10100); try client.receive(pong, 10100)
+    XCTAssertEqual(client.nextDeadline, 20100)
+    try client.checkPongDeadline(15000)
+  }
   func testConnectionMaintenancePerformsNoIdentityLoadsBeforeEncryptedPing() async throws {
     let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     let identity = try helper.identity(fixture, "initiator")

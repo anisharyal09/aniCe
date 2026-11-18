@@ -59,13 +59,12 @@ class TransferSendReview internal constructor(private val controller: TransferCo
         visible = false
         resolving = false
         // Ask for a faster route before opening the picker; the captured peer remains the review target.
-        controller.onDemandLanConnection?.invoke()
         controller.beginPicker()
         launchPicker()
     }
 
     internal fun selectionReturned(hasSelection: Boolean): Long? {
-        controller.endPicker()
+        controller.endPickerAfterReturn()
         if (!hasSelection) { dismiss(); return null }
         selectionRevision++
         visible = true
@@ -215,6 +214,9 @@ fun TransferView(
                     if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
+            if (controller.isBusy && controller.usingBluetooth && controller.state !is TransferState.IncomingOffer) {
+                TransferRouteNotice(controller)
+            }
 
             if (android.os.Build.VERSION.SDK_INT >= 33 && !androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
                 TextButton(
@@ -308,12 +310,14 @@ fun TransferView(
                             strokeWidth = 2.dp
                         )
                         Text(
-                            "Connecting to ${current.peerName} over local network…",
+                            if (controller.awaitingLan) "Connecting to ${current.peerName} over local network…"
+                            else "Checking file-transfer support on ${current.peerName}…",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Text(
-                        "Files will send automatically once connected.",
+                        if (controller.awaitingLan) "Files will send automatically once connected."
+                        else "Files will send once this device confirms support.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -752,5 +756,16 @@ fun TransferView(
             HorizontalDivider()
         }
         sendFiles.ReviewDialog()
+    }
+}
+
+@Composable
+internal fun TransferRouteNotice(controller: TransferController) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(controller.routeNotice ?: "Using Bluetooth, which is slower. Connect LAN for faster transfer.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = controller::connectLanForTransfer, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Connect LAN for speed")
+        }
     }
 }

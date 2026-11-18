@@ -22,7 +22,6 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.connections.sessionNotice
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 
 enum class ConnectionState {
@@ -76,9 +75,7 @@ class SessionController(application: Application) {
 
   @Volatile private var operation = 0L
   @Volatile private var connection: SessionConnection? = null
-  private var input: Channel<ByteArray>? = null
-  private var inputBytes = 0
-  private var inputCount = 0
+  private var input: SessionInputQueue? = null
   // Both app activities may overlap during navigation; stopping one must not background the other.
   private val presentations = mutableSetOf<Any>()
   internal val foreground get() = presentations.isNotEmpty()
@@ -97,15 +94,9 @@ class SessionController(application: Application) {
       {},
       { readySignal?.complete(Unit) },
       { bytes ->
-        if (
-          inputCount >= 8 ||
-            inputBytes + bytes.size > 32768 ||
-            input?.trySend(bytes)?.isSuccess != true
-        )
+        if (input?.offer(bytes) != true) {
+          android.util.Log.i("aniCe-ble", "input_queue_full queued=${input?.count} bytes=${input?.bytes} envelope_bytes=${bytes.size}")
           fail("Incoming connection queue was full. Retry.")
-        else {
-          inputBytes += bytes.size
-          inputCount++
         }
       },
       { _, reason ->
@@ -237,7 +228,7 @@ class SessionController(application: Application) {
     publishProgress()
     // Every callback belongs to this attempt; cancel/retry invalidates suspended results.
     val op = operation
-    input = Channel(8)
+    input = SessionInputQueue()
     readySignal = CompletableDeferred()
     worker =
       scope.launch {
@@ -357,12 +348,11 @@ class SessionController(application: Application) {
           }
           engine.start()
           val queue = input ?: return@launch
-          for (bytes in queue) {
+          while (isActive) {
+            val bytes = queue.next() ?: break
             if (op != operation) break
             withContext(Dispatchers.IO) { engine.receive(bytes) }
             if (op != operation) break
-            inputBytes -= bytes.size
-            inputCount--
             if (engine.isClosed) {
               // CoroutineScope.cancel(String) only stops this worker; retire the controller and publish state.
               this@SessionController.cancel("Your Mac ended the connection.")
@@ -445,8 +435,6 @@ class SessionController(application: Application) {
     renewalReason = null
     input?.close()
     input = null
-    inputBytes = 0
-    inputCount = 0
     readySignal?.cancel()
     readySignal = null
     transport.close()

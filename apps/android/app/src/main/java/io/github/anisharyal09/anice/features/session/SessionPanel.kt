@@ -106,12 +106,15 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     nearby.fingerprint == record.peer.fingerprint
                 val pauseStatus = nearby.pauseStatus.takeIf { automaticConfigured }
                 val peerPauseStatus = model.connectionPause.status(record.peer)
-                val summary = connectionSummary(bleState, lanState, waiting, paused = pauseStatus != null || peerPauseStatus != null)
+                val checkingLan = lanSelected && lan.verifyingConnection
+                val summary = connectionSummary(bleState, lanState, waiting,
+                    paused = pauseStatus != null || peerPauseStatus != null, checkingLan = checkingLan)
                 val summaryText = if (compact) {
                     automaticNotice?.takeIf { it.first == record.peer.deviceId }?.second
                         ?: pauseStatus ?: peerPauseStatus ?: summary.text
                 } else pauseStatus ?: peerPauseStatus ?: summary.text
                 val feedback = buildList {
+                    if (checkingLan) add("Local network: Checking connection…")
                     if (bleSelected && bleState != ConnectionState.SECURED && model.status.isNotBlank())
                         add("Bluetooth: ${model.status}")
                     if (lanSelected && lanState != ConnectionState.SECURED && lan.status.isNotBlank())
@@ -162,7 +165,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         showDetailsAction = false,
                         onCancel = model::cancelConnect,
                         bluetoothConnected = bleState == ConnectionState.SECURED,
-                        localNetworkConnected = lanState == ConnectionState.SECURED,
+                        localNetworkConnected = lanState == ConnectionState.SECURED && !checkingLan,
                         powerSummary = if (summary.state == ConnectionState.SECURED)
                             model.devicePower.macShortSummary(record.peer) else null,
                         connectionOptions = connectionOptions)
@@ -217,7 +220,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     if (flatDeviceLayout) HorizontalDivider()
                     TransportDetails("Local network", lanState, if (lanSelected) lan.status else "",
                         canConnect = canUsePeer,
-                        onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect,
+                        onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect, verifying = checkingLan,
                         onCancel = lan::cancelAttempt)
                     if (flatDeviceLayout) HorizontalDivider()
                 }
@@ -368,12 +371,12 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
 
 @Composable
 private fun TransportDetails(name: String, state: ConnectionState, status: String, canConnect: Boolean,
-    onConnect: () -> Unit, onDisconnect: () -> Unit, onCancel: () -> Unit) {
+    onConnect: () -> Unit, onDisconnect: () -> Unit, onCancel: () -> Unit, verifying: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Icon(painterResource(if (name == "Bluetooth") R.drawable.ic_bluetooth else R.drawable.ic_wifi), contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp).size(24.dp))
         Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(stateLabel(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Text(if (verifying) "Checking connection…" else stateLabel(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 10.dp))
         val active = state == ConnectionState.CONNECTING || state == ConnectionState.SECURED
         OutlinedButton(shape = MaterialTheme.shapes.small,

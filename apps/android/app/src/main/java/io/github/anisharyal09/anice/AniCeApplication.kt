@@ -52,9 +52,8 @@ class AniCeApplication : Application() {
         }
         lanSessionController.onDemandFailure = { reason -> transfer.onLanUnavailable(reason) }
         nowPlaying.onNetworkDemand = lanSessionController::updateMediaLease
-        transfer.onPickerChanged = { picking ->
+        transfer.onPickerChanged = {
             updateTransferOwnership()
-            if (picking) lanSessionController.requestAutomaticConnection()
         }
         transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
         transfer.canAutomaticallyReceive = {

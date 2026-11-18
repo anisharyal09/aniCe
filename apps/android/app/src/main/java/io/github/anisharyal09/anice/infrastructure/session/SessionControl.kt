@@ -104,7 +104,9 @@ internal data class LanRenewalControl(val kind: Int, val id: ByteArray = byteArr
 }
 
 /** Connection-serialized policy, in monotonic milliseconds; it never owns keys or transport. */
-internal class SessionLiveness(private val responder: Boolean, private var nextId: Long = 0) {
+internal class SessionLiveness(private val responder: Boolean, private var nextId: Long = 0,
+  private val pingAfterMillis: Long = 60_000, private val pongWithinMillis: Long = 20_000) {
+  init { require(pingAfterMillis > 0 && pongWithinMillis > 0) }
   @Volatile var support: Boolean? = null
     private set
   var pending: SessionControl? = null
@@ -178,7 +180,7 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
     return listOfNotNull(
       compatibilityDeadline.takeIf { support == null || pending?.kind == ControlKind.HELLO_ACK },
       pongDeadline,
-      (lastActivity + 60000).takeIf {
+      (lastActivity + pingAfterMillis).takeIf {
         !responder && support == true && renewalReason == null && pending == null && outstanding == null
       },
     ).minOrNull()
@@ -195,7 +197,7 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
     if (responder && support == true && pending == null && renewalReason != null && !renewalSubmitted) {
       pending = SessionControl(ControlKind.RENEWAL_REQUEST, renewalReason!!)
     }
-    if (!responder && support == true && renewalReason == null && pending == null && outstanding == null && now - lastActivity >= 60000) {
+    if (!responder && support == true && renewalReason == null && pending == null && outstanding == null && now - lastActivity >= pingAfterMillis) {
       if (nextId !in 0..0xffffffffL) timeout()
       pending = SessionControl(ControlKind.PING, nextId++)
     }
@@ -207,7 +209,7 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
     when (message.kind) {
       ControlKind.HELLO -> helloIssued = true
       ControlKind.HELLO_ACK -> support = true
-      ControlKind.PING -> if (outstanding == null) { outstanding = message.value; pongDeadline = now + 20000 }
+      ControlKind.PING -> if (outstanding == null) { outstanding = message.value; pongDeadline = now + pongWithinMillis }
       else -> Unit
     }
   }

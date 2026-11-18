@@ -83,6 +83,8 @@ actor SessionConnection {
   private var sendingControl = false
   private var liveness: SessionLiveness?
   private let now: @Sendable () -> Int64
+  private let pingAfterMillis: Int64
+  private let pongWithinMillis: Int64
   private var renew: Bool
   private let renewalHandshake: (@Sendable () async throws -> SessionHandshakeEngine)?
   private enum RenewalPhase { case none, request, begin, waitDrained, drained, switching, handshake, readiness }
@@ -117,7 +119,9 @@ actor SessionConnection {
     changed: @escaping @Sendable () -> Void = {},
     profile: SessionProfile = .standard,
     drain: @escaping @Sendable () async -> Void = {},
-    renewalHandshake: (@Sendable () async throws -> SessionHandshakeEngine)? = nil
+    renewalHandshake: (@Sendable () async throws -> SessionHandshakeEngine)? = nil,
+    pingAfterMillis: Int64 = 60000,
+    pongWithinMillis: Int64 = 20000
   ) {
     self.drain = drain
     self.profile = profile
@@ -128,11 +132,13 @@ actor SessionConnection {
     self.data = data
     self.secured = secured
     self.now = now
+    self.pingAfterMillis = pingAfterMillis
+    self.pongWithinMillis = pongWithinMillis
     self.renew = renew
     self.renewalHandshake = renewalHandshake
     self.changed = changed
     deadline = now() + 30000
-    liveness = controls ? SessionLiveness(responder: responder) : nil
+    liveness = controls ? SessionLiveness(responder: responder, pingAfterMillis: pingAfterMillis, pongWithinMillis: pongWithinMillis) : nil
     expected = responder ? 1 : 2
   }
   private func ensure(_ op: Int) throws {
@@ -485,7 +491,7 @@ actor SessionConnection {
     creatingHandshake = true
     let old = handshake
     let oldChannel = channel
-    liveness = SessionLiveness(responder: responder)
+    liveness = SessionLiveness(responder: responder, pingAfterMillis: pingAfterMillis, pongWithinMillis: pongWithinMillis)
     channel = nil
     await oldChannel?.close()
     await old.close()

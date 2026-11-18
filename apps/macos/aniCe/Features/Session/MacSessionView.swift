@@ -295,13 +295,15 @@ struct MacSessionView: View {
 
   private var connectionSummaryText: String {
     (ownsBluetooth ? model.connectionPauseStatus : nil)
-      ?? (presentation.connected ? "Connected" : peerPauseStatus ?? presentation.summary)
+      ?? (ownsLan && lan.verifyingConnection
+        ? (ownsBluetooth && model.state == "Secured" ? "Connected · Checking LAN" : "Checking LAN")
+        : presentation.connected ? "Connected" : peerPauseStatus ?? presentation.summary)
   }
 
   private var connectionStatusValue: String {
     connectionAccessibilityValue(connectionSummaryText,
       bluetoothConnected: ownsBluetooth && model.state == "Secured",
-      localNetworkConnected: ownsLan && lan.state == "Secured")
+      localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection)
   }
 
   private func isPeerConnected(_ record: PeerTrustRecord) -> Bool {
@@ -335,7 +337,9 @@ struct MacSessionView: View {
           lanAllowing: ownsLan && lan.allowing, automatic: bluetoothOwned && model.waitingAutomatically,
           paused: pauseText != nil)
         let statusText = (bluetoothOwned ? model.connectionPauseStatus : nil)
-          ?? (state.connected ? "Connected" : pauseText ?? state.summary)
+          ?? (ownsLan && lan.verifyingConnection
+            ? (bluetoothOwned && model.state == "Secured" ? "Connected · Checking LAN" : "Checking LAN")
+            : state.connected ? "Connected" : pauseText ?? state.summary)
         let occupied = model.allowing || lan.allowing || model.automatic
         HStack(spacing: 8) {
           Button { onOpenDevice(peer.deviceId) } label: {
@@ -344,7 +348,7 @@ struct MacSessionView: View {
                 Text(peer.deviceName).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
                 ConnectionStatusLine(text: statusText,
                   bluetoothConnected: bluetoothOwned && model.state == "Secured",
-                  localNetworkConnected: ownsLan && lan.state == "Secured",
+                  localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection,
                   color: state.connected ? AniCePalette.success(scheme) : AniCePalette.secondaryText(scheme),
                   power: state.connected ? phonePower.shortSummary(for: peer) : nil)
                   .font(.caption).fixedSize(horizontal: false, vertical: true)
@@ -362,7 +366,7 @@ struct MacSessionView: View {
           .accessibilityLabel("Device details for " + peer.deviceName)
           .accessibilityValue(connectionAccessibilityValue(statusText,
             bluetoothConnected: bluetoothOwned && model.state == "Secured",
-            localNetworkConnected: ownsLan && lan.state == "Secured") +
+            localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection) +
             (state.connected && phonePower.shortSummary(for: peer) != nil ? ". " + phonePower.shortSummary(for: peer)! : ""))
 
           if !state.connected {
@@ -480,7 +484,7 @@ struct MacSessionView: View {
         .fixedSize(horizontal: false, vertical: true)
         ConnectionStatusLine(text: connectionSummaryText,
           bluetoothConnected: ownsBluetooth && model.state == "Secured",
-          localNetworkConnected: ownsLan && lan.state == "Secured",
+          localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection,
           color: AniCePalette.secondaryText(scheme),
           power: presentation.connected ? phonePower.shortSummary(for: device) : nil).font(.callout)
           .fixedSize(horizontal: presentation.connected, vertical: !presentation.connected)
@@ -518,7 +522,7 @@ struct MacSessionView: View {
               .fixedSize(horizontal: false, vertical: true)
             ConnectionStatusLine(text: connectionSummaryText,
               bluetoothConnected: ownsBluetooth && model.state == "Secured",
-              localNetworkConnected: ownsLan && lan.state == "Secured",
+              localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection,
               color: AniCePalette.secondaryText(scheme),
               power: presentation.connected ? phonePower.shortSummary(for: device) : nil).font(.callout)
           }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
@@ -553,8 +557,10 @@ struct MacSessionView: View {
           connect: { model.selectedPeer = device; connectionPause.clear(); model.allowExplicit() },
           cancel: model.cancelAttempt, disconnect: model.disconnect)
         Divider()
-        transportRow("Local network", symbol: "wifi", state: ownsLan ? lan.state : "In use by another phone",
+        transportRow("Local network", symbol: "wifi",
+          state: ownsLan ? lan.state : "In use by another phone",
           active: ownsLan && (lan.allowing || lan.state == "Secured"), enabled: peerAvailable,
+          verifying: ownsLan && lan.verifyingConnection,
           connect: { connectionPause.clear(); lan.allow(selected: device, bluetoothAllowing: model.allowing) },
           cancel: { lan.cancelAttempt() }, disconnect: lan.disconnect)
         Divider()
@@ -584,6 +590,7 @@ struct MacSessionView: View {
   }
 
   private func transportRow(_ name: String, symbol: String, state: String, active: Bool, enabled: Bool,
+    verifying: Bool = false,
     connect: @escaping () -> Void, cancel: @escaping () -> Void, disconnect: @escaping () -> Void) -> some View {
     let inProgress = active || state == "Connecting"
     let label = state == "Secured" ? "Disconnect" : (inProgress ? "Cancel" : "Connect")
@@ -593,13 +600,13 @@ struct MacSessionView: View {
       HStack(spacing: 12) {
         Label(name, systemImage: symbol).fixedSize(horizontal: true, vertical: false)
         Spacer(minLength: 8)
-        Text(state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal: true, vertical: false)
+        Text(verifying ? "Checking connection…" : state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme)).fixedSize(horizontal: true, vertical: false)
         action.fixedSize()
       }
       VStack(alignment: .leading, spacing: 8) {
         Label(name, systemImage: symbol)
         HStack {
-          Text(state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+          Text(verifying ? "Checking connection…" : state).font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
           Spacer(minLength: 8)
           action
         }
@@ -617,14 +624,14 @@ struct MacSessionView: View {
       HStack(spacing: 12) {
         ConnectionStatusLine(text: connectionSummaryText,
           bluetoothConnected: ownsBluetooth && model.state == "Secured",
-          localNetworkConnected: ownsLan && lan.state == "Secured",
+          localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection,
           color: AniCePalette.secondaryText(scheme),
           power: presentation.connected ? phonePower.shortSummary(for: device) : nil)
         if device != nil { Text("Trusted device") }
       }.font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       VStack(spacing: 14) {
         HStack { Text("Bluetooth"); Spacer(); Text(ownsBluetooth ? model.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
-        HStack { Text("Local network"); Spacer(); Text(ownsLan ? lan.state : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
+        HStack { Text("Local network"); Spacer(); Text(ownsLan ? (lan.verifyingConnection ? "Checking connection…" : lan.state) : "In use by another phone").foregroundStyle(AniCePalette.secondaryText(scheme)) }
       }.font(.callout)
       HStack(spacing: 12) {
         automaticControl

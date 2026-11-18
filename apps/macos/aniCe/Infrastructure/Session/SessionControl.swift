@@ -126,11 +126,17 @@ struct SessionLiveness {
   private var expectedPing: Int64 = 0
   private(set) var renewalReason: Int64?
   private var renewalSubmitted = false
+  private let pingAfterMillis: Int64
+  private let pongWithinMillis: Int64
   mutating func requestRenewal(_ reason: Int64) throws {
     guard (1...2).contains(reason) else { throw SessionFailure.state }
     if support == true && renewalReason == nil { renewalReason = reason }
   }
-  init(responder: Bool, nextId: Int64 = 0) { self.responder = responder; self.nextId = nextId }
+  init(responder: Bool, nextId: Int64 = 0, pingAfterMillis: Int64 = 60000, pongWithinMillis: Int64 = 20000) {
+    precondition(pingAfterMillis > 0 && pongWithinMillis > 0)
+    self.responder = responder; self.nextId = nextId
+    self.pingAfterMillis = pingAfterMillis; self.pongWithinMillis = pongWithinMillis
+  }
   mutating func start(_ now: Int64) throws {
     guard !started else { throw SessionFailure.state }
     started = true
@@ -175,7 +181,7 @@ struct SessionLiveness {
     if support == nil || pending?.kind == .helloAck { deadlines.append(compatibilityDeadline) }
     if let pongDeadline { deadlines.append(pongDeadline) }
     if !responder, support == true, renewalReason == nil, pending == nil, outstanding == nil {
-      deadlines.append(lastActivity + 60000)
+      deadlines.append(lastActivity + pingAfterMillis)
     }
     return deadlines.min()
   }
@@ -187,7 +193,7 @@ struct SessionLiveness {
     if responder, support == true, pending == nil, let renewalReason, !renewalSubmitted {
       pending = SessionControl(kind: .renewalRequest, value: renewalReason)
     }
-    if !responder, support == true, renewalReason == nil, pending == nil, outstanding == nil, now - lastActivity >= 60000 {
+    if !responder, support == true, renewalReason == nil, pending == nil, outstanding == nil, now - lastActivity >= pingAfterMillis {
       guard (0...0xffffffff).contains(nextId) else { throw SessionFailure.controlTimeout }
       pending = SessionControl(kind: .ping, value: nextId)
       nextId += 1
@@ -200,7 +206,7 @@ struct SessionLiveness {
     case .hello: helloIssued = true
     case .helloAck: support = true
     case .ping:
-      if outstanding == nil { outstanding = message.value; pongDeadline = now + 20000 }
+      if outstanding == nil { outstanding = message.value; pongDeadline = now + pongWithinMillis }
     default: break
     }
   }

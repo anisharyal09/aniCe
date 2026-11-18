@@ -41,6 +41,10 @@
       "payloadHex": "8469616e694365204c414e020480"
     },
     {
+      "name": "v2-state-5",
+      "payloadHex": "8469616e694365204c414e020580"
+    },
+    {
       "name": "profile-1",
       "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c82201"
     },
@@ -225,6 +229,21 @@
     {
       "name": "endpoint-in-state-1",
       "payloadHex": "8469616e694365204c414e0201836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "endpoint-in-user-demand",
+      "payloadHex": "8469616e694365204c414e0205836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "v1-user-demand",
+      "payloadHex": "8369616e694365204c414e0105",
+      "reason": "malformed"
+    },
+    {
+      "name": "v2-unknown-state",
+      "payloadHex": "8469616e694365204c414e020680",
       "reason": "malformed"
     },
     {

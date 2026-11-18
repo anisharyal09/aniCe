@@ -6,6 +6,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Add ignorable rendezvous-v2 user-demand state 5 for bounded file-action recovery after transport-only Disconnect; v1 peers keep ordinary state 4 behavior.
 - Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown peer presentation, with independent shared fixtures and no remote preference mutation.
 - Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN renewal v1 authenticated drain barriers, retaining frame profiles, fresh-session cryptography and legacy expiry.
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
@@ -22,6 +23,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
 - Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
 - Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
 - Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.

@@ -14,6 +14,8 @@ On Android, **Share → Send to Mac** sends one or more selected files to the co
 
 Mac sends prefer a ready LAN channel and request bounded setup when needed. If setup fails, the files remain pending with **Retry**, **Send over Bluetooth**, and **Cancel**; Bluetooth never starts silently. Android may use an already-capable BLE channel while LAN setup runs. A batch stays bound to its trusted peer.
 
+With automatic LAN enabled, opening a new file picker or sending a new batch requests LAN even after a transport-level LAN Disconnect on either updated peer. A timed/indefinite connection Pause, disabled automation and the peer's native eligibility still take priority. Automatic receive and recovery of an existing batch do not manufacture a new user demand. Bluetooth fallback identifies its slower route and offers **Connect LAN for speed**; a capable LAN can upgrade the existing batch without reconnecting Bluetooth.
+
 ## Receiving and destinations
 
 Receives default to `~/Downloads/aniCe` on Mac and `Downloads/aniCe` on Android. Each platform can remember a supported local folder and reset to its default. Android uses pending MediaStore entries for the default and a validated document-tree grant for a custom folder; cloud-only providers are unsupported.
@@ -31,6 +33,8 @@ Files are written to job-owned partials, verified against their SHA-256 offer, t
 Progress identifies direction, peer and file. Send progress counts receiver acknowledgements; receive progress counts successful local writes. Verification and publication remain visible after the bytes arrive. Android’s ongoing notification shows throttled byte progress for active sends and receives even while the app is open, with an operation-bound cancel action. Notification permission controls visibility in the notification shade.
 
 Back or **Continue in background** hides Android’s Share-to-Mac panel without cancelling the job. **Cancel transfer** cancels it explicitly. The share activity remains alive while needed for temporary source-file access; process recreation does not replay a send.
+
+Android's bounded picker lease covers activity-result delivery through the returning activity's foreground handoff, so selecting a file need not tear down the healthy Bluetooth fallback.
 
 On either platform, connection loss pauses an active batch and retains verified partial data and a private checkpoint for up to 15 minutes. Reconnecting to the same trusted peer over LAN resumes after prefix verification. After LAN loss, either device can explicitly continue over BLE. Cancel removes the partial; already-published files remain untouched.
 

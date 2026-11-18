@@ -88,9 +88,12 @@ class SessionConnection(
   private val profile: SessionProfile = SessionProfile.STANDARD,
   private val drain: suspend () -> Unit = {},
   private val renewalHandshake: (suspend () -> SessionHandshakeEngine)? = null,
+  private val pingAfterMillis: Long = 60_000,
+  private val pongWithinMillis: Long = 20_000,
 ) {
   @Volatile private var handshake = handshake
-  private var liveness = if (controls) SessionLiveness(responder) else null
+  private var liveness = if (controls) newLiveness() else null
+  private fun newLiveness() = SessionLiveness(responder, pingAfterMillis = pingAfterMillis, pongWithinMillis = pongWithinMillis)
   private enum class RenewalPhase { NONE, REQUEST, BEGIN, WAIT_DRAINED, DRAINED, SWITCHING, HANDSHAKE, READINESS }
   @Volatile private var renewalPhase = RenewalPhase.NONE
   @Volatile private var renewalDeadline: Long? = null
@@ -448,7 +451,7 @@ class SessionConnection(
     creatingHandshake = true
     val old = handshake
     val oldChannel = channel
-    liveness = SessionLiveness(responder)
+    liveness = newLiveness()
     channel = null
     oldChannel?.close()
     old.invalidate()

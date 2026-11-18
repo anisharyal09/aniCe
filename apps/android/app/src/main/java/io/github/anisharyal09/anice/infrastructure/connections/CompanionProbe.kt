@@ -525,6 +525,10 @@ internal class CompanionProbe private constructor(
     }
 
     @Volatile private var instance: CompanionProbe? = null
+    internal val connectionPauseActive get() = instance?.let {
+      it.connectionPaused && it.automaticEnabled &&
+        (it.connectionPauseUntil == null || requireNotNull(it.connectionPauseUntil) > System.currentTimeMillis())
+    } == true
     fun get(context: Context): CompanionProbe = synchronized(this) {
       instance ?: CompanionProbe(context.applicationContext as AniCeApplication).also { instance = it }
     }

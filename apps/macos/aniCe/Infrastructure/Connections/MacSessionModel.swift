@@ -460,13 +460,14 @@ struct SessionStartupRecovery {
         guard op == self.generation, candidate == self.attempt, self.admitted,
           let engine = self.connection
         else { return }
+        // One active receive buffer is separate from the eight queued logical envelopes.
+        self.inputCount -= 1
+        self.inputBytes -= bytes.count
         do {
           try await engine.receive(bytes)
           guard op == self.generation, candidate == self.attempt else { return }
           if bytes.first == 3 { self.handshakeDeadline = self.now() + 10 }
           self.startMaintenance()
-          self.inputCount -= 1
-          self.inputBytes -= bytes.count
           if await engine.isClosed {
             if self.automatic { self.reopen() }
             else { self.cancel(); self.status = "Disconnected by your Android device." }

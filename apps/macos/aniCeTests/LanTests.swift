@@ -32,6 +32,131 @@ private actor ReceiveDrainProbe {
 }
 
 final class LanTests: XCTestCase {
+  @MainActor func testUserDemandIsVersion2OnlyKeepsEligibilityAndCannotEchoOrReplay() async throws {
+    var now: TimeInterval = 0
+    let link = LanRendezvous(now: { now }), channel = MockSecuredChannel(transport: "ble")
+    link.available(channel); link.update(1)
+    for _ in 0..<10 { await Task.yield() }
+    _ = await link.handle(try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 0)), on: channel.descriptor)
+    for _ in 0..<10 { await Task.yield() }
+    var userRequests = 0
+    link.transferRequested = { XCTAssertEqual($0, channel.descriptor); userRequests += 1 }
+    _ = await link.handle(try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 5)), on: channel.descriptor)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(link.remote, 0); XCTAssertEqual(userRequests, 1)
+    XCTAssertFalse(channel.sentData.contains { (try? LanRendezvousWire.decode($0)) == 5 })
+    channel.onSendData = { _ in throw SessionBackpressure() }
+    for _ in 0..<10 { link.requestTransfer() }
+    for _ in 0..<10 { await Task.yield() }
+    channel.sentData.removeAll()
+    channel.onSendData = nil
+    link.capacityAvailable(channel.descriptor)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 5 }.count, 1)
+    channel.onSendData = { _ in throw SessionBackpressure() }
+    link.requestTransfer()
+    for _ in 0..<10 { await Task.yield() }
+    channel.sentData.removeAll()
+    now = 10
+    channel.onSendData = nil
+    link.capacityAvailable(channel.descriptor)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertTrue(channel.sentData.isEmpty, "Expired user demand was retried")
+    channel.onSendData = { _ in throw SessionBackpressure() }
+    link.requestTransfer()
+    for _ in 0..<10 { await Task.yield() }
+    channel.sentData.removeAll(); link.cancelTransferRequest()
+    channel.onSendData = nil; link.capacityAvailable(channel.descriptor)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertTrue(channel.sentData.isEmpty)
+    channel.onSendData = { _ in throw SessionBackpressure() }
+    link.requestTransfer()
+    for _ in 0..<10 { await Task.yield() }
+    link.retired(channel.descriptor)
+    let replacement = MockSecuredChannel(instance: "replacement", transport: "ble")
+    link.available(replacement)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertFalse(replacement.sentData.contains { [4, 5].contains((try? LanRendezvousWire.decode($0)) ?? -1) })
+    link.retired(replacement.descriptor)
+  }
+
+  @MainActor func testLegacyUserDemandCannotAcquireTheVersion2DisconnectOverride() async throws {
+    let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
+    link.available(channel); link.update(1)
+    for _ in 0..<10 { await Task.yield() }
+    link.requestTransfer()
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(channel.sentData.filter { (try? LanRendezvousWire.decode($0)) == 4 }.count, 1)
+    XCTAssertFalse(channel.sentData.contains { (try? LanRendezvousWire.decode($0)) == 5 })
+    link.retired(channel.descriptor)
+  }
+
+  @MainActor func testRemoteUserDemandResumesDisconnectButNeverPauseDisabledOrOrdinaryRecovery() async throws {
+    for block in ["none", "pause", "disabled"] {
+      let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "remote-demand.test.")
+      let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation(), recoveryDelays: []) {
+        throw SessionFailure.state
+      }
+      let channel = MockSecuredChannel(transport: "ble")
+      owner.setAutomatic(true); owner.disconnect()
+      owner.rendezvous.available(channel)
+      _ = await owner.rendezvous.handle(try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 1)), on: channel.descriptor)
+      if block == "pause" { _ = owner.preparePause() }
+      if block == "disabled" { owner.setAutomatic(false) }
+      _ = await owner.rendezvous.handle(try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 4)), on: channel.descriptor)
+      for _ in 0..<10 { await Task.yield() }
+      XCTAssertFalse(owner.requestAutomaticConnection())
+      _ = await owner.rendezvous.handle(try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: 5)), on: channel.descriptor)
+      XCTAssertEqual(owner.requestAutomaticConnection(), block == "none")
+      owner.cancel(); owner.rendezvous.retired(channel.descriptor)
+    }
+  }
+
+  @MainActor func testPeerLossSignalsOnlyCurrentNonduplicateStateTransitionsNotLegacyOrStaleTraffic() async throws {
+    let link = LanRendezvous(), channel = MockSecuredChannel(transport: "ble")
+    var transitions = [String]()
+    link.remoteStateChanged = { descriptor, previous, current in
+      XCTAssertEqual(descriptor, channel.descriptor)
+      transitions.append("\(previous.map(String.init) ?? "nil")->\(current)")
+    }
+    link.available(channel)
+    func value(_ state: Int64) throws -> Data { try LanRendezvousWire.encode(LanRendezvousMessage(version: 2, state: state)) }
+    _ = await link.handle(try value(3), on: channel.descriptor)
+    for _ in 0..<10 { _ = await link.handle(try value(3), on: channel.descriptor) }
+    _ = await link.handle(try value(0), on: channel.descriptor)
+    for _ in 0..<10 { _ = await link.handle(try value(0), on: channel.descriptor) }
+    _ = await link.handle(try LanRendezvousWire.encode(3), on: channel.descriptor)
+    _ = await link.handle(try value(4), on: channel.descriptor)
+    let stale = MockSecuredChannel(instance: "retired", transport: "ble", peer: channel.descriptor.peer)
+    _ = await link.handle(try value(3), on: stale.descriptor)
+    XCTAssertEqual(transitions, ["nil->3", "3->0"])
+    XCTAssertEqual(link.remote, 0)
+    link.retired(channel.descriptor)
+  }
+
+  @MainActor func testNewTransferDemandResumesTransportDisconnectButNotConnectionPauseOrDisabledAutomation() async throws {
+    for block in ["none", "pause", "disabled"] {
+      let identity = IdentityService(storage: UnavailableLanIdentityStorage(), deviceName: "Test", tagPrefix: "demand.test.")
+      let owner = MacLanSessionModel(identity: identity, peers: SessionPeerReservation(), recoveryDelays: []) {
+        throw SessionFailure.state
+      }
+      let channel = MockSecuredChannel(transport: "ble")
+      owner.rendezvous.available(channel)
+      owner.setAutomatic(true)
+      owner.disconnect()
+      _ = await owner.rendezvous.handle(try LanRendezvousWire.encode(1), on: channel.descriptor)
+      if block == "pause" { _ = owner.preparePause() }
+      if block == "disabled" { owner.setAutomatic(false) }
+      XCTAssertFalse(owner.requestAutomaticConnection(), "Recovery cannot undo Disconnect")
+      let accepted = owner.requestTransferConnection()
+      XCTAssertEqual(accepted, block == "none")
+      for _ in 0..<30 { await Task.yield() }
+      XCTAssertEqual(channel.sentData.contains { [4, 5].contains((try? LanRendezvousWire.decode($0)) ?? -1) }, block == "none")
+      owner.cancel()
+      owner.rendezvous.retired(channel.descriptor)
+    }
+  }
+
   func testCancelConsumesLateReadinessAndRetriesButNewEventsRemainEnabled() {
     for event in ["request", "channel", "eligibility", "app-open", "explicit"] {
       var gate = LanAttemptGate()

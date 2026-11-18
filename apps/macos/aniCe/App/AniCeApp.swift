@@ -97,6 +97,7 @@ struct AniCeApp: App {
     _lan = State(initialValue: lan)
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
+    transfer.onDemandLanConnection = { [weak lan] in lan?.requestTransferConnection() ?? false }
     let smsPreferences = SmsPreferences(storage: .standard)
     _smsPreferences = State(initialValue: smsPreferences)
     let smsNotifier = MacSmsNotifier(preferences: smsPreferences)
@@ -135,6 +136,7 @@ struct AniCeApp: App {
       identity: identity.service, adapter: radio, store: { try await pairing.sessionStore() },
       preferences: .standard, peers: peers)
     session.automaticPauseEnded = { [weak lan] in lan?.resumeAfterTimedPause() }
+    lan.isConnectionPaused = { [weak session] in session?.connectionPauseStatus != nil }
     session.prepareLinkedPause = { [weak lan] in lan?.preparePause() ?? {} }
     session.pauseNotice = { [weak connectionPause] until in await connectionPause?.announcePause(until: until) }
     session.pauseResumed = { [weak connectionPause] in

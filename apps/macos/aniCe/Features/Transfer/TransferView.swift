@@ -120,6 +120,7 @@ struct TransferReceiveDestinationControls: View {
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
   guard let reviewedPeer = model.activeChannel?.descriptor.peer else { return }
+  _ = model.requestLanForSend()
   CompanionHost.currentHost?.isPickingFile = true
   defer {
     CompanionHost.currentHost?.isPickingFile = false
@@ -360,6 +361,14 @@ struct TransferView: View {
       }
       if let error = model.receiveDestinationError {
         Text(error).font(.caption).foregroundStyle(AniCePalette.error(colorScheme))
+      }
+      if model.activeChannel?.descriptor.transport == "ble", model.isBusy, model.pendingOffer == nil {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(model.routeNotice ?? "Using Bluetooth, which is slower. Connect LAN for faster transfer.")
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Connect LAN for speed", action: model.connectLanForTransfer)
+            .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+        }
       }
       if let selection = model.pendingRouteSelection {
         pendingRouteContent(selection)

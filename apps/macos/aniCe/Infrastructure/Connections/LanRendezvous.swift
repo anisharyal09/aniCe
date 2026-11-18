@@ -38,7 +38,8 @@ enum LanRendezvousWire {
     return try SessionCbor.encode(.array([.text("aniCe LAN"), .integer(1), .integer(state)]))
   }
   static func encode(_ message: LanRendezvousMessage) throws -> Data {
-    guard (0...4).contains(message.state), (1...2).contains(message.version) else { throw SessionFailure.malformed }
+    guard (1...2).contains(message.version),
+      (0...(message.version == 1 ? 4 : 5)).contains(message.state) else { throw SessionFailure.malformed }
     if message.version == 1 {
       guard message.endpoint == nil else { throw SessionFailure.malformed }
       return try encode(message.state)
@@ -56,7 +57,7 @@ enum LanRendezvousWire {
     guard bytes.count <= 64 else { throw SessionFailure.malformed }
     guard (3...4).contains(row.count), case .integer(let version) = row[1],
       (1...2).contains(version), row.count == Int(version) + 2, case .integer(let state) = row[2],
-      (0...4).contains(state) else { throw SessionFailure.malformed }
+      (0...(version == 1 ? 4 : 5)).contains(state) else { throw SessionFailure.malformed }
     var endpoint: LanDirectEndpoint?
     if version == 2 {
       guard case .array(let fields) = row[3], fields.isEmpty || fields.count == 3 && state == 2
@@ -81,8 +82,28 @@ enum LanRendezvousWire {
   private var probePending = true
   var changed: () -> Void = {}
   private(set) var requests: Int64 = 0
+  var remoteStateChanged: (ChannelDescriptor, Int64?, Int64) -> Void = { _, _, _ in }
+  var transferRequested: (ChannelDescriptor) -> Void = { _ in }
   private var requestPending = false
   func request() { requestPending = true; flush() }
+  private var transferRequestUntil: TimeInterval?
+  private var transferRevision = 0
+  private var transferRequestInFlight: Int?
+  private let now: () -> TimeInterval
+  init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) { self.now = now }
+  func requestTransfer() {
+    guard channel != nil, transferRequestInFlight != transferRevision else { return }
+    if transferRequestUntil == nil { transferRequestUntil = now() + 10 }
+    flush()
+  }
+  func cancelTransferRequest() {
+    transferRevision += 1; transferRequestUntil = nil
+    if transferRequestInFlight != nil {
+      generation += 1 // The cancelled sender's eventual defer cannot clear its replacement.
+      sending?.cancel(); sending = nil; wake = false
+      transferRequestInFlight = nil
+    }
+  }
   private var local: Int64 = 0
   private var endpoint: LanDirectEndpoint?
   private var sent: LanRendezvousMessage?
@@ -103,7 +124,8 @@ enum LanRendezvousWire {
     guard channel.descriptor.transport == "ble" else { return }
     sending?.cancel(); sending = nil; wake = false; generation += 1
     self.channel = channel; remote = nil; remoteEndpoint = nil; remoteVersion = 0
-    version2 = false; probePending = true; sent = nil; requestPending = false
+    version2 = false; probePending = true; sent = nil; requestPending = false; transferRequestUntil = nil
+    transferRevision += 1; transferRequestInFlight = nil
     changed(); flush()
   }
   func retired(_ descriptor: ChannelDescriptor) {
@@ -111,6 +133,8 @@ enum LanRendezvousWire {
     generation += 1
     sending?.cancel(); sending = nil; wake = false; channel = nil; remote = nil
     remoteEndpoint = nil; remoteVersion = 0; version2 = false; probePending = true; sent = nil; requestPending = false
+    transferRequestUntil = nil
+    transferRevision += 1; transferRequestInFlight = nil
     changed()
   }
   func capacityAvailable(_ descriptor: ChannelDescriptor) {
@@ -122,8 +146,13 @@ enum LanRendezvousWire {
     do {
       guard let value = try LanRendezvousWire.decodeMessage(bytes) else { return .unrecognized }
       if value.version == 2 { version2 = true }
-      if value.state == 4 { requests += 1 } else if value.version >= remoteVersion {
+      if value.state == 4 || value.state == 5 {
+        requests += 1
+        if value.state == 5 { transferRequested(descriptor) }
+      } else if value.version >= remoteVersion {
+        let previous = remote
         remoteVersion = value.version; remote = value.state; remoteEndpoint = value.endpoint
+        if previous != value.state { remoteStateChanged(descriptor, previous, value.state) }
       }
       changed()
       flush()
@@ -131,37 +160,56 @@ enum LanRendezvousWire {
     } catch { return .discarded }
   }
   private func flush() {
-    guard let target = channel, (probePending || requestPending || sent != publication()), sending == nil else { return }
+    if let until = transferRequestUntil, now() >= until { transferRequestUntil = nil }
+    guard let target = channel, (probePending || requestPending || transferRequestUntil != nil || sent != publication()), sending == nil else { return }
     let op = generation
     sending = Task { [weak self] in
       guard let self else { return }
       defer {
         if op == self.generation {
+          self.transferRequestInFlight = nil
           self.sending = nil
           if self.wake { self.wake = false; self.flush() }
         }
       }
       var requested = false
       var probing = false
+      var transferUntil: TimeInterval?
+      var transferOp = self.transferRevision
       do {
         while op == self.generation, self.channel === target,
-          (self.probePending || self.requestPending || self.sent != self.publication()), !Task.isCancelled {
+          (self.probePending || self.requestPending || self.transferRequestUntil != nil || self.sent != self.publication()), !Task.isCancelled {
+          if let until = self.transferRequestUntil, self.now() >= until { self.transferRequestUntil = nil }
+          if !self.probePending, !self.requestPending, self.transferRequestUntil == nil,
+            self.sent == self.publication() { break }
           probing = self.probePending
-          let value = probing ? self.publication(2) : self.requestPending
-            ? LanRendezvousMessage(version: self.version2 ? 2 : 1, state: 4) : self.publication()
-          requested = value.state == 4
+          transferUntil = probing ? nil : self.transferRequestUntil
+          let value = probing ? self.publication(2) : transferUntil != nil
+            ? LanRendezvousMessage(version: self.version2 ? 2 : 1, state: self.version2 ? 5 : 4)
+            : self.requestPending ? LanRendezvousMessage(version: self.version2 ? 2 : 1, state: 4) : self.publication()
+          requested = value.state == 4 && transferUntil == nil
           if probing { self.probePending = false }
           if requested { self.requestPending = false }
+          if transferUntil != nil {
+            transferOp = self.transferRevision
+            self.transferRequestUntil = nil; self.requestPending = false; self.transferRequestInFlight = transferOp
+          }
           try await target.sendData(LanRendezvousWire.encode(value))
           probing = false
           requested = false
-          if op == self.generation, self.channel === target, value.state != 4 { self.sent = value }
+          transferUntil = nil
+          self.transferRequestInFlight = nil
+          if op == self.generation, self.channel === target, value.state < 4 { self.sent = value }
         }
       // Backpressure refuses admission before sealing, so the request can be retained for a capacity wakeup.
       } catch is SessionBackpressure {
         if op == self.generation {
           self.requestPending = self.requestPending || requested
           self.probePending = self.probePending || probing
+          if transferOp == self.transferRevision, let until = transferUntil,
+            self.now() < until, self.transferRequestUntil == nil {
+            self.transferRequestUntil = until
+          }
         }
       } catch { /* Transport failures retire the channel without replaying sealed requests. */ }
     }

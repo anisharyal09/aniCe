@@ -124,6 +124,7 @@ enum TransferEvent: Equatable {
   var peerConnected = false
   var peerCompatible = false
   var dropStatus: String?
+  var routeNotice: String?
   var receiveDestinationError: String?
   var autoReceivePreparing = false
   var automaticReceiveTask: Task<Void, Never>?
@@ -138,6 +139,14 @@ enum TransferEvent: Equatable {
   var onEvent: ((TransferEvent) -> Void)?
   /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
   var onLanRequired: () -> Bool = { false }
+  /// A new local send is a distinct user action, unlike recovery or ordinary feature traffic.
+  var onDemandLanConnection: (() -> Bool)?
+  func requestLanForSend() -> Bool { onDemandLanConnection?() ?? onLanRequired() }
+  func connectLanForTransfer() {
+    routeNotice = requestLanForSend()
+      ? "Connecting to the local network for faster transfer…"
+      : "LAN could not start. Check automatic LAN on both devices, Wi-Fi and any connection Pause."
+  }
 
   /// Exposes the active incoming offer batch, or nil outside .incomingOffer.
   /// Fences background notification actions against stale or out-of-order execution without extra state.
@@ -626,6 +635,7 @@ extension MacTransferModel {
         .flatMap { channels[$0] } ?? channels["lan"] ?? channels["ble"]
     }
     activeChannel = preferred
+    if preferred?.descriptor.transport == "lan", capabilities["lan"] != nil { routeNotice = nil }
     peerConnected = preferred != nil
     peerCompatible = false
     peerMaxChunkBytes = 3072
@@ -642,6 +652,7 @@ extension MacTransferModel {
 
   func applyCapability(_ message: TransferMessage) {
     peerCompatible = true
+    if activeChannel?.descriptor.transport == "lan" { routeNotice = nil }
     let localLimit = Int64(chunkLimit(activeChannel?.descriptor))
     let negotiatedLimit: Int64 = message.number(0) == 4 ? localLimit : message.number(0) == 3 ? min(262016, localLimit) : message.number(0) == 2 ? min(131072, localLimit) : 3072
     peerMaxChunkBytes = min(message.number(1), negotiatedLimit)
@@ -817,6 +828,7 @@ extension MacTransferModel {
   }
 
   func cleanupActiveTransfer(selectChannel: Bool = true, preserveRecovery: Bool = false) {
+    routeNotice = nil
     automaticReceiveTask?.cancel(); automaticReceiveTask = nil
     autoReceivePreparing = false
     pendingAutomaticReceive = nil

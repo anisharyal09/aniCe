@@ -173,6 +173,7 @@ class ShareFilesActivity : ComponentActivity() {
 @Composable
 private fun ShareTransferProgress(controller: TransferController) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    if (controller.usingBluetooth && controller.state !is TransferState.IncomingOffer) TransferRouteNotice(controller)
     when (val state = controller.state) {
         is TransferState.Transferring -> {
             val total = state.batch.totalBytes
@@ -207,7 +208,8 @@ private fun ShareTransferProgress(controller: TransferController) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         is TransferState.Connecting -> {
-            Text("Connecting to ${state.peerName}…", style = MaterialTheme.typography.bodyMedium)
+            Text(if (controller.awaitingLan) "Connecting to ${state.peerName} over local network…"
+                else "Checking file-transfer support on ${state.peerName}…", style = MaterialTheme.typography.bodyMedium)
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         else -> {
