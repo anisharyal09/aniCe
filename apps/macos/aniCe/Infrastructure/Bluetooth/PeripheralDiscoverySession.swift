@@ -32,6 +32,7 @@ final class PeripheralDiscoverySession {
     private var publishing = false
     private var awaitingAdvertising = false
     private var nearbyAvailability = false
+    private var flags: UInt16 = 0
     private let now: () -> TimeInterval
     private let random: () throws -> Data
     private let makeAdapter: () -> any PeripheralAdapter
@@ -51,10 +52,11 @@ final class PeripheralDiscoverySession {
     }
 
     /// Long-lived anonymous availability is opt-in; ordinary discovery retains its original bound.
-    /// This does not open pairing writes, create an invitation or authorize a session.
-    func start(nearbyAvailability: Bool = false) {
+    /// This does not itself open pairing writes, create an invitation or authorize a session.
+    func start(nearbyAvailability: Bool = false, flags: UInt16 = 0) {
         stop()
         self.nearbyAvailability = nearbyAvailability
+        self.flags = flags
         generation += 1
         let operation = generation
         active = true; state = .discovering; message = "Starting Bluetooth discovery…"
@@ -75,6 +77,7 @@ final class PeripheralDiscoverySession {
         payload = nil; deadline = nil; nextRotation = nil; startupDeadline = nil
         publishing = false; awaitingAdvertising = false; remainingSeconds = 0
         nearbyAvailability = false
+        flags = 0
         state = .idle; recovery = .none; self.message = message
     }
 
@@ -93,7 +96,7 @@ final class PeripheralDiscoverySession {
         case .available:
             guard !publishing, nextRotation == nil else { return }
             if startupDeadline == nil { startupDeadline = now() + 10 }
-            do { payload = try BlePayloadCodec.encode(nonce: random()) }
+            do { payload = try BlePayloadCodec.encode(nonce: random(), flags: flags) }
             catch { fail(.failed, "Could not generate a discovery nonce. Try again."); return }
             state = .discovering; message = "Starting Bluetooth discovery…"
             publishing = true; adapter?.publish()
@@ -129,7 +132,7 @@ final class PeripheralDiscoverySession {
             remainingSeconds = Int(ceil(deadline - instant))
         }
         if let rotation = nextRotation, instant >= rotation {
-            do { payload = try BlePayloadCodec.encode(nonce: random()) }
+            do { payload = try BlePayloadCodec.encode(nonce: random(), flags: flags) }
             catch { fail(.failed, "Could not refresh discovery. Try again."); return }
             nextRotation = rotation + (floor((instant - rotation) / 30) + 1) * 30
         }

@@ -6,6 +6,11 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define provisional method-3 committed P-256 numeric comparison, uniform six-digit
+  derivation, salted identity openings after mutual confirmation and existing trust
+  receipts; add independent shared vectors and optional discovery flag `0x0001`.
+  Older journal readers cannot load method-3 evidence; QR/PIN wire formats remain unchanged.
+
 - Document staged foreground nearby discovery ownership, generic prompts and manual fallback; SAS remains unadvertised and unsupported.
 
 - Document staged nearby-discovery lifetime and RSSI policy without changing discovery bytes or advertising SAS support.

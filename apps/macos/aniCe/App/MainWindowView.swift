@@ -116,7 +116,7 @@ struct MainWindowView: View {
     .onAppear { updateKeyboardTrackpadTargets() }
     .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: pairing.peers.isEmpty) { _, empty in
-      if !empty && discovery.nearbyAvailable { discovery.stop() }
+      if !empty && !pairing.active && discovery.nearbyAvailable { discovery.stop() }
     }
     .onChange(of: session.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: lan.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
@@ -125,6 +125,7 @@ struct MainWindowView: View {
     .onChange(of: identity.local?.identity.deviceName) { old, new in
       if old != nil, old != new, pairing.active {
         pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.")
+        pairing.nearbyAvailabilityChanged()
       }
     }
     .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
@@ -145,12 +146,12 @@ struct MainWindowView: View {
     VStack(spacing: 0) {
       MacUpdateNotice(model: updates)
       if pairing.trustedPeersLoaded && pairing.peers.isEmpty && !pairing.trustRecoveryNeeded &&
-          !pairing.active && !session.allowing {
+          (!pairing.active || pairing.nearbyEnabled) && !session.allowing {
         HStack(spacing: 12) {
           VStack(alignment: .leading, spacing: 4) {
             Text("Nearby setup").font(.subheadline.weight(.medium))
-            Text(discovery.nearbyAvailable ? discovery.session.message :
-              "Let aniCe on your Android phone discover this Mac. Pair manually for now.")
+            Text(pairing.nearbyEnabled ? pairing.status :
+              "Let aniCe on your Android phone discover this Mac.")
               .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer()
@@ -159,14 +160,14 @@ struct MainWindowView: View {
             Button("Open Settings", action: discovery.openSettings)
               .buttonStyle(AniCeButtonStyle())
           }
-          if discovery.nearbyAvailable {
-            Button("Pause") { discovery.stop() }
+          if pairing.nearbyEnabled {
+            Button("Pause") { pairing.pauseNearby() }
               .buttonStyle(AniCeButtonStyle())
           } else {
-            Button("Find nearby") { discovery.startNearby() }
+            Button("Find nearby") { pairing.resumeNearby() }
               .buttonStyle(AniCeButtonStyle())
           }
-          Button("Manual pair") { discovery.stop(); navigation.show(.devices, route: .pairing) }
+          Button("Manual pair") { pairing.pauseNearby(); navigation.show(.devices, route: .pairing) }
             .buttonStyle(AniCeButtonStyle())
         }.padding(16).background(AniCePalette.surface(colorScheme))
       }
@@ -179,6 +180,16 @@ struct MainWindowView: View {
     .background(AniCePalette.background(colorScheme))
     .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
     .background(TitlebarWordmarkFormatter(colorScheme: colorScheme))
+    .overlay {
+      if pairing.nearbyEnabled, pairing.comparisonCode != nil,
+        ["comparison", "waiting"].contains(pairing.phase),
+        navigation.deviceRoute != .pairing, !showingLocalIdentity {
+        ZStack {
+          AniCePalette.background(colorScheme).opacity(0.75).ignoresSafeArea()
+          MacComparisonCard(model: pairing).frame(maxWidth: 420).padding(24)
+        }
+      }
+    }
   }
 
   @ViewBuilder private var pendingRequestRows: some View {
@@ -187,7 +198,7 @@ struct MainWindowView: View {
         navigation.select(.settings)
       }
     }
-    if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
+    if pairing.active && pairing.phase != "nearby" && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
       PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
         detail: pairing.status) { navigation.show(.devices, route: .pairing) }
     }

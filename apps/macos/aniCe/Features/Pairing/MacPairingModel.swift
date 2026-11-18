@@ -3,6 +3,7 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
 import Observation
+import CoreGraphics
 
 @Observable @MainActor final class MacPairingModel {
   var trustRemoved: () -> Void = {}
@@ -17,6 +18,25 @@ import Observation
   var qrText: String?
   var qrImage: NSImage?
   var pin: String?
+  private(set) var method: PairingMethod?
+  private(set) var comparisonCode: String?
+  private(set) var comparisonAttempt = UUID()
+  var comparisonChanged: () -> Void = {}
+  var nearbyAvailabilityChanged: () -> Void = {}
+  private var nearbyAdmission = NearbyPairingAdmission()
+  private var nearbyDeadline: Task<Void, Never>?
+  private var nearbyAttemptDeadline: TimeInterval?
+  private var attemptLease: PairingAttemptLease?
+  private var sleeping = false
+  private var quitting = false
+  private var screenLocked: Bool {
+    guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
+    return session["CGSSessionScreenIsLocked"] as? Bool == true ||
+      session[kCGSessionOnConsoleKey] as? Bool != true ||
+      session[kCGSessionLoginDoneKey] as? Bool != true
+  }
+  private(set) var nearbyPaused = false
+  var nearbyEnabled: Bool { active && method == .sas }
   var peer: DeviceIdentity?
   var peers: [PeerTrustRecord] = []
   // Presentation only; session admission resolves trust directly from the store.
@@ -45,24 +65,66 @@ import Observation
     self.identity = identity
     self.discovery = discovery
     self.makeStore = makeStore
+    discovery.availabilityFailed = { [weak self] in
+      guard let self, self.nearbyEnabled else { return }
+      self.fail(self.discovery.session.message)
+    }
     observers.append(
       NSWorkspace.shared.notificationCenter.addObserver(
         forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
-      ) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } })
+      ) { [weak self] _ in MainActor.assumeIsolated {
+        self?.sleeping = true; self?.cancel()
+      } })
     observers.append(
       NotificationCenter.default.addObserver(
         forName: NSApplication.willTerminateNotification, object: nil, queue: .main
-      ) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } })
+      ) { [weak self] _ in MainActor.assumeIsolated {
+        self?.quitting = true; self?.cancel()
+      } })
+    for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+      observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+        forName: name, object: nil, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated {
+        self?.sleeping = false
+        self?.nearbyAvailabilityChanged()
+      } })
+    }
+    observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in MainActor.assumeIsolated {
+      self?.sleeping = true
+      if self?.nearbyEnabled == true { self?.cancel() }
+    } })
+    for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+      observers.append(DistributedNotificationCenter.default().addObserver(
+        forName: Notification.Name(name), object: nil, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated {
+        guard let self else { return }
+        self.sleeping = locked
+        if locked {
+          if self.nearbyEnabled { self.cancel() }
+        } else { self.nearbyAvailabilityChanged() }
+      } })
+    }
+    observers.append(NotificationCenter.default.addObserver(
+      forName: IdentityService.invalidated, object: identity, queue: .main
+    ) { [weak self] _ in MainActor.assumeIsolated {
+      self?.trustedPeersLoaded = false
+      self?.cancel(message: "Identity changed. Start a fresh pairing.")
+    } })
   }
   func start(_ method: PairingMethod) {
     completedPeer = nil
     beforePairing()
     cancel()
+    self.method = method
     active = true
     phase = "preparing"
     status = "Preparing a new pairing invitation…"
     let op = generation
     let cleanup = work
+    let lease = PairingAttemptLease()
+    attemptLease = lease
     Task { [self] in
       await cleanup?.value
       do {
@@ -72,12 +134,18 @@ import Observation
         guard op == generation, active else { return }
         trustedPeerIdsBeforePairing = Set(
           store.list(localFingerprint: localIdentity.fingerprint).map { $0.peer.deviceId })
+        if method == .sas, !trustedPeerIdsBeforePairing.isEmpty {
+          fail("Nearby first-time setup is unavailable while trusted devices exist.")
+          return
+        }
         let engine = try await PairingEngine(
           method: method, identity: identity, store: store,
           send: { [weak self] data in
             await self?.send(data, operation: op)
           },
-          event: { [weak self] state, peer in await self?.event(state, peer: peer, operation: op) })
+          event: { [weak self] state, peer in await self?.event(state, peer: peer, operation: op) },
+          comparison: { [weak self] digits in await self?.showComparison(digits, operation: op) },
+          isCurrent: { lease.active })
         guard op == generation, active else {
           await engine.close()
           return
@@ -88,6 +156,20 @@ import Observation
         qrText = await engine.qr?.text
         qrImage = qrText.flatMap(Self.renderQR)
         pin = await engine.pin
+        discovery.adapter.pairingAdmitted = { [weak self] in
+          guard let self, self.generation == op, self.active else { return false }
+          guard method == .sas else { return true }
+          guard !self.sleeping, !self.quitting, !self.screenLocked, self.phase == "nearby",
+            self.nearbyAdmission.admit(at: ProcessInfo.processInfo.systemUptime)
+          else { return false }
+          self.phase = "connecting"
+          self.status = "A nearby phone is requesting pairing…"
+          let now = ProcessInfo.processInfo.systemUptime
+          self.nearbyAttemptDeadline = now + 120
+          self.deadline = now + 15
+          self.scheduleNearbyDeadline()
+          return true
+        }
         discovery.adapter.pairingWrite = { [weak self] data in
           guard let self, self.active, self.generation == op else { return false }
           self.tick()
@@ -109,6 +191,11 @@ import Observation
               self.cancel(message: self.status)
               return
             }
+            if method == .sas {
+              guard self.generation == op else { return }
+              self.endNearbyAttempt("Connection ended. Bring the devices close and tap Pair again.")
+              return
+            }
             do {
               try await engine.abortAttempt()
               guard self.generation == op else { return }
@@ -120,15 +207,23 @@ import Observation
           }
         }
         startedRadio = true
-        discovery.start()
-        phase = "starting"
-        status = "Starting Bluetooth for this invitation…"
-        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-          MainActor.assumeIsolated { self?.tick() }
+        if method == .sas {
+          discovery.startNearby(flags: PairingSas.discoveryFlag)
+          guard op == generation, active else { return }
+          phase = "nearby"
+          status = "Bring your phone close, then tap Pair in aniCe on Android."
+        } else {
+          discovery.start()
+          phase = "starting"
+          status = "Starting Bluetooth for this invitation…"
+          let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+          }
+          self.timer = timer
+          RunLoop.main.add(timer, forMode: .common)
         }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
         peers = store.list(localFingerprint: engine.local.fingerprint)
+        trustedPeersLoaded = true
       } catch {
         guard op == generation else { return }
         if error is TrustStoreLoadError {
@@ -154,6 +249,11 @@ import Observation
       guard self.active, self.generation == operation else { return }
       do { try await engine.receive(data) } catch {
         guard self.generation == operation else { return }
+        if self.method == .sas {
+          self.endNearbyAttempt((error as? PairingFailure) == .cancelled
+            ? "Pairing dismissed." : "Pairing was interrupted. Start a fresh comparison.")
+          return
+        }
         if error is IdentityError {
           self.fail("Identity access failed. Allow Keychain access, then start a fresh invitation.")
           return
@@ -186,6 +286,14 @@ import Observation
     case "approval":
       deadline = ProcessInfo.processInfo.systemUptime + 60
       status = "Verify this device, then approve pairing on both devices."
+    case "comparison":
+      deadline = ProcessInfo.processInfo.systemUptime + 60
+      status = "Compare all six digits on your phone, then confirm on both devices."
+      comparisonChanged()
+    case "verifying":
+      deadline = ProcessInfo.processInfo.systemUptime + 30
+      status = "Both confirmed. Verifying device identities…"
+      comparisonChanged()
     case "saving":
       deadline = ProcessInfo.processInfo.systemUptime + 10
       status = "Saving trust and confirming peer storage…"
@@ -195,6 +303,8 @@ import Observation
       qrText = nil
       qrImage = nil
       pin = nil
+      comparisonCode = nil
+      comparisonChanged()
       Task {
         guard let engine = self.engine else { return }
         let fingerprint = engine.local.fingerprint
@@ -202,6 +312,86 @@ import Observation
         self.peers = self.store?.list(localFingerprint: fingerprint) ?? []
       }
     default: break
+    }
+    if method == .sas { scheduleNearbyDeadline() }
+  }
+  private func showComparison(_ digits: String, operation: Int) {
+    guard active, generation == operation, method == .sas, phase == "authenticating" else { return }
+    comparisonCode = digits
+    comparisonAttempt = UUID()
+  }
+  func confirmComparison(attempt: UUID) {
+    guard !sleeping, !screenLocked, attempt == comparisonAttempt, phase == "comparison", comparisonCode != nil,
+      method == .sas, let engine else { return }
+    tick()
+    guard phase == "comparison" else { return }
+    phase = "waiting"
+    status = "Confirmed on this Mac. Waiting for your phone…"
+    comparisonChanged()
+    let op = generation
+    let previous = work
+    work = Task {
+      await previous?.value
+      guard self.generation == op, self.active else { return }
+      do { try await engine.confirmComparison() } catch {
+        if self.generation == op { self.endNearbyAttempt("Comparison could not finish. Start again.") }
+      }
+    }
+  }
+  func dismissComparison(attempt: UUID) {
+    guard attempt == comparisonAttempt, method == .sas, active,
+      ["comparison", "waiting", "verifying"].contains(phase), let engine else { return }
+    nearbyAdmission.dismiss(at: ProcessInfo.processInfo.systemUptime)
+    attemptLease?.cancel()
+    phase = "cancelling"
+    comparisonChanged()
+    let op = generation
+    let previous = work
+    work = Task {
+      await previous?.value
+      guard self.generation == op else { return }
+      try? await engine.decline()
+      await self.discovery.adapter.drainPairing()
+      if self.generation == op { self.endNearbyAttempt("Pairing dismissed.") }
+    }
+  }
+  func pauseNearby() {
+    nearbyPaused = true
+    cancel()
+  }
+  func resumeNearby() {
+    if phase == "failed" { phase = "idle" }
+    nearbyPaused = false
+    ensureNearbyAvailable()
+  }
+  func ensureNearbyAvailable() {
+    guard !active, !sleeping, !quitting, !screenLocked, !nearbyPaused, trustedPeersLoaded,
+      !trustRecoveryNeeded, peers.isEmpty, !discovery.session.active else { return }
+    start(.sas)
+  }
+  private func endNearbyAttempt(_ message: String) {
+    guard method == .sas else { return }
+    cancel(message: message)
+    let cleanup = work
+    let op = generation
+    Task {
+      await cleanup?.value
+      guard self.generation == op, !self.active else { return }
+      self.nearbyAvailabilityChanged()
+    }
+  }
+  private func scheduleNearbyDeadline() {
+    nearbyDeadline?.cancel()
+    nearbyDeadline = nil
+    guard method == .sas, active,
+      let next = [deadline, nearbyAttemptDeadline].compactMap({ $0 }).min()
+    else { return }
+    let op = generation
+    nearbyDeadline = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(max(0.001, next - ProcessInfo.processInfo.systemUptime))) }
+      catch { return }
+      guard let self, self.generation == op else { return }
+      self.tick()
     }
   }
   func approve() {
@@ -239,7 +429,7 @@ import Observation
   func tick() {
     guard active, phase != "cancelling" else { return }
     discovery.session.tick()
-    remaining = discovery.session.remainingSeconds
+    remaining = method == .sas ? 0 : discovery.session.remainingSeconds
     if phase == "starting" {
       if remaining > 0 {
         phase = "invitation"
@@ -256,15 +446,19 @@ import Observation
           : discovery.session.message)
       return
     }
-    if let deadline, ProcessInfo.processInfo.systemUptime >= deadline {
+    let now = ProcessInfo.processInfo.systemUptime
+    if (deadline.map { now >= $0 } ?? false) || (nearbyAttemptDeadline.map { now >= $0 } ?? false) {
       if phase == "paired" {
         cancel(message: status)
       } else {
-        fail("Pairing timed out. Start a fresh invitation.")
+        if method == .sas { endNearbyAttempt("Pairing timed out. Tap Pair again when ready.") }
+        else { fail("Pairing timed out. Start a fresh invitation.") }
       }
     }
   }
   func cancel(message: String = "Pairing stopped. Start a fresh invitation when ready.") {
+    attemptLease?.cancel()
+    attemptLease = nil
     let wasActive = active
     let paired = phase == "paired" ? peer : nil
     let isNewPeer = paired.map { !trustedPeerIdsBeforePairing.contains($0.deviceId) } ?? false
@@ -273,17 +467,24 @@ import Observation
     active = false
     timer?.invalidate()
     timer = nil
+    nearbyDeadline?.cancel()
+    nearbyDeadline = nil
+    nearbyAttemptDeadline = nil
     deadline = nil
     startedRadio = false
     remaining = 0
     qrText = nil
     qrImage = nil
     pin = nil
+    comparisonCode = nil
+    method = nil
+    comparisonChanged()
     peer = nil
     phase = "idle"
     status = message
     discovery.adapter.pairingWrite = nil
     discovery.adapter.pairingDisconnect = nil
+    discovery.adapter.pairingAdmitted = nil
     discovery.stop()
     let old = engine
     engine = nil
@@ -293,6 +494,10 @@ import Observation
       await old?.close()
       if wasActive && !self.active && self.generation == operation {
         if let paired, let onPaired = self.onPaired {
+          if let local = try? await self.identity.publicIdentity() {
+            guard self.generation == operation, !self.active else { return }
+            self.peers = self.store?.list(localFingerprint: local.fingerprint) ?? self.peers
+          }
           self.completedPeer = paired
           if isNewPeer { self.onNewPeerPaired?(paired) }
           onPaired(paired)
@@ -318,20 +523,26 @@ import Observation
     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
   }
   func refresh() async {
+    let operation = generation
+    trustedPeersLoaded = false
     do {
       let local = try await identity.publicIdentity()
       let store = try self.store ?? PeerTrustStore()
+      guard operation == generation else { return }
       self.store = store
       peers = store.list(localFingerprint: local.fingerprint)
       trustRecoveryNeeded = false
       trustedPeersLoaded = true
+      nearbyAvailabilityChanged()
     } catch {
+      guard operation == generation else { return }
       trustedPeersLoaded = false
       trustRecoveryNeeded = error is TrustStoreLoadError
       status =
         trustRecoveryNeeded
         ? "Local trust records could not be verified. Reset local trust to pair again."
         : "Trusted devices are unavailable. Check identity access and try again."
+      if nearbyEnabled { fail(status) }
     }
   }
   func recoverTrustStore() {

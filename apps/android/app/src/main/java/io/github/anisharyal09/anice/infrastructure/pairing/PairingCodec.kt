@@ -13,6 +13,7 @@ import javax.crypto.spec.SecretKeySpec
 enum class PairingMethod(val wire: Int) {
     QR(1),
     PIN(2),
+    SAS(3),
 }
 
 class PairingException : Exception("Pairing operation failed")

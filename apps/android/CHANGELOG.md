@@ -8,6 +8,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add selected-candidate nearby Pair, a native attempt-bound six-digit comparison
+  sheet, deferred identity verification and trust receipts, fresh foreground
+  connection and a post-connection background setup offer.
+
 - Scan for anonymous nearby Macs on unpaired Home while foreground/unlocked; present qualified signals in a dismissible Material bottom sheet with manual-pair fallback and explicit permission/retry actions.
 
 - Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests; not yet wired to onboarding.

@@ -19,6 +19,8 @@ import androidx.lifecycle.AndroidViewModel
 import io.github.anisharyal09.anice.infrastructure.bluetooth.BlePayloadCodec
 import io.github.anisharyal09.anice.infrastructure.bluetooth.ProximitySignalFilter
 import java.util.UUID
+import android.bluetooth.BluetoothDevice
+import io.github.anisharyal09.anice.infrastructure.bluetooth.NearbyPairingCandidate
 
 class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(application) {
     data class Candidate(val id: Long, val rssi: Int)
@@ -37,6 +39,7 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
     private val filter = ProximitySignalFilter(SystemClock::elapsedRealtime)
     // Native addresses stay in this active scan's deduplication map, never in presentation or logs.
     private val handles = linkedMapOf<String, Long>()
+    private val devices = mutableMapOf<Long, BluetoothDevice>()
     private var nextID = 0L
     private var scanner: BluetoothLeScanner? = null
     private var callback: ScanCallback? = null
@@ -76,6 +79,16 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
     fun dismiss() { dismissed = true }
     fun pause() { paused = true; reconcile() }
     fun retry() { dismissed = false; paused = false; failed = false; reconcile() }
+    /** Selection freezes one current handle and retires scanning before cryptographic preparation. */
+    internal fun claim(id: Long): NearbyPairingCandidate? {
+        publish()
+        if (!foreground || !eligible || paused || !scanning || candidates.none { it.id == id }) return null
+        val device = devices[id] ?: return null
+        val selected = NearbyPairingCandidate(device)
+        dismissed = true
+        stop()
+        return selected
+    }
 
     @SuppressLint("MissingPermission")
     private fun reconcile() {
@@ -117,6 +130,7 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
                             if (handles.size >= 32) return@post
                             (++nextID).also { handles[address] = it }
                         }
+                        devices[id] = result.device
                         filter.observe(id, result.rssi)
                         publish()
                     } catch (_: SecurityException) {
@@ -153,6 +167,7 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         val current = filter.current()
         val live = current.map { it.id }.toSet()
         handles.entries.removeAll { it.value !in live }
+        devices.keys.retainAll(live)
         candidates = current.filter { it.nearby }.map { Candidate(it.id, it.rssi) }
         handler.removeCallbacks(expiry)
         filter.nextExpiry?.let { handler.postDelayed(expiry, (it - SystemClock.elapsedRealtime()).coerceAtLeast(1)) }
@@ -167,7 +182,7 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         scanner = null
         scanning = false
         handler.removeCallbacks(expiry)
-        handles.clear(); filter.clear(); candidates = emptyList()
+        handles.clear(); devices.clear(); filter.clear(); candidates = emptyList()
     }
     override fun onCleared() { stop(); app.unregisterReceiver(receiver) }
 }

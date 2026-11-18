@@ -684,6 +684,7 @@ def run_vector_checks(interpreter, artifacts):
         ("Find Device vectors", ROOT / "protocol/test-vectors/find-device/generate.py", ["--check"]),
         ("Identity vectors", ROOT / "protocol/test-vectors/generate_identity_vectors.py", ["--check"]),
         ("Pairing vectors", ROOT / "protocol/test-vectors/generate_pairing_vectors.py", ["--check"]),
+        ("SAS pairing vectors", ROOT / "protocol/test-vectors/generate_sas_vectors.py", ["--check"]),
         ("Session handshake vectors", ROOT / "protocol/test-vectors/session/generate_session_vectors.py", ["--check"]),
         ("Session control vectors", ROOT / "protocol/test-vectors/session/generate_control_vectors.py", ["--check"]),
         ("Session record vectors", ROOT / "protocol/test-vectors/session/generate_record_vectors.py", ["--check"]),

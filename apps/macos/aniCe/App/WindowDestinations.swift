@@ -24,7 +24,7 @@ extension MainWindowView {
           } else {
             VStack(alignment: .leading, spacing: 12) {
               Text("Connect your Android phone").font(.title3.weight(.semibold))
-              Text("Choose Add device on this Mac. Then choose Add device on your phone to scan the QR code or enter the six-digit code shown here.")
+              Text("Open aniCe on your Android phone and bring it close. Tap Pair, then compare all six digits on both screens. Use Add device for QR or manual-code pairing.")
                 .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
             }

@@ -60,6 +60,7 @@ class AndroidGattTransport(
   private var locating = false
   private var setupRecovery = GattSetupRecovery()
   private var lastCandidateFailure: PairingTransportFailure? = null
+  private var requiredDiscoveryFlags = 0
   val scanEndFailure
     get() = lastCandidateFailure
 
@@ -83,6 +84,7 @@ class AndroidGattTransport(
     closedCallback = false
     closing = false
     locating = qr
+    requiredDiscoveryFlags = 0
     lastCandidateFailure = null
     search.begin()
     scanDeadline = search.deadline
@@ -171,11 +173,12 @@ class AndroidGattTransport(
   }
 
   /** An associated address selects a transport candidate; EDHOC still authenticates its pinned key. */
-  fun startCandidate(device: BluetoothDevice) {
+  fun startCandidate(device: BluetoothDevice, requiredDiscoveryFlags: Int = 0) {
     close()
     closedCallback = false
     closing = false
     locating = false
+    this.requiredDiscoveryFlags = requiredDiscoveryFlags
     connect(device)
   }
 
@@ -375,6 +378,10 @@ class AndroidGattTransport(
           if (!valid) {
             if (setupRecovery.retryProfileRead(status)) rediscoverServices(g)
             else finish(false, "Could not verify the Mac's Bluetooth service layout (GATT status $status).")
+            return@dispatch
+          }
+          if (BlePayloadCodec.decode(value).flags and requiredDiscoveryFlags != requiredDiscoveryFlags) {
+            finish(false, "This Mac does not offer code comparison. Open Manual pair to use QR or PIN.")
             return@dispatch
           }
           subscribe(g)

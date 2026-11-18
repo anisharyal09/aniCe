@@ -12,6 +12,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add seamless first-time nearby pairing with matching six-digit comparison,
+  mutual confirmation, a native Mac floating/in-app card and immediate authenticated
+  connection; keep QR/PIN fallback and offer Android background setup afterward.
+
 - Connect staged nearby discovery to native first-setup surfaces, with anonymous Android beacon prompts and explicit Mac availability controls; SAS confirmation remains unavailable.
 
 - Add the nearby-pairing discovery foundation: anonymous availability and a bounded RSSI policy; onboarding activation and SAS remain gated.

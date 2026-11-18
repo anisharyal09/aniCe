@@ -84,6 +84,20 @@ struct MacPairingView: View {
 
   @ViewBuilder
   private var activeInvitationContent: some View {
+    if model.nearbyEnabled {
+      if model.comparisonCode != nil && ["comparison", "waiting"].contains(model.phase) {
+        MacComparisonCard(model: model)
+      } else if model.phase == "nearby" || model.phase == "preparing" {
+        Text("Bring your phone close, then choose this Mac in aniCe on Android.")
+          .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+      Button("Manual pair") { model.pauseNearby() }
+        .buttonStyle(AniCeButtonStyle())
+        .disabled(["saving", "paired"].contains(model.phase))
+      if ["preparing", "connecting", "authenticating", "verifying", "saving"].contains(model.phase) {
+        ProgressView().accessibilityLabel(model.status)
+      }
+    }
     if model.phase == "invitation", let image = model.qrImage {
       VStack(spacing: 12) {
         ZStack {
@@ -172,11 +186,12 @@ struct MacPairingView: View {
     if model.phase == "preparing" || model.phase == "starting"
       || model.phase == "authenticating" || model.phase == "saving" || model.phase == "cancelling"
     {
-      ProgressView().accessibilityLabel(model.status)
-        .padding(.vertical, 4)
+      if !model.nearbyEnabled {
+        ProgressView().accessibilityLabel(model.status).padding(.vertical, 4)
+      }
     }
 
-    if model.phase != "approval" && model.phase != "cancelling" {
+    if !model.nearbyEnabled && model.phase != "approval" && model.phase != "cancelling" {
       Button("Cancel invitation") { model.cancel() }
         .buttonStyle(AniCeButtonStyle())
         .controlSize(.small)

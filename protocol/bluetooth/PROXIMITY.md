@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Nearby pairing discovery foundation
+# Nearby pairing discovery and availability
 
-This is a staged implementation, not a supported SAS pairing protocol yet.
+Numeric comparison uses [pairing method 3](../pairing/SAS.md), a provisional
+application-layer SAS contract requiring independent security review.
 Mac remains the peripheral; Android remains the central. No bonding is requested.
 
 ## Anonymous availability
@@ -11,19 +12,25 @@ Apple's peripheral advertising API does not provide arbitrary service/manufactur
 payloads. The existing 20-byte discovery characteristic retains its version,
 flags and random nonce layout. The nonce rotates every 30 seconds and is erased
 on stop; no device name, identity key, fingerprint or nickname is broadcast.
-Flags remain zero until a reviewed SAS method is implemented. Discovery proves
-compatibility only, not identity, freshness or proximity security.
+Flag `0x0001` offers numeric comparison during Mac nearby availability; ordinary
+discovery and QR/PIN keep flags zero. Discovery proves compatibility only, not
+identity, freshness or proximity security.
 
 Ordinary explicit discovery retains its 120-second Mac lifetime. A separate,
-opt-in nearby-availability lifetime may remain active while the Mac process is
-awake. It does not enable pairing writes or authenticated session admission.
-Mac offers explicit Find nearby and Pause controls only with successfully loaded,
-empty active trust. Android Home scans while foreground and unlocked with
+nearby-availability lifetime remains active while the Mac process is awake and
+unlocked, after successfully loaded empty active trust. Mac offers explicit
+Find nearby and Pause controls. Its pairing owner admits one globally rate-limited
+candidate through the existing GATT channels; discovery never authorizes a session.
+Android Home scans while foreground and unlocked with
 successfully loaded empty trust, granted permissions and no pairing/discovery
-operation. A qualified beacon can show a generic native prompt offering Manual
-pair; the prompt performs no connection or identity exchange. Dismiss suppresses
+operation. A qualified beacon shows a generic native prompt offering Pair and Manual
+pair. Pair freezes one native locator, stops scanning and hands it to the existing
+bounded GATT owner. Require availability flag `0x0001` after discovery read and
+never automatically downgrade or select another locator. Dismiss suppresses
 automatic prompts for the current presentation owner until Find nearby is tapped.
-Automatic Mac onboarding and SAS requests remain disabled.
+Manual pair retains QR/PIN compatibility with older peers. Nearby automatic
+discovery stops after the first trusted pairing; additional peers use Add device.
+Closing the Mac window leaves process-owned availability running; Quit stops it.
 
 ## Android signal policy
 
@@ -42,10 +49,12 @@ RSSI is an interruption/UX filter, never an authentication or relay defense.
 Selection must freeze before a pairing exchange; signal changes must not
 retarget it. Manual QR/PIN retains its authentication independent of RSSI.
 
-## Activation gate
+## Lifecycle and verification
 
-Before enabling onboarding, supply foreground/unlocked Android ownership,
-known-empty active trust (not unreadable storage), radio exclusivity, bounded
-global request admission, dismissal suppression and lifecycle cancellation.
-First-pair availability stops after trusted pairing; additional devices use
-explicit Add device. Never advertise support for an unimplemented SAS method.
+Foreground/unlocked Android ownership, known-empty active trust (not unreadable
+storage), radio exclusivity, bounded global request admission, dismissal suppression
+and lifecycle cancellation are mandatory. Per-attempt crypto/comparison deadlines
+are separate from the availability lifetime. Unknown names stay generic through
+comparison confirmation. See the SAS contract for identity commitments, receipts
+and admission limits. Real hardware acceptance includes signal calibration,
+lock/sleep cancellation, native card focus and mutual comparison confirmation.

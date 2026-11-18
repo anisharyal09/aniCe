@@ -7,6 +7,7 @@ import Observation
 final class MacDiscoveryModel {
   var beforeStart: () -> Void = {}
   var afterStop: () -> Void = {}
+  var availabilityFailed: () -> Void = {}
   let adapter: any PairingPeripheralAdapter
   let session: PeripheralDiscoverySession
   private(set) var nearbyAvailable = false
@@ -59,14 +60,14 @@ final class MacDiscoveryModel {
     session.stop()
     if wasActive { afterStop() }
   }
-  /// Explicit first-setup availability uses the existing radio, with pairing writes still closed.
-  func startNearby() {
+  /// The shared owner supplies optional method availability; discovery itself never authorizes trust.
+  func startNearby(flags: UInt16 = 0) {
     beforeStart()
     timer?.invalidate()
     timer = nil
     deadlineTask?.cancel()
     nearbyAvailable = true
-    session.start(nearbyAvailability: true)
+    session.start(nearbyAvailability: true, flags: flags)
     scheduleNearbyDeadline()
   }
   private func scheduleNearbyDeadline() {
@@ -76,6 +77,7 @@ final class MacDiscoveryModel {
     guard session.active else {
       nearbyAvailable = false
       afterStop()
+      availabilityFailed()
       return
     }
     guard let deadline = session.nextDeadline else { return }

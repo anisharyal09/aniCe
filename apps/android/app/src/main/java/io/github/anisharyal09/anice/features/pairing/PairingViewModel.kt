@@ -18,6 +18,7 @@ import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.infrastructure.bluetooth.AndroidPairingTransport
 import io.github.anisharyal09.anice.infrastructure.bluetooth.PairingTransportFailure
 import io.github.anisharyal09.anice.infrastructure.bluetooth.PairingTransportRecovery
+import io.github.anisharyal09.anice.infrastructure.bluetooth.NearbyPairingCandidate
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.*
 import java.io.File
@@ -34,6 +35,15 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private var method = PairingMethod.QR
     private var invitation: PairingQR? = null
     private var code = ""
+    private var nearbyCandidate: NearbyPairingCandidate? = null
+    var comparisonCode by mutableStateOf<String?>(null)
+        private set
+    var comparisonAttempt by mutableStateOf(0L)
+        private set
+    var completedWithComparison by mutableStateOf(false)
+        private set
+    val comparingNearby get() = method == PairingMethod.SAS && busy
+    val nearbyFailure get() = method == PairingMethod.SAS && phase == "failed"
     var phase by mutableStateOf("idle")
         private set
 
@@ -71,6 +81,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private var overall = 0L
     private var deadline = 0L
     private var readyToFinish = false
+    private var rejectingComparison = false
     @Volatile private var trustedPeerIdsBeforePairing = emptySet<String>()
     private var connectionStep = "connecting"
     private val transport =
@@ -80,7 +91,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             { onConnected() },
             { receive(it) },
             { success, reason ->
-                if (readyToFinish && success) {
+                if (rejectingComparison) cancel()
+                else if (readyToFinish && success) {
                     finishPairing()
                 } else if (busy) failLink(reason)
             },
@@ -100,6 +112,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                         "checking" -> "Checking the pairing invitation…"
                         else -> "Connecting to nearby Mac…"
                     }
+                scheduleComparisonDeadline()
             },
         )
     val choosingCandidate
@@ -113,7 +126,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 remaining =
                     (((minOf(overall, deadline) - now).coerceAtLeast(0) + 999) / 1000).toInt()
                 if (now >= overall || now >= deadline) {
-                    if (phase == "cleanup" && readyToFinish) {
+                    if (rejectingComparison) cancel()
+                    else if (phase == "cleanup" && readyToFinish) {
                         transport.close()
                         finishPairing()
                     } else if (phase == "scan" && transport.scanEndFailure != null) {
@@ -138,7 +152,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                         )
                     return
                 }
-                handler.postDelayed(this, 200)
+                handler.postDelayed(this, if (method == PairingMethod.SAS)
+                    (minOf(overall, deadline) - now).coerceAtLeast(1) else 200)
             }
         }
     private val receiver =
@@ -186,6 +201,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
             val qr = PairingQR.decode(text)
             cancel()
             method = PairingMethod.QR
+            completedWithComparison = false
             invitation = qr
             phase = "permission"
             status = "Ready to find the QR invitation."
@@ -202,9 +218,21 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
         cancel()
         method = PairingMethod.PIN
+        completedWithComparison = false
         code = pin
         phase = "permission"
         status = "Ready to scan for your Mac."
+    }
+
+    internal fun beginNearby(candidate: NearbyPairingCandidate) {
+        if (!foreground) { candidate.discard(); return }
+        cancel()
+        method = PairingMethod.SAS
+        nearbyCandidate = candidate
+        completedWithComparison = false
+        phase = "permission"
+        status = "Preparing a nearby comparison…"
+        start()
     }
 
     fun permissionStarted() {
@@ -267,10 +295,18 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
         beforePairing()
         val op = generation
+        val selectedCandidate = nearbyCandidate
+        val selectedMethod = method
         phase = "preparing"
         status = "Preparing pairing…"
         rows = emptyList()
         readyToFinish = false
+        rejectingComparison = false
+        if (selectedMethod == PairingMethod.SAS) {
+            overall = SystemClock.elapsedRealtime() + 120000
+            deadline = SystemClock.elapsedRealtime() + 15000
+            scheduleComparisonDeadline()
+        }
         worker.execute {
             try {
                 val trust = store ?: app.trustStore.also { store = it }
@@ -278,10 +314,11 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                     app.identityService.getOrCreateIdentity().identity.fingerprint
                 ).map { it.peer.deviceId }.toSet()
                 if (generation != op) return@execute
+                if (selectedMethod == PairingMethod.SAS) require(trustedPeerIds.isEmpty())
                 trustedPeerIdsBeforePairing = trustedPeerIds
                 val created =
                     PairingEngine(
-                        method,
+                        selectedMethod,
                         invitation,
                         code.toByteArray(),
                         app.identityService,
@@ -290,6 +327,13 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                             handler.post { if (generation == op && busy) transport.send(data) }
                         },
                         { state, p -> handler.post { if (generation == op) event(state, p) } },
+                        { digits -> handler.post {
+                            if (generation == op && foreground) {
+                                comparisonCode = digits
+                                comparisonAttempt = op
+                            }
+                        } },
+                        { generation == op },
                     )
                 if (generation != op) {
                     created.close()
@@ -303,10 +347,22 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                             if (method == PairingMethod.QR)
                                 "Finding the Mac matching your QR invitation…"
                             else "Select the Mac displaying your code."
-                        overall = SystemClock.elapsedRealtime() + 120000
+                        if (selectedMethod != PairingMethod.SAS)
+                            overall = SystemClock.elapsedRealtime() + 120000
                         deadline = SystemClock.elapsedRealtime() + 15000
-                        transport.startScan(method == PairingMethod.QR)
-                        handler.post(ticker)
+                        if (selectedMethod == PairingMethod.SAS) {
+                            phase = "connecting"
+                            status = "Opening the nearby Mac’s comparison channel…"
+                            try {
+                                requireNotNull(selectedCandidate).connect(transport)
+                                nearbyCandidate = null
+                            } catch (_: Exception) {
+                                fail("Nearby device expired. Find nearby and tap Pair again.")
+                                return@post
+                            }
+                        } else transport.startScan(selectedMethod == PairingMethod.QR)
+                        if (selectedMethod == PairingMethod.SAS) scheduleComparisonDeadline()
+                        else handler.post(ticker)
                     }
                 }
             } catch (error: Exception) {
@@ -340,9 +396,11 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         deadline = SystemClock.elapsedRealtime() + 10000
         rows = emptyList()
         transport.send(PairingCodec.message(1))
+        scheduleComparisonDeadline()
     }
 
     private fun receive(data: ByteArray) {
+        if (phase == "cancelling" || rejectingComparison) return
         val op = generation
         if (data.firstOrNull() == 2.toByte() && method == PairingMethod.QR) {
             try {
@@ -375,6 +433,15 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+        scheduleComparisonDeadline()
+    }
+
+    private fun scheduleComparisonDeadline() {
+        if (method != PairingMethod.SAS || !busy || overall == 0L) return
+        handler.removeCallbacks(ticker)
+        val now = SystemClock.elapsedRealtime()
+        remaining = (((minOf(overall, deadline) - now).coerceAtLeast(0) + 999) / 1000).toInt()
+        handler.postDelayed(ticker, (minOf(overall, deadline) - now).coerceAtLeast(1))
     }
 
     private fun event(state: String, p: DeviceIdentity?) {
@@ -392,6 +459,14 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 status = "Verify this Mac, then approve pairing on both devices."
                 deadline = SystemClock.elapsedRealtime() + 60000
             }
+            "comparison" -> {
+                status = "Compare all six digits on your Mac, then confirm on both devices."
+                deadline = SystemClock.elapsedRealtime() + 60000
+            }
+            "verifying" -> {
+                status = "Both confirmed. Verifying device identities…"
+                deadline = SystemClock.elapsedRealtime() + 30000
+            }
             "saving" -> {
                 status = "Saving trust and confirming peer storage…"
                 deadline = SystemClock.elapsedRealtime() + 10000
@@ -404,6 +479,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 transport.finishAfterWrites()
             }
         }
+        scheduleComparisonDeadline()
     }
 
     fun approve() {
@@ -423,6 +499,46 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun confirmComparison(attempt: Long) {
+        if (attempt != comparisonAttempt || generation != attempt || phase != "comparison" ||
+            comparisonCode == null || method != PairingMethod.SAS) return
+        val now = SystemClock.elapsedRealtime()
+        if (!foreground || app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true ||
+            now >= minOf(overall, deadline)) {
+            fail("Comparison expired or the phone was locked. Start a fresh pairing.")
+            return
+        }
+        phase = "waiting"
+        status = "Confirmed here. Waiting for your Mac…"
+        worker.execute {
+            if (generation != attempt) return@execute
+            try { engine?.confirmComparison() } catch (_: Exception) {
+                handler.post { if (generation == attempt) fail("Comparison could not finish. Start again.") }
+            }
+        }
+    }
+
+    fun declineComparison() {
+        if (!comparingNearby || phase in listOf("saving", "cleanup", "cancelling")) return
+        val op = ++generation
+        phase = "cancelling"
+        status = "Dismissing pairing…"
+        worker.execute {
+            if (generation != op) return@execute
+            val cancellation = try { engine?.cancellation() } catch (_: Exception) { null }
+            engine = null
+            handler.post {
+                if (generation != op) return@post
+                rejectingComparison = true
+                phase = "cleanup"
+                deadline = SystemClock.elapsedRealtime() + 2000
+                if (cancellation != null) transport.send(cancellation)
+                transport.finishAfterWrites()
+                scheduleComparisonDeadline()
+            }
+        }
+    }
+
     fun cancel() {
         generation++
         handler.removeCallbacks(ticker)
@@ -431,6 +547,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         invitation?.secret?.fill(0)
         invitation = null
         code = ""
+        nearbyCandidate?.discard()
+        nearbyCandidate = null
+        comparisonCode = null
         rows = emptyList()
         remaining = 0
         peer = null
@@ -438,6 +557,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         status = "Pairing stopped. Start again when ready."
         awaitingPermissions = false
         readyToFinish = false
+        rejectingComparison = false
     }
 
     private fun retireEngine() {
@@ -454,6 +574,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         peer?.takeIf { it.deviceId !in trustedPeerIdsBeforePairing }
             ?.let(app.transfer.autoReceivePreferences::enableForNewPeer)
         phase = "paired"
+        completedWithComparison = method == PairingMethod.SAS
         status = "Pairing complete. Device saved as trusted."
         retireEngine()
         refresh()
@@ -485,6 +606,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refresh() {
+        trustedPeersLoaded = false
         val op = generation
         worker.execute {
             try {

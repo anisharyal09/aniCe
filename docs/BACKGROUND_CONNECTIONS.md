@@ -59,6 +59,19 @@ Manual Allow connections retains its 120-second window. Disconnect pauses automa
 
 Pairing cleanup restores automatic availability only if pairing and discovery are both idle at callback delivery. A newer exclusive operation retains the radio; stopping discovery can restore the saved automatic policy afterward.
 
+First-time [nearby pairing](../protocol/bluetooth/PROXIMITY.md) has a separate
+known-empty-trust lifetime: anonymous Mac availability while awake/unlocked and
+foreground/unlocked Android discovery. It uses the same exclusive BLE radio owner
+but never grants companion background ownership before trust exists. One
+user-selected candidate runs [SAS verification](../protocol/pairing/SAS.md).
+After mutual confirmation and durable trust receipts, the foreground channel
+starts with fresh EDHOC. The default-on background setup choice is offered after
+that first secured connection; native companion approval is still required.
+Closing the Mac window retains nearby availability; lock/sleep/Quit retires
+pending comparison. Android background/screen lock cancels comparison even if
+an unrelated older companion association exists. A fresh attempt uses new keys
+and comparison material, never a resumed pairing channel.
+
 ## Liveness and renewal
 
 [Authoritative control CDDL](../protocol/session/control.cddl) defines controls inside existing DATA kind 3/envelope 6. HELLO/ACK compatibility completes within ten seconds of readiness; Android PING follows 60 seconds without authenticated activity, with one matching PONG due within 20 seconds. Unsupported peers retain manual operation; automatic policy pauses. Controls consume ordinary record sequences and never increment diagnostic check counters.

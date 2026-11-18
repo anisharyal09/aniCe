@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E50100000000000000000001 /* PairingSas.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000002; };
+		E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000004; };
+		E50100000000000000000005 /* MacComparisonCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000006; };
+		E50100000000000000000007 /* PairingSasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000008; };
+		E50100000000000000000009 /* sas-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = E5010000000000000000000A; };
 		F40200000000000000000001 /* UpdateSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000002 /* UpdateSchedule.swift */; };
 		F40200000000000000000003 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000004 /* ReleaseNotes.swift */; };
 		F40200000000000000000005 /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000006 /* ReleaseNotesTests.swift */; };
@@ -189,6 +194,11 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E50100000000000000000002 /* PairingSas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingSas.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000004 /* NearbyPairingAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/NearbyPairingAdmission.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000006 /* MacComparisonCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacComparisonCard.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000008 /* PairingSasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/PairingSasTests.swift; sourceTree = SOURCE_ROOT; };
+		E5010000000000000000000A /* sas-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sas-vectors.json"; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000002 /* UpdateSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/UpdateSchedule.swift; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000004 /* ReleaseNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseNotes.swift; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000006 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseNotesTests.swift; sourceTree = SOURCE_ROOT; };
@@ -506,6 +516,8 @@
 				1C2BA8C8461E82EE4511F509 /* ../../protocol/test-vectors/session/session-vectors.json */,
 				543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */,
 				88FFC4482694BD876043669A /* aniCeTests/PairingTests.swift */,
+				E50100000000000000000008 /* PairingSasTests.swift */,
+				E5010000000000000000000A /* sas-vectors.json */,
 				04E1689DBE5CE27F2E4DE8D6 /* ../../protocol/test-vectors/pairing-vectors.json */,
 				000000000000000000000450 /* aniCeTests/DiscoveryTests.swift */,
 				000000000000000000000452 /* ../../protocol/test-vectors/discovery-vectors.json */,
@@ -668,6 +680,8 @@
 				10A95CA8384F875E996F9139 /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift */,
 				CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */,
 				268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */,
+				E50100000000000000000002 /* PairingSas.swift */,
+				E50100000000000000000004 /* NearbyPairingAdmission.swift */,
 			);
 			path = Pairing;
 			sourceTree = "<group>";
@@ -677,6 +691,7 @@
 			children = (
 				9381F2D8BA7A0C690FC893B1 /* aniCe/Features/Pairing/MacPairingModel.swift */,
 				63457F669CCC8B7994A71D7A /* aniCe/Features/Pairing/MacPairingView.swift */,
+				E50100000000000000000006 /* MacComparisonCard.swift */,
 			);
 			path = Pairing;
 			sourceTree = "<group>";
@@ -784,6 +799,7 @@
 				2E55CC0A81ADFCE6FE8B1B1D /* ../../protocol/test-vectors/session/session-vectors.json in Resources */,
 				B5BD6790BA172D324FBA4CA9 /* ../../protocol/test-vectors/pairing-vectors.json in Resources */,
 				000000000000000000000453 /* ../../protocol/test-vectors/discovery-vectors.json in Resources */,
+				E50100000000000000000009 /* sas-vectors.json in Resources */,
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 				B10100000000000000000003 /* ../../protocol/test-vectors/transfer/transfer-vectors.json in Resources */,
 				B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */,
@@ -882,6 +898,9 @@
 				D8D003F789CFE6CBB27FC01E /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift in Sources */,
 				C0703186165FF0C5D2612FF7 /* aniCe/Infrastructure/Pairing/PairingCodec.swift in Sources */,
 				CC2537F76576ED2CBAF9A80F /* aniCe/Infrastructure/Pairing/PairingEngine.swift in Sources */,
+				E50100000000000000000001 /* PairingSas.swift in Sources */,
+				E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */,
+				E50100000000000000000005 /* MacComparisonCard.swift in Sources */,
 				C0CEE5B8CCC6DAEFBF420732 /* aniCe/Features/Pairing/MacPairingModel.swift in Sources */,
 				03966CFE7DA22180981E0047 /* aniCe/Features/Pairing/MacPairingView.swift in Sources */,
 				000000000000000000000420 /* BlePayloadCodec.swift in Sources */,
@@ -949,6 +968,7 @@
 				E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */,
 				FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */,
 				5AC4A19CBFF38BE42CBB0A83 /* aniCeTests/PairingTests.swift in Sources */,
+				E50100000000000000000007 /* PairingSasTests.swift in Sources */,
 				000000000000000000000451 /* aniCeTests/DiscoveryTests.swift in Sources */,
 				F40100000000000000000019 /* MacUpdateStagingTests.swift in Sources */,
 				F4010000000000000000001F /* MacUpdateRecordTests.swift in Sources */,

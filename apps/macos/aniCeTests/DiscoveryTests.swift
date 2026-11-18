@@ -136,4 +136,22 @@ final class DiscoveryTests: XCTestCase, @unchecked Sendable {
         r.advertise(); r.time += 120
         XCTAssertEqual(r.session.read(matches: true, offset: 0), .unavailable)
     }
+    @MainActor func testOptionalSasFlagRotatesAndClearsOnOrdinaryStart() async throws {
+        let r = Rig()
+        r.session.start(nearbyAvailability: true, flags: PairingSas.discoveryFlag)
+        r.fake.event(.available); r.fake.event(.published); r.fake.event(.advertising)
+        for time: TimeInterval in [0, 30, 120] {
+            r.time = time
+            guard case .value(let bytes) = r.session.read(matches: true, offset: 0) else {
+                XCTFail("Missing nearby payload"); return
+            }
+            XCTAssertEqual(try BlePayloadCodec.decode(bytes).flags, 1)
+        }
+        r.session.stop()
+        r.advertise()
+        guard case .value(let bytes) = r.session.read(matches: true, offset: 0) else {
+            XCTFail("Missing ordinary payload"); return
+        }
+        XCTAssertEqual(try BlePayloadCodec.decode(bytes).flags, 0)
+    }
 }

@@ -108,13 +108,25 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Devices and pairing
 - Flat peer list with readiness indicators and individual Bluetooth and Local Network connection controls.
-- Pairing requires mutual approval on both devices via QR code or 6-digit PIN.
+- Pairing requires mutual approval on both devices via nearby six-digit comparison,
+  QR code or entered 6-digit PIN.
 - Device identity sheet displays name, fingerprint, and confirmed reset action.
-- Staged nearby discovery uses generic anonymous candidates, never a claimed real device name.
-  Android Home offers Find nearby and a native bottom sheet for qualified signals, with Dismiss
-  and Manual pair. Mac offers explicit Find nearby/Pause and Manual pair while local trust is
-  known empty. Discovery alone must not display a verification code or Confirm action; those
-  remain gated until the SAS pairing method is implemented.
+- Nearby discovery uses generic anonymous candidates, never a claimed real device name.
+  Android Home offers Find nearby and a native bottom sheet for qualified signals, with Pair,
+  Dismiss and Manual pair. Pair freezes one candidate and opens a bounded comparison sheet.
+  Compare all six digits, including leading zeros, with Confirm on both devices and accessible
+  Dismiss. No device names are disclosed until both comparison confirmations.
+- With known-empty trust, Mac nearby availability starts while its process is awake/unlocked,
+  retaining explicit Pause/Find nearby. Manual pair opens the existing QR/PIN flow. An incoming
+  comparison uses a centered content card in the active app; otherwise use an AppKit floating
+  panel near the top-center of the pointer's display, respecting visible-frame bounds.
+  Showing the panel must not steal typing focus. Clicking its heading/code opens aniCe without
+  approval; Confirm approves the same attempt and opens aniCe. Dismiss rejects without opening.
+  Never regenerate or silently retarget the code during a surface handoff.
+- Comparison confirmation is not Connected. Verify identity openings/proofs, store trust through
+  the shared receipt flow, then establish fresh authenticated readiness. Default-on background
+  auto-connect setup on Android is offered after the first connection, not an unsolicited chooser
+  blocking SAS. Lock, background loss, cancellation and expiry cannot approve an old attempt.
 
 ### Desk Deck and Control Android
 - **Mac Desk Deck (Android)**: Real-time Mac telemetry display. Stale readings show their last-received timestamp.

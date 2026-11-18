@@ -16,8 +16,8 @@ The Mac peripheral exposes a fixed three-characteristic GATT service from initia
 | :--- | :--- | :--- | :--- |
 | **Primary Service** | `414E4953-4843-654A-494C-534149303901` | Service | Publicly advertised |
 | **Discovery** | `414E4953-4843-654A-494C-534149303902` | Read | Available only during active discovery |
-| **Pairing Write** | `414E4953-4843-654A-494C-534149303903` | Write with response | Requires active invitation; writes rejected otherwise |
-| **Pairing Indicate** | `414E4953-4843-654A-494C-534149303904` | Indicate | Requires active invitation; indications sent only to active subscriber |
+| **Pairing Write** | `414E4953-4843-654A-494C-534149303903` | Write with response | Requires active invitation or eligible nearby owner; writes rejected otherwise |
+| **Pairing Indicate** | `414E4953-4843-654A-494C-534149303904` | Indicate | Requires active pairing owner; indications sent only to admitted subscriber |
 
 ---
 
@@ -116,6 +116,14 @@ Used when camera scanning is unavailable. Prevents offline dictionary attacks ag
   $$K = \text{HKDF-SHA256}(\text{IKM}=\text{sessionKey}_{\text{OPAQUE}}, \text{salt}=H, \text{info}=\text{"aniCe pin bootstrap v1"}, L=32)$$
 
 ---
+
+### Method 3: Nearby six-digit comparison (SAS)
+
+The [numeric-comparison contract](SAS.md) defines commit/reveal P-256 bootstrap,
+six-digit derivation, deferred identity disclosure and mutual comparison approval.
+It reuses this service, framing, identity proofs and signed trust receipts; its
+bootstrap messages and identity envelope have method-specific field counts.
+Numeric comparison is not the entered OPAQUE PIN and cannot silently downgrade.
 
 ### Directional Encryption (AEAD)
 All inner messages (types 10–14) are encrypted using AES-256-GCM under directional keys:

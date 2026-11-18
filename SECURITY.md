@@ -14,6 +14,10 @@ Security boundaries:
 
 - **Device Identity:** P-256 keys in `AndroidKeyStore` with actual hardware/software protection reported, and actor-isolated macOS Keychain storage. Current Mac app builds use the development Keychain backend, not hardware isolation; the separate Secure Enclave backend requires appropriate signing and entitlements.
 - **Pairing Bootstrap:** Ephemeral ECDH QR codes with SHA-256 fingerprint commitments, or 6-digit PIN pairing via an in-memory OPAQUE (`opaque-ke` 4.0.1) password-authenticated key exchange.
+- **Nearby comparison:** Provisional [method-3 SAS](protocol/pairing/SAS.md) uses
+  committed P-256 exchange and deferred salted-identity openings. Users must
+  compare all six digits and confirm on both screens. RSSI is only a UX filter;
+  the application profile is not independently audited.
 - **Session Transport:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) authenticated record channels with directional AES-256-GCM encryption, monotonic sequence counters, and explicit rekeying schedules.
 - **LAN Discovery & Transfer:** Anonymous DNS-SD advertisements (`_anice._tcp`) and mutual credential verification prior to admission.
 

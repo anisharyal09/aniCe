@@ -52,7 +52,7 @@ fun HomeScreen(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
           Text("Connect your Mac", style = MaterialTheme.typography.titleSmall)
           Text(
-            "On your Mac, choose Add device. Then scan its QR code or enter its six-digit code here.",
+            "Bring your Mac close and tap Pair in the nearby prompt. Compare the digits on both screens, or choose Add device for QR/manual pairing.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )

@@ -10,11 +10,30 @@ Download published builds from [GitHub Releases](https://github.com/anisharyal09
 
 ## Pair your devices
 
-1. On the Mac, choose **Add device**, then **Show QR code** or **Show six-digit code**.
-2. On Android, choose **Add device**, then scan the QR code or enter the six-digit code.
-3. Check the device name and approve pairing on both screens.
+1. Keep aniCe running and both devices unlocked. Before the first pairing, bring
+   your phone close to the Mac and open Android Home. Grant Nearby Devices access.
+2. In the nearby prompt, select your Mac and tap **Pair**. Compare **all six digits**
+   shown on both screens, including leading zeros. Tap **Confirm** on both only
+   if they match. These digits are compared, not entered.
+3. The Mac shows a centered card in aniCe or a floating card when its main window
+   is closed/inactive. Clicking the floating code opens aniCe without confirmation;
+   **Confirm** approves locally and opens aniCe. **Dismiss** rejects the attempt.
+4. Identities are verified and trust saved before a fresh secure connection starts.
+   Android offers background auto-connect setup after the first connection.
+
+For older peers or additional devices, choose **Manual pair** / **Add device**.
+On Mac show a QR code or six-digit PIN; on Android scan or enter it, then check
+the device name and approve on both screens. An entered PIN is different from
+the nearby comparison code. Pause nearby setup stops discovery; Find nearby
+resumes. Mac dismissal temporarily rate-limits fresh nearby requests.
 
 Keep Bluetooth enabled. If an invitation expires or pairing is declined, start a new invitation from the Mac. Approving pairing saves trust locally on each device. Forgetting a device is also local.
+
+Nearby discovery does not run while Android is backgrounded or locked, or while
+the Mac is locked/asleep or Quit. Names are private until both comparison
+confirmations. The numeric-comparison profile is provisional; do not downgrade
+to an older aniCe binary after pairing with it, because older trust readers do
+not recognize method 3.
 
 After pairing, Home shows the device and current activity. Devices contains Bluetooth/LAN controls and connection diagnostics. Automatic LAN setup coordinates through authenticated Bluetooth; manual LAN remains independent. See [background Bluetooth](BACKGROUND_CONNECTIONS.md) and [LAN connections](LAN_CONNECTIONS.md) for lifecycle limits.
 

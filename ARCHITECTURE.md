@@ -19,6 +19,14 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 - **QR Pairing:** Ephemeral P-256 ECDH with a 256-bit PSK and SHA-256 identity fingerprint commitment. Android scans the Mac's invitation using CameraX/ZXing.
 - **Manual 6-Digit PIN Pairing:** Password-Authenticated Key Exchange (PAKE) powered by an isolated, in-memory [OPAQUE bridge](core/rust/pairing/README.md) (`opaque-ke 4.0.1`, Argon2id).
+- **Nearby Numeric Comparison:** Anonymous Mac availability and foreground Android
+  RSSI-filtered discovery hand one selected candidate to the shared pairing owner.
+  [Method 3 SAS](protocol/pairing/SAS.md) commits P-256 ephemerals, random nonces and
+  salted identities before reveal; both screens compare six digits and confirm.
+  Identity disclosure/proofs follow mutual comparison, then existing signed trust
+  receipts activate local trust. The native Mac floating/in-app card shares one
+  attempt. First foreground connection uses fresh EDHOC; Android companion setup
+  is offered afterward. The application profile is provisional and not audited.
 - **Mutual Approval:** Both devices require explicit on-screen approval before local trust activation. Each device persists its own journal atomically; completion across devices is not a distributed atomic transaction.
 - **Specifications & Decisions:** Full protocol flow, wire framing, and state machines are documented in the [Pairing Protocol Contract](protocol/pairing/README.md), recorded in [ADR 0003 (Pairing & Trust)](docs/decisions/0003-provisional-pairing-and-trust.md), and verified by [`pairing-vectors.json`](protocol/test-vectors/pairing-vectors.json).
 

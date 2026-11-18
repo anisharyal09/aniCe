@@ -34,6 +34,7 @@ struct AniCeApp: App {
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
   @State private var servicesStarted = false
+  @State private var comparisonPresenter: MacComparisonPresenter?
 
   init() {
     precondition(MacAppStorage.isPreview == (Bundle.main.bundleIdentifier == MacAppStorage.previewBundleIdentifier),
@@ -167,6 +168,10 @@ struct AniCeApp: App {
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
     lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    pairing.nearbyAvailabilityChanged = { [weak pairing, weak session] in
+      guard session?.allowing == false else { return }
+      pairing?.ensureNearbyAvailable()
+    }
     pairing.onNewPeerPaired = { peer in
       transfer.autoReceivePreferences.enableForNewPeer(peer)
     }
@@ -216,6 +221,10 @@ struct AniCeApp: App {
     servicesStarted = true
     clipboard.installLifecycle()
     session.restoreAutomatic()
+    comparisonPresenter = MacComparisonPresenter(model: pairing) {
+      navigation.show(.devices, route: .pairing)
+      delegate.openMainFromCompanion()
+    }
     guard !IdentityView.isTesting else { return }
     MacUpdateModel.shared.startAutomaticChecks()
     PasteTrayController.shared.setup(model: clipboard)
@@ -225,6 +234,8 @@ struct AniCeApp: App {
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
     delegate.onTerminate = {
+      pairing.cancel()
+      comparisonPresenter?.hide()
       MacUpdateModel.shared.stopAutomaticChecks()
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
       floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()

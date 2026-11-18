@@ -86,9 +86,17 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {
         if (identity.state.snapshot != null) pairing.refresh()
     }
+    val localName = identity.state.snapshot?.identity?.deviceName
+    var pairingIdentityName by remember { mutableStateOf(localName) }
+    LaunchedEffect(localName) {
+        if (localName != null && pairingIdentityName != null && localName != pairingIdentityName && pairing.busy)
+            pairing.cancel()
+        pairingIdentityName = localName
+    }
 
     var automaticAfterPairing by rememberSaveable { mutableStateOf(true) }
     var automaticLanAfterPairing by rememberSaveable { mutableStateOf(true) }
+    var backgroundSetupPeer by remember { mutableStateOf<io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity?>(null) }
     val nearbyOwner = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(LocalContext.current)
     LaunchedEffect(pairing.busy) {
         if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
@@ -97,10 +105,14 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         val paired = completedPairingPeer(pairing.phase, pairing.peer,
             identity.state.snapshot?.identity?.fingerprint, pairing.peers)
         if (paired != null) {
+            val compared = pairing.completedWithComparison
             session.lan.setAutomaticEnabled(automaticLanAfterPairing)
             navigation.paired()
             pairing.cancel()
-            if (automaticAfterPairing && nearbyOwner.available) {
+            if (compared) {
+                session.request(paired)
+                if (automaticAfterPairing && nearbyOwner.available) backgroundSetupPeer = paired
+            } else if (automaticAfterPairing && nearbyOwner.available) {
                 context.startActivity(Intent().setClassName(context.packageName,
                     "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
                     .putExtra("peer", paired.deviceId).putExtra("enable", true))
@@ -110,7 +122,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val snackbars = remember { SnackbarHostState() }
     val nearbyEligible = pairing.trustedPeersLoaded && pairing.peers.isEmpty() &&
         pairing.recovery != "trustStore" && !pairing.busy && !discovery.state.busy &&
-        identity.state.snapshot != null && navigation.route == DeviceRoute.Overview &&
+        identity.state.snapshot != null && !identity.state.isWorking &&
+        navigation.route == DeviceRoute.Overview &&
         navigation.destination == AppDestination.Home &&
         session.findDevice.incomingAlert == null
     LaunchedEffect(nearbyEligible) { nearbyDiscovery?.eligible(nearbyEligible) }
@@ -119,8 +132,12 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         nearbyDiscovery?.retry()
     }
     if (nearbyEligible && nearbyDiscovery != null) {
-        io.github.anisharyal09.anice.features.pairing.NearbyDiscoveryPrompt(nearbyDiscovery, navigation::pair)
+        io.github.anisharyal09.anice.features.pairing.NearbyDiscoveryPrompt(nearbyDiscovery, navigation::pair) { id ->
+            nearbyDiscovery.claim(id)?.let(pairing::beginNearby)
+        }
     }
+    if (navigation.route != DeviceRoute.Pairing)
+        io.github.anisharyal09.anice.features.pairing.ComparisonPrompt(pairing, navigation::pair)
     val pageState = rememberSaveableStateHolder()
     fun back() { navigation.back() }
     BackHandler(navigation.destination != AppDestination.Home || navigation.mediaDetails) { back() }
@@ -219,6 +236,37 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         // Consume Scaffold insets here so nested sheets and feature content do not apply the same padding twice.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
         Column(content) {
+            if (pairing.nearbyFailure) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(pairing.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = {
+                        pairing.cancel()
+                        nearbyDiscovery?.retry()
+                    }) { Text("Try again") }
+                    TextButton(onClick = { pairing.cancel(); navigation.pair() }) { Text("Manual pair") }
+                }
+            }
+            val backgroundPeer = backgroundSetupPeer
+            if (backgroundPeer != null && session.state == io.github.anisharyal09.anice.features.session.ConnectionState.SECURED &&
+                session.selected?.deviceId == backgroundPeer.deviceId &&
+                session.selected?.fingerprint == backgroundPeer.fingerprint &&
+                session.selected?.publicKey == backgroundPeer.publicKey &&
+                pairing.peers.any { it.peer == backgroundPeer }) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Connected. Background auto-connect needs system setup.", Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = {
+                        backgroundSetupPeer = null
+                        context.startActivity(Intent().setClassName(context.packageName,
+                            "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
+                            .putExtra("peer", backgroundPeer.deviceId).putExtra("enable", true))
+                    }) { Text("Set up") }
+                    TextButton(onClick = { backgroundSetupPeer = null }) { Text("Later") }
+                }
+            }
             if (nearbyEligible && nearbyDiscovery != null) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {

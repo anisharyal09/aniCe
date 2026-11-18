@@ -7,9 +7,14 @@ import os
 @MainActor protocol PairingPeripheralAdapter: PeripheralAdapter {
   var pairingWrite: ((Data) -> Bool)? { get set }
   var pairingDisconnect: (() -> Void)? { get set }
+  var pairingAdmitted: (() -> Bool)? { get set }
   func sendPairing(_ message: Data) throws
   func drainPairing() async
   func retirePairingConnection()
+}
+
+extension PairingPeripheralAdapter {
+  var pairingAdmitted: (() -> Bool)? { get { nil } set {} }
 }
 
 enum PeripheralMode { case idle, discovery, pairing, trustedSession }
@@ -112,6 +117,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   private var queueBudget = GattQueueBudget()
   var pairingWrite: ((Data) -> Bool)?
   var pairingDisconnect: (() -> Void)?
+  var pairingAdmitted: (() -> Bool)?
   private var incoming: CBMutableCharacteristic?
   private var outgoing: CBMutableCharacteristic?
   private var central: CBCentral?
@@ -195,6 +201,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   }
   // Stop advertising after admission; established writes use the candidate, not advertising state.
   private func admit(_ candidate: CBCentral) -> Bool {
+    if mode == .pairing { return pairingAdmitted?() ?? true }
     guard mode == .trustedSession else { return true }
     guard advertising.isConfirmed, sessionAdmitted?() == true else {
       Self.logger.info("candidate_admission accepted=false advertising=\(self.advertising.isConfirmed)")
@@ -284,7 +291,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       // Core Bluetooth may retain a subscription without another didSubscribe callback.
       // An explicit new window may admit it, but EDHOC and readiness must run afresh.
       // Invalid candidates remain blocked within the window until they subscribe again.
-      if mode == .trustedSession, !admit(first.central) {
+      if (mode == .trustedSession || mode == .pairing), !admit(first.central) {
         peripheral.respond(to: first, withResult: .writeNotPermitted)
         return
       }

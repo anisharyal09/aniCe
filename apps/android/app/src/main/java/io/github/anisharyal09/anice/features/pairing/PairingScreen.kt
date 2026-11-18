@@ -271,7 +271,8 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                 Text(peer.fingerprint.chunked(4).joinToString(" "),
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth())
             }
-            Text("Approve on both devices to finish pairing.", style = MaterialTheme.typography.bodySmall)
+            Text(if (model.comparingNearby) "Both confirmed. Verifying and saving trust…"
+                else "Approve on both devices to finish pairing.", style = MaterialTheme.typography.bodySmall)
         }
         if (model.phase == "approval")
             OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::approve, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
