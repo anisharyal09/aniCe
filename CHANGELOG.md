@@ -12,6 +12,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Connect staged nearby discovery to native first-setup surfaces, with anonymous Android beacon prompts and explicit Mac availability controls; SAS confirmation remains unavailable.
+
 - Add the nearby-pairing discovery foundation: anonymous availability and a bounded RSSI policy; onboarding activation and SAS remain gated.
 
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.

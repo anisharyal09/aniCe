@@ -8,6 +8,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Scan for anonymous nearby Macs on unpaired Home while foreground/unlocked; present qualified signals in a dismissible Material bottom sheet with manual-pair fallback and explicit permission/retry actions.
+
 - Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests; not yet wired to onboarding.
 
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.

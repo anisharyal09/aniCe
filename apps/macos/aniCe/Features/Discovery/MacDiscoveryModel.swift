@@ -9,6 +9,8 @@ final class MacDiscoveryModel {
   var afterStop: () -> Void = {}
   let adapter: any PairingPeripheralAdapter
   let session: PeripheralDiscoverySession
+  private(set) var nearbyAvailable = false
+  @ObservationIgnored private var deadlineTask: Task<Void, Never>?
   @ObservationIgnored private var timer: Timer?
   @ObservationIgnored private var observers: [NSObjectProtocol] = []
   init(
@@ -17,6 +19,7 @@ final class MacDiscoveryModel {
   ) {
     self.adapter = adapter
     session = PeripheralDiscoverySession(now: now, makeAdapter: { adapter })
+    session.onChange = { [weak self] in self?.scheduleNearbyDeadline() }
     observers.append(
       NSWorkspace.shared.notificationCenter.addObserver(
         forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
@@ -27,6 +30,8 @@ final class MacDiscoveryModel {
       ) { [weak self] _ in MainActor.assumeIsolated { self?.stop() } })
   }
   func start() {
+    nearbyAvailable = false
+    deadlineTask?.cancel()
     beforeStart()
     timer?.invalidate()
     session.start()
@@ -45,11 +50,41 @@ final class MacDiscoveryModel {
     RunLoop.main.add(timer, forMode: .common)
   }
   func stop() {
+    nearbyAvailable = false
+    deadlineTask?.cancel()
+    deadlineTask = nil
     let wasActive = session.active
     timer?.invalidate()
     timer = nil
     session.stop()
     if wasActive { afterStop() }
+  }
+  /// Explicit first-setup availability uses the existing radio, with pairing writes still closed.
+  func startNearby() {
+    beforeStart()
+    timer?.invalidate()
+    timer = nil
+    deadlineTask?.cancel()
+    nearbyAvailable = true
+    session.start(nearbyAvailability: true)
+    scheduleNearbyDeadline()
+  }
+  private func scheduleNearbyDeadline() {
+    guard nearbyAvailable else { return }
+    deadlineTask?.cancel()
+    deadlineTask = nil
+    guard session.active else {
+      nearbyAvailable = false
+      afterStop()
+      return
+    }
+    guard let deadline = session.nextDeadline else { return }
+    deadlineTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(max(0.001, deadline - ProcessInfo.processInfo.systemUptime))) }
+      catch { return }
+      guard let self, self.nearbyAvailable else { return }
+      self.session.tick()
+    }
   }
   func openSettings() {
     let target =

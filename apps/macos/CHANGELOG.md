@@ -8,6 +8,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add first-setup Find nearby/Pause controls on known-empty trust, using deadline-driven anonymous availability without opening pairing writes.
+
 - Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds; automatic onboarding remains gated.
 
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.

@@ -17,8 +17,13 @@ compatibility only, not identity, freshness or proximity security.
 Ordinary explicit discovery retains its 120-second Mac lifetime. A separate,
 opt-in nearby-availability lifetime may remain active while the Mac process is
 awake. It does not enable pairing writes or authenticated session admission.
-Production onboarding wiring remains disabled until request admission, native
-presentation and the SAS protocol are implemented together.
+Mac offers explicit Find nearby and Pause controls only with successfully loaded,
+empty active trust. Android Home scans while foreground and unlocked with
+successfully loaded empty trust, granted permissions and no pairing/discovery
+operation. A qualified beacon can show a generic native prompt offering Manual
+pair; the prompt performs no connection or identity exchange. Dismiss suppresses
+automatic prompts for the current presentation owner until Find nearby is tapped.
+Automatic Mac onboarding and SAS requests remain disabled.
 
 ## Android signal policy
 

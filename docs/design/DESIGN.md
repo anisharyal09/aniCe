@@ -110,6 +110,11 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Flat peer list with readiness indicators and individual Bluetooth and Local Network connection controls.
 - Pairing requires mutual approval on both devices via QR code or 6-digit PIN.
 - Device identity sheet displays name, fingerprint, and confirmed reset action.
+- Staged nearby discovery uses generic anonymous candidates, never a claimed real device name.
+  Android Home offers Find nearby and a native bottom sheet for qualified signals, with Dismiss
+  and Manual pair. Mac offers explicit Find nearby/Pause and Manual pair while local trust is
+  known empty. Discovery alone must not display a verification code or Confirm action; those
+  remain gated until the SAS pairing method is implemented.
 
 ### Desk Deck and Control Android
 - **Mac Desk Deck (Android)**: Real-time Mac telemetry display. Stale readings show their last-received timestamp.

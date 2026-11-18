@@ -6,6 +6,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Document staged foreground nearby discovery ownership, generic prompts and manual fallback; SAS remains unadvertised and unsupported.
+
 - Document staged nearby-discovery lifetime and RSSI policy without changing discovery bytes or advertising SAS support.
 
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.

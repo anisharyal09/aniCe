@@ -115,6 +115,9 @@ struct MainWindowView: View {
     .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
     .onAppear { updateKeyboardTrackpadTargets() }
     .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
+    .onChange(of: pairing.peers.isEmpty) { _, empty in
+      if !empty && discovery.nearbyAvailable { discovery.stop() }
+    }
     .onChange(of: session.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: lan.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: navigation.focusedPeer) { _, _ in updateKeyboardTrackpadTargets() }
@@ -141,6 +144,32 @@ struct MainWindowView: View {
   private var detailContent: some View {
     VStack(spacing: 0) {
       MacUpdateNotice(model: updates)
+      if pairing.trustedPeersLoaded && pairing.peers.isEmpty && !pairing.trustRecoveryNeeded &&
+          !pairing.active && !session.allowing {
+        HStack(spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Nearby setup").font(.subheadline.weight(.medium))
+            Text(discovery.nearbyAvailable ? discovery.session.message :
+              "Let aniCe on your Android phone discover this Mac. Pair manually for now.")
+              .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          Spacer()
+          if discovery.session.recovery == .permissionSettings ||
+              discovery.session.recovery == .bluetoothSettings {
+            Button("Open Settings", action: discovery.openSettings)
+              .buttonStyle(AniCeButtonStyle())
+          }
+          if discovery.nearbyAvailable {
+            Button("Pause") { discovery.stop() }
+              .buttonStyle(AniCeButtonStyle())
+          } else {
+            Button("Find nearby") { discovery.startNearby() }
+              .buttonStyle(AniCeButtonStyle())
+          }
+          Button("Manual pair") { discovery.stop(); navigation.show(.devices, route: .pairing) }
+            .buttonStyle(AniCeButtonStyle())
+        }.padding(16).background(AniCePalette.surface(colorScheme))
+      }
       pendingRequestRows
       destinationContent
     }

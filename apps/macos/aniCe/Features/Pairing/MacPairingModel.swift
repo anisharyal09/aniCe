@@ -24,6 +24,7 @@ import Observation
     peers.contains { $0.active && $0.peer.platform == "android" }
   }
   var trustRecoveryNeeded = false
+  var trustedPeersLoaded = false
   var remaining = 0
   private let identity: IdentityService
   private let discovery: MacDiscoveryModel
@@ -323,7 +324,9 @@ import Observation
       self.store = store
       peers = store.list(localFingerprint: local.fingerprint)
       trustRecoveryNeeded = false
+      trustedPeersLoaded = true
     } catch {
+      trustedPeersLoaded = false
       trustRecoveryNeeded = error is TrustStoreLoadError
       status =
         trustRecoveryNeeded

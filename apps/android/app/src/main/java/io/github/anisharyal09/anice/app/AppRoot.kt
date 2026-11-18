@@ -49,7 +49,8 @@ import io.github.anisharyal09.anice.ui.theme.saveAppearance
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
-    pairing: PairingViewModel, session: SessionViewModel) {
+    pairing: PairingViewModel, session: SessionViewModel,
+    nearbyDiscovery: io.github.anisharyal09.anice.infrastructure.connections.NearbyDiscoveryViewModel? = null) {
     session.findDevice.incomingAlert?.let { alert ->
         AlertDialog(onDismissRequest = { session.findDevice.dismiss(alert.identifier) },
             title = { Text(androidx.compose.ui.res.stringResource(R.string.find_ringing_title)) },
@@ -107,6 +108,19 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         }
     }
     val snackbars = remember { SnackbarHostState() }
+    val nearbyEligible = pairing.trustedPeersLoaded && pairing.peers.isEmpty() &&
+        pairing.recovery != "trustStore" && !pairing.busy && !discovery.state.busy &&
+        identity.state.snapshot != null && navigation.route == DeviceRoute.Overview &&
+        navigation.destination == AppDestination.Home &&
+        session.findDevice.incomingAlert == null
+    LaunchedEffect(nearbyEligible) { nearbyDiscovery?.eligible(nearbyEligible) }
+    val nearbyPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) {
+        nearbyDiscovery?.retry()
+    }
+    if (nearbyEligible && nearbyDiscovery != null) {
+        io.github.anisharyal09.anice.features.pairing.NearbyDiscoveryPrompt(nearbyDiscovery, navigation::pair)
+    }
     val pageState = rememberSaveableStateHolder()
     fun back() { navigation.back() }
     BackHandler(navigation.destination != AppDestination.Home || navigation.mediaDetails) { back() }
@@ -205,6 +219,22 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         // Consume Scaffold insets here so nested sheets and feature content do not apply the same padding twice.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
         Column(content) {
+            if (nearbyEligible && nearbyDiscovery != null) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(nearbyDiscovery.status, Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (nearbyDiscovery.scanning) {
+                        TextButton(onClick = nearbyDiscovery::pause,
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Pause") }
+                    }
+                    TextButton(onClick = {
+                        val missing = nearbyDiscovery.missingPermissions()
+                        if (missing.isEmpty()) nearbyDiscovery.retry() else nearbyPermission.launch(missing)
+                    }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Find nearby") }
+                }
+            }
             io.github.anisharyal09.anice.update.UpdateNotice((context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).updates)
             if (pairing.busy && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
                 PendingRequestRow(if (pairing.phase == "approval") "Review pairing" else "Pairing in progress", pairing.status, navigation::pair)

@@ -17,6 +17,7 @@ enum DiscoveryRead: Equatable { case value(Data), unavailable, invalidOffset, un
 
 @Observable @MainActor
 final class PeripheralDiscoverySession {
+    var onChange: () -> Void = {}
     private(set) var state: DiscoveryState = .idle
     private(set) var recovery: DiscoveryRecovery = .none
     private(set) var message = "Let your nearby Android device find this Mac. Discovery does not pair devices."
@@ -82,6 +83,7 @@ final class PeripheralDiscoverySession {
     }
 
     private func receive(_ event: PeripheralEvent) {
+        defer { onChange() }
         switch event {
         case .permissionPending:
             state = .permissionNeeded; message = "Allow Bluetooth access to make this Mac discoverable."
@@ -116,6 +118,7 @@ final class PeripheralDiscoverySession {
     }
 
     func tick() {
+        defer { onChange() }
         guard active else { return }
         let instant = now()
         if let startupDeadline, instant >= startupDeadline {

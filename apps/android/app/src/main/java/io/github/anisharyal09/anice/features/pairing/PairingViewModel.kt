@@ -474,6 +474,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
 
     fun foreground() {
         foreground = true
+        // Screen lock/background can retire the initial asynchronous trust load before delivery.
+        // Recheck on return; otherwise first-setup discovery remains silently ineligible forever.
+        if (!trustedPeersLoaded) refresh()
     }
 
     fun background(screenOff: Boolean = false) {
