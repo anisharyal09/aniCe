@@ -8,6 +8,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests; not yet wired to onboarding.
+
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
 - Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
 - **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.

@@ -6,6 +6,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Document staged nearby-discovery lifetime and RSSI policy without changing discovery bytes or advertising SAS support.
+
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
 - Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
 - Define Desk Deck v5 output selection, with a bounded revisioned catalog and opaque device IDs.

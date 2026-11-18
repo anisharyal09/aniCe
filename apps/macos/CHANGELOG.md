@@ -8,6 +8,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds; automatic onboarding remains gated.
+
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
 - Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive once-per-version release notifications respecting beta preferences.

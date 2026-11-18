@@ -12,6 +12,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add the nearby-pairing discovery foundation: anonymous availability and a bounded RSSI policy; onboarding activation and SAS remain gated.
+
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
