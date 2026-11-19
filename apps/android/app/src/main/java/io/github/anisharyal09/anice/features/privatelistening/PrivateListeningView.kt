@@ -5,12 +5,15 @@ package io.github.anisharyal09.anice.features.privatelistening
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.R
@@ -41,6 +44,40 @@ fun PrivateListeningView(controller: PrivateListeningController) {
         if (controller.active) {
             Button(onClick = { controller.stop() }) { Text(stringResource(R.string.listening_stop)) }
         }
+        Text(stringResource(R.string.listening_buffer_mode), style = MaterialTheme.typography.titleSmall)
+        Column(Modifier.selectableGroup()) {
+            for (profile in ListeningBufferProfile.entries) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                    selected = controller.bufferProfile == profile,
+                    enabled = !controller.active, role = Role.RadioButton,
+                    onClick = { controller.setBufferProfile(profile) }),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = controller.bufferProfile == profile,
+                        onClick = null, enabled = !controller.active)
+                    Text(stringResource(if (profile == ListeningBufferProfile.BALANCED)
+                        R.string.listening_buffer_balanced else R.string.listening_buffer_lower),
+                        modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        Text(stringResource(R.string.listening_buffer_help), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        controller.diagnostics?.let { health ->
+            Text(stringResource(R.string.listening_buffer_diagnostics,
+                health.queuedFrames / 48, health.targetFrames / 48,
+                health.nativeQueuedFrames / 48, health.droppedPackets, health.underruns),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.listening_native_diagnostics,
+                health.nativeWriteLimitFrames / 48, health.nativeBufferFrames / 48),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (health.routeType == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                health.routeType == AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                Text(stringResource(R.string.listening_bluetooth_delay), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (!controller.active && routes.isEmpty()) Text(stringResource(R.string.listening_headphone_hint),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         for (route in routes) {
             val key = route.confirmationKey
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

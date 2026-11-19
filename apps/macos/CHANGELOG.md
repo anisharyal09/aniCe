@@ -40,6 +40,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Trim stalled Private Listening capture to a newest 60-ms interval and reduce unsealed audio buildup without discarding sealed records.
 - Raise the Mac deployment target to 14.2 for private Core Audio process taps.
 - Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
 - Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.

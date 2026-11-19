@@ -19,6 +19,8 @@ uint64_t AniceListeningRingSourceFrames(const AniceListeningRing * _Nonnull ring
 uint64_t AniceListeningRingDroppedFrames(const AniceListeningRing * _Nonnull ring);
 uint32_t AniceListeningRingQueuedFrames(const AniceListeningRing * _Nonnull ring);
 void AniceListeningRingDiscard(AniceListeningRing * _Nonnull ring);
+// Consumer-only: keep the newest bounded interval; producers never advance the read cursor.
+uint32_t AniceListeningRingTrim(AniceListeningRing * _Nonnull ring, uint32_t maximumFrames);
 // The producer owns the write cursor; overflow drops this entire incoming block.
 bool AniceListeningRingWrite(AniceListeningRing * _Nonnull ring, const float * _Nullable left,
                             const float * _Nullable right, uint32_t stride, uint32_t frames);

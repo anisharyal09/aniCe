@@ -13,12 +13,14 @@ internal class PrivateListeningResampler {
     private var integral = 0.0
     var ratio = 1.0
         private set
+    val bufferedFrames: Int get() = frames
 
-    fun reset() {
+    fun reset(targetFrames: Int = 9600) {
+        require(targetFrames > 0)
         frames = 0
         phase = 1.0
         initialized = false
-        filteredFrames = 9600.0
+        filteredFrames = targetFrames.toDouble()
         integral = 0.0
         ratio = 1.0
     }

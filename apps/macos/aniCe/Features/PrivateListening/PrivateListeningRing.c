@@ -84,6 +84,17 @@ void AniceListeningRingDiscard(AniceListeningRing *ring) {
     atomic_store_explicit(&ring->read, written, memory_order_release);
 }
 
+uint32_t AniceListeningRingTrim(AniceListeningRing *ring, uint32_t maximumFrames) {
+    const uint64_t read = atomic_load_explicit(&ring->read, memory_order_relaxed);
+    const uint64_t written = atomic_load_explicit(&ring->written, memory_order_acquire);
+    const uint64_t count = written - read;
+    if (count <= maximumFrames) return 0;
+    const uint32_t discarded = (uint32_t)(count - maximumFrames);
+    atomic_store_explicit(&ring->read, read + discarded, memory_order_release);
+    atomic_fetch_add_explicit(&ring->droppedFrames, discarded, memory_order_relaxed);
+    return discarded;
+}
+
 bool AniceListeningRingWrite(AniceListeningRing *ring, const float *left,
                             const float *right, uint32_t stride, uint32_t frames) {
     const uint64_t start = atomic_load_explicit(&ring->sourceFrames, memory_order_relaxed);

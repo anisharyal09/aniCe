@@ -37,6 +37,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Add Balanced/Lower delay adaptive listening profiles, combined-backlog trimming and platform-aware AudioTrack write/startup limits.
 - Route phone media volume locally while listening and pace future file-transfer chunks without replaying or discarding submitted data.
 - Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
 - Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.

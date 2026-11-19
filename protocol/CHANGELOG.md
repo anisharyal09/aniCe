@@ -24,6 +24,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Clarify local lower-delay buffering profiles and native startup floors for Private Listening; all six wire messages and crypto/session bounds are unchanged.
 - Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
 - Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
 - Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.

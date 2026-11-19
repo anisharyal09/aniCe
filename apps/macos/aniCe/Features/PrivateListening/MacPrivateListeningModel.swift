@@ -373,7 +373,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
           current.lastCapturedSequence = packet.sequence
           audio.append(packet)
         }
-        if audio.count > 9 { audio.removeFirst(audio.count - 9) } // One packet may be owned by a suspended send.
+        if audio.count > 3 { audio.removeFirst(audio.count - 3) } // One additional packet may be owned by a send.
       }
       if !current.maintenanceActive && now() - current.statusAt >= 1000 {
         current.statusAt = now()

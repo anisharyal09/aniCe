@@ -2,7 +2,7 @@
 <!-- Describes explicit Mac system-audio capture and credential-scoped headphone listening on Android. -->
 # Private Listening
 
-Private Listening sends Mac system audio to headphones connected to Android through an already-secured local-network connection. It uses the existing trusted-device session, not a cloud relay or Bluetooth audio transport between Mac and phone. Audio is fixed 48-kHz stereo PCM16; music and podcasts do not require video lip-sync.
+Private Listening sends Mac system audio to headphones connected to Android through an already-secured local-network connection. It uses the existing trusted-device session, not a cloud relay or Bluetooth audio transport between Mac and phone. Audio is fixed 48-kHz stereo PCM16. Music and podcasts are the primary use; arbitrary Mac video players are not synchronized to the phone's audio clock.
 
 ## Setup and start
 
@@ -25,6 +25,19 @@ Phone hardware volume buttons and the active media session control local phone/h
 Android approves explicitly identified wired headphones/headsets, USB headsets and BLE headsets. A2DP and generic USB are ambiguous and require confirmation. An actual speaker/unknown route is not approved by its product name. Routing changes and becoming-noisy events stop playback rather than intentionally falling back to phone speakers; asynchronous OS routing still governs what happens before notification delivery.
 
 **Stop listening** is available in the feature panel, phone notification and active Mac companion row. Terminal cleanup restores normal Mac output. A still-playing source can become audible on Mac; the feature is not a crash-proof mute latch. No audio history, saved recording or offline queue is created.
+
+## Delay and buffering
+
+Choose a buffering mode on Android before starting:
+
+- **Balanced** is the default: initially 200 ms of app-managed audio, adapting within 160–320 ms.
+- **Lower delay** is opt-in: initially 80 ms, adapting within 80–160 ms. A busy connection or scheduler can cause more interruptions.
+
+Late packet arrival and new native underruns raise the local target; sustained healthy playback lowers it slowly. The target includes software audio and pending AudioTrack writes once. The worker requests a smaller effective native buffer and startup threshold where Android permits, without assuming that the platform accepted those requests. Older Android versions and some outputs retain a larger native startup floor. Audio memory remains bounded to 800 ms in either mode; this is a ceiling, not a latency goal.
+
+The panel shows current app backlog, target, pending AudioTrack audio (included in the backlog), skipped packets and native underruns. These are local diagnostics, **not measured end-to-end latency**. Bluetooth encoding, OS mixing and headphone buffering can add substantial delay beyond them; wired/USB headphones usually reduce that contribution. Neither mode guarantees video lip-sync. aniCe cannot remove downstream Bluetooth delay or delay video in an arbitrary Mac browser.
+
+For a useful comparison, replay the same source on the same LAN with Balanced and Lower delay, then compare with wired/USB headphones if available. Note both perceived delay and interruptions; also check screen-off playback and transfer coexistence. Switch modes only after stopping, and keep headphone-route/privacy checks unchanged.
 
 ## Interruptions and renewal
 

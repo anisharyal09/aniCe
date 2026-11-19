@@ -40,6 +40,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Add opt-in lower-delay Private Listening buffering and local backlog diagnostics while preserving headphone safety and encrypted LAN ownership.
 - Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
 - Document reusable Home action sizing, single-row transfer navigation and compact grouped Settings spacing.
 - Preserve elapsed background LAN idle deadlines through socket replacement and lock/app handoffs; request enabled LAN for new local file actions and clarify Bluetooth fallback.

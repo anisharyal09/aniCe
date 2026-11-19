@@ -16,6 +16,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PrivateListeningControllerTests {
+    @Test fun profileIsFrozenForTheCurrentTicketAndRetiredHealthCannotReappear() = runBlocking {
+        val h = Harness()
+        h.owner.setBufferProfile(ListeningBufferProfile.LOWER_DELAY)
+        h.owner.setConsent(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        assertEquals(ListeningBufferProfile.LOWER_DELAY, ticket.bufferProfile)
+        h.owner.setBufferProfile(ListeningBufferProfile.BALANCED)
+        assertEquals(ListeningBufferProfile.LOWER_DELAY, h.owner.bufferProfile)
+        h.attach()
+        h.owner.playbackHealth(ticket, ListeningPlaybackHealth(1, 960, 3840, 0, false, targetFrames = 3840))
+        assertEquals(3840, h.owner.diagnostics?.targetFrames)
+        h.owner.focusChanged(ticket, false)
+        assertNull(h.owner.diagnostics)
+        h.owner.playbackHealth(ticket, ListeningPlaybackHealth(2, 1920, 3840, 0, false))
+        assertNull(h.owner.diagnostics)
+        h.owner.stop()
+        assertNull(h.owner.diagnostics)
+        h.owner.playbackHealth(ticket, ListeningPlaybackHealth(2, 1920, 9600, 1, false))
+        assertNull(h.owner.diagnostics)
+        h.owner.serviceDestroyed(ticket, h)
+        h.owner.setBufferProfile(ListeningBufferProfile.BALANCED)
+        h.start(OTHER_ID)
+        assertEquals(ListeningBufferProfile.BALANCED, requireNotNull(h.request).bufferProfile)
+        h.owner.stop()
+    }
+
     private class Clock(var now: Long = 0)
     private class Channel(private val clock: Clock, instance: String = "channel") : SecuredChannel {
         override val descriptor = ChannelDescriptor(instance, "lan", DeviceIdentity(

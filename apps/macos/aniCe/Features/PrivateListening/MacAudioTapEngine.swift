@@ -279,8 +279,8 @@ actor MacAudioTapEngine {
       return MacAudioTapBatch(packets: [], sourceFrames: sourceFrame / 960 * 960,
         queuedFrames: 0, droppedFrames: AniceListeningRingDroppedFrames(ring))
     }
-    if AniceListeningRingQueuedFrames(ring) > UInt32(format.sampleRate * 0.2) {
-      AniceListeningRingDiscard(ring)
+    // Capacity protects callback ownership; it is not a reason to replay 200 ms after a worker stall.
+    if AniceListeningRingTrim(ring, UInt32(format.sampleRate * 0.06)) > 0 {
       nextRawFrame = nil
     }
     var rawOffset: UInt64 = 0

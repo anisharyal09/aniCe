@@ -6,7 +6,7 @@ internal data class ListeningAudioPacket(val sequence: Long, val offset: Long, v
 
 internal class PrivateListeningAudioQueue(
     val maximumFrames: Int = 38400,
-    val targetFrames: Int = 9600,
+    targetFrames: Int = 9600,
 ) {
     private val packets = ArrayDeque<ListeningAudioPacket>()
     private var queued = 0
@@ -15,6 +15,8 @@ internal class PrivateListeningAudioQueue(
     private var gate = false
     private var closed = false
     private var discontinuity = true
+    private var target = targetFrames
+    private var dropped = 0L
 
     init {
         require(targetFrames in 960..maximumFrames && maximumFrames <= 48000)
@@ -31,9 +33,11 @@ internal class PrivateListeningAudioQueue(
             packets.removeFirst()
             queued -= packetFrames
             discontinuity = true
+            dropped++
         }
         if (queued + packetFrames + native > maximumFrames) {
             discontinuity = true
+            dropped++
             return false
         }
         packets.addLast(ListeningAudioPacket(message.number(1), message.number(2), message.bytes(3).copyOf()))
@@ -68,12 +72,36 @@ internal class PrivateListeningAudioQueue(
         discontinuity = true
     }
 
-    @Synchronized fun trimToTarget() {
-        while (packets.size > 1 && queued > targetFrames) {
+    @Synchronized fun setTargetFrames(frames: Int) {
+        require(frames in 960..maximumFrames)
+        target = frames
+    }
+
+    @Synchronized fun trimToTarget(nativeFrames: Int = 0): Int {
+        require(nativeFrames >= 0)
+        val before = queued
+        // Native writes are part of the same target, not a second buffer added on top.
+        val softwareTarget = maxOf(960, target - nativeFrames)
+        val packetFrames = PrivateListeningMessage.FRAMES_PER_PACKET.toInt()
+        while (packets.size > 1 && queued - packetFrames >= softwareTarget) {
+            packets.removeFirst()
+            queued -= packetFrames
+            discontinuity = true
+            dropped++
+        }
+        return before - queued
+    }
+
+    @Synchronized fun trimToMaximum(nativeFrames: Int): Int {
+        require(nativeFrames >= 0)
+        val before = queued
+        while (packets.isNotEmpty() && queued + nativeFrames > maximumFrames) {
             packets.removeFirst()
             queued -= PrivateListeningMessage.FRAMES_PER_PACKET.toInt()
             discontinuity = true
+            dropped++
         }
+        return before - queued
     }
 
     @Synchronized fun take(): ListeningAudioPacket? {
@@ -102,4 +130,6 @@ internal class PrivateListeningAudioQueue(
     val highestSequence: Long @Synchronized get() = lastSequence
     val writeGateOpen: Boolean @Synchronized get() = gate && !closed
     val revision: Long @Synchronized get() = generation
+    val targetFrames: Int @Synchronized get() = target
+    val droppedPackets: Long @Synchronized get() = dropped
 }

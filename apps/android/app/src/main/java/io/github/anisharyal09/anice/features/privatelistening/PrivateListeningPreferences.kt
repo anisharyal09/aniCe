@@ -7,6 +7,17 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 
 class PrivateListeningPreferences(private val storage: SharedPreferences? = null) {
     private val consent = mutableMapOf<String, Boolean>()
+    private var profile = ListeningBufferProfile.restored(storage?.getString("buffer_profile", null))
+
+    internal fun bufferProfile() = profile
+
+    internal fun setBufferProfile(value: ListeningBufferProfile) {
+        check(storage?.edit()?.putString("buffer_profile", value.preference)?.commit() != false) {
+            "Buffering preference could not be saved"
+        }
+        profile = value
+    }
+
     private fun key(localFingerprint: String, peer: DeviceIdentity): String =
         "receive:$localFingerprint:${peer.deviceId}:${peer.fingerprint}:${peer.publicKey}"
 
@@ -26,5 +37,6 @@ class PrivateListeningPreferences(private val storage: SharedPreferences? = null
     fun clear() {
         check(storage?.edit()?.clear()?.commit() != false) { "Listening consent could not be cleared" }
         consent.clear()
+        profile = ListeningBufferProfile.BALANCED
     }
 }

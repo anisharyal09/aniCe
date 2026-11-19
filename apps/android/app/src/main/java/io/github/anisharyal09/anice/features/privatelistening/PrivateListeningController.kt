@@ -35,6 +35,7 @@ internal class PrivateListeningRequest(
     val descriptor: ChannelDescriptor,
     val startedAt: Long,
     val maintenanceAtStart: Long,
+    val bufferProfile: ListeningBufferProfile = ListeningBufferProfile.BALANCED,
 ) {
     var output: PrivateListeningOutput? = null
     var foregroundOwner: Any? = null
@@ -86,6 +87,10 @@ class PrivateListeningController internal constructor(
         private set
     var openWorkspaceRequest by mutableStateOf(false)
         private set
+    internal var bufferProfile by mutableStateOf(preferences.bufferProfile())
+        private set
+    internal var diagnostics by mutableStateOf<ListeningPlaybackHealth?>(null)
+        private set
     val active get() = current != null
     val streamId get() = current?.id
     internal var loadLocalFingerprint: suspend () -> String = { "" }
@@ -98,6 +103,13 @@ class PrivateListeningController internal constructor(
 
     fun openWorkspace() { openWorkspaceRequest = true }
     fun workspaceOpened() { openWorkspaceRequest = false }
+
+    internal fun setBufferProfile(profile: ListeningBufferProfile) {
+        if (active || stoppingService != null) return
+        try { preferences.setBufferProfile(profile) }
+        catch (error: IllegalStateException) { status = error.message.orEmpty(); return }
+        bufferProfile = profile
+    }
 
     fun setConsent(enabled: Boolean) {
         val channel = channel ?: return
@@ -210,8 +222,9 @@ class PrivateListeningController internal constructor(
             reply(id, 1); return
         }
         if (!startupAllowed(descriptor.peer)) { reply(id, 4); return }
-        val request = PrivateListeningRequest(id, descriptor, now(), channel?.maintenance?.elapsedMillis ?: 0)
+        val request = PrivateListeningRequest(id, descriptor, now(), channel?.maintenance?.elapsedMillis ?: 0, bufferProfile)
         current = request
+        diagnostics = null
         state = 1
         status = "Preparing headphones for ${descriptor.peer.deviceName}…"
         ownershipChanged(true)
@@ -276,6 +289,7 @@ class PrivateListeningController internal constructor(
 
     internal fun playbackHealth(request: PrivateListeningRequest, health: ListeningPlaybackHealth) {
         if (current !== request) return
+        if (!request.focusPaused && !request.maintenanceActive && !request.priming) diagnostics = health
         request.positionFrames = health.positionFrames
         request.queuedFrames = health.queuedFrames
         request.underruns = health.underruns.coerceIn(0, 4294967295L)
@@ -294,6 +308,7 @@ class PrivateListeningController internal constructor(
         }
         request.focusPaused = !granted
         if (!granted) {
+            diagnostics = null
             request.pauseAt = request.pauseAt ?: now()
             request.preparationRevision += 1
             request.priming = false
@@ -315,6 +330,7 @@ class PrivateListeningController internal constructor(
         val output = request.output ?: return
         if (request.priming) return
         request.priming = true
+        diagnostics = null
         val revision = ++request.preparationRevision
         state = 5
         output.beginResume()
@@ -354,6 +370,7 @@ class PrivateListeningController internal constructor(
             request.output?.pause()
         }
         if (active) {
+            diagnostics = null
             state = 4
             status = "Renewing secure LAN…"
             outgoing.removeAll { it.kind == 5L }
@@ -398,6 +415,7 @@ class PrivateListeningController internal constructor(
         val request = current
         generation += 1
         current = null
+        diagnostics = null
         tickJob?.cancel(); tickJob = null
         sending?.cancel(); sending = null
         outgoing.clear()

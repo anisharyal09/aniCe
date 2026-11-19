@@ -122,6 +122,11 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Remote playback control scoped to the connected peer. See [Now Playing](../features/NOW_PLAYING.md).
 - Centered track metadata (title, artist, album), fixed-dimension artwork placeholder to prevent layout shifts, transport controls (play/pause/skip), and volume slider.
 
+### Private Listening
+- Keep explicit capture preparation and Start/Stop on Mac; Android receiving consent remains credential-scoped and headphone confirmation is local.
+- Android buffering choices form one accessible radio group: Balanced by default and opt-in Lower delay, disabled while listening. Keep Stop above diagnostics so setup detail cannot bury it.
+- Label app/native buffer diagnostics as local backlog, with native writes included once. Never label a target or platform buffer as measured video/headphone latency. Explain Bluetooth's additional output delay without promising lip-sync. See [Private Listening](../features/PRIVATE_LISTENING.md).
+
 ### File transfer
 - Compact entry progressing through file selection, recipient confirmation, transfer progress, and persistent result.
 - Supports native macOS drag-and-drop and Android share sheets. See [File Transfer](../features/FILE_TRANSFER.md).

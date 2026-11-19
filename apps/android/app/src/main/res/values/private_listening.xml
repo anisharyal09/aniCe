@@ -16,4 +16,12 @@
     <string name="listening_renewing">Renewing secure LAN…</string>
     <string name="listening_focus_paused">Phone audio focus interrupted</string>
     <string name="listening_buffering">Buffering current Mac audio…</string>
+    <string name="listening_buffer_mode">Buffering</string>
+    <string name="listening_buffer_balanced">Balanced · fewer interruptions</string>
+    <string name="listening_buffer_lower">Lower delay · may stutter</string>
+    <string name="listening_buffer_help">Choose before starting. Buffering adapts to the connection; lower delay does not guarantee video lip-sync.</string>
+    <string name="listening_buffer_diagnostics">App buffer %1$d ms · target %2$d ms · AudioTrack %3$d ms (included)\nSkipped packets %4$d · native underruns %5$d</string>
+    <string name="listening_bluetooth_delay">Bluetooth adds output delay beyond this app buffer. Wired or USB headphones usually reduce it.</string>
+    <string name="listening_native_diagnostics">Native write limit %1$d ms · effective buffer %2$d ms (not measured output delay)</string>
+    <string name="listening_headphone_hint">Connect headphones to your phone; its own speaker is not used. Wired/USB headsets need no extra confirmation.</string>
 </resources>

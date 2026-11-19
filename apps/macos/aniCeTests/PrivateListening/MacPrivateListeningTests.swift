@@ -13,6 +13,9 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
   var failure = false
   var activationGate: CheckedContinuation<Void, Never>?
   var holdActivation = false
+  var batch = MacAudioTapBatch(
+    packets: [PrivateListeningCapturedPacket(sequence: 1, pcm: Data(count: 3840))],
+    sourceFrames: 960, queuedFrames: 0, droppedFrames: 0)
   func prepare() throws { prepared += 1 }
   func activate(alsoPlayThroughMacSpeakers: Bool) async throws {
     if holdActivation { await withCheckedContinuation { activationGate = $0 } }
@@ -23,13 +26,13 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
   func setMuting(_ muted: Bool) throws { muting.append(muted) }
   func setForwarding(_ enabled: Bool) throws { forwards.append(enabled) }
   func read() throws -> MacAudioTapBatch {
-    MacAudioTapBatch(packets: [PrivateListeningCapturedPacket(sequence: 1, pcm: Data(count: 3840))],
-      sourceFrames: 960, queuedFrames: 0, droppedFrames: 0)
+    batch
   }
   func stop() throws { stopped += 1 }
   func setFailure(_ value: Bool) { failure = value }
   func hold() { holdActivation = true }
   func release() { holdActivation = false; activationGate?.resume(); activationGate = nil }
+  func setBatch(_ value: MacAudioTapBatch) { batch = value }
 }
 
 @MainActor private final class ListeningModelClock {
@@ -47,6 +50,25 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
 }
 
 @MainActor final class MacPrivateListeningTests: XCTestCase {
+  func testCaptureBurstKeepsOnlyTheNewestUnsealedPacketsOnTheSameStream() async throws {
+    let (model, capture, _, channel) = try await preparedModel()
+    model.start()
+    try await settle { channel.sent.contains { $0.kind == 1 } }
+    let id = try XCTUnwrap(channel.sent.first { $0.kind == 1 }).text(0)
+    _ = await model.handle(try PrivateListeningMessage(kind: 2,
+      fields: [.text(id), .integer(0)]).encode(), on: channel.descriptor)
+    try await settle { model.state == 2 }
+    await capture.setBatch(MacAudioTapBatch(packets: (1...10).map {
+      PrivateListeningCapturedPacket(sequence: Int64($0), pcm: Data(count: 3840))
+    }, sourceFrames: 9600, queuedFrames: 0, droppedFrames: 0))
+    await model.tick()
+    try await settle { channel.sent.filter { $0.kind == 3 }.count == 3 }
+    XCTAssertEqual(channel.sent.filter { $0.kind == 3 }.map { $0.number(1) }, [8, 9, 10])
+    XCTAssertEqual(channel.sent.filter { $0.kind == 1 }.count, 1)
+    model.stop()
+    try await settle { !model.busy }
+  }
+
   private func peer() throws -> DeviceIdentity {
     let helper = SessionFixtures()
     let row = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)

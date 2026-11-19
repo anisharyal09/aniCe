@@ -88,7 +88,7 @@ class PrivateListeningService : Service() {
             })
             ServiceCompat.startForeground(this, ID, notification(ticket),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            val output = PrivateListeningPlayer(audio, app.listeningConfirmedRoutes()) {
+            val output = PrivateListeningPlayer(audio, app.listeningConfirmedRoutes(), ticket.bufferProfile) {
                 handler.post { if (request === ticket) controller.stop(reason = 2, message = "Headphone route lost.") }
             }
             player = output

@@ -12,6 +12,32 @@ private final class ListeningRingTestPointer: @unchecked Sendable {
 }
 
 final class PrivateListeningCaptureTests: XCTestCase {
+  func testConsumerTrimsOldFramesWithoutChangingTheSourceTimelineOrOverwritingNewestSamples() throws {
+    let ring = try XCTUnwrap(AniceListeningRingCreate(8))
+    defer { AniceListeningRingDestroy(ring) }
+    let input: [Float] = [0, 1, 2, 3, 4, 5, 6, 7]
+    input.withUnsafeBufferPointer {
+      XCTAssertTrue(AniceListeningRingWrite(ring, $0.baseAddress, $0.baseAddress, 1, 8))
+    }
+    XCTAssertEqual(AniceListeningRingTrim(ring, 3), 5)
+    XCTAssertEqual(AniceListeningRingTrim(ring, 3), 0)
+    XCTAssertEqual(AniceListeningRingSourceFrames(ring), 8)
+    XCTAssertEqual(AniceListeningRingDroppedFrames(ring), 5)
+    var output = [Float](repeating: 0, count: 6)
+    var offset: UInt64 = 0
+    output.withUnsafeMutableBufferPointer {
+      XCTAssertEqual(AniceListeningRingRead(ring, $0.baseAddress, 3, &offset), 3)
+    }
+    XCTAssertEqual(offset, 5)
+    XCTAssertEqual(output, [5, 5, 6, 6, 7, 7])
+    input.withUnsafeBufferPointer {
+      XCTAssertTrue(AniceListeningRingWrite(ring, $0.baseAddress, $0.baseAddress, 1, 8))
+    }
+    XCTAssertEqual(AniceListeningRingTrim(ring, 0), 8)
+    XCTAssertEqual(AniceListeningRingQueuedFrames(ring), 0)
+    XCTAssertEqual(AniceListeningRingSourceFrames(ring), 16)
+  }
+
   func testNativeCallbackAcceptsStereoAndRejectsUnsupportedBufferLayout() throws {
     let ring = try XCTUnwrap(AniceListeningRingCreate(4))
     defer { AniceListeningRingDestroy(ring) }
