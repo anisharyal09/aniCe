@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Box
@@ -127,7 +128,11 @@ fun DeviceIdentityScreen(
                             Icon(painterResource(R.drawable.ic_phone), contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium)
+                                Text(current.identity.deviceName, style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = { name = current.identity.deviceName; editingName = true },
+                                        onLongClick = { name = current.identity.deviceName; editingName = true },
+                                        onLongClickLabel = "Edit device name"))
                                 Text(stringResource(R.string.android_platform), style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }

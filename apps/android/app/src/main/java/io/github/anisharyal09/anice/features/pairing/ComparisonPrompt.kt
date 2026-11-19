@@ -5,6 +5,7 @@ package io.github.anisharyal09.anice.features.pairing
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -15,7 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun ComparisonPrompt(model: PairingViewModel, manualPair: () -> Unit) {
     if (!model.comparingNearby) return
@@ -28,7 +29,13 @@ internal fun ComparisonPrompt(model: PairingViewModel, manualPair: () -> Unit) {
         Column(Modifier.fillMaxWidth().heightIn(max = sheetHeight)
             .padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Pair with your Mac", style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_laptop),
+                    contentDescription = null, modifier = Modifier.size(28.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Connect your Mac", style = MaterialTheme.typography.titleLarge)
+            }
             Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 model.comparisonCode?.let { code ->
@@ -37,17 +44,28 @@ internal fun ComparisonPrompt(model: PairingViewModel, manualPair: () -> Unit) {
                         modifier = Modifier.semantics {
                             contentDescription = "Comparison code " + code.toList().joinToString(" ")
                         })
-                    Text("Only confirm if all six digits match on your Mac.",
+                    Text("Does this code match your Mac?",
                         style = MaterialTheme.typography.bodyMedium)
                 }
-                Text(model.status, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (model.phase != "comparison")
+                    Text(model.status, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (model.phase in listOf("preparing", "connecting", "authenticating", "verifying", "saving", "cleanup"))
                     LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text("Pairing expires automatically if it is not confirmed.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                    value = model.automaticAfterPairing, enabled = model.phase == "comparison",
+                    role = androidx.compose.ui.semantics.Role.Checkbox,
+                    onValueChange = model::chooseAutomaticAfterPairing),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(checked = model.automaticAfterPairing, enabled = model.phase == "comparison",
+                        onCheckedChange = null)
+                    Text("Reconnect automatically", style = MaterialTheme.typography.bodyMedium)
+                }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { model.cancel(); manualPair() },
+                    enabled = model.phase !in listOf("saving", "cleanup", "cancelling")) { Text("Manual pair") }
                 TextButton(onClick = model::declineComparison,
                     enabled = model.phase !in listOf("saving", "cleanup", "cancelling"),
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("Dismiss") }
@@ -55,9 +73,6 @@ internal fun ComparisonPrompt(model: PairingViewModel, manualPair: () -> Unit) {
                     enabled = model.phase == "comparison", shape = MaterialTheme.shapes.small,
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("Confirm") }
             }
-            TextButton(onClick = { model.cancel(); manualPair() },
-                enabled = model.phase !in listOf("saving", "cleanup", "cancelling"),
-                modifier = Modifier.heightIn(min = 48.dp)) { Text("Manual pair") }
         }
     }
 }

@@ -178,6 +178,28 @@ class ConnectionCancelRegressionTest {
         } finally { withContext(NonCancellable + Dispatchers.Main) { fixture.close() } }
     }
 
+    @Test fun cancelledChooserCannotInvalidateItsReplacementOrReachArming() = runBlocking {
+        val fixture = fixture()
+        try {
+            withContext(Dispatchers.Main) {
+                val first = fixture.policy.beginSetup()
+                val next = fixture.policy.beginSetup()
+                fixture.policy.cancelSetup(first)
+                assertEquals(next, fixture.field("setupGeneration"))
+                fixture.policy.cancelSetup(next)
+                val saved = fixture.preferences.all
+                runBlocking {
+                    try {
+                        fixture.policy.arm(fixture.peer, "02:00:00:00:00:01", -1, next)
+                        fail("A cancelled chooser reached trust reads or native observation")
+                    } catch (error: IllegalStateException) { assertEquals("Setup was cancelled.", error.message) }
+                }
+                fixture.assertPolicyUnchanged(saved)
+                assertFalse(fixture.policy.armed)
+            }
+        } finally { withContext(NonCancellable + Dispatchers.Main) { fixture.close() } }
+    }
+
     @Test fun foregroundReturnRestartsRetainedOwnerButDuplicatePresenceCannotUndoCancel() = runBlocking {
         val fixture = fixture(armed = true)
         try {

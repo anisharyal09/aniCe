@@ -47,6 +47,11 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     fun missingPermissions() = owner.missingPermissions()
 
     fun request(peer: DeviceIdentity) = owner.request(peer)
+    val findingAutomatically get() = owner.findingAutomatically
+    internal fun findTrustedForeground(peer: DeviceIdentity) = owner.findTrustedForeground(peer)
+    internal fun requestAfterPairing(peer: DeviceIdentity,
+        candidate: io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate?) =
+        owner.requestAfterPairing(peer, candidate)
 
     /** Device-level Connect asks both transports; LAN declines without disturbing an existing peer session. */
     fun connectDevice(peer: DeviceIdentity) {

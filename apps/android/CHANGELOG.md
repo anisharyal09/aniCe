@@ -48,6 +48,23 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Retain already-secured manual Bluetooth through brief Home/Recents and activity
+  handoffs with a fifteen-second monotonic grace, without enabling auto-connect;
+  lock, explicit Disconnect and trust/radio loss still stop access.
+- Start discovery with a bounded fast foreground scan, retry pre-auth transport
+  failures twice and try three foreground trusted reconnects while preserving
+  cancellation, permission and authentication boundaries.
+- Prepare comparison automatically once for a single qualified Mac; preserve
+  multiple-candidate selection, explicit retry and mutual approval.
+- Show default-on Reconnect automatically during comparison, then open native
+  approval for the authenticated Mac without a connection-settings detour.
+- Long-press Devices names to edit this phone's shared name or a paired Mac's
+  private nickname directly, retaining explicit details actions.
+- Ask for Nearby Devices access automatically once on unpaired Home, start discovery
+  on grant and keep an obvious permission/settings action after denial.
+- Reconnect after SAS using a one-use credential-pinned native locator, wait
+  briefly for pairing availability to retire and preserve saved trust on GATT failure.
+
 - Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
 - Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
 - Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.

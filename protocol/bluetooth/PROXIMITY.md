@@ -23,11 +23,19 @@ Find nearby and Pause controls. Its pairing owner admits one globally rate-limit
 candidate through the existing GATT channels; discovery never authorizes a session.
 Android Home scans while foreground and unlocked with
 successfully loaded empty trust, granted permissions and no pairing/discovery
-operation. A qualified beacon shows a generic native prompt offering Pair and Manual
-pair. Pair freezes one native locator, stops scanning and hands it to the existing
+operation. First unpaired/resumed Home may request native discovery permission
+once; denial and subsequent foreground return never repeatedly launch that dialog.
+Permission is not trust, comparison confirmation or companion ownership.
+Exactly one qualified beacon, unchanged through a 750-ms ambiguity
+check, automatically prepares comparison once. Multiple qualified candidates
+require explicit selection with Compare code, even if one later disappears.
+Selection freezes one native locator, stops scanning and hands it to the existing
 bounded GATT owner. Require availability flag `0x0001` after discovery read and
 never automatically downgrade or select another locator. Dismiss suppresses
-automatic prompts for the current presentation owner until Find nearby is tapped.
+automatic prompts and exchanges until Find nearby is tapped. A failed exchange
+requires Try again after verification has begun. A pre-authentication transport
+failure may restart discovery twice at least ten seconds apart, without clearing
+Mac admission limits. Dismissal still requires explicit Find nearby.
 Manual pair retains QR/PIN compatibility with older peers. Nearby automatic
 discovery stops after the first trusted pairing; additional peers use Add device.
 Closing the Mac window leaves process-owned availability running; Quit stops it.

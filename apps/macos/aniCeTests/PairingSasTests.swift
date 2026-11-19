@@ -1,11 +1,79 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Checks independently generated numeric-comparison vectors, ordered disclosure and trust activation.
 import CryptoKit
+import AppKit
 import Foundation
+import SwiftUI
 import XCTest
 @testable import aniCe
 
 final class PairingSasTests: XCTestCase, @unchecked Sendable {
+  func testCompanionSetupEnvelopeIsBoundedAndDirectional() throws {
+    for message in [CompanionSetupMessage(kind: 1), CompanionSetupMessage(kind: 2, seconds: 60),
+      CompanionSetupMessage(kind: 2), CompanionSetupMessage(kind: 3, available: true)] {
+      XCTAssertEqual(try CompanionSetupMessage.decode(message.encode()), message)
+    }
+    XCTAssertThrowsError(try CompanionSetupMessage(kind: 2, seconds: 61).encode())
+    let bad = try SessionCbor.encode(.array([.text(CompanionSetupMessage.tag), .integer(1),
+      .integer(2), .array([.integer(60), .integer(60)])]))
+    XCTAssertThrowsError(try CompanionSetupMessage.decode(bad))
+    let messages = [CompanionSetupMessage(kind: 1), CompanionSetupMessage(kind: 2, seconds: 60),
+      CompanionSetupMessage(kind: 2), CompanionSetupMessage(kind: 3, available: true),
+      CompanionSetupMessage(kind: 3, available: false)]
+    XCTAssertEqual(try messages.map { try $0.encode().map { String(format: "%02x", $0) }.joined() }, [
+      "8475616e69436520636f6d70616e696f6e20736574757001018101",
+      "8475616e69436520636f6d70616e696f6e207365747570010281183c",
+      "8475616e69436520636f6d70616e696f6e20736574757001028100",
+      "8475616e69436520636f6d70616e696f6e207365747570010381f5",
+      "8475616e69436520636f6d70616e696f6e207365747570010381f4",
+    ])
+  }
+  @MainActor func testCompanionSetupRequiresCapabilityAndDoesNotExtendDuplicateWindow() async throws {
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "test.")
+    let initial = try await identity.publicIdentity()
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: PairingCodec.identityBytes(initial)) as? [String: Any])
+    json["platform"] = "android"
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: json))
+    let link = NamesLink(peer: peer)
+    var transitions: [Bool] = []
+    let owner = MacCompanionSetup(advertising: { transitions.append($0); return true },
+      wait: { try await Task.sleep(for: .seconds(1000)) })
+    owner.available(link)
+    let early = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    XCTAssertEqual(early, .discarded)
+    XCTAssertTrue(transitions.isEmpty)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 1).encode(), on: link.descriptor)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    XCTAssertEqual(transitions, [true])
+    owner.retired(link.descriptor)
+    XCTAssertEqual(transitions, [true, false])
+    let late = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    XCTAssertEqual(late, .discarded)
+  }
+  @MainActor func testCompanionWindowExpiresAndLanDoesNotSwallowOtherFeatures() async throws {
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "test.")
+    let initial = try await identity.publicIdentity()
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: PairingCodec.identityBytes(initial)) as? [String: Any])
+    json["platform"] = "android"
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: json))
+    let link = NamesLink(peer: peer)
+    var transitions: [Bool] = []
+    let owner = MacCompanionSetup(advertising: { transitions.append($0); return true }, wait: {})
+    owner.available(link)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 1).encode(), on: link.descriptor)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    try await waitFor { transitions == [true, false] }
+    let lan = ChannelDescriptor(instance: "lan", transport: "lan", peer: peer)
+    let unrelated = await owner.handle(try NameWire.encode(), on: lan)
+    XCTAssertEqual(unrelated, .unrecognized)
+    let foreign = await owner.handle(try CompanionSetupMessage(kind: 1).encode(), on: lan)
+    XCTAssertEqual(foreign, .discarded)
+    let wrongDirection = await owner.handle(try CompanionSetupMessage(kind: 3, available: true).encode(), on: link.descriptor)
+    XCTAssertEqual(wrongDirection, .discarded)
+    owner.retired(link.descriptor)
+    XCTAssertEqual(transitions, [true, false])
+  }
   @MainActor func testSyncedNamesPreserveTrustAndPrivateAliasPrecedence() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("anice-names-test-" + UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -430,6 +498,47 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     XCTFail("Expected nearby pairing state did not arrive")
   }
 
+  @MainActor private func renderComparison(_ model: MacPairingModel) throws {
+    XCTAssertNotNil(NSImage(systemSymbolName: "smartphone", accessibilityDescription: nil))
+    let name = "aniCe.ComparisonRender.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let code = model.comparisonCode
+    let attempt = model.comparisonAttempt
+    var renders = 0
+    for dark in [false, true] {
+      for scale in [0.8, 1.0, 1.2] {
+        for width in [320.0, 360.0] {
+          preferences.set(scale, forKey: "ui.fontScale")
+          let view = MacComparisonCard(model: model, openApp: {}).frame(width: width)
+            .environment(\.colorScheme, dark ? .dark : .light).defaultAppStorage(preferences)
+          let host = NSHostingView(rootView: view)
+          let size = host.fittingSize
+          XCTAssertEqual(size.width, width, accuracy: 1)
+          XCTAssertGreaterThan(size.height, 150)
+          XCTAssertLessThan(size.height, 400)
+          host.frame = NSRect(origin: .zero, size: size)
+          host.layoutSubtreeIfNeeded()
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          XCTAssertGreaterThan(data.count, 1000)
+          if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+            let directory = URL(fileURLWithPath: path, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: directory.appendingPathComponent(
+              "comparison-\(dark ? "dark" : "light")-\(Int(width))-\(Int(scale * 100)).png"))
+          }
+          renders += 1
+        }
+      }
+    }
+    XCTAssertEqual(renders, 12)
+    XCTAssertEqual(model.phase, "comparison", "Rendering must never confirm the attempt")
+    XCTAssertEqual(model.comparisonCode, code)
+    XCTAssertEqual(model.comparisonAttempt, attempt)
+  }
+
   @MainActor func testModelSharesCodeAndRejectsStaleConfirmationAfterDismissal() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "anice-sas-model-" + UUID().uuidString)
@@ -474,6 +583,7 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     ])) == true)
     try await waitFor { model.phase == "comparison" }
     XCTAssertEqual(model.comparisonCode, try PairingSas.digits(key: bootstrap, transcript: transcript))
+    try renderComparison(model)
     let attempt = model.comparisonAttempt
     model.confirmComparison(attempt: UUID())
     XCTAssertEqual(model.phase, "comparison")

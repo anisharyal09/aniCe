@@ -24,7 +24,7 @@ extension MainWindowView {
           } else {
             VStack(alignment: .leading, spacing: 12) {
               Text("Connect your Android phone").font(.title3.weight(.semibold))
-              Text("Open aniCe on your Android phone and bring it close. Tap Pair, then compare all six digits on both screens. Use Add device for QR or manual-code pairing.")
+              Text("Open aniCe on your Android phone and bring it close. Confirm the matching code on both screens. Use Add device for QR or manual-code pairing.")
                 .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
             }
@@ -144,8 +144,9 @@ extension MainWindowView {
               details: Binding(get: { navigation.details && navigation.focusedPeer == record.peer.deviceId },
                 set: { navigation.focusedPeer = record.peer.deviceId; navigation.details = $0 }),
               diagnostics: $navigation.diagnostics, focusedPeer: record.peer.deviceId, discovery: discovery,
-              canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-              onManageDevices: { navigation.show(.devices, route: .pairing) })
+               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
+               onManageDevices: { navigation.show(.devices, route: .pairing) },
+               onRenamePeer: { nicknamePeer = $0 })
           }
           if pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
             DisclosureGroup("Trust and saved devices") {
@@ -162,7 +163,10 @@ extension MainWindowView {
             Spacer()
             Image(systemName: "chevron.forward").accessibilityHidden(true)
           }.frame(minHeight: 36).contentShape(Rectangle())
-        }.buttonStyle(AniCeHoverButtonStyle())
+         }.buttonStyle(AniCeHoverButtonStyle())
+           .contextMenu { Button("Edit name…") { editingLocalName = true } }
+           .highPriorityGesture(LongPressGesture().onEnded { _ in editingLocalName = true })
+           .accessibilityAction(named: "Edit device name") { editingLocalName = true }
         Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }

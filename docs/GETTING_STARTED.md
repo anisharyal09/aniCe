@@ -11,15 +11,26 @@ Download builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/rel
 ## Pair your devices
 
 1. Keep aniCe running and both devices unlocked. Before the first pairing, bring
-   your phone close to the Mac and open Android Home. Grant Nearby Devices access.
-2. In the nearby prompt, select your Mac and tap **Pair**. Compare **all six digits**
+   your phone close to the Mac and open Android Home. On the first unpaired launch,
+   Android asks for Nearby Devices access automatically. Allow it to start
+   discovery without tapping Find nearby. If declined, Home offers **Allow nearby
+   devices** (or **Open app settings**); aniCe does not keep asking on later launches.
+2. When one Mac qualifies nearby, comparison opens automatically. If several Macs
+   qualify, select one with **Compare code**. Compare **all six digits**
    shown on both screens, including leading zeros. Tap **Confirm** on both only
    if they match. These digits are compared, not entered.
 3. The Mac shows a centered card in aniCe or a floating card when its main window
    is closed/inactive. Clicking the floating code opens aniCe without confirmation;
    **Confirm** approves locally and opens aniCe. **Dismiss** rejects the attempt.
 4. Identities are verified and trust saved before a fresh secure connection starts.
-   Android offers background auto-connect setup after the first connection.
+   **Reconnect automatically** is on by default in Android's comparison sheet.
+   After the first secure connection, approve Android's native auto-reconnect
+   request for that verified Mac. No separate settings page is required; declining
+   keeps pairing intact. Older peers retain manual setup.
+
+The immediate connection targets the Mac just verified, not a new generic
+candidate. If Bluetooth fails after confirmation, the saved pairing remains:
+keep aniCe open on the Mac and use **Connect**, not another pairing/reset.
 
 For older peers or additional devices, choose **Manual pair** / **Add device**.
 On Mac show a QR code or six-digit PIN; on Android scan or enter it, then check
@@ -50,6 +61,10 @@ Use **Pause/Resume** to stop automatic connection work for 1, 3 or 6 hours, a cu
 Enable **Connect automatically** on both devices for their supported native background setup. Android first enable or association repair can require the companion association dialog. Closing the Mac window leaves the menu-bar companion running; Command-Q quits. Phone force-stop and reboot have no automatic-recovery promise. See [Bluetooth lifecycle](BACKGROUND_CONNECTIONS.md) and [LAN policy](LAN_CONNECTIONS.md) for the full ownership rules.
 
 In **Settings → This device → Edit name**, save a trimmed name of 1–64 Unicode code points. Renaming keeps the same device ID, key and trust. **Forget device** removes local trust; **Reset identity** replaces the local identity and requires pairing again. Neither action clears optional saved clipboard history; delete or clear that history explicitly in Clipboard.
+
+In Devices, long-press a device name (or right-click on Mac) to open its name
+editor directly. **This device** edits its shared name; a paired device edits only
+the nickname private to this installation. A normal click/tap still opens details.
 
 Device-name edits sync to capable paired peers over existing secure connections;
 offline edits arrive on reconnect. They do not wake the peer or force a connection.

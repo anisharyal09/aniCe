@@ -183,6 +183,7 @@ struct MacSessionView: View {
   @State private var pauseMenuHandler = MacPauseMenuHandler()
   var onManageDevices: @MainActor () -> Void
   var onOpenDevice: @MainActor (String) -> Void = { _ in }
+  var onRenamePeer: (@MainActor (DeviceIdentity) -> Void)?
   var onChoosePhone: @MainActor () -> Void = {}
   var onOpenDiagnostics: @MainActor () -> Void = {}
   @AppStorage("ui.fontScale") private var fontScale = 1.0
@@ -516,18 +517,7 @@ struct MacSessionView: View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 16) {
         Image(systemName: "iphone").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(scheme)).accessibilityHidden(true)
-        Button { diagnostics = false; details = true } label: {
-          VStack(alignment: .leading, spacing: 6) {
-            Text(device?.displayName ?? "Any trusted phone").font(.system(size: 14, weight: .medium))
-              .fixedSize(horizontal: false, vertical: true)
-            ConnectionStatusLine(text: connectionSummaryText,
-              bluetoothConnected: ownsBluetooth && model.state == "Secured",
-              localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection,
-              color: AniCePalette.secondaryText(scheme),
-              power: presentation.connected ? phonePower.shortSummary(for: device) : nil).font(.callout)
-          }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.displayName ?? "your phone"))
-          .accessibilityValue(connectionStatusValue + (presentation.connected && phonePower.shortSummary(for: device) != nil ? ". " + phonePower.shortSummary(for: device)! : ""))
+        overviewName
         pauseMenu
         if !presentation.connected {
           Button(presentation.action.rawValue) { perform(presentation.action, peer: device) }
@@ -587,6 +577,26 @@ struct MacSessionView: View {
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
       .foregroundStyle(AniCePalette.primaryText(scheme))
+  }
+
+  @ViewBuilder private var overviewName: some View {
+    let button = Button { diagnostics = false; details = true } label: {
+      VStack(alignment: .leading, spacing: 6) {
+        Text(device?.displayName ?? "Any trusted phone").font(.system(size: 14, weight: .medium))
+          .fixedSize(horizontal: false, vertical: true)
+        ConnectionStatusLine(text: connectionSummaryText,
+          bluetoothConnected: ownsBluetooth && model.state == "Secured",
+          localNetworkConnected: ownsLan && lan.state == "Secured" && !lan.verifyingConnection,
+          color: AniCePalette.secondaryText(scheme),
+          power: presentation.connected ? phonePower.shortSummary(for: device) : nil).font(.callout)
+      }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+    }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("Device details for " + (device?.displayName ?? "your phone"))
+      .accessibilityValue(connectionStatusValue + (presentation.connected && phonePower.shortSummary(for: device) != nil ? ". " + phonePower.shortSummary(for: device)! : ""))
+    if let peer = device, let onRenamePeer {
+      button.contextMenu { Button("Edit name on this Mac…") { onRenamePeer(peer) } }
+        .highPriorityGesture(LongPressGesture().onEnded { _ in onRenamePeer(peer) })
+        .accessibilityAction(named: "Edit name on this Mac") { onRenamePeer(peer) }
+    } else { button }
   }
 
   private func transportRow(_ name: String, symbol: String, state: String, active: Bool, enabled: Bool,

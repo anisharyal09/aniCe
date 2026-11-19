@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E50300000000000000000003 /* MacNicknamePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50300000000000000000004; };
+		E50300000000000000000001 /* MacCompanionSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50300000000000000000002; };
 		E50200000000000000000003 /* PeerNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50200000000000000000004; };
 		E50200000000000000000001 /* PeerNickname.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50200000000000000000002; };
 		E50100000000000000000001 /* PairingSas.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000002; };
@@ -199,6 +201,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E50300000000000000000004 /* MacNicknamePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacNicknamePanel.swift; sourceTree = SOURCE_ROOT; };
+		E50300000000000000000002 /* MacCompanionSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/MacCompanionSetup.swift; sourceTree = SOURCE_ROOT; };
 		E50200000000000000000004 /* PeerNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/PeerNames.swift; sourceTree = SOURCE_ROOT; };
 		E50200000000000000000002 /* PeerNickname.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/PeerNickname.swift; sourceTree = SOURCE_ROOT; };
 		E50100000000000000000002 /* PairingSas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingSas.swift; sourceTree = SOURCE_ROOT; };
@@ -696,6 +700,8 @@
 				E50100000000000000000002 /* PairingSas.swift */,
 				E50200000000000000000002 /* PeerNickname.swift */,
 				E50200000000000000000004 /* PeerNames.swift */,
+				E50300000000000000000002 /* MacCompanionSetup.swift */,
+				E50300000000000000000004 /* MacNicknamePanel.swift */,
 				E50100000000000000000004 /* NearbyPairingAdmission.swift */,
 			);
 			path = Pairing;
@@ -918,6 +924,8 @@
 				E50100000000000000000001 /* PairingSas.swift in Sources */,
 				E50200000000000000000001 /* PeerNickname.swift in Sources */,
 				E50200000000000000000003 /* PeerNames.swift in Sources */,
+				E50300000000000000000001 /* MacCompanionSetup.swift in Sources */,
+				E50300000000000000000003 /* MacNicknamePanel.swift in Sources */,
 				E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */,
 				E50100000000000000000005 /* MacComparisonCard.swift in Sources */,
 				C0CEE5B8CCC6DAEFBF420732 /* aniCe/Features/Pairing/MacPairingModel.swift in Sources */,

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,7 +47,8 @@ import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
-fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, overview: Boolean = false, flatDeviceLayout: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {}) {
+fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, overview: Boolean = false, flatDeviceLayout: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {},
+    onRenamePeer: ((io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity) -> Unit)? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var automaticChanging by remember { mutableStateOf(false) }
@@ -169,7 +171,8 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         localNetworkConnected = lanState == ConnectionState.SECURED && !checkingLan,
                         powerSummary = if (summary.state == ConnectionState.SECURED)
                             model.devicePower.macShortSummary(record.peer) else null,
-                        connectionOptions = connectionOptions)
+                        connectionOptions = connectionOptions,
+                        onRename = onRenamePeer?.let { rename -> { rename(record.peer) } })
                 if (!compact) {
                 val groupOutline = MaterialTheme.colorScheme.outlineVariant
                 Column(Modifier.fillMaxWidth()
@@ -459,7 +462,8 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
     onCancel: () -> Unit = onDisconnect,
     bluetoothConnected: Boolean = false, localNetworkConnected: Boolean = false,
     powerSummary: String? = null,
-    connectionOptions: (@Composable () -> Unit)? = null) {
+    connectionOptions: (@Composable () -> Unit)? = null,
+    onRename: (() -> Unit)? = null) {
     val statusColor = when (state) {
         ConnectionState.SECURED -> MaterialTheme.colorScheme.onSurfaceVariant
         ConnectionState.FAILED -> MaterialTheme.colorScheme.error
@@ -469,7 +473,9 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(painterResource(R.drawable.ic_laptop), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Open devices for $name", onClick = onConnectionDetails)
+            Column(Modifier.weight(1f).combinedClickable(role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = "Open devices for $name", onClick = onConnectionDetails,
+                onLongClickLabel = "Edit private name for $name", onLongClick = onRename)
                 .heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
                 Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
@@ -494,8 +500,10 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(painterResource(R.drawable.ic_laptop), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
-                onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
+            Column(Modifier.weight(1f).combinedClickable(role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = "Device details for $name", onClick = onConnectionDetails,
+                onLongClickLabel = "Edit private name for $name", onLongClick = onRename)
+                .heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor, powerSummary)
             }

@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.lifecycle.repeatOnLifecycle
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
@@ -41,7 +42,9 @@ import io.github.anisharyal09.anice.features.pairing.PairingViewModel
 import io.github.anisharyal09.anice.features.pairing.completedPairingPeer
 import io.github.anisharyal09.anice.features.session.SessionPanel
 import io.github.anisharyal09.anice.features.session.SessionViewModel
+import io.github.anisharyal09.anice.features.session.ConnectionState
 import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
+import io.github.anisharyal09.anice.features.backgroundprobe.quickCompanionSetupIntent
 import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
 import io.github.anisharyal09.anice.ui.theme.saveAppearance
@@ -98,7 +101,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     var automaticLanAfterPairing by rememberSaveable { mutableStateOf(true) }
     var backgroundSetupPeer by remember { mutableStateOf<io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity?>(null) }
     val nearbyOwner = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(LocalContext.current)
-    LaunchedEffect(pairing.busy) {
+    LaunchedEffect(pairing.busy, discovery.state.busy) {
         if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
     }
     LaunchedEffect(pairing.phase, pairing.peers, identity.state.snapshot?.identity?.fingerprint) {
@@ -106,18 +109,58 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             identity.state.snapshot?.identity?.fingerprint, pairing.peers)
         if (paired != null) {
             val compared = pairing.completedWithComparison
+            val automaticComparison = pairing.automaticAfterPairing
+            val pairedCandidate = pairing.takePairedCandidate()
             session.lan.setAutomaticEnabled(automaticLanAfterPairing)
             navigation.paired()
             pairing.cancel()
             if (compared) {
-                session.request(paired)
-                if (automaticAfterPairing && nearbyOwner.available) backgroundSetupPeer = paired
+                session.requestAfterPairing(paired, pairedCandidate)
+                if (automaticComparison && nearbyOwner.available) backgroundSetupPeer = paired
             } else if (automaticAfterPairing && nearbyOwner.available) {
                 context.startActivity(companionSetupIntent(context, paired.deviceId, enable = true))
             } else session.request(paired)
         }
     }
     val snackbars = remember { SnackbarHostState() }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(pairing.peers, pairing.busy, discovery.state.busy, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            if (!pairing.busy && pairing.phase != "paired" && !discovery.state.busy && pairing.trustedPeersLoaded) {
+                val peer = pairing.peers.map { it.peer }.singleOrNull { it.platform == "macos" }
+                if (peer != null && automaticAfterPairing) session.findTrustedForeground(peer)
+            }
+        }
+    }
+    var nearbyRecoveryAttempts by remember { mutableIntStateOf(0) }
+    LaunchedEffect(pairing.nearbyTransportFailure, lifecycle) {
+        if (pairing.nearbyTransportFailure && nearbyRecoveryAttempts < 2) {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                kotlinx.coroutines.delay(10_000) // Mac's global first-pair admission cooldown remains authoritative.
+                if (nearbyRecoveryAttempts < 2 && pairing.nearbyTransportFailure && !pairing.busy && pairing.peers.isEmpty()) {
+                    nearbyRecoveryAttempts++
+                    pairing.cancel()
+                    nearbyDiscovery?.retry()
+                }
+            }
+        }
+    }
+    LaunchedEffect(backgroundSetupPeer, session.state, session.findingAutomatically, session.selected, pairing.peers, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            val peer = backgroundSetupPeer ?: return@repeatOnLifecycle
+            val selected = session.selected
+            val samePeer = selected?.deviceId == peer.deviceId && selected.fingerprint == peer.fingerprint &&
+                selected.publicKey == peer.publicKey
+            if (session.state == ConnectionState.SECURED && samePeer && pairing.peers.any {
+                    it.peer.deviceId == peer.deviceId && it.peer.fingerprint == peer.fingerprint &&
+                        it.peer.publicKey == peer.publicKey }) {
+                backgroundSetupPeer = null
+                context.startActivity(quickCompanionSetupIntent(context, peer.deviceId))
+            } else if (!samePeer || !session.findingAutomatically &&
+                session.state in listOf(ConnectionState.FAILED, ConnectionState.DISCONNECTED))
+                backgroundSetupPeer = null
+        }
+    }
     val nearbyEligible = pairing.trustedPeersLoaded && pairing.peers.isEmpty() &&
         pairing.recovery != "trustStore" && !pairing.busy && !discovery.state.busy &&
         identity.state.snapshot != null && !identity.state.isWorking &&
@@ -125,9 +168,33 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         navigation.destination == AppDestination.Home &&
         session.findDevice.incomingAlert == null
     LaunchedEffect(nearbyEligible) { nearbyDiscovery?.eligible(nearbyEligible) }
+    DisposableEffect(nearbyDiscovery, nearbyEligible) {
+        nearbyDiscovery?.onUnambiguousCandidate = if (nearbyEligible) { id ->
+            nearbyDiscovery.claim(id)?.let(pairing::beginNearby)
+        } else null
+        onDispose { nearbyDiscovery?.onUnambiguousCandidate = null }
+    }
     val nearbyPermission = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) {
-        nearbyDiscovery?.retry()
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val activity = context as? android.app.Activity
+        val permanent = result.any { (permission, granted) ->
+            !granted && activity?.shouldShowRequestPermissionRationale(permission) == false
+        }
+        nearbyDiscovery?.permissionsReturned(permanent)
+    }
+    LaunchedEffect(nearbyEligible, nearbyDiscovery, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            val model = nearbyDiscovery ?: return@repeatOnLifecycle
+            if (!nearbyEligible) return@repeatOnLifecycle
+            // Let Home explain the request before the native dialog; never launch it while stopped.
+            withFrameNanos { }
+            val activity = context as? android.app.Activity
+            val denied = model.missingPermissions().any {
+                activity?.shouldShowRequestPermissionRationale(it) == true
+            }
+            val missing = model.initialPermissionRequest(previouslyDenied = denied)
+            if (missing.isNotEmpty()) nearbyPermission.launch(missing)
+        }
     }
     if (nearbyEligible && nearbyDiscovery != null) {
         io.github.anisharyal09.anice.features.pairing.NearbyDiscoveryPrompt(nearbyDiscovery, navigation::pair) { id ->
@@ -246,41 +313,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     TextButton(onClick = { pairing.cancel(); navigation.pair() }) { Text("Manual pair") }
                 }
             }
-            val backgroundPeer = backgroundSetupPeer
-            if (backgroundPeer != null && session.state == io.github.anisharyal09.anice.features.session.ConnectionState.SECURED &&
-                session.selected?.deviceId == backgroundPeer.deviceId &&
-                session.selected?.fingerprint == backgroundPeer.fingerprint &&
-                session.selected?.publicKey == backgroundPeer.publicKey &&
-                pairing.peers.any { it.peer == backgroundPeer }) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Connected. Background auto-connect needs system setup.", Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = {
-                        backgroundSetupPeer = null
-                        context.startActivity(companionSetupIntent(context, backgroundPeer.deviceId, enable = true))
-                    }) { Text("Set up") }
-                    TextButton(onClick = { backgroundSetupPeer = null }) { Text("Later") }
-                }
-            }
-            if (nearbyEligible && nearbyDiscovery != null) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(nearbyDiscovery.status, Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (nearbyDiscovery.scanning) {
-                        TextButton(onClick = nearbyDiscovery::pause,
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Pause") }
-                    }
-                    TextButton(onClick = {
-                        val missing = nearbyDiscovery.missingPermissions()
-                        if (missing.isEmpty()) nearbyDiscovery.retry() else nearbyPermission.launch(missing)
-                    }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Find nearby") }
-                }
-            }
             io.github.anisharyal09.anice.update.UpdateNotice((context.applicationContext as io.github.anisharyal09.anice.AniCeApplication).updates)
-            if (pairing.busy && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
+            if (pairing.busy && !pairing.comparingNearby && !(navigation.destination == AppDestination.Devices && navigation.route == DeviceRoute.Pairing)) {
                 PendingRequestRow(if (pairing.phase == "approval") "Review pairing" else "Pairing in progress", pairing.status, navigation::pair)
             }
             val incoming = session.transfer.state as? io.github.anisharyal09.anice.features.transfer.TransferState.IncomingOffer
@@ -295,7 +329,26 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 pageState.SaveableStateProvider(navigation.destination.name) {
                     when (navigation.destination) {
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
-                            DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity)
+                            DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity,
+                                nearbySetup = {
+                                    if (nearbyEligible && nearbyDiscovery != null)
+                                        io.github.anisharyal09.anice.features.pairing.NearbySetupStatus(
+                                            nearbyDiscovery,
+                                            onAllow = {
+                                                val missing = nearbyDiscovery.missingPermissions()
+                                                if (missing.isEmpty()) nearbyDiscovery.retry()
+                                                else {
+                                                    nearbyDiscovery.permissionRequestStarted()
+                                                    nearbyPermission.launch(missing)
+                                                }
+                                            },
+                                            onSettings = {
+                                                context.startActivity(android.content.Intent(
+                                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                    android.net.Uri.fromParts("package", context.packageName, null)))
+                                            },
+                                            onRetry = nearbyDiscovery::retry)
+                                })
                         }
                         AppDestination.Features -> FeaturesScreen(session, pairing.peers, navigation,
                             trustedPeersLoaded = pairing.trustedPeersLoaded)

@@ -6,6 +6,18 @@ aniCe uses one Android Bluetooth owner and one Mac availability policy. Pairing 
 
 Enable **Connect automatically** for the trusted device on both platforms. Android's first setup uses the system companion-device chooser. The association supplies a Bluetooth locator and OS ownership, not authentication: each connection still checks the pinned device ID, fingerprint and public key.
 
+Unpaired Android Home requests native Nearby Devices access once on first
+foreground launch. Granting starts discovery automatically; denial retains a
+clear permission/settings action and does not trigger repeated startup prompts.
+
+For nearby pairing, **Reconnect automatically** starts on in the comparison sheet.
+After mutual confirmation and fresh secured BLE readiness, Android opens a
+single-device native approval for the currently verified Mac without a separate
+connection-settings detour. It filters the process-local authenticated locator;
+the Mac briefly advertises its existing generic service without reopening its
+occupied application slot. Cancellation preserves trust and returns to Home.
+See the [bounded setup contract](../protocol/bluetooth/COMPANION_SETUP.md).
+
 Android companion ownership requires API 31 or newer. API 29–30 use manual foreground connections. Approved transfers have a separate connected-device foreground service; they do not require automatic Bluetooth setup.
 
 Only one Mac owns Android's saved automatic setup. Enabling another Mac explicitly replaces that setup; opening another device's settings does not. **Reset connection setup** removes its association and observation without resetting identity or pairing.
@@ -13,8 +25,17 @@ Only one Mac owns Android's saved automatic setup. Enabling another Mac explicit
 ## Android policy
 
 - Started activities contribute independent foreground tokens. Closing one activity does not release another that remains started.
-- Idle manual Bluetooth closes after the final presentation stops or the screen locks, unless eligible companion, picker or approved-transfer ownership remains.
+- Already-secured manual Bluetooth has a fifteen-second return-to-app grace
+  after the final presentation stops. Home/Recents and brief activity overlays
+  within that window retain the same channel, even with Auto connect off.
+  Duplicate stop events do not extend it; expiry is checked with elapsed realtime
+  on return. Screen lock, radio loss, trust invalidation and explicit Disconnect
+  still retire access immediately. Pending connections have no grace.
+  This creates no reconnect, service or indefinite background ownership.
 - Only Android's OS-bound companion service supplies companion ownership. The app does not start or bind that service itself.
+- Explicit foreground enrollment may retain its already-secured BLE channel for
+  at most sixty seconds while the native chooser is visible. This temporary lease
+  grants no automatic recovery; screen lock still cancels unowned access.
 - Service loss/unbind releases ownership and stops its connection work. Native rebind and presence events can restore eligible work.
 - API 36 distinguishes BLE-advertisement presence from Bluetooth-connection presence. Advertisement loss alone does not retire a transport while Bluetooth presence remains active.
 - Foreground return reevaluates saved enabled setup even without a new presence callback.
@@ -59,7 +80,9 @@ First-time [nearby pairing](../protocol/bluetooth/PROXIMITY.md) has a separate
 known-empty-trust lifetime: anonymous Mac availability while awake/unlocked and
 foreground/unlocked Android discovery. It uses the same exclusive BLE radio owner
 but never grants companion background ownership before trust exists. One
-user-selected candidate runs [SAS verification](../protocol/pairing/SAS.md).
+unambiguous candidate automatically starts [SAS verification](../protocol/pairing/SAS.md);
+multiple qualified candidates require selection. Dismissal or failure never
+starts a second exchange without Find nearby/Try again.
 After mutual confirmation and durable trust receipts, the foreground channel
 starts with fresh EDHOC. The default-on background setup choice is offered after
 that first secured connection; native companion approval is still required.
@@ -67,6 +90,23 @@ Closing the Mac window retains nearby availability; lock/sleep/Quit retires
 pending comparison. Android background/screen lock cancels comparison even if
 an unrelated older companion association exists. A fresh attempt uses new keys
 and comparison material, never a resumed pairing channel.
+
+The first connection uses a short-lived process-local locator captured from the
+completed comparison channel and pinned to that peer's full credential. It never
+rescans to select a different anonymous candidate. Before authentication, at most
+twelve 500-ms same-characteristic reads may wait for the Mac to release pairing
+availability or an unavailable (`14`) profile. Failed reads are not accepted as
+compatibility and sealed writes are never retried. Persistent GATT failures leave
+trust intact and require explicit Connect; native setup is offered only after
+fresh secured readiness.
+
+Foreground return with one trusted Mac can make up to three fresh connection
+attempts, separated by two and five seconds. No new background lease is granted.
+Cancel, Disconnect, Pause, screen lock, foreground loss and authentication/trust
+failure stop this bounded work. First-pair transport failure before authentication
+can retry discovery twice, at least ten seconds apart; comparison dismissal and
+verification failure never auto-retry. Foreground discovery uses a fifteen-second
+low-latency scan burst before returning to low-power scanning.
 
 ## Liveness and renewal
 

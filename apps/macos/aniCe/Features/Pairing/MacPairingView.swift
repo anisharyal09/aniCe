@@ -113,7 +113,7 @@ struct MacPairingView: View {
       if model.comparisonCode != nil && ["comparison", "waiting"].contains(model.phase) {
         MacComparisonCard(model: model)
       } else if model.phase == "nearby" || model.phase == "preparing" {
-        Text("Bring your phone close, then choose this Mac in aniCe on Android.")
+        Text("Bring your phone close with aniCe open, then compare the code on both screens.")
           .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
       Button("Manual pair") { model.pauseNearby() }

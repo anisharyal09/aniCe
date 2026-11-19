@@ -37,6 +37,8 @@ struct MainWindowView: View {
   @State var settingsFocusToken = UUID()
   @State var settingsScroller = SettingsScrollCoordinator()
   @State var showingLocalIdentity = false
+  @State var editingLocalName = false
+  @State var nicknamePeer: DeviceIdentity?
   @State var updates = MacUpdateModel.shared
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
@@ -96,6 +98,14 @@ struct MainWindowView: View {
     } detail: { detailContent }
     .sheet(isPresented: $showingLocalIdentity) {
       IdentityView(model: identity).preferredColorScheme(colorScheme)
+    }
+    .sheet(isPresented: $editingLocalName) {
+      MacDeviceNamePanel(model: identity).preferredColorScheme(colorScheme)
+    }
+    .sheet(isPresented: Binding(get: { nicknamePeer != nil }, set: { if !$0 { nicknamePeer = nil } })) {
+      if let peer = nicknamePeer {
+        MacNicknamePanel(model: pairing, peer: peer).preferredColorScheme(colorScheme)
+      }
     }
     .disclosureGroupStyle(ClickableDisclosureStyle())
     .preferredColorScheme(colorScheme)

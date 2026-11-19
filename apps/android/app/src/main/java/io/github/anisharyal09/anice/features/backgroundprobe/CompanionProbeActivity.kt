@@ -16,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
@@ -49,6 +50,9 @@ internal fun automaticSetupReady(peer: DeviceIdentity?, available: Boolean, busy
 internal fun companionSetupIntent(context: Context, peerId: String, enable: Boolean = false) =
   Intent(context, CompanionProbeActivity::class.java).putExtra("peer", peerId).putExtra("enable", enable)
 
+internal fun quickCompanionSetupIntent(context: Context, peerId: String) =
+  companionSetupIntent(context, peerId, enable = true).putExtra("quick", true)
+
 /** Native device-scoped setup; the system chooser grants ownership, never peer authentication. */
 class CompanionProbeActivity : ComponentActivity() {
   private val probe get() = CompanionProbe.get(this)
@@ -57,7 +61,12 @@ class CompanionProbeActivity : ComponentActivity() {
   private var setup by mutableStateOf(false)
   // Activity callbacks and suspended probe setup have separate generations; Stop invalidates both.
   private var generation = 0
-  private var probeToken = 0
+  private var probeToken = -1
+  private var chooserGeneration: Int? = null
+  private var setupWork: Job? = null
+  private var setupExpiry: Job? = null
+  private var setupTarget: io.github.anisharyal09.anice.infrastructure.connections.CompanionSetupTarget? = null
+  private val quick get() = intent.getBooleanExtra("quick", false)
 
   @OptIn(ExperimentalMaterial3Api::class)
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +74,11 @@ class CompanionProbeActivity : ComponentActivity() {
     enableEdgeToEdge()
     lifecycleScope.launch {
       try { peer = probe.trustedPeer(requireNotNull(intent.getStringExtra("peer"))) }
-      catch (_: Exception) { notice = "Select a trusted Mac from Home before configuring connections." }
+      catch (error: CancellationException) { throw error }
+      catch (_: Exception) {
+        if (quick) setupFailed("Select a trusted Mac in Devices before enabling auto-reconnect.", generation)
+        else notice = "Select a trusted Mac in Devices before configuring connections."
+      }
     }
     setContent {
       val controller = (application as AniCeApplication).sessionController
@@ -81,11 +94,19 @@ class CompanionProbeActivity : ComponentActivity() {
       val association = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         // API 31/32 returns the device here; API 33+ supplies the association through the manager callback.
         if (Build.VERSION.SDK_INT < 33) {
+          val op = chooserGeneration
+          chooserGeneration = null
           if (result.resultCode == RESULT_OK) {
             val device = result.data?.getParcelableExtra<BluetoothDevice>(CompanionDeviceManager.EXTRA_DEVICE)
-            if (device != null) arm(device.address, -1, generation) else { setup = false; notice = "No device association returned." }
-          } else { setup = false; notice = "Association cancelled." }
-        } else if (result.resultCode != RESULT_OK) { setup = false; notice = "Association cancelled." }
+            if (op == generation && setup && device != null) arm(device.address, -1, op)
+            else {
+              if (device != null) removeAssociation(device.address, -1)
+              if (op == generation) setupFailed("No device association returned.", op)
+            }
+          } else if (op == generation) setupFailed("Auto-reconnect wasn't enabled. Your devices are still paired.", op)
+        } else if (result.resultCode != RESULT_OK && chooserGeneration == generation) {
+          setupFailed("Auto-reconnect wasn't enabled. Your devices are still paired.", generation)
+        }
       }
       fun enableAutomatic() {
         if (!automaticSetupReady(peer, probe.available, setup)) return
@@ -93,44 +114,79 @@ class CompanionProbeActivity : ComponentActivity() {
         else if (hasConnectionSetup(peer, probe.peerId, probe.fingerprint) && probe.address != null) {
           setup = true
           val op = ++generation
-          lifecycleScope.launch {
-            try { probe.resume(); if (op == generation) { notice = ""; if (intent.getBooleanExtra("enable", false)) finish() } }
+          setupWork = lifecycleScope.launch {
+            try {
+              probe.resume(stillCurrent = { !isDestroyed && op == generation })
+              if (op == generation) { notice = ""; if (intent.getBooleanExtra("enable", false)) finish() }
+            }
             catch (error: CancellationException) { throw error }
-            catch (_: Exception) { if (op == generation) notice = "Device setup is unavailable. Reset setup, then try again." }
-            finally { if (op == generation) setup = false }
+            catch (_: Exception) { setupFailed("Device setup is unavailable. Reset setup, then try again.", op) }
+            finally {
+              if (op == generation) setup = false
+              if (setupWork === currentCoroutineContext().job) setupWork = null
+            }
           }
         } else {
           // Only one Mac owns automatic setup; explicit replacement retires its old association.
           if (probe.peerId != null || probe.address != null) probe.stop("Connection setup changed.")
-          controller.cancel()
-          setup = true; notice = "Choose your Mac in the system dialog."
+          setupTarget = peer?.let(controller::beginCompanionSetup)
+          if (setupTarget == null && !quick) controller.cancel()
+          setup = true; notice = "Preparing auto-reconnect…"
           val op = ++generation
           probeToken = probe.beginSetup()
-          val manager = getSystemService(CompanionDeviceManager::class.java)
-          val request = AssociationRequest.Builder().addDeviceFilter(BluetoothLeDeviceFilter.Builder()
-            .setScanFilter(ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(BlePayloadCodec.SERVICE_UUID))).build()).build())
-            .setSingleDevice(false).build()
-          val callback = object : CompanionDeviceManager.Callback() {
+          setupTarget?.let { target ->
+            setupExpiry = lifecycleScope.launch {
+              delay((target.expiresAt - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+              setupFailed("Auto-reconnect setup expired. Try again in Devices; your devices are still paired.", op)
+            }
+          }
+           val manager = getSystemService(CompanionDeviceManager::class.java)
+           val callback = object : CompanionDeviceManager.Callback() {
             override fun onDeviceFound(sender: IntentSender) = pending(sender)
             override fun onAssociationPending(sender: IntentSender) = pending(sender)
             private fun pending(sender: IntentSender) {
-              if (!isDestroyed && op == generation) association.launch(IntentSenderRequest.Builder(sender).build())
+              if (!isDestroyed && op == generation && setup && chooserGeneration != op) {
+                val target = setupTarget
+                if (target != null && !controller.companionSetupCurrent(target)) {
+                  setupFailed("Auto-reconnect setup expired. Try again in Devices.", op)
+                  return
+                }
+                chooserGeneration = op
+                association.launch(IntentSenderRequest.Builder(sender).build())
+              }
             }
             override fun onAssociationCreated(info: AssociationInfo) {
               if (Build.VERSION.SDK_INT < 33) return
               val address = info.deviceMacAddress?.toString()
               // A late chooser approval must not survive cancellation or a destroyed activity.
-              if (isDestroyed || op != generation || address == null) manager.disassociate(info.id)
+              if (isDestroyed || op != generation || !setup || address == null || quick && setupTarget == null)
+                removeAssociation(address, info.id)
               else arm(address, info.id, op)
             }
             override fun onFailure(error: CharSequence?) {
-              if (op == generation) { setup = false; notice = "Association failed. ${error ?: "Retry from the foreground."}" }
+              setupFailed("Auto-reconnect setup couldn't finish. You can try again in Devices.", op)
             }
           }
-          try {
-            if (Build.VERSION.SDK_INT >= 33) manager.associate(request, mainExecutor, callback)
-            else manager.associate(request, callback, Handler(Looper.getMainLooper()))
-          } catch (_: Exception) { setup = false; notice = "Association is unavailable. Manual connections remain available." }
+          setupWork = lifecycleScope.launch {
+            try {
+              val target = setupTarget
+              if (target != null) {
+                check((application as AniCeApplication).companionSetup.prepare(target))
+                check(op == generation && controller.companionSetupCurrent(target))
+              } else if (quick) error("Connect before quick enrollment")
+              val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(BlePayloadCodec.SERVICE_UUID)))
+              if (target != null) filter.setDeviceAddress(target.address)
+              val request = AssociationRequest.Builder().addDeviceFilter(BluetoothLeDeviceFilter.Builder()
+                .setScanFilter(filter.build()).build()).setSingleDevice(target != null).build()
+              notice = if (target != null) "Allow auto-reconnect to your verified Mac."
+                else "Choose your Mac in Android's approval dialog."
+              if (Build.VERSION.SDK_INT >= 33) manager.associate(request, mainExecutor, callback)
+              else manager.associate(request, callback, Handler(Looper.getMainLooper()))
+            } catch (error: CancellationException) { throw error }
+            catch (_: Exception) {
+              setupFailed("Your devices are paired. You can enable auto-reconnect later in Devices.", op)
+            } finally { if (setupWork === currentCoroutineContext().job) setupWork = null }
+          }
         }
       }
       LaunchedEffect(peer, startRequested) {
@@ -139,7 +195,30 @@ class CompanionProbeActivity : ComponentActivity() {
           enableAutomatic()
         }
       }
+      BackHandler(setup) {
+        setupFailed("Auto-reconnect wasn't enabled. Your devices are still paired.", generation)
+        if (!quick) finish()
+      }
       AniCeTheme {
+        if (quick) {
+          Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+              Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.widthIn(max = 440.dp)) {
+                Icon(painterResource(R.drawable.ic_laptop), contentDescription = null,
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                Text(peer?.displayName ?: "Your Mac", style = MaterialTheme.typography.titleLarge)
+                Text(notice.ifBlank { "Allow Android to reconnect when your Mac is nearby." },
+                  style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (setup || peer == null && notice.isBlank()) LinearProgressIndicator(Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                  TextButton(onClick = { generation++; endQuickSetup(); finish() }) { Text("Not now") }
+                  if (!setup && peer != null) OutlinedButton(onClick = ::enableAutomatic,
+                    shape = MaterialTheme.shapes.small) { Text("Try again") }
+                }
+              }
+            }
+          }
+        } else {
         Scaffold(topBar = { TopAppBar(title = { Text("Connection settings") }, navigationIcon = {
           IconButton(onClick = { finish() }) {
             Icon(painterResource(R.drawable.ic_back), contentDescription = stringResource(R.string.back))
@@ -150,8 +229,9 @@ class CompanionProbeActivity : ComponentActivity() {
             Text(peer?.displayName ?: "Trusted Mac", style = MaterialTheme.typography.titleLarge)
             Text("Reconnect to this Mac when nearby. Turn on Connect automatically on your Mac too.",
               style = MaterialTheme.typography.bodyMedium)
-            if (!configured && connected)
-              Text("First-time setup reconnects through the system association.", style = MaterialTheme.typography.bodySmall)
+            if (!configured && connected) {
+              Text("Android will ask you to allow auto-reconnect to this Mac.", style = MaterialTheme.typography.bodySmall)
+            }
             AutomaticConnectionToggle(checked = configured && probe.armed, enabled = peer != null && probe.available && !setup, onCheckedChange = { enabled ->
                 // Recheck at action time: another settings activity may have changed the selected Mac.
                 if (!enabled) {
@@ -168,14 +248,18 @@ class CompanionProbeActivity : ComponentActivity() {
             }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (setup) TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
               generation++; setup = false
+              endQuickSetup()
               if (probe.peerId == null || hasConnectionSetup(peer, probe.peerId, probe.fingerprint)) probe.stop()
               notice = "Setup cancelled."
             }) { Text("Cancel setup") }
             if (configured && probe.address != null) TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
-              if (hasConnectionSetup(peer, probe.peerId, probe.fingerprint)) { generation++; setup = false; probe.stop(); notice = "" }
+              if (hasConnectionSetup(peer, probe.peerId, probe.fingerprint)) {
+                generation++; setup = false; endQuickSetup(); probe.stop(); notice = ""
+              }
             }) { Text("Reset connection setup") }
 
           }
+        }
         }
       }
     }
@@ -196,7 +280,7 @@ class CompanionProbeActivity : ComponentActivity() {
 
   override fun onStop() {
     super.onStop()
-        (application as AniCeApplication).clipboard.focus(false, this)
+    (application as AniCeApplication).clipboard.focus(false, this)
     val app = application as AniCeApplication
     app.nowPlaying.background(this, isChangingConfigurations)
     app.sessionController.background(this, isChangingConfigurations)
@@ -208,19 +292,67 @@ class CompanionProbeActivity : ComponentActivity() {
       try {
         val target = requireNotNull(peer)
         if (op != generation) return@launch
-        probe.arm(target, address, id, probeToken)
+        if (quick) check(setupTarget != null)
+        setupTarget?.let { expected ->
+          check(address.equals(expected.address, ignoreCase = true) &&
+            (application as AniCeApplication).sessionController.companionSetupCurrent(expected))
+        }
+        val expected = setupTarget
+        probe.arm(target, address, id, probeToken, stillCurrent = {
+          !isDestroyed && op == generation && (!quick || expected != null) &&
+            (expected == null || (application as AniCeApplication).sessionController.companionSetupCurrent(expected))
+        })
         if (op == generation) { notice = ""; if (intent.getBooleanExtra("enable", false)) finish() }
       } catch (error: CancellationException) { throw error }
-      catch (_: Exception) { if (op == generation) notice = "Could not observe this association. Reset setup and retry; manual connections remain available." }
+      catch (_: Exception) { setupFailed("Auto-reconnect couldn't be enabled. Try again in Devices; your devices are still paired.", op) }
       finally {
+        endQuickSetup(op)
         if (op == generation) setup = false
         // A destroyed chooser cannot leave an untracked association authorizing later work.
-        if (!probe.armed || op != generation) {
-          val manager = getSystemService(CompanionDeviceManager::class.java)
-          try { if (Build.VERSION.SDK_INT >= 33 && id >= 0) manager.disassociate(id) else manager.disassociate(address) }
-          catch (_: IllegalArgumentException) {} catch (_: SecurityException) {}
-        }
+        removeAssociation(address, id)
       }
     }
+  }
+  private fun endQuickSetup(op: Int = generation) {
+    if (op != generation) return
+    setupWork?.cancel(); setupWork = null
+    setupExpiry?.cancel(); setupExpiry = null
+    chooserGeneration = null
+    probe.cancelSetup(probeToken)
+    probeToken = -1
+    val app = application as AniCeApplication
+    setupTarget?.let {
+      app.companionSetup.finish(it)
+      app.sessionController.endCompanionSetup(it)
+    }
+    setupTarget = null
+  }
+  private fun setupFailed(message: String, op: Int) {
+    if (op != generation || isDestroyed) return
+    generation++
+    endQuickSetup()
+    setup = false
+    notice = message
+    if (quick) {
+      android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+      finish()
+    }
+  }
+  private fun removeAssociation(address: String?, id: Int) {
+    // Never remove a successfully armed relationship or one adopted by a newer setup.
+    val tracked = if (Build.VERSION.SDK_INT >= 33 && id >= 0) probe.associationId == id &&
+      address != null && address.equals(probe.address, ignoreCase = true)
+    else address != null && address.equals(probe.address, ignoreCase = true)
+    if (tracked) return
+    val manager = getSystemService(CompanionDeviceManager::class.java)
+    try {
+      if (Build.VERSION.SDK_INT >= 33 && id >= 0) manager.disassociate(id)
+      else if (address != null) manager.disassociate(address)
+    } catch (_: IllegalArgumentException) {} catch (_: SecurityException) {}
+  }
+  override fun onDestroy() {
+    generation++
+    endQuickSetup()
+    super.onDestroy()
   }
 }

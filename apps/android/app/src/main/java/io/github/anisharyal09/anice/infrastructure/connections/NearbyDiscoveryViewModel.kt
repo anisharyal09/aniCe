@@ -26,7 +26,7 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
     data class Candidate(val id: Long, val rssi: Int)
     var candidates by mutableStateOf(emptyList<Candidate>())
         private set
-    var status by mutableStateOf("Nearby discovery is paused.")
+    var status by mutableStateOf("Getting ready to find your Mac…")
         private set
     var scanning by mutableStateOf(false)
         private set
@@ -34,7 +34,15 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         private set
     var paused by mutableStateOf(false)
         private set
+    var choosingCandidate by mutableStateOf(false)
+        private set
     private val app = application
+    private val permissionPreferences = app.getSharedPreferences("nearby_permission", Context.MODE_PRIVATE)
+    private var permissionRequested = permissionPreferences.getBoolean("requested", false)
+    var permissionRequired by mutableStateOf(false)
+        private set
+    var permissionNeedsSettings by mutableStateOf(permissionPreferences.getBoolean("settings", false))
+        private set
     private val handler = Handler(Looper.getMainLooper())
     private val filter = ProximitySignalFilter(SystemClock::elapsedRealtime)
     // Native addresses stay in this active scan's deduplication map, never in presentation or logs.
@@ -47,6 +55,19 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
     private var foreground = false
     private var eligible = false
     private var failed = false
+    private var scanBoost: Runnable? = null
+    private val comparisonPolicy = NearbyComparisonPolicy()
+    private var pendingComparison: Long? = null
+    private val automaticComparison = Runnable {
+        pendingComparison = null
+        val listener = onUnambiguousCandidate ?: return@Runnable
+        reconcile()
+        publish()
+        if (!scanning || paused) return@Runnable
+        val id = comparisonPolicy.candidate(candidates.map { it.id }, eligible && foreground, dismissed)
+        if (id != null) listener(id)
+    }
+    internal var onUnambiguousCandidate: ((Long) -> Unit)? = null
     private val expiry = Runnable { publish() }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -76,13 +97,40 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         reconcile()
     }
     fun eligible(value: Boolean) { eligible = value; reconcile() }
-    fun dismiss() { dismissed = true }
+    /** Called only by resumed Home; the OS grants access, not discovery or trust. */
+    internal fun initialPermissionRequest(previouslyDenied: Boolean): Array<String> {
+        val missing = missingPermissions()
+        val allowed = foreground && eligible && !paused && !dismissed &&
+            app.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE) &&
+            app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != true
+        if (!initialNearbyPermissionReady(allowed, missing.isNotEmpty(), permissionRequested, previouslyDenied))
+            return emptyArray()
+        permissionRequestStarted()
+        return missing
+    }
+    internal fun permissionRequestStarted() {
+        permissionRequested = true
+        permissionPreferences.edit().putBoolean("requested", true).apply()
+    }
+    internal fun permissionsReturned(permanent: Boolean) {
+        permissionNeedsSettings = permanent && missingPermissions().isNotEmpty()
+        permissionPreferences.edit().putBoolean("settings", permissionNeedsSettings).apply()
+        // A denied dialog is never permission to scan or to clear a dismissed comparison.
+        reconcile()
+    }
+    fun dismiss() { dismissed = true; reconcile() }
     fun pause() { paused = true; reconcile() }
-    fun retry() { dismissed = false; paused = false; failed = false; reconcile() }
+    fun retry() {
+        comparisonPolicy.reset()
+        choosingCandidate = false
+        dismissed = false; paused = false; failed = false; reconcile()
+        if (scanning) publish()
+    }
     /** Selection freezes one current handle and retires scanning before cryptographic preparation. */
     internal fun claim(id: Long): NearbyPairingCandidate? {
+        reconcile()
         publish()
-        if (!foreground || !eligible || paused || !scanning || candidates.none { it.id == id }) return null
+        if (!foreground || !eligible || paused || dismissed || !scanning || candidates.none { it.id == id }) return null
         val device = devices[id] ?: return null
         val selected = NearbyPairingCandidate(device)
         dismissed = true
@@ -92,10 +140,15 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
 
     @SuppressLint("MissingPermission")
     private fun reconcile() {
+        permissionRequired = missingPermissions().isNotEmpty()
+        if (!permissionRequired && permissionNeedsSettings) {
+            permissionNeedsSettings = false
+            permissionPreferences.edit().putBoolean("settings", false).apply()
+        }
         val available = try {
-            foreground && eligible && !paused &&
+            foreground && eligible && !paused && !dismissed &&
                 app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != true &&
-                missingPermissions().isEmpty() &&
+                !permissionRequired &&
                 app.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true &&
                 (Build.VERSION.SDK_INT > 30 ||
                     app.getSystemService(LocationManager::class.java)?.isLocationEnabled == true)
@@ -103,8 +156,12 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         if (!available) {
             stop()
             status = when {
-                !foreground || !eligible || paused -> "Nearby discovery is paused."
-                missingPermissions().isNotEmpty() -> "Allow Nearby Devices access to find a Mac."
+                dismissed -> "Nearby comparison closed. Find nearby when you're ready."
+                paused -> "Nearby discovery paused."
+                !foreground || !eligible -> "Getting ready to find your Mac…"
+                permissionRequired -> if (Build.VERSION.SDK_INT >= 31)
+                    "Allow nearby devices so aniCe can find your Mac automatically."
+                    else "Allow location access for Bluetooth discovery on Android 10–11."
                 else -> "Unlock your phone and turn on Bluetooth to find a Mac."
             }
         } else if (!scanning && !failed) start()
@@ -157,7 +214,18 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
             scanner!!.startScan(
                 listOf(ScanFilter.Builder().setServiceUuid(
                     ParcelUuid(UUID.fromString(BlePayloadCodec.SERVICE_UUID))).build()),
-                ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build(), cb)
+                ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), cb)
+            // Fast foreground entry, then lower radio cost. This never extends into background.
+            scanBoost = Runnable {
+                if (generation == operation && callback === cb && scanning) {
+                    try {
+                        scanner?.stopScan(cb)
+                        scanner?.startScan(listOf(ScanFilter.Builder().setServiceUuid(
+                            ParcelUuid(UUID.fromString(BlePayloadCodec.SERVICE_UUID))).build()),
+                            ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build(), cb)
+                    } catch (_: Exception) { stop(); failed = true; status = "Bluetooth discovery interrupted. Try again." }
+                }
+            }.also { handler.postDelayed(it, 15_000) }
         } catch (_: Exception) {
             stop(); failed = true; status = "Nearby scanning is unavailable. Use manual pairing or try again."
         }
@@ -169,6 +237,19 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         handles.entries.removeAll { it.value !in live }
         devices.keys.retainAll(live)
         candidates = current.filter { it.nearby }.map { Candidate(it.id, it.rssi) }
+        if (candidates.size > 1) {
+            comparisonPolicy.candidate(candidates.map { it.id }, eligible && foreground, dismissed)
+            choosingCandidate = true
+        }
+        val single = candidates.singleOrNull()?.id
+        if (single == null || dismissed || choosingCandidate || pendingComparison != null && pendingComparison != single) {
+            handler.removeCallbacks(automaticComparison)
+            pendingComparison = null
+        }
+        if (single != null && !dismissed && scanning && comparisonPolicy.allowsAutomatic && pendingComparison == null) {
+            pendingComparison = single
+            handler.postDelayed(automaticComparison, 750)
+        }
         handler.removeCallbacks(expiry)
         filter.nextExpiry?.let { handler.postDelayed(expiry, (it - SystemClock.elapsedRealtime()).coerceAtLeast(1)) }
     }
@@ -182,6 +263,9 @@ class NearbyDiscoveryViewModel(application: Application) : AndroidViewModel(appl
         scanner = null
         scanning = false
         handler.removeCallbacks(expiry)
+        handler.removeCallbacks(automaticComparison)
+        scanBoost?.let(handler::removeCallbacks); scanBoost = null
+        pendingComparison = null
         handles.clear(); devices.clear(); filter.clear(); candidates = emptyList()
     }
     override fun onCleared() { stop(); app.unregisterReceiver(receiver) }

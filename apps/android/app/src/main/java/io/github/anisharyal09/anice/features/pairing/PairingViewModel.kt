@@ -46,7 +46,9 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     fun displayedName(peer: DeviceIdentity) = app.peerNames.displayName(peer)
     fun deviceName(peer: DeviceIdentity) = app.peerNames.deviceName(peer)
     fun saveNickname(peer: DeviceIdentity, name: String, enabled: Boolean) {
-        if (savingNickname || peers.none { it.peer == peer }) return
+        if (savingNickname || peers.none {
+                it.peer.deviceId == peer.deviceId && it.peer.fingerprint == peer.fingerprint &&
+                    it.peer.publicKey == peer.publicKey }) return
         savingNickname = true
         nicknameFailure = false
         viewModelScope.launch {
@@ -57,6 +59,16 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     private var nearbyCandidate: NearbyPairingCandidate? = null
+    private var pairedCandidate: io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate? = null
+    internal fun takePairedCandidate(): io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate? {
+        if (phase != "paired" || !completedWithComparison) return null
+        return pairedCandidate.also { pairedCandidate = null }
+    }
+    var automaticAfterPairing by mutableStateOf(true)
+        private set
+    fun chooseAutomaticAfterPairing(enabled: Boolean) {
+        if (phase == "comparison") automaticAfterPairing = enabled
+    }
     var comparisonCode by mutableStateOf<String?>(null)
         private set
     var comparisonAttempt by mutableStateOf(0L)
@@ -65,6 +77,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         private set
     val comparingNearby get() = method == PairingMethod.SAS && busy
     val nearbyFailure get() = method == PairingMethod.SAS && phase == "failed"
+    var nearbyTransportFailure by mutableStateOf(false)
+        private set
     var phase by mutableStateOf("idle")
         private set
 
@@ -251,6 +265,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         method = PairingMethod.SAS
         nearbyCandidate = candidate
         completedWithComparison = false
+        nearbyTransportFailure = false
         phase = "permission"
         status = "Preparing a nearby comparison…"
         start()
@@ -378,7 +393,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                                 requireNotNull(selectedCandidate).connect(transport)
                                 nearbyCandidate = null
                             } catch (_: Exception) {
-                                fail("Nearby device expired. Find nearby and tap Pair again.")
+                                fail("Nearby device expired. Choose Try again to find your Mac.")
                                 return@post
                             }
                         } else transport.startScan(selectedMethod == PairingMethod.QR)
@@ -493,6 +508,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 deadline = SystemClock.elapsedRealtime() + 10000
             }
             "paired" -> {
+                if (method == PairingMethod.SAS && p != null) pairedCandidate = transport.pairedCandidate(p)
                 readyToFinish = true
                 phase = "cleanup"
                 status = "Trust saved. Releasing Bluetooth…"
@@ -561,6 +577,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun cancel() {
+        nearbyTransportFailure = false
         generation++
         handler.removeCallbacks(ticker)
         if (foreground) transport.cancel() else transport.close()
@@ -570,6 +587,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         code = ""
         nearbyCandidate?.discard()
         nearbyCandidate = null
+        pairedCandidate?.discard()
+        pairedCandidate = null
         comparisonCode = null
         rows = emptyList()
         remaining = 0
@@ -602,8 +621,10 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun failLink(failure: PairingTransportFailure?) {
+        val beforeAuthentication = method == PairingMethod.SAS && phase in listOf("scan", "connecting")
         if (failure?.recovery == PairingTransportRecovery.bluetoothSettings) recovery = "bluetooth"
         fail(failure?.message ?: "Pairing was interrupted. Start again.")
+        nearbyTransportFailure = beforeAuthentication && failure?.recovery != PairingTransportRecovery.bluetoothSettings
     }
 
     private fun fail(message: String) {

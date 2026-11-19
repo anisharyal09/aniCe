@@ -122,8 +122,18 @@ Connection, trust, support, permission, and enabled states are separate facts. N
   labels use the same resolver. Immutable historic activity retains its event-time
   label; security and pairing identity remain separate from presentation.
 - Nearby discovery uses generic anonymous candidates, never a claimed real device name.
-  Android Home offers Find nearby and a native bottom sheet for qualified signals, with Pair,
-  Dismiss and Manual pair. Pair freezes one candidate and opens a bounded comparison sheet.
+  On first unpaired foreground launch, Android requests native Nearby Devices
+  access once after Home is drawn. Granted access starts discovery without a
+  Find nearby tap. Denial leaves a clear Allow nearby devices/Open app settings
+  action within the Home connection entry, not another dialog on every launch.
+  Find nearby remains explicit retry. One qualified candidate
+  automatically opens the bounded comparison sheet after a short ambiguity check;
+  multiple candidates retain a native selection sheet with Compare code,
+  Dismiss and Manual pair. Selection freezes one candidate and stops scanning.
+  Dismissal and verification failure never silently retry an exchange. Pre-auth
+  transport failures may retry twice with a ten-second cooldown; discovery starts
+  with a bounded low-latency foreground burst. Trusted reconnects may try three
+  times on foreground return without requesting companion setup repeatedly.
   Compare all six digits, including leading zeros, with Confirm on both devices and accessible
   Dismiss. No device names are disclosed until both comparison confirmations.
 - With known-empty trust, Mac nearby availability starts while its process is awake/unlocked,
@@ -135,8 +145,15 @@ Connection, trust, support, permission, and enabled states are separate facts. N
   Never regenerate or silently retarget the code during a surface handoff.
 - Comparison confirmation is not Connected. Verify identity openings/proofs, store trust through
   the shared receipt flow, then establish fresh authenticated readiness. Default-on background
-  auto-connect setup on Android is offered after the first connection, not an unsolicited chooser
-  blocking SAS. Lock, background loss, cancellation and expiry cannot approve an old attempt.
+  auto-connect is visible as Reconnect automatically in Android's comparison sheet.
+  Its native approval opens after the first secured connection, targeting only the
+  verified Mac; no second connection-settings page or chooser blocks SAS.
+  Cancellation leaves trust intact. Lock, background loss, cancellation and expiry
+  cannot approve an old attempt.
+- Long-press a Devices name to open its editor directly; Mac also offers a native
+  right-click Edit name action. This device edits the shared device-owned name;
+  a paired device edits a private nickname. Normal taps/clicks retain details,
+  and explicit edit controls in details remain available without gestures.
 
 ### Desk Deck and Control Android
 - **Mac Desk Deck (Android)**: Real-time Mac telemetry display. Stale readings show their last-received timestamp.

@@ -9,6 +9,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GattSetupRecoveryTests {
+  @Test fun postPairAvailabilityWaitIsSameProfileBoundedAndNeverRetriesOtherErrors() {
+    val recovery = GattSetupRecovery()
+    assertTrue(recovery.retrySessionAvailability(0, comparisonAvailable = true, trustedSession = true))
+    assertTrue(recovery.retrySessionAvailability(14, comparisonAvailable = false, trustedSession = true))
+    assertTrue(recovery.retrySessionAvailability(14, comparisonAvailable = false, trustedSession = true))
+    repeat(9) { assertTrue(recovery.retrySessionAvailability(14, comparisonAvailable = false, trustedSession = true)) }
+    assertFalse(recovery.retrySessionAvailability(14, comparisonAvailable = false, trustedSession = true))
+    assertTrue("Availability waiting must not refresh the service cache", recovery.retryMissingLayout())
+    val other = GattSetupRecovery()
+    for (status in listOf(0, 1, 3, 5, 8, 15, 133, 242, 257))
+      assertFalse(other.retrySessionAvailability(status, comparisonAvailable = false, trustedSession = true))
+    assertFalse(other.retrySessionAvailability(14, comparisonAvailable = false, trustedSession = false))
+    assertFalse(other.retrySessionAvailability(0, comparisonAvailable = true, trustedSession = false))
+  }
+  @Test fun postPairReadFailureExplainsSavedTrustWithoutAskingToPairAgain() {
+    for (status in listOf(14, 242)) {
+      val text = GattSetupRecovery().profileReadFailure(status, trustedSession = true).message
+      assertTrue(text.contains("GATT status $status"))
+      assertTrue(text.contains("Pairing is still saved"))
+      assertTrue(text.contains("Connect"))
+      assertFalse(text.contains("invitation"))
+    }
+  }
   @Test fun unavailableProfileReadsRemainFailuresWithoutBlindCacheRetry() {
     for (status in listOf(14, 242)) {
       val recovery = GattSetupRecovery()

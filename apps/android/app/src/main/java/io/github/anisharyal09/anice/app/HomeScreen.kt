@@ -26,6 +26,7 @@ fun HomeScreen(
   activities: @Composable () -> Unit = {},
   recentActivity: @Composable () -> Unit = {},
   showRecentHeading: Boolean = true,
+  nearbySetup: @Composable () -> Unit = {},
 ) {
   Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
@@ -52,12 +53,13 @@ fun HomeScreen(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
           Text("Connect your Mac", style = MaterialTheme.typography.titleSmall)
           Text(
-            "Bring your Mac close and tap Pair in the nearby prompt. Compare the digits on both screens, or choose Add device for QR/manual pairing.",
+            "Keep aniCe open on your Mac and bring your phone close. Confirm the matching code on both screens.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          nearbySetup()
           OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp), onClick = onPair, modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
-            Text("Add device")
+            Text("Manual pair")
           }
         }
       }

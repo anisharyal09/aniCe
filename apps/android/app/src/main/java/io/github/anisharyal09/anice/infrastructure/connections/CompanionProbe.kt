@@ -153,9 +153,16 @@ internal class CompanionProbe private constructor(
     return ++setupGeneration
   }
 
+  /** Withdraw only this unfinished chooser; never disable or replace a newer saved setup. */
+  fun cancelSetup(token: Int) {
+    if (token == setupGeneration) setupGeneration++
+  }
+
   /** Register presence only after active-trust validation; EDHOC authenticates the candidate afterward. */
-  suspend fun arm(peer: DeviceIdentity, address: String, id: Int, token: Int) {
+  suspend fun arm(peer: DeviceIdentity, address: String, id: Int, token: Int,
+    stillCurrent: () -> Boolean = { true }) {
     check(token == setupGeneration) { "Setup was cancelled." }
+    check(stillCurrent()) { "The selected connection changed." }
     check(available)
     val locator = bluetoothAddress(address)
     val trusted = trustedPeer(peer.deviceId)
@@ -163,6 +170,7 @@ internal class CompanionProbe private constructor(
     val local = withContext(Dispatchers.IO) { app.identityService.getOrCreateIdentity().identity }
     // Trust/identity reads suspend: Stop may have invalidated this chooser while they were running.
     check(token == setupGeneration) { "Setup was cancelled." }
+    check(stillCurrent()) { "The selected connection changed." }
     // The address/id locate an OS association only. Authentication still pins the complete peer credential.
     check(preferences.edit().putString("peer", peer.deviceId).putString("fingerprint", peer.fingerprint)
       .putString("local", local.fingerprint).putString("address", locator).putInt("association", id)
@@ -445,7 +453,7 @@ internal class CompanionProbe private constructor(
     }
   }
 
-  suspend fun resume(resolve: suspend () -> DeviceIdentity = {
+  suspend fun resume(stillCurrent: () -> Boolean = { true }, resolve: suspend () -> DeviceIdentity = {
     checkAssociation()
     trustedPeer(requireNotNull(peerId), requireNotNull(fingerprint))
   }) {
@@ -454,7 +462,7 @@ internal class CompanionProbe private constructor(
     val token = beginSetup()
     try {
       val peer = resolve()
-      arm(peer, requireNotNull(address), associationId, token)
+      arm(peer, requireNotNull(address), associationId, token, stillCurrent)
     } catch (error: Exception) {
       // A retired Resume cannot let its caller pause or overwrite a newer setup.
       if (token != setupGeneration) throw CancellationException("Setup was cancelled.").apply { initCause(error) }

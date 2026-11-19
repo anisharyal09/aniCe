@@ -37,4 +37,14 @@ class CompanionSetupIntentTest {
         assertEquals(context.packageName, resolved?.activityInfo?.packageName)
         assertEquals(CompanionProbeActivity::class.java.name, resolved?.activityInfo?.name)
     }
+    @Test fun quickSetupIsExplicitWithoutSendingALocatorInTheIntent() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = quickCompanionSetupIntent(context, "selected-peer")
+        assertEquals(context.packageName, intent.component?.packageName)
+        assertEquals(CompanionProbeActivity::class.java.name, intent.component?.className)
+        assertTrue(intent.getBooleanExtra("quick", false))
+        assertTrue(intent.getBooleanExtra("enable", false))
+        assertFalse(intent.hasExtra("address"))
+        assertFalse(intent.hasExtra("channel"))
+    }
 }

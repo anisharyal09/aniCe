@@ -80,6 +80,20 @@ private actor DeadlineValidationProbe {
   func validate() throws { loads += 1; if let fault { throw fault } }
 }
 final class SessionChannelTests: XCTestCase, @unchecked Sendable {
+  func testUnsubscribeCannotRetireAReplacementThatStillHasItsNativeSubscription() {
+    var retiring = 0
+    for matches in [false, true] {
+      for characteristic in [false, true] {
+        for subscribed in [false, true] {
+          let allowed = GattCandidateAdmission.mayRetireSubscription(
+            candidateMatches: matches, characteristicMatches: characteristic, subscriptionRemains: subscribed)
+          XCTAssertEqual(allowed, matches && characteristic && !subscribed)
+          if allowed { retiring += 1 }
+        }
+      }
+    }
+    XCTAssertEqual(retiring, 1)
+  }
   func testPeerWithoutPauseFeatureIgnoresTheAdditiveTagWithoutClosingSession() async throws {
     let fixture = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)
     let outgoing = ChannelMailbox(), replies = ChannelMailbox()

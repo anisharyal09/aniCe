@@ -29,6 +29,10 @@ Flag `0x0001` offers [pairing method 3](../pairing/SAS.md) only; it is unauthent
 capability information and cannot establish trust. Explicit compatibility
 discovery and QR/PIN retain their original bounds and zero flags.
 
+After fresh trusted BLE readiness, [foreground companion enrollment](COMPANION_SETUP.md)
+can briefly advertise this same generic service while its application slot stays
+occupied. The OS approval supplies a locator/background lease, not trust.
+
 Android scans for 15 seconds using the service filter, selects a temporary candidate, stops scanning, connects, discovers the assigned readable characteristic, reads and validates, then disconnects/closes. The connection/read deadline is 15 seconds with up to 2 additional seconds for cleanup. Successful validation proves only that the connected endpoint returned this format.
 
 No trust/identity storage is accessed. Android scan addresses remain only in an active deduplication map and never reach UI, persistence, or logs. Pairing QR carries ephemeral rendezvous information and an identity fingerprint commitment, not a BLE address. The full public identity is exchanged only after authentication; see `../pairing/`.

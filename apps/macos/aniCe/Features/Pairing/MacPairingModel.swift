@@ -212,7 +212,7 @@ import CoreGraphics
             }
             if method == .sas {
               guard self.generation == op else { return }
-              self.endNearbyAttempt("Connection ended. Bring the devices close and tap Pair again.")
+              self.endNearbyAttempt("Connection ended. Choose Try again in aniCe on your phone.")
               return
             }
             do {
@@ -230,7 +230,7 @@ import CoreGraphics
           discovery.startNearby(flags: PairingSas.discoveryFlag)
           guard op == generation, active else { return }
           phase = "nearby"
-          status = "Bring your phone close, then tap Pair in aniCe on Android."
+          status = "Bring your phone close with aniCe open, then compare the code on both screens."
         } else {
           discovery.start()
           phase = "starting"
@@ -470,7 +470,7 @@ import CoreGraphics
       if phase == "paired" {
         cancel(message: status)
       } else {
-        if method == .sas { endNearbyAttempt("Pairing timed out. Tap Pair again when ready.") }
+        if method == .sas { endNearbyAttempt("Pairing timed out. Choose Try again in aniCe on your phone.") }
         else { fail("Pairing timed out. Start a fresh invitation.") }
       }
     }

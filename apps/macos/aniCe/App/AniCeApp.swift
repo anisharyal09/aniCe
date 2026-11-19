@@ -156,6 +156,7 @@ struct AniCeApp: App {
       if (try? MacConnectionPauseMessage.decode(bytes)) == nil { lan?.onApplicationActivity(descriptor, bytes) }
     }
     features.register(lan.rendezvous)
+    features.register(MacCompanionSetup(advertising: { radio.setCompanionSetupAdvertising($0) }))
     features.register(playback)
     features.register(transfer)
     features.register(findDevice)

@@ -6,6 +6,9 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define capability-gated Foreground companion setup v1 over secured BLE DATA:
+  sixty-second generic advertising, current-credential/channel/locator scoping,
+  native single-device approval and cancellation fences; no new trust or bonding.
 - Define Device Names v1 capability-gated revision/name reports over existing
   secured DATA, with no identity credential changes, connection leases or transmitted aliases.
 
@@ -34,6 +37,9 @@ Records shared communication-contract changes and compatibility implications. Pr
 - Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
 
 ### Changed
+
+- Bound native post-SAS locator handoff and pre-authentication profile waits,
+  require current-subscription retirement and clarify first-launch permission behavior.
 
 - Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
 - Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.

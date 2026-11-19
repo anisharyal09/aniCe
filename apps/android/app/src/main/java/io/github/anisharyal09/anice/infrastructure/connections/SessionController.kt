@@ -85,6 +85,65 @@ class SessionController(application: Application) {
   private var worker: Job? = null
   private var workRecovery: Job? = null
   private var recoveryPaused = false
+  private val manualGrace = ManualBleGrace()
+  private var manualGraceJob: Job? = null
+  private fun clearManualGrace() {
+    manualGrace.clear()
+    manualGraceJob?.cancel(); manualGraceJob = null
+  }
+  private fun retireUnowned() {
+    if (foreground || companionOwner != null || workLease || pickerLease || hasCompanionSetupLease) return
+    val now = SystemClock.elapsedRealtime()
+    val deadline = manualGrace.begin(now, state == ConnectionState.SECURED)
+    if (deadline == null || now >= deadline) { cancel(); return }
+    if (manualGraceJob?.isActive == true) return
+    val token = channelToken
+    manualGraceJob = scope.launch {
+      delay((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+      if (token == channelToken && !foreground && companionOwner == null &&
+          !workLease && !pickerLease && !hasCompanionSetupLease) cancel()
+      else clearManualGrace()
+    }
+  }
+  private var foregroundRecovery: Job? = null
+  var findingAutomatically by mutableStateOf(false)
+    private set
+  private fun stopForegroundRecovery() {
+    foregroundRecovery?.cancel(); foregroundRecovery = null
+    findingAutomatically = false
+  }
+  internal fun findTrustedForeground(peer: DeviceIdentity, candidate: BluetoothDevice? = null) {
+    if (!foreground || recoveryPaused || foregroundRecovery?.isActive == true ||
+        state == ConnectionState.SECURED || hasCompanionOwner || automaticRecoveryReserved()) return
+    val job = scope.launch(start = CoroutineStart.LAZY) {
+      findingAutomatically = true
+      try {
+        for (attempt in 0..2) {
+          if (!foreground || recoveryPaused || missingPermissions().isNotEmpty() ||
+              app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true) return@launch
+          if (attempt > 0) delay(if (attempt == 1) 2_000 else 5_000)
+          ensureActive()
+          if (!foreground || recoveryPaused || !app.sessionPeers.permits(peer)) return@launch
+          connect(peer, candidate)
+          progress.first { it.state != ConnectionState.CONNECTING }
+          if (state == ConnectionState.FAILED &&
+              app.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled != true) return@launch
+          if (state == ConnectionState.SECURED || lastFailure in listOf(SessionFailure.UNTRUSTED_PEER,
+                SessionFailure.AUTHENTICATION, SessionFailure.STATE)) return@launch
+        }
+      } finally {
+        findingAutomatically = false
+        if (foregroundRecovery === currentCoroutineContext().job) foregroundRecovery = null
+      }
+    }
+    foregroundRecovery = job
+    job.start()
+  }
+  private var companionSetupLease: Job? = null
+  private var companionSetupTarget: CompanionSetupTarget? = null
+  private val hasCompanionSetupLease get() = companionSetupTarget?.let {
+    companionSetupCurrent(it) && companionSetupLease?.isActive == true
+  } == true
   var beforeConnect: () -> Unit = {}
   private var readySignal: CompletableDeferred<Unit>? = null
   private val maintenanceEvents = SessionMaintenance()
@@ -101,7 +160,7 @@ class SessionController(application: Application) {
       },
       { _, reason ->
         if (state == ConnectionState.SECURED) {
-          cancel()
+          cancel(preserveForegroundRecovery = true)
           status = reason?.message ?: "Bluetooth connection ended."
         } else if (state == ConnectionState.CONNECTING) {
           fail(reason?.message ?: "Connection ended. Retry.")
@@ -144,7 +203,57 @@ class SessionController(application: Application) {
       .filter { ContextCompat.checkSelfPermission(app, it) != PackageManager.PERMISSION_GRANTED }
       .toTypedArray()
 
-  fun request(peer: DeviceIdentity) {
+  /** Only an explicit foreground setup may temporarily retain an already-authenticated channel for the OS dialog. */
+  internal fun beginCompanionSetup(peer: DeviceIdentity): CompanionSetupTarget? {
+    if (!foreground || state != ConnectionState.SECURED ||
+        hasCompanionSetupLease || missingPermissions().isNotEmpty() ||
+        app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true ||
+        selected?.deviceId != peer.deviceId || selected?.fingerprint != peer.fingerprint ||
+        selected?.publicKey != peer.publicKey) return null
+    val token = channelToken
+    val address = try { transport.connectedAddress() } catch (_: SecurityException) { null } ?: return null
+    val target = CompanionSetupTarget(peer, address, token, SystemClock.elapsedRealtime() + 60_000)
+    companionSetupLease?.cancel()
+    companionSetupTarget = target
+    companionSetupLease = scope.launch {
+      delay(60_000)
+      endCompanionSetup(target)
+    }
+    return target
+  }
+
+  internal fun companionSetupCurrent(target: CompanionSetupTarget): Boolean =
+    companionSetupTarget === target && state == ConnectionState.SECURED &&
+      target.matches(selected, channelToken, SystemClock.elapsedRealtime())
+
+  internal fun endCompanionSetup(target: CompanionSetupTarget) {
+    if (companionSetupTarget !== target) return
+    companionSetupLease?.cancel()
+    companionSetupLease = null
+    companionSetupTarget = null
+    scope.launch {
+      delay(500)
+      if (channelToken == target.channel && !foreground && companionOwner == null &&
+          !workLease && !pickerLease && !hasCompanionSetupLease) cancel()
+    }
+  }
+
+  fun request(peer: DeviceIdentity) = request(peer, candidate = null)
+
+  internal fun requestAfterPairing(peer: DeviceIdentity,
+    candidate: io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate?) {
+    if (!foreground || !app.sessionPeers.permits(peer)) { candidate?.discard(); return }
+    val device = candidate?.take(peer)
+    if (device == null) {
+      selected = peer
+      fail("Pairing is saved. The immediate Bluetooth handoff expired; choose Connect for your Mac.")
+      return
+    }
+    recoveryPaused = false
+    findTrustedForeground(peer, device)
+  }
+
+  private fun request(peer: DeviceIdentity, candidate: BluetoothDevice?) {
     if (!app.sessionPeers.permits(peer)) return
     recoveryPaused = false
     beforeRequest(peer)
@@ -154,7 +263,7 @@ class SessionController(application: Application) {
       status = "Allow Bluetooth access to connect."
       return
     }
-    connect(peer)
+    connect(peer, candidate)
   }
 
   fun permissionReturned() {
@@ -170,6 +279,7 @@ class SessionController(application: Application) {
   fun cancelAttempt() {
     if (state == ConnectionState.SECURED) return
     beforeCancelAttempt()
+    stopForegroundRecovery()
     recoveryPaused = true
     workRecovery?.cancel(); workRecovery = null
     cancel("Connection canceled.")
@@ -177,6 +287,7 @@ class SessionController(application: Application) {
 
   /** Keep the secured channel usable for metadata while preventing approved-work recovery. */
   internal fun preparePause(): () -> Unit {
+    stopForegroundRecovery()
     recoveryPaused = true
     workRecovery?.cancel(); workRecovery = null
     awaitingPermissions = false
@@ -197,7 +308,7 @@ class SessionController(application: Application) {
       }
       return
     }
-    cancel()
+    cancel(preserveForegroundRecovery = true)
     lastFailure = null
     automaticAttempt = automatic
     beforeConnect()
@@ -370,8 +481,11 @@ class SessionController(application: Application) {
   }
 
   internal fun securityInvalidated() {
+    stopForegroundRecovery()
     recoveryPaused = true
     workRecovery?.cancel(); workRecovery = null
+    companionSetupLease?.cancel(); companionSetupLease = null
+    companionSetupTarget = null
     // Retire keys synchronously even when the mutation originates outside a presentation.
     val op = operation
     connection?.retire()
@@ -406,6 +520,7 @@ class SessionController(application: Application) {
   }
 
   fun disconnect(skipAutomaticPause: Boolean = false) {
+    stopForegroundRecovery()
     recoveryPaused = true
     workRecovery?.cancel(); workRecovery = null
     if (!skipAutomaticPause) beforeDisconnect()
@@ -426,7 +541,13 @@ class SessionController(application: Application) {
     }
   }
 
-  fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
+  fun cancel(message: String = "Open Allow connections on your Mac to reconnect.",
+    preserveForegroundRecovery: Boolean = false) {
+    clearManualGrace()
+    if (!preserveForegroundRecovery) stopForegroundRecovery()
+    companionSetupLease?.cancel()
+    companionSetupLease = null
+    companionSetupTarget = null
     awaitingPermissions = false
     app.features.retired("ble")
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
@@ -461,7 +582,7 @@ class SessionController(application: Application) {
         engine?.closedByPeer == true,
         state == ConnectionState.SECURED,
       )
-    cancel()
+    cancel(preserveForegroundRecovery = true)
     lastFailure = (error as? SessionException)?.reason
     state = notice.state
     status = if (error is java.io.IOException) error.message ?: notice.text else notice.text
@@ -469,7 +590,7 @@ class SessionController(application: Application) {
   }
 
   private fun fail(reason: String) {
-    cancel()
+    cancel(preserveForegroundRecovery = true)
     state = ConnectionState.FAILED
     status = reason
     publishProgress()
@@ -507,7 +628,7 @@ class SessionController(application: Application) {
     val withdrawing = workLease || pickerLease
     workLease = approved
     pickerLease = picking && state == ConnectionState.SECURED
-    if (withdrawing && !foreground && companionOwner == null && !workLease && !pickerLease) cancel()
+    if (withdrawing) retireUnowned()
     reconcileWorkRecovery()
   }
 
@@ -540,10 +661,14 @@ class SessionController(application: Application) {
     if (!workLease) return
     workLease = false
     reconcileWorkRecovery()
-    if (!foreground && companionOwner == null && !pickerLease) cancel("Background transfer ownership ended.")
+    retireUnowned()
   }
 
   fun foreground(presentation: Any = this) {
+    // Handler scheduling may pause in background; elapsed realtime remains authoritative.
+    if (manualGrace.deadline != null && !manualGrace.active(SystemClock.elapsedRealtime()) &&
+        companionOwner == null && !workLease && !pickerLease && !hasCompanionSetupLease) cancel()
+    clearManualGrace()
     val previous = foreground
     presentations.add(presentation)
     if (!previous) foregroundChanged()
@@ -552,9 +677,10 @@ class SessionController(application: Application) {
   fun background(presentation: Any = this, changingConfigurations: Boolean = false) {
     val previous = foreground
     presentations.remove(presentation)
+    if (!foreground) stopForegroundRecovery()
     if (previous && !foreground) foregroundChanged()
     // The system permission dialog temporarily backgrounds the app during explicit setup.
-    if (!foreground && !changingConfigurations && !awaitingPermissions && companionOwner == null && !workLease && !pickerLease) cancel()
+    if (!foreground && !changingConfigurations && !awaitingPermissions) retireUnowned()
   }
 
   fun acquireCompanion(owner: Any) {
@@ -585,7 +711,7 @@ class SessionController(application: Application) {
 
   fun presentationCleared() {
     beforeConnect = {}
-    if (!foreground && companionOwner == null && !workLease && !pickerLease) cancel()
+    retireUnowned()
   }
 
   var companionOwnershipChanged: (Boolean)->Unit = {}

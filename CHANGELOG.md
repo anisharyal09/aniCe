@@ -49,6 +49,14 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Speed up foreground nearby discovery and add bounded trusted reconnect attempts;
+  retain explicit stop/verification boundaries and wait through Mac pairing handoff.
+- Open first-pair comparison directly for one nearby Mac, make native auto-reconnect
+  approval device-specific, and add direct Devices name editors with a smaller
+  native Mac comparison card.
+- Request Android discovery permission once on first unpaired launch, retain clear
+  denial recovery on Home, and pin immediate Bluetooth handoff to the just-verified Mac.
+
 - Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
 - Document reusable Home action sizing, single-row transfer navigation and compact grouped Settings spacing.
 - Preserve elapsed background LAN idle deadlines through socket replacement and lock/app handoffs; request enabled LAN for new local file actions and clarify Bluetooth fallback.

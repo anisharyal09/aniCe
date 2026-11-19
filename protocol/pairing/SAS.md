@@ -131,6 +131,16 @@ After completion, erase ephemeral material and establish a **fresh EDHOC**
 authenticated session through the existing owners. Never reuse the pairing
 channel as an application session. Background companion setup remains separate.
 
+The Android native locator from the completed channel may select one fresh
+connection to that same full peer credential for fifteen seconds, once only.
+It is process-local, never transmitted or persisted, and cannot replace pinned
+EDHOC authentication. A missing/stale handoff does not select another anonymous
+candidate automatically. The fixed discovery profile may still offer comparison
+while Mac cleanup finishes; before EDHOC, a trusted connection may repeat only
+that unauthenticated read at most twelve times 500 ms apart, within its original
+setup deadline. Status `14` remains failure unless a subsequent valid profile is
+read; no cache reset, successful-read fabrication or sealed-write replay is allowed.
+
 ## Compatibility and stored evidence
 
 The public identity schema and journal version remain unchanged. New records

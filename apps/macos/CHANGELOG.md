@@ -51,6 +51,15 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Compact the non-activating comparison card with a native smartphone symbol,
+  shorter copy and unchanged same-attempt approval/focus behavior.
+- Open shared-name/private-nickname editors directly from held Devices names or
+  native context menus, preserving normal click-to-details and save failures.
+- Advertise the existing generic BLE service for bounded authenticated Android
+  companion enrollment without reopening occupied session admission.
+- Fence delayed native unsubscribe callbacks against the current characteristic
+  and live subscription; report profile/read/write outcomes without peer payloads.
+
 - Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
 - Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
 - Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.
