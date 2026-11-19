@@ -11,7 +11,9 @@ internal data class CompanionSetupTarget(
     val expiresAt: Long,
 ) {
     fun matches(selected: DeviceIdentity?, channel: String?, now: Long): Boolean =
-        now < expiresAt && this.channel == channel &&
-            selected?.deviceId == peer.deviceId && selected.fingerprint == peer.fingerprint &&
-            selected.publicKey == peer.publicKey
+        now < expiresAt && this.channel == channel && companionSetupPeerMatches(peer, selected)
 }
+
+internal fun companionSetupPeerMatches(expected: DeviceIdentity, selected: DeviceIdentity?): Boolean =
+    selected?.deviceId == expected.deviceId && selected.fingerprint == expected.fingerprint &&
+        selected.publicKey == expected.publicKey

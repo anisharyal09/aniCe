@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.LayoutDirection
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupCopy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -112,8 +113,9 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                 if (automaticAvailable) onAutomaticChanged(enabled)
                 onAutomaticLanChanged(enabled)
             },
-            label = "Connect automatically after pairing")
-        if (!automaticAvailable) Text("Automatic Bluetooth is unavailable in this build.", style = MaterialTheme.typography.bodySmall)
+            label = "Reconnect automatically",
+            description = CompanionSetupCopy.explanation)
+        if (!automaticAvailable) Text("Background Bluetooth is unavailable on this phone.", style = MaterialTheme.typography.bodySmall)
         if (!enterCode || model.phase != "idle") {
             Text(model.status,
                 style = if (model.phase == "idle") MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,

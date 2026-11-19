@@ -4,13 +4,17 @@ aniCe uses one Android Bluetooth owner and one Mac availability policy. Pairing 
 
 ## Set up
 
-Enable **Connect automatically** for the trusted device on both platforms. Android's first setup uses the system companion-device chooser. The association supplies a Bluetooth locator and OS ownership, not authentication: each connection still checks the pinned device ID, fingerprint and public key.
+Enable **Auto connect** for the trusted device on Android and **Connect automatically**
+on the Mac. Android requires one native approval for background reconnection.
+This cannot be silently granted or restyled by aniCe. The association supplies a
+Bluetooth locator and OS ownership, not authentication: every connection still
+checks the pinned device ID, fingerprint and public key.
 
 Unpaired Android Home requests native Nearby Devices access once on first
 foreground launch. Granting starts discovery automatically; denial retains a
 clear permission/settings action and does not trigger repeated startup prompts.
 
-For nearby pairing, **Reconnect automatically** starts on in the comparison sheet.
+For nearby and QR/PIN pairing, **Reconnect automatically** starts on in the pairing sheet.
 After mutual confirmation and fresh secured BLE readiness, Android opens a
 single-device native approval for the currently verified Mac without a separate
 connection-settings detour. It filters the process-local authenticated locator;
@@ -18,16 +22,31 @@ the Mac briefly advertises its existing generic service without reopening its
 occupied application slot. Cancellation preserves trust and returns to Home.
 See the [bounded setup contract](../protocol/bluetooth/COMPANION_SETUP.md).
 
-The first approval uses one compact reconnection panel with stable title, progress
-area and actions behind Android's native chooser. Its copy explains general
-device reconnection, not call/message access; feature permissions remain separate.
+All pairing methods and the Devices Auto connect preference use the same flow:
+connect with fresh pinned EDHOC first, then prepare native single-Mac approval.
+There is no intermediate Connection settings page or broad "device to manage"
+chooser. aniCe's inline notice reads **Reconnect when nearby, even in the
+background.** and notes that allowing this phone and Mac connection does not
+grant feature permissions: files, clipboard and control keep their own.
+Android owns the system consent title and its generic “sync info” description;
+aniCe cannot restyle or replace that platform copy. Association does not grant
+feature permissions.
 One retained setup owner survives activity recreation without reopening approval.
 Cancellation and expiry fence late results; a new process requires explicit retry
 instead of automatically repeating an interrupted chooser.
 
+Automatic reconnection is event-driven, not continuous app polling. Android's
+native presence/foreground events start eligible connection work; failures have
+bounded retry spacing. Pause stops automatic work until resumed (or its selected
+deadline expires); it does not make a background polling loop run for that duration.
+
 Android companion ownership requires API 31 or newer. API 29–30 use manual foreground connections. Approved transfers have a separate connected-device foreground service; they do not require automatic Bluetooth setup.
 
-Only one Mac owns Android's saved automatic setup. Enabling another Mac explicitly replaces that setup; opening another device's settings does not. **Reset connection setup** removes its association and observation without resetting identity or pairing.
+Only one Mac owns Android's saved automatic setup. Enabling another Mac explicitly
+replaces it only after connection verification. **Reset auto connect** in device
+diagnostics removes association and observation without resetting identity or pairing.
+Saved valid setup resumes without another native prompt. Older peers lacking the
+enrollment capability retain manual connections; no broad chooser bypass is used.
 
 ## Android policy
 

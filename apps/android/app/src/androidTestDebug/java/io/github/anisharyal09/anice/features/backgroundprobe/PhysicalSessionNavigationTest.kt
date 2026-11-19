@@ -183,7 +183,6 @@ class PhysicalSessionNavigationTest {
     val trustFile = File(app.noBackupFilesDir, "trusted_peers.json")
     val beforeTrust = trustFile.readBytes()
     var home: Activity? = null
-    var settings: Activity? = null
     try {
       home = runner.startActivitySync(Intent().setClassName(app, "io.github.anisharyal09.anice.MainActivity")
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -208,14 +207,17 @@ class PhysicalSessionNavigationTest {
       withContext(Dispatchers.Main) { policy.pause(); assertFalse(controller.hasCompanionOwner) }
       withContext(Dispatchers.Main) { policy.resume() }
       waitOwned("Resume with cached native presence")
-      settings = runner.startActivitySync(Intent().setClassName(app, CompanionProbeActivity::class.java.name)
-        .putExtra("peer", peerId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      withContext(Dispatchers.Main) {
+        requireNotNull(home).startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+          android.net.Uri.fromParts("package", app.packageName, null)))
+      }
       delay(10000)
       withContext(Dispatchers.Main) {
         assertTrue(controller.hasCompanionOwner)
         assertEquals(controller.status, ConnectionState.SECURED, controller.state)
-        requireNotNull(settings).finish()
       }
+      home = runner.startActivitySync(Intent().setClassName(app, "io.github.anisharyal09.anice.MainActivity")
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       runner.waitForIdleSync()
       withContext(Dispatchers.Main) { requireNotNull(home).finishAndRemoveTask() }
       runner.waitForIdleSync()
@@ -239,7 +241,7 @@ class PhysicalSessionNavigationTest {
       delay(1000)
       withContext(Dispatchers.Main) { assertEquals(ConnectionState.SECURED, controller.state) }
     } finally {
-      withContext(Dispatchers.Main) { settings?.finish(); home?.finish() }
+      withContext(Dispatchers.Main) { home?.finish() }
       assertArrayEquals(beforeTrust, trustFile.readBytes())
       assertEquals(identity, withContext(Dispatchers.IO) { app.identityService.getOrCreateIdentity().identity })
     }
@@ -256,7 +258,6 @@ class PhysicalSessionNavigationTest {
     val beforeTrust = trustFile.readBytes()
     val controller = app.sessionController
     var home: Activity? = null
-    var probe: Activity? = null
     try {
       home = runner.startActivitySync(Intent().setClassName(app, "io.github.anisharyal09.anice.MainActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       withContext(Dispatchers.Main) {
@@ -268,9 +269,11 @@ class PhysicalSessionNavigationTest {
           controller.state != ConnectionState.SECURED
         }) delay(100)
       }
-      // Launch the real screen: its Start and Home's Stop must preserve the authenticated channel.
-      probe = runner.startActivitySync(Intent().setClassName(app, CompanionProbeActivity::class.java.name)
-        .putExtra("peer", peerId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      // A native settings overlay returns within the manual grace; it changes no permission or preference.
+      withContext(Dispatchers.Main) {
+        requireNotNull(home).startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+          android.net.Uri.fromParts("package", app.packageName, null)))
+      }
       withContext(Dispatchers.Main) {
         assertEquals(ConnectionState.SECURED, controller.state)
         controller.checkConnection()
@@ -278,8 +281,9 @@ class PhysicalSessionNavigationTest {
       delay(10000)
       withContext(Dispatchers.Main) {
         assertEquals(controller.status, ConnectionState.SECURED, controller.state)
-        requireNotNull(probe).finish()
       }
+      home = runner.startActivitySync(Intent().setClassName(app, "io.github.anisharyal09.anice.MainActivity")
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       runner.waitForIdleSync()
       withContext(Dispatchers.Main) {
         assertEquals(ConnectionState.SECURED, controller.state)
@@ -289,7 +293,6 @@ class PhysicalSessionNavigationTest {
       withContext(Dispatchers.Main) { assertEquals(controller.status, ConnectionState.SECURED, controller.state) }
     } finally {
       withContext(Dispatchers.Main) {
-        probe?.finish()
         home?.finish()
         controller.cancel()
       }

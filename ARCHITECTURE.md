@@ -31,7 +31,9 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   is offered afterward. A capability-gated, sixty-second
   [companion setup window](protocol/bluetooth/COMPANION_SETUP.md) filters native
   approval to the currently authenticated Mac without reopening its occupied BLE
-  slot or creating trust. The application profile is provisional and not audited.
+  slot or creating trust. Nearby, QR/PIN and explicit Auto connect share this
+  authenticated enrollment path; no broad native device chooser precedes it.
+  The application profile is provisional and not audited.
 - **Mutual Approval:** Both devices require explicit on-screen approval before local trust activation. Each device persists its own journal atomically; completion across devices is not a distributed atomic transaction.
 - **Specifications & Decisions:** Full protocol flow, wire framing, and state machines are documented in the [Pairing Protocol Contract](protocol/pairing/README.md), recorded in [ADR 0003 (Pairing & Trust)](docs/decisions/0003-provisional-pairing-and-trust.md), and verified by [`pairing-vectors.json`](protocol/test-vectors/pairing-vectors.json).
 
@@ -110,7 +112,7 @@ separately from immutable trust evidence. Ordinary current-peer surfaces resolve
 the latest device name unless Use nickname is enabled. Rename never starts a
 connection or changes EDHOC credentials; offline edits publish on reconnection.
 
-Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android manifest companion activity/service packages retain their original names; only their policy implementation moves. Existing identity, association and appearance persistence keys remain unchanged.
+Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android companion service keeps its installed identity; setup uses one retained feature model in the normal app shell, with no separate setup activity. Existing identity, association and appearance persistence keys remain unchanged.
 
 App registers media and transfer FeatureHandlers before DATA delivery. Android feature mutations are delivered on the main dispatcher; transport framing and cryptography remain off-main. FeatureDispatch publishes authenticated channel descriptors (instance ID, transport and peer identity/fingerprint), availability, retirement and capacity events. SecuredChannel rejects retired instances and bounds submissions to the authenticated channel profile; transport owners retain capacity preflight, readiness ordering, liveness priority and nonce ownership. Authenticated application delivery remains ordered. Transfer chunks enter a feature-owned bounded FIFO; unrelated handlers can proceed while its worker decodes and writes. A full FIFO suspends delivery without dropping valid chunks. Receiver resume verification shares the chunk FIFO through channel rebinding; cancellation and retirement invalidate pending work and fence active completions. Normal EOF and authenticated close drain accepted work for at most ten seconds. Generation checks reject retired callbacks. Handlers distinguish handled, queued, discarded and unrecognized DATA; unrecognized records retain connection-check fallback. Dispatch owns no transfer scheduler or sealed-record queue. Session DATA admission bounds unsealed callers, prioritizes standard-sized requests with bounded bulk turns, and removes cancelled waiters before nonce reservation. Cancellation remains effective through pre-seal native validation; nonce-owned submissions and post-write validation complete independently of producer cancellation or retire the session.
 

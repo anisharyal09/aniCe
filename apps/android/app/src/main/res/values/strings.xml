@@ -3,8 +3,6 @@
 <!-- Defines shared Android action labels, identity copy and connection messages. -->
 <resources>
     <string name="app_name">aniCe</string>
-    <string name="no_devices_paired">No devices paired</string>
-    <string name="this_device">This device</string>
     <string name="back">Back</string>
     <string name="cancel">Cancel</string>
     <string name="retry">Retry</string>

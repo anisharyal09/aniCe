@@ -51,6 +51,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Use native Liquid Glass for the floating comparison card on macOS 26+,
+  native material on older systems and a solid Reduce Transparency fallback;
+  preserve legible code, same-attempt actions and non-activating focus.
 - Remove an unused window text-scale mapper; keep actual font-scale behavior.
 - Compact the non-activating comparison card with a native smartphone symbol,
   shorter copy and unchanged same-attempt approval/focus behavior.
@@ -121,6 +124,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Retain a capacity event arriving during a refused companion capability send
+  so first enrollment does not wait for an unrelated later retry.
 - Keep floating-card Confirm on the same attempt in normal Devices navigation;
   avoid competing sheet cancellation shortcuts and verify approval versus dismissal.
 - Stop pairing advertising while its slot is occupied or admission is cooling

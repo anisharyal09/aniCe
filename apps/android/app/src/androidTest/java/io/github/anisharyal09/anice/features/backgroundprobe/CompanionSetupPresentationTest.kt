@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Checks retained approval ownership and stable themed setup without BLE, native enrollment or trust changes.
+// Verifies one retained inline approval, dismissal and themed layout without native enrollment or trust changes.
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import android.app.PendingIntent
@@ -8,10 +8,12 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
 import android.os.SystemClock
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -21,7 +23,14 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionSetupTarget
+import io.github.anisharyal09.anice.infrastructure.connections.SessionController
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.ui.PresentationFixture
+import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -34,89 +43,173 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CompanionSetupPresentationTest {
     private val runner get() = InstrumentationRegistry.getInstrumentation()
+    private val app get() = runner.targetContext.applicationContext as AniCeApplication
     private fun isolatedEmulator() {
-        assumeTrue("Setup fixtures run only in an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeTrue("Run only on an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         assumeTrue(runner.targetContext.packageName.contains(".preview"))
     }
     @Suppress("UNCHECKED_CAST")
-    private fun <T> state(model: CompanionSetupViewModel, name: String) =
-        CompanionSetupViewModel::class.java.getDeclaredField("$name\$delegate")
+    private fun <T> state(model: Any, name: String) =
+        model.javaClass.getDeclaredField("$name\$delegate")
             .apply { isAccessible = true }.get(model) as MutableState<T>
+    private fun field(model: Any, name: String, value: Any?) =
+        model.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(model, value)
+    private fun model(activity: MainActivity) =
+        ViewModelProvider(activity, ViewModelProvider.AndroidViewModelFactory.getInstance(app))[CompanionSetupViewModel::class.java]
+    private fun scenario(fixture: PresentationFixture) = ActivityScenario.launch<MainActivity>(fixture.intent())
 
     @Test fun rotationRetainsOneApprovalAndCancelFencesItsLateResult() {
         isolatedEmulator()
-        val scenario = ActivityScenario.launch<CompanionQuickSetupActivity>(
-            Intent(runner.targetContext, CompanionQuickSetupActivity::class.java))
+        val fixture = PresentationFixture()
+        val scenario = scenario(fixture)
         lateinit var original: CompanionSetupViewModel
+        val controller = app.sessionController
+        val beforeState = controller.state
+        val beforePeer = controller.selected
         var pending: PendingIntent? = null
         try {
-            awaitLabels(CompanionSetupCopy.title, "Close")
             scenario.onActivity { activity ->
-                original = ViewModelProvider(activity)[CompanionSetupViewModel::class.java]
-                state<DeviceIdentity?>(original, "peer").value = DeviceIdentity("fixture", "Fixture Mac", "macos", "", "")
+                activity.setContent { Text("Approval ownership fixture") }
+                original = model(activity)
+                val peer = DeviceIdentity("fixture", "Fixture Mac", "macos", "key", "fingerprint")
+                original.start(peer)
+                state<Boolean>(original, "startRequested").value = false
                 state<CompanionSetupPhase>(original, "phase").value = CompanionSetupPhase.PREPARING
-                val op = CompanionSetupViewModel::class.java.getDeclaredField("generation")
-                    .apply { isAccessible = true }.getInt(original)
-                // A sender is claimed but never sent. No system association or permission is requested.
-                pending = PendingIntent.getActivity(activity, 431, Intent(activity, CompanionQuickSetupActivity::class.java),
+                state<ConnectionState>(controller, "state").value = ConnectionState.SECURED
+                state<DeviceIdentity?>(controller, "selected").value = peer
+                val operation = SessionController::class.java.getDeclaredField("operation")
+                    .apply { isAccessible = true }.getLong(controller)
+                val connection = SessionController::class.java.getDeclaredField("connection")
+                    .apply { isAccessible = true }.get(controller)
+                val token = "$operation-${System.identityHashCode(connection)}"
+                val target = CompanionSetupTarget(peer, "02:00:00:00:00:01", token, SystemClock.elapsedRealtime() + 60_000)
+                field(controller, "companionSetupTarget", target)
+                field(original, "target", target)
+                // Claim a sender but never launch it; no association/permission is created.
+                pending = PendingIntent.getActivity(activity, 431, Intent(activity, MainActivity::class.java),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_CANCEL_CURRENT)
-                val approval = CompanionApproval(op, requireNotNull(pending).intentSender)
+                val approval = CompanionApproval(0, requireNotNull(pending).intentSender)
                 state<CompanionApproval?>(original, "pendingApproval").value = approval
                 assertSame(approval.sender, original.claimApproval(approval))
                 repeat(5) { assertNull(original.claimApproval(approval)) }
-                assertEquals(CompanionSetupPhase.APPROVAL, original.phase)
             }
             scenario.recreate()
             scenario.onActivity { activity ->
-                val retained = ViewModelProvider(activity)[CompanionSetupViewModel::class.java]
-                assertSame("Rotation must not create another enrollment owner", original, retained)
+                activity.setContent { Text("Approval ownership fixture") }
+                val retained = model(activity)
+                assertSame(original, retained)
                 assertEquals(CompanionSetupPhase.APPROVAL, retained.phase)
                 assertNull(retained.pendingApproval)
-                retained.startWhenReady()
-                assertEquals(CompanionSetupPhase.APPROVAL, retained.phase)
-                retained.cancel()
-                val cancelled = retained.notice
-                assertFalse("An old chooser result must be drained before another attempt", retained.canEnable)
+                retained.dismiss()
+                assertFalse("Drain the old result before starting another request", retained.canStart)
                 retained.approvalReturned(success = true, association = null)
-                assertEquals(cancelled, retained.notice)
+                assertTrue(retained.canStart)
+                assertFalse(retained.showing)
                 assertEquals(CompanionSetupPhase.READY, retained.phase)
-                assertTrue(retained.canEnable)
-                assertFalse(retained.complete)
             }
         } finally {
             pending?.cancel()
             scenario.close()
+            fixture.close()
+            runner.runOnMainSync {
+                field(controller, "companionSetupTarget", null)
+                state<ConnectionState>(controller, "state").value = beforeState
+                state<DeviceIdentity?>(controller, "selected").value = beforePeer
+            }
         }
     }
 
-    @Test fun freshProcessNeverAutomaticallyRepeatsAnInterruptedApproval() {
+    @Test fun aReplacementOwnerDoesNotRepeatAnInterruptedApproval() {
         isolatedEmulator()
         runner.runOnMainSync {
-            val model = CompanionSetupViewModel(runner.targetContext.applicationContext as AniCeApplication)
+            val model = CompanionSetupViewModel(app)
             val store = ViewModelStore().apply { put("setup", model) }
             try {
-                // Null peer avoids any native identity/trust lookup; only restored-start policy is exercised.
-                model.initialize(null, quick = true, enable = true, restored = true)
-                state<DeviceIdentity?>(model, "peer").value = DeviceIdentity("fixture", "Fixture Mac", "macos", "", "")
-                state<CompanionSetupPhase>(model, "phase").value = CompanionSetupPhase.READY
                 model.startWhenReady()
-                assertEquals(CompanionSetupPhase.READY, model.phase)
+                assertFalse(model.startRequested)
+                assertFalse(model.showing)
                 assertNull(model.pendingApproval)
                 assertNull(model.permissionRequest)
-                assertFalse(model.complete)
             } finally { store.clear() }
         }
     }
 
-    @Test fun preparationAndApprovalKeepTheSamePanelAcrossThemesWidthsAndTextScales() {
+    @Test fun everyEntryPointUsesOneCredentialAndBackgroundOrDismissalCannotRestartIt() {
         isolatedEmulator()
-        val scenario = ActivityScenario.launch<CompanionQuickSetupActivity>(
-            Intent(runner.targetContext, CompanionQuickSetupActivity::class.java))
-        val phase = mutableStateOf(CompanionSetupPhase.LOADING)
+        runner.runOnMainSync {
+            val model = CompanionSetupViewModel(app)
+            val store = ViewModelStore().apply { put("setup", model) }
+            try {
+                val peer = DeviceIdentity("fixture", "Fixture Mac", "macos", "key", "fingerprint")
+                model.start(peer)
+                val initiallyShowing = model.showing
+                assertFalse("The request owns the next enrollment", model.canStart)
+                model.start(peer.copy(deviceId = "replacement"))
+                assertEquals(peer, model.peer)
+                model.presentationStopped(changingConfigurations = true)
+                assertEquals(initiallyShowing, model.showing)
+                model.presentationStopped(changingConfigurations = false)
+                assertFalse(model.showing)
+                model.start(peer)
+                model.dismiss()
+                model.startWhenReady()
+                assertFalse(model.showing)
+                assertNull(model.pendingApproval)
+                assertNull(model.permissionRequest)
+            } finally { store.clear() }
+        }
+    }
+
+    @Test fun quietResumeIsCancelledWhenPresentationStopsWithoutShowingACard() {
+        isolatedEmulator()
+        runner.runOnMainSync {
+            val model = CompanionSetupViewModel(app)
+            val store = ViewModelStore().apply { put("setup", model) }
+            try {
+                val peer = DeviceIdentity("fixture", "Fixture Mac", "macos", "key", "fingerprint")
+                model.start(peer)
+                state<Boolean>(model, "showing").value = false
+                state<CompanionSetupPhase>(model, "phase").value = CompanionSetupPhase.CONNECTING
+                assertFalse("A quiet resume still owns the request", model.canStart)
+                model.presentationStopped(changingConfigurations = false)
+                assertFalse(model.startRequested)
+                assertFalse(model.showing)
+                assertEquals(CompanionSetupPhase.READY, model.phase)
+            } finally { store.clear() }
+        }
+    }
+
+    @Test fun unpinnedApprovalIsRejectedWithoutLaunchingIt() {
+        isolatedEmulator()
+        runner.runOnMainSync {
+            val model = CompanionSetupViewModel(app)
+            val store = ViewModelStore().apply { put("setup", model) }
+            val pending = PendingIntent.getActivity(runner.targetContext, 432,
+                Intent(runner.targetContext, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+            try {
+                model.start(DeviceIdentity("fixture", "Fixture Mac", "macos", "key", "fingerprint"))
+                state<Boolean>(model, "startRequested").value = false
+                val approval = CompanionApproval(0, pending.intentSender)
+                state<CompanionApproval?>(model, "pendingApproval").value = approval
+                assertNull(model.claimApproval(approval))
+                assertEquals(CompanionSetupPhase.FAILED, model.phase)
+                assertNull(model.pendingApproval)
+            } finally { pending.cancel(); store.clear() }
+        }
+    }
+
+    @Test fun setupStaysCompactAcrossThemesWidthsAndTextScales() {
+        isolatedEmulator()
+        val fixture = PresentationFixture()
+        val scenario = scenario(fixture)
+        lateinit var model: CompanionSetupViewModel
         val scale = mutableFloatStateOf(1f)
         val dark = mutableStateOf(false)
+        val width = mutableIntStateOf(280)
         try {
             scenario.onActivity { activity ->
+                model = model(activity)
+                model.start(DeviceIdentity("fixture", "Fixture Mac", "macos", "key", "fingerprint"))
                 activity.setContent {
                     val configuration = Configuration(LocalConfiguration.current).apply {
                         uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -126,47 +219,51 @@ class CompanionSetupPresentationTest {
                         AniCeTheme {
                             val density = LocalDensity.current
                             CompositionLocalProvider(LocalDensity provides Density(density.density, scale.floatValue)) {
-                                CompanionSetupPanel("Fixture Mac", phase.value, "", {}, {})
+                                Surface(Modifier.fillMaxSize()) {
+                                    Box(Modifier.safeDrawingPadding().padding(top = 16.dp)) {
+                                        Column(Modifier.width(width.intValue.dp)) { CompanionSetupStatus(model) }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-            for (width in listOf(280, 360)) for (fontScale in listOf(0.8f, 1.2f)) for (night in listOf(false, true)) {
+            for (widthDp in listOf(280, 360)) for (fontScale in listOf(0.8f, 1.2f)) for (night in listOf(false, true)) {
                 var minimumTouchHeight = 0
                 scenario.onActivity { activity ->
-                    activity.window.setLayout((width * activity.resources.displayMetrics.density).toInt(),
-                        WindowManager.LayoutParams.WRAP_CONTENT)
+                    width.intValue = widthDp
                     minimumTouchHeight = (48 * activity.resources.displayMetrics.density).toInt() - 1
                     scale.floatValue = fontScale
                     dark.value = night
-                    phase.value = CompanionSetupPhase.LOADING
+                    state<CompanionSetupPhase>(model, "phase").value = CompanionSetupPhase.PREPARING
                 }
                 drawn(scenario)
-                val before = bounds(clickable(find(awaitLabels(CompanionSetupCopy.title, "Fixture Mac", "Not now"), "Not now")))
-                assertTrue(before.height() >= minimumTouchHeight)
-                for (step in listOf(CompanionSetupPhase.READY, CompanionSetupPhase.PREPARING,
-                    CompanionSetupPhase.APPROVAL, CompanionSetupPhase.SAVING)) {
-                    scenario.onActivity { phase.value = step }
+                val preparedTree = awaitLabels(CompanionSetupCopy.title, "Not now")
+                val before = bounds(clickable(find(preparedTree, "Not now")))
+                assertTrue("Not now bounds=$before, expected height >= $minimumTouchHeight at $widthDp / $fontScale",
+                    before.height() >= minimumTouchHeight)
+                for (phase in listOf(CompanionSetupPhase.APPROVAL, CompanionSetupPhase.SAVING)) {
+                    scenario.onActivity { state<CompanionSetupPhase>(model, "phase").value = phase }
                     drawn(scenario)
-                    val tree = awaitLabels(CompanionSetupCopy.title, CompanionSetupCopy.explanation,
-                        CompanionSetupCopy.permissions, "Not now")
-                    assertEquals("Setup resized during $step at $width dp / $fontScale / dark=$night",
-                        before, bounds(clickable(find(tree, "Not now"))))
-                    assertNull("Preparation must never flash a retry control", find(tree, "Try again"))
+                    val tree = awaitLabels(CompanionSetupCopy.title, CompanionSetupCopy.explanation, "Not now")
+                    assertEquals("Pending approval resized", before, bounds(clickable(find(tree, "Not now"))))
+                    assertNull(find(tree, "Try again"))
                 }
-                if (width == 280 && fontScale == 1.2f) {
-                    runner.uiAutomation.takeScreenshot()?.let { image ->
-                        File(runner.targetContext.cacheDir, "companion-setup-${if (night) "dark" else "light"}.png")
-                            .outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-                        image.recycle()
-                    }
+                if (widthDp == 280 && fontScale == 1.2f) runner.uiAutomation.takeScreenshot()?.let { image ->
+                    File(runner.targetContext.cacheDir, "auto-connect-${if (night) "dark" else "light"}.png")
+                        .outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    image.recycle()
                 }
-                scenario.onActivity { phase.value = CompanionSetupPhase.FAILED }
-                val failed = awaitLabels(CompanionSetupCopy.title, "Close", "Try again")
+                scenario.onActivity {
+                    state<CompanionSetupPhase>(model, "phase").value = CompanionSetupPhase.FAILED
+                    state<String>(model, "notice").value = "Couldn't connect. Try again."
+                }
+                val failed = awaitLabels("Not now", "Try again")
                 assertTrue(bounds(clickable(find(failed, "Try again"))).height() >= minimumTouchHeight)
+                scenario.onActivity { state<String>(model, "notice").value = "" }
             }
-        } finally { scenario.close() }
+        } finally { scenario.close(); fixture.close() }
     }
 
     private fun awaitLabels(vararg labels: String): AccessibilityNodeInfo {
@@ -178,18 +275,16 @@ class CompanionSetupPresentationTest {
             val root = automation.rootInActiveWindow
             if (root != null && labels.all { find(root, it)?.isVisibleToUser == true }) return root
         } while (SystemClock.uptimeMillis() < deadline)
-        error("Setup panel did not show ${labels.joinToString()}")
+        error("Setup did not show ${labels.joinToString()}")
     }
-    private fun drawn(scenario: ActivityScenario<CompanionQuickSetupActivity>) {
+    private fun drawn(scenario: ActivityScenario<MainActivity>) {
         val drawn = CountDownLatch(1)
         scenario.onActivity { activity ->
             activity.window.decorView.postOnAnimation {
-                activity.window.decorView.postOnAnimation {
-                    activity.window.decorView.post { drawn.countDown() }
-                }
+                activity.window.decorView.postOnAnimation { activity.window.decorView.post { drawn.countDown() } }
             }
         }
-        assertTrue("Setup frame did not draw", drawn.await(10, TimeUnit.SECONDS))
+        assertTrue(drawn.await(10, TimeUnit.SECONDS))
         runner.waitForIdleSync()
     }
     private fun find(node: AccessibilityNodeInfo?, label: String): AccessibilityNodeInfo? {
@@ -204,5 +299,5 @@ class CompanionSetupPresentationTest {
         return null
     }
     private fun bounds(node: AccessibilityNodeInfo?): Rect =
-        Rect().also { requireNotNull(node) { "Missing accessible control" }.getBoundsInScreen(it) }
+        Rect().also { requireNotNull(node).getBoundsInScreen(it) }
 }

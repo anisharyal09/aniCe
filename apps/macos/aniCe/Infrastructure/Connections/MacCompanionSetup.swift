@@ -47,6 +47,7 @@ struct CompanionSetupMessage: Equatable {
     let channel: any SecuredChannel
     var sent = false
     var sending = false
+    var capacityPending = false
     var capable = false
     init(_ channel: any SecuredChannel) { self.channel = channel }
   }
@@ -73,17 +74,25 @@ struct CompanionSetupMessage: Equatable {
     link = nil
   }
   func capacityAvailable(_ descriptor: ChannelDescriptor) {
-    if let current = link, current.channel.descriptor.instance == descriptor.instance { sendCapability(current) }
+    if let current = link, current.channel.descriptor.instance == descriptor.instance {
+      if current.sending { current.capacityPending = true } else { sendCapability(current) }
+    }
   }
   private func sendCapability(_ current: Link) {
     guard link === current, !current.sent, !current.sending else { return }
     current.sending = true
+    current.capacityPending = false
     Task {
-      defer { current.sending = false }
+      var backpressured = false
+      defer {
+        current.sending = false
+        if backpressured && current.capacityPending { sendCapability(current) }
+      }
       do {
         try await current.channel.sendData(CompanionSetupMessage(kind: 1).encode())
         if link === current { current.sent = true }
-      } catch {}
+      } catch is SessionBackpressure { backpressured = true }
+      catch {}
     }
   }
   func handle(_ bytes: Data, on descriptor: ChannelDescriptor) async -> DataHandling {

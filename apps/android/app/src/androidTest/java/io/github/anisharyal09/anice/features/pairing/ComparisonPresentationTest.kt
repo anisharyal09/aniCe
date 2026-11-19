@@ -2,7 +2,6 @@
 // Exercises live comparison visibility through Compose and navigation without BLE, confirmation or trust mutations.
 package io.github.anisharyal09.anice.features.pairing
 
-import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.SystemClock
@@ -18,11 +17,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.anisharyal09.anice.features.backgroundprobe.CompanionProbeActivity
+import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.ui.PresentationFixture
 import io.github.anisharyal09.anice.infrastructure.pairing.PairingMethod
+import io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -63,22 +64,51 @@ class ComparisonPresentationTest {
         }
     }
 
+    @Test fun everyPairingMethodHandsOffItsNativeCandidateOnlyOnceAfterTrustIsSaved() {
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val app = runner.targetContext.applicationContext as io.github.anisharyal09.anice.AniCeApplication
+        assumeTrue("Use an isolated preview", app.packageName.contains(".preview"))
+        runner.runOnMainSync {
+            val model = PairingViewModel(app)
+            val store = androidx.lifecycle.ViewModelStore().apply { put("pairing", model) }
+            val peer = DeviceIdentity("fixture", "Verified Mac", "macos", "key", "fingerprint")
+            val candidateField = PairingViewModel::class.java.getDeclaredField("pairedCandidate")
+                .apply { isAccessible = true }
+            try {
+                for (method in listOf(PairingMethod.QR, PairingMethod.PIN, PairingMethod.SAS)) {
+                    state<PairingMethod>(model, "method").value = method
+                    state<Boolean>(model, "completedWithComparison").value = method == PairingMethod.SAS
+                    val candidate = PairedBleCandidate(null, peer, SystemClock.elapsedRealtime() + 15_000)
+                    candidateField.set(model, candidate)
+                    state<String>(model, "phase").value = "saving"
+                    assertNull(model.takePairedCandidate())
+                    state<String>(model, "phase").value = "paired"
+                    assertSame("All pairing methods must share the fresh Bluetooth handoff", candidate, model.takePairedCandidate())
+                    assertNull(model.takePairedCandidate())
+                }
+            } finally { model.cancel(); store.clear() }
+        }
+    }
+
     @Test fun globalAndAddDeviceSurfacesRenderTheSameLiveCodeAcrossPhaseChanges() {
         val runner = InstrumentationRegistry.getInstrumentation()
         assumeTrue("UI fixture runs only on an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         assumeTrue(runner.targetContext.packageName.contains(".preview"))
         runner.uiAutomation
-        // A full-screen native host avoids Home's unrelated first-launch permission/discovery effects.
-        val activity = runner.startActivitySync(Intent(runner.targetContext, CompanionProbeActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CompanionProbeActivity
+        // Hold Home's unrelated first-launch prompt without changing OS permissions.
+        val fixture = PresentationFixture()
+        val activity = runner.startActivitySync(fixture.intent()) as MainActivity
         lateinit var model: PairingViewModel
+        val store = androidx.lifecycle.ViewModelStore()
         var initialized = false
         val embedded = mutableStateOf(false)
         val scale = mutableFloatStateOf(1f)
         val dark = mutableStateOf(false)
         try {
             runner.runOnMainSync {
-                model = ViewModelProvider(activity)[PairingViewModel::class.java]
+                // The fixture has its own pairing owner; native Activity lifecycle must not cancel a synthetic exchange.
+                model = PairingViewModel(runner.targetContext.applicationContext as io.github.anisharyal09.anice.AniCeApplication)
+                store.put("comparison", model)
                 initialized = true
                 model.beforePairing = {}
                 model.cancel()
@@ -141,7 +171,8 @@ class ComparisonPresentationTest {
                 runner.waitForIdleSync()
             }
         } finally {
-            runner.runOnMainSync { if (initialized) model.cancel(); activity.finish() }
+            runner.runOnMainSync { if (initialized) model.cancel(); store.clear(); activity.finish() }
+            fixture.close()
         }
     }
 

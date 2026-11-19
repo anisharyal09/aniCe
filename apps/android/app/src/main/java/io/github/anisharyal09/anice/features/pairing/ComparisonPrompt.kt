@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupCopy
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -74,6 +75,8 @@ internal fun ComparisonContent(model: PairingViewModel, manualPair: () -> Unit) 
                     onCheckedChange = null)
                 Text("Reconnect automatically", style = MaterialTheme.typography.bodyMedium)
             }
+            Text(CompanionSetupCopy.explanation,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
             verticalArrangement = Arrangement.spacedBy(4.dp)) {

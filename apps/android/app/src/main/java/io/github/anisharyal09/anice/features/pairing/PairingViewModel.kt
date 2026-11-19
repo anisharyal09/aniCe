@@ -61,7 +61,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private var nearbyCandidate: NearbyPairingCandidate? = null
     private var pairedCandidate: io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate? = null
     internal fun takePairedCandidate(): io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate? {
-        if (phase != "paired" || !completedWithComparison) return null
+        if (phase != "paired") return null
         return pairedCandidate.also { pairedCandidate = null }
     }
     var automaticAfterPairing by mutableStateOf(true)
@@ -510,7 +510,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 deadline = SystemClock.elapsedRealtime() + 10000
             }
             "paired" -> {
-                if (method == PairingMethod.SAS && p != null) pairedCandidate = transport.pairedCandidate(p)
+                if (p != null) pairedCandidate = transport.pairedCandidate(p)
                 readyToFinish = true
                 phase = "cleanup"
                 status = "Trust saved. Releasing Bluetooth…"

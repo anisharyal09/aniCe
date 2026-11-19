@@ -175,4 +175,72 @@ class ProximitySetupTests {
             assertEquals(listOf(1L), next.messages.map { it.kind })
         } finally { scope.cancel() }
     }
+
+    @Test fun capacityEventDuringCapabilitySubmissionIsNotLost() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val owner = CompanionSetupLink(scope) { 0 }
+            val ble = link()
+            val release = CompletableDeferred<Unit>()
+            var attempts = 0
+            ble.submit = {
+                if (++attempts == 1) {
+                    release.await()
+                    throw SessionBackpressure()
+                }
+            }
+            owner.available(ble)
+            owner.capacityAvailable(ble.descriptor)
+            release.complete(Unit)
+            withTimeout(1000) { while (ble.messages.isEmpty()) yield() }
+            assertEquals(2, attempts)
+            assertEquals(listOf(CompanionSetupMessage(1)), ble.messages)
+            ble.submit = { message ->
+                if (message.kind == 2L) owner.handle(ble.descriptor, CompanionSetupMessage(3, true).encode())
+            }
+            owner.handle(ble.descriptor, CompanionSetupMessage(1).encode())
+            assertTrue(withTimeout(1000) { owner.prepare(target(ble)) })
+        } finally { scope.cancel() }
+    }
+
+    @Test fun refusedWindowRequestWaitsForCapacityWithoutRepeatingSubmittedRequest() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val owner = CompanionSetupLink(scope) { 0 }
+            val ble = link()
+            owner.available(ble)
+            owner.handle(ble.descriptor, CompanionSetupMessage(1).encode())
+            var attempts = 0
+            ble.submit = { message ->
+                if (message.kind == 2L && ++attempts == 1) throw SessionBackpressure()
+                if (message.kind == 2L) owner.handle(ble.descriptor, CompanionSetupMessage(3, true).encode())
+            }
+            val preparation = async(start = CoroutineStart.UNDISPATCHED) { owner.prepare(target(ble)) }
+            assertFalse(preparation.isCompleted)
+            owner.capacityAvailable(ble.descriptor)
+            assertTrue(withTimeout(1000) { preparation.await() })
+            repeat(5) { owner.capacityAvailable(ble.descriptor) }
+            assertEquals(2, attempts)
+            assertEquals(listOf(1L, 2L), ble.messages.map { it.kind })
+        } finally { scope.cancel() }
+    }
+
+    @Test fun retiredCapabilitySubmissionCannotRetryOnANewerChannel() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val owner = CompanionSetupLink(scope) { 0 }
+            val old = link()
+            val release = CompletableDeferred<Unit>()
+            var attempts = 0
+            old.submit = { attempts++; release.await(); throw SessionBackpressure() }
+            owner.available(old)
+            owner.capacityAvailable(old.descriptor)
+            val next = link("new")
+            owner.available(next)
+            release.complete(Unit)
+            yield()
+            assertEquals(1, attempts)
+            assertEquals(listOf(CompanionSetupMessage(1)), next.messages)
+        } finally { scope.cancel() }
+    }
 }

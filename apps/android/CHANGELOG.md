@@ -48,6 +48,14 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Unify nearby, QR/PIN and Devices Auto connect around one authenticated Mac
+  approval; remove the separate Connection settings activity and broad association
+  chooser. Keep a short reconnection note and resume valid saved setup without
+  asking again.
+- Re-enable saved Auto connect without flashing the setup notice; the inline card
+  appears only when Android must ask again or a retry needs attention.
+- Remove unused device-list text resources and obsolete setup-intent scaffolding;
+  retain approval, lifecycle, credential and presentation regression tests.
 - Explain general device reconnection during native auto-connect setup, keeping
   feature permissions separate from companion approval.
 - Retain already-secured manual Bluetooth through brief Home/Recents and activity
@@ -127,6 +135,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Prepare first post-pair auto-reconnect approval inline on Home instead of
+  opening a second aniCe activity; explain native approval, background reconnection
+  and Pause. Preserve setup capability/request capacity events and give
+  acknowledgment its own bounded wait without replaying submitted messages.
 - Keep first auto-reconnect setup in a stable floating panel without a full-screen
   launch flash or transient retry controls; retain one native request across
   rotation and reject late cancelled, expired or process-restored results.

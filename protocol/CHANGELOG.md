@@ -38,6 +38,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Require the same authenticated single-Mac companion enrollment for all pairing
+  methods and explicit Auto connect; older peers keep manual connections.
 - Bound native post-SAS locator handoff and pre-authentication profile waits,
   require current-subscription retirement and clarify first-launch permission behavior.
 
@@ -59,6 +61,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Fixed
 
+- Clarify separate bounded companion capability/ack waits and capacity-driven
+  pre-seal retries without changing wire bytes or replaying submitted requests.
 - Clarify same-attempt comparison presentation and stop anonymous availability
   during occupied pairing admission or cooldown without changing SAS wire bytes.
 - Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample formats.

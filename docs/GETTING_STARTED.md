@@ -58,7 +58,13 @@ Manual LAN uses a live authenticated Bluetooth endpoint hint when one is availab
 
 Use **Pause/Resume** to stop automatic connection work for 1, 3 or 6 hours, a custom interval, or until manually resumed. A timed pause closes current Bluetooth/LAN sessions and saves its resume deadline; it does not keep active work connected. Disconnect local network and Disconnect Bluetooth affect their respective channels. Android's background LAN timeout defaults to Never; this removes the idle timeout, not network loss, process loss or session security limits.
 
-Enable **Connect automatically** on both devices for their supported native background setup. Android first enable or association repair can require the companion association dialog. Closing the Mac window leaves the menu-bar companion running; Command-Q quits. Phone force-stop and reboot have no automatic-recovery promise. See [Bluetooth lifecycle](BACKGROUND_CONNECTIONS.md) and [LAN policy](LAN_CONNECTIONS.md) for the full ownership rules.
+Enable **Auto connect** on Android and **Connect automatically** on the Mac.
+Nearby, QR/PIN pairing and the Android preference all use one native approval
+for the verified Mac, after connecting. Android requires Allow for background
+reconnection; declining leaves the devices paired. Closing the Mac window leaves
+the companion running; Command-Q quits. Phone force-stop and reboot have no
+automatic-recovery promise. See [Bluetooth lifecycle](BACKGROUND_CONNECTIONS.md)
+and [LAN policy](LAN_CONNECTIONS.md).
 
 In **Settings → This device → Edit name**, save a trimmed name of 1–64 Unicode code points. Renaming keeps the same device ID, key and trust. **Forget device** removes local trust; **Reset identity** replaces the local identity and requires pairing again. Neither action clears optional saved clipboard history; delete or clear that history explicitly in Clipboard.
 

@@ -100,7 +100,7 @@ For an isolated transfer preview on an explicitly selected test phone, run:
 
 This builds **aniCe Transfer Preview** as `io.github.anisharyal09.anice.preview.transfer`, verifies the package ID and installs alongside the normal aniCe app. It never uninstalls or replaces production; remember that a fresh package starts with its own data and permissions.
 
-The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Automatic-setup activity routing retains the compiled Kotlin namespace even though the installed application ID has a preview suffix.
+The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Nearby, QR/PIN and explicit Auto connect use the same single-Mac approval from the normal app, without a separate setup activity or broad device-management chooser.
 
 Run only one branch's Transfer Preview at a time on each platform: branch copies share the preview identity, trust and preferences. New file actions can request enabled LAN after transport Disconnect; other feature demand retains the normal Disconnect gate. Connection Pause and native eligibility always apply.
 

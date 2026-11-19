@@ -45,6 +45,11 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Simplify all Android auto-connect entry points to one verified-device approval
+  and short note, preserving Android consent while removing device-management
+  detours and unused setup-screen code.
+- Remove the intermediate Android auto-reconnect setup popup, clarify its
+  background/pause purpose and use native Mac glass for floating code comparison.
 - Stabilize Android's first auto-reconnect approval and clarify general device
   reconnection; remove superseded edge-drop prototype code and stale nearby-setup
   descriptions while retaining native/product regression coverage.

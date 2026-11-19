@@ -3,6 +3,9 @@
 package io.github.anisharyal09.anice.infrastructure.connections
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
 
 internal class CompanionSetupLink(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
@@ -11,6 +14,8 @@ internal class CompanionSetupLink(
     private class Link(val channel: SecuredChannel) {
         var capabilitySent = false
         var sending = false
+        var capacityPending = false
+        val capacity = MutableStateFlow(0L)
         val capability = CompletableDeferred<Unit>()
         val submitted = CompletableDeferred<Unit>()
         var preparing = false
@@ -37,12 +42,17 @@ internal class CompanionSetupLink(
         link.acknowledgment?.cancel()
     }
     override fun capacityAvailable(descriptor: ChannelDescriptor) {
-        link?.takeIf { it.channel.descriptor.instance == descriptor.instance }?.let(::sendCapability)
+        link?.takeIf { it.channel.descriptor.instance == descriptor.instance }?.let {
+            it.capacity.value++
+            if (it.sending) it.capacityPending = true else sendCapability(it)
+        }
     }
     private fun sendCapability(current: Link) {
         if (current.capabilitySent || current.sending || link !== current) return
         current.sending = true
+        current.capacityPending = false
         scope.launch {
+            var backpressured = false
             try {
                 current.channel.sendData(CompanionSetupMessage(1).encode())
                 if (link === current) {
@@ -50,8 +60,12 @@ internal class CompanionSetupLink(
                     current.submitted.complete(Unit)
                 }
             } catch (error: CancellationException) { throw error }
+            catch (_: SessionBackpressure) { backpressured = true }
             catch (_: Exception) {}
-            finally { current.sending = false }
+            finally {
+                current.sending = false
+                if (backpressured && current.capacityPending) sendCapability(current)
+            }
         }
     }
     override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
@@ -64,7 +78,7 @@ internal class CompanionSetupLink(
         return when (message.kind) {
             1L -> { current.capability.complete(Unit); DataHandling.HANDLED }
             3L -> {
-                if (!current.capability.isCompleted || !current.capabilitySent || current.acknowledgment == null)
+                if (!current.capability.isCompleted || current.acknowledgment == null)
                     DataHandling.DISCARDED
                 else { current.acknowledgment?.complete(message.available); DataHandling.HANDLED }
             }
@@ -77,14 +91,29 @@ internal class CompanionSetupLink(
                 now()) || current.preparing) return false
         current.preparing = true
         try {
-            return withTimeoutOrNull(5_000) {
+            val capable = withTimeoutOrNull(5_000) {
                 current.capability.await()
                 current.submitted.await()
+                true
+            } ?: false
+            if (!capable) return false
+            return withTimeoutOrNull(5_000) {
                 if (link !== current || !target.matches(current.channel.descriptor.peer,
                         current.channel.descriptor.instance, now())) return@withTimeoutOrNull false
                 val reply = CompletableDeferred<Boolean>()
                 current.acknowledgment = reply
-                current.channel.sendData(CompanionSetupMessage(2, seconds = 60).encode())
+                while (true) {
+                    val capacity = current.capacity.value
+                    try {
+                        current.channel.sendData(CompanionSetupMessage(2, seconds = 60).encode())
+                        break
+                    } catch (_: SessionBackpressure) {
+                        // Only a refused, unsealed request can wait for capacity; never replay a submission.
+                        current.capacity.first { it != capacity }
+                        if (link !== current || !target.matches(current.channel.descriptor.peer,
+                                current.channel.descriptor.instance, now())) return@withTimeoutOrNull false
+                    }
+                }
                 reply.await() && link === current && target.matches(current.channel.descriptor.peer,
                     current.channel.descriptor.instance, now())
             } ?: false

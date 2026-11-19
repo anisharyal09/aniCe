@@ -8,7 +8,8 @@ import io.github.anisharyal09.anice.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.features.backgroundprobe.hasConnectionSetup
-import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
+import io.github.anisharyal09.anice.features.backgroundprobe.rememberCompanionSetup
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupCopy
 import androidx.compose.ui.res.painterResource
 import android.content.pm.ApplicationInfo
 import androidx.activity.compose.BackHandler
@@ -50,6 +51,7 @@ import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, overview: Boolean = false, flatDeviceLayout: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {},
     onRenamePeer: ((io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity) -> Unit)? = null) {
     val context = LocalContext.current
+    val companionSetup = rememberCompanionSetup()
     val scope = rememberCoroutineScope()
     var automaticChanging by remember { mutableStateOf(false) }
     var automaticNotice by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -152,7 +154,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                     try { nearby.resumeNow() }
                                     catch (error: CancellationException) { throw error }
                                     catch (_: Exception) {
-                                        automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
+                                        automaticNotice = record.peer.deviceId to "Couldn't resume auto connect. Try enabling it again."
                                     } finally { automaticChanging = false }
                                 }
                             }
@@ -197,22 +199,14 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                 if (!compact && nearby.available) {
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint
-                    AutomaticConnectionToggle(checked = enabled, enabled = canUsePeer && !automaticChanging,
-                        label = "Auto connect", description = pauseStatus ?: "Reconnect when this device is available.", compact = flatDeviceLayout,
+                    AutomaticConnectionToggle(checked = enabled,
+                        enabled = canUsePeer && !automaticChanging && companionSetup.canStart,
+                        label = "Auto connect", description = pauseStatus ?: CompanionSetupCopy.explanation, compact = flatDeviceLayout,
                         onCheckedChange = { checked ->
                             automaticNotice = null
                             if (!checked) {
                                 if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint)) nearby.disable()
-                            } else if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) && nearby.address != null && model.missingPermissions().isEmpty()) {
-                                automaticChanging = true
-                                scope.launch {
-                                    try { nearby.resumeNow() }
-                                    catch (error: CancellationException) { throw error }
-                                    catch (_: Exception) {
-                                        automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
-                                    } finally { automaticChanging = false }
-                                }
-                            } else context.startActivity(companionSetupIntent(context, record.peer.deviceId, enable = true))
+                            } else companionSetup.start(record.peer)
                         })
                 }
                 if (!compact) {
@@ -271,13 +265,10 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         if (diagnostics) {
                             Text("Idle local network follows the background timeout in Settings. Approved active work keeps it connected.",
                                 style = MaterialTheme.typography.bodySmall)
-                            if (nearby.available) {
+                            if (nearby.available && hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint)) {
                                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
-                                    context.startActivity(companionSetupIntent(context, record.peer.deviceId))
-                                }) { Text("Setup settings") }
-                            } else {
-                                Text("Automatic Bluetooth connection is unavailable in this build.",
-                                    style = MaterialTheme.typography.bodySmall)
+                                    nearby.stop("Auto-connect setup cleared.", preserveForegroundSession = true)
+                                }, enabled = companionSetup.canStart) { Text("Reset auto connect") }
                             }
                             if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) &&
                                 context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {

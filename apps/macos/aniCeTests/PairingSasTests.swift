@@ -74,6 +74,30 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     owner.retired(link.descriptor)
     XCTAssertEqual(transitions, [true, false])
   }
+  @MainActor func testCompanionCapabilityRetainsCapacityEventDuringRefusedSend() async throws {
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "test.")
+    let peer = try await identity.publicIdentity()
+    let link = NamesLink(peer: peer)
+    var release: CheckedContinuation<Void, Never>?
+    var attempts = 0
+    link.submit = { _ in
+      attempts += 1
+      if attempts == 1 {
+        await withCheckedContinuation { release = $0 }
+        throw SessionBackpressure()
+      }
+    }
+    let owner = MacCompanionSetup(advertising: { _ in true })
+    owner.available(link)
+    try await waitFor { release != nil }
+    owner.capacityAvailable(link.descriptor)
+    release?.resume()
+    try await waitFor { attempts == 2 }
+    for _ in 0..<5 { owner.capacityAvailable(link.descriptor) }
+    await Task.yield()
+    XCTAssertEqual(attempts, 2, "Successful capability must not be replayed")
+    owner.retired(link.descriptor)
+  }
   @MainActor func testSyncedNamesPreserveTrustAndPrivateAliasPrecedence() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("anice-names-test-" + UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -178,7 +202,8 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
   @MainActor private final class NamesLink: SecuredChannel {
     let descriptor: ChannelDescriptor
     init(peer: DeviceIdentity) { descriptor = ChannelDescriptor(instance: UUID().uuidString, transport: "ble", peer: peer) }
-    func sendData(_ bytes: Data) async throws {}
+    var submit: (Data) async throws -> Void = { _ in }
+    func sendData(_ bytes: Data) async throws { try await submit(bytes) }
   }
   func testNicknameKeepsCredentialAndRealNameSeparate() async throws {
     let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Real Mac", tagPrefix: "test.")
@@ -539,7 +564,7 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
             let directory = URL(fileURLWithPath: path, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: directory.appendingPathComponent(
-              "comparison-\(dark ? "dark" : "light")-\(Int(width))-\(Int(scale * 100)).png"))
+               "comparison-\(dark ? "dark" : "light")-\(Int(width))-\(Int(scale * 100)).png"))
           }
           renders += 1
         }

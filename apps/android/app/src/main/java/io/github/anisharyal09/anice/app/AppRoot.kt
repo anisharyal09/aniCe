@@ -42,9 +42,9 @@ import io.github.anisharyal09.anice.features.pairing.PairingViewModel
 import io.github.anisharyal09.anice.features.pairing.completedPairingPeer
 import io.github.anisharyal09.anice.features.session.SessionPanel
 import io.github.anisharyal09.anice.features.session.SessionViewModel
-import io.github.anisharyal09.anice.features.session.ConnectionState
-import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
-import io.github.anisharyal09.anice.features.backgroundprobe.quickCompanionSetupIntent
+import io.github.anisharyal09.anice.features.backgroundprobe.rememberCompanionSetup
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupEffects
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupStatus
 import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
 import io.github.anisharyal09.anice.ui.theme.saveAppearance
@@ -65,6 +65,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             })
     }
     val context = LocalContext.current
+    val companionSetup = rememberCompanionSetup()
+    CompanionSetupEffects(companionSetup)
     val fontScale = LocalDensity.current.fontScale
     val largeText = fontScale >= 1.5f
     val navigationScroll = rememberScrollState()
@@ -99,7 +101,6 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
 
     var automaticAfterPairing by rememberSaveable { mutableStateOf(true) }
     var automaticLanAfterPairing by rememberSaveable { mutableStateOf(true) }
-    var backgroundSetupPeer by remember { mutableStateOf<io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity?>(null) }
     val nearbyOwner = io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(LocalContext.current)
     LaunchedEffect(pairing.busy, discovery.state.busy) {
         if (pairing.busy || discovery.state.busy) nearbyOwner.suspend() else nearbyOwner.resumeAfterOperation()
@@ -114,12 +115,10 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             session.lan.setAutomaticEnabled(automaticLanAfterPairing)
             navigation.paired()
             pairing.cancel()
-            if (compared) {
-                session.requestAfterPairing(paired, pairedCandidate)
-                if (automaticComparison && nearbyOwner.available) backgroundSetupPeer = paired
-            } else if (automaticAfterPairing && nearbyOwner.available) {
-                context.startActivity(companionSetupIntent(context, paired.deviceId, enable = true))
-            } else session.request(paired)
+            if (!discovery.state.busy) nearbyOwner.resumeAfterOperation()
+            session.requestAfterPairing(paired, pairedCandidate)
+            if ((if (compared) automaticComparison else automaticAfterPairing) && nearbyOwner.available)
+                companionSetup.start(paired)
         }
     }
     val snackbars = remember { SnackbarHostState() }
@@ -143,22 +142,6 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     nearbyDiscovery?.retry()
                 }
             }
-        }
-    }
-    LaunchedEffect(backgroundSetupPeer, session.state, session.findingAutomatically, session.selected, pairing.peers, lifecycle) {
-        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-            val peer = backgroundSetupPeer ?: return@repeatOnLifecycle
-            val selected = session.selected
-            val samePeer = selected?.deviceId == peer.deviceId && selected.fingerprint == peer.fingerprint &&
-                selected.publicKey == peer.publicKey
-            if (session.state == ConnectionState.SECURED && samePeer && pairing.peers.any {
-                    it.peer.deviceId == peer.deviceId && it.peer.fingerprint == peer.fingerprint &&
-                        it.peer.publicKey == peer.publicKey }) {
-                backgroundSetupPeer = null
-                context.startActivity(quickCompanionSetupIntent(context, peer.deviceId))
-            } else if (!samePeer || !session.findingAutomatically &&
-                session.state in listOf(ConnectionState.FAILED, ConnectionState.DISCONNECTED))
-                backgroundSetupPeer = null
         }
     }
     val nearbyEligible = pairing.trustedPeersLoaded && pairing.peers.isEmpty() &&
@@ -305,6 +288,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
         // Consume Scaffold insets here so nested sheets and feature content do not apply the same padding twice.
         val content = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()
         Column(content) {
+            CompanionSetupStatus(companionSetup)
             if (pairing.nearbyFailure) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {

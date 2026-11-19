@@ -5,6 +5,9 @@ Version 0.3. This guide defines visual direction, interaction behavior, standard
 ## Design principles
 
 - **Clarity over ornament**: Warm neutrals with charcoal-green action ink. No blue glows, decorative gradients, artificial glassmorphism, or skeuomorphic shadows.
+  The Mac floating comparison overlay may use the OS's native Liquid Glass on
+  macOS 26+, native material on older systems, and a solid Reduce Transparency
+  fallback. This exception does not change in-app content surfaces.
 - **Native behavior**: Use platform-native controls, typography, and navigation patterns (macOS AppKit/SwiftUI with SF Symbols; Android Material 3/Compose with Material Symbols).
 - **State truth**: Truthfully distinguish between trusted, connecting, secured, offline, permission-gated, and unsupported states. Never fake live state or display an invented zero.
 - **Direct feedback**: Interactive controls respond immediately with visible hover, pressed, and focus feedback. Transitions are brief (120–220 ms) and respect system reduced-motion settings.
@@ -154,14 +157,18 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Comparison confirmation is not Connected. Verify identity openings/proofs, store trust through
   the shared receipt flow, then establish fresh authenticated readiness. Default-on background
   auto-connect is visible as Reconnect automatically in Android's comparison sheet.
-  Its native approval opens after the first secured connection, targeting only the
-  verified Mac; no second connection-settings page or chooser blocks SAS.
+  Every pairing method and Devices Auto connect uses the same single-Mac native
+  approval after a secured connection; no extra connection-settings page or
+  broad device-management chooser is shown.
   Cancellation leaves trust intact. Lock, background loss, cancellation and expiry
   cannot approve an old attempt.
-  Quick Android setup uses a manifest-declared floating reconnection panel, no
-  full-screen starting window, stable title/progress/actions and one native
-  approval per attempt across rotation. Explain general sharing/control
-  reconnection and keep feature permissions separate from companion ownership.
+  Post-pair Android setup stays inline on Home with one retained owner and launches
+  only Android's native approval, not a second aniCe activity/popup.
+  Keep the note to **Reconnect when nearby, even in the background.** and state
+  that allowing this phone and Mac connection does not grant feature permissions.
+  Android owns the native dialog wording, which aniCe must not spoof or bypass.
+  Feature permissions remain separate; rotation must not repeat approval,
+  and cancellation keeps trust.
 - Long-press a Devices name to open its editor directly; Mac also offers a native
   right-click Edit name action. This device edits the shared device-owned name;
   a paired device edits a private nickname. Normal taps/clicks retain details,

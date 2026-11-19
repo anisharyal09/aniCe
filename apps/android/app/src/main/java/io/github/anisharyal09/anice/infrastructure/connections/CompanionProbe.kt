@@ -321,12 +321,11 @@ internal class CompanionProbe private constructor(
     if (monitor?.isActive != true) startMonitor(null)
   }
 
-  private fun checkAssociation() {
-    val found = if (Build.VERSION.SDK_INT >= 33) manager.myAssociations.any {
+  internal fun associationAvailable(): Boolean =
+    if (Build.VERSION.SDK_INT >= 33) manager.myAssociations.any {
       it.id == associationId && it.deviceMacAddress?.toString()?.let(::bluetoothAddress) == address
     } else manager.associations.any { bluetoothAddress(it) == address }
-    check(found) { "Association unavailable." }
-  }
+  private fun checkAssociation() { check(associationAvailable()) { "Association unavailable." } }
 
   /** Presence/lease loss cancels delayed retries; old services cannot release a newly acquired lease. */
   fun disappeared(service: Any) {
@@ -394,13 +393,14 @@ internal class CompanionProbe private constructor(
     if (saved) scheduleTimedPauseResume()
   }
 
-  suspend fun resumeNow() {
+  suspend fun resumeNow(stillCurrent: () -> Boolean = { true }) {
     cancelConnectResume()
     pauseNotice.cancel()
     timedPauseJob?.cancel(); timedPauseJob = null
     app.connectionPause.clear()
     scope.launch { app.connectionPause.announceResume() }
-    resume()
+    resume(stillCurrent)
+    check(stillCurrent()) { "Setup was cancelled." }
     app.lanSessionController.resumeAfterTimedPause()
   }
 
@@ -483,7 +483,8 @@ internal class CompanionProbe private constructor(
   }
 
   /** Stop invalidates chooser results, retires keys, then removes only this probe's OS association. */
-  fun stop(message: String = "Stopped. The probe association has been removed.") {
+  fun stop(message: String = "Stopped. The probe association has been removed.",
+    preserveForegroundSession: Boolean = false) {
     pauseNotice.cancel()
     setupGeneration++
     cancelConnectResume()
@@ -493,9 +494,11 @@ internal class CompanionProbe private constructor(
     val oldAddress = address
     val oldId = associationId
     // Retire application access before disk work: a failed preference write cannot keep keys usable.
+    val foregroundOwned = owner == null && monitor?.isActive == true
     armedPreference = false
     monitor?.cancel(); monitor = null
-    owner?.let { app.sessionController.releaseCompanion(it) }; owner = null
+    owner?.let { app.sessionController.releaseCompanion(it, preserveForegroundSession) }; owner = null
+    if (foregroundOwned) app.sessionController.releaseForegroundAutomatic(preserveForegroundSession)
     val saved = preferences.edit().putBoolean("armed", false).remove("peer").remove("fingerprint")
       .remove("local").remove("address").remove("association").remove("automatic").remove("paused")
       .remove(pauseUntilKey).remove("verified").commit()

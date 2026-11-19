@@ -7,6 +7,7 @@ import SwiftUI
 struct MacComparisonCard: View {
   @Bindable var model: MacPairingModel
   var openApp: (() -> Void)?
+  private var floating: Bool { openApp != nil }
   @Environment(\.colorScheme) private var scheme
   @AppStorage("ui.fontScale") private var fontScale = 1.0
 
@@ -21,7 +22,7 @@ struct MacComparisonCard: View {
       } else { headingAndDigits }
       Text(model.phase == "comparison" ? "Confirm only if this code matches your phone." : model.status)
         .font(.system(size: 13 * fontScale))
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
+        .foregroundStyle(floating ? Color.secondary : AniCePalette.secondaryText(scheme))
         .fixedSize(horizontal: false, vertical: true)
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 12) { actions(attempt) }
@@ -30,22 +31,21 @@ struct MacComparisonCard: View {
     }
     .padding(20)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .foregroundStyle(AniCePalette.primaryText(scheme))
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 14))
-    .overlay(RoundedRectangle(cornerRadius: 14).stroke(AniCePalette.separator(scheme), lineWidth: 1))
+    .foregroundStyle(floating ? Color.primary : AniCePalette.primaryText(scheme))
+    .modifier(ComparisonSurface(floating: floating))
   }
 
   @ViewBuilder private var headingAndDigits: some View {
     HStack(spacing: 12) {
       Image(systemName: "smartphone")
         .font(.system(size: 24, weight: .regular))
-        .foregroundStyle(AniCePalette.secondaryText(scheme))
+        .foregroundStyle(floating ? Color.secondary : AniCePalette.secondaryText(scheme))
         .frame(width: 28, height: 36)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 3) {
         Text("Connect your phone").font(.system(size: 15 * fontScale, weight: .semibold))
         Text("aniCe · Nearby pairing").font(.system(size: 12 * fontScale))
-          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .foregroundStyle(floating ? Color.secondary : AniCePalette.secondaryText(scheme))
       }
     }
     if let code = model.comparisonCode {
@@ -71,6 +71,25 @@ struct MacComparisonCard: View {
       .accessibilityIdentifier("pairing-comparison-dismiss")
       .keyboardShortcut(.cancelAction)
       .disabled(model.phase == "cancelling" || model.phase == "saving")
+  }
+}
+
+/// Native glass belongs only to the floating overlay; in-app security content keeps its solid surface.
+private struct ComparisonSurface: ViewModifier {
+  let floating: Bool
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  func body(content: Content) -> some View {
+    if floating && !reduceTransparency {
+      if #available(macOS 26.0, *) {
+        content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+      } else {
+        content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+      }
+    } else {
+      content.background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AniCePalette.separator(scheme), lineWidth: 1))
+    }
   }
 }
 
@@ -134,7 +153,7 @@ struct MacComparisonCard: View {
     panel.hidesOnDeactivate = false
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = false
+    panel.hasShadow = true
     panel.isReleasedWhenClosed = false
     panel.becomesKeyOnlyIfNeeded = true
     panel.setAccessibilityLabel("aniCe pairing comparison")

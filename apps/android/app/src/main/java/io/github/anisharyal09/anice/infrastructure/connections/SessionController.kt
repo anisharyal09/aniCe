@@ -39,10 +39,11 @@ internal fun retainForegroundSession(requested: Boolean, presented: Boolean, sta
  * Preserves active connection state across UI activity transitions.
  */
 class SessionController(application: Application) {
-  internal data class Progress(val state: ConnectionState, val controls: Boolean?, val renewal: Long?, val checks: Int)
+  internal data class Progress(val state: ConnectionState, val controls: Boolean?, val renewal: Long?, val checks: Int,
+    val operation: Long = 0)
   // Background owners cannot depend on Compose's snapshot apply notifications or an active Recomposer.
   internal val progress = MutableStateFlow(Progress(ConnectionState.DISCONNECTED, null, null, 0))
-  private fun publishProgress() { progress.value = Progress(state, controlSupport, renewalReason, receivedChecks) }
+  private fun publishProgress() { progress.value = Progress(state, controlSupport, renewalReason, receivedChecks, operation) }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var companionOwner: Any? = null
   private val app = application as AniCeApplication
@@ -222,6 +223,36 @@ class SessionController(application: Application) {
     return target
   }
 
+  /** Enrollment uses this Bluetooth owner, never a second scan or an unauthenticated OS-selected device. */
+  internal suspend fun connectForCompanionSetup(peer: DeviceIdentity) {
+    check(foreground && missingPermissions().isEmpty())
+    check(app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked != true)
+    check(app.sessionPeers.permits(peer))
+    if (state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED))
+      check(companionSetupPeerMatches(peer, selected)) { "Another Mac is connected." }
+    val recovery = foregroundRecovery?.takeIf { companionSetupPeerMatches(peer, selected) }
+    val starting = recovery == null && state !in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED)
+    if (starting) {
+      stopForegroundRecovery()
+      request(peer)
+    }
+    val op = operation
+    try {
+      if (recovery != null) {
+        // First-pair recovery already owns bounded fresh attempts. Wait for it rather than racing another scan.
+        recovery.join()
+        check(!recovery.isCancelled)
+      } else {
+        progress.first { operation != op || state != ConnectionState.CONNECTING || !foreground }
+        check(operation == op)
+      }
+      check(foreground && state == ConnectionState.SECURED && companionSetupPeerMatches(peer, selected))
+    } catch (error: CancellationException) {
+      if (starting && operation == op && state == ConnectionState.CONNECTING) cancelAttempt()
+      throw error
+    }
+  }
+
   internal fun companionSetupCurrent(target: CompanionSetupTarget): Boolean =
     companionSetupTarget === target && state == ConnectionState.SECURED &&
       target.matches(selected, channelToken, SystemClock.elapsedRealtime())
@@ -250,6 +281,7 @@ class SessionController(application: Application) {
       return
     }
     recoveryPaused = false
+    beforeRequest(peer)
     findTrustedForeground(peer, device)
   }
 
