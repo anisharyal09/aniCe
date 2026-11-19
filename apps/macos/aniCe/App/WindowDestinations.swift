@@ -12,7 +12,7 @@ extension MainWindowView {
           Text("Overview").font(.system(size: 20 * fontScale, weight: .medium))
           if pairing.hasTrustedAndroid {
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
-              phonePower: phonePower,
+              connectionPause: connectionPause, phonePower: phonePower,
               details: $navigation.details, diagnostics: $navigation.diagnostics, workspaceHeader: true,
               focusedPeer: navigation.focusedPeer, discovery: discovery,
               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
@@ -30,7 +30,7 @@ extension MainWindowView {
             }
           }
           if transfer.pendingOffer != nil {
-            TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) })
+            TransferView(model: transfer, peers: pairing.peers, overview: true, open: { navigation.openFeature(.files) })
           }
           if pairing.hasTrustedAndroid {
             HStack(spacing: 8) {
@@ -63,7 +63,7 @@ extension MainWindowView {
     VStack(alignment: .leading, spacing: 20) {
       if availableWidth >= 720 {
         let showPlayback = playback.showOnMac && playback.compactVisible
-        let showFileTransfer = pairing.hasTrustedAndroid && transfer.pendingOffer == nil
+        let showFileTransfer = pairing.hasTrustedAndroid && transfer.pendingOffer == nil && !isResult
         if showPlayback || showFileTransfer {
           HStack(alignment: .top, spacing: 16) {
             if showPlayback {
@@ -78,7 +78,7 @@ extension MainWindowView {
                 .frame(maxHeight: .infinity)
             }
             if showFileTransfer {
-              homeFileTransferActivity(isResult: isResult)
+              homeFileTransferActivity()
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
           }.frame(maxWidth: .infinity, alignment: .leading)
@@ -88,20 +88,17 @@ extension MainWindowView {
           MediaView(model: playback, compact: true, overview: true, origin: identity.local?.identity.deviceName,
             visible: playback.mainVisible, open: { navigation.openFeature(.playback) })
         }
-        if pairing.hasTrustedAndroid && transfer.pendingOffer == nil {
-          homeFileTransferActivity(isResult: isResult)
+        if pairing.hasTrustedAndroid && transfer.pendingOffer == nil && !isResult {
+          homeFileTransferActivity()
         }
       }
-      if isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
+      if isResult { TransferView(model: transfer, peers: pairing.peers, overview: true, open: { navigation.openFeature(.files) }) }
     }
   }
 
-  @ViewBuilder private func homeFileTransferActivity(isResult: Bool) -> some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Button { navigation.openFeature(.files) } label: {
-        HStack(spacing: 8) { Text("File transfer"); Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true) }
-          .font(.system(size: 14 * fontScale, weight: .medium)).contentShape(Rectangle())
-      }.buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 3))
+  @ViewBuilder private func homeFileTransferActivity() -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HomeTransferHeading { navigation.openFeature(.files) }
       if transfer.state == .idle && !transfer.preparing {
         HStack(spacing: 16) {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
@@ -119,7 +116,7 @@ extension MainWindowView {
         if let dropStatus = transfer.dropStatus {
           Text(dropStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
         }
-      } else if !isResult { TransferView(model: transfer, peers: pairing.peers, open: { navigation.openFeature(.files) }) }
+      } else { TransferView(model: transfer, peers: pairing.peers, overview: true) }
     }
   }
 
@@ -143,7 +140,7 @@ extension MainWindowView {
           }
           ForEach(primary) { record in
             MacSessionView(peers: pairing.peers, model: session, lan: lan,
-              phonePower: phonePower,
+              connectionPause: connectionPause, phonePower: phonePower,
               details: Binding(get: { navigation.details && navigation.focusedPeer == record.peer.deviceId },
                 set: { navigation.focusedPeer = record.peer.deviceId; navigation.details = $0 }),
               diagnostics: $navigation.diagnostics, focusedPeer: record.peer.deviceId, discovery: discovery,

@@ -218,6 +218,8 @@ class LanOwnershipTest {
         } finally {
             withContext(NonCancellable + Dispatchers.Main) {
                 controller.releaseCompanion(companion)
+                // Work ownership survives channel cancellation; release this fixture's synthetic lease.
+                controller.updateWorkLease(false, false)
                 controller.cancel()
                 controller.background(presentation, false)
                 policy.resumeAfterOperation()

@@ -4,9 +4,9 @@ Keep changes focused, explain their user-visible effect, and run the checks rele
 
 ## Getting Started
 
-### Local Setup & Verification
+### Setup and checks
 
-Before opening a pull request, we recommend running our local test suite to ensure everything builds and passes cleanly:
+Set up the toolchain, then run the checks relevant to the change.
 
 Use Python 3.11 or newer for the repository helper scripts.
 
@@ -34,7 +34,7 @@ The `ci-integrity` lane also requires actionlint 1.7.12 on `PATH`; it is not ins
 
 ## Pull requests
 
-- Describe the problem, resulting behavior and validation. Note physical-device checks that remain pending.
+- Describe the problem, resulting behavior and the checks performed.
 - Add regression tests for changed logic and update the relevant guide or contract. UI changes should include before/after captures.
 - Use cohesive commits with descriptive subjects; Conventional Commits are welcome.
 - Record shared changes in the root changelog and platform/contract details in their component changelogs. Keep entries under Unreleased until publication, ordered Added, Changed, Fixed. Earlier versions marked as development milestones are not published releases.

@@ -1,0 +1,157 @@
+{
+  "valid": [
+    {
+      "name": "indefinite",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501018100",
+      "kind": 1,
+      "untilMillis": 0
+    },
+    {
+      "name": "timed",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101811b000001a31860e3e0",
+      "kind": 1,
+      "untilMillis": 1800000300000
+    },
+    {
+      "name": "epoch-min",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501018101",
+      "kind": 1,
+      "untilMillis": 1
+    },
+    {
+      "name": "epoch-max",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101811b0000e677d21fdbff",
+      "kind": 1,
+      "untilMillis": 253402300799999
+    },
+    {
+      "name": "resume",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501028100",
+      "kind": 2,
+      "untilMillis": 0
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "payloadHex": "",
+      "reason": "malformed"
+    },
+    {
+      "name": "truncated",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101811b000001a31860e3",
+      "reason": "malformed"
+    },
+    {
+      "name": "trailing",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101811b000001a31860e3e000",
+      "reason": "malformed"
+    },
+    {
+      "name": "indefinite-array",
+      "payloadHex": "9f76616e69436520636f6e6e656374696f6e2070617573650101811b000001a31860e3e0ff",
+      "reason": "malformed"
+    },
+    {
+      "name": "nonminimal-version",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e207061757365180101811b000001a31860e3e0",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-version",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736502018100",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-version",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e207061757365f5018100",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-kind",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501038100",
+      "reason": "malformed"
+    },
+    {
+      "name": "zero-kind",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501008100",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-kind",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501f58100",
+      "reason": "malformed"
+    },
+    {
+      "name": "missing-fields",
+      "payloadHex": "8376616e69436520636f6e6e656374696f6e2070617573650101",
+      "reason": "malformed"
+    },
+    {
+      "name": "extra-envelope-field",
+      "payloadHex": "8576616e69436520636f6e6e656374696f6e2070617573650101811b000001a31860e3e000",
+      "reason": "malformed"
+    },
+    {
+      "name": "non-array-fields",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101a0",
+      "reason": "malformed"
+    },
+    {
+      "name": "empty-fields",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e207061757365010180",
+      "reason": "malformed"
+    },
+    {
+      "name": "extra-field",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101820000",
+      "reason": "malformed"
+    },
+    {
+      "name": "negative-time",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501018120",
+      "reason": "malformed"
+    },
+    {
+      "name": "time-overflow",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101811b0000e677d21fdc00",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-time",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e207061757365010181f5",
+      "reason": "malformed"
+    },
+    {
+      "name": "text-time",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e2070617573650101816130",
+      "reason": "malformed"
+    },
+    {
+      "name": "null-time",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e207061757365010181f6",
+      "reason": "malformed"
+    },
+    {
+      "name": "float-time",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e207061757365010181f93c00",
+      "reason": "malformed"
+    },
+    {
+      "name": "resume-with-deadline",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501028101",
+      "reason": "malformed"
+    },
+    {
+      "name": "oversized",
+      "payloadHex": "8476616e69436520636f6e6e656374696f6e20706175736501018178807878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "reason": "malformed"
+    }
+  ],
+  "unrecognized": [
+    {
+      "name": "other-tag",
+      "payloadHex": "846f616e6f74686572206665617475726501018100"
+    }
+  ]
+}

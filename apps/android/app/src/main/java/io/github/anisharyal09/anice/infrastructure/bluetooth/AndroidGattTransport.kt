@@ -270,10 +270,14 @@ class AndroidGattTransport(
 
         override fun onMtuChanged(g: BluetoothGatt, value: Int, status: Int) =
           dispatch(g) {
+            // A successful callback may arrive after the bounded MTU wait fell back to service discovery.
+            // Honour the actual negotiated size for future fragments rather than remaining at 23 forever.
+            if (status == BluetoothGatt.GATT_SUCCESS) mtu = value.coerceIn(23, 517)
             if (stage == "mtu") {
-              mtu = if (status == BluetoothGatt.GATT_SUCCESS) value.coerceIn(23, 517) else 23
+              if (status != BluetoothGatt.GATT_SUCCESS) mtu = 23
               services(g)
             }
+            Log.d("aniCe-ble", "mtu_changed epoch=$op mtu=$mtu status=$status stage=$stage")
           }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) =

@@ -6,6 +6,9 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Add ignorable rendezvous-v2 user-demand state 5 for bounded file-action recovery after transport-only Disconnect; v1 peers keep ordinary state 4 behavior.
+- Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown peer presentation, with independent shared fixtures and no remote preference mutation.
+- Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN renewal v1 authenticated drain barriers, retaining frame profiles, fresh-session cryptography and legacy expiry.
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
 - Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
 - Define Desk Deck v5 output selection, with a bounded revisioned catalog and opaque device IDs.
@@ -20,6 +23,11 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
+- Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
+- Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
+- Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.
+- Exclude bounded negotiated LAN maintenance from transfer transport waits while preserving fixed offer, recovery and security deadlines.
 - Clarify transfer status channel/job binding, bounded notification revision retention and current profile-4 benchmark selection; wire layouts and cryptographic parameters are unchanged.
 - Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE transfer window; wire formats and negotiated limits are unchanged.
 - Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.

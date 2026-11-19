@@ -7,6 +7,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ConnectionSummaryTests {
+    @Test fun suspectLanIsNotPresentedAsConfirmedWhileBluetoothRemainsIndependent() {
+        assertEquals("Connected · Checking LAN",
+            connectionSummary(ConnectionState.SECURED, ConnectionState.SECURED, checkingLan = true).text)
+        assertEquals("Checking LAN",
+            connectionSummary(ConnectionState.DISCONNECTED, ConnectionState.SECURED, checkingLan = true).text)
+        assertEquals("Disconnect",
+            connectionSummary(ConnectionState.SECURED, ConnectionState.SECURED, checkingLan = true).action)
+    }
+    @Test fun pausedDisconnectedOrStaleAttemptAlwaysOffersExplicitConnect() {
+        for (ble in ConnectionState.entries) for (lan in ConnectionState.entries) {
+            val result = connectionSummary(ble, lan, waitingNearby = true, paused = true)
+            if (ble == ConnectionState.SECURED || lan == ConnectionState.SECURED) {
+                assertEquals("Connected", result.text)
+                assertEquals("Disconnect", result.action)
+            } else {
+                assertEquals("Paused", result.text)
+                assertEquals("Connect", result.action)
+            }
+        }
+    }
+
     @Test fun staleSelectionCannotOfferControlsForAnotherActivePeer() {
         assertFalse(canConnectToPeer(ConnectionState.DISCONNECTED, ConnectionState.SECURED, true, false))
         assertFalse(canConnectToPeer(ConnectionState.CONNECTING, ConnectionState.FAILED, false, true))

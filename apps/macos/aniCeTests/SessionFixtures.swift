@@ -83,6 +83,20 @@ struct SessionFixtures {
       ephemeral: P256.KeyAgreement.PrivateKey(rawRepresentation: b(row, server ? "y" : "x")),
       connectionId: b(row, server ? "cr" : "ci"), now: now)
   }
+  func freshFactory(
+    _ row: [String: Any], server: Bool, now: @escaping @Sendable () -> TimeInterval
+  ) throws -> @Sendable () throws -> SessionHandshakeEngine {
+    let local = try identity(row, server ? "responder" : "initiator")
+    let peer = try identity(row, server ? "initiator" : "responder")
+    let key = try P256.Signing.PrivateKey(rawRepresentation:
+      b(XCTUnwrap(row[server ? "responder" : "initiator"] as? [String: Any]), "private"))
+    return {
+      try SessionHandshakeEngine(local: local, responder: server, trusted: { [peer] },
+        currentIdentity: { local }, signer: {
+          SignedIdentityPayload(identity: local, signature: try key.signature(for: $0).derRepresentation)
+        }, selectedPeer: server ? nil : peer, now: now)
+    }
+  }
   func reject(_ expected: SessionFailure, _ body: () async throws -> Void) async throws {
     do {
       try await body()

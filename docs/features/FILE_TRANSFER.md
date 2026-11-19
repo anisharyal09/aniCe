@@ -8,11 +8,15 @@ Home shows file-send controls after at least one device is trusted. On a new ins
 
 On Mac, Home and Features → File transfer accept file drops; **Choose files** remains available. Picker sends show the selected files and recipient for review. A drop sends to the current compatible Android phone and pins that recipient.
 
+The Mac picker confirmation is centered on the initiating display; Home keeps the same File transfer heading size through progress and results.
+
 **Edge Drop** is on by default at the right edge. It can be moved to the left or top, or turned off in Settings → File transfer; an explicit choice is saved. It appears only for a current Finder file drag on the display containing the drag. Drops accept regular local files already available to Mac, up to 128 per batch. Folders, symbolic links, promised files, unavailable cloud files and mixed unsupported selections are rejected without partial sending. After the receiver verifies a drop, the shelf confirms the file count and recipient before dismissing. Edge Drop uses native drag observation and requires no Accessibility permission.
 
 On Android, **Share → Send to Mac** sends one or more selected files to the connected compatible Mac. The send is pinned to that Mac. Busy or disconnected states offer recovery instead of queuing or redirecting the batch. Text and link sharing keep their existing clipboard flow.
 
 Mac sends prefer a ready LAN channel and request bounded setup when needed. If setup fails, the files remain pending with **Retry**, **Send over Bluetooth**, and **Cancel**; Bluetooth never starts silently. Android may use an already-capable BLE channel while LAN setup runs. A batch stays bound to its trusted peer.
+
+With automatic LAN enabled, opening a new file picker or sending a new batch requests LAN even after a transport-level LAN Disconnect on either updated peer. A timed/indefinite connection Pause, disabled automation and the peer's native eligibility still take priority. Automatic receive and recovery of an existing batch do not manufacture a new user demand. Bluetooth fallback identifies its slower route and offers **Connect LAN for speed**; a capable LAN can upgrade the existing batch without reconnecting Bluetooth.
 
 ## Receiving and destinations
 
@@ -22,7 +26,7 @@ Both platforms offer **Automatically receive files** per trusted sender. New pai
 
 On Android Home, a pending manual offer appears below the connected device summary and before Quick access. The file list and destination stay visible above the equal-width **Accept** and **Decline** actions.
 
-Android can receive in the background when its existing connected-device/companion ownership permits it. Otherwise the offer stays pending until aniCe opens. Background connection also requires **Connect automatically**.
+Android can automatically approve an incoming offer in the background when existing companion or approved transfer-service ownership permits it. Otherwise the offer stays pending until aniCe opens. An already-approved transfer can continue under its connected-device service without automatic Bluetooth setup; new automatic connection attempts still follow the Bluetooth/LAN preferences and native ownership rules.
 
 Files are written to job-owned partials, verified against their SHA-256 offer, then published without overwriting existing files. Android keeps default MediaStore entries pending until publication succeeds. Custom document providers are checked before use, but they do not guarantee atomic rename.
 
@@ -32,7 +36,11 @@ Progress identifies direction, peer and file. Send progress counts receiver ackn
 
 Back or **Continue in background** hides Android’s Share-to-Mac panel without cancelling the job. **Cancel transfer** cancels it explicitly. The share activity remains alive while needed for temporary source-file access; process recreation does not replay a send.
 
+Android's bounded picker lease covers activity-result delivery through the returning activity's foreground handoff, so selecting a file need not tear down the healthy Bluetooth fallback.
+
 On either platform, connection loss pauses an active batch and retains verified partial data and a private checkpoint for up to 15 minutes. Reconnecting to the same trusted peer over LAN resumes after prefix verification. After LAN loss, either device can explicitly continue over BLE. Cancel removes the partial; already-published files remain untouched.
+
+With mutually capable peers, LAN renews its cryptographic session before the lifetime/record limit without closing TCP or replacing the active batch. New chunks and ACKs briefly wait behind authenticated drain barriers and fresh EDHOC/readiness. Transfer capacity, resume and file-confirmation timeouts exclude this bounded maintenance interval; successful renewal neither replays chunks nor restarts checkpoint recovery. Android's approved work lease remains held until the batch finishes or its native owner is lost.
 
 A verified file that cannot be published retains its private partial and publication checkpoint. Restarting aniCe within the checkpoint lifetime reconciles an already-published file or restores the retained bytes for a fresh resume handshake. Cancel, dismissing the failed result or starting another batch discards that retained recovery state; published files are never removed. Hash-mismatched input is not retained for recovery.
 

@@ -29,7 +29,7 @@ internal fun transferLeases(
     busy: Boolean = false,
 ): TransferLeases = TransferLeases(
     // A paused LAN batch keeps its LAN lease: automatic LAN is what makes resuming possible.
-    lanWork = backgroundAllowed && (activeTransport == "lan" || connecting || paused),
+    lanWork = backgroundAllowed && (activeTransport == "lan" || connecting || paused || busy),
     lanPicker = selectingFiles,
     bleWork = backgroundAllowed && (
         activeTransport == "ble" || paused || (bleSecured && (activeTransport == null || busy))

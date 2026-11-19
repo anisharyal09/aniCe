@@ -15,12 +15,14 @@ Contracts define required behavior.
 | **Classic Bluetooth HID input** | System profile | Implemented on macOS | [`bluetooth/classic-hid.md`](bluetooth/classic-hid.md) | Local keyboard and pointer reports to a system-paired Android HID host |
 | **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
+| **Connection pause notice** | `1` | Implemented | [`connection-pause/README.md`](connection-pause/README.md) | Authenticated peer pause presentation before teardown; local preferences remain independent |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **Mac Desk Deck** | `1`–`5` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
 | **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Peer battery and charging status on existing device surfaces over authenticated DATA, with no new connection lease |
 | **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
-| **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
+| **Automatic LAN rendezvous** | `2` (legacy `1`) | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Authenticated BLE direct locators and event/demand-triggered LAN admission |
+| **In-flight LAN renewal** | `1` | Implemented | [`lan/RENEWAL.md`](lan/RENEWAL.md) | Authenticated drain barriers and fresh EDHOC over a retained socket |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
@@ -99,7 +101,7 @@ Full specification, record framing, CBOR definitions, and keepalive controls are
 
 - **Handshake:** RFC 9528 EDHOC method 0, cipher suite 5 (P-256, SHA-256, ChaCha20-Poly1305), mandatory message 4.
 - **Application Records:** AES-256-GCM with directional 64-bit counters; standard/BLE plaintext is bounded to 4,000 bytes. Negotiated LAN profiles use the larger bounds in the [LAN profile](lan/TRANSFER_PROFILE.md).
-- **Liveness & Renewal:** Encrypted HELLO/ACK and PING/PONG; automatic BLE reconnects with fresh sessions before lifetime/record limits. Manual LAN requires another Connect after expiry; automatic LAN waits for an eligible event or feature demand.
+- **Liveness & Renewal:** Encrypted HELLO/ACK and PING/PONG; automatic BLE reconnects with fresh sessions before lifetime/record limits. Mutually capable LAN peers renew through fresh EDHOC on the same socket; unsupported peers retain hard expiry. Discovery/reconnection remains separately owned.
 - **BLE Transport:** Session v2 fragmentation header, 10-second reassembly deadline, 32 KiB queue limit.
 
 ---
@@ -108,9 +110,10 @@ Full specification, record framing, CBOR definitions, and keepalive controls are
 
 Full specification, DNS-SD locator rules, and TCP stream framing are documented in [`lan/README.md`](lan/README.md).
 
-- **Discovery:** `_anice._tcp` DNS-SD registration with an anonymous `aniCe-<UUID>` instance and current `v=3` TXT revision; legacy revisions are `1` and `2`. Locators confer no trust.
+- **Discovery:** Direct IPv4 locators from authenticated BLE rendezvous v2 precede `_anice._tcp` DNS-SD fallback with an anonymous `aniCe-<UUID>` instance and current `v=3` TXT revision; legacy revisions are `1` and `2`. Manual LAN remains available without BLE. Locators confer no trust.
 - **Stream Framing:** A five-byte version/length header precedes each session envelope. Current profile 4 uses frame version 4 and a 2–524,447-byte envelope; legacy profile 3 and standard profile 1 retain their own negotiated limits. Handshakes remain bounded to 4,096 bytes.
 - **Transport Security:** Independent fresh EDHOC session and directional AES-GCM records over TCP.
+- **Renewal:** Mutually capable peers exchange authenticated directional drain barriers before fresh EDHOC/readiness on the same TCP socket; feature descriptors and work ownership remain intact.
 - **Coexistence:** Shared peer reservation permits concurrent BLE and LAN sessions only to the same pinned peer.
 
 ---
@@ -123,6 +126,9 @@ protocol/
 ├── README.md                      # This document
 ├── bluetooth/
 │   └── README.md                  # BLE discovery wire format & lifecycle
+├── connection-pause/
+│   ├── README.md                  # Authenticated pause presentation and bounded teardown
+│   └── connection-pause.cddl      # Additive pause/resume DATA notices
 ├── desk-deck/
 │   ├── README.md                  # Mac telemetry, app approval and control behavior
 │   └── desk-deck.cddl             # Bounded Desk Deck v1–v4 messages
@@ -132,7 +138,12 @@ protocol/
 ├── fixtures/
 │   └── identity/                  # Sample valid JSON records (android.json, macos.json)
 ├── lan/
-│   ├── README.md                  # Local network stream framing and mDNS discovery contract
+│   ├── README.md                  # Local network framing, direct locators and mDNS fallback
+│   ├── AUTOMATIC.md               # Authenticated BLE rendezvous v2 and bounded admission
+│   ├── automatic.cddl             # Rendezvous v1/v2 state and endpoint envelopes
+│   ├── RENEWAL.md                 # Directional drain barriers and consecutive fresh sessions
+│   ├── renewal.cddl               # Bounded LAN support/begin/drained controls
+│   ├── TRANSFER_PROFILE.md        # Legacy profile 3 and current profile 4 record bounds
 │   ├── BENCHMARK.md               # Production LAN throughput benchmark harness & gates
 │   └── BULK_PROBE.md              # Isolated bulk record profiling specification
 ├── pairing/
@@ -153,6 +164,9 @@ protocol/
 │   ├── README.md                  # Local file transfer protocol, flow control & lifecycle
 │   └── transfer.cddl              # Authoritative message and envelope CDDL definitions
 └── test-vectors/
+    ├── connection-pause/
+    │   ├── vectors.json           # Canonical pause/resume and rejected notices
+    │   └── generate.py            # Independent CBOR pause-notice oracle
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
     ├── desk-deck-vectors.json      # Desk Deck v1–v4 samples, actions and invalid records
     ├── device-power-vectors.json   # Phone power states and invalid records
@@ -162,7 +176,10 @@ protocol/
     │   ├── bulk-probe-vectors.json # Positive & negative bulk probe framing vectors
     │   ├── generate_bulk_probe_vectors.py # Bulk probe fixture generator
     │   ├── lan-vectors.json       # Positive & negative TCP stream envelope framing vectors
-    │   └── generate_lan_vectors.py # Independent Python oracle and fixture generator
+    │   ├── generate_lan_vectors.py # Independent Python oracle and fixture generator
+    │   ├── automatic-vectors.json # Rendezvous v1/v2 and invalid routing hints
+    │   ├── renewal-vectors.json   # LAN support/begin/drained controls and invalid encodings
+    │   └── generate_lan_control_vectors.py # Independent CBOR and numeric-IP control oracle
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
     ├── phone-input/

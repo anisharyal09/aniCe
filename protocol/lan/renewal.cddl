@@ -1,0 +1,6 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Negotiates consecutive fresh EDHOC sessions over one authenticated LAN socket, at most 128 bytes.
+lan-renewal = ["aniCe LAN renewal", 1, 1, []] /
+              ["aniCe LAN renewal", 1, 2, [renewal-id, reason: 1 / 2]] /
+              ["aniCe LAN renewal", 1, 3, [renewal-id]]
+renewal-id = bstr .size 16

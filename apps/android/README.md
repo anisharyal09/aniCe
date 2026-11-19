@@ -17,7 +17,7 @@ The development version is **0.9.0-beta.3 · build 90023**. See [installation, p
 - **Clipboard → Share → More options** offers setup for the Send to Mac Quick Settings tile. The tile opens a focused capture panel; it cannot read the clipboard continuously in the background. Automatic sharing and saved local history are separate, default-off preferences.
 - **Settings → Notification sync** configures Notification Access, selected source apps, incoming-call controls and optional caller ID. **Settings → Do Not Disturb** enables phone-to-Mac sync after the Mac Shortcuts are configured. Desk Deck's DND button is a separate Mac-local action.
 
-Background ownership uses the native companion association on supported API 31+ devices. First enable or association repair requires Android's setup dialog; force-stop and reboot have no automatic-recovery promise. Background LAN defaults to Never, but network/process loss, session expiry and explicit Disconnect still apply. See [connection management](../../docs/GETTING_STARTED.md#manage-connections) and [background policy](../../docs/BACKGROUND_CONNECTIONS.md).
+Background ownership uses the native companion association on supported API 31+ devices. First enable or association repair requires Android's setup dialog; force-stop and reboot have no automatic-recovery promise. Background LAN defaults to Never, but network/process loss, legacy-peer expiry and explicit Disconnect still apply. Capable LAN peers renew through fresh EDHOC on the same socket; eligible authenticated BLE peers supply direct IPv4 locators before bounded mDNS fallback. See [connection management](../../docs/GETTING_STARTED.md#manage-connections), [LAN behavior](../../docs/LAN_CONNECTIONS.md) and [background policy](../../docs/BACKGROUND_CONNECTIONS.md).
 
 SMS live relay, history and replies have separate permission requirements. Phone-state access for SIM selection is optional; live SIM call controls have their own Phone permissions. Permission denial and restricted settings are explained in [Messages](../../docs/features/SMS.md#permissions) and [notification setup](../../docs/features/NOTIFICATION_MIRRORING.md#set-up).
 
@@ -100,6 +100,10 @@ For an isolated transfer preview on an explicitly selected test phone, run:
 
 This builds **aniCe Transfer Preview** as `io.github.anisharyal09.anice.preview.transfer`, verifies the package ID and installs alongside the normal aniCe app. It never uninstalls or replaces production; remember that a fresh package starts with its own data and permissions.
 
+The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Automatic-setup activity routing retains the compiled Kotlin namespace even though the installed application ID has a preview suffix.
+
+Run only one branch's Transfer Preview at a time on each platform: branch copies share the preview identity, trust and preferences. New file actions can request enabled LAN after transport Disconnect; other feature demand retains the normal Disconnect gate. Connection Pause and native eligibility always apply.
+
 For the strict aggregate gate, run from the repository root:
 
 ```sh
@@ -111,9 +115,9 @@ python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
 
 `--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator.
 
-The gate parses the JUnit reports and fails on zero tests, failures, crashes, truncated reports and undocumented skips. `connectedDebugAndroidTest` alone is not an acceptance result because several native tests are environment-gated.
+The suite parses JUnit reports and rejects failures, missing/truncated results and unexpected skips. Native tests can require device setup or explicit instrumentation arguments.
 
-Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. The minimum remains provisional. Key protection is reported from the actual device, not assumed.
+Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. Key protection is reported from the actual device.
 
 [Design](../../docs/design/DESIGN.md) · [Changelog](CHANGELOG.md)
 

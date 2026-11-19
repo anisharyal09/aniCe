@@ -85,7 +85,7 @@ Local session owners additionally retain readiness/idle/lifetime/record-limit ex
 
 Typed local failures: `malformed`, `unsupportedProfile`, `untrustedPeer`, `authentication`, `state`, `cancelled`, `expired`, `controlTimeout`. Native identity/storage/provider errors retain their original typed failure and retire the handshake.
 
-Accepted EDHOC error sequences: `(1, tstr <= 64 UTF-8 bytes)`, `(2, 5)`, `(3, true)`. Error code zero, unknown codes and extra data are rejected. Received errors are fatal with no suite retry. Outgoing generic error is `(1, "Handshake failed")`; callers do not emit credential identifiers in errors. During an established application session, handshake envelopes/errors are invalid.
+Accepted EDHOC error sequences: `(1, tstr <= 64 UTF-8 bytes)`, `(2, 5)`, `(3, true)`. Error code zero, unknown codes and extra data are rejected. Received errors are fatal with no suite retry. Outgoing generic error is `(1, "Handshake failed")`; callers do not emit credential identifiers in errors. On an established socket, handshake envelopes are accepted only in the expected phase of negotiated [LAN renewal](../lan/RENEWAL.md); unsolicited handshakes remain invalid.
 
 Credentials are protected against passive handshake observation. This is not anonymity: an active initiator can obtain responder credential information, and radio identifiers, lengths and timing remain observable. No stable identity appears in discovery or advertising. No handshake/application key is persisted or logged. Buffer overwrite and object release are best effort on Swift/JVM.
 
@@ -122,13 +122,13 @@ Mac admission window: 120 seconds, five failed candidates maximum. With multiple
 | --- | --- | --- | --- |
 | 1 HELLO | Android | `{"version": 1}` | Sent once after verified readyAck |
 | 2 HELLO_ACK | Mac | `{"version": 1}` | Reply after readiness and valid HELLO |
-| 3 PING | Android | `{"requestId": uint32}` | Sent after 60 seconds without authenticated channel activity |
+| 3 PING | Android | `{"requestId": uint32}` | Sent after 60 seconds without authenticated BLE activity; the LAN binding uses 10 seconds |
 | 4 PONG | Mac | `{"requestId": uint32}` | Reply matching the outstanding PING |
 | 5 RENEWAL_REQUEST | Mac | `{"reason": 1 / 2}` | One request when lifetime or record margin is reached |
 
 HELLO compatibility expires ten seconds after readiness. Missing HELLO/ACK marks the peer unsupported and stops negotiation; manual DATA remains usable with the original hard limits. Android's companion automatic owner pauses on unsupported compatibility; it cannot keep a background lease indefinitely for a legacy peer. A late ACK or unexpected control closes the session with `state`. The responder enables liveness when it submits ACK; submission does not prove peer receipt.
 
-Only Android initiates PING. IDs start at zero per fresh session, increment as unsigned 32-bit values, and never wrap. There is one outstanding PING and one pending logical control. PONG must match before its 20-second deadline; wrong, duplicate or unsolicited replies close with `state`, late/missing replies with `controlTimeout`. Other authenticated traffic resets activity but cannot satisfy an outstanding PING. These timers use monotonic clocks; Android's owner supplies `SystemClock.elapsedRealtime()` so deep sleep counts toward deadlines and record age. OS suspension may miss a deadline and close the connection. Mac sleep retires its session.
+Only Android initiates PING. IDs start at zero per fresh session, increment as unsigned 32-bit values, and never wrap. There is one outstanding PING and one pending logical control. PONG must match before its 20-second BLE deadline (ten seconds under the [LAN binding](../lan/README.md)); wrong, duplicate or unsolicited replies close with `state`, late/missing replies with `controlTimeout`. Other authenticated traffic resets activity but cannot satisfy an outstanding PING. These timers use monotonic clocks; Android's owner supplies `SystemClock.elapsedRealtime()` so deep sleep counts toward deadlines and record age. OS suspension may miss a deadline and close the connection. Mac sleep retires its session.
 
 Queue capacity is checked before sealing. Pre-seal backpressure retains one pending control; it does not consume a record sequence. PONG timing starts at the first accepted submission attempt. Encryption/post-seal transport failures close the session under existing nonce-burn rules. Keepalive traffic consumes ordinary directional counters and maintains channel activity; it cannot extend one-hour lifetime, `2^20` record limits, or readiness deadlines. Control timers use no periodic wake alarms; reconnect and admission policies belong to native session owners.
 
@@ -136,16 +136,16 @@ CBOR arrays reserve the application dispatcher framing: they must decode determi
 
 Independent cbor2 fixtures contain eight valid and 26 invalid encodings in [control-vectors.json](../test-vectors/session/control-vectors.json). Regenerate or verify with `generate_control_vectors.py [--check]` using the pinned session oracle requirements. Native tests exercise authenticated controls, legacy fallback, queue saturation, timeout/order failures and hard lifetime enforcement with injected monotonic clocks. Native interchange additionally exchanges encrypted HELLO/ACK, PING/PONG and RENEWAL_REQUEST; it does not exercise BLE or OS background scheduling.
 
-## Coordinated renewal
+## BLE renewal and consecutive LAN sessions
 
-Automatic owners initiate renewal at 55 minutes of record-channel age or when either directional counter reaches `2^20 − 1024`. Mac submits one RENEWAL_REQUEST; Android initiates every new handshake. A manual Android owner receiving the request retires its session and exposes explicit Connect. Manual sessions otherwise retain their hard limits.
+Automatic BLE owners initiate renewal at 55 minutes of record-channel age or when either directional counter reaches `2^20 − 1024`. Mac submits one RENEWAL_REQUEST; Android initiates every new handshake. A manual BLE owner receiving the request retires its session and exposes explicit Connect. Manual BLE sessions otherwise retain their hard limits.
 
 A renewal flag blocks new application submissions before sealing. One pending Mac request observes ordinary queue backpressure and nonce burn rules. Android coalesces local/remote thresholds, submits encrypted close within two seconds, retires transport and keys, then revalidates its automatic policy, trust and OS ownership before fresh EDHOC/readiness. A close-submission failure still retires the old channel; bounded recovery may reconnect. Stop/Disconnect invalidates generations and pauses policy before suspended cleanup can finish. Sessions do not overlap or reuse keys, IV bases, counters, connection IDs or ephemeral keys. Hard one-hour/`2^20` limits are unchanged.
+
+LAN independently negotiates a bounded DATA extension before enabling those same thresholds. Authenticated directional drain barriers retire the old cryptographic channel without closing TCP or replacing the application-channel descriptor. Android then performs fresh EDHOC/readiness with new keys, IV bases, session ID, ephemerals and connection IDs. The [LAN renewal contract](../lan/RENEWAL.md) owns exact envelopes, role/order validation, ten-second quiescence, thirty-second handshake and ten-second readiness bounds. This applies to negotiated manual and automatic LAN, independently of Bluetooth or discovery preferences. Peers without mutual support retain original LAN hard expiry. No cryptographic session, key or counter is resumed.
 
 ## Application diagnostic
 
 The connection-check UI sends kind `3 data` containing exactly UTF-8 `aniCe connection check` (22 bytes). After readiness, the receiver recognizes check and reply payloads before feature decoding, updates its local status, and replies on the same secured transport with UTF-8 `aniCe connection check reply`. A sender awaiting a reply reports confirmation on receipt or a timeout after five seconds. Older peers can receive the original check without returning a reply. Keepalive controls are consumed separately and do not increment received-check counters. Feature DATA uses the shared authenticated dispatcher. The native interchange harness additionally exchanges deterministic 4,000-byte test buffers. Diagnostic application records share the ordinary directional sequence and lifetime limits.
-
-Baseline minimum-OS runtime coverage (API 29 and macOS 14) and independent security review remain tracked as outstanding release gates.
 
 References: [RFC 9528](https://www.rfc-editor.org/rfc/rfc9528.html), [RFC 9529](https://www.rfc-editor.org/rfc/rfc9529.html), [ADR 0005](../../docs/decisions/0005-edhoc-secure-sessions.md).

@@ -254,7 +254,8 @@ fun SettingsScreen(
                             enabled = true,
                             onCheckedChange = lan::setAutomaticEnabled,
                             label = "Use local network automatically",
-                            description = "Enable on both devices to use Wi-Fi."
+                            description = "Enable on both devices to use Wi-Fi.",
+                            compact = true,
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Box {
@@ -263,7 +264,20 @@ fun SettingsScreen(
                                     .clickable(role = Role.Button, onClickLabel = "Choose background timeout") { timeoutExpanded = true },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Background timeout", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Column(
+                                    Modifier.weight(1f).padding(vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text("Idle LAN in background", style = MaterialTheme.typography.bodyMedium)
+                                    Text("Closes idle LAN after Home or lock. Active work stays connected.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    lan.backgroundRetentionReason?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
                                 Text(timeoutOptions.firstOrNull { it.first == timeoutMinutes }?.second
                                         ?: if (timeoutMinutes > 0) "$timeoutMinutes min" else "Never",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -279,7 +293,7 @@ fun SettingsScreen(
                                         onClick = {
                                             timeoutExpanded = false
                                             timeoutMinutes = minutes
-                                            lanPrefs.edit().putInt("lan_background_timeout_minutes", minutes).apply()
+                                            lan.setBackgroundTimeoutMinutes(minutes)
                                         }
                                     )
                                 }
@@ -307,8 +321,8 @@ fun SettingsScreen(
                         val selectedCount = app.notificationMirror.preferences.selectedPackages().size
                         Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
                             .clickable(role = Role.Button, onClickLabel = "Select apps") { navigation.settingsRoute = SettingsRoute.NotificationApps }
-                            .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("Select apps", style = MaterialTheme.typography.bodyMedium)
                                 Text(when (selectedCount) { 0 -> "No apps selected"; 1 -> "1 app selected"; else -> "$selectedCount apps selected" },
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -323,7 +337,7 @@ fun SettingsScreen(
                             preferences = app.transfer.autoReceivePreferences,
                             peers = peers,
                             compact = true,
-                            modifier = Modifier.padding(vertical = 10.dp),
+                            modifier = Modifier.padding(vertical = 6.dp),
                         )
                     }
 
@@ -333,10 +347,10 @@ fun SettingsScreen(
                                 .clickable(role = Role.Button, onClickLabel = "Open identity and security") {
                                     showingIdentity = true
                                 }
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(identity.state.snapshot?.identity?.deviceName ?: "This device", style = MaterialTheme.typography.bodyMedium)
                                 Text("Identity and security", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -369,7 +383,7 @@ private fun PreferenceSection(
             shape = shape,
             color = if (highlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), content = content)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), content = content)
         }
     }
 }

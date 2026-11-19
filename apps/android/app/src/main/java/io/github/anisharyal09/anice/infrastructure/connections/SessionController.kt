@@ -22,7 +22,6 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.connections.sessionNotice
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 
 enum class ConnectionState {
@@ -67,6 +66,7 @@ class SessionController(application: Application) {
     private set
   var beforeDisconnect: () -> Unit = {}
   var beforeRequest: (DeviceIdentity) -> Unit = {}
+  internal var beforeCancelAttempt: () -> Unit = {}
   var radioChanged: (Boolean) -> Unit = {}
   internal var foregroundChanged: () -> Unit = {}
   internal var automaticRecoveryReserved: () -> Boolean = { false }
@@ -75,9 +75,7 @@ class SessionController(application: Application) {
 
   @Volatile private var operation = 0L
   @Volatile private var connection: SessionConnection? = null
-  private var input: Channel<ByteArray>? = null
-  private var inputBytes = 0
-  private var inputCount = 0
+  private var input: SessionInputQueue? = null
   // Both app activities may overlap during navigation; stopping one must not background the other.
   private val presentations = mutableSetOf<Any>()
   internal val foreground get() = presentations.isNotEmpty()
@@ -96,15 +94,9 @@ class SessionController(application: Application) {
       {},
       { readySignal?.complete(Unit) },
       { bytes ->
-        if (
-          inputCount >= 8 ||
-            inputBytes + bytes.size > 32768 ||
-            input?.trySend(bytes)?.isSuccess != true
-        )
+        if (input?.offer(bytes) != true) {
+          android.util.Log.i("aniCe-ble", "input_queue_full queued=${input?.count} bytes=${input?.bytes} envelope_bytes=${bytes.size}")
           fail("Incoming connection queue was full. Retry.")
-        else {
-          inputBytes += bytes.size
-          inputCount++
         }
       },
       { _, reason ->
@@ -154,23 +146,43 @@ class SessionController(application: Application) {
 
   fun request(peer: DeviceIdentity) {
     if (!app.sessionPeers.permits(peer)) return
-    selected = peer
     recoveryPaused = false
+    beforeRequest(peer)
     if (missingPermissions().isNotEmpty()) {
+      selected = peer
       awaitingPermissions = true
       status = "Allow Bluetooth access to connect."
       return
     }
-    beforeRequest(peer)
     connect(peer)
   }
 
   fun permissionReturned() {
+    if (!awaitingPermissions) return
     awaitingPermissions = false
     selected?.let {
       if (missingPermissions().isEmpty()) { beforeRequest(it); connect(it) }
       else fail("Bluetooth access is needed. Allow it in app settings, then retry.")
     }
+  }
+
+  /** Cancel retires only the current attempt, including a pending permission result. */
+  fun cancelAttempt() {
+    if (state == ConnectionState.SECURED) return
+    beforeCancelAttempt()
+    recoveryPaused = true
+    workRecovery?.cancel(); workRecovery = null
+    cancel("Connection canceled.")
+  }
+
+  /** Keep the secured channel usable for metadata while preventing approved-work recovery. */
+  internal fun preparePause(): () -> Unit {
+    recoveryPaused = true
+    workRecovery?.cancel(); workRecovery = null
+    awaitingPermissions = false
+    if (state != ConnectionState.SECURED) { cancel("Connection paused."); return {} }
+    val op = operation
+    return { if (op == operation) disconnect(skipAutomaticPause = true) }
   }
 
   @SuppressLint("MissingPermission")
@@ -216,7 +228,7 @@ class SessionController(application: Application) {
     publishProgress()
     // Every callback belongs to this attempt; cancel/retry invalidates suspended results.
     val op = operation
-    input = Channel(8)
+    input = SessionInputQueue()
     readySignal = CompletableDeferred()
     worker =
       scope.launch {
@@ -336,12 +348,11 @@ class SessionController(application: Application) {
           }
           engine.start()
           val queue = input ?: return@launch
-          for (bytes in queue) {
+          while (isActive) {
+            val bytes = queue.next() ?: break
             if (op != operation) break
             withContext(Dispatchers.IO) { engine.receive(bytes) }
             if (op != operation) break
-            inputBytes -= bytes.size
-            inputCount--
             if (engine.isClosed) {
               // CoroutineScope.cancel(String) only stops this worker; retire the controller and publish state.
               this@SessionController.cancel("Your Mac ended the connection.")
@@ -416,6 +427,7 @@ class SessionController(application: Application) {
   }
 
   fun cancel(message: String = "Open Allow connections on your Mac to reconnect.") {
+    awaitingPermissions = false
     app.features.retired("ble")
     // Retire access synchronously; cleanup cannot rely on a scope that may be clearing.
     operation++
@@ -423,8 +435,6 @@ class SessionController(application: Application) {
     renewalReason = null
     input?.close()
     input = null
-    inputBytes = 0
-    inputCount = 0
     readySignal?.cancel()
     readySignal = null
     transport.close()

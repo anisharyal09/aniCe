@@ -1,3 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Coordinates existing LAN admission through live authenticated BLE DATA, at most 64 bytes.
-lan-rendezvous = ["aniCe LAN", 1, 0 / 1 / 2 / 3 / 4]
+; Coordinates bounded LAN admission and direct IPv4 locators through authenticated BLE DATA, at most 64 bytes.
+lan-rendezvous = ["aniCe LAN", 1, 0 / 1 / 2 / 3 / 4] /
+                 ["aniCe LAN", 2, 0 / 1 / 3 / 4 / 5, []] /
+                 ["aniCe LAN", 2, 2, [] / lan-endpoint]
+lan-endpoint = [ip: tstr .size (7..15), port: uint .ge 1 .le 65535, profile: 1 / 3 / 4]

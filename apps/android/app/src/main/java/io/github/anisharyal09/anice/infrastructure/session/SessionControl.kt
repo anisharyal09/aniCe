@@ -46,19 +46,67 @@ data class SessionControl(val kind: ControlKind, val value: Long = 1) {
     }
 
     /** Arrays must be valid CBOR; other payloads and arrays with a different tag keep their dispatcher. */
-    fun application(bytes: ByteArray, maximumBytes: Int = SessionCbor.MAX_BYTES): SessionControl? {
+    fun application(bytes: ByteArray, maximumBytes: Int = SessionCbor.MAX_BYTES): SessionControl? =
+      (classifyApplication(bytes, maximumBytes) as? ApplicationControl.Session)?.value
+
+    internal fun classifyApplication(bytes: ByteArray, maximumBytes: Int, lanRenewal: Boolean = false): ApplicationControl? {
       if (bytes.isEmpty() || (bytes[0].toInt() and 0xe0) != 0x80) return null
       val parsed = SessionCbor.decode(bytes, maximumBytes, materializeBytes = false)
       val row = (parsed as? Cbor.Array)?.value ?: return null
+      if (lanRenewal && row.firstOrNull() == Cbor.Text(LanRenewalControl.TAG)) {
+        // Only this bounded control is decoded again to materialize its 16-byte identifier, never bulk DATA.
+        return ApplicationControl.LanRenewal(LanRenewalControl.decode(bytes))
+      }
       if (row.firstOrNull() != Cbor.Text(TAG)) return null
       if (bytes.size > 128) throw SessionException(SessionFailure.MALFORMED)
-      return fromCbor(parsed)
+      return ApplicationControl.Session(fromCbor(parsed))
+    }
+  }
+}
+
+internal sealed interface ApplicationControl {
+  data class Session(val value: SessionControl) : ApplicationControl
+  data class LanRenewal(val value: LanRenewalControl) : ApplicationControl
+}
+
+/** LAN-only DATA extension defined by protocol/lan/renewal.cddl. */
+internal data class LanRenewalControl(val kind: Int, val id: ByteArray = byteArrayOf(), val reason: Long = 1) {
+  fun encode(): ByteArray {
+    if (kind !in 1..3 || id.size != (if (kind == 1) 0 else 16) || reason !in 1..2)
+      throw SessionException(SessionFailure.MALFORMED)
+    val fields = if (kind == 1) emptyList() else listOf(Cbor.Bytes(id)) +
+      if (kind == 2) listOf(Cbor.Integer(reason)) else emptyList()
+    return SessionCbor.encode(Cbor.Array(listOf(Cbor.Text(TAG), Cbor.Integer(1),
+      Cbor.Integer(kind.toLong()), Cbor.Array(fields))))
+  }
+  companion object {
+    const val TAG = "aniCe LAN renewal"
+    fun decode(bytes: ByteArray): LanRenewalControl {
+      if (bytes.size > 128) throw SessionException(SessionFailure.MALFORMED)
+      val row = (SessionCbor.decode(bytes) as? Cbor.Array)?.value
+        ?: throw SessionException(SessionFailure.MALFORMED)
+      if (row.size != 4 || row[0] != Cbor.Text(TAG) || row[1] !is Cbor.Integer || row[2] !is Cbor.Integer)
+        throw SessionException(SessionFailure.MALFORMED)
+      val kind = (row[2] as Cbor.Integer).value
+      if (row[1] != Cbor.Integer(1) || kind !in 1..3) throw SessionException(SessionFailure.UNSUPPORTED_PROFILE)
+      val fields = (row[3] as? Cbor.Array)?.value ?: throw SessionException(SessionFailure.MALFORMED)
+      if (fields.size != when (kind) { 1L -> 0; 2L -> 2; else -> 1 })
+        throw SessionException(SessionFailure.MALFORMED)
+      val id = if (kind == 1L) byteArrayOf() else (fields[0] as? Cbor.Bytes)?.value
+        ?: throw SessionException(SessionFailure.MALFORMED)
+      val reason = if (kind == 2L) (fields[1] as? Cbor.Integer)?.value
+        ?: throw SessionException(SessionFailure.MALFORMED) else 1
+      if (id.size != (if (kind == 1L) 0 else 16) || reason !in 1..2)
+        throw SessionException(SessionFailure.MALFORMED)
+      return LanRenewalControl(kind.toInt(), id, reason)
     }
   }
 }
 
 /** Connection-serialized policy, in monotonic milliseconds; it never owns keys or transport. */
-internal class SessionLiveness(private val responder: Boolean, private var nextId: Long = 0) {
+internal class SessionLiveness(private val responder: Boolean, private var nextId: Long = 0,
+  private val pingAfterMillis: Long = 60_000, private val pongWithinMillis: Long = 20_000) {
+  init { require(pingAfterMillis > 0 && pongWithinMillis > 0) }
   @Volatile var support: Boolean? = null
     private set
   var pending: SessionControl? = null
@@ -90,7 +138,7 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
   }
   fun activity(now: Long) { lastActivity = now }
 
-  fun receive(message: SessionControl, now: Long) {
+  fun receive(message: SessionControl, now: Long, allowRenewalPing: Boolean = false) {
     if (!started || support == false) stateFailure()
     activity(now)
     when (message.kind) {
@@ -103,7 +151,8 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
         support = true
       }
       ControlKind.PING -> {
-        if (!responder || support != true || pending != null || message.value != expectedPing) stateFailure()
+        if (!responder || support != true || pending != null &&
+          !(allowRenewalPing && pending?.kind == ControlKind.RENEWAL_REQUEST) || message.value != expectedPing) stateFailure()
         expectedPing++ // Stored as Long so uint32 exhaustion never wraps back to zero.
         pending = SessionControl(ControlKind.PONG, message.value)
       }
@@ -120,12 +169,18 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
     }
   }
 
+  fun quiesceForLanBarrier() {
+    if (pending?.kind == ControlKind.RENEWAL_REQUEST ||
+      pending?.kind == ControlKind.PING && outstanding == null) pending = null
+    renewalSubmitted = true
+  }
+
   fun nextDeadline(): Long? {
     if (!started) return null
     return listOfNotNull(
       compatibilityDeadline.takeIf { support == null || pending?.kind == ControlKind.HELLO_ACK },
       pongDeadline,
-      (lastActivity + 60000).takeIf {
+      (lastActivity + pingAfterMillis).takeIf {
         !responder && support == true && renewalReason == null && pending == null && outstanding == null
       },
     ).minOrNull()
@@ -142,7 +197,7 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
     if (responder && support == true && pending == null && renewalReason != null && !renewalSubmitted) {
       pending = SessionControl(ControlKind.RENEWAL_REQUEST, renewalReason!!)
     }
-    if (!responder && support == true && renewalReason == null && pending == null && outstanding == null && now - lastActivity >= 60000) {
+    if (!responder && support == true && renewalReason == null && pending == null && outstanding == null && now - lastActivity >= pingAfterMillis) {
       if (nextId !in 0..0xffffffffL) timeout()
       pending = SessionControl(ControlKind.PING, nextId++)
     }
@@ -154,7 +209,7 @@ internal class SessionLiveness(private val responder: Boolean, private var nextI
     when (message.kind) {
       ControlKind.HELLO -> helloIssued = true
       ControlKind.HELLO_ACK -> support = true
-      ControlKind.PING -> if (outstanding == null) { outstanding = message.value; pongDeadline = now + 20000 }
+      ControlKind.PING -> if (outstanding == null) { outstanding = message.value; pongDeadline = now + pongWithinMillis }
       else -> Unit
     }
   }

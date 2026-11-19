@@ -102,10 +102,10 @@ actor LanTcpTransport {
     let tcp = NWProtocolTCP.Options()
     tcp.noDelay = true
     tcp.enableKeepalive = true
-    tcp.keepaliveIdle = 10
-    tcp.keepaliveInterval = 5
+    tcp.keepaliveIdle = 5
+    tcp.keepaliveInterval = 2
     tcp.keepaliveCount = 3
-    tcp.connectionDropTime = 20
+    tcp.connectionDropTime = 10
     let parameters = NWParameters(tls: nil, tcp: tcp)
     parameters.includePeerToPeer = false
     parameters.prohibitedInterfaceTypes = [.cellular, .loopback, .other]

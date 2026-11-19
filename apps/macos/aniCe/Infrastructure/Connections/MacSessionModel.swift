@@ -43,11 +43,18 @@ struct SessionStartupRecovery {
   var receivedChecks = 0
   private var checkPending = false
   private(set) var automatic = false
+  var automaticArmed: Bool { automatic && connectionPauseStatus == nil }
+  var waitingAutomatically: Bool { automaticArmed && !attemptCancelled }
+  private var attemptCancelled = false
   private var suspended = false
   private var sleeping = false
   private var quitting = false
   private var restart: Task<Void, Never>?
   private var pauseResumeTask: Task<Void, Never>?
+  @ObservationIgnored private var pauseNoticeTask: Task<Void, Never>?
+  @ObservationIgnored private var pauseNoticeDeadline: Task<Void, Never>?
+  @ObservationIgnored private var pendingPause: UUID?
+  @ObservationIgnored private var pauseTeardown: (@MainActor () -> Void)?
   private var radioBlocked = false
   private var startupRecovery = SessionStartupRecovery()
   private var cooldownUntil: TimeInterval?
@@ -106,6 +113,13 @@ struct SessionStartupRecovery {
   private var observers = [NSObjectProtocol]()
   private(set) var connectionPauseStatus: String?
   var automaticPauseEnded: () -> Void = {}
+  /// Sends the authenticated pause notice before this model retires an established session.
+  var pauseNotice: (@MainActor (Date?) async -> Void)?
+  /// Gates linked transport work now and returns generation-scoped teardown for after the notice.
+  var prepareLinkedPause: (@MainActor () -> (@MainActor () -> Void))?
+  /// Clears a mirrored peer pause after local Resume or explicit Connect.
+  var pauseResumed: (@MainActor () -> Void)?
+  var connectionClockChanged: () -> Void = {}
   init(
     identity: IdentityService, adapter: any SessionPeripheralAdapter,
     store: @escaping @MainActor () async throws -> PeerTrustStore,
@@ -176,6 +190,7 @@ struct SessionStartupRecovery {
     allow()
   }
   func setAutomatic(_ enabled: Bool) {
+    invalidatePauseNotice()
     pauseResumeTask?.cancel(); pauseResumeTask = nil
     cooldownUntil = nil
     automatic = enabled
@@ -183,6 +198,7 @@ struct SessionStartupRecovery {
     preferences?.set(false, forKey: "session.paused")
     preferences?.removeObject(forKey: Self.pauseUntilKey)
     updateConnectionPauseStatus()
+    if enabled { pauseResumed?() }
     automaticPauseEnded()
     preferences?.set(selectedPeer?.deviceId, forKey: "session.target")
     preferences?.set(selectedPeer?.fingerprint, forKey: "session.fingerprint")
@@ -209,10 +225,11 @@ struct SessionStartupRecovery {
       else { allow() }
     }
   }
-  func sleep() { sleeping = true; cancel() }
+  func sleep() { invalidatePauseNotice(); sleeping = true; cancel() }
   func wake() { sleeping = false; resumeAutomatic() }
-  func quit() { quitting = true; cancel() }
+  func quit() { invalidatePauseNotice(); quitting = true; cancel() }
   func retireTrust() {
+    invalidatePauseNotice()
     pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = false
     preferences?.set(true, forKey: "session.paused")
@@ -236,6 +253,30 @@ struct SessionStartupRecovery {
       self.allow()
     }
   }
+  /// Explicit Connect resumes an active pause and ignores a recovery cooldown.
+  func connectDevice(_ peer: DeviceIdentity?, alongside lan: MacLanSessionModel) {
+    if let peer, let current = peers.peer,
+      current.deviceId != peer.deviceId || current.fingerprint != peer.fingerprint || current.publicKey != peer.publicKey {
+      status = "Disconnect the other device before connecting to this phone."
+      return
+    }
+    if let peer { selectedPeer = peer }
+    allowExplicit()
+    lan.connectAlongside(peer ?? selectedPeer)
+  }
+
+  func allowExplicit() {
+    invalidatePauseNotice()
+    cooldownUntil = nil
+    if automatic, preferences?.bool(forKey: "session.paused") == true,
+      preferences?.object(forKey: Self.pauseUntilKey) != nil {
+      resumeAutomaticPause()
+    } else {
+      pauseResumed?()
+      guard !allowing else { return }
+      allow()
+    }
+  }
   func allow() {
     if automatic, preferences?.bool(forKey: "session.paused") == true,
       let deadline = automaticPauseDeadline, deadline <= wallNow() {
@@ -245,6 +286,8 @@ struct SessionStartupRecovery {
     if automatic && (suspended || sleeping || quitting) { return }
     if automatic && isAutomaticPauseActive { schedulePauseResume(); return }
     if automatic, let until = cooldownUntil, now() < until { return }
+    invalidatePauseNotice()
+    attemptCancelled = false
     cancel()
     beforeAllow()
     allowing = true
@@ -356,7 +399,8 @@ struct SessionStartupRecovery {
   private func installCallbacks(_ op: Int, target: DeviceIdentity?) {
     // Subscription admits one candidate, not an authenticated identity. EDHOC enforces the target.
     adapter.sessionAdmitted = { [weak self] in
-      guard let self, op == self.generation, self.allowing, self.admission.claim(self.now()) else {
+      guard let self, op == self.generation, self.allowing, !self.isAutomaticPauseActive,
+        self.admission.claim(self.now()) else {
         return false
       }
       Self.logger.notice("BLE admitted generation=\(op) attempt=\(self.attempt)")
@@ -416,13 +460,14 @@ struct SessionStartupRecovery {
         guard op == self.generation, candidate == self.attempt, self.admitted,
           let engine = self.connection
         else { return }
+        // One active receive buffer is separate from the eight queued logical envelopes.
+        self.inputCount -= 1
+        self.inputBytes -= bytes.count
         do {
           try await engine.receive(bytes)
           guard op == self.generation, candidate == self.attempt else { return }
           if bytes.first == 3 { self.handshakeDeadline = self.now() + 10 }
           self.startMaintenance()
-          self.inputCount -= 1
-          self.inputBytes -= bytes.count
           if await engine.isClosed {
             if self.automatic { self.reopen() }
             else { self.cancel(); self.status = "Disconnected by your Android device." }
@@ -691,6 +736,7 @@ struct SessionStartupRecovery {
   }
   func disconnect() {
     // Stop outranks renewal/recovery; persist the pause before any suspended close.
+    invalidatePauseNotice()
     pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = false
     preferences?.set(true, forKey: "session.paused")
@@ -699,8 +745,18 @@ struct SessionStartupRecovery {
     disconnectAndCancel()
   }
 
+  /// Cancels the current admission or connection without changing the automatic preference.
+  func cancelAttempt() {
+    guard state != "Secured" else { return }
+    invalidatePauseNotice()
+    attemptCancelled = true
+    cancel()
+    status = "Connection canceled."
+  }
+
   func pauseAutomatic(for duration: TimeInterval?) {
     guard automatic || preferences?.bool(forKey: "session.automatic") == true else { return }
+    invalidatePauseNotice()
     pauseResumeTask?.cancel(); pauseResumeTask = nil
     automatic = true
     preferences?.set(true, forKey: "session.automatic")
@@ -711,7 +767,33 @@ struct SessionStartupRecovery {
       preferences?.set(0.0, forKey: Self.pauseUntilKey)
     }
     updateConnectionPauseStatus()
-    disconnectAndCancel()
+    let linkedTeardown = prepareLinkedPause?()
+    // Only an already-secured link can deliver metadata; retire unfinished admission immediately.
+    if state != "Secured" { cancel() }
+    let op = generation
+    let token = UUID()
+    pendingPause = token
+    pauseTeardown = { [weak self] in
+      linkedTeardown?()
+      guard let self, op == self.generation else { return }
+      self.disconnectAndCancel()
+    }
+    let until = automaticPauseDeadline
+    if let pauseNotice {
+      pauseNoticeTask = Task { [weak self] in
+        guard self?.pendingPause == token, !Task.isCancelled else { return }
+        await pauseNotice(until)
+        guard !Task.isCancelled else { return }
+        self?.finishPauseNotice(token)
+      }
+      // A nonce-owned send may outlive cancellation; teardown must not wait on that producer.
+      pauseNoticeDeadline = Task { [weak self] in
+        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        self?.finishPauseNotice(token)
+      }
+    } else {
+      finishPauseNotice(token)
+    }
     if automaticPauseDeadline != nil { schedulePauseResume() }
   }
 
@@ -719,15 +801,18 @@ struct SessionStartupRecovery {
     pauseResumeTask?.cancel(); pauseResumeTask = nil
     guard preferences?.bool(forKey: "session.automatic") == true,
       preferences?.object(forKey: Self.pauseUntilKey) != nil else { return }
+    invalidatePauseNotice()
+    pauseResumed?()
     automatic = true
     preferences?.set(false, forKey: "session.paused")
     preferences?.removeObject(forKey: Self.pauseUntilKey)
     updateConnectionPauseStatus()
     automaticPauseEnded()
-    if !suspended && !sleeping && !quitting { allow() }
+    if !suspended && !sleeping && !quitting && !allowing { allow() }
   }
 
   func reconcileConnectionPause() {
+    connectionClockChanged()
     if automatic, preferences?.bool(forKey: "session.paused") == true,
       let deadline = automaticPauseDeadline, deadline <= wallNow() {
       resumeAutomaticPause()
@@ -735,6 +820,20 @@ struct SessionStartupRecovery {
     }
     updateConnectionPauseStatus()
     if automatic && isAutomaticPauseActive { schedulePauseResume() }
+  }
+
+  private func finishPauseNotice(_ token: UUID) {
+    guard pendingPause == token, isAutomaticPauseActive else { return }
+    let teardown = pauseTeardown
+    invalidatePauseNotice()
+    teardown?()
+  }
+
+  private func invalidatePauseNotice() {
+    pendingPause = nil
+    pauseTeardown = nil
+    pauseNoticeTask?.cancel(); pauseNoticeTask = nil
+    pauseNoticeDeadline?.cancel(); pauseNoticeDeadline = nil
   }
 
   private var automaticPauseDeadline: Date? {
@@ -782,6 +881,9 @@ struct SessionStartupRecovery {
       cancel()
       return
     }
+    // Retire presentation/admission immediately; explicit Connect can replace this bounded close.
+    allowing = false
+    state = "Disconnected"
     status = "Disconnecting…"
     let op = generation
     Task {

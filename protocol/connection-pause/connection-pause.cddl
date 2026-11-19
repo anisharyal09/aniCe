@@ -1,0 +1,5 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Deterministic CBOR inside application DATA kind 3 / session envelope 6; at most 128 bytes.
+connection-pause = ["aniCe connection pause", 1, 1, [until-millis]] /
+                   ["aniCe connection pause", 1, 2, [0]]
+until-millis = uint .le 253402300799999

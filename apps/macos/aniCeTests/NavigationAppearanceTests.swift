@@ -320,7 +320,7 @@ extension SessionTests {
     XCTAssertEqual(presentation().action, .allow)
     XCTAssertEqual(presentation("Failed").action, .retry)
     XCTAssertEqual(presentation(bleAllowing: true).summary, "Waiting for phone")
-    XCTAssertEqual(presentation("Connecting", bleAllowing: true).action, .stop)
+    XCTAssertEqual(presentation("Connecting", bleAllowing: true).action, .cancel)
     XCTAssertEqual(presentation(automatic: true).summary, "Waiting nearby")
     XCTAssertEqual(presentation(automatic: true).action, .stop)
     XCTAssertEqual(presentation("Failed", "Secured", lanAllowing: true).summary, "Connected")
@@ -329,6 +329,45 @@ extension SessionTests {
       "Connected")
   }
 
+  func testPausedPresentationOffersExplicitConnectDespiteStaleAdmission() {
+    for bluetooth in ["Disconnected", "Connecting", "Failed", "Secured"] {
+      for lan in ["Disconnected", "Connecting", "Failed", "Secured"] {
+        let presentation = ConnectionPresentation(bluetooth: bluetooth, lan: lan,
+          bluetoothAllowing: true, lanAllowing: true, automatic: true, paused: true)
+        if bluetooth == "Secured" || lan == "Secured" {
+          XCTAssertTrue(presentation.connected)
+          XCTAssertEqual(presentation.action, .disconnect)
+        } else {
+          XCTAssertEqual(presentation.summary, "Paused")
+          XCTAssertEqual(presentation.action, .allow)
+        }
+      }
+    }
+  }
+
+}
+
+@MainActor
+final class PauseMenuTests: XCTestCase {
+  func testPauseMenuGroupsExistingChoicesWithoutHidingResumeBehindAMenu() {
+    let handler = MacPauseMenuHandler(), items = handler.makeMenu().items
+    XCTAssertEqual(items.filter { !$0.isSeparatorItem }.map(\.title),
+      ["1 hour", "3 hours", "6 hours", "Until I resume", "Custom…"])
+    XCTAssertEqual(items.indices.filter { items[$0].isSeparatorItem }, [3, 5])
+    for item in items where !item.isSeparatorItem {
+      XCTAssertTrue(item.target === handler)
+      XCTAssertNotNil(item.action)
+    }
+    var durations: [TimeInterval?] = [], custom = 0
+    handler.onPause = { durations.append($0) }
+    handler.onCustom = { custom += 1 }
+    handler.select1Hour(); handler.select3Hours(); handler.select6Hours()
+    handler.selectUntilResume(); handler.selectCustom()
+    XCTAssertEqual(durations.count, 4)
+    XCTAssertEqual(durations.compactMap { $0 }, [3600, 10800, 21600])
+    XCTAssertNil(durations.last!)
+    XCTAssertEqual(custom, 1)
+  }
 }
 
 

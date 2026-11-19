@@ -1,6 +1,6 @@
 # Experimental bulk benchmark profile
 
-This profile is selectable only by the isolated native LAN benchmark configuration. It is separate from the production [LAN transfer profile](TRANSFER_PROFILE.md), which negotiates 256-KiB DATA records. This experimental 4-MiB profile has no production feature integration.
+This profile is selectable only by the isolated native LAN benchmark configuration. It is separate from the production [LAN transfer profile](TRANSFER_PROFILE.md), whose current profile 4 supports 512-KiB transfer chunks. This experimental 4-MiB profile has no production feature integration.
 
 Discovery uses the isolated `_anicebulk._tcp` service with TXT `v=1`; standard discovery ignores it. Fresh TCP and EDHOC authenticate the pinned disposable peer. Both endpoints explicitly select `bulk-probe`; incoming bytes cannot select or downgrade the local profile. EDHOC messages and CBOR limits remain unchanged.
 
@@ -16,4 +16,4 @@ Exporter context is deterministic CBOR `["aniCe bulk probe", 1, maximumPlaintext
 
 The benchmark body is at most 4,194,299 bytes, leaving five bytes for its existing kind/offset header. A four- or eight-block logical window uses cumulative ACKs every half-window and at EOF. The transport retains at most four envelopes and 16,777,340 bytes; refusal remains before sealing. Submitted records are never replayed. The standard transport remains eight envelopes/32 KiB and standard DATA remains 4,000 bytes.
 
-This probe measures whether native-validation overhead can be amortized without changing the control channel. Throughput success alone does not establish media latency, memory/battery, supported-OS or production bulk-channel acceptance.
+This probe isolates record and transport costs from file storage and production feature routing. Its profile is not advertised by ordinary app connections.

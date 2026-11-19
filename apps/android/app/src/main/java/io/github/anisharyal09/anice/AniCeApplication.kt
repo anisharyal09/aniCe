@@ -52,9 +52,8 @@ class AniCeApplication : Application() {
         }
         lanSessionController.onDemandFailure = { reason -> transfer.onLanUnavailable(reason) }
         nowPlaying.onNetworkDemand = lanSessionController::updateMediaLease
-        transfer.onPickerChanged = { picking ->
+        transfer.onPickerChanged = {
             updateTransferOwnership()
-            if (picking) lanSessionController.requestAutomaticConnection()
         }
         transfer.onDemandLanConnection = { lanSessionController.connectPreferred() }
         transfer.canAutomaticallyReceive = {
@@ -162,6 +161,11 @@ class AniCeApplication : Application() {
     val phoneInput get() = phoneInputOwner.value
     private val dndSyncOwner = lazy { io.github.anisharyal09.anice.features.dndsync.DndSyncController(this) }
     val dndSync get() = dndSyncOwner.value
+    private val connectionPauseOwner = lazy {
+        io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseController(
+            formatTime = { android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(it)) })
+    }
+    val connectionPause get() = connectionPauseOwner.value
     val devicePower by lazy { io.github.anisharyal09.anice.features.deskdeck.DevicePowerController(this) }
     val deskDeck by lazy {
         io.github.anisharyal09.anice.features.deskdeck.DeskDeckController(
@@ -181,7 +185,12 @@ class AniCeApplication : Application() {
     // Notification adapters need the base context attached by Android after Application construction.
     val features by lazy {
         io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
-            it.applicationActivity = lanSessionController::onApplicationActivity
+            it.applicationActivity = { descriptor, bytes ->
+                val pauseNotice = try {
+                    io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseMessage.decode(bytes) != null
+                } catch (_: io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseWireException) { false }
+                if (!pauseNotice) lanSessionController.onApplicationActivity(descriptor, bytes)
+            }
             it.register(lanSessionController.rendezvous)
             it.register(nowPlaying)
             it.register(transfer)
@@ -191,6 +200,7 @@ class AniCeApplication : Application() {
             it.register(notificationMirror)
             it.register(phoneInput)
             it.register(dndSync)
+            it.register(connectionPause)
             it.register(devicePower)
             it.register(deskDeck)
         }
@@ -205,6 +215,9 @@ class AniCeApplication : Application() {
 
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
+        if (connectionPauseOwner.isInitialized()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { connectionPause.clear() }
+        }
         android.os.Handler(android.os.Looper.getMainLooper()).post { transfer.invalidate() }
         nowPlaying.invalidate()
         if (smsOwner.isInitialized()) {

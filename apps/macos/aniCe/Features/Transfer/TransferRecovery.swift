@@ -584,7 +584,7 @@ extension MacTransferModel {
         statusWaiterToken = token
         statusRequest = (channel.descriptor, operation)
         statusTimeoutTask = Task { [weak self] in
-          do { try await Task.sleep(for: self?.resumeTimeout ?? .seconds(15)) } catch { return }
+          do { try await waitForChannelDeadline(self?.resumeTimeout ?? .seconds(15), on: channel) } catch { return }
           finish(nil)
         }
         statusSubmissionTask = Task { [weak self] in

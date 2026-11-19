@@ -4,9 +4,11 @@ aniCe connects Android and macOS over local Bluetooth and LAN. Report suspected 
 
 ## Supported Versions
 
-The first public beta is being prepared. Security fixes target `main` and the latest published beta or stable release; older builds are not maintained. A development version in source is not a published release.
+Security fixes target `main` and the latest published beta or stable release; older builds are not maintained. A development version in source is not a published release.
 
-Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer.
+Official Mac builds and updates require Apple Silicon (`arm64`) and macOS 14 or newer. Android builds require Android 10 (API 29) or newer.
+
+Compatibility is defined for these minimums, but runtime validation currently exercises newer OS baselines. Minimum-OS runtime coverage and an independent security review remain open.
 
 ## Security Architecture & Scope
 
@@ -15,7 +17,7 @@ Security boundaries:
 - **Device Identity:** P-256 keys in `AndroidKeyStore` with actual hardware/software protection reported, and actor-isolated macOS Keychain storage. Current Mac app builds use the development Keychain backend, not hardware isolation; the separate Secure Enclave backend requires appropriate signing and entitlements.
 - **Pairing Bootstrap:** Ephemeral ECDH QR codes with SHA-256 fingerprint commitments, or 6-digit PIN pairing via an in-memory OPAQUE (`opaque-ke` 4.0.1) password-authenticated key exchange.
 - **Session Transport:** RFC 9528 EDHOC (method 0, cipher suite 5: P-256, SHA-256, ChaCha20-Poly1305) authenticated record channels with directional AES-256-GCM encryption, monotonic sequence counters, and explicit rekeying schedules.
-- **LAN Discovery & Transfer:** Anonymous DNS-SD advertisements (`_anice._tcp`) and mutual credential verification prior to admission.
+- **LAN Discovery & Transfer:** Authenticated BLE IPv4 locators with anonymous DNS-SD fallback (`_anice._tcp`); independent pinned EDHOC authentication and fresh directional record keys on every initial/renewed cryptographic session.
 
 ### In Scope
 
@@ -52,6 +54,6 @@ Include the affected version and platform, impact, and reproduction steps. The m
 
 ### Current limits
 
-Discovery is unauthenticated; trust is established during pairing and authenticated session setup. The Mac app is unsandboxed, uses development Keychain storage and does not claim Secure Enclave isolation. Its current release pipeline uses a self-signed certificate, without Apple notarization. Peer feature content stays local; update checks and downloads contact GitHub.
+BLE advertisements and DNS-SD discovery are unauthenticated; direct LAN locators exchanged over an established encrypted BLE channel are authenticated routing hints, not credentials or LAN keys. Trust is established during pairing, and each LAN socket/renewed cryptographic session independently authenticates the full pinned credential. The Mac app is unsandboxed, uses development Keychain storage and does not claim Secure Enclave isolation. Its current release pipeline uses a self-signed certificate, without Apple notarization. Peer feature content stays local; update checks and downloads contact GitHub.
 
 Automated security analysis is one check, not evidence of an independent cryptographic audit. See [architecture](ARCHITECTURE.md) for ownership and trust boundaries.
