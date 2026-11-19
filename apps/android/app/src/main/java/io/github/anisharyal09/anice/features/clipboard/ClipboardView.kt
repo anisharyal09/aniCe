@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents credential-scoped clipboard sharing and optional device-local text history.
 package io.github.anisharyal09.anice.features.clipboard
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -39,9 +40,9 @@ fun ClipboardSettings(
         if (peers.size > 1) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 peers.forEach { record -> FilterChip(selected = owner.selected?.deviceId == record.peer.deviceId && owner.selected?.fingerprint == record.peer.fingerprint,
-                    onClick = { owner.select(record.peer) }, label = { Text(record.peer.deviceName) }) }
+                    onClick = { owner.select(record.peer) }, label = { Text(record.peer.displayName) }) }
             }
-        } else if (!grouped) peers.firstOrNull()?.let { Text(it.peer.deviceName, style = MaterialTheme.typography.titleSmall) }
+        } else if (!grouped) peers.firstOrNull()?.let { Text(it.peer.displayName, style = MaterialTheme.typography.titleSmall) }
         if (!showPreferences && owner.selected != null) {
             Text(if (owner.automatic) "Automatic sharing on" else "Manual sharing",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -172,7 +173,7 @@ fun ClipboardSendButton(owner: ClipboardController, modifier: Modifier = Modifie
         Text("Send clipboard")
     }
     if (confirming) AlertDialog(onDismissRequest = { confirming = false; sensitiveSample = null; owner.clearPreview() }, title = { Text("Send sensitive text?") },
-        text = { Text("This clipboard is marked sensitive. Send it to ${owner.selected?.deviceName ?: "the selected device"}?") },
+        text = { Text("This clipboard is marked sensitive. Send it to ${owner.selected?.displayName ?: "the selected device"}?") },
         // Confirm the captured sensitive item rather than rereading a possibly replaced system clipboard.
         confirmButton = { TextButton(onClick = { confirming = false; sensitiveSample?.let(owner::sendConfirmed); sensitiveSample = null }) { Text("Send") } },
         dismissButton = { TextButton(onClick = { confirming = false; sensitiveSample = null; owner.clearPreview() }) { Text("Cancel") } })

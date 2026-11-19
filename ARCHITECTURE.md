@@ -93,6 +93,13 @@ Profile 4 reserves a 524,416-byte authenticated plaintext budget for each transf
 
 ## Application DATA and source organization
 
+Device-owned name metadata uses [Device Names v1](protocol/device-names/README.md)
+over existing secured DATA. One platform-native PeerNames owner persists local
+publication revisions, peer name floors and credential-scoped private nicknames
+separately from immutable trust evidence. Ordinary current-peer surfaces resolve
+the latest device name unless Use nickname is enabled. Rename never starts a
+connection or changes EDHOC credentials; offline edits publish on reconnection.
+
 Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android manifest companion activity/service packages retain their original names; only their policy implementation moves. Existing identity, association and appearance persistence keys remain unchanged.
 
 App registers media and transfer FeatureHandlers before DATA delivery. Android feature mutations are delivered on the main dispatcher; transport framing and cryptography remain off-main. FeatureDispatch publishes authenticated channel descriptors (instance ID, transport and peer identity/fingerprint), availability, retirement and capacity events. SecuredChannel rejects retired instances and bounds submissions to the authenticated channel profile; transport owners retain capacity preflight, readiness ordering, liveness priority and nonce ownership. Authenticated application delivery remains ordered. Transfer chunks enter a feature-owned bounded FIFO; unrelated handlers can proceed while its worker decodes and writes. A full FIFO suspends delivery without dropping valid chunks. Receiver resume verification shares the chunk FIFO through channel rebinding; cancellation and retirement invalidate pending work and fence active completions. Normal EOF and authenticated close drain accepted work for at most ten seconds. Generation checks reject retired callbacks. Handlers distinguish handled, queued, discarded and unrecognized DATA; unrecognized records retain connection-check fallback. Dispatch owns no transfer scheduler or sealed-record queue. Session DATA admission bounds unsealed callers, prioritizes standard-sized requests with bounded bulk turns, and removes cancelled waiters before nonce reservation. Cancellation remains effective through pre-seal native validation; nonce-owned submissions and post-write validation complete independently of producer cancellation or retire the session.

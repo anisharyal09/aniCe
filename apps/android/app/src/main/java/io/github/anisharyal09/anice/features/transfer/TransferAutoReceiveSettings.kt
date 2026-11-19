@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents local automatic-receive consent for trusted Mac senders.
 package io.github.anisharyal09.anice.features.transfer
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,9 +41,9 @@ fun TransferAutoReceiveSettings(
             senders.forEach { record ->
                 val key = preferences.key(record.peer)
                 val checked = enabled[key] == true
-                val duplicate = senders.count { it.peer.deviceName == record.peer.deviceName } > 1
-                val name = if (duplicate) "Mac · ${record.peer.deviceName} · ${record.peer.fingerprint.takeLast(8)}"
-                    else "Mac · ${record.peer.deviceName}"
+                val duplicate = senders.count { it.peer.displayName == record.peer.displayName } > 1
+                val name = if (duplicate) "Mac · ${record.peer.displayName} · ${record.peer.fingerprint.takeLast(8)}"
+                    else "Mac · ${record.peer.displayName}"
                 val update: (Boolean) -> Unit = { value -> preferences.set(record.peer, value) }
                 AutomaticConnectionToggle(
                     checked = checked,

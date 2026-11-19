@@ -19,6 +19,7 @@ Contracts define required behavior.
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **Mac Desk Deck** | `1`–`5` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
 | **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Peer battery and charging status on existing device surfaces over authenticated DATA, with no new connection lease |
+| **Device Names** | `1` | Capability gated | [`device-names/README.md`](device-names/README.md) | Revisioned device-owned display names over existing authenticated DATA; private aliases remain local |
 | **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `1` | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Opt-in authenticated BLE coordination of event/demand-triggered LAN admission |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |

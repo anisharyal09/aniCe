@@ -23,6 +23,14 @@ internal class GattSetupRecovery {
   fun retryProfileRead(status: Int): Boolean =
     (status == 0 || status == 1 || status == 2 || status == 10) && retryMissingLayout()
 
+  fun profileReadFailure(status: Int): PairingTransportFailure = PairingTransportFailure(
+    when (status) {
+      14 -> "The Mac's discovery service is not currently available (GATT status 14). Keep the Mac's nearby setup or a fresh manual invitation open, then retry."
+      242 -> "The Mac's discovery read was rejected after Bluetooth service lookup (GATT status 242). Stop and restart nearby setup on the Mac, then find it again."
+      else -> "Could not verify the Mac's Bluetooth discovery service (GATT status $status)."
+    }
+  )
+
   fun subscriptionFailure(status: Int): PairingTransportFailure? =
     if (status == 0) null else PairingTransportFailure(
       "Could not subscribe to the Mac's Bluetooth reply channel (GATT status $status)."

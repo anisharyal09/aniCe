@@ -8,6 +8,12 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add credential-scoped private nicknames and an explicit Use nickname choice
+  in saved-device details without modifying authenticated peer identity.
+- Sync device-owned names over capable existing BLE/LAN channels, retain revision
+  floors and local aliases separately from trust, and resolve current peer labels
+  across Home, Devices, feature selectors and destination controls.
+
 - Add selected-candidate nearby Pair, a native attempt-bound six-digit comparison
   sheet, deferred identity verification and trust receipts, fresh foreground
   connection and a post-connection background setup offer.

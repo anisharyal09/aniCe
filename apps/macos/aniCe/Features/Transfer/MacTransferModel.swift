@@ -28,6 +28,9 @@ struct TransferRecipient: Equatable, Sendable {
   let deviceId: String
   let fingerprint: String
   let deviceName: String
+  @MainActor var displayName: String {
+    PeerNames.shared.displayName(deviceId: deviceId, fingerprint: fingerprint, fallback: deviceName)
+  }
 
   init(peer: DeviceIdentity) {
     deviceId = peer.deviceId

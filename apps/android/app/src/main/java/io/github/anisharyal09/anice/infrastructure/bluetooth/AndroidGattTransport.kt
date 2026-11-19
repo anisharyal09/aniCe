@@ -377,7 +377,7 @@ class AndroidGattTransport(
           Log.i("aniCe-ble", "profile_read epoch=$op status=$status valid=$valid instance=${c.instanceId}")
           if (!valid) {
             if (setupRecovery.retryProfileRead(status)) rediscoverServices(g)
-            else finish(false, "Could not verify the Mac's Bluetooth service layout (GATT status $status).")
+            else finish(false, setupRecovery.profileReadFailure(status).message)
             return@dispatch
           }
           if (BlePayloadCodec.decode(value).flags and requiredDiscoveryFlags != requiredDiscoveryFlags) {

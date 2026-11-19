@@ -107,7 +107,7 @@ extension MainWindowView {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           VStack(alignment: .leading, spacing: 6) {
             Text("Send files").font(.system(size: 14 * fontScale, weight: .medium))
-            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.deviceName } ?? "Connect a compatible Android phone to send files")
+            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.displayName } ?? "Connect a compatible Android phone to send files")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer(minLength: 12)
@@ -152,7 +152,7 @@ extension MainWindowView {
           }
           if pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
             DisclosureGroup("Trust and saved devices") {
-              MacPairingView(model: pairing, showPairingControls: false)
+              MacPairingView(model: pairing, showPairingControls: false, identityModel: identity)
             }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
           }
 
@@ -182,7 +182,7 @@ extension MainWindowView {
             get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
             set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
             .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(pairing.phase == "paired")
-          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false)
+          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false, identityModel: identity)
           HStack {
             Spacer()
             Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
@@ -664,7 +664,7 @@ private struct DeskDeckSettingsView: View {
           let peer = record.peer
           VStack(alignment: .leading, spacing: 4) {
             HStack {
-              Text(peer.deviceName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
+              Text(peer.displayName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
               Spacer()
               Button("Add app…") { chooseApplication(for: peer) }
                 .disabled(model.availableApprovalCount(for: peer) >= 32)
@@ -682,7 +682,7 @@ private struct DeskDeckSettingsView: View {
                     .foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
                 }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
-                  .accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
+                  .accessibilityLabel("Remove \(app.name) for \(peer.displayName)")
               }.frame(minHeight: 32)
             }
             if model.availableApprovalCount(for: peer) >= 32 {

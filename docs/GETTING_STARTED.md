@@ -49,6 +49,14 @@ Enable **Connect automatically** on both devices for their supported native back
 
 In **Settings → This device → Edit name**, save a trimmed name of 1–64 Unicode code points. Renaming keeps the same device ID, key and trust. **Forget device** removes local trust; **Reset identity** replaces the local identity and requires pairing again. Neither action clears optional saved clipboard history; delete or clear that history explicitly in Clipboard.
 
+Device-name edits sync to capable paired peers over existing secure connections;
+offline edits arrive on reconnect. They do not wake the peer or force a connection.
+In **Devices → Trust and saved devices**, expand the peer's details to set a
+**Private nickname**. **Use nickname** is off by default; enable it to use your
+local alias on current device surfaces. Turning it off restores the latest synced
+device name. Nicknames are never sent to the other device. Fingerprint/security
+details retain the actual name. Forget prunes the local display metadata.
+
 ## Permissions
 
 Grant feature permissions when you use the feature. Notification mirroring needs Android Notification Access; SMS needs the phone's SMS permissions; Mac input needs Event Posting access. DND sync needs configured Mac Shortcuts. Setup and platform limits are described in the [feature guides](../README.md#features).

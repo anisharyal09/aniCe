@@ -6,6 +6,122 @@ import XCTest
 @testable import aniCe
 
 final class PairingSasTests: XCTestCase, @unchecked Sendable {
+  @MainActor func testSyncedNamesPreserveTrustAndPrivateAliasPrecedence() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("anice-names-test-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac", tagPrefix: "test.")
+    let local = try await identity.publicIdentity()
+    let signing = P256.Signing.PrivateKey()
+    let initial = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: "Original Phone",
+      publicKey: signing.publicKey.x963Representation)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: PairingCodec.identityBytes(initial)) as? [String: Any])
+    object["platform"] = "android"
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: object))
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let hash = Data(repeating: 9, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: peer, localFingerprint: local.fingerprint,
+      method: .qr, pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: peer.deviceId, hash: hash,
+      receipt: signing.signature(for: PairingCodec.receipt(hash, 1)).derRepresentation)
+    let owner = PeerNames(url: directory.appendingPathComponent("names.json"))
+    owner.configure(identity: identity, trust: { trust })
+    try await owner.awaitRefresh()
+    try await owner.saveNickname(peer: peer, name: "Private Phone", enabled: true)
+    XCTAssertEqual(owner.displayName(peer), "Private Phone")
+    let link = NamesLink(peer: peer)
+    owner.available(link)
+    _ = await owner.handle(try NameWire.encode(), on: link.descriptor)
+    let handled = await owner.handle(try NameWire.encode(NameReport(revision: 4, name: "Renamed Phone")),
+      on: link.descriptor)
+    XCTAssertEqual(handled, .handled)
+    XCTAssertEqual(owner.deviceName(peer), "Renamed Phone")
+    XCTAssertEqual(owner.displayName(peer), "Private Phone")
+    try await owner.saveNickname(peer: peer, name: "Private Phone", enabled: false)
+    XCTAssertEqual(owner.displayName(peer), "Renamed Phone")
+    XCTAssertEqual(trust.list(localFingerprint: local.fingerprint).first?.peer.deviceName, "Original Phone")
+    let stale = await owner.handle(try NameWire.encode(NameReport(revision: 3, name: "Stale")), on: link.descriptor)
+    XCTAssertEqual(stale, .discarded)
+    owner.retired(link.descriptor)
+    let retired = await owner.handle(try NameWire.encode(NameReport(revision: 5, name: "Retired")), on: link.descriptor)
+    XCTAssertEqual(retired, .discarded)
+    let reopened = PeerNames(url: directory.appendingPathComponent("names.json"))
+    reopened.configure(identity: identity, trust: { trust })
+    try await reopened.awaitRefresh()
+    XCTAssertEqual(reopened.deviceName(peer), "Renamed Phone")
+    try trust.remove(peer.deviceId)
+    reopened.invalidate()
+    try await reopened.awaitRefresh()
+    XCTAssertNil(reopened.nickname(peer))
+    XCTAssertEqual(reopened.deviceName(peer), peer.deviceName)
+  }
+
+  func testNameWireBoundsAndUniformNativeEncoding() throws {
+    XCTAssertEqual(try NameWire.encode().map { String(format: "%02x", $0) }.joined(),
+      "8472616e69436520646576696365206e616d657301018101")
+    for name in ["Mac", String(repeating: "😀", count: 64)] {
+      let report = NameReport(revision: Int64.max, name: name)
+      XCTAssertEqual(try NameWire.decode(NameWire.encode(report))?.1, report)
+    }
+    XCTAssertThrowsError(try NameWire.encode(NameReport(revision: -1, name: "Mac")))
+    XCTAssertThrowsError(try NameWire.encode(NameReport(revision: 1, name: " Mac ")))
+    XCTAssertThrowsError(try NameWire.encode(NameReport(revision: 1, name: String(repeating: "x", count: 65))))
+  }
+
+  @MainActor func testNamesPersistenceFailureKeepsPreviousDisplay() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("anice-names-fault-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Mac", tagPrefix: "test.")
+    let local = try await identity.publicIdentity()
+    let key = P256.Signing.PrivateKey()
+    let peer = try DeviceIdentity(deviceId: UUID().uuidString.lowercased(), deviceName: "Peer",
+      publicKey: key.publicKey.x963Representation)
+    let trust = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let hash = Data(repeating: 3, count: 32)
+    try trust.prepare(PeerTrustRecord(peer: peer, localFingerprint: local.fingerprint, method: .qr,
+      pairedAt: Date(), transcriptHash: hash, active: false))
+    try trust.activate(peerID: peer.deviceId, hash: hash,
+      receipt: key.signature(for: PairingCodec.receipt(hash, 2)).derRepresentation)
+    let memory = NamesMemory()
+    let owner = PeerNames(url: directory.appendingPathComponent("names.json"),
+      read: { memory.read() }, write: { try memory.write($0) })
+    owner.configure(identity: identity, trust: { trust })
+    try await owner.awaitRefresh()
+    try await owner.saveNickname(peer: peer, name: "First", enabled: true)
+    memory.failWrites()
+    do { try await owner.saveNickname(peer: peer, name: "Second", enabled: true)
+      XCTFail("Storage error ignored")
+    } catch {}
+    XCTAssertEqual(owner.displayName(peer), "First")
+  }
+
+  private final class NamesMemory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data: Data?
+    private var fail = false
+    func read() -> Data? { lock.lock(); defer { lock.unlock() }; return data }
+    func write(_ value: Data) throws {
+      lock.lock(); defer { lock.unlock() }
+      if fail { throw SessionFailure.state }
+      data = value
+    }
+    func failWrites() { lock.lock(); defer { lock.unlock() }; fail = true }
+  }
+
+  @MainActor private final class NamesLink: SecuredChannel {
+    let descriptor: ChannelDescriptor
+    init(peer: DeviceIdentity) { descriptor = ChannelDescriptor(instance: UUID().uuidString, transport: "ble", peer: peer) }
+    func sendData(_ bytes: Data) async throws {}
+  }
+  func testNicknameKeepsCredentialAndRealNameSeparate() async throws {
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Real Mac", tagPrefix: "test.")
+    let peer = try await identity.publicIdentity()
+    let before = PeerNickname.credential(peer)
+    XCTAssertEqual(try PeerNickname(name: "Private Mac", enabled: false).displayedName(for: peer), "Real Mac")
+    XCTAssertEqual(try PeerNickname(name: "Private Mac", enabled: true).displayedName(for: peer), "Private Mac")
+    XCTAssertEqual(PeerNickname.credential(peer), before)
+    XCTAssertThrowsError(try PeerNickname(name: "", enabled: true))
+    XCTAssertNoThrow(try PeerNickname(name: String(repeating: "😀", count: 64), enabled: true))
+  }
   private func hex(_ string: String) -> Data {
     let chars = Array(string)
     return Data(stride(from: 0, to: chars.count, by: 2).map {

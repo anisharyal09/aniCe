@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents device-scoped actions and explicit transport details using the existing session owners.
 package io.github.anisharyal09.anice.features.session
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import io.github.anisharyal09.anice.R
@@ -117,7 +118,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                 val connectionOptions: (@Composable () -> Unit)? = if (nearby.available && (automaticConfigured || summary.state == ConnectionState.SECURED || nearby.connectionPaused)) {
                     {
                         ConnectionPauseMenu(
-                            peerName = record.peer.deviceName,
+                            peerName = record.peer.displayName,
                             paused = nearby.connectionPaused,
                             enabled = !automaticChanging,
                             expanded = expandedPauseMenu == record.peer.deviceId,
@@ -147,7 +148,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     }
                 } else null
                 Column(Modifier.fillMaxWidth().padding(vertical = if (compact || flatDeviceLayout) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else if (flatDeviceLayout) 4.dp else 8.dp)) {
-                DeviceSessionCard(record.peer.deviceName, summary.state,
+                DeviceSessionCard(record.peer.displayName, summary.state,
                     if (compact) "" else feedback, canUsePeer, { connect(record) }, model::disconnect,
                     onConnectionDetails = { if (compact) onOpenDevice(record.peer.deviceId) else { diagnostics = false; showEvents = false; details = if (details == record.peer.deviceId + ":" + record.peer.fingerprint) null else record.peer.deviceId + ":" + record.peer.fingerprint } },
                     summary = summaryText, action = summary.action,
@@ -325,7 +326,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
             title = { Text("Pause connection") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Choose when aniCe should reconnect to ${record.peer.deviceName}.")
+                    Text("Choose when aniCe should reconnect to ${record.peer.displayName}.")
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             value = customPauseHours,

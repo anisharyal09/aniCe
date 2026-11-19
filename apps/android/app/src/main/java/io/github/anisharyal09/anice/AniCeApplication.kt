@@ -163,6 +163,7 @@ class AniCeApplication : Application() {
     private val dndSyncOwner = lazy { io.github.anisharyal09.anice.features.dndsync.DndSyncController(this) }
     val dndSync get() = dndSyncOwner.value
     val devicePower by lazy { io.github.anisharyal09.anice.features.deskdeck.DevicePowerController(this) }
+    val peerNames by lazy { io.github.anisharyal09.anice.infrastructure.connections.PeerNames(this) }
     val deskDeck by lazy {
         io.github.anisharyal09.anice.features.deskdeck.DeskDeckController(
             shortcutPreferences = getSharedPreferences("desk_deck_shortcuts", MODE_PRIVATE),
@@ -183,6 +184,7 @@ class AniCeApplication : Application() {
         io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
             it.applicationActivity = lanSessionController::onApplicationActivity
             it.register(lanSessionController.rendezvous)
+            it.register(peerNames)
             it.register(nowPlaying)
             it.register(transfer)
             it.register(findDevice)
@@ -205,6 +207,7 @@ class AniCeApplication : Application() {
 
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { peerNames.invalidate() }
         android.os.Handler(android.os.Looper.getMainLooper()).post { transfer.invalidate() }
         nowPlaying.invalidate()
         if (smsOwner.isInitialized()) {
@@ -247,6 +250,9 @@ class AniCeApplication : Application() {
     val identityService by lazy {
         IdentityService(AndroidIdentityMetadata(this), AndroidIdentityKeys(), { Build.MODEL })
             .also {
+                it.onRenamed = {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { peerNames.refresh() }
+                }
                 it.onInvalidated = {
                     if (dndSyncOwner.isInitialized()) android.os.Handler(android.os.Looper.getMainLooper()).post { dndSync.setSendingEnabled(false) }
                     invalidateSessions()

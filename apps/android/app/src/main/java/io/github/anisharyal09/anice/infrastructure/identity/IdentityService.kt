@@ -51,6 +51,7 @@ class IdentityService(
     private val aliasPrefix: String = "anice.identity.v1.",
 ) {
     @Volatile var onInvalidated: () -> Unit = {}
+    @Volatile var onRenamed: () -> Unit = {}
     @Volatile internal var identityLoads = 0L
         private set
 
@@ -88,6 +89,7 @@ class IdentityService(
         val renamed = active.copy(identity = active.identity.copy(deviceName = name).validate())
         metadata.write(journal.copy(active = renamed))
         val updated = snapshot.copy(identity = renamed.identity)
+        onRenamed()
         return updated
     }
 

@@ -103,7 +103,7 @@ struct MacKeyboardTrackpadView: View {
       model.leavePanel(id: activePresentationID)
     }
     .alert(
-      "Link device to \(linkPeer?.deviceName ?? "this phone")?",
+      "Link device to \(linkPeer?.displayName ?? "this phone")?",
       isPresented: $showLinkConfirmation,
       presenting: linkCandidate
     ) { candidate in
@@ -114,14 +114,14 @@ struct MacKeyboardTrackpadView: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: { candidate in
-      Text("Use the Bluetooth device you paired with this Mac for \(linkPeer?.deviceName ?? "this phone"). aniCe will reconnect when Keyboard & Trackpad opens. Input starts only after you click the keyboard or pad.")
+      Text("Use the Bluetooth device you paired with this Mac for \(linkPeer?.displayName ?? "this phone"). aniCe will reconnect when Keyboard & Trackpad opens. Input starts only after you click the keyboard or pad.")
     }
   }
 
   private var targetHeader: some View {
     HStack(alignment: .top, spacing: 12) {
       VStack(alignment: .leading, spacing: 3) {
-        Text(model.targetPeer?.deviceName ?? "Choose a trusted phone")
+        Text(model.targetPeer?.displayName ?? "Choose a trusted phone")
           .font(.system(size: floatingPresentation ? 14 : 16, weight: .medium))
           .fixedSize(horizontal: false, vertical: true)
         if !floatingPresentation, model.targetPeer == nil {
@@ -198,13 +198,13 @@ struct MacKeyboardTrackpadView: View {
 
   private func peerMenuOption(_ peer: DeviceIdentity) -> some View {
     let selected = model.targetKey == KeyboardTrackpadAssociations.peerKey(peer)
-    let title = "\(peer.deviceName) · \(peer.fingerprint.prefix(8))"
+    let title = "\(peer.displayName) · \(peer.fingerprint.prefix(8))"
     return Button {
       model.selectTarget(peer)
       model.refreshPairedDevices()
     } label: {
       if selected {
-        Label("\(peer.deviceName) · selected", systemImage: "checkmark")
+        Label("\(peer.displayName) · selected", systemImage: "checkmark")
       } else {
         Text(title)
       }
@@ -231,7 +231,7 @@ struct MacKeyboardTrackpadView: View {
             HStack(spacing: 10) {
               Image(systemName: "iphone")
               VStack(alignment: .leading, spacing: 2) {
-                Text(peer.deviceName)
+                Text(peer.displayName)
                 Text(peer.fingerprint.prefix(12))
                   .font(.caption.monospaced())
                   .foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -261,7 +261,7 @@ struct MacKeyboardTrackpadView: View {
         ProgressView("Checking Bluetooth pairings…")
           .controlSize(.small)
       } else if !model.matchingPairedDevices.isEmpty {
-        Text("Choose the system Bluetooth device you paired with \(model.targetPeer?.deviceName ?? "this phone"), then confirm Link device.")
+        Text("Choose the system Bluetooth device you paired with \(model.targetPeer?.displayName ?? "this phone"), then confirm Link device.")
           .font(.callout)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
           .fixedSize(horizontal: false, vertical: true)
@@ -320,7 +320,7 @@ struct MacKeyboardTrackpadView: View {
         showLinkConfirmation = true
       }
       .buttonStyle(AniCeButtonStyle(prominent: true))
-      .accessibilityLabel("Link Bluetooth device \(candidate.name) to \(model.targetPeer?.deviceName ?? "this phone")")
+      .accessibilityLabel("Link Bluetooth device \(candidate.name) to \(model.targetPeer?.displayName ?? "this phone")")
       .disabled(model.phase == .disconnecting)
     }
   }
@@ -767,7 +767,7 @@ private struct FullScreenTrackpadContent: View {
     VStack(spacing: 8) {
       HStack(spacing: 12) {
         VStack(alignment: .leading, spacing: 4) {
-          Text(model.targetPeer?.deviceName ?? "Phone trackpad").font(.headline)
+          Text(model.targetPeer?.displayName ?? "Phone trackpad").font(.headline)
           Text("\(model.stateTitle) · ⌘⇧Esc stops input")
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))

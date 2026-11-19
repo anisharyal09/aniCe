@@ -110,7 +110,7 @@ extension MacSmsModel {
     if announced { return }
     state.status = "Message received"
     let outcome = await notifier.post(SmsNotification(identifier: smsNotificationPrefix + assembly.messageId, peerKey: key(peer),
-      peerName: peer.deviceName, address: assembly.address, threadId: conversation.threadId,
+      peerName: peer.displayName, address: assembly.address, threadId: conversation.threadId,
       threadIdentifier: normalized, body: body, failure: false))
     guard peers[key(peer)] === state, live(assembly.descriptor) else { return }
     if outcome == .submitted || outcome == .duplicate {

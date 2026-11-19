@@ -135,6 +135,11 @@ struct AniCeApp: App {
     session.automaticPauseEnded = { [weak lan] in lan?.resumeAfterTimedPause() }
     lan.onNetworkReturn = { [weak session] in session?.reconcileConnectionPause() }
     let features=FeatureDispatch()
+    if !IdentityView.isTesting {
+      PeerNames.shared.configure(identity: identity.service, trust: { try await pairing.sessionStore() })
+    }
+    identity.onRename = { PeerNames.shared.refresh() }
+    features.register(PeerNames.shared)
     features.applicationActivity = { [weak lan] descriptor, bytes in lan?.onApplicationActivity(descriptor, bytes) }
     features.register(lan.rendezvous)
     features.register(playback)
@@ -185,6 +190,7 @@ struct AniCeApp: App {
       if !navigation.automaticAfterPairing { session.allow() }
     }
     pairing.trustRemoved = {
+      PeerNames.shared.invalidate()
       transfer.invalidate()
       session.retireTrust(); lan.cancel(); clipboard.invalidate(); sms.invalidate()
       Task { @MainActor in
@@ -197,6 +203,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      PeerNames.shared.invalidate()
       dndSync.removeSelections()
       transfer.invalidate()
       clipboard.invalidate(); clipboard.preferences.clear()

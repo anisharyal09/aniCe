@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E50200000000000000000003 /* PeerNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50200000000000000000004; };
+		E50200000000000000000001 /* PeerNickname.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50200000000000000000002; };
 		E50100000000000000000001 /* PairingSas.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000002; };
 		E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000004; };
 		E50100000000000000000005 /* MacComparisonCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000006; };
@@ -194,6 +196,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E50200000000000000000004 /* PeerNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/PeerNames.swift; sourceTree = SOURCE_ROOT; };
+		E50200000000000000000002 /* PeerNickname.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/PeerNickname.swift; sourceTree = SOURCE_ROOT; };
 		E50100000000000000000002 /* PairingSas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingSas.swift; sourceTree = SOURCE_ROOT; };
 		E50100000000000000000004 /* NearbyPairingAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/NearbyPairingAdmission.swift; sourceTree = SOURCE_ROOT; };
 		E50100000000000000000006 /* MacComparisonCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacComparisonCard.swift; sourceTree = SOURCE_ROOT; };
@@ -681,6 +685,8 @@
 				CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */,
 				268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */,
 				E50100000000000000000002 /* PairingSas.swift */,
+				E50200000000000000000002 /* PeerNickname.swift */,
+				E50200000000000000000004 /* PeerNames.swift */,
 				E50100000000000000000004 /* NearbyPairingAdmission.swift */,
 			);
 			path = Pairing;
@@ -899,6 +905,8 @@
 				C0703186165FF0C5D2612FF7 /* aniCe/Infrastructure/Pairing/PairingCodec.swift in Sources */,
 				CC2537F76576ED2CBAF9A80F /* aniCe/Infrastructure/Pairing/PairingEngine.swift in Sources */,
 				E50100000000000000000001 /* PairingSas.swift in Sources */,
+				E50200000000000000000001 /* PeerNickname.swift in Sources */,
+				E50200000000000000000003 /* PeerNames.swift in Sources */,
 				E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */,
 				E50100000000000000000005 /* MacComparisonCard.swift in Sources */,
 				C0CEE5B8CCC6DAEFBF420732 /* aniCe/Features/Pairing/MacPairingModel.swift in Sources */,

@@ -8,6 +8,12 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add own-name editing to the pairing screen and private saved-device nicknames
+  with an explicit Use nickname choice; leave trust credentials unchanged.
+- Add authenticated live/reconnect device-name snapshots, revisioned no-backup
+  display storage and shared label resolution for current device/companion and
+  feature surfaces without recreating secure sessions.
+
 - Add awake/unlocked first-pair availability, globally bounded request admission,
   six-digit verification in a non-activating floating or centered native card,
   deferred identity disclosure, trust receipts and existing session handoff.

@@ -9,6 +9,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GattSetupRecoveryTests {
+  @Test fun unavailableProfileReadsRemainFailuresWithoutBlindCacheRetry() {
+    for (status in listOf(14, 242)) {
+      val recovery = GattSetupRecovery()
+      assertFalse(recovery.retryProfileRead(status))
+      assertTrue(recovery.profileReadFailure(status).message.contains("GATT status $status"))
+      assertTrue(recovery.profileReadFailure(status).message.contains("Mac"))
+    }
+  }
   @Test fun immediateWriteRejectionPreservesUnknownNativeStatusesAsIoFailures() {
     requireGattWriteSubmission(0)
     val statuses = listOf(-1, 1, 3, 133, 201, Int.MAX_VALUE)

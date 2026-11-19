@@ -6,6 +6,9 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define Device Names v1 capability-gated revision/name reports over existing
+  secured DATA, with no identity credential changes, connection leases or transmitted aliases.
+
 - Define provisional method-3 committed P-256 numeric comparison, uniform six-digit
   derivation, salted identity openings after mutual confirmation and existing trust
   receipts; add independent shared vectors and optional discovery flag `0x0001`.

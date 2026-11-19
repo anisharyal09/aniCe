@@ -23,6 +23,9 @@ import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.*
 import java.io.File
 import java.util.concurrent.Executors
+import io.github.anisharyal09.anice.infrastructure.connections.PeerNickname
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 
 class PairingViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as AniCeApplication
@@ -35,6 +38,24 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     private var method = PairingMethod.QR
     private var invitation: PairingQR? = null
     private var code = ""
+    var savingNickname by mutableStateOf(false)
+        private set
+    var nicknameFailure by mutableStateOf(false)
+        private set
+    internal fun nickname(peer: DeviceIdentity) = app.peerNames.nickname(peer)
+    fun displayedName(peer: DeviceIdentity) = app.peerNames.displayName(peer)
+    fun deviceName(peer: DeviceIdentity) = app.peerNames.deviceName(peer)
+    fun saveNickname(peer: DeviceIdentity, name: String, enabled: Boolean) {
+        if (savingNickname || peers.none { it.peer == peer }) return
+        savingNickname = true
+        nicknameFailure = false
+        viewModelScope.launch {
+            try {
+                app.peerNames.saveNickname(peer, name, enabled)
+            } catch (_: Exception) { nicknameFailure = true }
+            finally { savingNickname = false }
+        }
+    }
     private var nearbyCandidate: NearbyPairingCandidate? = null
     var comparisonCode by mutableStateOf<String?>(null)
         private set
@@ -616,6 +637,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 handler.post {
                     if (generation == op) {
                         peers = list
+                        app.peerNames.refresh()
                         trustedPeersLoaded = true
                         onPeersChanged(list)
                     }

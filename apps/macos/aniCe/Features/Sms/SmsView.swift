@@ -46,7 +46,7 @@ struct SmsSettingsView: View {
             SmsNotificationControls(preferences: preferences, peer: record.peer, controlSize: .regular)
           } label: {
             VStack(alignment: .leading, spacing: 2) {
-              Text(record.peer.deviceName)
+              Text(record.peer.displayName)
               Text(summary(record.peer)).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
             }
           }
@@ -94,7 +94,7 @@ struct SmsView: View {
         if selectable.count > 1 {
           Picker("Phone", selection: Binding(get: { peerKey }, set: { key in selectPhone(key) })) {
             ForEach(selectable) { record in
-              Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
+              Text(record.peer.displayName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
             }
           }.labelsHidden().frame(maxWidth: 260)
         }
@@ -456,14 +456,14 @@ struct SmsView: View {
     Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
       .labelStyle(.iconOnly).frame(width: 24, height: 24)
       .buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
-      .help("Notification settings for \(peer.deviceName)")
-      .accessibilityLabel("Notification settings for \(peer.deviceName)")
+      .help("Notification settings for \(peer.displayName)")
+      .accessibilityLabel("Notification settings for \(peer.displayName)")
       .accessibilityValue(controlsOpen ? "Showing" : "Hidden")
   }
 
   @ViewBuilder private func notificationPanel(_ peer: DeviceIdentity) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text(peer.deviceName).font(.subheadline.weight(.medium))
+      Text(peer.displayName).font(.subheadline.weight(.medium))
       SmsNotificationControls(preferences: preferences, peer: peer)
       DisclosureGroup("Connection details") {
         Text(model.status(peer)).font(.caption)

@@ -111,6 +111,13 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Pairing requires mutual approval on both devices via nearby six-digit comparison,
   QR code or entered 6-digit PIN.
 - Device identity sheet displays name, fingerprint, and confirmed reset action.
+- Private nicknames are separate from device-owned names. Default Use nickname
+  to off; show the real device name in security details. Device-name edits sync
+  live over existing authenticated channels and on reconnect while offline.
+  Nicknames stay local, persist across restarts and take precedence only when enabled.
+  Home, Devices, companion, feature peer pickers and file/clipboard destination
+  labels use the same resolver. Immutable historic activity retains its event-time
+  label; security and pairing identity remain separate from presentation.
 - Nearby discovery uses generic anonymous candidates, never a claimed real device name.
   Android Home offers Find nearby and a native bottom sheet for qualified signals, with Pair,
   Dismiss and Manual pair. Pair freezes one candidate and opens a bounded comparison sheet.

@@ -2,6 +2,7 @@
 // Presents device-scoped automatic connection settings and the native association chooser.
 @file:Suppress("DEPRECATION") // API 31/32 association results use EXTRA_DEVICE.
 package io.github.anisharyal09.anice.features.backgroundprobe
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import android.bluetooth.BluetoothDevice
@@ -140,7 +141,7 @@ class CompanionProbeActivity : ComponentActivity() {
         }) }, contentWindowInsets = WindowInsets.safeDrawing) { padding ->
           Column(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()
             .verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(peer?.deviceName ?: "Trusted Mac", style = MaterialTheme.typography.titleLarge)
+            Text(peer?.displayName ?: "Trusted Mac", style = MaterialTheme.typography.titleLarge)
             Text("Reconnect to this Mac when nearby. Turn on Connect automatically on your Mac too.",
               style = MaterialTheme.typography.bodyMedium)
             if (!configured && connected)

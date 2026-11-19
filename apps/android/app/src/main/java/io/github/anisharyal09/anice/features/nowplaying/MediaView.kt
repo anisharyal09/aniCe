@@ -83,7 +83,7 @@ import kotlinx.coroutines.delay
                     Text(if (overview) "Now Playing" else "Now playing",style=MaterialTheme.typography.titleSmall, modifier=Modifier.weight(1f, fill=false))
                     if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription=null, modifier=Modifier.size(16.dp))
                 }
-                Text(if (overview) owner.origin.ifBlank { "Your Mac" } else "On ${owner.origin.ifBlank { "your Mac" }}",
+                Text(if (overview) owner.displayedOrigin.ifBlank { "Your Mac" } else "On ${owner.displayedOrigin.ifBlank { "your Mac" }}",
                     style=MaterialTheme.typography.bodySmall, modifier=Modifier.weight(1f),textAlign=androidx.compose.ui.text.style.TextAlign.End)
                 if (!showPlayerSelector && !overview) IconButton(onClick={ options = !options }, modifier=Modifier.semantics { contentDescription="More playback controls" }) { Text("⋯",style=MaterialTheme.typography.titleLarge) }
             }
@@ -231,7 +231,7 @@ import kotlinx.coroutines.delay
                     if((showPlayerSelector || options) && owner.playerVolume==null) Text("Player volume is unavailable. Check support and permissions in aniCe on your Mac.",style=MaterialTheme.typography.bodySmall)
                     if(media.actions and 16L!=0L) Text("Allow playback control on your Mac.",style=MaterialTheme.typography.bodySmall)
                 }
-            } else if(!compact) Text(if(!owner.connected) "Connect to your trusted Mac to use Now Playing." else if(!owner.supported) "Update aniCe on your Mac to use Now Playing." else if(owner.awaitingSnapshot) "Waiting for playback information from ${owner.origin}." else "Play media on ${owner.origin} to see it here.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if(!compact) Text(if(!owner.connected) "Connect to your trusted Mac to use Now Playing." else if(!owner.supported) "Update aniCe on your Mac to use Now Playing." else if(owner.awaitingSnapshot) "Waiting for playback information from ${owner.displayedOrigin}." else "Play media on ${owner.displayedOrigin} to see it here.",color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(owner.feedback.isNotEmpty() && (owner.feedback!="Processing…" || showProcessing)) Text(owner.feedback,style=MaterialTheme.typography.bodySmall)
             if (overview) {
                 Spacer(Modifier.height(16.dp))

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents local file transfer controls, incoming batch approval and progress in the Android feature workspace.
 package io.github.anisharyal09.anice.features.transfer
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.text.format.Formatter
 import android.content.ContentResolver
@@ -47,7 +48,7 @@ class TransferSendReview internal constructor(private val controller: TransferCo
     private var selectionRevision = 0L
 
     private fun currentPeer(): TransferReviewPeer? = controller.activeChannel?.descriptor?.peer?.let {
-        TransferReviewPeer(it.deviceId, it.fingerprint, it.deviceName)
+        TransferReviewPeer(it.deviceId, it.fingerprint, it.displayName)
     }
 
     internal fun installPicker(action: () -> Unit) { launchPicker = action }
@@ -272,7 +273,7 @@ fun TransferView(
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("Send files", style = MaterialTheme.typography.titleSmall)
                                 Text(
-                                    if (controller.peerConnected) "To ${controller.activeChannel?.descriptor?.peer?.deviceName ?: "your Mac"}"
+                                    if (controller.peerConnected) "To ${controller.activeChannel?.descriptor?.peer?.displayName ?: "your Mac"}"
                                     else "Connect your Mac to send files.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

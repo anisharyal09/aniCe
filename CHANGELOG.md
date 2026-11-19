@@ -12,6 +12,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Added
 
+- Add authenticated live/reconnect device-name sync and private credential-scoped
+  nicknames with default-off display override across current device surfaces;
+  preserve pairing evidence and secure sessions during metadata changes.
+
 - Add seamless first-time nearby pairing with matching six-digit comparison,
   mutual confirmation, a native Mac floating/in-app card and immediate authenticated
   connection; keep QR/PIN fallback and offer Android background setup afterward.

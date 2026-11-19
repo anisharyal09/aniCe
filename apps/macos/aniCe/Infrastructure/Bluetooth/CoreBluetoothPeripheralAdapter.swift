@@ -493,17 +493,19 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       peripheral.respond(to: request, withResult: .unlikelyError)
       return
     }
-    let result =
-      read?(
-        characteristic != nil && request.characteristic.uuid == characteristic?.uuid, request.offset
-      ) ?? .unavailable
+    let matches = characteristic != nil && request.characteristic.uuid == characteristic?.uuid
+    let result = read?(matches, request.offset) ?? .unavailable
+    // State-only diagnostics: never log native central identifiers, tokens or payload bytes.
+    Self.logger.notice("discovery_read mode=\(String(describing: self.mode), privacy: .public) matches=\(matches) offset=\(request.offset) owner=\(self.read != nil) published=\(self.published) advertising=\(self.advertising.isConfirmed)")
     switch result {
     case .value(let data):
       request.value = data
       peripheral.respond(to: request, withResult: .success)
     case .invalidOffset: peripheral.respond(to: request, withResult: .invalidOffset)
     case .unknownCharacteristic: peripheral.respond(to: request, withResult: .attributeNotFound)
-    case .unavailable: peripheral.respond(to: request, withResult: .unlikelyError)
+    case .unavailable:
+      Self.logger.notice("discovery_read unavailable=true")
+      peripheral.respond(to: request, withResult: .unlikelyError)
     }
   }
   func stop() {

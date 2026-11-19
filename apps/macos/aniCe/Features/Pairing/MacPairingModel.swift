@@ -39,6 +39,25 @@ import CoreGraphics
   var nearbyEnabled: Bool { active && method == .sas }
   var peer: DeviceIdentity?
   var peers: [PeerTrustRecord] = []
+  var nicknameFailure = false
+  var savingNickname = false
+  func nickname(for peer: DeviceIdentity) -> PeerNickname? { PeerNames.shared.nickname(peer) }
+  func displayedName(for peer: DeviceIdentity) -> String {
+    PeerNames.shared.displayName(peer)
+  }
+  func saveNickname(peer: DeviceIdentity, name: String, enabled: Bool) {
+    guard !savingNickname,
+      peers.contains(where: { PeerNickname.credential($0.peer) == PeerNickname.credential(peer) })
+    else { return }
+    savingNickname = true
+    nicknameFailure = false
+    Task {
+      defer { savingNickname = false }
+      do {
+        try await PeerNames.shared.saveNickname(peer: peer, name: name, enabled: enabled)
+      } catch { nicknameFailure = true }
+    }
+  }
   // Presentation only; session admission resolves trust directly from the store.
   var hasTrustedAndroid: Bool {
     peers.contains { $0.active && $0.peer.platform == "android" }
@@ -531,6 +550,7 @@ import CoreGraphics
       guard operation == generation else { return }
       self.store = store
       peers = store.list(localFingerprint: local.fingerprint)
+      PeerNames.shared.refresh()
       trustRecoveryNeeded = false
       trustedPeersLoaded = true
       nearbyAvailabilityChanged()

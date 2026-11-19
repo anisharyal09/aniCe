@@ -66,6 +66,7 @@ class MediaController(
     override fun available(channel: SecuredChannel) {
         val d = channel.descriptor
         attach(d.transport, d.instance, d.peer.deviceName, channel::sendData)
+        links[d.transport]?.peer = d.peer
     }
 
     override fun retired(descriptor: ChannelDescriptor) {
@@ -80,6 +81,7 @@ class MediaController(
         handleData(descriptor.transport, descriptor.instance, bytes)
 
     internal class Link(val token: String, val origin: String, val send: suspend (ByteArray) -> Unit) {
+        var peer: io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity? = null
         var capable = false
         var volumeCapable = false
         var outputCapable = false
@@ -352,6 +354,7 @@ class MediaController(
         private set
     var origin by mutableStateOf("")
         private set
+    val displayedOrigin: String get() = active?.let { links[it]?.peer?.displayName } ?: origin
     var feedback by mutableStateOf("")
         internal set
     var busy by mutableStateOf(false)
