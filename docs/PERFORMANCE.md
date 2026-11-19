@@ -17,6 +17,7 @@ This guide describes the BLE/LAN record path, resource budgets and instrumentati
 | Socket write deadline | 10 seconds | [LAN](../protocol/lan/README.md) |
 | CBOR structure | 512 items, 8 levels; profile-specific byte limit | [Session](../protocol/session/README.md) |
 | Receive credit | Four 3,072-byte BLE chunks; up to eight negotiated LAN chunks | [Transfer](../protocol/transfer/README.md) |
+| Private Listening audio | 50 packets/second; 960 stereo frames / 3,840 PCM bytes; at most 3,927 Audio CBOR bytes | [Private Listening](../protocol/private-listening/README.md) |
 
 Larger records amortize per-record validation. At 8 MiB/s:
 
@@ -117,6 +118,12 @@ Producer cancellation remains effective before nonce reservation. Once sealed, t
 LAN renewal closes sealing admission and drains nonce-owned submissions before fresh EDHOC. It retains transport/feature queues and the channel descriptor. Cumulative monotonic maintenance snapshots exclude that interval from transfer capacity, resume and file-confirmation waits. Old-epoch deadline results cannot retire the successor. Security, frame/write, offer-assembly and recovery deadlines remain absolute.
 
 Normal TCP EOF permits at most ten seconds for accepted delivery to drain. Explicit close, authentication failure and native transport failure retire immediately.
+
+## Private Listening audio primitives
+
+The Mac tap callback copies Float32 frames into a source-rate 200-ms SPSC ring. It allocates, locks and seals no records; incoming overflow advances the source timeline without overwriting consumer-owned frames. The worker inspects the tap format, converts to 48-kHz stereo and clips to fixed 960-frame PCM16 packets. Packet boundaries expose skipped source intervals instead of padding them.
+
+Android owns a bounded newest-audio queue and native AudioTrack write backlog, including one reserved resampler output. Silent priming closes the audible write gate until actual output-route verification. Worker-side cubic interpolation keeps one stereo phase and a smoothly slewed input/output ratio in 0.997–1.003; it does not use native pitch-preserving timestretching. The nominal combined backlog is 200 ms and its hard ceiling is 800 ms; downstream Bluetooth buffering is not included. Native low-latency mode is requested, not assumed.
 
 ## Observed costs
 

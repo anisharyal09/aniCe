@@ -4,7 +4,7 @@ Swift 6 and SwiftUI provide persistent device identity, a main window and a menu
 
 ## Requirements and user setup
 
-Apple Silicon and macOS 14 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
+Apple Silicon and macOS 14.2 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
 The development version is **0.9.0-beta.3 · build 90023**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
 
@@ -152,7 +152,7 @@ Timing checks require an awake Mac. Keep the lid open; `caffeinate -i python3 sc
 
 The storage backend remains the development login Keychain, without hardware isolation. Local app builds default to ad-hoc signing; developers may use a stable Apple Development identity locally when testing macOS permission persistence. Automated tests remain ad-hoc signed. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
-The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Official builds, releases and updates support Apple Silicon (`arm64`) only; Intel Macs are not supported. macOS 14 is the deployment target.
+The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Official builds, releases and updates support Apple Silicon (`arm64`) only; Intel Macs are not supported. The deployment target is macOS 14.2 for Core Audio process-tap support.
 
 [Design](../../docs/design/DESIGN.md) · [Changelog](CHANGELOG.md)
 

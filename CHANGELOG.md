@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add native Private Listening capture/playback primitives with bounded buffers, route verification and off-callback audio conversion.
 - Add the shared Private Listening audio contract and native Mac/Android wire codecs without changing existing session cryptography.
 - Show authenticated peer pause notices before connection teardown without changing the peer's saved automatic policy.
 - Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.

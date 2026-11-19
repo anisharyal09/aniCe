@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add private Core Audio tap capture, a lock-free bounded audio handoff and fixed stereo PCM packetization on macOS 14.2+.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
 - Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.
 - Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
@@ -38,6 +39,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Raise the Mac deployment target to 14.2 for private Core Audio process taps.
 - Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
 - Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
 - Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.

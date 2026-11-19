@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add bounded headphone-route playback, silent priming and worker-side stereo clock-drift resampling for Private Listening.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
 - Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
 - Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
