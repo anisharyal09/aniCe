@@ -212,8 +212,28 @@ enum TransferEvent: Equatable {
   var peerMaxChunkBytes: Int64 = 3072
   var peerMaxWindow: Int64 = 64
   var sendWindow: TransferSendWindow?
-  var senderChunkBytes: Int64 { sendWindow?.chunkBytes ?? peerMaxChunkBytes }
-  var sendCreditBytes: Int64 { sendWindow?.creditBytes ?? (peerMaxChunkBytes * peerMaxWindow) }
+  private var lowLatencyMedia = false
+  private(set) var mediaPacingRevision = 0
+  private var pacedLan: Bool { lowLatencyMedia && activeChannel?.descriptor.transport == "lan" }
+  var senderChunkBytes: Int64 {
+    let chunk = sendWindow?.chunkBytes ?? peerMaxChunkBytes
+    return pacedLan ? min(chunk, 65536) : chunk
+  }
+  var sendCreditBytes: Int64 {
+    let credit = sendWindow?.creditBytes ?? (peerMaxChunkBytes * peerMaxWindow)
+    return pacedLan ? min(credit, 131072) : credit
+  }
+  var lowLatencyBacklogReady: Bool {
+    activeChannel?.descriptor.transport != "lan" || receiving || sentBytes - acknowledgedBytes <= 131072
+  }
+  func setLowLatencyMediaActive(_ active: Bool) {
+    guard lowLatencyMedia != active else { return }
+    lowLatencyMedia = active
+    mediaPacingRevision += 1
+    let resume = creditResume
+    creditResume = nil
+    resume?()
+  }
   // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
   var hasSendCredit: Bool {
     let next = min(senderChunkBytes, max(0, (sendingFile?.size ?? sentBytes) - sentBytes))

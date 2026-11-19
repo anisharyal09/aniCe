@@ -385,9 +385,9 @@ internal suspend fun TransferController.streamBatchFrom(
 
                     if (!coroutineContext.isActive || operation != epoch || activeChannel == null) return
 
-                    val chunkSize = (file.size - fileBytesSent).coerceAtMost(senderChunkBytes).toInt()
+                    var chunkSize = (file.size - fileBytesSent).coerceAtMost(senderChunkBytes).toInt()
                     val limit = chunkLimit(activeChannel?.descriptor)
-                    val encoded = try { withContext(Dispatchers.IO) {
+                    var encoded = try { withContext(Dispatchers.IO) {
                         var filled = 0
                         while (filled < chunkSize) {
                             val count = fis.read(buffer, filled, chunkSize - filled)
@@ -403,12 +403,33 @@ internal suspend fun TransferController.streamBatchFrom(
                         return
                     }
                     if (operation != epoch) return
+                    // Source bytes are already read but unsubmitted; split them without rewinding the stream.
+                    val preparedBytes = chunkSize
+                    var preparedOffset = 0
+                    while (preparedOffset < preparedBytes) {
+                    val pacingRevision = mediaPacingRevision
+                    chunkSize = minOf(preparedBytes - preparedOffset, senderChunkBytes.toInt())
+                    if (preparedOffset != 0 || chunkSize != preparedBytes) {
+                        encoded = withContext(Dispatchers.Default) {
+                            TransferMessage.chunkFrom(batch.id, file.id, fileBytesSent,
+                                buffer.copyOfRange(preparedOffset, preparedOffset + chunkSize), chunkSize).encode(limit)
+                        }
+                    }
+                    while (sentBytes - acknowledgedBytes > sendCreditBytes - chunkSize) {
+                        if (pacingRevision != mediaPacingRevision) break
+                        val deferred = CompletableDeferred<Unit>().also { creditDeferred = it }
+                        if (sentBytes - acknowledgedBytes <= sendCreditBytes - chunkSize) creditDeferred = null
+                        else deferred.await()
+                    }
+                    if (pacingRevision != mediaPacingRevision || chunkSize > senderChunkBytes) continue
+                    if (operation != epoch || !coroutineContext.isActive) return
                     try {
                         sendWindow?.beginSubmission(clock(), windowEmpty = sentBytes == acknowledgedBytes)
                         sentBytes += chunkSize
                         sendWithBackpressure(encoded)
                         if (operation != epoch) return
                         fileBytesSent += chunkSize
+                        preparedOffset += chunkSize
                         totalTransferred += chunkSize
 
                         val now = clock()
@@ -439,6 +460,7 @@ internal suspend fun TransferController.streamBatchFrom(
                     } catch (e: Exception) {
                         if (operation == epoch) failTransfer("Failed sending chunk: ${e.message}")
                         return
+                    }
                     }
                 }
             } finally {

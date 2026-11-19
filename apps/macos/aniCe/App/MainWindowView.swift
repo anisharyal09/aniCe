@@ -11,6 +11,7 @@ struct MainWindowView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  let privateListening: MacPrivateListeningModel
   let connectionPause: MacConnectionPauseModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
@@ -186,6 +187,7 @@ struct MainWindowView: View {
     FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
       sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences,
       findNotifier: findNotifier, peers: pairing.peers, edgeDrop: edgeDrop,
+      privateListening: privateListening,
       navigation: navigation, favouritesOnly: favouritesOnly)
   }
 

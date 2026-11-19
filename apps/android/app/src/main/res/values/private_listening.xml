@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Supplies native Private Listening setup, notification and stream-action labels. -->
+<resources>
+    <string name="listening_title">Private Listening</string>
+    <string name="listening_stop">Stop listening</string>
+    <string name="listening_notification_peer">Audio from %1$s</string>
+    <string name="listening_receive">Allow audio from this Mac</string>
+    <string name="listening_setup">Connect LAN, enable receiving and confirm your headphones. Start listening on your Mac.</string>
+    <string name="listening_confirm_route">These are my headphones</string>
+    <string name="listening_confirmed">Headphones confirmed</string>
+    <string name="listening_no_route">Connect headphones to prepare listening.</string>
+    <string name="listening_connect_mac">Connect your trusted Mac over LAN.</string>
+    <string name="listening_refresh_outputs">Refresh audio outputs</string>
+    <string name="listening_confirmation_failed">Headphone confirmation could not be saved.</string>
+    <string name="listening_renewing">Renewing secure LAN…</string>
+    <string name="listening_focus_paused">Phone audio focus interrupted</string>
+    <string name="listening_buffering">Buffering current Mac audio…</string>
+</resources>

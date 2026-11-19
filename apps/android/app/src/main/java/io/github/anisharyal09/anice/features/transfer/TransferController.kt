@@ -302,9 +302,25 @@ class TransferController(
     internal var peerMaxChunkBytes: Long = 3072L
     internal var peerMaxWindow: Long = 64L
     internal var sendWindow: TransferSendWindow? = null
-    internal val senderChunkBytes get() = sendWindow?.chunkBytes ?: peerMaxChunkBytes
+    @Volatile private var lowLatencyMedia = false
+    @Volatile internal var mediaPacingRevision = 0
+        private set
+    private val pacedLan get() = lowLatencyMedia && activeChannel?.descriptor?.transport == "lan"
+    internal val senderChunkBytes get() = (sendWindow?.chunkBytes ?: peerMaxChunkBytes).let {
+        if (pacedLan) minOf(it, 65536) else it
+    }
     internal val sendCreditBytes: Long
-        get() = sendWindow?.creditBytes ?: (peerMaxChunkBytes * peerMaxWindow)
+        get() = (sendWindow?.creditBytes ?: (peerMaxChunkBytes * peerMaxWindow)).let {
+            if (pacedLan) minOf(it, 131072) else it
+        }
+    internal val lowLatencyBacklogReady get() =
+        activeChannel?.descriptor?.transport != "lan" || receiving || sentBytes - acknowledgedBytes <= 131072
+    internal fun setLowLatencyMediaActive(active: Boolean) {
+        if (lowLatencyMedia == active) return
+        lowLatencyMedia = active
+        mediaPacingRevision += 1
+        resumeCredit()
+    }
 
     // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
     internal val hasSendCredit: Boolean

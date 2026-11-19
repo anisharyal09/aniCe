@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add credential-scoped Private Listening consent, headphone confirmation and foreground playback with focus, notification Stop and native work leases.
 - Add bounded headphone-route playback, silent priming and worker-side stereo clock-drift resampling for Private Listening.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
 - Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
@@ -36,6 +37,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Route phone media volume locally while listening and pace future file-transfer chunks without replaying or discarding submitted data.
 - Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
 - Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
 - Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.

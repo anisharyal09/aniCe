@@ -51,6 +51,28 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun listeningPacingBoundsFutureLanRecordsWithoutDiscardingOutstandingFileBytes() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.peerMaxChunkBytes = 524288
+        owner.peerMaxWindow = 8
+        owner.sentBytes = 1048576
+        owner.acknowledgedBytes = 0
+        owner.setLowLatencyMediaActive(true)
+        assertEquals(65536L, owner.senderChunkBytes)
+        assertEquals(131072L, owner.sendCreditBytes)
+        assertFalse(owner.lowLatencyBacklogReady)
+        owner.acknowledgedBytes = 1048576 - 131072
+        assertTrue(owner.lowLatencyBacklogReady)
+        owner.activeChannel = MockAndroidSecuredChannel(transport = "ble")
+        assertEquals(524288L, owner.senderChunkBytes)
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.setLowLatencyMediaActive(false)
+        assertEquals(524288L, owner.senderChunkBytes)
+        assertEquals(4194304L, owner.sendCreditBytes)
+        owner.dismiss()
+    }
+
     @Test fun pickerReturnKeepsItsLeaseUntilTheReturningActivityIsForegrounded() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val leases = mutableListOf<Boolean>()

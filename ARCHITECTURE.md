@@ -85,6 +85,12 @@ The current native implementations advertise the following receive limits. These
 
 Profile 4 reserves a 524,416-byte authenticated plaintext budget for each transfer envelope, including metadata. These bounds are defined in the [LAN profile](protocol/lan/TRANSFER_PROFILE.md) and [transfer contract](protocol/transfer/README.md). A 512-KiB chunk is 0.5 MiB.
 
+## Private Listening
+
+Mac process taps capture fixed 48-kHz stereo PCM16 for one authenticated Android peer over an already-secured LAN channel. Android receiving consent binds the full peer credential and current local identity; an eligible native mediaPlayback service owns headphone routing, focus and job-scoped LAN work. Mac suppresses tapped-process output only after phone Ready and keeps reading/discarding during interruptions. Existing channel maintenance preserves stream ownership across retained-socket renewal; actual retirement ends listening without replay.
+
+Audio workers retain bounded plaintext/native queues. App assembly switches phone media volume to local output and paces future transfer chunks/credit during listening without changing session framing, crypto validation or Connections feature dependencies. See [feature behavior](docs/features/PRIVATE_LISTENING.md) and [Private Listening v1](protocol/private-listening/README.md).
+
 ## Application DATA and source organization
 
 Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android manifest companion activity/service packages retain their original names; only their policy implementation moves. Existing identity, association and appearance persistence keys remain unchanged.

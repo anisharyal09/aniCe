@@ -23,12 +23,13 @@ class AniCeApplication : Application() {
     }
 
     private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
+    private var startedActivities = 0
     override fun onCreate() {
         startupMark("application_on_create")
         super.onCreate()
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityStarted(activity: android.app.Activity) { updates.foregroundStarted() }
-            override fun onActivityStopped(activity: android.app.Activity) { updates.foregroundStopped() }
+            override fun onActivityStarted(activity: android.app.Activity) { startedActivities++; updates.foregroundStarted() }
+            override fun onActivityStopped(activity: android.app.Activity) { startedActivities = maxOf(0, startedActivities - 1); updates.foregroundStopped() }
             override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
             override fun onActivityResumed(activity: android.app.Activity) = Unit
             override fun onActivityPaused(activity: android.app.Activity) = Unit
@@ -159,6 +160,58 @@ class AniCeApplication : Application() {
     val notificationMirror get() = notificationMirrorOwner.value
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
+    private val listeningOwner = lazy {
+        io.github.anisharyal09.anice.features.privatelistening.PrivateListeningController(
+            preferences = io.github.anisharyal09.anice.features.privatelistening.PrivateListeningPreferences(
+                getSharedPreferences("private_listening", MODE_PRIVATE))
+        ).also { listening ->
+            listening.loadLocalFingerprint = {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    identityService.getOrCreateIdentity().identity.fingerprint
+                }
+            }
+            listening.startupAllowed = { peer ->
+                startedActivities > 0 || (bleOwner.isInitialized() && bleOwner.value.hasCompanionOwner &&
+                    bleOwner.value.selected?.deviceId == peer.deviceId &&
+                    bleOwner.value.selected?.fingerprint == peer.fingerprint)
+            }
+            listening.startService = { request ->
+                androidx.core.content.ContextCompat.startForegroundService(this,
+                    android.content.Intent(this,
+                        io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService::class.java)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.STREAM, request.id)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.INSTANCE, request.descriptor.instance))
+            }
+            listening.stopService = {
+                stopService(android.content.Intent(this,
+                    io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService::class.java))
+            }
+            listening.serviceOwnershipChanged = { _, owner, eligible ->
+                lanSessionController.updateWorkOwner(owner, eligible)
+                if (eligible) {
+                    if (!listeningWorkLeases.containsKey(owner)) {
+                        listeningWorkLeases[owner] = lanSessionController.acquireWorkLease("private-listening", owner)
+                    }
+                } else {
+                    listeningWorkLeases.remove(owner)?.close()
+                }
+            }
+            listening.ownershipChanged = { active ->
+                transfer.setLowLatencyMediaActive(active)
+                mediaNotification.listeningOwnershipChanged()
+            }
+            listening.transferReady = ::listeningTransferReady
+        }
+    }
+    private val listeningWorkLeases = java.util.IdentityHashMap<Any, AutoCloseable>()
+    val privateListening get() = listeningOwner.value
+    internal val listeningOwned get() = listeningOwner.isInitialized() && listeningOwner.value.active
+    internal fun listeningMediaStateChanged() = mediaNotification.update()
+    internal fun listeningMediaToken() = mediaNotification.listeningToken()
+    internal fun listeningTransferReady() = transfer.lowLatencyBacklogReady
+    internal fun listeningConfirmedRoutes(): Set<String> =
+        getSharedPreferences("private_listening_routes", MODE_PRIVATE).getStringSet("headphones", emptySet())
+            ?.toSet().orEmpty()
     private val dndSyncOwner = lazy { io.github.anisharyal09.anice.features.dndsync.DndSyncController(this) }
     val dndSync get() = dndSyncOwner.value
     private val connectionPauseOwner = lazy {
@@ -193,6 +246,7 @@ class AniCeApplication : Application() {
             }
             it.register(lanSessionController.rendezvous)
             it.register(nowPlaying)
+            it.register(privateListening)
             it.register(transfer)
             it.register(findDevice)
             it.register(clipboard)
@@ -215,6 +269,9 @@ class AniCeApplication : Application() {
 
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
+        if (listeningOwner.isInitialized()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { privateListening.invalidate() }
+        }
         if (connectionPauseOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post { connectionPause.clear() }
         }

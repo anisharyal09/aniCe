@@ -53,6 +53,7 @@ struct FeaturesView: View {
   let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
   let edgeDrop: MacEdgeDropController
+  let privateListening: MacPrivateListeningModel
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
@@ -91,6 +92,7 @@ struct FeaturesView: View {
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
+          case .privateListening: PrivateListeningView(model: privateListening)
           }
         } else {
           Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20 * fontScale, weight: .medium))
@@ -207,6 +209,8 @@ struct FeaturesView: View {
       if findDevice.busy { return "Request in progress" }
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }
       return peers.contains(where: { findDevice.connected($0.peer) }) ? "Not available on this device" : "Device offline"
+    case .privateListening:
+      return privateListening.status
     }
   }
 

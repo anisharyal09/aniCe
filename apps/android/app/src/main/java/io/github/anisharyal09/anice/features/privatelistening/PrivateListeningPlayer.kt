@@ -113,16 +113,24 @@ internal class PrivateListeningPlayer(
 
     suspend fun resume() {
         if (closed) return
+        val token = primingToken ?: return
         worker.withLock {
-            if (closed) return
-            paused = false
-            prime()
+            if (closed || paused || !queue.currentPreparation(token)) throw CancellationException()
+            prime(token)
         }
     }
 
-    private suspend fun prime() {
+    fun beginResume() {
+        if (closed) return
+        // Wire admission resumes immediately; only silent priming may write until route verification.
+        primingToken = queue.beginPriming()
+        paused = false
+    }
+
+    private suspend fun prime(resumeToken: Long? = null) {
         val native = track ?: throw PrivateListeningPlaybackError(8, "AudioTrack missing")
-        val token = queue.beginPriming()
+        val token = resumeToken ?: queue.beginPriming()
+        if (paused || !queue.currentPreparation(token)) throw CancellationException()
         primingToken = token
         queue.consumeDiscontinuity()
         synchronized(nativeLock) {
@@ -203,6 +211,7 @@ internal class PrivateListeningPlayer(
             if (rebuffering && queue.queuedFrames + nativeFrames < queue.targetFrames) return true
             if (rebuffering) {
                 queue.trimToTarget()
+                queue.consumeDiscontinuity()
                 resampler.reset()
                 expectedOffset = null
                 rebuffering = false
@@ -263,6 +272,10 @@ internal class PrivateListeningPlayer(
             }
             nativeFrames = 0
         }
+    }
+
+    fun checkRoute() {
+        if (!closed && primingToken == null && !paused && !safeRoute()) interruptRoute()
     }
 
     private fun safeRoute(): Boolean = synchronized(nativeLock) {

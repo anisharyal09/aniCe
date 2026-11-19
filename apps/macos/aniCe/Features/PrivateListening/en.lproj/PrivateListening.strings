@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Supplies native Private Listening preparation and privacy-control labels.
+"listening_audio_to" = "Audio to %@";
+"listening_connect_phone" = "Connect a trusted phone over LAN.";
+"listening_phone_setup" = "Enable receiving and confirm headphones in Private Listening on your phone.";
+"listening_stop" = "Stop listening";
+"listening_prepare" = "Prepare system audio…";
+"listening_start" = "Start listening";
+"listening_also_mac" = "Also play through Mac speakers";
+"listening_restore_warning" = "Ending listening restores normal Mac output. A still-playing source may become audible.";
+"listening_recording_settings" = "System audio recording settings";

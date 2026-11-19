@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Connect native Private Listening engines through secured LAN with explicit setup, bounded lifecycle, local headphone volume and transfer pacing.
 - Add native Private Listening capture/playback primitives with bounded buffers, route verification and off-callback audio conversion.
 - Add the shared Private Listening audio contract and native Mac/Android wire codecs without changing existing session cryptography.
 - Show authenticated peer pause notices before connection teardown without changing the peer's saved automatic policy.

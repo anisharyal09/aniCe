@@ -14,7 +14,7 @@ enum class SettingsRoute { Overview, Identity, NotificationApps, About }
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
     PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),
-    Playback("Now Playing"), Sms("Messages"), FindDevice("Find Device");
+    Playback("Now Playing"), Sms("Messages"), FindDevice("Find Device"), PrivateListening("Private Listening");
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableList()
         if (!saved.remove(this)) saved.add(this)

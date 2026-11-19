@@ -13,6 +13,7 @@ struct AniCeApp: App {
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
+  @State private var privateListening: MacPrivateListeningModel
   @State private var connectionPause: MacConnectionPauseModel
   @State private var playback: MacPlaybackModel
   @State private var clipboard: MacClipboardModel
@@ -95,6 +96,10 @@ struct AniCeApp: App {
     let peers = SessionPeerReservation()
     let lan = MacLanSessionModel(identity: identity.service, peers: peers, preferences: .standard, store: { try await pairing.sessionStore() })
     _lan = State(initialValue: lan)
+    let privateListening = MacPrivateListeningModel(preferences: IdentityView.isTesting ? nil : .standard)
+    _privateListening = State(initialValue: privateListening)
+    privateListening.pacingChanged = { [weak transfer] active in transfer?.setLowLatencyMediaActive(active) }
+    privateListening.transferReady = { [weak transfer] in transfer?.lowLatencyBacklogReady ?? true }
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     transfer.onDemandLanConnection = { [weak lan] in lan?.requestTransferConnection() ?? false }
@@ -151,6 +156,7 @@ struct AniCeApp: App {
     }
     features.register(lan.rendezvous)
     features.register(playback)
+    features.register(privateListening)
     features.register(transfer)
     features.register(findDevice)
     features.register(clipboard)
@@ -198,6 +204,7 @@ struct AniCeApp: App {
       if !navigation.automaticAfterPairing { session.allow() }
     }
     pairing.trustRemoved = {
+      privateListening.stop(reason: 7, message: "Trust changed.", notify: false)
       connectionPause.clear()
       transfer.invalidate()
       session.retireTrust(); lan.cancel(); clipboard.invalidate(); sms.invalidate()
@@ -211,6 +218,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      privateListening.stop(reason: 7, message: "Local identity changed.", notify: false)
       connectionPause.clear()
       dndSync.removeSelections()
       transfer.invalidate()
@@ -237,6 +245,7 @@ struct AniCeApp: App {
     // Hosted tests must not restore the user's saved radio or clipboard owners.
     guard !IdentityView.isTesting else { return }
     clipboard.installLifecycle()
+    privateListening.installLifecycle()
     session.restoreAutomatic()
     MacUpdateModel.shared.startAutomaticChecks()
     PasteTrayController.shared.setup(model: clipboard)
@@ -246,6 +255,7 @@ struct AniCeApp: App {
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
     delegate.onTerminate = {
+      privateListening.shutdown()
       MacUpdateModel.shared.stopAutomaticChecks()
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
       floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
@@ -253,7 +263,7 @@ struct AniCeApp: App {
     }
     delegate.installCompanion(
       CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, connectionPause: connectionPause, playback: playback, transfer: transfer, clipboard: clipboard,
+        session: session, lan: lan, privateListening: privateListening, connectionPause: connectionPause, playback: playback, transfer: transfer, clipboard: clipboard,
         keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: phonePower, navigation: navigation,
         openMainWindow: { delegate.openMainFromCompanion() }),
       navigation: navigation, floatingKeyboard: floatingKeyboard)
@@ -288,7 +298,7 @@ struct AniCeApp: App {
     Window(MacAppStorage.applicationName, id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
+        session: session, lan: lan, privateListening: privateListening, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
         onInitialRender: { startDeferredServices() }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)

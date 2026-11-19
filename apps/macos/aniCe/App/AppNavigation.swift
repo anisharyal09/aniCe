@@ -14,12 +14,12 @@ enum DeviceRoute: Equatable { case overview, pairing }
 enum SettingsRoute: Equatable { case overview, identity, about }
 // Stable identifiers belong to local presentation preferences, never peer capabilities.
 enum AppFeature: String, CaseIterable, Identifiable {
-  case keyboardTrackpad, messages, files, clipboard, findDevice, playback
+  case keyboardTrackpad, messages, files, clipboard, findDevice, playback, privateListening
   static let defaultFavourites = "clipboard,keyboardTrackpad,messages"
   static let defaultPinnedToCompanion = "clipboard,keyboardTrackpad,messages"
   var id: Self { self }
-  var title: String { switch self { case .keyboardTrackpad: "Control Android"; case .messages: "Messages"; case .files: "Send files"; case .clipboard: "Clipboard"; case .findDevice: "Find Device"; case .playback: "Now Playing" } }
-  var symbol: String { switch self { case .keyboardTrackpad: "keyboard"; case .messages: "message"; case .files: "arrow.up.doc"; case .clipboard: "doc.on.clipboard"; case .findDevice: "bell"; case .playback: "music.note" } }
+  var title: String { switch self { case .keyboardTrackpad: "Control Android"; case .messages: "Messages"; case .files: "Send files"; case .clipboard: "Clipboard"; case .findDevice: "Find Device"; case .playback: "Now Playing"; case .privateListening: "Private Listening" } }
+  var symbol: String { switch self { case .keyboardTrackpad: "keyboard"; case .messages: "message"; case .files: "arrow.up.doc"; case .clipboard: "doc.on.clipboard"; case .findDevice: "bell"; case .playback: "music.note"; case .privateListening: "headphones" } }
   static func favourites(in value: String) -> [Self] {
     uniqueFeatures(in: value)
   }

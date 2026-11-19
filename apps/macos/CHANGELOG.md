@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add explicit Private Listening capture preparation, Start/Stop and companion status with LAN-maintenance-aware audio ownership.
 - Add private Core Audio tap capture, a lock-free bounded audio handoff and fixed stereo PCM packetization on macOS 14.2+.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
 - Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.

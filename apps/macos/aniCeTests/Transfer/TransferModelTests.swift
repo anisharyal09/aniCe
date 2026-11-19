@@ -32,6 +32,28 @@ final class MockSecuredChannel: SecuredChannel {
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
 
+  func testListeningPacingBoundsFutureLanRecordsButDoesNotPretendExistingBytesDrained() {
+    let model = MacTransferModel()
+    model.activeChannel = MockSecuredChannel()
+    model.peerMaxChunkBytes = 524288
+    model.peerMaxWindow = 8
+    model.sentBytes = 1048576
+    model.acknowledgedBytes = 0
+    model.setLowLatencyMediaActive(true)
+    XCTAssertEqual(model.senderChunkBytes, 65536)
+    XCTAssertEqual(model.sendCreditBytes, 131072)
+    XCTAssertFalse(model.lowLatencyBacklogReady)
+    model.acknowledgedBytes = 1048576 - 131072
+    XCTAssertTrue(model.lowLatencyBacklogReady)
+    model.activeChannel = MockSecuredChannel(transport: "ble")
+    XCTAssertEqual(model.senderChunkBytes, 524288)
+    model.setLowLatencyMediaActive(false)
+    model.activeChannel = MockSecuredChannel()
+    XCTAssertEqual(model.senderChunkBytes, 524288)
+    XCTAssertEqual(model.sendCreditBytes, 4194304)
+    model.invalidate()
+  }
+
   func testSendConfirmationCentersAfterNativeLayout() throws {
     let screen = try XCTUnwrap(NSScreen.main)
     let alert = NSAlert()

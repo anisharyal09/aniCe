@@ -23,7 +23,7 @@ Contracts define required behavior.
 | **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `2` (legacy `1`) | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Authenticated BLE direct locators and event/demand-triggered LAN admission |
 | **In-flight LAN renewal** | `1` | Implemented | [`lan/RENEWAL.md`](lan/RENEWAL.md) | Authenticated drain barriers and fresh EDHOC over a retained socket |
-| **Private Listening** | `1` | Contract and codecs | [`private-listening/README.md`](private-listening/README.md) | Bounded Mac-to-Android PCM over secured LAN with stream-bound readiness and maintenance |
+| **Private Listening** | `1` | Native integration | [`private-listening/README.md`](private-listening/README.md) | Bounded Mac-to-Android PCM over secured LAN with stream-bound readiness and maintenance |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |

@@ -45,6 +45,12 @@ fun FeaturesScreen(
             else if (panel == AppFeature.Sms) io.github.anisharyal09.anice.features.sms.SmsView(session.sms, peers)
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer, peers = peers)
         }
+    } else if (!favouritesOnly && panel == AppFeature.PrivateListening) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(panel.label, style = MaterialTheme.typography.titleMedium)
+            io.github.anisharyal09.anice.features.privatelistening.PrivateListeningView(session.privateListening)
+        }
     } else if (!favouritesOnly && panel == AppFeature.PhoneInput) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
@@ -123,7 +129,7 @@ internal fun FeatureEntry(
     canMoveUp: Boolean, canMoveDown: Boolean,
 ) {
     var actionsExpanded by remember(feature) { mutableStateOf(false) }
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms }
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms; AppFeature.PrivateListening -> R.drawable.ic_headphones }
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
             Row(
@@ -176,6 +182,7 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         session.state == ConnectionState.SECURED && it.platform == "macos" && session.phoneInput.connected(it)
     }
     return when (feature) {
+    AppFeature.PrivateListening -> session.privateListening.status
     AppFeature.Playback -> session.media.playback?.let { current ->
         if (current.source.isEmpty()) "No active playback" else
             (if (current.state == 1L) "Playing" else "Paused") + current.title.takeIf(String::isNotEmpty)?.let { " · $it" }.orEmpty()

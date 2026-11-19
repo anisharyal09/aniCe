@@ -107,6 +107,8 @@ A slower initial probe or an advancing-ACK gap above one second constrains subse
 
 After a five-second cooldown, advancing credit allows a fresh probe once outstanding data drains. Only an acknowledged fresh probe restores the larger window. Source preparation and fully drained idle time are excluded from probe/ACK-gap timing.
 
+While Private Listening owns pacing, App caps future LAN file chunks at 65,536 bytes and outstanding unacknowledged file data at 131,072 bytes within negotiated limits. A policy change fences prepared plaintext before submission; source reads are not rewound or valid transfer bytes discarded. Existing submitted bytes drain normally, and normal transfer policy returns after the listening lease ends.
+
 On large-chunk LAN links, smaller-than-negotiated chunks return credit immediately. Full-size chunks use the quarter-window byte threshold; a 20-ms timer also flushes written progress. These rules bound bytes ahead of controls, not elapsed latency on a lossy path.
 
 ## Validation, cancellation and renewal

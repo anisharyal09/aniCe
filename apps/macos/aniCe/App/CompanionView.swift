@@ -9,6 +9,7 @@ struct CompanionView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  let privateListening: MacPrivateListeningModel
   let connectionPause: MacConnectionPauseModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
@@ -167,7 +168,7 @@ struct CompanionView: View {
         navigation.openFeature(.files)
         openMain()
       }
-    case .keyboardTrackpad, .clipboard, .messages, .findDevice, .playback:
+    case .keyboardTrackpad, .clipboard, .messages, .findDevice, .playback, .privateListening:
       navigation.openFeature(feature)
       openMain()
     }
@@ -209,13 +210,23 @@ struct CompanionView: View {
   }
 
   private var hasLiveActivity: Bool {
-    transfer.preparing || transfer.state != .idle || (playback.showOnMac && playback.compactVisible)
+    privateListening.active || transfer.preparing || transfer.state != .idle || (playback.showOnMac && playback.compactVisible)
   }
 
   @ViewBuilder
   private var liveActivitySection: some View {
     if hasLiveActivity {
       VStack(alignment: .leading, spacing: 16) {
+        if privateListening.active {
+          HStack {
+            VStack(alignment: .leading, spacing: 4) {
+              Label("Private Listening", systemImage: "headphones")
+              Text(privateListening.status).font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
+            Spacer()
+            Button("Stop") { privateListening.stop() }.buttonStyle(AniCeButtonStyle(compact: true))
+          }
+        }
         if playback.showOnMac && playback.compactVisible {
           MediaView(model: playback, compact: true, visible: playback.companionVisible)
         }
