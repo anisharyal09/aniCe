@@ -125,31 +125,29 @@ class ShareFilesActivity : ComponentActivity() {
                         !share.started -> {
                             Text(share.message ?: "Preparing share…", style = MaterialTheme.typography.bodyMedium)
                             if (share.urls != null) {
-                                Button(onClick = { share.send(owner) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                                TransferActionButton(onClick = { share.send(owner) }, prominent = true) {
                                     Text("Retry")
                                 }
                             }
-                            TextButton(
+                            TransferActionButton(
                                 onClick = {
                                     startActivity(Intent(this@ShareFilesActivity, MainActivity::class.java))
                                     finish()
                                 },
-                                modifier = Modifier.fillMaxWidth(),
                             ) { Text("Open aniCe") }
                         }
                         else -> ShareTransferResult(share, owner)
                     }
                     if (active) {
                         HorizontalDivider()
-                        Button(onClick = { moveTaskToBack(true) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                        TransferActionButton(onClick = { moveTaskToBack(true) }, prominent = true) {
                             Text("Continue in background")
                         }
-                        TextButton(
+                        TransferActionButton(
                             onClick = { share.cancel(owner); finish() },
-                            modifier = Modifier.fillMaxWidth(),
                         ) { Text("Cancel transfer") }
                     } else if (share.started) {
-                        Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                        TransferActionButton(onClick = { finish() }) {
                             Text("Done")
                         }
                     }

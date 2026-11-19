@@ -4,6 +4,7 @@ import XCTest
 import CryptoKit
 import os
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 @testable import aniCe
 
@@ -30,6 +31,76 @@ final class MockSecuredChannel: SecuredChannel {
 @MainActor
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
+
+  func testSendConfirmationCentersAfterNativeLayout() throws {
+    let screen = try XCTUnwrap(NSScreen.main)
+    let alert = NSAlert()
+    alert.messageText = "Send 1 file to Fixture phone?"
+    alert.informativeText = "Review image.png"
+    alert.addButton(withTitle: "Send files")
+    alert.addButton(withTitle: "Cancel")
+    presentTransferAlert(alert, on: screen)
+    defer { alert.window.orderOut(nil) }
+    XCTAssertEqual(alert.window.frame.midX, screen.visibleFrame.midX, accuracy: 1)
+    XCTAssertEqual(alert.window.frame.midY, screen.visibleFrame.midY, accuracy: 1)
+    XCTAssertGreaterThan(alert.window.frame.width, 100)
+  }
+
+  func testTransferControlsRenderAcrossStatesWidthsAndAppearances() async throws {
+    let file = TransferFile(id: UUID(), name: "Review image.png", size: 1_048_576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
+    let batch = TransferBatch(id: UUID(), files: [file], totalBytes: file.size, peerName: "Fixture phone")
+    let states: [TransferState] = [
+      .idle, .waitingForPeerApproval(batch: batch), .incomingOffer(batch: batch),
+      .transferring(batch: batch, fileIndex: 1, fileName: file.name, fileBytes: 524_288,
+        fileSize: file.size, totalBytes: 524_288, speedBps: 65_536),
+      .paused(batch: batch, fileIndex: 1, fileName: file.name, fileBytes: 524_288,
+        fileSize: file.size, totalBytes: 524_288, reason: "Connection lost", canResumeOverBle: true),
+      .completed(batchId: batch.id, fileCount: 1, totalBytes: file.size),
+      .rejected(batchId: batch.id, reason: 0), .failed(reason: "Connection unavailable"), .cancelled,
+    ]
+    let suite = "aniCe.transfer-presentation.\(UUID().uuidString)"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let folder = root.appendingPathComponent("build/ui-finalization/macos-renders")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    for scheme: ColorScheme in [.light, .dark] {
+      for width in [350.0, 720.0] {
+        for scale in [0.8, 1.2] {
+          preferences.set(scale, forKey: "ui.fontScale")
+          let model = MacTransferModel(
+            notificationPreferences: TransferNotificationPreferences(storage: nil),
+            autoReceivePreferences: TransferAutoReceivePreferences(storage: nil),
+            receiveDestinationPreferences: TransferReceiveDestinationPreferences(storage: nil))
+          defer { model.dismiss() }
+          model.peerConnected = true; model.peerCompatible = true
+          for (index, state) in states.enumerated() {
+            model.state = state
+            model.receiving = index % 2 == 0
+            let view = TransferView(model: model, overview: true, open: {})
+              .defaultAppStorage(preferences).environment(\.colorScheme, scheme)
+              .font(.system(size: 13 * scale)).padding(12).frame(width: width)
+              .fixedSize(horizontal: false, vertical: true)
+              .foregroundStyle(AniCePalette.primaryText(scheme))
+              .background(AniCePalette.surface(scheme)).tint(AniCePalette.accent(scheme))
+            let host = NSHostingView(rootView: view)
+            host.frame.size = host.fittingSize
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+            XCTAssertGreaterThan(host.bounds.height, 40)
+            XCTAssertLessThan(host.bounds.height, 700)
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            XCTAssertGreaterThan(bytes.count, 1000)
+            try bytes.write(to: folder.appendingPathComponent("transfer-\(scheme)-\(Int(width))-\(Int(scale * 100))-\(index).png"))
+          }
+        }
+      }
+    }
+  }
 
   private func androidPeer(deviceId: String = UUID().uuidString.lowercased(), name: String = "Pixel 9") throws -> DeviceIdentity {
     let key = P256.Signing.PrivateKey()

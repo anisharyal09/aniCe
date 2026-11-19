@@ -68,6 +68,9 @@ SUITE_ORDER = (
 # skips at all; this list only covers the broad connected/hosted runs.
 DOCUMENTED_ANDROID_SKIPS = {
     "HomeVisualReviewTest#nativePresentationStates",
+    "TransferPresentationTest#transferStatesKeepOneOverviewHeadingAndAccessibleActions",
+    "TransferPresentationTest#sharedActionMatchesHomeSizeAndFiresOnlyOnce",
+    "TransferPresentationTest#groupedSettingsKeepCompactHelpersAndPermissionActions",
     "ClipboardSurfaceTests#preferencesAndHistoryRenderInBothThemesWithoutClipboardReads",
     "IdentityInterchangeTest#executeInterchange",
     "LanNativeTest#rawSocketBaseline",

@@ -37,6 +37,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
+- Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
 - Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.
 - Explain slower Bluetooth fallback with a LAN action, and keep the active BLE receive envelope separate from queued-envelope accounting.
 - Close unfinished BLE/LAN admission immediately on Pause while retaining secured notice delivery, and emit one Resume notice per explicit paused Connect.

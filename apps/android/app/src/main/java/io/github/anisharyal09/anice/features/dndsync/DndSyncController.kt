@@ -196,14 +196,14 @@ fun DndSyncSettings(model: DndSyncController) {
         lifecycle.addObserver(observer); model.refreshAccess()
         onDispose { lifecycle.removeObserver(observer) }
     }
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
             checked = model.sending, enabled = true, onCheckedChange = model::setSendingEnabled,
-            label = "Sync phone DND to Mac", description = "Updates Mac Focus when this phone enters Do Not Disturb.")
+            label = "Sync phone DND to Mac", description = "Syncs DND changes while connected.",
+            compact = true, descriptionBottomPadding = if (!model.granted) 0.dp else null)
         if (!model.granted) {
-            Text("Requires Do Not Disturb permission.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = model::requestAccess) { Text("Allow DND access") }
+            TextButton(onClick = model::requestAccess, modifier = Modifier.heightIn(min = 48.dp),
+                contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Allow Do Not Disturb access") }
         }
         if (model.status.isNotBlank()) Text(model.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

@@ -76,6 +76,7 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 - **Direct peer-to-peer transport:** Bluetooth Low Energy (BLE) and framed local-network TCP streams. Zero cloud relays or external routing; update checks contact GitHub Releases directly, and Mac-to-Android control uses system Bluetooth HID.
 - **Cryptographic security:** Mutual P-256 ECDSA authentication, OPAQUE PIN pairing, an EDHOC handshake with ChaCha20-Poly1305, and directional AES-256-GCM record encryption.
 - **[LAN continuity](docs/LAN_CONNECTIONS.md):** Authenticated BLE endpoint hints precede bounded mDNS fallback. Capable peers renew through fresh EDHOC on the existing TCP socket while retaining active feature channels and native work ownership.
+  - New file actions can request enabled automatic LAN after transport Disconnect. Other features share the same eligibility policy without that exception; connection Pause remains authoritative.
 - **Platform key storage:** Cryptographic identities use Android Keystore and the macOS Login Keychain; current Mac builds do not claim Secure Enclave isolation.
 - **Zero telemetry:** No analytics, no tracking, and no telemetry uploads.
 

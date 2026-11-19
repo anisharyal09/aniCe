@@ -137,10 +137,10 @@ class TransferSendReview internal constructor(private val controller: TransferCo
             },
             confirmButton = {
                 when {
-                    resolving || files.isEmpty() || files.size > 128 -> Button(onClick = {}, enabled = false) { Text("Preparing…") }
-                    !identityReady -> Button(onClick = {}, enabled = false) { Text("Reconnect") }
-                    !matches -> Button(onClick = ::retargetToCurrentPeer) { Text("Review current device") }
-                    else -> Button(onClick = ::sendReviewedFiles) { Text("Send files") }
+                    resolving || files.isEmpty() || files.size > 128 -> TransferActionButton(onClick = {}, enabled = false, prominent = true) { Text("Preparing…") }
+                    !identityReady -> TransferActionButton(onClick = {}, enabled = false, prominent = true) { Text("Reconnect") }
+                    !matches -> TransferActionButton(onClick = ::retargetToCurrentPeer, prominent = true) { Text("Review current device") }
+                    else -> TransferActionButton(onClick = ::sendReviewedFiles, prominent = true) { Text("Send files") }
                 }
             },
             dismissButton = { TextButton(onClick = ::dismiss) { Text("Cancel") } }
@@ -203,22 +203,25 @@ fun TransferView(
             Modifier
                 .fillMaxWidth()
                 .padding(if (overview) 0.dp else 16.dp),
-            verticalArrangement = Arrangement.spacedBy(if (overview) 8.dp else 10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (overview) {
                 Row(
                     Modifier.fillMaxWidth().then(if (open != null) Modifier.clickable(onClickLabel = "Open file transfer", onClick = open).heightIn(min = 48.dp) else Modifier),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("File transfer", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    if (open != null) Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("File transfer", style = MaterialTheme.typography.titleSmall)
+                    if (open != null) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
             if (controller.isBusy && controller.usingBluetooth && controller.state !is TransferState.IncomingOffer) {
                 TransferRouteNotice(controller)
             }
 
-            if (android.os.Build.VERSION.SDK_INT >= 33 && !androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            if (!overview && android.os.Build.VERSION.SDK_INT >= 33 && !androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
                 TextButton(
                     onClick = { notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
                     modifier = Modifier.heightIn(min = 48.dp)
@@ -227,11 +230,10 @@ fun TransferView(
                 }
             }
             if (controller.preparing) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Preparing files…", style = MaterialTheme.typography.bodySmall)
-                    TextButton(
+                    TransferActionButton(
                         onClick = { controller.cancelTransfer() },
-                        modifier = Modifier.heightIn(min = 48.dp)
                     ) { Text("Cancel") }
                 }
             }
@@ -258,12 +260,9 @@ fun TransferView(
                         )
                     }
                     if (overview) {
-                        OutlinedButton(
+                        TransferActionButton(
                             enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
                             onClick = sendFiles::chooseFiles,
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -280,12 +279,9 @@ fun TransferView(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            OutlinedButton(
+                            TransferActionButton(
                                 enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && controller.state is TransferState.Idle,
                                 onClick = sendFiles::chooseFiles,
-                                shape = MaterialTheme.shapes.small,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.heightIn(min = 48.dp)
                             ) {
                                 Text("Choose files")
                             }
@@ -321,11 +317,8 @@ fun TransferView(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedButton(
+                    TransferActionButton(
                         onClick = { controller.cancelTransfer(local = true) },
-                        shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
                     }
@@ -349,11 +342,8 @@ fun TransferView(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedButton(
+                    TransferActionButton(
                         onClick = { controller.cancelTransfer(local = true) },
-                        shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
                     }
@@ -409,12 +399,11 @@ fun TransferView(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(
+                        TransferActionButton(
                             onClick = controller::acceptIncomingOffer,
                             enabled = !controller.destinationPreparing,
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                            prominent = true,
+                            modifier = Modifier.weight(1f)
                         ) {
                             if (controller.destinationPreparing) {
                                 CircularProgressIndicator(
@@ -428,11 +417,9 @@ fun TransferView(
                             Spacer(Modifier.width(8.dp))
                             Text(if (controller.destinationPreparing) "Preparing…" else "Accept")
                         }
-                        OutlinedButton(
+                        TransferActionButton(
                             onClick = { controller.rejectIncomingOffer(reason = 0L) },
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(painterResource(R.drawable.ic_close), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -515,11 +502,8 @@ fun TransferView(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    OutlinedButton(
+                    TransferActionButton(
                         onClick = { controller.cancelTransfer(local = true) },
-                        shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)
                     ) {
                         Text("Cancel")
                     }
@@ -569,9 +553,10 @@ fun TransferView(
                                 .semantics { contentDescription = "$activity ${current.fileName} paused" }
                         )
                     }
-                    Row(
+                    FlowRow(
                         Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             if (hasTotal)
@@ -590,22 +575,17 @@ fun TransferView(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (current.canResumeOverBle) {
-                            Button(
+                            TransferActionButton(
                                 onClick = { controller.resumeOverBluetooth() },
-                                shape = MaterialTheme.shapes.small,
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.heightIn(min = 48.dp)
+                                prominent = true,
                             ) {
                                 Text("Continue over Bluetooth")
                             }
                         }
-                        OutlinedButton(
+                        TransferActionButton(
                             onClick = { controller.cancelTransfer(local = true) },
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
                         ) {
                             Text("Cancel transfer")
                         }
@@ -625,54 +605,14 @@ fun TransferView(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = sendFiles::chooseFiles,
-                            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && !controller.isBusy,
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Send files…")
-                        }
-                        OutlinedButton(
-                            onClick = { controller.dismiss() },
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Done")
-                        }
-                    }
+                    TransferResultActions(controller, sendFiles, dismissLabel = "Done")
                 }
                 is TransferState.Rejected -> {
                     Text(
                         "Transfer declined by your Mac.",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = sendFiles::chooseFiles,
-                            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && !controller.isBusy,
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Send files…")
-                        }
-                        OutlinedButton(
-                            onClick = { controller.dismiss() },
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Dismiss")
-                        }
-                    }
+                    TransferResultActions(controller, sendFiles)
                 }
                 is TransferState.Failed -> {
                     Text(
@@ -680,27 +620,7 @@ fun TransferView(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = sendFiles::chooseFiles,
-                            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && !controller.isBusy,
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Send files…")
-                        }
-                        OutlinedButton(
-                            onClick = { controller.dismiss() },
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Dismiss")
-                        }
-                    }
+                    TransferResultActions(controller, sendFiles)
                 }
                 is TransferState.Cancelled -> {
                     Text(
@@ -708,27 +628,7 @@ fun TransferView(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = sendFiles::chooseFiles,
-                            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && !controller.isBusy,
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Send files…")
-                        }
-                        OutlinedButton(
-                            onClick = { controller.dismiss() },
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        ) {
-                            Text("Dismiss")
-                        }
-                    }
+                    TransferResultActions(controller, sendFiles)
                 }
             }
             if (!overview) {
@@ -751,11 +651,22 @@ fun TransferView(
                 }
             }
         }
-        if (overview) {
-            Spacer(Modifier.height(14.dp))
-            HorizontalDivider()
-        }
         sendFiles.ReviewDialog()
+    }
+}
+
+@Composable
+private fun TransferResultActions(controller: TransferController, sendFiles: TransferSendReview, dismissLabel: String = "Dismiss") {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        TransferActionButton(
+            onClick = sendFiles::chooseFiles,
+            enabled = controller.peerConnected && controller.peerCompatible && !controller.preparing && !controller.isBusy,
+        ) {
+            Icon(painterResource(R.drawable.ic_file_send), contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Send files…")
+        }
+        TransferActionButton(onClick = controller::dismiss) { Text(dismissLabel) }
     }
 }
 
@@ -764,7 +675,7 @@ internal fun TransferRouteNotice(controller: TransferController) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(controller.routeNotice ?: "Using Bluetooth, which is slower. Connect LAN for faster transfer.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = controller::connectLanForTransfer, modifier = Modifier.heightIn(min = 48.dp)) {
+        TransferActionButton(onClick = controller::connectLanForTransfer) {
             Text("Connect LAN for speed")
         }
     }

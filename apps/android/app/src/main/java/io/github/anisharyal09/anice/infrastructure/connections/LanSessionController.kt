@@ -238,9 +238,9 @@ class LanSessionController(private val app: AniCeApplication,
         consumeTransferDemand()
         scheduleAutomatic()
         backgroundRetentionReason = when {
-            workLease -> "An approved transfer keeps LAN open, including a paused batch waiting to resume."
-            pickerLease -> "File selection keeps LAN open briefly."
-            mediaLease -> "Remote playback keeps LAN open."
+            workLease -> "Kept open for a transfer or pending resume."
+            pickerLease -> "Kept open while choosing files."
+            mediaLease -> "Kept open for playback."
             else -> null
         }
         val deadline = backgroundIdle.update(elapsedRealtime(), backgroundedOrLocked, backgroundLeased,

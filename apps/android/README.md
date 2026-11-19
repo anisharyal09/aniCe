@@ -102,6 +102,8 @@ This builds **aniCe Transfer Preview** as `io.github.anisharyal09.anice.preview.
 
 The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Automatic-setup activity routing retains the compiled Kotlin namespace even though the installed application ID has a preview suffix.
 
+Run only one branch's Transfer Preview at a time on each platform: branch copies share the preview identity, trust and preferences. New file actions can request enabled LAN after transport Disconnect; other feature demand retains the normal Disconnect gate. Connection Pause and native eligibility always apply.
+
 For the strict aggregate gate, run from the repository root:
 
 ```sh

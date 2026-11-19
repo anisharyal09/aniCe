@@ -68,6 +68,8 @@ The window and companion share identity, connection state and the allowed-device
 
 Eligible authenticated BLE peers receive the Mac's numeric IPv4 locator when TCP admission is ready, independently of Bonjour registration. Capable LAN sessions renew through fresh EDHOC on the same socket without replacing active feature channels or transfers; old cryptographic material is never resumed. [LAN behavior](../../docs/LAN_CONNECTIONS.md) defines fallback, ownership and legacy-peer expiry.
 
+All features use the shared LAN admission policy. Only new user file actions can resume transport Disconnect with automatic LAN enabled; other feature demand cannot. Connection Pause, trust and native eligibility remain authoritative. Run only one branch's Transfer Preview at a time: its bundle/data identity is shared across worktrees, not branch-isolated.
+
 ## Build and run
 
 From the repository root:

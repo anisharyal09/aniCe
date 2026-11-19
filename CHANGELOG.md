@@ -37,6 +37,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
+- Document reusable Home action sizing, single-row transfer navigation and compact grouped Settings spacing.
 - Preserve elapsed background LAN idle deadlines through socket replacement and lock/app handoffs; request enabled LAN for new local file actions and clarify Bluetooth fallback.
 - Shorten LAN peer-loss detection without changing BLE liveness, and fix queued-envelope and picker/MTU handoffs that can interrupt a healthy Bluetooth transfer.
 - Make Cancel invalidate pending Connect-to-Resume work, retain event-scoped recovery and close unfinished admission immediately on Pause.

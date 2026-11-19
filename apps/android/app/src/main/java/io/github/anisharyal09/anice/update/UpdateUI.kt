@@ -253,6 +253,8 @@ internal fun BetaUpdatePreference(checked: Boolean, onCheckedChange: (Boolean) -
         label = "Include beta releases",
         description = if (checked) "Turning this off keeps your installed version."
             else "Get early builds and help test aniCe.",
+        compact = true,
+        descriptionBottomPadding = 0.dp,
     )
     if (confirming && !checked) {
         AlertDialog(

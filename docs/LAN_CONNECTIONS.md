@@ -31,6 +31,8 @@ Automatic setup runs on connection events and feature demand:
 
 Disconnect pauses local LAN automation for the current app run. Manual Connect/Allow, an explicit preference change or a new file-selection/send action from either updated peer with automatic LAN enabled resumes it. Ordinary traffic and recovery of an existing batch do not undo Disconnect. Turning automation off cancels pending setup but leaves an already-secured channel available manually.
 
+All features use these shared owners and eligibility checks. Only a new file action (including **Connect LAN for speed**) has the Disconnect exception; clipboard, messages, playback and other feature traffic cannot override it. No feature demand overrides connection Pause, disabled automation or trust/native ownership restrictions.
+
 **Cancel** stops only the current attempt and its retries, not the automatic preference. Duplicate readiness callbacks cannot restart that cancelled attempt; a new connection/eligibility event or explicit demand can authorize another.
 
 A timed **Pause** closes both transports and gates automatic work until its saved deadline or an early Resume. It does not preserve an active connection.
@@ -47,7 +49,7 @@ Settings identifies any transfer, picker or playback work retaining LAN. When th
 
 Opening connection setup or another aniCe activity does not release an activity that is still started. Configuration recreation preserves the owner. Opening Bluetooth discovery leaves LAN unchanged; starting Scan affects only Bluetooth.
 
-Mutually capable LAN peers renew through fresh EDHOC before the session lifetime or record limit. Renewal retains the TCP socket, feature channel, subscriptions and active transfer batch while new DATA briefly waits. Keys, counters and handshake material are replaced, never resumed. Legacy peers retain hard expiry. Manual recovery after network loss or failed renewal requires a new Allow/Connect attempt.
+Mutually capable LAN peers renew through fresh EDHOC before the session lifetime or record limit. Renewal retains the TCP socket, feature channel, subscriptions and active transfer batch while new DATA briefly waits. Keys, counters and handshake material are replaced, never resumed. Legacy peers retain hard expiry. After network loss or failed renewal, eligible automatic recovery follows the bounded event/demand budget above; manual recovery starts a fresh Allow/Connect attempt.
 
 Mac window and menu-bar companion share the LAN owner. Closing the window retains the connection; sleep and Quit retire it. Wake reevaluates enabled automatic choices. Trust removal and identity reset retire both transports.
 

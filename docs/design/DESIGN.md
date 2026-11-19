@@ -57,7 +57,7 @@ Color communicates action and status, not decorative categorization. Always pair
 - **Buttons**:
   - Wrapped, comfortably sized buttons with visible hover, active, and focus states.
   - Filled action ink is reserved for primary actions; secondary actions use subtle borders or neutral backgrounds.
-  - Touch targets retain a minimum 48 dp bound on Android.
+  - Reuse Home's compact rectangular controls; Android keeps a 48 dp interaction area around the smaller face rather than stretching its border.
 
 ## Navigation and information architecture
 
@@ -105,6 +105,8 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Single device row showing connected device name, readiness status, and battery percentage when authenticated.
 - Session control: Wrapped Pause button with grouped duration choices (1 hour, 3 hours, 6 hours, Until I resume, Custom…). When locally paused, show a play icon and a direct Resume action without a dropdown. The Auto connect checkbox reflects currently armed work, not merely a saved preference.
 - Quick actions: Compact Send Files and Send Clipboard buttons.
+- Home transfer panels use one inline title/chevron and omit feature settings or duplicate navigation rows.
+- Keep the Home File transfer heading at the same normal section size across idle, active and result states. Mac picker confirmations center on the initiating display after native alert layout.
 - Active work (transfers, current playback) displays prominently above secondary recent activity.
 
 ### Devices and pairing
@@ -123,6 +125,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 ### File transfer
 - Compact entry progressing through file selection, recipient confirmation, transfer progress, and persistent result.
 - Supports native macOS drag-and-drop and Android share sheets. See [File Transfer](../features/FILE_TRANSFER.md).
+- Share action styling across send, receive, pause and result states; preserve primary/secondary roles and wrap long action groups instead of squeezing labels.
 - Bluetooth fallback names its slower route and offers **Connect LAN for speed** in the existing transfer panel; no modal blocks an active batch. New local file actions request enabled automatic LAN but cannot undo a connection Pause.
 
 ### Messages (SMS relay)
@@ -137,6 +140,9 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Settings and About
 - Grouped preferences using native controls (toggles, sliders, pickers).
+- Android Settings cards use 12 dp horizontal / 4 dp vertical insets with compact grouped rows; child sections must not add another outer inset.
+- Keep setting labels and helper text in one column with the shared 6 dp gap (4 dp for compact rows); apply padding around the row, not between a separately padded control and its description.
+- Keep helper copy brief; avoid redundant permission paragraphs or extra helper-text padding above permission/update actions.
 - Android Connection labels its timeout **Idle LAN in background**, explains Home/lock and active-work exceptions, and identifies the work retaining LAN. The setting does not imply that Bluetooth or the app itself stops.
 - Android Updates uses a compact labeled checkbox row for beta inclusion, with update status and the text **Check for updates** action sharing one trailing row. At narrow widths or large text, put status above the trailing action rather than squeezing it into a thin column. Do not add a divider or a full-width bordered button between them. Mac retains its native update actions. Enabling beta updates on either platform requires a native confirmation; cancellation leaves the setting unchanged, and disabling does not require another dialog.
 - Android update review uses a native bottom sheet with a version badge and accessible Close action. Only the notes body scrolls; progress, byte counts and the current installation or cancellation action remain in the footer. More holds Skip version and View on GitHub. Close, Back and swipe dismiss review without cancelling active work. Mac keeps its notes in a bounded, bordered scroll area so the action row stays visible. Both platforms use the shared rectangular button shapes and render release-note headings, bold text, indented lists and horizontal rules in scalable native themed typography, hiding source metadata only in presentation and suppressing a leading version heading duplicated by the review title. Automatic checks retain the version in an open review; manual checks may refresh it.
