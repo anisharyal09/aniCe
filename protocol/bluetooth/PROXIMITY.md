@@ -21,6 +21,12 @@ nearby-availability lifetime remains active while the Mac process is awake and
 unlocked, after successfully loaded empty active trust. Mac offers explicit
 Find nearby and Pause controls. Its pairing owner admits one globally rate-limited
 candidate through the existing GATT channels; discovery never authorizes a session.
+Generic nearby advertising stops when a pairing candidate takes the slot. Already
+admitted pairing reads/writes and replies do not depend on advertising afterward.
+After retirement, re-advertise only once the global admission spacing/budget and
+dismissal deadline permit another attempt. The native availability presentation
+shows cooldown instead of advertising a request it cannot admit; explicit Find
+nearby cannot clear these limits.
 Android Home scans while foreground and unlocked with
 successfully loaded empty trust, granted permissions and no pairing/discovery
 operation. First unpaired/resumed Home may request native discovery permission
@@ -66,3 +72,9 @@ are separate from the availability lifetime. Unknown names stay generic through
 comparison confirmation. See the SAS contract for identity commitments, receipts
 and admission limits. Real hardware acceptance includes signal calibration,
 lock/sleep cancellation, native card focus and mutual comparison confirmation.
+
+Android comparison visibility must subscribe to the selected method and phase
+even when the initial method is QR/idle. The global comparison prompt and the
+Add device surface share the same attempt/code/actions. Confirm/decline callbacks
+must reject retired attempt IDs; changing presentation alone never sends either
+approval or cancellation.

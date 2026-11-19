@@ -5,7 +5,6 @@ package io.github.anisharyal09.anice.infrastructure.connections
 internal class NearbyComparisonPolicy {
     private var chooserRequired = false
     private var consumed = false
-    val requiresSelection get() = chooserRequired
     val allowsAutomatic get() = !chooserRequired && !consumed
 
     fun candidate(ids: List<Long>, eligible: Boolean, dismissed: Boolean): Long? {

@@ -52,14 +52,6 @@ struct MainWindowView: View {
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
   @AppStorage("ui.fontScale") var fontScale: Double = 1.0
 
-  private var dynamicTypeSizeForScale: DynamicTypeSize {
-    if fontScale < 0.88 { return .small }
-    else if fontScale < 0.98 { return .medium }
-    else if fontScale <= 1.05 { return .large }
-    else if fontScale <= 1.15 { return .xLarge }
-    else { return .xxLarge }
-  }
-
   var body: some View {
     let sidebarMinimumWidth = MainWindowSizing.sidebarMinimumWidth(fontScale: fontScale)
     return NavigationSplitView {
@@ -209,7 +201,8 @@ struct MainWindowView: View {
         navigation.select(.settings)
       }
     }
-    if pairing.active && pairing.phase != "nearby" && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
+    if pairing.active && !["nearby", "comparison", "waiting", "cooldown"].contains(pairing.phase) &&
+        !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
       PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
         detail: pairing.status) { navigation.show(.devices, route: .pairing) }
     }

@@ -130,6 +130,9 @@ Connection, trust, support, permission, and enabled states are separate facts. N
   automatically opens the bounded comparison sheet after a short ambiguity check;
   multiple candidates retain a native selection sheet with Compare code,
   Dismiss and Manual pair. Selection freezes one candidate and stops scanning.
+  Searching shows progress immediately. Preparing/comparison is observable UI
+  state; Add device renders the same code and controls rather than hiding a
+  global prompt. Surface removal alone must never approve or reject pairing.
   Dismissal and verification failure never silently retry an exchange. Pre-auth
   transport failures may retry twice with a ten-second cooldown; discovery starts
   with a bounded low-latency foreground burst. Trusted reconnects may try three
@@ -143,6 +146,11 @@ Connection, trust, support, permission, and enabled states are separate facts. N
   Showing the panel must not steal typing focus. Clicking its heading/code opens aniCe without
   approval; Confirm approves the same attempt and opens aniCe. Dismiss rejects without opening.
   Never regenerate or silently retarget the code during a surface handoff.
+  Floating-card Confirm opens the regular Devices window, not a second pairing
+  sheet with competing Cancel actions. Enter confirms only the displayed attempt;
+  Escape/Dismiss reject. Mac stops generic nearby advertising while the pairing
+  slot is occupied and while admission is cooling down; availability resumes
+  automatically at the existing bounded admission deadline.
 - Comparison confirmation is not Connected. Verify identity openings/proofs, store trust through
   the shared receipt flow, then establish fresh authenticated readiness. Default-on background
   auto-connect is visible as Reconnect automatically in Android's comparison sheet.
@@ -150,6 +158,10 @@ Connection, trust, support, permission, and enabled states are separate facts. N
   verified Mac; no second connection-settings page or chooser blocks SAS.
   Cancellation leaves trust intact. Lock, background loss, cancellation and expiry
   cannot approve an old attempt.
+  Quick Android setup uses a manifest-declared floating reconnection panel, no
+  full-screen starting window, stable title/progress/actions and one native
+  approval per attempt across rotation. Explain general sharing/control
+  reconnection and keep feature permissions separate from companion ownership.
 - Long-press a Devices name to open its editor directly; Mac also offers a native
   right-click Edit name action. This device edits the shared device-owned name;
   a paired device edits a private nickname. Normal taps/clicks retain details,

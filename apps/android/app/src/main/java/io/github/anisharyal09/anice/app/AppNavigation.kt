@@ -11,6 +11,9 @@ enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"),
 enum class DeviceRoute { Overview, Pairing, Discovery }
 enum class SettingsRoute { Overview, Identity, NotificationApps, About }
 
+internal fun comparisonUsesDeviceSheet(destination: AppDestination, route: DeviceRoute): Boolean =
+    route == DeviceRoute.Pairing && destination in listOf(AppDestination.Home, AppDestination.Devices)
+
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
     PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),

@@ -507,8 +507,8 @@ class AndroidGattTransport(
                 require(budget + bytes.size <= 32768)
                 budget += bytes.size
               }
-              if (trustedSession && bytes.firstOrNull() != 6.toByte())
-                Log.i("aniCe-ble", "received epoch=$op envelope=${bytes.firstOrNull()} bytes=${bytes.size}")
+              if (!trustedSession || bytes.firstOrNull() != 6.toByte())
+                Log.i("aniCe-ble", "received epoch=$op envelope=${bytes.firstOrNull()} bytes=${bytes.size} session=$trustedSession")
               message(bytes)
             }
             changed()

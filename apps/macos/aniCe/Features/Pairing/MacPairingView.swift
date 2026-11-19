@@ -116,6 +116,7 @@ struct MacPairingView: View {
         Text("Bring your phone close with aniCe open, then compare the code on both screens.")
           .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
+      if model.phase == "cooldown" { ProgressView().accessibilityLabel("Waiting for nearby pairing availability") }
       Button("Manual pair") { model.pauseNearby() }
         .buttonStyle(AniCeButtonStyle())
         .disabled(["saving", "paired"].contains(model.phase))

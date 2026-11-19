@@ -468,11 +468,23 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     XCTAssertFalse(admission.admit(at: 180.9))
     XCTAssertTrue(admission.admit(at: 181))
   }
+  func testAdmissionAvailabilityDeadlinePreservesSpacingBudgetAndDismissal() {
+    var admission = NearbyPairingAdmission()
+    XCTAssertEqual(admission.nextAdmission(at: 0), 0)
+    XCTAssertTrue(admission.admit(at: 0))
+    XCTAssertEqual(admission.nextAdmission(at: 1), 10)
+    for time: TimeInterval in [10, 20, 30, 40] { XCTAssertTrue(admission.admit(at: time)) }
+    XCTAssertEqual(admission.nextAdmission(at: 50), 120)
+    admission.dismiss(at: 100)
+    XCTAssertEqual(admission.nextAdmission(at: 120), 160)
+    XCTAssertEqual(admission.nextAdmission(at: 160), 160)
+  }
 
   @MainActor private final class Radio: PairingPeripheralAdapter {
     var pairingWrite: ((Data) -> Bool)?
     var pairingDisconnect: (() -> Void)?
     var pairingAdmitted: (() -> Bool)?
+    var pairingStopsAdvertisingOnAdmission = false
     var output: [Data] = []
     var reader: ((Bool, Int) -> DiscoveryRead)?
     var event: ((PeripheralEvent) -> Void)?
@@ -547,10 +559,13 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test Mac", tagPrefix: "test.")
     let radio = Radio()
     let discovery = MacDiscoveryModel(adapter: radio)
-    let model = MacPairingModel(identity: identity, discovery: discovery, makeStore: { store })
+    var locked = false
+    let model = MacPairingModel(identity: identity, discovery: discovery, makeStore: { store },
+      isScreenLocked: { locked })
     defer { model.cancel() }
     model.start(.sas)
     try await waitFor { model.phase == "nearby" }
+    XCTAssertTrue(radio.pairingStopsAdvertisingOnAdmission)
     guard case .value(let bytes) = radio.reader?(true, 0) else { XCTFail("No nearby payload"); return }
     XCTAssertEqual(try BlePayloadCodec.decode(bytes).flags, 1)
     XCTAssertTrue(radio.pairingAdmitted?() == true)
@@ -587,17 +602,36 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     let attempt = model.comparisonAttempt
     model.confirmComparison(attempt: UUID())
     XCTAssertEqual(model.phase, "comparison")
-    XCTAssertEqual(try PairingCodec.unpack(radio.output.removeFirst(), type: 6, count: 1)[0], client.confirm())
+    let finish = try XCTUnwrap(radio.output.first)
+    radio.output.removeFirst()
+    XCTAssertEqual(try PairingCodec.unpack(finish, type: 6, count: 1)[0], client.confirm())
+    locked = true
+    model.confirmComparison(attempt: attempt)
+    XCTAssertEqual(model.phase, "comparison", "A locked screen cannot confirm")
+    XCTAssertTrue(radio.output.isEmpty)
+    locked = false
+    model.confirmComparison(attempt: attempt)
+    try await waitFor { radio.output.count == 1 }
+    XCTAssertEqual(model.phase, "waiting", "Confirm must wait for the phone, not dismiss")
+    let confirmed = try XCTUnwrap(radio.output.first)
+    radio.output.removeFirst()
+    XCTAssertEqual(try client.open(confirmed), PairingCodec.message(15))
+    XCTAssertEqual(model.comparisonAttempt, attempt)
+    XCTAssertNotNil(model.comparisonCode)
+    model.confirmComparison(attempt: attempt)
+    XCTAssertTrue(radio.output.isEmpty, "Repeated confirmation must not emit another approval")
     model.dismissComparison(attempt: attempt)
     try await waitFor { !model.active }
+    XCTAssertFalse(radio.pairingStopsAdvertisingOnAdmission)
     XCTAssertEqual(try client.open(try XCTUnwrap(radio.output.first)), PairingCodec.message(14))
     XCTAssertNil(model.comparisonCode)
     model.confirmComparison(attempt: attempt)
     XCTAssertFalse(model.active)
     model.start(.sas)
-    try await waitFor { model.phase == "nearby" }
+    try await waitFor { model.phase == "cooldown" }
     XCTAssertFalse(radio.pairingAdmitted?() == true, "Dismissal cooldown survives an explicit retry")
+    XCTAssertNil(radio.reader, "Cooldown must not advertise a comparison the Mac cannot admit")
     model.confirmComparison(attempt: attempt)
-    XCTAssertEqual(model.phase, "nearby")
+    XCTAssertEqual(model.phase, "cooldown")
   }
 }

@@ -18,7 +18,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 - Scan for anonymous nearby Macs on unpaired Home while foreground/unlocked; present qualified signals in a dismissible Material bottom sheet with manual-pair fallback and explicit permission/retry actions.
 
-- Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests; not yet wired to onboarding.
+- Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests.
 
 - Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
 - Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
@@ -48,6 +48,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Explain general device reconnection during native auto-connect setup, keeping
+  feature permissions separate from companion approval.
 - Retain already-secured manual Bluetooth through brief Home/Recents and activity
   handoffs with a fifteen-second monotonic grace, without enabling auto-connect;
   lock, explicit Disconnect and trust/radio loss still stop access.
@@ -125,6 +127,13 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Keep first auto-reconnect setup in a stable floating panel without a full-screen
+  launch flash or transient retry controls; retain one native request across
+  rotation and reject late cancelled, expired or process-restored results.
+- Make nearby comparison method observable so the phone opens its prompt from
+  idle/QR state; show the same code and attempt-bound actions inside Add device.
+- Show search progress immediately and separate presentation changes from
+  explicit comparison dismissal.
 - Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
 - Route automatic setup through the compiled activity class in normal and isolated preview packages.
 - Preserve paused setup and release synthetic work leases in native tests.

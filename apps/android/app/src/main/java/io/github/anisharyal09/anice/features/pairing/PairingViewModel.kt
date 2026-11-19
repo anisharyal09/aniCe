@@ -35,7 +35,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     @Volatile private var generation = 0L
     private var engine: PairingEngine? = null
     private var store: PeerTrustStore? = null
-    private var method = PairingMethod.QR
+    private var method by mutableStateOf(PairingMethod.QR)
     private var invitation: PairingQR? = null
     private var code = ""
     var savingNickname by mutableStateOf(false)
@@ -263,6 +263,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         if (!foreground) { candidate.discard(); return }
         cancel()
         method = PairingMethod.SAS
+        comparisonAttempt = generation
         nearbyCandidate = candidate
         completedWithComparison = false
         nearbyTransportFailure = false
@@ -481,6 +482,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun event(state: String, p: DeviceIdentity?) {
+        android.util.Log.i("aniCe-pairing", "pairing_state operation=$generation method=${method.wire} from=$phase to=$state")
         peer = p
         phase = state
         when (state) {
@@ -537,6 +539,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun confirmComparison(attempt: Long) {
+        android.util.Log.i("aniCe-pairing", "comparison_confirm operation=$generation current=${attempt == comparisonAttempt && generation == attempt} phase=$phase")
         if (attempt != comparisonAttempt || generation != attempt || phase != "comparison" ||
             comparisonCode == null || method != PairingMethod.SAS) return
         val now = SystemClock.elapsedRealtime()
@@ -555,8 +558,10 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun declineComparison() {
+    fun declineComparison(attempt: Long = comparisonAttempt) {
+        if (attempt != comparisonAttempt || generation != attempt) return
         if (!comparingNearby || phase in listOf("saving", "cleanup", "cancelling")) return
+        android.util.Log.i("aniCe-pairing", "comparison_dismiss operation=$generation phase=$phase")
         val op = ++generation
         phase = "cancelling"
         status = "Dismissing pairing…"

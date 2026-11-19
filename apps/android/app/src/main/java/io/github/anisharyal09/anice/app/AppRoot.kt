@@ -201,11 +201,15 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             nearbyDiscovery.claim(id)?.let(pairing::beginNearby)
         }
     }
-    if (navigation.route != DeviceRoute.Pairing)
+    if (!comparisonUsesDeviceSheet(navigation.destination, navigation.route))
         io.github.anisharyal09.anice.features.pairing.ComparisonPrompt(pairing, navigation::pair)
+    if (pairing.comparingNearby) BackHandler {
+        pairing.declineComparison()
+    }
     val pageState = rememberSaveableStateHolder()
     fun back() { navigation.back() }
-    BackHandler(navigation.destination != AppDestination.Home || navigation.mediaDetails) { back() }
+    BackHandler(!pairing.comparingNearby &&
+        (navigation.destination != AppDestination.Home || navigation.mediaDetails)) { back() }
     Scaffold(containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -306,6 +310,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(pairing.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
+                    if (pairing.nearbyTransportFailure && nearbyRecoveryAttempts < 2)
+                        Text("Retrying shortly…", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = {
                         pairing.cancel()
                         nearbyDiscovery?.retry()

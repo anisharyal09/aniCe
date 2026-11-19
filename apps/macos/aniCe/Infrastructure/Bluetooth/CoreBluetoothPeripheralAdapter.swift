@@ -8,6 +8,7 @@ import os
   var pairingWrite: ((Data) -> Bool)? { get set }
   var pairingDisconnect: (() -> Void)? { get set }
   var pairingAdmitted: (() -> Bool)? { get set }
+  var pairingStopsAdvertisingOnAdmission: Bool { get set }
   func sendPairing(_ message: Data) throws
   func drainPairing() async
   func retirePairingConnection()
@@ -15,6 +16,7 @@ import os
 
 extension PairingPeripheralAdapter {
   var pairingAdmitted: (() -> Bool)? { get { nil } set {} }
+  var pairingStopsAdvertisingOnAdmission: Bool { get { false } set {} }
 }
 
 enum PeripheralMode { case idle, discovery, pairing, trustedSession }
@@ -118,6 +120,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   var pairingWrite: ((Data) -> Bool)?
   var pairingDisconnect: (() -> Void)?
   var pairingAdmitted: (() -> Bool)?
+  var pairingStopsAdvertisingOnAdmission = false
   private var incoming: CBMutableCharacteristic?
   private var outgoing: CBMutableCharacteristic?
   private var central: CBCentral?
@@ -152,7 +155,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     return true
   }
   func sendPairing(_ message: Data) throws {
-    guard advertising.isConfirmed, pairingWrite != nil, let central, outgoing != nil,
+    guard mode == .pairing, pairingWrite != nil, let central, outgoing != nil,
       trafficBudget + message.count <= 32768, queueBudget.canReserve(message.count)
     else { throw PairingFailure.transport }
     let frames = try PairingReassembler.fragments(
@@ -218,7 +221,15 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   }
   // Stop advertising after admission; established writes use the candidate, not advertising state.
   private func admit(_ candidate: CBCentral) -> Bool {
-    if mode == .pairing { return pairingAdmitted?() ?? true }
+    if mode == .pairing {
+      let accepted = pairingAdmitted?() ?? true
+      Self.logger.notice("pairing_admission accepted=\(accepted) generation=\(self.channelGeneration)")
+      if accepted && pairingStopsAdvertisingOnAdmission {
+        advertising.stop()
+        manager?.stopAdvertising()
+      }
+      return accepted
+    }
     guard mode == .trustedSession else { return true }
     guard advertising.isConfirmed, sessionAdmitted?() == true else {
       Self.logger.info("candidate_admission accepted=false advertising=\(self.advertising.isConfirmed)")
@@ -301,7 +312,8 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     guard let first = requests.first else { return }
     guard peripheral === manager,
       mode == .trustedSession
-        ? sessionWrite != nil : advertising.isConfirmed && pairingWrite != nil
+        ? sessionWrite != nil : mode == .pairing && pairingWrite != nil &&
+          (central != nil || advertising.isConfirmed)
     else {
       Self.logger.notice("session_write permission_rejected=true mode_session=\(self.mode == .trustedSession) generation=\(self.channelGeneration)")
       peripheral.respond(to: first, withResult: .writeNotPermitted)

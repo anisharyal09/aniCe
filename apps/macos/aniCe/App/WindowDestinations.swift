@@ -184,10 +184,12 @@ extension MainWindowView {
             set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
             .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(pairing.phase == "paired")
           MacPairingView(model: pairing, embedded: true, showTrustedDevices: false, identityModel: identity)
-          HStack {
-            Spacer()
-            Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
-              .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+          if !pairing.nearbyEnabled {
+            HStack {
+              Spacer()
+              Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
+                .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+            }
           }
         }.padding(24)
       }.frame(minWidth: 400, idealWidth: 460, maxHeight: 680)

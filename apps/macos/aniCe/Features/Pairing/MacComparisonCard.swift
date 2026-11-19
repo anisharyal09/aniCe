@@ -63,9 +63,12 @@ struct MacComparisonCard: View {
       openApp?()
     }
     .buttonStyle(AniCeButtonStyle(prominent: true))
+    .accessibilityIdentifier("pairing-comparison-confirm")
+    .keyboardShortcut(.defaultAction)
     .disabled(model.phase != "comparison")
     Button("Dismiss") { model.dismissComparison(attempt: attempt) }
       .buttonStyle(AniCeButtonStyle())
+      .accessibilityIdentifier("pairing-comparison-dismiss")
       .keyboardShortcut(.cancelAction)
       .disabled(model.phase == "cancelling" || model.phase == "saving")
   }

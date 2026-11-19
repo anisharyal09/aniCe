@@ -18,10 +18,6 @@ Shared product changes, repository structure, documentation and development conv
   mutual confirmation, a native Mac floating/in-app card and immediate authenticated
   connection; keep QR/PIN fallback and offer Android background setup afterward.
 
-- Connect staged nearby discovery to native first-setup surfaces, with anonymous Android beacon prompts and explicit Mac availability controls; SAS confirmation remains unavailable.
-
-- Add the nearby-pairing discovery foundation: anonymous availability and a bounded RSSI policy; onboarding activation and SAS remain gated.
-
 - Show authenticated peer pause notices before connection teardown without changing the peer's saved automatic policy.
 - Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.
@@ -49,6 +45,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Stabilize Android's first auto-reconnect approval and clarify general device
+  reconnection; remove superseded edge-drop prototype code and stale nearby-setup
+  descriptions while retaining native/product regression coverage.
 - Speed up foreground nearby discovery and add bounded trusted reconnect attempts;
   retain explicit stop/verification boundaries and wait through Mac pairing handoff.
 - Open first-pair comparison directly for one nearby Mac, make native auto-reconnect
@@ -112,6 +111,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Restore visible phone comparison/search progress and same-attempt Mac Confirm
+  navigation; keep occupied or cooling-down pairing admission out of discovery.
 - Preserve transfer publication recovery and correlate resume replies with their issuing channel and job epoch on both platforms.
 - Correct device-lab temperature conversion, replace the public hardware serial with a placeholder, and remove unused resources and legacy notification builders.
 - Create tagged release drafts through the Releases API, capture their IDs for verification, and fill marker-only drafts with generated notes while preserving maintainer descriptions.

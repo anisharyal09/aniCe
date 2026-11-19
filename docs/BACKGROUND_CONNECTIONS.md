@@ -18,6 +18,13 @@ the Mac briefly advertises its existing generic service without reopening its
 occupied application slot. Cancellation preserves trust and returns to Home.
 See the [bounded setup contract](../protocol/bluetooth/COMPANION_SETUP.md).
 
+The first approval uses one compact reconnection panel with stable title, progress
+area and actions behind Android's native chooser. Its copy explains general
+device reconnection, not call/message access; feature permissions remain separate.
+One retained setup owner survives activity recreation without reopening approval.
+Cancellation and expiry fence late results; a new process requires explicit retry
+instead of automatically repeating an interrupted chooser.
+
 Android companion ownership requires API 31 or newer. API 29–30 use manual foreground connections. Approved transfers have a separate connected-device foreground service; they do not require automatic Bluetooth setup.
 
 Only one Mac owns Android's saved automatic setup. Enabling another Mac explicitly replaces that setup; opening another device's settings does not. **Reset connection setup** removes its association and observation without resetting identity or pairing.
@@ -81,7 +88,7 @@ known-empty-trust lifetime: anonymous Mac availability while awake/unlocked and
 foreground/unlocked Android discovery. It uses the same exclusive BLE radio owner
 but never grants companion background ownership before trust exists. One
 unambiguous candidate automatically starts [SAS verification](../protocol/pairing/SAS.md);
-multiple qualified candidates require selection. Dismissal or failure never
+multiple qualified candidates require selection. Dismissal or verification failure never
 starts a second exchange without Find nearby/Try again.
 After mutual confirmation and durable trust receipts, the foreground channel
 starts with fresh EDHOC. The default-on background setup choice is offered after
@@ -90,6 +97,14 @@ Closing the Mac window retains nearby availability; lock/sleep/Quit retires
 pending comparison. Android background/screen lock cancels comparison even if
 an unrelated older companion association exists. A fresh attempt uses new keys
 and comparison material, never a resumed pairing channel.
+
+The phone presents visible search progress and the shared comparison content
+both globally and inside Add device. Mac Confirm emits comparison approval and
+keeps waiting for phone approval; floating-card navigation opens normal Devices
+without an extra cancellable pairing sheet. An admitted pairing owns the BLE
+slot with advertising stopped. After retirement, the Mac resumes anonymous
+availability only at its existing global admission deadline, showing cooldown
+while waiting rather than offering a rejected first write.
 
 The first connection uses a short-lived process-local locator captured from the
 completed comparison channel and pinned to that peer's full credential. It never

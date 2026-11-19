@@ -17,8 +17,13 @@ import io.github.anisharyal09.anice.infrastructure.connections.NearbyDiscoveryVi
 internal fun NearbySetupStatus(model: NearbyDiscoveryViewModel, onAllow: () -> Unit,
     onSettings: () -> Unit, onRetry: () -> Unit) {
     if (model.scanning) {
-        Text("Looking for your Mac automatically…", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Looking for your Mac automatically…", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text("Keep aniCe open on your Mac. A matching code will appear here.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

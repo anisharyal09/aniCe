@@ -46,7 +46,10 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
         DeviceRoute.Pairing -> {
             DevicesOverviewContent(pairing, session, navigation, identity)
             ModalBottomSheet(
-                onDismissRequest = navigation::back,
+                onDismissRequest = {
+                    if (pairing.comparingNearby) pairing.declineComparison()
+                    navigation.back()
+                },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 dragHandle = null,
             ) {

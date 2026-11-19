@@ -3,6 +3,7 @@
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import android.content.ContextWrapper
+import android.view.ContextThemeWrapper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
@@ -27,6 +28,9 @@ class CompanionSetupIntentTest {
                 assertEquals("selected-peer", intent.getStringExtra("peer"))
                 assertEquals(enable, intent.getBooleanExtra("enable", !enable))
             }
+            assertEquals(application, quickCompanionSetupIntent(scoped, "selected-peer").component?.packageName)
+            assertEquals(CompanionQuickSetupActivity::class.java.name,
+                quickCompanionSetupIntent(scoped, "selected-peer").component?.className)
         }
     }
 
@@ -41,10 +45,19 @@ class CompanionSetupIntentTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = quickCompanionSetupIntent(context, "selected-peer")
         assertEquals(context.packageName, intent.component?.packageName)
-        assertEquals(CompanionProbeActivity::class.java.name, intent.component?.className)
-        assertTrue(intent.getBooleanExtra("quick", false))
+        assertEquals(CompanionQuickSetupActivity::class.java.name, intent.component?.className)
+        assertEquals("selected-peer", intent.getStringExtra("peer"))
+        assertFalse("The native component owns its presentation, not a redundant flag", intent.hasExtra("quick"))
         assertTrue(intent.getBooleanExtra("enable", false))
         assertFalse(intent.hasExtra("address"))
         assertFalse(intent.hasExtra("channel"))
+        val resolved = requireNotNull(context.packageManager.resolveActivity(intent, 0))
+        assertEquals(CompanionQuickSetupActivity::class.java.name, resolved.activityInfo.name)
+        val attributes = ContextThemeWrapper(context, resolved.activityInfo.theme).obtainStyledAttributes(
+            intArrayOf(android.R.attr.windowIsFloating, android.R.attr.windowDisablePreview))
+        try {
+            assertTrue("Quick setup must be floating before Android launches it", attributes.getBoolean(0, false))
+            assertTrue("Quick setup must not flash a starting window", attributes.getBoolean(1, false))
+        } finally { attributes.recycle() }
     }
 }

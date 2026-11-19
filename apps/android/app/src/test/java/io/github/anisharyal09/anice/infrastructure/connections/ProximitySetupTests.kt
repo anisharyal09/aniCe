@@ -37,7 +37,7 @@ class ProximitySetupTests {
     @Test fun multipleCandidatesRequireSelectionEvenAfterOneDisappears() {
         val policy = NearbyComparisonPolicy()
         assertNull(policy.candidate(listOf(1, 2), true, false))
-        assertTrue(policy.requiresSelection)
+        assertFalse(policy.allowsAutomatic)
         assertNull(policy.candidate(listOf(1), true, false))
         policy.reset()
         assertEquals(1L, policy.candidate(listOf(1), true, false))

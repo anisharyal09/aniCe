@@ -56,6 +56,10 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
     automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {},
     automaticLan: Boolean = true, onAutomaticLanChanged: (Boolean) -> Unit = {},
     onDismiss: () -> Unit = {}) {
+    if (model.comparingNearby) {
+        ComparisonContent(model, manualPair = model::cancel)
+        return
+    }
     val context = LocalContext.current
     var camera by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current

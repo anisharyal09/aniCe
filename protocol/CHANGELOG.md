@@ -59,6 +59,8 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Fixed
 
+- Clarify same-attempt comparison presentation and stop anonymous availability
+  during occupied pairing admission or cooldown without changing SAS wire bytes.
 - Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample formats.
 - Reject stale v2 app-catalog revisions and obsolete Desk Deck messages; allow unknown battery percentages without manufacturing values.
 - Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.

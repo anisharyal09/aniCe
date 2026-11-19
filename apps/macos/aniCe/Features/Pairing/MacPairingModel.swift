@@ -4,8 +4,10 @@ import AppKit
 import CoreImage.CIFilterBuiltins
 import Observation
 import CoreGraphics
+import OSLog
 
 @Observable @MainActor final class MacPairingModel {
+  private static let logger = Logger(subsystem: "io.github.anisharyal09.anice", category: "pairing")
   var trustRemoved: () -> Void = {}
   var beforePairing: () -> Void = {}
   var afterPairing: () -> Void = {}
@@ -25,11 +27,14 @@ import CoreGraphics
   var nearbyAvailabilityChanged: () -> Void = {}
   private var nearbyAdmission = NearbyPairingAdmission()
   private var nearbyDeadline: Task<Void, Never>?
+  private var nearbyAvailabilityWait: Task<Void, Never>?
   private var nearbyAttemptDeadline: TimeInterval?
   private var attemptLease: PairingAttemptLease?
   private var sleeping = false
   private var quitting = false
-  private var screenLocked: Bool {
+  private let isScreenLocked: () -> Bool
+  private var screenLocked: Bool { isScreenLocked() }
+  nonisolated private static func nativeScreenLocked() -> Bool {
     guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
     return session["CGSSessionScreenIsLocked"] as? Bool == true ||
       session[kCGSessionOnConsoleKey] as? Bool != true ||
@@ -79,11 +84,13 @@ import CoreGraphics
   private var trustedPeerIdsBeforePairing = Set<String>()
   init(
     identity: IdentityService, discovery: MacDiscoveryModel,
-    makeStore: @escaping @Sendable () throws -> PeerTrustStore = { try PeerTrustStore() }
+    makeStore: @escaping @Sendable () throws -> PeerTrustStore = { try PeerTrustStore() },
+    isScreenLocked: @escaping () -> Bool = MacPairingModel.nativeScreenLocked
   ) {
     self.identity = identity
     self.discovery = discovery
     self.makeStore = makeStore
+    self.isScreenLocked = isScreenLocked
     discovery.availabilityFailed = { [weak self] in
       guard let self, self.nearbyEnabled else { return }
       self.fail(self.discovery.session.message)
@@ -175,12 +182,17 @@ import CoreGraphics
         qrText = await engine.qr?.text
         qrImage = qrText.flatMap(Self.renderQR)
         pin = await engine.pin
+        discovery.adapter.pairingStopsAdvertisingOnAdmission = method == .sas
         discovery.adapter.pairingAdmitted = { [weak self] in
           guard let self, self.generation == op, self.active else { return false }
           guard method == .sas else { return true }
           guard !self.sleeping, !self.quitting, !self.screenLocked, self.phase == "nearby",
             self.nearbyAdmission.admit(at: ProcessInfo.processInfo.systemUptime)
-          else { return false }
+          else {
+            Self.logger.notice("pairing_admission accepted=false phase=\(self.phase, privacy: .public) generation=\(op)")
+            return false
+          }
+          Self.logger.notice("pairing_admission accepted=true generation=\(op)")
           self.phase = "connecting"
           self.status = "A nearby phone is requesting pairing…"
           let now = ProcessInfo.processInfo.systemUptime
@@ -227,10 +239,19 @@ import CoreGraphics
         }
         startedRadio = true
         if method == .sas {
-          discovery.startNearby(flags: PairingSas.discoveryFlag)
-          guard op == generation, active else { return }
-          phase = "nearby"
-          status = "Bring your phone close with aniCe open, then compare the code on both screens."
+          let now = ProcessInfo.processInfo.systemUptime
+          let availableAt = nearbyAdmission.nextAdmission(at: now)
+          if availableAt > now {
+            phase = "cooldown"
+            status = "Nearby pairing is taking a short break. It will become available automatically."
+            nearbyAvailabilityWait = Task { [weak self] in
+              do { try await Task.sleep(for: .seconds(max(0.001, availableAt - ProcessInfo.processInfo.systemUptime))) }
+              catch { return }
+              guard let self, self.generation == op, self.active, !self.sleeping, !self.quitting,
+                !self.screenLocked, self.phase == "cooldown" else { return }
+              self.openNearbyRadio(operation: op)
+            }
+          } else { openNearbyRadio(operation: op) }
         } else {
           discovery.start()
           phase = "starting"
@@ -258,16 +279,26 @@ import CoreGraphics
     guard active, generation == operation else { return }
     tick()
     guard active else { return }
+    Self.logger.notice("pairing_send generation=\(operation) kind=\(data.first ?? 0) bytes=\(data.count)")
     do { try discovery.adapter.sendPairing(data) } catch { fail() }
+  }
+  private func openNearbyRadio(operation: Int) {
+    guard generation == operation, active, method == .sas else { return }
+    discovery.startNearby(flags: PairingSas.discoveryFlag)
+    guard generation == operation, active else { return }
+    phase = "nearby"
+    status = "Bring your phone close with aniCe open, then compare the code on both screens."
   }
   private func enqueue(_ data: Data, operation: Int) {
     guard phase != "cancelling", let engine else { return }
+    Self.logger.notice("pairing_receive generation=\(operation) kind=\(data.first ?? 0) bytes=\(data.count)")
     let previous = work
     work = Task {
       await previous?.value
       guard self.active, self.generation == operation else { return }
       do { try await engine.receive(data) } catch {
         guard self.generation == operation else { return }
+        Self.logger.notice("pairing_receive_failed generation=\(operation) reason=\(String(describing: error), privacy: .public)")
         if self.method == .sas {
           self.endNearbyAttempt((error as? PairingFailure) == .cancelled
             ? "Pairing dismissed." : "Pairing was interrupted. Start a fresh comparison.")
@@ -296,6 +327,7 @@ import CoreGraphics
   }
   private func event(_ state: String, peer: DeviceIdentity?, operation: Int) {
     guard active, generation == operation, phase != "cancelling" else { return }
+    Self.logger.notice("pairing_state generation=\(operation) from=\(self.phase, privacy: .public) to=\(state, privacy: .public)")
     self.peer = peer
     phase = state
     switch state {
@@ -340,6 +372,7 @@ import CoreGraphics
     comparisonAttempt = UUID()
   }
   func confirmComparison(attempt: UUID) {
+    Self.logger.notice("comparison_confirm current=\(attempt == self.comparisonAttempt) phase=\(self.phase, privacy: .public) generation=\(self.generation)")
     guard !sleeping, !screenLocked, attempt == comparisonAttempt, phase == "comparison", comparisonCode != nil,
       method == .sas, let engine else { return }
     tick()
@@ -360,6 +393,7 @@ import CoreGraphics
   func dismissComparison(attempt: UUID) {
     guard attempt == comparisonAttempt, method == .sas, active,
       ["comparison", "waiting", "verifying"].contains(phase), let engine else { return }
+    Self.logger.notice("comparison_dismiss phase=\(self.phase, privacy: .public) generation=\(self.generation)")
     nearbyAdmission.dismiss(at: ProcessInfo.processInfo.systemUptime)
     attemptLease?.cancel()
     phase = "cancelling"
@@ -447,6 +481,7 @@ import CoreGraphics
   }
   func tick() {
     guard active, phase != "cancelling" else { return }
+    if phase == "cooldown" { return }
     discovery.session.tick()
     remaining = method == .sas ? 0 : discovery.session.remainingSeconds
     if phase == "starting" {
@@ -476,6 +511,7 @@ import CoreGraphics
     }
   }
   func cancel(message: String = "Pairing stopped. Start a fresh invitation when ready.") {
+    Self.logger.notice("pairing_cancel phase=\(self.phase, privacy: .public) generation=\(self.generation)")
     attemptLease?.cancel()
     attemptLease = nil
     let wasActive = active
@@ -488,6 +524,8 @@ import CoreGraphics
     timer = nil
     nearbyDeadline?.cancel()
     nearbyDeadline = nil
+    nearbyAvailabilityWait?.cancel()
+    nearbyAvailabilityWait = nil
     nearbyAttemptDeadline = nil
     deadline = nil
     startedRadio = false
@@ -504,6 +542,7 @@ import CoreGraphics
     discovery.adapter.pairingWrite = nil
     discovery.adapter.pairingDisconnect = nil
     discovery.adapter.pairingAdmitted = nil
+    discovery.adapter.pairingStopsAdvertisingOnAdmission = false
     discovery.stop()
     let old = engine
     engine = nil

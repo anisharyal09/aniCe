@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Defines native light window and clipboard-action themes before Compose content loads. -->
+<!-- Defines native light windows, sharing and connection setup before Compose content loads. -->
 <resources>
     <style name="Theme.AniCe" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowLightStatusBar">true</item>
@@ -11,5 +11,14 @@
         <item name="android:windowCloseOnTouchOutside">false</item>
         <item name="android:windowMinWidthMajor">85%</item>
         <item name="android:windowMinWidthMinor">85%</item>
+    </style>
+    <style name="Theme.AniCe.ConnectionSetup" parent="android:style/Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+        <item name="android:windowMinWidthMajor">85%</item>
+        <item name="android:windowMinWidthMinor">85%</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorAccent">#47534D</item>
     </style>
 </resources>

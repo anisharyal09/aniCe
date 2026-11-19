@@ -18,7 +18,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 - Add first-setup Find nearby/Pause controls on known-empty trust, using deadline-driven anonymous availability without opening pairing writes.
 
-- Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds; automatic onboarding remains gated.
+- Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds.
 
 - Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.
 - Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
@@ -51,6 +51,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Remove an unused window text-scale mapper; keep actual font-scale behavior.
 - Compact the non-activating comparison card with a native smartphone symbol,
   shorter copy and unchanged same-attempt approval/focus behavior.
 - Open shared-name/private-nickname editors directly from held Devices names or
@@ -120,6 +121,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Keep floating-card Confirm on the same attempt in normal Devices navigation;
+  avoid competing sheet cancellation shortcuts and verify approval versus dismissal.
+- Stop pairing advertising while its slot is occupied or admission is cooling
+  down; resume eligible availability at the existing global deadline.
 - Fence LAN deadline checks and renewal triggers to the current cryptographic session.
 - Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
 - Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.

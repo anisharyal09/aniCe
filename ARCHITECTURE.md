@@ -21,7 +21,8 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 - **Manual 6-Digit PIN Pairing:** Password-Authenticated Key Exchange (PAKE) powered by an isolated, in-memory [OPAQUE bridge](core/rust/pairing/README.md) (`opaque-ke 4.0.1`, Argon2id).
 - **Nearby Numeric Comparison:** Anonymous Mac availability and foreground Android
   RSSI-filtered discovery hand one unambiguous or explicitly selected candidate
-  to the shared pairing owner; failed/dismissed attempts require explicit retry.
+  to the shared pairing owner; dismissed/verification-failed attempts require explicit retry.
+  Pre-authentication transport failure has bounded foreground discovery recovery.
   [Method 3 SAS](protocol/pairing/SAS.md) commits P-256 ephemerals, random nonces and
   salted identities before reveal; both screens compare six digits and confirm.
   Identity disclosure/proofs follow mutual comparison, then existing signed trust

@@ -7,6 +7,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CompanionSettingsTests {
+  @Test fun approvalLaunchIsOneShotAndRetiredGenerationsCannotReclaimIt() {
+    val gate = CompanionApprovalGate()
+    assertFalse(gate.owns(1))
+    assertTrue(gate.claim(1))
+    repeat(10) { assertFalse(gate.claim(1)) }
+    assertTrue(gate.owns(1))
+    assertTrue(gate.claim(3))
+    assertFalse(gate.claim(1))
+    assertFalse(gate.claim(2))
+    assertFalse(gate.owns(1))
+    assertTrue(gate.owns(3))
+    assertTrue(gate.claim(4))
+  }
+  @Test fun pendingPhasesBlockAnotherEnrollmentWithoutDisablingSavedSettings() {
+    val peer = DeviceIdentity("mac", "Mac", "macos", "key", "fingerprint")
+    val idle = setOf(CompanionSetupPhase.READY, CompanionSetupPhase.FAILED)
+    for (phase in CompanionSetupPhase.entries) {
+      assertEquals(phase !in idle, phase.busy)
+      assertEquals(phase in idle, automaticSetupReady(peer, true, phase.busy))
+    }
+  }
   @Test fun automaticSetupRequiresTrustedSelectionAndAvailableIdlePresentation() {
     val peer = DeviceIdentity("mac", "Mac", "macos", "key", "fingerprint")
     var ready = 0

@@ -252,7 +252,8 @@ struct AniCeApp: App {
     clipboard.installLifecycle()
     session.restoreAutomatic()
     comparisonPresenter = MacComparisonPresenter(model: pairing) {
-      navigation.show(.devices, route: .pairing)
+      // Keep comparison in the normal window rather than introducing a second cancellable sheet.
+      navigation.show(.devices)
       delegate.openMainFromCompanion()
     }
     MacUpdateModel.shared.startAutomaticChecks()
