@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E90100000000000000000001 /* PrivateListeningWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90100000000000000000002; };
+		E90100000000000000000003 /* PrivateListeningWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90100000000000000000004; };
+		E90100000000000000000005 /* vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = E90100000000000000000006; };
 		F40200000000000000000001 /* UpdateSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000002 /* UpdateSchedule.swift */; };
 		F40200000000000000000003 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000004 /* ReleaseNotes.swift */; };
 		F40200000000000000000005 /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000006 /* ReleaseNotesTests.swift */; };
@@ -192,6 +195,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E90100000000000000000002 /* PrivateListeningWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/PrivateListeningWire.swift"; sourceTree = SOURCE_ROOT; };
+		E90100000000000000000004 /* PrivateListeningWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PrivateListening/PrivateListeningWireTests.swift"; sourceTree = SOURCE_ROOT; };
+		E90100000000000000000006 /* vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/private-listening/vectors.json"; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000002 /* UpdateSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/UpdateSchedule.swift; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000004 /* ReleaseNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseNotes.swift; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000006 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseNotesTests.swift; sourceTree = SOURCE_ROOT; };
@@ -393,6 +399,8 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		E90100000000000000000007 /* PrivateListening */ = {isa = PBXGroup; children = (E90100000000000000000002,); path = PrivateListening; sourceTree = "<group>"; };
+		E90100000000000000000008 /* PrivateListeningTests */ = {isa = PBXGroup; children = (E90100000000000000000004, E90100000000000000000006,); path = PrivateListening; sourceTree = "<group>"; };
         D70000000000000000000007 /* DndSync */ = {isa = PBXGroup; children = (D70000000000000000000002,); path = DndSync; sourceTree = "<group>"; };
 		D30000000000000000000007 /* PhoneInput */ = {isa = PBXGroup; children = (D30000000000000000000002, D40000000000000000000004, D40000000000000000000005, D40000000000000000000008,); path = PhoneInput; sourceTree = "<group>"; };
 		D30000000000000000000008 /* PhoneInputTests */ = {isa = PBXGroup; children = (D30000000000000000000004, D30000000000000000000006, D40000000000000000000006,); path = PhoneInput; sourceTree = "<group>"; };
@@ -504,6 +512,7 @@
 				D60000000000000000000002 /* DeskDeckWireTests.swift */,
                 D70000000000000000000004, D70000000000000000000006,
 				D30000000000000000000008 /* PhoneInputTests */,
+				E90100000000000000000008 /* PrivateListeningTests */,
 				D10000000000000000000012 /* KeyboardTrackpadTests */,
 				AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */,
 				0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */,
@@ -590,6 +599,7 @@
 				000000000000000000000304 /* DeviceIdentity */,
 				000000000000000000000461 /* Discovery */,
 				D30000000000000000000007 /* PhoneInput */,
+				E90100000000000000000007 /* PrivateListening */,
 				D1000000000000000000000A /* KeyboardTrackpad */,
 				D50000000000000000000003 /* DeskDeck */,
                 D70000000000000000000007 /* DndSync */,
@@ -799,6 +809,7 @@
 				B40100000000000000000004 /* ../../protocol/test-vectors/notifications/notification-vectors.json in Resources */,
 				D1000000000000000000000E /* hid-vectors.json in Resources */,
 				D30000000000000000000005 /* phone-input-vectors.json in Resources */,
+				E90100000000000000000005 /* vectors.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -932,6 +943,7 @@
 				D20000000000000000000001 /* FloatingKeyboardWindow.swift in Sources */,
 				D10000000000000000000005 /* ClassicHIDAdapter.m in Sources */,
 				D30000000000000000000001 /* PhoneInputWire.swift in Sources */,
+				E90100000000000000000001 /* PrivateListeningWire.swift in Sources */,
 				D40000000000000000000001 /* MacPhoneInputEventAdapter.swift in Sources */,
 				D40000000000000000000002 /* MacPhoneInputModel.swift in Sources */,
 				D40000000000000000000007 /* MacPhoneInputView.swift in Sources */,
@@ -983,6 +995,7 @@
 				D1000000000000000000000C /* KeyboardTrackpadTests.swift in Sources */,
 				D10000000000000000000010 /* ClassicHIDAdapterTests.m in Sources */,
 				D30000000000000000000003 /* PhoneInputTests.swift in Sources */,
+				E90100000000000000000003 /* PrivateListeningWireTests.swift in Sources */,
 				D40000000000000000000003 /* MacPhoneInputTests.swift in Sources */,
 				D60000000000000000000001 /* DeskDeckWireTests.swift in Sources */,
                 D70000000000000000000003,

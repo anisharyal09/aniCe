@@ -1,0 +1,30 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Defines bounded Mac-to-Android PCM and stream lifecycle messages inside authenticated LAN DATA.
+
+private-listening =
+  ["aniCe private listening", 1, 0, capability] /
+  ["aniCe private listening", 1, 1, start] /
+  ["aniCe private listening", 1, 2, start-result] /
+  ["aniCe private listening", 1, 3, audio] /
+  ["aniCe private listening", 1, 4, stop] /
+  ["aniCe private listening", 1, 5, status-report]
+
+capability = [sample-rate: 48000, channels: 2, bit-depth: 16, frame-size: 960, enabled: bool]
+start = [stream-id: uuid, sample-rate: 48000, channels: 2, bit-depth: 16, frame-size: 960]
+start-result = [stream-id: uuid, result: 0..9]
+audio = [stream-id: uuid, sequence: sequence, sample-offset: uint63, pcm: bstr .size 3840]
+stop = [stream-id: uuid, reason: 0..7]
+status-report = [
+  stream-id: uuid,
+  side: 0..1,
+  state: 0..5,
+  last-sequence: 0..9607679205057058,
+  position-frames: uint63,
+  queued-frames: 0..48000,
+  underruns: 0..4294967295
+]
+
+; The final packet's end position must still fit the native signed-64-bit timeline.
+sequence = 1..9607679205057058
+uint63 = 0..9223372036854775807
+uuid = tstr .regexp "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"

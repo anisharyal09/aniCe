@@ -6,6 +6,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
+- Define Private Listening v1 LAN DATA with six bound message kinds, 960-frame stereo PCM16 packets, checked source timelines and retained-channel maintenance semantics.
 - Add ignorable rendezvous-v2 user-demand state 5 for bounded file-action recovery after transport-only Disconnect; v1 peers keep ordinary state 4 behavior.
 - Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown peer presentation, with independent shared fixtures and no remote preference mutation.
 - Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN renewal v1 authenticated drain barriers, retaining frame profiles, fresh-session cryptography and legacy expiry.
