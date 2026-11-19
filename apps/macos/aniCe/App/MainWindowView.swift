@@ -11,6 +11,7 @@ struct MainWindowView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  let connectionPause: MacConnectionPauseModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
   let edgeDrop: MacEdgeDropController

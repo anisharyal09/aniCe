@@ -93,7 +93,13 @@ internal fun <T> TransferController.prepareSources(
             updateState(TransferState.Failed("The connected device changed. Review the selected files before sending."))
             return
         }
-        val requestedLan = awaitLan && channel?.descriptor?.transport != "lan" && onDemandLanConnection?.invoke() == true
+        val userDemand = awaitLan && onDemandLanConnection?.invoke() == true
+        val requestedLan = userDemand && channel?.descriptor?.transport != "lan"
+        if (awaitLan) routeNotice = when {
+            requestedLan -> "Connecting to the local network for faster transfer…"
+            channel?.descriptor?.transport == "ble" -> "Using Bluetooth, which is slower. Enable automatic LAN on both devices or connect LAN for faster transfer."
+            else -> null
+        }
         // A requested LAN route gets a bounded rendezvous before a ready BLE fallback is used.
         if (requestedLan || channel == null || !peerConnected || !peerCompatible) {
             if (!requestedLan && channel == null) {
@@ -102,7 +108,7 @@ internal fun <T> TransferController.prepareSources(
             }
             awaitingLan = requestedLan
             pendingSend = { prepareSources(sources, awaitLan = false, reviewedPeer = reviewedPeer, prepare = prepare) }
-            updateState(TransferState.Connecting("your Mac"))
+             updateState(TransferState.Connecting(channel?.descriptor?.peer?.deviceName ?: "your Mac"))
             onLeaseChanged?.invoke(true)
             connectTimeoutJob?.cancel()
             connectTimeoutJob = scope.launch {
@@ -451,7 +457,8 @@ internal suspend fun TransferController.streamBatchFrom(
                 pending
             }
             if (pendingResult != null) resultWaiter.complete(pendingResult)
-            val fileResult = withTimeout(confirmationTimeoutMillis) { resultWaiter.await() }
+            val resultChannel = activeChannel ?: throw SessionException(SessionFailure.CANCELLED)
+            val fileResult = awaitTransferResult(resultChannel, confirmationTimeoutMillis) { resultWaiter.await() }
             if (operation != epoch) return
             if (fileResult.number(2) != 0L) {
                 failTransfer("Receiver reported error for file ${file.name}")

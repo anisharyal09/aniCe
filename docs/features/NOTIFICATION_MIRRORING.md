@@ -38,8 +38,6 @@ aniCe stores no notification content, reply text, or action token on disk and cr
 
 Turning off an app stops new mirroring and clears its current mirrored alerts. Revoking Android Notification Access also clears current mirrored alerts. Removing a phone's trust or quitting aniCe clears Mac-side mirrored alerts. Each distinct Mac action can be submitted once per notification revision; duplicate callbacks for that action are ignored. Android opts in to background activity launches for these authenticated user actions on supported OS versions, but the source app and Android still control execution. Source app action delivery reports that Android accepted the action dispatch; aniCe does not retry an action whose outcome is uncertain.
 
-Device testing confirmed live SIM call alerts, Answer/Decline and caller-name lookup after permission setup. WhatsApp mirroring and source icons were also reported working. Compatibility with other devices and source actions remains unverified.
-
 ## Limits
 
 - Only the current default SMS app is excluded. SMS content should continue to use the Messages relay.
@@ -49,6 +47,6 @@ Device testing confirmed live SIM call alerts, Answer/Decline and caller-name lo
 - `READ_CALL_LOG` is restricted: the installer may need to allowlist it, and Google Play distribution requires an eligible use case. Denying caller-ID access does not disable ringing alerts or call controls.
 - Android can hide sensitive content, and some source-app actions cannot be invoked outside Android.
 - Notifications that arrive while the phone and Mac are disconnected are not replayed unless they remain active when they reconnect.
-- Android listener behavior, redaction and source-app action compatibility vary by device and app and require real-device verification. Discord call joining and SIM missed-call Call back remain dependent on the source app and have not been confirmed across devices.
+- Listener content and action availability depend on Android and the source app. Source-specific call actions are available only when that notification exposes them.
 
 See the [Notification Mirroring v1 contract](../../protocol/notifications/README.md) for message bounds and lifecycle details.

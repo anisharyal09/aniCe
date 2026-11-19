@@ -8,8 +8,8 @@ import io.github.anisharyal09.anice.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.features.backgroundprobe.hasConnectionSetup
+import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
 import androidx.compose.ui.res.painterResource
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,6 +66,11 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
     val active = model.state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED) ||
         lan.state in listOf(ConnectionState.CONNECTING, ConnectionState.SECURED)
     fun connect(record: PeerTrustRecord) {
+        model.connectDevice(record.peer)
+        val missing = model.missingPermissions()
+        if (missing.isNotEmpty()) permissions.launch(missing)
+    }
+    fun connectBluetooth(record: PeerTrustRecord) {
         model.request(record.peer)
         val missing = model.missingPermissions()
         if (missing.isNotEmpty()) permissions.launch(missing)
@@ -96,16 +101,21 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                 val bleState = if (bleSelected) model.state else ConnectionState.DISCONNECTED
                 val lanState = if (lanSelected) lan.state else ConnectionState.DISCONNECTED
                 val canUsePeer = canConnectToPeer(model.state, lan.state, bleSelected, lanSelected)
-                val waiting = nearby.armed && nearby.peerId == record.peer.deviceId &&
+                val waiting = nearby.waiting && nearby.peerId == record.peer.deviceId &&
                     nearby.fingerprint == record.peer.fingerprint && canUsePeer
                 val automaticConfigured = nearby.automaticEnabled && nearby.peerId == record.peer.deviceId &&
                     nearby.fingerprint == record.peer.fingerprint
                 val pauseStatus = nearby.pauseStatus.takeIf { automaticConfigured }
-                val summary = connectionSummary(bleState, lanState, waiting)
+                val peerPauseStatus = model.connectionPause.status(record.peer)
+                val checkingLan = lanSelected && lan.verifyingConnection
+                val summary = connectionSummary(bleState, lanState, waiting,
+                    paused = pauseStatus != null || peerPauseStatus != null, checkingLan = checkingLan)
                 val summaryText = if (compact) {
-                    automaticNotice?.takeIf { it.first == record.peer.deviceId }?.second ?: pauseStatus ?: summary.text
-                } else pauseStatus ?: summary.text
+                    automaticNotice?.takeIf { it.first == record.peer.deviceId }?.second
+                        ?: pauseStatus ?: peerPauseStatus ?: summary.text
+                } else pauseStatus ?: peerPauseStatus ?: summary.text
                 val feedback = buildList {
+                    if (checkingLan) add("Local network: Checking connection…")
                     if (bleSelected && bleState != ConnectionState.SECURED && model.status.isNotBlank())
                         add("Bluetooth: ${model.status}")
                     if (lanSelected && lanState != ConnectionState.SECURED && lan.status.isNotBlank())
@@ -113,9 +123,9 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     automaticNotice?.takeIf { it.first == record.peer.deviceId }?.let { add(it.second) }
                     if (waiting && !bleSelected && nearby.status != "Waiting nearby.") add(nearby.status)
                     if (!canUsePeer) add("Disconnect your current Mac to connect to this one.")
-                    if (!active && !waiting && pauseStatus == null && isEmpty()) add("Tap Connect on both devices.")
+                    if (!active && !waiting && pauseStatus == null && peerPauseStatus == null && isEmpty()) add("Tap Connect on both devices.")
                 }.joinToString("\n")
-                val connectionOptions: (@Composable () -> Unit)? = if (nearby.available && (automaticConfigured || summary.state == ConnectionState.SECURED || nearby.connectionPaused)) {
+                val connectionOptions: (@Composable () -> Unit)? = if (nearby.available && automaticConfigured) {
                     {
                         ConnectionPauseMenu(
                             peerName = record.peer.displayName,
@@ -154,9 +164,9 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     summary = summaryText, action = summary.action,
                         detailsExpanded = detailRecord?.peer?.deviceId == record.peer.deviceId, compact = compact,
                         showDetailsAction = false,
-                        showConnectionAction = !(compact && automaticConfigured && nearby.connectionPaused),
+                        onCancel = model::cancelConnect,
                         bluetoothConnected = bleState == ConnectionState.SECURED,
-                        localNetworkConnected = lanState == ConnectionState.SECURED,
+                        localNetworkConnected = lanState == ConnectionState.SECURED && !checkingLan,
                         powerSummary = if (summary.state == ConnectionState.SECURED)
                             model.devicePower.macShortSummary(record.peer) else null,
                         connectionOptions = connectionOptions)
@@ -184,8 +194,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                 if (!compact && nearby.available) {
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint
-                    val paused = automaticConfigured && nearby.connectionPaused
-                    AutomaticConnectionToggle(checked = enabled || paused, enabled = canUsePeer && !automaticChanging,
+                    AutomaticConnectionToggle(checked = enabled, enabled = canUsePeer && !automaticChanging,
                         label = "Auto connect", description = pauseStatus ?: "Reconnect when this device is available.", compact = flatDeviceLayout,
                         onCheckedChange = { checked ->
                             automaticNotice = null
@@ -194,26 +203,26 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                             } else if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) && nearby.address != null && model.missingPermissions().isEmpty()) {
                                 automaticChanging = true
                                 scope.launch {
-                                    try { nearby.resume() }
+                                    try { nearby.resumeNow() }
                                     catch (error: CancellationException) { throw error }
                                     catch (_: Exception) {
                                         automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
                                     } finally { automaticChanging = false }
                                 }
-                            } else context.startActivity(Intent().setClassName(context.packageName,
-                                "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
-                                .putExtra("peer", record.peer.deviceId).putExtra("enable", true))
+                            } else context.startActivity(companionSetupIntent(context, record.peer.deviceId, enable = true))
                         })
                 }
                 if (!compact) {
                     HorizontalDivider()
                     TransportDetails("Bluetooth", bleState, if (bleSelected) model.status else "",
                         canConnect = canUsePeer,
-                        onConnect = { connect(record) }, onDisconnect = model::disconnectBluetooth)
+                        onConnect = { connectBluetooth(record) }, onDisconnect = model::disconnectBluetooth,
+                        onCancel = model::cancelBluetoothAttempt)
                     if (flatDeviceLayout) HorizontalDivider()
                     TransportDetails("Local network", lanState, if (lanSelected) lan.status else "",
                         canConnect = canUsePeer,
-                        onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect)
+                        onConnect = { lan.connect(record.peer) }, onDisconnect = lan::disconnect, verifying = checkingLan,
+                        onCancel = lan::cancelAttempt)
                     if (flatDeviceLayout) HorizontalDivider()
                 }
                 if (!compact) {
@@ -257,12 +266,11 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                             Text(if (diagnostics) "Hide diagnostics" else "Diagnostics", modifier = Modifier.fillMaxWidth())
                         }
                         if (diagnostics) {
-                            Text("Local network ends on background or screen lock.", style = MaterialTheme.typography.bodySmall)
+                            Text("Idle local network follows the background timeout in Settings. Approved active work keeps it connected.",
+                                style = MaterialTheme.typography.bodySmall)
                             if (nearby.available) {
                                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
-                                    context.startActivity(Intent().setClassName(context.packageName,
-                                        "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
-                                        .putExtra("peer", record.peer.deviceId))
+                                    context.startActivity(companionSetupIntent(context, record.peer.deviceId))
                                 }) { Text("Setup settings") }
                             } else {
                                 Text("Automatic Bluetooth connection is unavailable in this build.",
@@ -364,17 +372,22 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
 
 @Composable
 private fun TransportDetails(name: String, state: ConnectionState, status: String, canConnect: Boolean,
-    onConnect: () -> Unit, onDisconnect: () -> Unit) {
+    onConnect: () -> Unit, onDisconnect: () -> Unit, onCancel: () -> Unit, verifying: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Icon(painterResource(if (name == "Bluetooth") R.drawable.ic_bluetooth else R.drawable.ic_wifi), contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp).size(24.dp))
         Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(stateLabel(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Text(if (verifying) "Checking connection…" else stateLabel(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 10.dp))
         val active = state == ConnectionState.CONNECTING || state == ConnectionState.SECURED
         OutlinedButton(shape = MaterialTheme.shapes.small,
             colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp), onClick = if (active) onDisconnect else onConnect,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            onClick = when (state) {
+                ConnectionState.CONNECTING -> onCancel
+                ConnectionState.SECURED -> onDisconnect
+                else -> onConnect
+            },
             enabled = active || canConnect, modifier = Modifier.defaultMinSize(minHeight = 32.dp)
                 .semantics { contentDescription = "${when (state) {
                     ConnectionState.CONNECTING -> "Cancel"
@@ -410,7 +423,7 @@ private fun ConnectionPauseMenu(
 ) {
     Box {
         OutlinedButton(
-            onClick = onOpen,
+            onClick = if (paused) onResume else onOpen,
             enabled = enabled,
             shape = MaterialTheme.shapes.small,
             colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -419,21 +432,19 @@ private fun ConnectionPauseMenu(
                 contentDescription = "${if (paused) "Resume" else "Pause"} automatic connection to $peerName"
             },
         ) {
-            Icon(painterResource(R.drawable.ic_pause_circle), contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(painterResource(if (paused) R.drawable.ic_play_circle else R.drawable.ic_pause_circle),
+                contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text(if (paused) "Resume" else "Pause", style = MaterialTheme.typography.labelMedium)
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenu(expanded = !paused && expanded, onDismissRequest = onDismiss) {
             DropdownMenuItem(text = { Text("1 hour") }, onClick = { onPause(3_600_000L) })
             DropdownMenuItem(text = { Text("3 hours") }, onClick = { onPause(10_800_000L) })
             DropdownMenuItem(text = { Text("6 hours") }, onClick = { onPause(21_600_000L) })
-            DropdownMenuItem(text = { Text("Custom…") }, onClick = onCustomPause)
             HorizontalDivider()
             DropdownMenuItem(text = { Text("Until I resume") }, onClick = { onPause(null) })
-            if (paused) {
-                HorizontalDivider()
-                DropdownMenuItem(text = { Text("Resume now") }, onClick = onResume)
-            }
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text("Custom…") }, onClick = onCustomPause)
         }
     }
 }
@@ -445,6 +456,7 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
     summary: String = stateLabel(state),
     action: String = connectionSummary(state, ConnectionState.DISCONNECTED).action,
     detailsExpanded: Boolean = false, compact: Boolean = false, showDetailsAction: Boolean = true, showConnectionAction: Boolean = true,
+    onCancel: () -> Unit = onDisconnect,
     bluetoothConnected: Boolean = false, localNetworkConnected: Boolean = false,
     powerSummary: String? = null,
     connectionOptions: (@Composable () -> Unit)? = null) {
@@ -467,7 +479,10 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
             if (showConnectionAction && action != "Disconnect") {
-                OutlinedButton(onClick = if (action == "Cancel") onDisconnect else onConnect,
+                OutlinedButton(onClick = when (action) {
+                    "Cancel" -> onCancel
+                    else -> onConnect
+                },
                     enabled = action == "Cancel" || canConnect,
                     shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                     modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
@@ -487,7 +502,10 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
             connectionOptions?.invoke()
             if (showConnectionAction && action != "Disconnect") OutlinedButton(shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
-                onClick = if (action == "Cancel") onDisconnect else onConnect,
+                onClick = when (action) {
+                    "Cancel" -> onCancel
+                    else -> onConnect
+                },
                 enabled = action == "Cancel" || canConnect,
                 modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text(action) }
         }

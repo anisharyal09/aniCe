@@ -59,3 +59,23 @@ internal suspend fun <T> Flow<T>.consumeLanEndpoints(consume: suspend (ReceiveCh
         try { consume(endpoints) }
         finally { endpoints.cancel() }
     }
+
+// Await the direct result before creating a discovery producer; a prepended buffered flow would start NSD early.
+internal suspend fun <T> consumeLanCandidates(
+    direct: T?, discover: () -> Flow<T>, key: (T) -> String, attempt: suspend (T, Boolean) -> Boolean,
+): Boolean {
+    val seen = mutableSetOf<String>()
+    if (direct != null) {
+        seen.add(key(direct))
+        if (attempt(direct, true)) return true
+    }
+    var connected = false
+    discover().consumeLanEndpoints { endpoints ->
+        for (endpoint in endpoints) {
+            if (!seen.add(key(endpoint))) continue
+            if (attempt(endpoint, false)) { connected = true; break }
+            if (seen.size >= 8) break
+        }
+    }
+    return connected
+}

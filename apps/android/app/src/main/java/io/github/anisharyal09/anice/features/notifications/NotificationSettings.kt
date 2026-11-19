@@ -33,7 +33,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -104,10 +103,7 @@ fun NotificationSettings(owner: NotificationMirrorController) {
         owner.phoneCallPermissionsChanged()
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
-    // Keep a compact 32 dp face while reserving the standard 48 dp interaction area.
-    val permissionButtonModifier = Modifier.minimumInteractiveComponentSize()
-        .heightIn(max = 32.dp)
-        .defaultMinSize(minHeight = 32.dp)
+    val permissionButtonModifier = Modifier.defaultMinSize(minHeight = 32.dp)
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) refresh()
@@ -116,12 +112,13 @@ fun NotificationSettings(owner: NotificationMirrorController) {
         onDispose { lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(Unit) { refresh() }
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (!access) {
             Text(
-                "Enable notification access to sync alerts to your Mac.",
+                "Allow access to sync alerts to your Mac.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
             )
             OutlinedButton(
                 shape = MaterialTheme.shapes.small,

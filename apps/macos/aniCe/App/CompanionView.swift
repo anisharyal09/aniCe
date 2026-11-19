@@ -9,6 +9,7 @@ struct CompanionView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  let connectionPause: MacConnectionPauseModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
   let clipboard: MacClipboardModel
@@ -190,7 +191,7 @@ struct CompanionView: View {
           if pairing.nearbyEnabled { pairing.pauseNearby() } else { pairing.cancel() }
         }
       } else if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
-        MacSessionView(peers: pairing.peers, model: session, lan: lan, phonePower: phonePower,
+        MacSessionView(peers: pairing.peers, model: session, lan: lan, connectionPause: connectionPause, phonePower: phonePower,
           details: .constant(false), diagnostics: .constant(false), compact: true, keyboardTrackpad: keyboardTrackpad,
           onManageDevices: { navigation.open(.devices, present: openMain) },
           onOpenDevice: { peer in navigation.open(.devices, peer: peer, present: openMain) })

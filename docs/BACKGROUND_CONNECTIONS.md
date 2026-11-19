@@ -1,63 +1,59 @@
-# Background BLE connections
+# Background Bluetooth connections
 
-## Implementation and release gate
+aniCe uses one Android Bluetooth owner and one Mac availability policy. Pairing establishes trust; automatic connection uses that trust together with native ownership and the saved connection preferences.
 
-One application-scoped Android `SessionController` owns transport, EDHOC/readiness, records and operation generations. Native `StateFlow` publishes connection/control/renewal progress to the background owner independently of Compose snapshot application. Activities contribute presentation tokens; only an OS-bound `CompanionDeviceService` supplies background ownership. Manual connections close when the final presentation stops without a companion lease. No activity starts or binds the companion service itself.
+## Set up
 
-Automatic nearby recovery, negotiated keepalive, fresh-session renewal, and Mac automatic availability are implemented. Android uses one device-level **Connect automatically** switch. First setup uses the native companion chooser; association is a locator/OS lease, never authentication. EDHOC pins the selected active device ID, fingerprint and key under the current local identity. Wrong first-time candidates remove their newly created association. Identity and trust journals are preserved.
+Enable **Connect automatically** for the trusted device on both platforms. Android's first setup uses the system companion-device chooser. The association supplies a Bluetooth locator and OS ownership, not authentication: each connection still checks the pinned device ID, fingerprint and public key.
 
-Notification-free companion support is enabled in main resources for Android API 31+ (`res/values-v31/bools.xml`), providing background ownership across both Debug and Release builds on supported platforms. Legacy API 29–30 targets retain manual connections via base resources (`res/values/bools.xml`). General BLE foreground-service fallback and phone-reboot recovery are not implemented. Approved transfers use a dedicated connected-device foreground service; background LAN ownership follows the [LAN lease policy](LAN_CONNECTIONS.md).
+Android companion ownership requires API 31 or newer. API 29–30 use manual foreground connections. Approved transfers have a separate connected-device foreground service; they do not require automatic Bluetooth setup.
 
-## Native API paths
-
-| Android API | Presence ownership |
-| --- | --- |
-| 29–30 | Service disabled; manual connections |
-| 31–32 | Address observation and address callbacks |
-| 33–35 | Address observation; callbacks matched by association ID |
-| 36 | Association-ID requests; separate BLE advertisement and Bluetooth-connection events |
-
-The nonexported setup activity and service live in main sources. The service requires `android.permission.BIND_COMPANION_DEVICE_SERVICE`; the build gate controls its enabled state. Native service creation and same-instance `onRebind` restore ownership even when CDM omits cached presence callbacks. `onUnbind` requests rebind notification and clears the lease; callbacks delivered while unbound cannot restore it. Destruction permanently retires that instance. Duplicate events reacquire a resumed lease. Every attempt revalidates the native association and pinned trust. On API 36, advertisement loss alone does not retire a transport while Bluetooth presence remains active. Association addresses are normalized to uppercase for `BluetoothAdapter`; temporary addresses are never trust credentials.
+Only one Mac owns Android's saved automatic setup. Enabling another Mac explicitly replaces that setup; opening another device's settings does not. **Reset connection setup** removes its association and observation without resetting identity or pairing.
 
 ## Android policy
 
-Saved preferences bind one selected peer ID/fingerprint to the local fingerprint, native association ID/address, automatic/paused flags and an authenticated-association marker. The existing bounded diagnostic log is retained. Private keys, session material, record counters, transports and generations remain in memory. Observation is registered only after active trust validation; a registered observation is not successful authentication.
+- Started activities contribute independent foreground tokens. Closing one activity does not release another that remains started.
+- Idle manual Bluetooth closes after the final presentation stops or the screen locks, unless eligible companion, picker or approved-transfer ownership remains.
+- Only Android's OS-bound companion service supplies companion ownership. The app does not start or bind that service itself.
+- Service loss/unbind releases ownership and stops its connection work. Native rebind and presence events can restore eligible work.
+- API 36 distinguishes BLE-advertisement presence from Bluetooth-connection presence. Advertisement loss alone does not retire a transport while Bluetooth presence remains active.
+- Foreground return reevaluates saved enabled setup even without a new presence callback.
 
-Connection settings match the displayed device ID and fingerprint before showing enabled state, diagnostics or Reset setup. Actions recheck that binding. Enabling a different Mac explicitly retires the prior association before opening the chooser; merely opening another Mac's settings does not change the selected setup.
+Transient failures use one owned retry chain with 2, 5, 15, 30, 60 and 90-second delays, capped at 90 seconds with jitter. Presence loss cancels retries; radio-off waits for radio recovery. Repeated failures can use bounded service-filtered rediscovery, but a new locator must authenticate as the saved peer and cannot silently replace the association.
 
-One retry chain follows the current native companion or foreground owner. Foreground return reevaluates saved enabled setup even when CDM supplies no new presence callback; only the OS-bound service supplies companion ownership. A live service lease serializes attempts. Transient failures use 2, 5, 15, 30, 60 and 90-second base delays with ±10% jitter and a 90-second cap applied after jitter. Presence loss cancels the entire retry chain; radio-off waits for radio recovery. Rejected locators are excluded for 60 seconds in an in-memory set capped at 32. After two failures, each owned retry permits one bounded 15-second service-filtered rediscovery. A rediscovered candidate still requires pinned authentication and cannot silently replace the native association. Exclusions wait on their expiry deadline. No periodic wake alarms or unowned scan loop is used.
+Fifteen uninterrupted seconds of authenticated readiness reset retry history. Brief connections and foreground/service handoffs do not reset it. Permission, association or trust failures show corrective feedback instead of retrying indefinitely.
 
-A failed discovery does not permanently exhaust rediscovery eligibility. Foreground/service handoffs retain failure history and candidate exclusions. Fifteen uninterrupted seconds of authenticated readiness or explicit companion setup reset the failure history; retirement cancels that stability deadline. Approved-transfer BLE recovery applies the same readiness threshold: brief secured intervals retain the retry delay, interrupted intervals cannot accumulate toward stability, and owner cancellation clears the pending stability deadline.
-
-| Event | Policy and session action |
-| --- | --- |
-| Presence appears / duplicate callback | Acquire the system lease; start or retain one pinned attempt |
-| Service disappearance/unbind | Cancel attempts/retries; retire session; wait for presence |
-| System rebind of the same service | Restore unknown presence facts and restart only enabled, unpaused, trusted setup |
-| Transient disconnect or missed PONG | Retire old operation; bounded retry only while owned and permitted |
-| Disconnect | Persist pause before teardown; stop retries/access; retain association and native observation |
-| Switch off | Save automatic off/paused; stop observation/retries and release the service lease. Retain a secured foreground channel as manual work unless renewal is pending; background channels close |
-| Checkbox on / explicit Connect after pause | Revalidate remembered trust/association; resume observation |
-| Pairing/discovery | Suspend automatic attempts; restore policy after the exclusive operation |
-| Revocation / identity reset | Retire session and selected setup; require explicit correction |
-| Permission/association loss / legacy peer | Pause with an actionable explanation; manual connection remains available |
-| Reset connection setup | Invalidate chooser jobs, release keys/access, remove only its association |
-
-Stop invalidates chooser/setup/session generations before disk or suspended crypto work. Resume reserves its generation before association/trust validation; retired results and failures become cancellation, so callers cannot re-enable or pause a newer setup. A failed preference write cannot retain live application access. Pause retains observation but runs no connection/retry work; disabling stops observation. Restored system bindings treat an omitted presence source as unknown until its callback or native unbind, rather than inventing an absence. Restored configuration requires the original local identity and an active matching peer. OS rebinding can recover a process; force-stop has no automatic-recovery promise. Reboot recovery is not enabled.
-
-Manual and automatic requests for the same credential coalesce while connecting or secured. Native setup timeout retires the attempt and publishes terminal state. Approved transfer-service work can own bounded recovery when no automatic owner is active; explicit Disconnect and exclusive discovery/pairing suspend it. A timed pause stores a wall-clock resume deadline (or an indefinite pause) and closes current BLE/LAN sessions. Android consumes the elapsed marker before asynchronous setup validation and rechecks it on foreground return, screen return, system presence, restored Wi-Fi addressing and clock changes; Mac rechecks it on activation, wake, local-network return and clock changes. Suspension does not extend the saved wall-clock deadline, and clock rollback cannot resume early. Expiry restores only enabled choices, including Bluetooth's existing owned 2/5/15/30/60/90-second retry chain with its 90-second cap; it does not create another retry loop or enable a disabled setting. A newer manual pause or disabled choice cancels the old deadline. Android restores a pending deadline after process recreation; Mac restores it when its automatic connection policy starts.
-
-An authenticated Mac CLOSE retires Android's operation generation, releases its channel and GATT transport, and publishes disconnected state with terminal feedback. Nearby retry remains eligible with enabled, unpaused policy and a native companion or foreground owner. Coroutine cleanup explicitly targets `SessionController`; cancelling its worker alone leaves stale presentation and transport ownership.
+Force-stop and reboot do not provide automatic recovery. Returning to the app can resume an enabled, valid setup.
 
 ## Mac policy
 
-The window and menu companion share one opt-in **Connect automatically** policy and allowed-phone selection. A target is frozen per attempt and resolved against active trust. Empty trust cannot enable automatic admission. The slot holds one candidate/session; other centrals cannot join it. Automatic availability advertises only while the slot is empty, stops advertising on admission, and renews empty 120-second periods. Five failed candidates in a period trigger a 120-second cooldown. Unknown candidates consume admission failures without disabling valid trust.
+The main window and menu-bar companion share **Connect automatically** and allowed-phone selection. A connection attempt freezes its target against active trust. One candidate/session owns admission; other centrals cannot join it.
 
-Transient startup failures and established-session interruptions use one generation-bound reopen task with 2, 5, 15, 30, 60 and 90-second delays, capped at 90 seconds. Fifteen uninterrupted seconds of authenticated readiness reset that sequence through one monotonic deadline. The device menu can pause automatic reconnect for 1, 3 or 6 hours, a custom duration up to 30 days, or until manually resumed; the saved deadline gates the existing reopen task and event-driven LAN owner. Powered-off/resetting radios, denied authorization and unsupported hardware retire application access and retain native state observation without timed retries. Candidate failures retain their separate original-window budget and cooldown.
+Manual **Allow connections** lasts 120 seconds. Automatic availability reopens empty 120-second windows while enabled and owned. Five failed candidates in a window trigger a 120-second cooldown. Established interruptions use the same bounded 2/5/15/30/60/90-second reopen policy, reset after fifteen seconds of stable readiness.
 
-Manual Allow connections retains its 120-second window. Disconnect pauses automatic availability before cleanup. Switch off disables it; enabling again clears pause. Closing the window retains the menu companion; sleep retires the channel and wake restores enabled availability. Quit stops all operations. Automatic login launch is not implemented. Pairing/discovery temporarily suspend admission. Core Bluetooth application access is retired when physical central disconnection is unavailable.
+Closing the window retains the companion. Sleep retires connections; wake reevaluates enabled choices. Quit stops all work. Automatic login launch is not provided.
 
-Pairing cleanup restores automatic availability only if pairing and discovery are both idle at callback delivery. A newer exclusive operation retains the radio; stopping discovery can restore the saved automatic policy afterward.
+Pairing and active discovery temporarily suspend Bluetooth admission. Cleanup resumes eligible work only after the exclusive operation has ended. Radio-off retains native state observation; reset/unsupported/permission states stop application access.
+
+## Disconnect, disable and timed pause
+
+| Action | Effect |
+| --- | --- |
+| Device Connect | Starts BLE and LAN together for the selected trusted peer; already-ready channels remain connected. |
+| Cancel | Ends the current attempt and any pending Connect-to-Resume lookup without disabling the saved automatic choice; another connection event or explicit Connect can retry. |
+| Disconnect | Closes the selected transport and pauses its automatic work; a new local file selection/send can request LAN again when automatic LAN is enabled. |
+| Resume / explicit Connect | Revalidates remembered setup and resumes eligible work. |
+| Switch automatic connection off | Stops observation and retries; a secured foreground or approved-work channel can remain manual. |
+| Reset setup | Removes that native association; identity and peer trust remain. |
+| Remove trust / reset identity | Retires both transports and invalidates the associated setup. |
+
+A timed **Pause** closes BLE and LAN and stores a wall-clock resume deadline, or an indefinite pause. It does not keep an active transfer connected. Expiry restores only previously enabled choices; it never enables a disabled preference. App return, wake, network/presence events and clock changes reevaluate the deadline. A newer pause or disabled choice supersedes the old deadline.
+
+Pause stops unfinished admission immediately; only already-secured channels remain briefly available for the best-effort peer notice. Duplicate native presence callbacks do not undo Cancel. Android foreground return can restart a retained companion owner's recovery without requiring another presence callback.
+
+**Resume** acts immediately; only **Pause** opens the duration menu. The Auto connect checkbox shows currently armed work, so it is unchecked during a local pause. A current secured peer can receive a [pause notice](../protocol/connection-pause/README.md) before teardown and show **Paused on &lt;device&gt;**. This does not alter that peer's saved automatic choice; fresh secured connection, expiry or local Resume/Connect clears the notice.
+
+A new file action from either updated peer can resume a transport-level LAN Disconnect, but never a timed/indefinite **Pause**, disabled automatic LAN or invalid trust. Passive feature traffic and automatic transfer recovery retain the Disconnect pause.
 
 First-time [nearby pairing](../protocol/bluetooth/PROXIMITY.md) has a separate
 known-empty-trust lifetime: anonymous Mac availability while awake/unlocked and
@@ -74,57 +70,18 @@ and comparison material, never a resumed pairing channel.
 
 ## Liveness and renewal
 
-[Authoritative control CDDL](../protocol/session/control.cddl) defines controls inside existing DATA kind 3/envelope 6. HELLO/ACK compatibility completes within ten seconds of readiness; Android PING follows 60 seconds without authenticated activity, with one matching PONG due within 20 seconds. Unsupported peers retain manual operation; automatic policy pauses. Controls consume ordinary record sequences and never increment diagnostic check counters.
+After encrypted readiness, peers negotiate keepalive controls. Android sends PING after 60 seconds without authenticated activity; its matching PONG is due within 20 seconds. A received close retires the operation and its transport; enabled native ownership can start fresh recovery.
 
-Automatic renewal starts at 55 minutes or `2^20 − 1024` records in either direction. Mac sends one request; Android coalesces requests, blocks application submissions, retires the old session within two seconds, then performs fresh EDHOC/readiness if policy/ownership still permit it. Stop outranks renewal. Queue preflight precedes nonce reservation; encryption/post-seal submission failures burn the sequence and retire the session.
+Automatic BLE renewal starts before the one-hour lifetime or record limit. The old transport and cryptographic session retire before fresh EDHOC/readiness. Keys and counters are never resumed. Manual BLE retains explicit reconnection.
 
-BLE hard bounds remain: ten-second readiness, 120-second idle, one-hour age, `2^20` records/direction, 4,000-byte plaintext, 4,096-byte logical messages and eight queued messages/32 KiB. All deadlines are monotonic; Android elapsed realtime includes sleep. OS suspension may miss a deadline and disconnect. Owned mutable secrets are overwritten and key objects released; JVM/Swift zeroization is best effort.
+LAN negotiates [retained-socket renewal](../protocol/lan/RENEWAL.md) separately. Its cryptographic session changes without replacing the TCP socket, feature channel or eligible work leases. [LAN connections](LAN_CONNECTIONS.md) describes its independent background timeout and automatic eligibility.
 
-## Idle maintenance
+## Ownership and security
 
-### Architecture and event-driven scheduling
+Approved transfer work can retain BLE and own bounded recovery independently of companion setup. Explicit Disconnect, disabled recovery, identity/trust invalidation and unusable transport still take priority.
 
-Prior builds ran periodic maintenance loops (1-second intervals while secured, 200 ms during handshake and readiness) that queried KeyStore/Keychain and flash storage on every tick. This periodic polling established an initial workload baseline with median CPU utilization of ~3.166% on Android and ~0.385% on macOS across three 5-minute sampling intervals.
+Maintenance waits on monotonic deadlines and transport events rather than recurring storage polling. Quiet waits do not read KeyStore/Keychain or trust journals. Authenticated operations retain live native identity, protection and trust checks. Android elapsed realtime includes deep sleep; suspension can therefore leave a deadline expired when execution resumes.
 
-The updated architecture replaces recurring polling loops with cancellable waits for the earliest absolute monotonic deadline. Candidate admission, authentication, readiness, control compatibility, PING/PONG liveness, idle expiry (120 s), hard session lifetime (60 min), renewal (55 min), and partial-frame assembly each retain their existing bounds. The wait is recalculated upon state transitions, authenticated packet reception, successful transmission, or capacity release. Mac BLE record submissions complete from native queue-drain callbacks with bounded deadline and retirement cleanup. Pending controls with no immediate queue capacity await capacity events rather than busy-waiting; an overdue PING cannot arm a zero-delay wake loop.
+Native teardown and callbacks are generation-scoped. Stale writes, chooser results, capacity events or presence callbacks cannot re-enable a retired operation. Uncertain or already-sealed submissions are never replayed.
 
-Android deadline enforcement operates independently of its bounded control worker. Active signing or native validation cannot block hard session or GATT assembly retirement. While control work is queued, snapshots defer actionable PING or renewal triggers while preserving hard readiness, idle, lifetime, and outstanding PONG bounds. Completion requests a new snapshot once the worker becomes idle, coalescing transport events without recursive crypto dispatch.
-
-### Security validation boundaries
-
-Quiet deadline calculation and deadline-only waits perform zero identity, KeyStore, Keychain, or flash reads. Every encrypted transmission and reception (including keepalive HELLO, PING, and PONG controls) retains full current native identity, hardware protection, and active in-memory trust validation. Signing, key export, queue preflight, and submission retain their rechecks after suspended work. No timed identity cache is introduced.
-
-Trust stores maintain validated records in memory; explicit revocation, identity reset, or journal recovery immediately retires both BLE and LAN transport owners through service invalidation callbacks. Changes occurring outside application mutation paths are caught upon the next authenticated operation rather than through background storage polling. Android production clocks use elapsed realtime so deep sleep counts toward deadlines. Mac sleep retires both transports.
-
-Android TCP reads block while no frame is being assembled. Partial headers and handshake frames retain a ten-second absolute assembly budget; secured encrypted-record bodies allow ten seconds without byte progress, capped at sixty seconds from the first header byte. Socket read timeouts follow the remaining assembly deadline, and descriptor closure unblocks a retired read. Native write watchdogs remain ten seconds absolute. The Mac admission countdown updates only in its visible SwiftUI timeline, separately from security maintenance. Identity services expose process-local load counters for diagnostics; counters contain no key or peer material.
-
-### Verification harness and measured workload
-
-The physical test harness (`PhysicalSessionIdleTest`, invoked with `physicalIdle=ble`) asserts connected-idle stability:
-1. Waits up to 180 seconds for a secured physical BLE channel with negotiated keepalive controls.
-2. Warms up for two minutes without generating synthetic traffic.
-3. Samples three consecutive five-minute intervals, asserting unchanged connection continuity, static manual check counts, and exact identity/trust journal byte matches.
-
-Under matched Debug/USB test conditions, the updated event-driven architecture reduced median single-core CPU utilization from 3.166% to 0.322% on Android (0.325%, 0.284%, 0.322% across intervals) and from 0.385% to 0.030% on macOS (0.030%, 0.030%, 0.060%). Android recorded exactly thirty native identity loads for the ten authenticated keepalive records in each interval, confirming zero storage access during quiet idle periods.
-
-These measurements verify relative software workload reduction on test hardware. Long-term unplugged battery consumption (in mAh/hr), deep OS Doze endurance, foreground UI spikes, and release companion ownership remain separate physical release gates.
-
-## Reconnect acceptance
-
-1. Establish an automatic connection with the phone locked. Mac Disconnect pauses admission; verify Android leaves Secured after authenticated CLOSE and Mac remains unavailable while paused.
-2. Re-enable Mac Connect automatically with the phone untouched. Allow the existing retry backoff, capped at 90 seconds, plus connection/authentication time. Verify fresh EDHOC/readiness without opening the phone app, toggling Bluetooth or sending diagnostic checks.
-3. Repeat with the phone removed from Recents. Pause/disable Android automatic setup and verify Mac availability cannot restart a stopped phone policy.
-
-`ProbePresenceTest` covers unbound/stale events and missing-fact recovery. `CompanionBindingTest` injects same-instance framework callbacks on an unconfigured installation; it checks rebind, invalid intents, destroyed-instance retirement and unchanged identity/trust journals/preferences. Callback injection does not establish actual CDM/radio recovery.
-
-`PhysicalSessionNavigationTest.authenticatedMacCloseRetiresControllerAndAllowsFreshRecovery` requires `physicalMacClose=<selected Mac device ID>` and existing automatic setup. It observes authenticated CLOSE, requires controller retirement within two seconds, then requires a distinct secured channel with negotiated controls after Mac automatic availability is re-enabled. Identity/trust bytes must remain unchanged.
-
-References: [Android background BLE](https://developer.android.com/develop/connectivity/bluetooth/ble/background), [CompanionDeviceService](https://developer.android.com/reference/android/companion/CompanionDeviceService), [Secure session profile](../protocol/session/README.md).
-
-Opening Android discovery leaves BLE/LAN owners untouched. Scan suspends automatic Bluetooth ownership before discovery starts; its busy-state callbacks restore eligible work after success, failure or cancellation. LAN remains independent. Android Devices resumes saved matching association setup directly through the existing policy owner; no settings activity is opened. First association and repair remain in native setup. Explicit disable removes renewal eligibility from retained foreground work; hard session limits and final-presentation/screen-lock cleanup still apply. Pause, trust revocation and native lease loss retain their teardown behaviour.
-
-Android GATT fragment values are bounded by both the negotiated ATT payload and the 512-byte attribute-value maximum. MTU 517 therefore uses 512-byte values, including the existing fragmentation header. Subscription failures with ATT Invalid Handle (1), Write Not Permitted (3), or status 245 share the single missing-layout cache refresh/rediscovery budget: a stale CCCD handle may address a read-only attribute or another service. A persistent rejection retains its native status. Authentication, authorization and encryption errors do not trigger this refresh; authenticated data writes never use it.
-
-Android write admission and completion use separate status namespaces. API 33+ synchronous rejection preserves its `BluetoothStatusCodes` value; legacy `false` reports rejection without a numeric status. Both fail pending submissions with the original I/O error and retire the transport without replay. Asynchronous write failures retain their GATT status. Failure logs include operation epoch, stage, MTU, fragment queue depth, active-write and closing state; callbacks from retired epochs or GATT objects are discarded before execution and logged with current ownership. Successful fragment callbacks do not emit routine logs.
-
-Mac radio power-off retires the active application channel but retains the published GATT service table. Manager states below powered-off invalidate the table and require publication again. LAN eligibility exchange on both platforms retains capacity events arriving during a pending submission so a subsequent pre-seal refusal does not lose the wakeup.
+See [architecture](../ARCHITECTURE.md), the [session contract](../protocol/session/README.md), [Android development](../apps/android/README.md) and [Mac development](../apps/macos/README.md) for implementation and test commands.

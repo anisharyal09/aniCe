@@ -51,6 +51,48 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun pickerReturnKeepsItsLeaseUntilTheReturningActivityIsForegrounded() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val leases = mutableListOf<Boolean>()
+        var demands = 0
+        owner.onPickerChanged = { leases.add(it) }
+        owner.onDemandLanConnection = { assertTrue(owner.selectingFiles); demands++; false }
+        owner.beginPicker()
+        owner.endPickerAfterReturn()
+        assertTrue(owner.selectingFiles)
+        assertEquals(listOf(true), leases)
+        assertEquals(1, demands)
+        owner.applicationForegrounded()
+        assertFalse(owner.selectingFiles)
+        assertEquals(listOf(true, false), leases)
+        delay(30)
+        assertEquals(listOf(true, false), leases)
+        owner.dismiss()
+    }
+
+    @Test fun fallbackNoticeExplainsBluetoothWithoutRetiringTheHealthyChannel() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val ble = MockAndroidSecuredChannel(transport = "ble")
+        owner.available(ble)
+        owner.handle(ble.descriptor, TransferMessage.capability().encode())
+        var demands = 0
+        owner.onDemandLanConnection = { demands++; false }
+        val source = File(tempDir, "bluetooth-notice.bin").apply { writeBytes(byteArrayOf(1)) }
+        try {
+            owner.sendFiles(listOf(source))
+            withTimeout(2000) { while (owner.state !is TransferState.WaitingForPeerApproval) delay(5) }
+            assertSame(ble, owner.activeChannel)
+            assertEquals(1, demands)
+            assertTrue(owner.routeNotice?.contains("slower") == true)
+            withTimeout(2000) { while (ble.sentData.none { TransferMessage.decode(it)?.kind == 2L }) delay(5) }
+            assertTrue(ble.sentData.any { TransferMessage.decode(it)?.kind == 2L })
+            owner.connectLanForTransfer()
+            assertSame(ble, owner.activeChannel)
+            assertTrue(owner.routeNotice?.contains("Pause") == true)
+        } finally { owner.dismiss() }
+        assertNull(owner.routeNotice)
+    }
+
     @Test fun automaticReceiveConsentIsScopedToTheFullTrustedIdentity() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val peer = MockAndroidSecuredChannel().descriptor.peer

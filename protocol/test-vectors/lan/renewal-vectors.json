@@ -1,0 +1,137 @@
+{
+  "valid": [
+    {
+      "name": "support",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c010180"
+    },
+    {
+      "name": "lifetime",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f01"
+    },
+    {
+      "name": "record-margin",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f02"
+    },
+    {
+      "name": "drained",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01038150000102030405060708090a0b0c0d0e0f"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "payloadHex": "",
+      "reason": "malformed"
+    },
+    {
+      "name": "truncated",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f",
+      "reason": "malformed"
+    },
+    {
+      "name": "trailing",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f0100",
+      "reason": "malformed"
+    },
+    {
+      "name": "indefinite",
+      "payloadHex": "9f71616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f01ff",
+      "reason": "malformed"
+    },
+    {
+      "name": "nonminimal-version",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c1801028250000102030405060708090a0b0c0d0e0f01",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-tag",
+      "payloadHex": "84656f7468657201028250000102030405060708090a0b0c0d0e0f01",
+      "reason": "malformed"
+    },
+    {
+      "name": "extra-field",
+      "payloadHex": "8571616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f0100",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-version",
+      "payloadHex": "8471616e694365204c414e2072656e6577616cf5028250000102030405060708090a0b0c0d0e0f01",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-type",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01f58250000102030405060708090a0b0c0d0e0f01",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-version",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c09028250000102030405060708090a0b0c0d0e0f01",
+      "reason": "unsupportedProfile"
+    },
+    {
+      "name": "unknown-type",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01098250000102030405060708090a0b0c0d0e0f01",
+      "reason": "unsupportedProfile"
+    },
+    {
+      "name": "non-array-fields",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c0102a0",
+      "reason": "malformed"
+    },
+    {
+      "name": "oversized",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028178807878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "reason": "malformed"
+    },
+    {
+      "name": "float",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01f93c008250000102030405060708090a0b0c0d0e0f01",
+      "reason": "malformed"
+    },
+    {
+      "name": "null",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c0102f6",
+      "reason": "malformed"
+    },
+    {
+      "name": "short-id",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c0102824f000102030405060708090a0b0c0d0e01",
+      "reason": "malformed"
+    },
+    {
+      "name": "long-id",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028251000102030405060708090a0b0c0d0e0f0001",
+      "reason": "malformed"
+    },
+    {
+      "name": "text-id",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c010282706161616161616161616161616161616101",
+      "reason": "malformed"
+    },
+    {
+      "name": "reason-zero",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f00",
+      "reason": "malformed"
+    },
+    {
+      "name": "reason-three",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0f03",
+      "reason": "malformed"
+    },
+    {
+      "name": "reason-bool",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01028250000102030405060708090a0b0c0d0e0ff5",
+      "reason": "malformed"
+    },
+    {
+      "name": "support-with-id",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01018150000102030405060708090a0b0c0d0e0f",
+      "reason": "malformed"
+    },
+    {
+      "name": "drained-with-reason",
+      "payloadHex": "8471616e694365204c414e2072656e6577616c01038250000102030405060708090a0b0c0d0e0f01",
+      "reason": "malformed"
+    }
+  ]
+}

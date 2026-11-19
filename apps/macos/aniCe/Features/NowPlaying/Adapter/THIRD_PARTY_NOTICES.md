@@ -4,7 +4,7 @@ The adapter derives from [Vorssaint](https://github.com/vorssaint/vorssaint-util
 
 Copyright (C) 2026 Vorssaint. Licensed under GPL-3.0-or-later; the packaged GPL-LICENSE.txt and repository root LICENSE contain the GNU GPL text.
 
-Reviewed incorporated files:
+Adapted files:
 
 - `Sources/NowPlayingAdapter/NowPlayingAdapter.swift`: notification-driven reads, bounded callback waits and directed commands; failed capability queries preserve unknown support rather than reporting disabled commands. Queue calls removed and exported loader symbols renamed.
 - `Sources/NowPlayingAdapter/NowPlayingSelection.swift`: native client/path discovery, recording validation and command routing; manual metadata gaps retain selection, and recording-bound position samples include recovered duration.
@@ -15,4 +15,4 @@ Reviewed incorporated files:
 
 Original SPDX and copyright notices remain in each derived file; internal type names are adapted for aniCe. No notch UI, queue inspection, lyrics, radial menus or upstream artwork is incorporated.
 
-The native implementation uses private MediaRemote APIs. Metadata availability and directed-command reliability require packaged-app runtime acceptance; symbol availability alone does not establish support.
+The native implementation uses private MediaRemote APIs. Symbol or metadata availability alone does not establish directed-command support.

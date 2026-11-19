@@ -9,6 +9,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionChannelTests {
+  @Test fun peerWithoutPauseFeatureIgnoresTheAdditiveDataTagWithoutClosingSession() = runBlocking {
+    val helper = SessionTests()
+    val fixture = helper.root().getJSONArray("valid").getJSONObject(0)
+    val outgoing = mutableListOf<ByteArray>()
+    val replies = mutableListOf<ByteArray>()
+    val received = mutableListOf<ByteArray>()
+    val client = SessionConnection(helper.engine(fixture, false), false, { true }, { outgoing.add(it) }, {}, {})
+    val server = SessionConnection(helper.engine(fixture, true), true, { true }, { replies.add(it) },
+        { received.add(it) }, {})
+    try {
+      client.start()
+      repeat(3) { server.receive(outgoing.removeAt(0)); client.receive(replies.removeAt(0)) }
+      val notice = io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseMessage(1).encode()
+      client.sendData(notice)
+      server.receive(outgoing.removeAt(0))
+      assertArrayEquals(notice, received.single())
+      assertFalse(server.isClosed)
+      assertFalse(client.isClosed)
+      client.sendData(byteArrayOf(7))
+      server.receive(outgoing.removeAt(0))
+      assertArrayEquals(byteArrayOf(7), received.last())
+    } finally { client.close(); server.close() }
+  }
+
   @Test fun lan512MatchesIndependentCiphertextAndRejectsLegacyProfile() {
     val profile = SessionProfile.LAN_TRANSFER_512
     val key = ByteArray(32) { it.toByte() }; val iv = ByteArray(12) { it.toByte() }

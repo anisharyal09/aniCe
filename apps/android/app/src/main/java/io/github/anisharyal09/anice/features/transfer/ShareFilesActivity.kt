@@ -125,31 +125,29 @@ class ShareFilesActivity : ComponentActivity() {
                         !share.started -> {
                             Text(share.message ?: "Preparing share…", style = MaterialTheme.typography.bodyMedium)
                             if (share.urls != null) {
-                                Button(onClick = { share.send(owner) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                                TransferActionButton(onClick = { share.send(owner) }, prominent = true) {
                                     Text("Retry")
                                 }
                             }
-                            TextButton(
+                            TransferActionButton(
                                 onClick = {
                                     startActivity(Intent(this@ShareFilesActivity, MainActivity::class.java))
                                     finish()
                                 },
-                                modifier = Modifier.fillMaxWidth(),
                             ) { Text("Open aniCe") }
                         }
                         else -> ShareTransferResult(share, owner)
                     }
                     if (active) {
                         HorizontalDivider()
-                        Button(onClick = { moveTaskToBack(true) }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                        TransferActionButton(onClick = { moveTaskToBack(true) }, prominent = true) {
                             Text("Continue in background")
                         }
-                        TextButton(
+                        TransferActionButton(
                             onClick = { share.cancel(owner); finish() },
-                            modifier = Modifier.fillMaxWidth(),
                         ) { Text("Cancel transfer") }
                     } else if (share.started) {
-                        Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                        TransferActionButton(onClick = { finish() }) {
                             Text("Done")
                         }
                     }
@@ -173,6 +171,7 @@ class ShareFilesActivity : ComponentActivity() {
 @Composable
 private fun ShareTransferProgress(controller: TransferController) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    if (controller.usingBluetooth && controller.state !is TransferState.IncomingOffer) TransferRouteNotice(controller)
     when (val state = controller.state) {
         is TransferState.Transferring -> {
             val total = state.batch.totalBytes
@@ -207,7 +206,8 @@ private fun ShareTransferProgress(controller: TransferController) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         is TransferState.Connecting -> {
-            Text("Connecting to ${state.peerName}…", style = MaterialTheme.typography.bodyMedium)
+            Text(if (controller.awaitingLan) "Connecting to ${state.peerName} over local network…"
+                else "Checking file-transfer support on ${state.peerName}…", style = MaterialTheme.typography.bodyMedium)
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         else -> {

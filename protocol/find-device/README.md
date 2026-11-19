@@ -30,9 +30,9 @@ Android uses a normal-importance notification channel, checks runtime/app/channe
 
 Mac retains UserNotifications with custom-dismiss callbacks, foreground banner/list/sound presentation, checked settings/submission and application-owned expiry. Neither platform promises audible delivery or changes global volume/settings. No location payload exists.
 
-Android API 31+ background BLE still requires existing valid companion ownership; API 29–30 remain foreground/manual. LAN keeps its existing foreground/approved-work ownership. The ringing service acquires no network lease and does not initiate connections. Background service-start eligibility remains platform-controlled. Mac clears alerts on normal termination and at startup; expiry resumes with execution. An abruptly terminated or suspended Mac process cannot guarantee wall-clock removal of a delivered notification.
+Android API 31+ background BLE still requires existing valid companion ownership; API 29–30 remain foreground/manual. LAN follows its [configured background timeout and native work ownership](../lan/README.md#admission-ownership-and-coexistence). The ringing service acquires no network lease and does not initiate connections. Background service-start eligibility remains platform-controlled. Mac clears alerts on normal termination and at startup; expiry resumes with execution. An abruptly terminated or suspended Mac process cannot guarantee wall-clock removal of a delivered notification.
 
 
 ## Fixtures
 
-[Independent fixtures](../test-vectors/find-device/find-device-vectors.json) contain eight valid and 24 invalid envelopes produced by a standalone Python encoder. Native suites assert inventory floors, canonical bytes, invalid bounds, generation correlation, dismissal replay, permission failure and monotonic deadlines. Native OS presentation and physical transport acceptance are separate checks.
+[Independent fixtures](../test-vectors/find-device/find-device-vectors.json) contain valid and rejected envelopes produced by a standalone Python encoder. Both platform codecs use the same bytes.

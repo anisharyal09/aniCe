@@ -4,8 +4,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
-Preparing the first public beta. Entries remain unreleased until publication.
-
 ### Added
 
 - Add own-name editing to the pairing screen and private saved-device nicknames
@@ -22,6 +20,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 - Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds; automatic onboarding remains gated.
 
+- Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.
+- Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
 - **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
 - Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive once-per-version release notifications respecting beta preferences.
@@ -51,6 +51,13 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
+- Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
+- Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.
+- Explain slower Bluetooth fallback with a LAN action, and keep the active BLE receive envelope separate from queued-envelope accounting.
+- Close unfinished BLE/LAN admission immediately on Pause while retaining secured notice delivery, and emit one Resume notice per explicit paused Connect.
+- Make Resume one-click with a play icon, show the armed automatic state and group the existing native pause-menu options.
+- Keep transfer channels and transport-dependent waits intact across bounded LAN maintenance; retain cryptographic, frame and recovery deadlines.
 - Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers to `90023`.
 - Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.
 - Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.
@@ -58,7 +65,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 - Require confirmation before enabling beta updates and use compact, scalable text across Settings, including embedded feature preferences.
 - Use Reach out for About contacts, keep the name/social actions together at the trailing edge, and open a user-reviewed GitHub report form with app and OS versions.
 - Clarify aniCe trust versus system Bluetooth pairing in Control Android setup and device selection.
-- Add isolated UI and transfer-preview bundles with separate identity/runtime storage; the transfer preview keeps notification permissions realistic without touching production updates.
+- Add isolated UI and transfer-preview bundles with separate identity/runtime storage and native feature/lifecycle controls; the transfer preview keeps notification permissions realistic without touching production updates.
 - Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
 
 - Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.
@@ -104,6 +111,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Fence LAN deadline checks and renewal triggers to the current cryptographic session.
 - Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
 - Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.
 - Bind transfer status waiters to their issuing channel and job epoch; retain publication checkpoints after a verified file fails to save.

@@ -20,7 +20,7 @@ Use native framework permissions only on discovery action. Mac declares Bluetoot
 
 Discovery establishes compatibility only. Generic discovery candidates cannot authenticate the intended Mac. Pairing QR carries an ephemeral rendezvous token, high-entropy secret and identity fingerprint commitment; the public identity record follows authentication. QR contains no BLE address or system peer UUID as permanent cross-platform identity.
 
-Real hardware is required for acceptance, including API 29 and macOS 14. OS termination cleans system handles; restart is idle and does not resume discovery. Do not claim that stopping Mac advertising forcibly disconnects a central.
+OS termination cleans system handles; restart is idle and does not resume discovery. Stopping Mac advertising does not forcibly disconnect a central.
 
 ## References
 

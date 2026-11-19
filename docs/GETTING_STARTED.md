@@ -3,7 +3,7 @@
 
 ## Install
 
-Download published builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/releases). Use the [development setup](../CONTRIBUTING.md) to build from source. For a detailed step-by-step walkthrough covering Play Protect, Android 13+ restricted settings, background battery optimization, and macOS Gatekeeper/Keychain approval, see the [First Installation & Permissions Guide](FIRST_INSTALL_GUIDE.md).
+Download builds from [GitHub Releases](https://github.com/anisharyal09/aniCe/releases). See [installation and permissions](FIRST_INSTALL_GUIDE.md) for OS prompts, or [development setup](../CONTRIBUTING.md) to build from source.
 
 - **Mac:** Apple Silicon and macOS 14 or newer. Extract `aniCe-mac.zip`, move `aniCe.app` to Applications and open it. The current release pipeline uses a self-signed certificate, without Apple notarization; macOS may require explicit approval in System Settings → Privacy & Security. Do not disable Gatekeeper globally.
 - **Android:** Android 10 or newer. Open `aniCe-android.apk` and approve installation from the app used to download it. Development builds use a different signer; Android cannot update them in place with a production APK. Preserve anything needed before deliberately removing a development installation, since uninstalling removes app data and trust.
@@ -35,13 +35,15 @@ confirmations. The numeric-comparison profile is provisional; do not downgrade
 to an older aniCe binary after pairing with it, because older trust readers do
 not recognize method 3.
 
-After pairing, Home shows the device and current activity. Devices contains Bluetooth/LAN controls and connection diagnostics. Automatic LAN setup coordinates through authenticated Bluetooth; manual LAN remains independent. See [background Bluetooth](BACKGROUND_CONNECTIONS.md) and [LAN connections](LAN_CONNECTIONS.md) for lifecycle limits.
+After pairing, Home shows the device and current activity. Devices contains Bluetooth/LAN controls and connection diagnostics.
 
 ## Manage connections
 
-**Devices** keeps the trusted-device list, Bluetooth and local-network controls, and collapsed diagnostics for connection checks. A failed secondary transport does not mean the other secured channel has stopped. Manual LAN is independent; automatic LAN setup coordinates through authenticated Bluetooth.
+Bluetooth and LAN are independent channels. A failed secondary transport does not disconnect the other secured channel. Manual LAN works without Bluetooth; automatic LAN setup coordinates through authenticated BLE.
 
 For a manual Bluetooth connection, select the trusted Android on the Mac and choose **Connect**, then choose **Connect** for that Mac on Android. For manual LAN, keep the devices on the same local network, open the Mac's **Allow** window and connect from Android. Connection status becomes ready only after authentication completes.
+
+Manual LAN uses a live authenticated Bluetooth endpoint hint when one is available; otherwise it uses bounded mDNS discovery, including with Bluetooth off. Capable LAN peers renew through fresh EDHOC on the existing socket before the one-hour/record limit. Bluetooth discovery, native background ownership and reconnection remain separate from that renewal.
 
 Use **Pause/Resume** to stop automatic connection work for 1, 3 or 6 hours, a custom interval, or until manually resumed. A timed pause closes current Bluetooth/LAN sessions and saves its resume deadline; it does not keep active work connected. Disconnect local network and Disconnect Bluetooth affect their respective channels. Android's background LAN timeout defaults to Never; this removes the idle timeout, not network loss, process loss or session security limits.
 

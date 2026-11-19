@@ -120,6 +120,8 @@ struct TransferReceiveDestinationControls: View {
 // Modal presentation is isolated to @MainActor; sends files only when selection is non-empty.
 @MainActor func promptAndSendTransferFiles(model: MacTransferModel) {
   guard let reviewedPeer = model.activeChannel?.descriptor.peer else { return }
+  let presentationScreen = NSApp.keyWindow?.screen ?? NSScreen.main
+  _ = model.requestLanForSend()
   CompanionHost.currentHost?.isPickingFile = true
   defer {
     CompanionHost.currentHost?.isPickingFile = false
@@ -150,9 +152,7 @@ struct TransferReceiveDestinationControls: View {
     review.informativeText = names + additional
     review.addButton(withTitle: "Send files")
     review.addButton(withTitle: "Cancel")
-    review.window.level = .floating
-    review.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-    review.window.orderFrontRegardless()
+    presentTransferAlert(review, on: presentationScreen)
     guard review.runModal() == .alertFirstButtonReturn else { return }
     guard let currentPeer = model.activeChannel?.descriptor.peer,
       currentPeer.deviceId == reviewedPeer.deviceId, currentPeer.fingerprint == reviewedPeer.fingerprint else {
@@ -160,9 +160,7 @@ struct TransferReceiveDestinationControls: View {
       changed.messageText = "Connection changed"
       changed.informativeText = "No files were sent. Choose the files again to review them for the current device."
       changed.addButton(withTitle: "OK")
-      changed.window.level = .floating
-      changed.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-      changed.window.orderFrontRegardless()
+      presentTransferAlert(changed, on: presentationScreen)
       changed.runModal()
       return
     }
@@ -170,6 +168,37 @@ struct TransferReceiveDestinationControls: View {
       await model.sendFiles(urls: urls, reviewedPeer: reviewedPeer,
         fileAccess: TransferFileAccessLease(urls: urls))
     }
+  }
+}
+
+@MainActor func presentTransferAlert(_ alert: NSAlert, on screen: NSScreen?) {
+  // Alert layout must settle before positioning; ordering an unsized alert places it at a corner.
+  alert.layout()
+  let window = alert.window
+  window.level = .floating
+  window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+  if let screen {
+    window.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - window.frame.width / 2,
+      y: screen.visibleFrame.midY - window.frame.height / 2))
+  } else {
+    window.center()
+  }
+  window.orderFrontRegardless()
+}
+
+struct HomeTransferHeading: View {
+  let open: () -> Void
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: 8) {
+        Text("File transfer")
+        Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true)
+      }
+      .font(.system(size: 14 * fontScale, weight: .medium)).contentShape(Rectangle())
+    }
+    .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 3))
+    .accessibilityLabel("Open file transfer")
   }
 }
 
@@ -331,19 +360,15 @@ struct TransferView: View {
   var peers: [PeerTrustRecord] = []
   var edgeDrop: MacEdgeDropController? = nil
   var compact: Bool = false
+  var overview: Bool = false
   var open: (() -> Void)? = nil
   @Environment(\.colorScheme) private var colorScheme
   @State private var controlsOpen = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+    VStack(alignment: .leading, spacing: compact || overview ? 8 : 12) {
       if let open {
-        HStack {
-          Spacer()
-          Button(action: open) { Label("Open file transfer", systemImage: "chevron.forward") }
-            .labelStyle(.iconOnly).buttonStyle(AniCeHoverButtonStyle())
-            .accessibilityLabel("Open file transfer")
-        }
+        HomeTransferHeading(open: open)
       }
       if model.preparing {
         HStack {
@@ -351,8 +376,7 @@ struct TransferView: View {
           Text("Preparing files…").font(.caption)
           Spacer()
           Button("Cancel") { model.cancelTransfer() }
-            .buttonStyle(.bordered).aniCeControlFeedback()
-            .controlSize(.small)
+            .buttonStyle(AniCeButtonStyle(compact: compact))
         }
       }
       if model.pendingRouteSelection == nil, let dropStatus = model.dropStatus {
@@ -360,6 +384,14 @@ struct TransferView: View {
       }
       if let error = model.receiveDestinationError {
         Text(error).font(.caption).foregroundStyle(AniCePalette.error(colorScheme))
+      }
+      if model.activeChannel?.descriptor.transport == "ble", model.isBusy, model.pendingOffer == nil {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(model.routeNotice ?? "Using Bluetooth, which is slower. Connect LAN for faster transfer.")
+            .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          Button("Connect LAN for speed", action: model.connectLanForTransfer)
+            .buttonStyle(AniCeButtonStyle(compact: compact))
+        }
       }
       if let selection = model.pendingRouteSelection {
         pendingRouteContent(selection)
@@ -385,7 +417,7 @@ struct TransferView: View {
           statusNotice(icon: "slash.circle", message: "Transfer cancelled.")
         }
       }
-      if !compact {
+      if !compact && !overview {
         DisclosureGroup("More settings", isExpanded: $controlsOpen) {
           VStack(alignment: .leading, spacing: 8) {
             TransferNotificationControls(preferences: model.notificationPreferences)
@@ -397,7 +429,7 @@ struct TransferView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(compact ? 0 : 8)
+    .padding(compact || overview ? 0 : 8)
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .background(Color.clear)
   }
@@ -414,8 +446,7 @@ struct TransferView: View {
         } label: {
           Label("Send…", systemImage: "arrow.up.circle")
         }
-        .buttonStyle(.bordered).aniCeControlFeedback()
-        .controlSize(.small)
+        .buttonStyle(AniCeButtonStyle(compact: compact))
         .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
       }
       if !model.peerConnected {
@@ -461,8 +492,7 @@ struct TransferView: View {
       Button(action: promptAndSendFiles) {
         Text("Choose files")
       }
-      .buttonStyle(.bordered).aniCeControlFeedback()
-      .controlSize(.regular)
+      .buttonStyle(AniCeButtonStyle())
       .disabled(!model.peerConnected || !model.peerCompatible || model.preparing)
     }
     .padding(.horizontal, 20)
@@ -486,10 +516,7 @@ struct TransferView: View {
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         .fixedSize(horizontal: false, vertical: true)
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 8) { retryRouteButton; bluetoothRouteButton; cancelRouteButton }
-        VStack(alignment: .leading, spacing: 8) { retryRouteButton; bluetoothRouteButton; cancelRouteButton }
-      }
+      actionGroup { retryRouteButton; bluetoothRouteButton; cancelRouteButton }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(12)
@@ -501,18 +528,18 @@ struct TransferView: View {
 
   private var retryRouteButton: some View {
     Button("Retry") { Task { await model.retryPendingRouteSelection() } }
-      .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true).controlSize(.small)
+      .buttonStyle(AniCeButtonStyle(prominent: true, compact: compact))
   }
 
   private var bluetoothRouteButton: some View {
     Button("Send over Bluetooth") { Task { await model.sendPendingRouteOverBluetooth() } }
-      .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+      .buttonStyle(AniCeButtonStyle(compact: compact))
       .disabled(!model.canSendPendingOverBluetooth)
   }
 
   private var cancelRouteButton: some View {
     Button("Cancel", role: .cancel) { model.cancelPendingRouteSelection() }
-      .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small)
+      .buttonStyle(AniCeButtonStyle(compact: compact))
   }
 
   private var transferTargetDescription: String {
@@ -535,8 +562,7 @@ struct TransferView: View {
       Button("Cancel", role: .cancel) {
         model.cancelTransfer(local: true)
       }
-      .buttonStyle(.bordered).aniCeControlFeedback()
-      .controlSize(.small)
+      .buttonStyle(AniCeButtonStyle(compact: compact))
     }
   }
 
@@ -583,18 +609,17 @@ struct TransferView: View {
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
       }
 
-      HStack(spacing: 8) {
+      actionGroup {
         Button(model.autoReceivePreparing ? "Preparing…" : "Accept") {
           Task { await model.acceptIncomingOffer() }
         }
-        .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
-        .controlSize(.small).disabled(model.autoReceivePreparing)
+        .buttonStyle(AniCeButtonStyle(prominent: true, compact: compact))
+        .disabled(model.autoReceivePreparing)
 
         Button("Decline", role: .cancel) {
           Task { await model.rejectIncomingOffer(reason: 0) }
         }
-        .buttonStyle(.bordered).aniCeControlFeedback()
-        .controlSize(.small)
+        .buttonStyle(AniCeButtonStyle(compact: compact))
       }
     }
   }
@@ -646,8 +671,7 @@ struct TransferView: View {
       Button("Cancel", role: .cancel) {
         model.cancelTransfer(local: true)
       }
-      .buttonStyle(.bordered).aniCeControlFeedback()
-      .controlSize(.small)
+      .buttonStyle(AniCeButtonStyle(compact: compact))
     }
   }
 
@@ -695,19 +719,17 @@ struct TransferView: View {
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
 
-      HStack(spacing: 8) {
+      actionGroup {
         if canResumeOverBle {
           Button("Continue over Bluetooth") {
             model.resumeOverBluetooth()
           }
-          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
-          .controlSize(.small)
+          .buttonStyle(AniCeButtonStyle(prominent: true, compact: compact))
         }
         Button("Cancel", role: .cancel) {
           model.cancelTransfer(local: true)
         }
-        .buttonStyle(.bordered).aniCeControlFeedback()
-        .controlSize(.small)
+        .buttonStyle(AniCeButtonStyle(compact: compact))
       }
     }
   }
@@ -729,29 +751,7 @@ struct TransferView: View {
         .lineSpacing(2)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
 
-      HStack(spacing: 8) {
-        if model.receiving && !model.publishedURLs.isEmpty {
-          Button("Show in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting(model.publishedURLs)
-          }
-          .buttonStyle(.bordered).aniCeControlFeedback()
-          .controlSize(compact ? .small : .regular)
-        }
-        if model.peerConnected && model.peerCompatible {
-          Button {
-            promptAndSendFiles()
-          } label: { Label("Send files…", systemImage: "arrow.up.circle") }
-          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
-          .controlSize(compact ? .small : .regular)
-          .disabled(model.preparing || model.isBusy)
-        }
-
-        Button("Done") {
-          model.dismiss()
-        }
-        .buttonStyle(.bordered).aniCeControlFeedback()
-        .controlSize(compact ? .small : .regular)
-      }
+      resultActions(dismissLabel: "Done", showsPublishedFiles: model.receiving)
     }
   }
 
@@ -766,29 +766,32 @@ struct TransferView: View {
           .font(.subheadline.weight(.medium))
           .foregroundStyle(isError ? AniCePalette.error(colorScheme) : AniCePalette.primaryText(colorScheme))
       }
-      HStack(spacing: 8) {
-        if !model.publishedURLs.isEmpty {
-          Button("Show in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting(model.publishedURLs)
-          }
-          .buttonStyle(.bordered).aniCeControlFeedback()
-          .controlSize(compact ? .small : .regular)
-        }
-        if model.peerConnected && model.peerCompatible {
-          Button("Send files…") {
-            promptAndSendFiles()
-          }
-          .buttonStyle(.borderedProminent).aniCeControlFeedback(prominent: true)
-          .controlSize(compact ? .small : .regular)
-          .disabled(model.preparing || model.isBusy)
-        }
+      resultActions(dismissLabel: "Dismiss")
+    }
+  }
 
-        Button("Dismiss") {
-          model.dismiss()
+  private func resultActions(dismissLabel: String, showsPublishedFiles: Bool = true) -> some View {
+    actionGroup {
+      if showsPublishedFiles && !model.publishedURLs.isEmpty {
+        Button("Show in Finder") {
+          NSWorkspace.shared.activateFileViewerSelecting(model.publishedURLs)
         }
-        .buttonStyle(.bordered).aniCeControlFeedback()
-        .controlSize(compact ? .small : .regular)
+        .buttonStyle(AniCeButtonStyle(compact: compact))
       }
+      if model.peerConnected && model.peerCompatible {
+        Button(action: promptAndSendFiles) { Label("Send files…", systemImage: "arrow.up.circle") }
+          .buttonStyle(AniCeButtonStyle(prominent: true, compact: compact))
+          .disabled(model.preparing || model.isBusy)
+      }
+      Button(dismissLabel) { model.dismiss() }
+        .buttonStyle(AniCeButtonStyle(compact: compact))
+    }
+  }
+
+  private func actionGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 8, content: content)
+      VStack(alignment: .leading, spacing: 8, content: content)
     }
   }
 

@@ -36,7 +36,9 @@ fun ClipboardSettings(
     val keys = peers.map { it.peer.deviceId + ":" + it.peer.fingerprint }
     LaunchedEffect(keys) { owner.prune(peers.map { it.peer }); if (owner.selected == null) owner.select(peers.firstOrNull()?.peer) }
     Column(verticalArrangement = Arrangement.spacedBy(if (grouped) 0.dp else 8.dp)) {
-        if (peers.isEmpty()) Text("Pair a device to share your clipboard.")
+        if (peers.isEmpty()) Text("Pair a device to share your clipboard.",
+            modifier = if (grouped) Modifier.padding(vertical = 6.dp) else Modifier,
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (peers.size > 1) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 peers.forEach { record -> FilterChip(selected = owner.selected?.deviceId == record.peer.deviceId && owner.selected?.fingerprint == record.peer.fingerprint,
@@ -52,7 +54,8 @@ fun ClipboardSettings(
             AutomaticConnectionToggle(checked = owner.automatic, enabled = owner.selected != null,
                 onCheckedChange = owner::setAutomaticEnabled,
                 label = if (grouped) "Automatic sharing" else "Automatic clipboard sharing",
-                description = if (grouped && peers.isNotEmpty()) "Enable on both devices. Manual sends stay available." else null)
+                description = if (grouped && peers.isNotEmpty()) "Enable on both devices. Manual sends stay available." else null,
+                compact = grouped)
             if (showHistory) {
                 if (grouped) HorizontalDivider()
                 HistoryPreference(owner.history, compact = grouped)
@@ -185,7 +188,8 @@ private fun HistoryPreference(history: ClipboardHistory, compact: Boolean = fals
     AutomaticConnectionToggle(checked = history.enabled, enabled = true,
         onCheckedChange = { if (it) confirm = true else history.setKeepingHistory(false) },
         label = "Keep clipboard history",
-        description = if (compact) "Saved on this phone. Pausing keeps saved clips." else null)
+        description = if (compact) "Saved on this phone. Pausing keeps saved clips." else null,
+        compact = compact)
     if (!compact) {
         var capacityMenu by remember { mutableStateOf(false) }
         Box {

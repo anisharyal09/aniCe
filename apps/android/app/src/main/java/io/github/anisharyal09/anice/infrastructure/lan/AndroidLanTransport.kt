@@ -19,6 +19,8 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
     private val frame = ByteArray(profile.maximumEnvelope + 5)
     @Volatile private var closed = false
     @Volatile private var secured = false
+    internal var tcpUserTimeoutConfigured = false
+        private set
     @Volatile var localAddress: java.net.InetAddress? = null
         private set
     fun markSecured() { secured = true }
@@ -51,6 +53,16 @@ internal class AndroidLanTransport(private val scope: CoroutineScope, val profil
             socket.soTimeout = 0
             socket.tcpNoDelay = true
             socket.keepAlive = true
+            // Public Android API, no hidden descriptor reflection. Local write acceptance is not peer delivery.
+            try {
+                android.os.ParcelFileDescriptor.fromSocket(socket).use { descriptor ->
+                    android.system.Os.setsockoptInt(descriptor.fileDescriptor, android.system.OsConstants.IPPROTO_TCP,
+                        android.system.OsConstants.TCP_USER_TIMEOUT, 10_000)
+                    tcpUserTimeoutConfigured = true
+                }
+            } catch (error: Exception) {
+                android.util.Log.d("aniCe-lan", "TCP user timeout unavailable type=${error.javaClass.simpleName}")
+            }
             if (closed) throw SessionException(SessionFailure.CANCELLED)
         }
 

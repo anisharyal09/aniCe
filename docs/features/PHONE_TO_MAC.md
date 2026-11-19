@@ -43,10 +43,4 @@ If access stays blocked after a restart:
 
 Run one aniCe copy at a time. Branch folders share app identity and device state. Development and distribution signatures can need separate approval.
 
-For a developer-only reset of aniCe's Event Posting decision:
-
-```sh
-tccutil reset PostEvent io.github.anisharyal09.anice
-```
-
-Request access again afterward. This resets consent; it does not grant it. See [Apple's reset guide](https://developer.apple.com/documentation/xcode/resetting-access-to-protected-resources-in-macos).
+Developer permission tools are documented in the [Mac setup](../../apps/macos/README.md).

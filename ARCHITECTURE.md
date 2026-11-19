@@ -9,7 +9,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 ## Platform-Native Device Identity
 
 - **Android:** P-256 signing keys in `AndroidKeyStore`, with actual hardware/software protection reported and metadata excluded from backup.
-- **macOS:** Actor-isolated P-256 lifecycle through Security and Keychain. Current app builds select development Keychain storage; the separate signed backend prefers Secure Enclave when available and still requires verification.
+- **macOS:** Actor-isolated P-256 lifecycle through Security and Keychain. Current app builds select development Keychain storage. The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements.
 - **Boundary Format:** Signatures use ASN.1 DER at the native identity boundary. Identity reset retires sessions and automatic connection setup; trust bound to the previous identity no longer authorizes connections, so devices must pair again. It does not erase the other device's stored records.
 - **Specifications & Decisions:** Defined in [ADR 0001 (Device Identity)](docs/decisions/0001-provisional-device-identity.md) and enforced by the [Identity Schema](protocol/schemas/identity.schema.json) with test cases in [`identity-vectors.json`](protocol/test-vectors/identity-vectors.json).
 
@@ -48,7 +48,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
   - Vectors: [`discovery-vectors.json`](protocol/test-vectors/discovery-vectors.json)
-- **LAN Transport:** Anonymous Bonjour/NSD discovery (`_anice._tcp`) and a five-byte TCP frame header with bounded envelopes. Android streams resolved Wi-Fi discovery candidates into selected-peer authentication during a bounded browse; Mac accepts local connections. LAN carries connection checks, subscribed media DATA and preferred file-transfer DATA, with a 4,000-byte standard plaintext bound or a 524,416-byte plaintext bound under negotiated profile 4 (legacy profile 3: 262,144 bytes). BLE retains standard records.
+- **LAN Transport:** Authenticated BLE IPv4 locators precede bounded anonymous Bonjour/NSD discovery (`_anice._tcp`); manual LAN remains available without BLE. A five-byte TCP frame header carries bounded envelopes. Android authenticates direct and resolved Wi-Fi candidates against the selected peer; Mac accepts local connections. LAN carries connection checks, subscribed media DATA and preferred file-transfer DATA, with a 4,000-byte standard plaintext bound or a 524,416-byte plaintext bound under negotiated profile 4 (legacy profile 3: 262,144 bytes). BLE retains standard records.
   - Mac frame assembly, submission accounting and watchdogs run in a transport actor; Android socket work runs on IO dispatchers. Frame parsing samples time once per receive buffer, retaining queue/nonce bounds. Secured encrypted-frame assembly allows ten seconds without byte progress, capped at sixty seconds total; pre-readiness assembly remains bounded to ten seconds.
   - Contract: [LAN Binding Contract](protocol/lan/README.md)
   - Lifecycle: [Independent LAN Connections](docs/LAN_CONNECTIONS.md)
@@ -56,21 +56,23 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
   - Vectors: [`lan-vectors.json`](protocol/test-vectors/lan/lan-vectors.json)
 - **Concurrent Coexistence:** Simultaneous BLE and LAN sessions to the same pinned peer with independent session keys, nonces, and counters under a shared reservation lock.
 - **Ownership:** Android idle LAN follows its configured background timeout after final activity stop or screen lock; bounded pickers, user-approved transfer-service leases and companion remote-playback demand retain active work. Network loss still retires the channel. Mac window and menu companion share its LAN owner; sleep and Quit retire it. Authenticated BLE rendezvous, enabled by default unless explicitly disabled, coordinates bounded LAN admission on BLE connection events, live BLE feature activity and feature demand while Android is foreground and interactive or holds an eligible picker, transfer or companion media lease. Every feature callback is gated by the authenticated channel instance, so a late retirement, capacity event or DATA callback from an old BLE/LAN session cannot affect its replacement.
+- **Demand policy:** Features share the same LAN owners, trust and native eligibility gates. New user file actions use rendezvous-v2 state 5 to resume transport-only Disconnect when automatic LAN is enabled; ordinary feature demand and transfer recovery use state 4 without that exception. Neither overrides connection Pause, disabled automation or identity/trust invalidation. See [automatic rendezvous](protocol/lan/AUTOMATIC.md).
 
 ---
 
-## Encrypted Liveness & BLE Session Renewal
+## Encrypted Liveness & Session Renewal
 
-- **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG after 60 seconds without authenticated activity, with monotonic deadlines.
+- **Encrypted Liveness:** HELLO/ACK negotiation and Android-initiated PING/PONG with monotonic deadlines. BLE uses sixty seconds without activity and a twenty-second reply budget; LAN uses ten seconds for each, alongside bounded native TCP failure detection and generation-scoped checks prompted by peer BLE state.
 - **Event-Driven Idle:** Connection maintenance replaced earlier periodic 1-second polling loops with absolute monotonic deadline waits and transport events. Quiet deadline evaluation performs zero storage or Keystore/Keychain reads; full native identity and active-trust validation are enforced on authenticated operations.
-- **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed. Manual LAN requires another Connect after expiry; automatic LAN waits for a connection event or feature demand before establishing another session through authenticated BLE rendezvous.
+- **Automatic BLE Renewal:** Fresh EDHOC at 55 minutes or the `2^20 - 1024` record threshold. The old session retires before reconnection; keys and counters are never resumed.
+- **LAN Fast-Path and Renewal:** Authenticated BLE rendezvous v2 supplies a numeric IPv4 locator before Bonjour registration, with bounded mDNS fallback. Mutually capable LAN peers use authenticated directional drain barriers and fresh EDHOC/readiness at the same renewal thresholds without closing TCP or replacing the feature-channel instance. Old cryptographic material is retired, not updated or resumed. Transfer waits account for the bounded maintenance interval; native owner/job work leases survive it. Legacy LAN peers retain hard expiry.
 - **Specifications & Decisions:** Keepalive envelopes, event-driven scheduling, and renewal thresholds are specified in the [Session Protocol Contract](protocol/session/README.md) and recorded in [ADR 0005 (EDHOC Secure Sessions)](docs/decisions/0005-edhoc-secure-sessions.md).
 
 ---
 
 ## Now Playing
 
-One application-scoped MacPlaybackModel owns playback state, selection and observation leases; its MediaProcessBridge owns the packaged native adapter and MediaSessionLink owns subscriptions. Android controls this owner through one existing secured channel, preferring foreground LAN and using BLE otherwise. Background requires existing companion ownership. Artwork stays on LAN; channel replacement requires fresh state and never replays commands.
+One application-scoped MacPlaybackModel owns playback state, selection and observation leases; its MediaProcessBridge owns the packaged native adapter and MediaSessionLink owns subscriptions. Android controls this owner through one existing secured channel, preferring compatible LAN and using BLE otherwise. Background requires existing companion ownership; bounded active-playback demand can retain LAN. Artwork stays on LAN; channel replacement requires fresh state and never replays commands, while successful retained-socket renewal preserves the channel and subscription.
 
 Mac output volume and verified selected-player volume are independently negotiated controls. See [feature behavior](docs/features/NOW_PLAYING.md), [media contracts](protocol/media/README.md) and the [playback decision](docs/decisions/features/now-playing/0009-remote-playback-presentation.md).
 
@@ -106,7 +108,7 @@ App registers media and transfer FeatureHandlers before DATA delivery. Android f
 
 Native navigation types and Features destination content are separated from app shells. MacPlaybackModel is the sole playback authority; its owned process bridge fences native delivery by launch generation, and its session link coalesces logical snapshots before sealing. The fixture generator lives beside the media fixture; native and interchange scripts remain supported entry points. `python3 scripts/check-structure.py` checks dependency direction, local documentation links and explicit Xcode membership.
 
-Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Feature-owned recovery journals retain prepared jobs and verified prefixes across app restarts for 15 minutes. Native hard-link publication can be reconciled by file identity and SHA-256; ambiguous provider/copy publication requires confirmation. Coordinated LAN renewal remains unimplemented.
+Approved Android reception uses document-tree grants and provider preflight. TransferService presents foreground-approved jobs through the existing owner; unapproved offers have no transfer background lease. Mac publication uses an exclusive same-filesystem link. Feature-owned recovery journals retain prepared jobs and verified prefixes across app restarts for 15 minutes. Native hard-link publication can be reconciled by file identity and SHA-256; ambiguous provider/copy publication requires confirmation. Negotiated LAN renewal preserves the active batch and uses no checkpoint restart; transport loss retains existing feature-owned recovery.
 
 ## Messages (SMS relay)
 

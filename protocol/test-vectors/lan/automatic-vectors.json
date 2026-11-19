@@ -1,0 +1,260 @@
+{
+  "valid": [
+    {
+      "name": "v1-state-0",
+      "payloadHex": "8369616e694365204c414e0100"
+    },
+    {
+      "name": "v1-state-1",
+      "payloadHex": "8369616e694365204c414e0101"
+    },
+    {
+      "name": "v1-state-2",
+      "payloadHex": "8369616e694365204c414e0102"
+    },
+    {
+      "name": "v1-state-3",
+      "payloadHex": "8369616e694365204c414e0103"
+    },
+    {
+      "name": "v1-state-4",
+      "payloadHex": "8369616e694365204c414e0104"
+    },
+    {
+      "name": "v2-state-0",
+      "payloadHex": "8469616e694365204c414e020080"
+    },
+    {
+      "name": "v2-state-1",
+      "payloadHex": "8469616e694365204c414e020180"
+    },
+    {
+      "name": "v2-state-2",
+      "payloadHex": "8469616e694365204c414e020280"
+    },
+    {
+      "name": "v2-state-3",
+      "payloadHex": "8469616e694365204c414e020380"
+    },
+    {
+      "name": "v2-state-4",
+      "payloadHex": "8469616e694365204c414e020480"
+    },
+    {
+      "name": "v2-state-5",
+      "payloadHex": "8469616e694365204c414e020580"
+    },
+    {
+      "name": "profile-1",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c82201"
+    },
+    {
+      "name": "profile-3",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c82203"
+    },
+    {
+      "name": "profile-4",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c82204"
+    },
+    {
+      "name": "port-min",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e31300104"
+    },
+    {
+      "name": "port-max",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019ffff04"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "payloadHex": "",
+      "reason": "malformed"
+    },
+    {
+      "name": "truncated",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c822",
+      "reason": "malformed"
+    },
+    {
+      "name": "trailing",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c8220400",
+      "reason": "malformed"
+    },
+    {
+      "name": "indefinite",
+      "payloadHex": "9f69616e694365204c414e0202836a3139322e302e322e313019c82204ff",
+      "reason": "malformed"
+    },
+    {
+      "name": "nonminimal-version",
+      "payloadHex": "8469616e694365204c414e180202836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "wrong-tag",
+      "payloadHex": "84656f746865720202836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "extra-field",
+      "payloadHex": "8569616e694365204c414e0202836a3139322e302e322e313019c8220400",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-version",
+      "payloadHex": "8469616e694365204c414ef502836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "boolean-type",
+      "payloadHex": "8469616e694365204c414e02f5836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-version",
+      "payloadHex": "8469616e694365204c414e0902836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "unknown-type",
+      "payloadHex": "8469616e694365204c414e0209836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "non-array-fields",
+      "payloadHex": "8469616e694365204c414e0202a0",
+      "reason": "malformed"
+    },
+    {
+      "name": "oversized",
+      "payloadHex": "8469616e694365204c414e02028178807878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "reason": "malformed"
+    },
+    {
+      "name": "float",
+      "payloadHex": "8469616e694365204c414e02f93c00836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "null",
+      "payloadHex": "8469616e694365204c414e0202f6",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-127.0.0.1",
+      "payloadHex": "8469616e694365204c414e020283693132372e302e302e3119c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-0.0.0.0",
+      "payloadHex": "8469616e694365204c414e02028367302e302e302e3019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-0.2.3.4",
+      "payloadHex": "8469616e694365204c414e02028367302e322e332e3419c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-224.0.0.1",
+      "payloadHex": "8469616e694365204c414e020283693232342e302e302e3119c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-255.255.255.255",
+      "payloadHex": "8469616e694365204c414e0202836f3235352e3235352e3235352e32353519c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-192.168.01.1",
+      "payloadHex": "8469616e694365204c414e0202836c3139322e3136382e30312e3119c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-192.168.1.256",
+      "payloadHex": "8469616e694365204c414e0202836d3139322e3136382e312e32353619c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-localhost",
+      "payloadHex": "8469616e694365204c414e020283696c6f63616c686f737419c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-192.0.2",
+      "payloadHex": "8469616e694365204c414e020283673139322e302e3219c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-::1",
+      "payloadHex": "8469616e694365204c414e020283633a3a3119c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "ip-1.2.3.4%5",
+      "payloadHex": "8469616e694365204c414e02028369312e322e332e34253519c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "port-zero",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e31300004",
+      "reason": "malformed"
+    },
+    {
+      "name": "port-overflow",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e31301a0001000004",
+      "reason": "malformed"
+    },
+    {
+      "name": "port-bool",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e3130f504",
+      "reason": "malformed"
+    },
+    {
+      "name": "profile-probe",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c82202",
+      "reason": "malformed"
+    },
+    {
+      "name": "profile-bool",
+      "payloadHex": "8469616e694365204c414e0202836a3139322e302e322e313019c822f5",
+      "reason": "malformed"
+    },
+    {
+      "name": "short-endpoint",
+      "payloadHex": "8469616e694365204c414e0202826a3139322e302e322e313019c822",
+      "reason": "malformed"
+    },
+    {
+      "name": "endpoint-in-state-1",
+      "payloadHex": "8469616e694365204c414e0201836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "endpoint-in-user-demand",
+      "payloadHex": "8469616e694365204c414e0205836a3139322e302e322e313019c82204",
+      "reason": "malformed"
+    },
+    {
+      "name": "v1-user-demand",
+      "payloadHex": "8369616e694365204c414e0105",
+      "reason": "malformed"
+    },
+    {
+      "name": "v2-unknown-state",
+      "payloadHex": "8469616e694365204c414e020680",
+      "reason": "malformed"
+    },
+    {
+      "name": "v1-with-fields",
+      "payloadHex": "8469616e694365204c414e010280",
+      "reason": "malformed"
+    },
+    {
+      "name": "v2-without-fields",
+      "payloadHex": "8369616e694365204c414e0202",
+      "reason": "malformed"
+    }
+  ]
+}

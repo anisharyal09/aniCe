@@ -34,9 +34,9 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
   <strong>v0.9.0-beta.3</strong> (Apple Silicon macOS 14+ · Android 10+) <br> <a href="docs/FIRST_INSTALL_GUIDE.md">First Installation Guide</a> · <a href="docs/GETTING_STARTED.md">Getting Started</a>
 </p>
 
-- **🔒 100% Private & Local:** Zero accounts, zero relay servers, zero analytics. Your feature data stays strictly local; in-app update checks contact GitHub Releases directly.
-- **⚡ Built from Scratch:** Built in native Swift 6 and SwiftUI on macOS, and Kotlin with Jetpack Compose (Material 3) on Android.
-- **🛡️ Secure by Design:** Mutual P-256 ECDSA authentication, OPAQUE pairing, and encrypted transport protect every interaction between paired devices.
+- **Local connections:** No accounts, relays or analytics. BLE/LAN feature data stays peer-to-peer; updates contact GitHub.
+- **Native apps:** Swift/SwiftUI on Mac and Kotlin/Compose on Android.
+- **Trusted peers:** Mutual pairing, pinned EDHOC authentication and encrypted BLE/LAN records. Mac-to-Android HID uses system Bluetooth separately.
 
 ## Features
 
@@ -50,11 +50,10 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 ### File sharing and clipboard
 
 - **[File transfer](docs/features/FILE_TRANSFER.md):**
-  - **Send instantly:** Drag files to the screen edge (Edge Drop), drop them into the app window, or share from Android via **Share → Send to Mac**.
+   - **Send:** Drag files to Edge Drop or the app window, or use Android **Share → Send to Mac**.
   - **Receiving:** Choose a local save folder and enable automatic receiving per trusted sender. Incoming files are verified and saved without overwriting existing files.
-  - **Resilient recovery:** Interrupted transfers keep verified progress for up to 15 minutes and resume automatically over the local network or Bluetooth.
+   - **Recovery:** Interrupted transfers retain verified progress for 15 minutes. LAN can resume automatically; Bluetooth continuation after LAN loss requires an explicit action.
 - **[Clipboard sync](docs/features/CLIPBOARD.md):** Share text and links manually or enable automatic sharing separately on each device. Keep optional local history and open shared HTTP(S) links directly in the Mac browser. Android clipboard observation requires input focus; images and rich text are unsupported.
-- **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** Option–Command–V opens searchable Mac clipboard history with filters, previews, pins and keyboard selection. Return copies the selection for ordinary paste; the tray does not inject text into another app.
 
 ### Keyboard, trackpad and workspace controls
 
@@ -76,6 +75,8 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 - **Native platform stacks:** Swift 6, SwiftUI & AppKit on macOS; modern Kotlin, Jetpack Compose & Material 3 on Android.
 - **Direct peer-to-peer transport:** Bluetooth Low Energy (BLE) and framed local-network TCP streams. Zero cloud relays or external routing; update checks contact GitHub Releases directly, and Mac-to-Android control uses system Bluetooth HID.
 - **Cryptographic security:** Mutual P-256 ECDSA authentication, OPAQUE PIN pairing, an EDHOC handshake with ChaCha20-Poly1305, and directional AES-256-GCM record encryption.
+- **[LAN continuity](docs/LAN_CONNECTIONS.md):** Authenticated BLE endpoint hints precede bounded mDNS fallback. Capable peers renew through fresh EDHOC on the existing TCP socket while retaining active feature channels and native work ownership.
+  - New file actions can request enabled automatic LAN after transport Disconnect. Other features share the same eligibility policy without that exception; connection Pause remains authoritative.
 - **Platform key storage:** Cryptographic identities use Android Keystore and the macOS Login Keychain; current Mac builds do not claim Secure Enclave isolation.
 - **Zero telemetry:** No analytics, no tracking, and no telemetry uploads.
 
@@ -95,7 +96,7 @@ See [contributing](CONTRIBUTING.md) for development checks and contribution guid
 
 ## Documentation and repository structure
 
-For the complete directory of guides, feature walkthroughs, and architecture specs, see **[Documentation Directory (DOCS.md)](DOCS.md)**.
+See [Documentation](DOCS.md) for setup, feature guides, contracts and development instructions.
 
 ```text
 apps/android/       Native Android app and tests

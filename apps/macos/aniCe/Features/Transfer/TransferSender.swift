@@ -85,9 +85,10 @@ extension MacTransferModel {
     case .preferLanWithChoice: requiredTransport = "lan"
     case .bluetooth: requiredTransport = "ble"
     }
+    let userDemand = transportPolicy != .bluetooth && requestLanForSend()
     switch transportPolicy {
     case .preferAvailable:
-      if activeChannel?.descriptor.transport != "lan", onLanRequired() {
+      if activeChannel?.descriptor.transport != "lan", userDemand {
         await awaitLan(operation: operation)
       }
     case .preferLanWithChoice:
@@ -96,7 +97,7 @@ extension MacTransferModel {
         return
       }
       if !hasReadyChannel("lan", for: pinnedRecipient) {
-        if onLanRequired() { await awaitLan(operation: operation) }
+        if userDemand { await awaitLan(operation: operation) }
         guard operation == epoch else { return }
         guard !Task.isCancelled else { cancelTransfer(); return }
         guard hasReadyChannel("lan", for: pinnedRecipient) else {
@@ -136,6 +137,8 @@ extension MacTransferModel {
       return
     }
     guard peerCompatible else { failTransfer(reason: "This peer has not advertised file transfer support"); return }
+    routeNotice = initialChannel.descriptor.transport == "ble"
+      ? "Using Bluetooth, which is slower. Connect LAN for faster transfer." : nil
     if let identity = recoveryIdentity, recoveryStore != nil {
       do {
         let local = try await identity.publicIdentity().fingerprint
@@ -493,8 +496,9 @@ extension MacTransferModel {
         if let pending = receivedFileResult { fileResult = pending; receivedFileResult = nil }
         else {
           let operation = epoch
+          guard let resultChannel = activeChannel else { throw SessionFailure.cancelled }
           let deadline = Task { [weak self] in
-            do { try await Task.sleep(for: self?.confirmationTimeout ?? .seconds(30)) } catch { return }
+            do { try await waitForChannelDeadline(self?.confirmationTimeout ?? .seconds(30), on: resultChannel) } catch { return }
             guard let self, self.epoch == operation else { return }
             self.fileResultContinuation?.resume(throwing: SessionFailure.expired)
             self.fileResultContinuation = nil

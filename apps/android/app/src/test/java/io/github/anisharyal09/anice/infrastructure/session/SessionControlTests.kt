@@ -10,6 +10,43 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionControlTests {
+  @Test fun lanProbesInTenSecondsAndRequiresItsOwnPongWithinTenWithoutChangingBle() {
+    val client = SessionLiveness(false, pingAfterMillis = 10_000, pongWithinMillis = 10_000)
+    val server = SessionLiveness(true)
+    client.start(0); server.start(0)
+    val hello = requireNotNull(client.pending)
+    client.issuing(hello, 0); client.submitted(hello, 0); server.receive(hello, 0)
+    val ack = requireNotNull(server.pending)
+    server.issuing(ack, 0); server.submitted(ack, 0); client.receive(ack, 0)
+    assertEquals(10_000L, client.nextDeadline())
+    client.poll(9_999); assertNull(client.pending)
+    client.poll(10_000)
+    val ping = requireNotNull(client.pending)
+    assertEquals(SessionControl(ControlKind.PING, 0), ping)
+    client.issuing(ping, 10_000); client.submitted(ping, 10_000)
+    client.activity(19_999)
+    assertEquals(20_000L, client.nextDeadline())
+    reject(SessionFailure.CONTROL_TIMEOUT) { client.checkPongDeadline(20_000) }
+    assertEquals(60_000L, pair().first.nextDeadline())
+  }
+
+  @Test fun earlyLanPingIsCompatibleWithTheExistingResponder() {
+    val client = SessionLiveness(false, pingAfterMillis = 10_000, pongWithinMillis = 10_000)
+    val server = SessionLiveness(true)
+    client.start(0); server.start(0)
+    val hello = requireNotNull(client.pending)
+    client.issuing(hello, 0); client.submitted(hello, 0); server.receive(hello, 0)
+    val helloAck = requireNotNull(server.pending)
+    server.issuing(helloAck, 0); server.submitted(helloAck, 0); client.receive(helloAck, 0)
+    client.poll(10_000)
+    val ping = requireNotNull(client.pending)
+    client.issuing(ping, 10_000); client.submitted(ping, 10_000); server.receive(ping, 10_100)
+    val pong = requireNotNull(server.pending)
+    server.issuing(pong, 10_100); server.submitted(pong, 10_100); client.receive(pong, 10_100)
+    assertEquals(20_100L, client.nextDeadline())
+    client.checkPongDeadline(15_000)
+  }
+
   @Test fun cancellingAnAdmittedSendPreservesHealthyChannelAndPeerSequence() = runBlocking {
     val helper = SessionTests()
     val fixture = helper.root().getJSONArray("valid").getJSONObject(0)

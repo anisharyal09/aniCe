@@ -2,7 +2,6 @@
 // Routes existing device, pairing and diagnostic presentations while preserving native lifecycle ownership.
 package io.github.anisharyal09.anice.app
 
-import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -42,6 +41,7 @@ import io.github.anisharyal09.anice.features.pairing.PairingViewModel
 import io.github.anisharyal09.anice.features.pairing.completedPairingPeer
 import io.github.anisharyal09.anice.features.session.SessionPanel
 import io.github.anisharyal09.anice.features.session.SessionViewModel
+import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
 import io.github.anisharyal09.anice.ui.theme.Appearance
 import io.github.anisharyal09.anice.ui.theme.appearancePreference
 import io.github.anisharyal09.anice.ui.theme.saveAppearance
@@ -113,9 +113,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 session.request(paired)
                 if (automaticAfterPairing && nearbyOwner.available) backgroundSetupPeer = paired
             } else if (automaticAfterPairing && nearbyOwner.available) {
-                context.startActivity(Intent().setClassName(context.packageName,
-                    "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
-                    .putExtra("peer", paired.deviceId).putExtra("enable", true))
+                context.startActivity(companionSetupIntent(context, paired.deviceId, enable = true))
             } else session.request(paired)
         }
     }
@@ -260,9 +258,7 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                         style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = {
                         backgroundSetupPeer = null
-                        context.startActivity(Intent().setClassName(context.packageName,
-                            "${context.packageName}.features.backgroundprobe.CompanionProbeActivity")
-                            .putExtra("peer", backgroundPeer.deviceId).putExtra("enable", true))
+                        context.startActivity(companionSetupIntent(context, backgroundPeer.deviceId, enable = true))
                     }) { Text("Set up") }
                     TextButton(onClick = { backgroundSetupPeer = null }) { Text("Later") }
                 }

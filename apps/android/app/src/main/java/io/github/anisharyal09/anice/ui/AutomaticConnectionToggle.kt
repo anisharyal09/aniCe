@@ -10,14 +10,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun AutomaticConnectionToggle(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit, label: String = "Connect automatically", description: String? = null, compact: Boolean = false) {
+fun AutomaticConnectionToggle(
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    label: String = "Connect automatically",
+    description: String? = null,
+    compact: Boolean = false,
+    descriptionBottomPadding: Dp? = null,
+) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
         .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
         .semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(vertical = if (description == null) 0.dp else if (compact) 6.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
+        val inset = if (description == null) 0.dp else if (compact) 6.dp else 12.dp
+        Column(Modifier.weight(1f).padding(top = inset, bottom = descriptionBottomPadding ?: inset), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             if (description != null) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -9,6 +9,8 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanFilter
 import android.companion.*
 import android.content.IntentSender
+import android.content.Context
+import android.content.Intent
 import android.os.*
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +44,10 @@ internal fun hasConnectionSetup(peer: DeviceIdentity?, selectedId: String?, sele
 
 internal fun automaticSetupReady(peer: DeviceIdentity?, available: Boolean, busy: Boolean) =
   peer != null && available && !busy
+
+// Application IDs gain preview suffixes; compiled activity classes retain the Kotlin namespace.
+internal fun companionSetupIntent(context: Context, peerId: String, enable: Boolean = false) =
+  Intent(context, CompanionProbeActivity::class.java).putExtra("peer", peerId).putExtra("enable", enable)
 
 /** Native device-scoped setup; the system chooser grants ownership, never peer authentication. */
 class CompanionProbeActivity : ComponentActivity() {

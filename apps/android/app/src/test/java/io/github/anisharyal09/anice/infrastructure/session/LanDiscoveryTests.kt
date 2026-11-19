@@ -5,6 +5,7 @@ package io.github.anisharyal09.anice.infrastructure.session
 import io.github.anisharyal09.anice.infrastructure.lan.LanDiscoveryCandidates
 import io.github.anisharyal09.anice.infrastructure.lan.NsdResolutionFailure
 import io.github.anisharyal09.anice.infrastructure.lan.consumeLanEndpoints
+import io.github.anisharyal09.anice.infrastructure.lan.consumeLanCandidates
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.flow.toList
@@ -12,6 +13,72 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LanDiscoveryTests {
+    @Test fun missingAuthenticatedEndpointStartsOnlyBoundedDiscovery() = runBlocking {
+        for (ready in listOf(true, false)) {
+            var browses = 0
+            val attempts = mutableListOf<Pair<String, Boolean>>()
+            val discovered = (0..20).map { "discovered-$it" }
+            assertEquals(ready, consumeLanCandidates<String>(null, discover = {
+                browses++; kotlinx.coroutines.flow.flowOf(*discovered.toTypedArray())
+            }, key = { it }) { endpoint, direct -> attempts.add(endpoint to direct); ready })
+            assertEquals(1, browses)
+            assertEquals(discovered.take(if (ready) 1 else 8).map { it to false }, attempts)
+        }
+    }
+
+    @Test fun directReadinessNeverCreatesDiscovery() = runBlocking {
+        var browses = 0
+        val attempts = mutableListOf<Pair<String, Boolean>>()
+        assertTrue(consumeLanCandidates("direct", discover = {
+            browses++; kotlinx.coroutines.flow.flowOf("discovered")
+        }, key = { it }) { endpoint, direct -> attempts.add(endpoint to direct); true })
+        assertEquals(0, browses)
+        assertEquals(listOf("direct" to true), attempts)
+    }
+
+    @Test fun discoveryWaitsForDirectFailureAndSharesItsEndpointBound() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var browses = 0
+        val attempts = mutableListOf<String>()
+        val work = async {
+            consumeLanCandidates("same", discover = {
+                browses++; kotlinx.coroutines.flow.flowOf("same", *(0..20).map { "fallback-$it" }.toTypedArray())
+            }, key = { it }) { endpoint, direct ->
+                attempts.add(endpoint)
+                if (direct) { entered.complete(Unit); release.await() }
+                false
+            }
+        }
+        try {
+            withTimeout(1000) { entered.await() }
+            assertEquals(0, browses)
+            release.complete(Unit)
+            assertFalse(withTimeout(1000) { work.await() })
+            assertEquals(1, browses)
+            assertEquals(listOf("same") + (0..6).map { "fallback-$it" }, attempts)
+        } finally { release.complete(Unit); work.cancelAndJoin() }
+    }
+
+    @Test fun directAuthenticationFailureAndCancellationDoNotBrowse() = runBlocking {
+        var browses = 0
+        try {
+            consumeLanCandidates("direct", discover = {
+                browses++; kotlinx.coroutines.flow.flowOf("fallback")
+            }, key = { it }) { _, _ -> throw SessionException(SessionFailure.AUTHENTICATION) }
+            fail("Authentication failure was swallowed")
+        } catch (error: SessionException) { assertEquals(SessionFailure.AUTHENTICATION, error.reason) }
+        val entered = CompletableDeferred<Unit>()
+        val work = launch {
+            consumeLanCandidates("direct", discover = {
+                browses++; kotlinx.coroutines.flow.flowOf("fallback")
+            }, key = { it }) { _, _ -> entered.complete(Unit); awaitCancellation() }
+        }
+        withTimeout(1000) { entered.await(); work.cancelAndJoin() }
+        assertTrue(work.isCancelled)
+        assertEquals(0, browses)
+    }
+
     @Test fun ownerCancellationRetiresDiscoveryWithoutBecomingAFailure() = runBlocking {
         val candidates = LanDiscoveryCandidates<String>()
         val resolving = CompletableDeferred<Unit>()

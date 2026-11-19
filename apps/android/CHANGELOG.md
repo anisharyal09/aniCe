@@ -4,8 +4,6 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
-Preparing the first public beta. Entries remain unreleased until publication.
-
 ### Added
 
 - Add credential-scoped private nicknames and an explicit Use nickname choice
@@ -22,6 +20,8 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 - Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests; not yet wired to onboarding.
 
+- Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
+- Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
 - Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
 - **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.
@@ -48,6 +48,12 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Changed
 
+- Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
+- Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
+- Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.
+- Fence pending Resume lookups on Cancel; restore a retained companion monitor on foreground return without rearming from duplicate presence callbacks.
+- Make Resume one-click, show the armed automatic state and group the existing pause-menu options.
+- Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.
 - Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
 - Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
 - Present update review in a dismissible bottom sheet with scalable native Markdown, rectangular themed actions, sticky progress and secondary actions under More; retain the reviewed version during automatic refreshes.
@@ -102,6 +108,10 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 ### Fixed
 
+- Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
+- Route automatic setup through the compiled activity class in normal and isolated preview packages.
+- Preserve paused setup and release synthetic work leases in native tests.
+- Correct LAN background-timeout and approved-work diagnostics.
 - Commit identity and trust journals with checked file sync, atomic replacement and directory sync; restore legacy backup-only journals without resetting trust.
 - Bind transfer status waiters to their channel and job epoch; retain verified partial checkpoints and destination grants after publication failure.
 - Resynchronize notifications on capacity restoration, retain bounded capability/action-result retries, and leave incomplete snapshots open rather than dropping current state.
@@ -241,7 +251,7 @@ Preparing the first public beta. Entries remain unreleased until publication.
 
 - Opt-in physical connected-idle CPU test with channel continuity, encrypted-operation validation budgets and unchanged identity/trust journal assertions.
 - Foreground LAN sessions with Wi-Fi-bound sockets, scoped IPv6, bounded NSD resolution and independent Bluetooth/local-network controls.
-- Notification-free companion auto-connect on API 31+ in Debug and Release, with pinned saved setup, a device-level preference and Disconnect pause. Physical endurance and minimum-OS acceptance remain pending.
+- Notification-free companion auto-connect on API 31+ in Debug and Release, with pinned saved setup, a device-level preference and Disconnect pause.
 - Coordinated fresh EDHOC renewal before lifetime/record limits, with encrypted backpressure, Stop and key-reuse regressions.
 - HELLO/ACK compatibility and encrypted PING/PONG in the shared session controller; legacy peers retain manual operation and unsupported background probes stop.
 - Adversarial control tests for malformed encodings, ordering, deadlines, backpressure, transport failure and hard session lifetime.
