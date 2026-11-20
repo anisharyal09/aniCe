@@ -126,9 +126,6 @@ def membership_errors(root, project):
         helper_inputs.add(base / 'aniCe/Update/UpdateHelper/main.swift')
         declared_inputs = {value for obj in objects.values() if obj.get('isa') == 'PBXShellScriptBuildPhase' for value in obj.get('inputPaths', [])}
         for path in folder.rglob('*.swift'):
-            if path == base / 'aniCeTests/NowPlaying/AdapterChecks.swift':
-                if counts[path.resolve()] != 0: errors.append('standalone adapter checks must not enter hosted test membership')
-                continue
             if path in helper_inputs:
                 if '$(SRCROOT)/' + str(path.relative_to(base)) not in declared_inputs:
                     errors.append(f'helper: missing build input {path.relative_to(root)}')

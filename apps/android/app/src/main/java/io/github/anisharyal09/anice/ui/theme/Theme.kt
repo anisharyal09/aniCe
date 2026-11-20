@@ -207,8 +207,8 @@ val ColorScheme.wordmarkAccent: Color
 
 @Composable
 fun AniCeWordmark(
-    style: TextStyle = MaterialTheme.typography.titleMedium,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.titleMedium
 ) {
     val accent = MaterialTheme.colorScheme.wordmarkAccent
     Text(

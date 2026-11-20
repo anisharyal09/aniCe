@@ -107,8 +107,9 @@ class LanPeerLossRegressionTest {
 
     private suspend fun fixture(now: AtomicLong): Fixture = withContext(Dispatchers.Main) {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
-        assumeTrue("Requires the disposable native-regression app",
-            app.packageName == "io.github.anisharyal09.anice.preview.transfer.regression")
+        assumeTrue("Requires an isolated preview or native-regression app",
+            app.packageName in setOf("io.github.anisharyal09.anice.preview",
+                "io.github.anisharyal09.anice.preview.transfer.regression"))
         Fixture(app, now).also { it.controller.foreground(it.presentation) }
     }
 

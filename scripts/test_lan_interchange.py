@@ -2,10 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Rejects skipped, partial, misidentified and crashed native LAN instrumentation results.
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
 import contextlib
 import io
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location(
     'lan_interchange', Path(__file__).with_name('verify-lan-interchange.py'))
@@ -54,6 +60,25 @@ class LanInstrumentationGateTests(unittest.TestCase):
         for name, result in cases.items():
             with self.subTest(name=name), self.assertRaises(AssertionError):
                 harness.require_test(result)
+
+
+    def test_optimized_python_cannot_turn_invalid_evidence_into_a_pass(self):
+        code = """
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("lan", sys.argv[1])
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+try:
+    harness.require_test("OK (1 test)\\nINSTRUMENTATION_CODE: -1\\n")
+except AssertionError:
+    raise SystemExit(0)
+raise SystemExit("Optimized Python accepted missing test events")
+"""
+        result = subprocess.run(
+            [sys.executable, "-O", "-c", code, str(Path(harness.__file__))],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class LanDeadlineInventoryTests(unittest.TestCase):
@@ -113,7 +138,8 @@ class LanBenchmarkGateTests(unittest.TestCase):
         self.assertFalse(harness.benchmark_deadline_result(progress, 100 * 1048576, 32)['throughputPassed'])
         invalid = [('completed', True), ('throughputPassed', True), ('elapsedSeconds', 1),
                    ('elapsedSeconds', float('nan')), ('androidReceivedBytes', -1),
-                   ('androidAcknowledgedBytes', 101 * 1048576)]
+                   ('androidAcknowledgedBytes', 101 * 1048576), ('androidReceivedBytes', True),
+                   ('androidCpuMs', float('inf')), ('androidCpuMs', True)]
         self.assertGreaterEqual(len(invalid), 6)
         for key, value in invalid:
             with self.subTest(key=key, value=value), self.assertRaises(AssertionError):
@@ -136,6 +162,57 @@ class LanBenchmarkGateTests(unittest.TestCase):
         del mac['macReceiveMiBs']
         with self.assertRaises(KeyError):
             harness.benchmark_result(android, mac, 100 * 1048576, 32)
+
+
+class LanEvidenceTests(unittest.TestCase):
+    def test_each_run_is_isolated_and_cleanup_failure_cannot_persist_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            helper = root / "helper"
+            helper.write_text("#!/bin/sh\nexit 0\n")
+            helper.chmod(0o755)
+            previous = root / "result.json"
+            previous.write_text('{"prior": true}\n')
+            for cleanup_failure in (True, False):
+                before = set(root.glob("anice-lan-native-*"))
+
+                def run(command, **kwargs):
+                    if command[:2] == ['adb', '-s']:
+                        if command[-3:-1] == ['rm', '-f'] and cleanup_failure:
+                            raise subprocess.CalledProcessError(1, command)
+                        if command[-1].endswith('/client.json'):
+                            return SimpleNamespace(stdout='{"identity": {}}', returncode=0)
+                        if command[-1].endswith('/result.json'):
+                            return SimpleNamespace(stdout=json.dumps(dict(
+                                tcp=True, controls=True, bidirectionalBytes=4000, family='ipv4')), returncode=0)
+                    return SimpleNamespace(stdout='', returncode=0)
+
+                def popen(command, **kwargs):
+                    if command[0] == 'adb':
+                        kwargs['stdout'].write(PASS)
+                    return SimpleNamespace(stdin=io.StringIO(), returncode=0,
+                                           poll=lambda: 0, wait=lambda **_: 0)
+
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(patch.object(sys, 'argv', [
+                        'verify-lan-interchange.py', '--serial', 'test-device',
+                        '--mac-binary', str(helper), '--output', str(root)]))
+                    stack.enter_context(patch.object(harness.subprocess, 'run', side_effect=run))
+                    stack.enter_context(patch.object(harness.subprocess, 'Popen', side_effect=popen))
+                    stack.enter_context(patch.object(harness, 'read_event', side_effect=[
+                        {'cleanupNamespace': 'isolated'},
+                        dict(cleanup=True, tcp=True, bidirectionalBytes=4000)]))
+                    stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                    if cleanup_failure:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            harness.main()
+                    else:
+                        harness.main()
+                outputs = set(root.glob("anice-lan-native-*")) - before
+                self.assertEqual(len(outputs), 1)
+                result = outputs.pop() / 'result.json'
+                self.assertEqual(result.exists(), not cleanup_failure)
+                self.assertEqual(previous.read_text(), '{"prior": true}\n')
 
 
 if __name__ == '__main__':

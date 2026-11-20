@@ -225,7 +225,8 @@ struct TransferNotificationContent: Equatable {
     super.init()
     if let native = center as? UNUserNotificationCenter {
       // Remove banners from earlier builds without touching Messages or Find Device notifications.
-      native.getDeliveredNotifications { notices in
+      Task { @MainActor in
+        let notices = await native.deliveredNotifications()
         let categories = [Category.offer, Category.result, Category.paused, Category.pausedSender]
         let ids = notices.filter { categories.contains($0.request.content.categoryIdentifier) }.map { $0.request.identifier }
         native.removeDeliveredNotifications(withIdentifiers: ids)

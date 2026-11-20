@@ -5,6 +5,7 @@ package io.github.anisharyal09.anice.infrastructure.pairing
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.infrastructure.identity.IdentityCrypto
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import java.math.BigInteger
 import java.security.AlgorithmParameters
 import java.security.KeyFactory
@@ -33,6 +34,10 @@ class PairingSasNativeTest {
         repeat(vectors.length()) { index ->
             val row = vectors.getJSONObject(index)
             fun bytes(name: String) = hex(row.getString(name + "Hex"))
+            for ((name, platform) in listOf("clientIdentity" to "android", "serverIdentity" to "macos")) {
+                val identity = DeviceIdentity.fromJson(JSONObject(String(bytes(name), Charsets.UTF_8)))
+                assertEquals(platform, identity.platform)
+            }
             val ci = PairingSas.identityCommitment(1, bytes("clientIdentitySalt"), bytes("clientIdentity"))
             val si = PairingSas.identityCommitment(2, bytes("serverIdentitySalt"), bytes("serverIdentity"))
             assertArrayEquals(bytes("clientIdentityCommitment"), ci)

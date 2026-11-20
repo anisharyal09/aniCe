@@ -20,8 +20,9 @@ import org.junit.runner.RunWith
 class LanSocketPolicyRegressionTest {
     @Test fun configuringTcpUserTimeoutKeepsTheOriginalSocketUsable() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        assumeTrue("Requires the disposable native-regression app",
-            context.packageName == "io.github.anisharyal09.anice.preview.transfer.regression")
+        assumeTrue("Requires an isolated preview or native-regression app",
+            context.packageName in setOf("io.github.anisharyal09.anice.preview",
+                "io.github.anisharyal09.anice.preview.transfer.regression"))
         val manager = context.getSystemService(ConnectivityManager::class.java)
         val network = manager.allNetworks.firstOrNull {
             manager.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true

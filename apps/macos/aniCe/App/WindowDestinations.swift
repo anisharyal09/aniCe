@@ -599,7 +599,7 @@ private struct SettingsSectionLayout: Layout {
 @MainActor final class SettingsScrollCoordinator {
   var anchors: [String: NSView] = [:]
 
-  func scroll(to id: String, animated: Bool, completion: @escaping () -> Void) {
+  func scroll(to id: String, animated: Bool, completion: @escaping @MainActor @Sendable () -> Void) {
     guard let anchor = anchors[id], let scroll = anchor.enclosingScrollView,
           let document = scroll.documentView else { return }
     document.layoutSubtreeIfNeeded()
@@ -624,8 +624,10 @@ private struct SettingsSectionLayout: Layout {
         context.duration = 0.18
         clip.animator().setBoundsOrigin(origin)
       } completionHandler: {
-        scroll.reflectScrolledClipView(clip)
-        completion()
+        Task { @MainActor in
+          scroll.reflectScrolledClipView(clip)
+          completion()
+        }
       }
     } else {
       clip.scroll(to: origin)

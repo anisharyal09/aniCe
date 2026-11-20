@@ -685,9 +685,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       state.status = "Message exceeds 24 KiB. Shorten it before sending."
       return
     }
-    guard let link = capableLink(request.peerKey), state.send == nil else {
+    guard capableLink(request.peerKey) != nil, state.send == nil else {
       state.status = state.send == nil ? "Connect your phone to send replies" : "A reply is already in flight"
-      await notifier.post(failureNote(request.peerKey, request.peerName, request.address, request.threadId))
+      _ = await notifier.post(failureNote(request.peerKey, request.peerName, request.address, request.threadId))
       return
     }
     submit(request.peerKey, address: request.address, text: request.text, threadId: request.threadId, subscriptionId: 0)
@@ -1065,7 +1065,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       dropPending(state, send)
       state.status = code == 1 ? "Allow SMS on your phone to send replies" : code == 5 ? "Not confirmed; it may have been sent" : "The reply was rejected"
       if code == 1 || code == 5 {
-        await notifier.post(failureNote(key(send.descriptor.peer), send.descriptor.peer.deviceName, send.address, send.threadId))
+        _ = await notifier.post(failureNote(key(send.descriptor.peer), send.descriptor.peer.deviceName, send.address, send.threadId))
       }
     }
     schedule()

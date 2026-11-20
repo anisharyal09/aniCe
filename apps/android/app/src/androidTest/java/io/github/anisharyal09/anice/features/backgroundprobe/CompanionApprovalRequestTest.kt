@@ -6,6 +6,7 @@ import android.companion.BluetoothLeDeviceFilter
 import android.bluetooth.le.ScanFilter
 import android.os.ParcelUuid
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import io.github.anisharyal09.anice.infrastructure.bluetooth.BlePayloadCodec
 import io.github.anisharyal09.anice.infrastructure.connections.CompanionSetupTarget
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
@@ -15,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@SdkSuppress(minSdkVersion = 31)
 class CompanionApprovalRequestTest {
     @Test fun enrollmentAlwaysUsesSingleDeviceApprovalForThePinnedMac() {
         val peer = DeviceIdentity("fixture", "Verified Mac", "macos", "key", "fingerprint")

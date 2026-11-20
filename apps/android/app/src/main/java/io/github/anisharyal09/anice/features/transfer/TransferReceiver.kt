@@ -205,7 +205,7 @@ internal fun TransferController.startAutomaticReceiveIfEligible() {
             }
             if (operation != epoch || (state as? TransferState.IncomingOffer)?.batch?.id != pending.batchId ||
                 !canAutomaticallyReceive()) {
-                withContext(NonCancellable + receiveDispatcher) { destination?.close() }
+                withContext(NonCancellable + receiveDispatcher) { destination.close() }
                 if (operation == epoch && pendingAutomaticReceive?.batchId == pending.batchId) {
                     automaticReceiveNeedsApp = true
                     destinationMessage = null

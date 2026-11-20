@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
@@ -41,12 +42,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@SdkSuppress(minSdkVersion = 31)
 class CompanionSetupPresentationTest {
     private val runner get() = InstrumentationRegistry.getInstrumentation()
     private val app get() = runner.targetContext.applicationContext as AniCeApplication
     private fun isolatedEmulator() {
         assumeTrue("Run only on an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
-        assumeTrue(runner.targetContext.packageName.contains(".preview"))
+        assumeTrue("Use the isolated UI preview", runner.targetContext.packageName == "io.github.anisharyal09.anice.preview")
     }
     @Suppress("UNCHECKED_CAST")
     private fun <T> state(model: Any, name: String) =

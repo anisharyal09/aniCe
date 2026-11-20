@@ -101,6 +101,7 @@
 		20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */; };
 		AEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */; };
 		AEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */; };
+		AEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json */; };
 		A34D9997D94406D2CD684BEE /* aniCe/Features/NowPlaying/MediaWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F786D4EA28875E8B52A5050; };
 		2AC7B0EC9E0FD0C1ED8EAC03 /* aniCe/Features/NowPlaying/MacPlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E997F22245B67C3AA3AE4C; };
 		CC1FEE3CCD0C897922760D25 /* aniCe/Features/NowPlaying/MediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3699A9022B41B5DC0049D2; };
@@ -115,6 +116,7 @@
 		26AEED17CBDDE483B38EF1F2 /* aniCeTests/NavigationAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4EE9233703057A84035C690; };
 		17DF506938FC5A7030B149A4 /* aniCeTests/SessionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF1A8C5ED31593319075195; };
 		56BF6E0E9BF7C49DD96623E1 /* aniCeTests/NowPlaying/PackagedAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545AA68D8842B1A3825E53B9; };
+		AF0200000000000000000001 /* aniCeTests/NowPlaying/AdapterChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002; };
 		37D4295E83741498D4CCD68B /* aniCeTests/NowPlaying/MediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC6FE7E995098CD289F52EB; };
 		877A16FC897B3FDF1BE11F56 /* aniCe/App/FeaturesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCA2E4BCAC982F9693EBC96; };
 		A420E9395D8F99F11FF1B3B5 /* aniCeTests/IdentityFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65EFE3CD37ACE93ADAFC6439; };
@@ -298,6 +300,7 @@
 		C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-vectors.json"; sourceTree = SOURCE_ROOT; };
 		BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/bulk-probe-vectors.json"; sourceTree = SOURCE_ROOT; };
 		BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-transfer-vectors.json"; sourceTree = SOURCE_ROOT; };
+		BEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-512-vectors.json"; sourceTree = SOURCE_ROOT; };
 		4F786D4EA28875E8B52A5050 /* aniCe/Features/NowPlaying/MediaWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaWire.swift"; sourceTree = SOURCE_ROOT; };
 		D0E997F22245B67C3AA3AE4C /* aniCe/Features/NowPlaying/MacPlaybackModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MacPlaybackModel.swift"; sourceTree = SOURCE_ROOT; };
 		9A3699A9022B41B5DC0049D2 /* aniCe/Features/NowPlaying/MediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaView.swift"; sourceTree = SOURCE_ROOT; };
@@ -312,6 +315,7 @@
 		C4EE9233703057A84035C690 /* aniCeTests/NavigationAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NavigationAppearanceTests.swift"; sourceTree = SOURCE_ROOT; };
 		9AF1A8C5ED31593319075195 /* aniCeTests/SessionFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/SessionFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		545AA68D8842B1A3825E53B9 /* aniCeTests/NowPlaying/PackagedAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/PackagedAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		AF0200000000000000000002 /* aniCeTests/NowPlaying/AdapterChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/AdapterChecks.swift"; sourceTree = SOURCE_ROOT; };
 		6AC6FE7E995098CD289F52EB /* aniCeTests/NowPlaying/MediaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/MediaTests.swift"; sourceTree = SOURCE_ROOT; };
 		9DCA2E4BCAC982F9693EBC96 /* aniCe/App/FeaturesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/FeaturesView.swift"; sourceTree = SOURCE_ROOT; };
 		65EFE3CD37ACE93ADAFC6439 /* aniCeTests/IdentityFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/IdentityFixture.swift"; sourceTree = SOURCE_ROOT; };
@@ -451,6 +455,7 @@
 				9DCA2E4BCAC982F9693EBC96,
 				6AC6FE7E995098CD289F52EB,
 				545AA68D8842B1A3825E53B9,
+				AF0200000000000000000002 /* aniCeTests/NowPlaying/AdapterChecks.swift */,
 				9AF1A8C5ED31593319075195,
 				C4EE9233703057A84035C690,
 				40AD2698142215B36FAF9467,
@@ -676,6 +681,7 @@
 				C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */,
 				BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */,
 				BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */,
+				BEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json */,
 				CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */,
 				AF0100000000000000000004 /* LanRenewalTests.swift */,
 				088E75AB91963156C23260D5 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift */,
@@ -814,6 +820,7 @@
 				20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */,
 				AEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json in Resources */,
 				AEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json in Resources */,
+				AEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json in Resources */,
 				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
 				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
 				AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */,
@@ -989,6 +996,7 @@
 				A420E9395D8F99F11FF1B3B5,
 				37D4295E83741498D4CCD68B,
 				56BF6E0E9BF7C49DD96623E1,
+				AF0200000000000000000001 /* aniCeTests/NowPlaying/AdapterChecks.swift in Sources */,
 				17DF506938FC5A7030B149A4,
 				26AEED17CBDDE483B38EF1F2,
 				FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */,

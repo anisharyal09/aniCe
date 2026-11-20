@@ -110,7 +110,7 @@ def trace(index):
                   signature3=sig3, signingInput2=input2, signingInput3=input3, plaintext2=p2,
                   plaintext3=p3, keystream2=stream2, k3=k3, iv3=iv3, k4=k4, iv4=iv4,
                   aad3=aad(th3), aad4=aad(th4), prkOut=out, prkExporter=exporter)
-    # Application exporter profile; no record-channel implementation is enabled by these vectors.
+    # Application exporter profile; these fixtures never authorize a live session.
     for purpose, direction, size in [("key", 1, 32), ("key", 2, 32), ("iv", 1, 12),
                                       ("iv", 2, 12), ("session-id", 0, 32)]:
         context = enc(["aniCe session", 1, enc(credential(initiator)),

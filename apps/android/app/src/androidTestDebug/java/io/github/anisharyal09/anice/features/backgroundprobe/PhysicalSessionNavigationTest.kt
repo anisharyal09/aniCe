@@ -39,7 +39,7 @@ class PhysicalSessionNavigationTest {
     }
   }
 
-  @Test fun physicalMediaCommandLatency() = runBlocking {
+  @Test fun physicalMediaCommandLatency() = runBlocking<Unit> {
     val transport = InstrumentationRegistry.getArguments().getString("physicalMedia")
     assumeTrue("Supply physicalMedia=ble or lan for real playback timing", transport != null)
     require(transport == "ble" || transport == "lan")

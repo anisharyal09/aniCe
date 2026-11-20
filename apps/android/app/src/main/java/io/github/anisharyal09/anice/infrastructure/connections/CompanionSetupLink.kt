@@ -125,9 +125,7 @@ internal class CompanionSetupLink(
     fun finish(target: CompanionSetupTarget) {
         val current = link?.takeIf {
             it.channel.descriptor.instance == target.channel &&
-                it.channel.descriptor.peer.deviceId == target.peer.deviceId &&
-                it.channel.descriptor.peer.fingerprint == target.peer.fingerprint &&
-                it.channel.descriptor.peer.publicKey == target.peer.publicKey
+                companionSetupPeerMatches(target.peer, it.channel.descriptor.peer)
         } ?: return
         scope.launch {
             try { current.channel.sendData(CompanionSetupMessage(2, seconds = 0).encode()) }

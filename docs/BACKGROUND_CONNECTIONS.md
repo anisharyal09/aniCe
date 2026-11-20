@@ -62,6 +62,9 @@ enrollment capability retain manual connections; no broad chooser bypass is used
 - Explicit foreground enrollment may retain its already-secured BLE channel for
   at most sixty seconds while the native chooser is visible. This temporary lease
   grants no automatic recovery; screen lock still cancels unowned access.
+- Releasing the final picker/approved-work lease after screen-off retires unowned
+  BLE immediately, even before Activity stop; it cannot start an unlocked
+  foreground-handoff grace while the phone is locked.
 - Service loss/unbind releases ownership and stops its connection work. Native rebind and presence events can restore eligible work.
 - API 36 distinguishes BLE-advertisement presence from Bluetooth-connection presence. Advertisement loss alone does not retire a transport while Bluetooth presence remains active.
 - Foreground return reevaluates saved enabled setup even without a new presence callback.

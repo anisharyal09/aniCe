@@ -48,10 +48,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import org.junit.Rule
+import io.github.anisharyal09.anice.ui.EmulatorPresentationRule
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SettingsRefinementTests {
+    @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
     @Suppress("DEPRECATION")
     @Test fun betaOptInRequiresConfirmationAndCancelOrBackPreservesTheSetting() {
         assumeEmulator()
@@ -68,7 +71,7 @@ class SettingsRefinementTests {
                 val drawn = CountDownLatch(1)
                 runner.runOnMainSync {
                     activity.setContent {
-                        fixture(dark, 1f) {
+                        Fixture(dark, 1f) {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Updates", style = MaterialTheme.typography.titleMedium)
                                 BetaUpdatePreference(beta.value) {
@@ -147,7 +150,7 @@ class SettingsRefinementTests {
                         val drawn = CountDownLatch(1)
                         runner.runOnMainSync {
                             activity.setContent {
-                                fixture(dark, scale) {
+                                Fixture(dark, scale) {
                                     Column(Modifier.widthIn(max = if (narrow) 300.dp else 360.dp).fillMaxWidth().padding(12.dp)) {
                                         Text("Updates", style = MaterialTheme.typography.titleMedium)
                                         UpdateSettingsContent(false, status, "v0.9.0-beta.2", {}, { checks.incrementAndGet() })
@@ -219,7 +222,7 @@ class SettingsRefinementTests {
                 try {
                     runner.runOnMainSync {
                         activity.setContent {
-                            fixture(dark, scale) {
+                            Fixture(dark, scale) {
                                 Column {
                                     Text("Home fixture")
                                     Button(onClick = { showing.value = true }) { Text("Review update") }
@@ -487,7 +490,7 @@ class SettingsRefinementTests {
                     val drawn = CountDownLatch(1)
                     runner.runOnMainSync {
                         activity.setContent {
-                            fixture(dark, scale) {
+                            Fixture(dark, scale) {
                                 CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
                                     override fun openUri(uri: String) { opened.add(uri) }
                                 }) {
@@ -549,7 +552,7 @@ class SettingsRefinementTests {
         }
     }
 
-    @Composable private fun fixture(dark: Boolean, scale: Float, content: @Composable () -> Unit) {
+    @Composable private fun Fixture(dark: Boolean, scale: Float, content: @Composable () -> Unit) {
         val configuration = Configuration(LocalConfiguration.current).apply {
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
                 if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO

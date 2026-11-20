@@ -17,6 +17,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.ui.EmulatorPresentationRule
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import io.github.anisharyal09.anice.features.pairing.PairingViewModel
@@ -30,14 +31,18 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import org.junit.Rule
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class FeatureRowInteractionTests {
+    @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
     @Test
     fun largeTextNavigationRevealsSelectedDestinationAfterBack() {
         assumeTrue("Navigation fixture runs only on an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        assumeTrue("Use the isolated UI preview",
+            instrumentation.targetContext.packageName == "io.github.anisharyal09.anice.preview")
         instrumentation.uiAutomation
         val activity = instrumentation.startActivitySync(
             android.content.Intent(instrumentation.targetContext, MainActivity::class.java)
@@ -98,6 +103,8 @@ class FeatureRowInteractionTests {
     fun openingRowAndChangingFavouriteAreIndependentSingleActions() {
         assumeTrue("Feature interaction fixture runs only on an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        assumeTrue("Use the isolated UI preview",
+            instrumentation.targetContext.packageName == "io.github.anisharyal09.anice.preview")
         val activity = instrumentation.startActivitySync(
             android.content.Intent(instrumentation.targetContext, MainActivity::class.java)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)

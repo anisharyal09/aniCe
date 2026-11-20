@@ -22,6 +22,10 @@ class PairingSasTests {
         repeat(vectors.length()) { index ->
             val v = vectors.getJSONObject(index)
             fun bytes(name: String) = hex(v.getString(name + "Hex"))
+            for ((name, platform) in listOf("clientIdentity" to "android", "serverIdentity" to "macos")) {
+                val identity = DeviceIdentity.fromJson(JSONObject(String(bytes(name), Charsets.UTF_8)))
+                assertEquals(platform, identity.platform)
+            }
             val clientIC = PairingSas.identityCommitment(1, bytes("clientIdentitySalt"), bytes("clientIdentity"))
             val serverIC = PairingSas.identityCommitment(2, bytes("serverIdentitySalt"), bytes("serverIdentity"))
             assertArrayEquals(bytes("clientIdentityCommitment"), clientIC)

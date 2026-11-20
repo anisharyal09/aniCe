@@ -26,80 +26,77 @@ import io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import org.junit.Assert.*
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ComparisonPresentationTest {
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> state(model: PairingViewModel, name: String) =
-        PairingViewModel::class.java.getDeclaredField("$name\$delegate")
-            .apply { isAccessible = true }.get(model) as MutableState<T>
-
     @Test fun comparisonVisibilitySubscribesEvenWhenTheInitialMethodIsNotSas() {
+        PairingPresentationFixture.assumeIsolated()
         val runner = InstrumentationRegistry.getInstrumentation()
-        val app = runner.targetContext.applicationContext as io.github.anisharyal09.anice.AniCeApplication
-        assumeTrue("Use an isolated preview", app.packageName.contains(".preview"))
         runner.runOnMainSync {
-            val model = PairingViewModel(app)
-            val store = androidx.lifecycle.ViewModelStore().apply { put("comparison", model) }
+            val fixture = PairingPresentationFixture()
+            val model = fixture.model
             val observer = SnapshotStateObserver { it() }
             var invalidations = 0
             observer.start()
             try {
-                state<PairingMethod>(model, "method").value = PairingMethod.QR
-                state<String>(model, "phase").value = "idle"
+                fixture.present(PairingViewModel::method, PairingMethod.QR)
+                fixture.present(PairingViewModel::phase, "idle")
                 Snapshot.sendApplyNotifications()
                 observer.observeReads("comparison", { invalidations++ }) { assertFalse(model.comparingNearby) }
-                state<PairingMethod>(model, "method").value = PairingMethod.SAS
-                state<String>(model, "phase").value = "preparing"
+                fixture.present(PairingViewModel::method, PairingMethod.SAS)
+                fixture.present(PairingViewModel::phase, "preparing")
                 Snapshot.sendApplyNotifications()
                 assertTrue(invalidations > 0)
                 assertTrue(model.comparingNearby)
+                val beforePhaseChange = invalidations
+                observer.observeReads("comparison", { invalidations++ }) { assertTrue(model.comparingNearby) }
+                fixture.present(PairingViewModel::phase, "idle")
+                Snapshot.sendApplyNotifications()
+                assertTrue("Live visibility must observe phase as well as method", invalidations > beforePhaseChange)
+                assertFalse(model.comparingNearby)
             } finally {
                 observer.stop(); observer.clear()
-                store.clear()
+                fixture.close()
             }
         }
     }
 
     @Test fun everyPairingMethodHandsOffItsNativeCandidateOnlyOnceAfterTrustIsSaved() {
+        PairingPresentationFixture.assumeIsolated()
         val runner = InstrumentationRegistry.getInstrumentation()
-        val app = runner.targetContext.applicationContext as io.github.anisharyal09.anice.AniCeApplication
-        assumeTrue("Use an isolated preview", app.packageName.contains(".preview"))
         runner.runOnMainSync {
-            val model = PairingViewModel(app)
-            val store = androidx.lifecycle.ViewModelStore().apply { put("pairing", model) }
+            val fixture = PairingPresentationFixture()
+            val model = fixture.model
             val peer = DeviceIdentity("fixture", "Verified Mac", "macos", "key", "fingerprint")
             val candidateField = PairingViewModel::class.java.getDeclaredField("pairedCandidate")
                 .apply { isAccessible = true }
             try {
                 for (method in listOf(PairingMethod.QR, PairingMethod.PIN, PairingMethod.SAS)) {
-                    state<PairingMethod>(model, "method").value = method
-                    state<Boolean>(model, "completedWithComparison").value = method == PairingMethod.SAS
+                    fixture.present(PairingViewModel::method, method)
+                    fixture.present(PairingViewModel::completedWithComparison, method == PairingMethod.SAS)
                     val candidate = PairedBleCandidate(null, peer, SystemClock.elapsedRealtime() + 15_000)
                     candidateField.set(model, candidate)
-                    state<String>(model, "phase").value = "saving"
+                    fixture.present(PairingViewModel::phase, "saving")
                     assertNull(model.takePairedCandidate())
-                    state<String>(model, "phase").value = "paired"
+                    fixture.present(PairingViewModel::phase, "paired")
                     assertSame("All pairing methods must share the fresh Bluetooth handoff", candidate, model.takePairedCandidate())
                     assertNull(model.takePairedCandidate())
                 }
-            } finally { model.cancel(); store.clear() }
+            } finally { fixture.close() }
         }
     }
 
     @Test fun globalAndAddDeviceSurfacesRenderTheSameLiveCodeAcrossPhaseChanges() {
+        PairingPresentationFixture.assumeIsolated()
         val runner = InstrumentationRegistry.getInstrumentation()
-        assumeTrue("UI fixture runs only on an isolated emulator", Build.HARDWARE in setOf("ranchu", "goldfish"))
-        assumeTrue(runner.targetContext.packageName.contains(".preview"))
         runner.uiAutomation
         // Hold Home's unrelated first-launch prompt without changing OS permissions.
         val fixture = PresentationFixture()
         val activity = runner.startActivitySync(fixture.intent()) as MainActivity
         lateinit var model: PairingViewModel
-        val store = androidx.lifecycle.ViewModelStore()
+        var presentation: PairingPresentationFixture? = null
         var initialized = false
         val embedded = mutableStateOf(false)
         val scale = mutableFloatStateOf(1f)
@@ -107,11 +104,10 @@ class ComparisonPresentationTest {
         try {
             runner.runOnMainSync {
                 // The fixture has its own pairing owner; native Activity lifecycle must not cancel a synthetic exchange.
-                model = PairingViewModel(runner.targetContext.applicationContext as io.github.anisharyal09.anice.AniCeApplication)
-                store.put("comparison", model)
+                val owner = PairingPresentationFixture()
+                presentation = owner
+                model = owner.model
                 initialized = true
-                model.beforePairing = {}
-                model.cancel()
                 activity.setContent {
                     val configuration = Configuration(LocalConfiguration.current).apply {
                         uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -139,16 +135,20 @@ class ComparisonPresentationTest {
                     embedded.value = inline
                     scale.floatValue = fontScale
                     dark.value = night
-                    state<PairingMethod>(model, "method").value = PairingMethod.SAS
-                    state<String>(model, "phase").value = "preparing"
-                    state<String>(model, "status").value = "Preparing a nearby comparison…"
-                    state<String?>(model, "comparisonCode").value = null
+                    requireNotNull(presentation).apply {
+                        present(PairingViewModel::method, PairingMethod.SAS)
+                        present(PairingViewModel::phase, "preparing")
+                        present(PairingViewModel::status, "Preparing a nearby comparison…")
+                        present(PairingViewModel::comparisonCode, null)
+                    }
                 }
                 awaitLabels("Connect your Mac", "Preparing a nearby comparison…")
                 runner.runOnMainSync {
-                    state<Long>(model, "comparisonAttempt").value = 42L
-                    state<String?>(model, "comparisonCode").value = "012345"
-                    state<String>(model, "phase").value = "comparison"
+                    requireNotNull(presentation).apply {
+                        present(PairingViewModel::comparisonAttempt, 42L)
+                        present(PairingViewModel::comparisonCode, "012345")
+                        present(PairingViewModel::phase, "comparison")
+                    }
                 }
                 val tree = awaitLabels("012 345", "Confirm", "Dismiss", "Reconnect automatically")
                 val confirm = clickable(find(tree, "Confirm"))
@@ -158,20 +158,24 @@ class ComparisonPresentationTest {
                 confirm.getBoundsInScreen(rectangle)
                 assertTrue(rectangle.height() >= (48 * activity.resources.displayMetrics.density).toInt() - 1)
                 runner.runOnMainSync {
-                    state<String>(model, "phase").value = "waiting"
-                    state<String>(model, "status").value = "Confirmed here. Waiting for your Mac…"
+                    requireNotNull(presentation).apply {
+                        present(PairingViewModel::phase, "waiting")
+                        present(PairingViewModel::status, "Confirmed here. Waiting for your Mac…")
+                    }
                 }
                 val waiting = awaitLabels("012 345", "Confirmed here. Waiting for your Mac…")
                 assertFalse(clickable(find(waiting, "Confirm"))!!.isEnabled)
                 runner.runOnMainSync {
-                    state<String?>(model, "comparisonCode").value = null
-                    state<String>(model, "phase").value = "idle"
-                    state<PairingMethod>(model, "method").value = PairingMethod.QR
+                    requireNotNull(presentation).apply {
+                        present(PairingViewModel::comparisonCode, null)
+                        present(PairingViewModel::phase, "idle")
+                        present(PairingViewModel::method, PairingMethod.QR)
+                    }
                 }
                 runner.waitForIdleSync()
             }
         } finally {
-            runner.runOnMainSync { if (initialized) model.cancel(); store.clear(); activity.finish() }
+            runner.runOnMainSync { if (initialized) presentation?.close(); activity.finish() }
             fixture.close()
         }
     }

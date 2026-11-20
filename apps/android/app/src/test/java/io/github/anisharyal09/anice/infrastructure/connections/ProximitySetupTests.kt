@@ -176,6 +176,18 @@ class ProximitySetupTests {
         } finally { scope.cancel() }
     }
 
+    @Test fun finishingSetupCannotSendToAChangedCredentialWithTheSameIdAndFingerprint() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val owner = CompanionSetupLink(scope) { 0 }
+            val replaced = Link(ChannelDescriptor("one", "ble", peer.copy(publicKey = "replacement")))
+            owner.available(replaced)
+            owner.finish(CompanionSetupTarget(peer, "02:00:00:00:00:01", "one", 60_000))
+            assertEquals("Even cleanup must retain the full pinned credential",
+                listOf(CompanionSetupMessage(1)), replaced.messages)
+        } finally { scope.cancel() }
+    }
+
     @Test fun capacityEventDuringCapabilitySubmissionIsNotLost() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         try {

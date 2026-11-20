@@ -244,7 +244,14 @@ class LanTests {
 
     @Test
     fun lanTransferOracleAndStandardIsolation() {
-        val root = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("lan/lan-transfer-vectors.json"))
+        for ((fixture, profile) in listOf(
+            "lan-transfer-vectors.json" to SessionProfile.LAN_TRANSFER,
+            "lan-512-vectors.json" to SessionProfile.LAN_TRANSFER_512,
+        )) verifyLanTransferProfile(fixture, profile)
+    }
+
+    private fun verifyLanTransferProfile(fixture: String, profile: SessionProfile) {
+        val root = JSONObject(requireNotNull(javaClass.classLoader!!.getResourceAsStream("lan/$fixture"))
             .bufferedReader().use { it.readText() })
         val valid = root.getJSONArray("valid")
         val invalid = root.getJSONArray("invalid")
@@ -253,34 +260,37 @@ class LanTests {
         repeat(valid.length()) {
             val row = valid.getJSONObject(it)
             val plain = ByteArray(row.getInt("length")) { index -> (index % 251).toByte() }
-            val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, plain, SessionProfile.LAN_TRANSFER)
+            val record = SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, plain, profile)
             assertArrayEquals(bytes(row.getString("recordSHA256")), SessionCrypto.hash(record))
             assertArrayEquals(bytes(row.getString("headerHex")), record.copyOfRange(0, 14))
             assertArrayEquals(bytes(row.getString("tagHex")), record.copyOfRange(record.size - 16, record.size))
-            assertArrayEquals(plain, SessionRecordCodec.open(key, iv, id, 1, 0uL, record, SessionProfile.LAN_TRANSFER).second)
+            assertArrayEquals(plain, SessionRecordCodec.open(key, iv, id, 1, 0uL, record, profile).second)
             reject(SessionFailure.MALFORMED) { SessionRecordCodec.open(key, iv, id, 1, 0uL, record) }
+            if (profile == SessionProfile.LAN_TRANSFER_512) reject(SessionFailure.MALFORMED) {
+                SessionRecordCodec.open(key, iv, id, 1, 0uL, record, SessionProfile.LAN_TRANSFER)
+            }
         }
         repeat(invalid.length()) {
             val row = invalid.getJSONObject(it)
             reject(if (row.getString("reason") == "authentication") SessionFailure.AUTHENTICATION else SessionFailure.MALFORMED) {
-                SessionRecordCodec.open(key, iv, id, 1, 0uL, bytes(row.getString("recordHex")), SessionProfile.LAN_TRANSFER)
+                SessionRecordCodec.open(key, iv, id, 1, 0uL, bytes(row.getString("recordHex")), profile)
             }
         }
         reject(SessionFailure.MALFORMED) {
-            SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, ByteArray(262145), SessionProfile.LAN_TRANSFER)
+            SessionRecordCodec.seal(key, iv, id, 1, RecordKind.DATA, 0uL, ByteArray(profile.maximumPlaintext + 1), profile)
         }
-        reject(SessionFailure.MALFORMED) { SessionEnvelope.encode(1, ByteArray(4096), SessionProfile.LAN_TRANSFER) }
-        val envelope = ByteArray(262175) { 6 }
-        val frame = LanFraming.encode(envelope, SessionProfile.LAN_TRANSFER)
-        assertArrayEquals(envelope, decode(LanFraming(SessionProfile.LAN_TRANSFER), frame).single())
+        reject(SessionFailure.MALFORMED) { SessionEnvelope.encode(1, ByteArray(4096), profile) }
+        val envelope = ByteArray(profile.maximumEnvelope) { 6 }
+        val frame = LanFraming.encode(envelope, profile)
+        assertArrayEquals(envelope, decode(LanFraming(profile), frame).single())
         reject(SessionFailure.UNSUPPORTED_PROFILE) { decode(LanFraming(), frame.copyOfRange(0, 5)) }
-        val budget = LanQueueBudget(SessionProfile.LAN_TRANSFER)
+        val budget = LanQueueBudget(profile)
         repeat(4) { budget.reserve(envelope.size) }
         assertFalse(budget.canReserve(1))
         repeat(4) { budget.release(envelope.size) }
         assertTrue(budget.canReserve(envelope.size))
         assertFalse(LanQueueBudget(SessionProfile.STANDARD).canReserve(envelope.size))
-        assertNotEquals(SessionProfile.STANDARD.exporterLabel, SessionProfile.LAN_TRANSFER.exporterLabel)
+        assertNotEquals(SessionProfile.STANDARD.exporterLabel, profile.exporterLabel)
     }
 
     @Test

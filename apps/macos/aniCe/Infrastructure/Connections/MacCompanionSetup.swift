@@ -114,7 +114,7 @@ struct CompanionSetupMessage: Equatable {
           let wait = self.wait
           expiry = Task {
             do { try await wait() } catch { return }
-            guard self.window == descriptor.instance else { return }
+            guard !Task.isCancelled, self.window == descriptor.instance else { return }
             self.finishWindow()
           }
         }

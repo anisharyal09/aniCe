@@ -83,6 +83,7 @@ class SessionController(application: Application) {
   private var awaitingPermissions = false
   private var workLease = false
   private var pickerLease = false
+  private var screenOff = app.getSystemService(android.os.PowerManager::class.java)?.isInteractive == false
   private var worker: Job? = null
   private var workRecovery: Job? = null
   private var recoveryPaused = false
@@ -93,7 +94,14 @@ class SessionController(application: Application) {
     manualGraceJob?.cancel(); manualGraceJob = null
   }
   private fun retireUnowned() {
-    if (foreground || companionOwner != null || workLease || pickerLease || hasCompanionSetupLease) return
+    if (companionOwner != null || workLease || pickerLease) return
+    // A work lease may span screen-off. Its later release must not grant foreground
+    // handoff grace while locked, even before Android delivers the Activity stop.
+    if (screenOff || app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true) {
+      cancel()
+      return
+    }
+    if (foreground || hasCompanionSetupLease) return
     val now = SystemClock.elapsedRealtime()
     val deadline = manualGrace.begin(now, state == ConnectionState.SECURED)
     if (deadline == null || now >= deadline) { cancel(); return }
@@ -174,6 +182,8 @@ class SessionController(application: Application) {
   private val radio =
     object : BroadcastReceiver() {
       override fun onReceive(context: Context?, intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SCREEN_OFF) screenOff = true
+        else if (intent?.action == Intent.ACTION_SCREEN_ON) screenOff = false
         if (
           (intent?.action == Intent.ACTION_SCREEN_OFF && companionOwner == null && !workLease && !pickerLease) ||
             (intent?.action == BluetoothAdapter.ACTION_STATE_CHANGED &&
@@ -191,6 +201,7 @@ class SessionController(application: Application) {
       radio,
       IntentFilter().apply {
         addAction(Intent.ACTION_SCREEN_OFF)
+        addAction(Intent.ACTION_SCREEN_ON)
         addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
       },
       ContextCompat.RECEIVER_EXPORTED,
@@ -209,8 +220,7 @@ class SessionController(application: Application) {
     if (!foreground || state != ConnectionState.SECURED ||
         hasCompanionSetupLease || missingPermissions().isNotEmpty() ||
         app.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true ||
-        selected?.deviceId != peer.deviceId || selected?.fingerprint != peer.fingerprint ||
-        selected?.publicKey != peer.publicKey) return null
+        !companionSetupPeerMatches(peer, selected)) return null
     val token = channelToken
     val address = try { transport.connectedAddress() } catch (_: SecurityException) { null } ?: return null
     val target = CompanionSetupTarget(peer, address, token, SystemClock.elapsedRealtime() + 60_000)

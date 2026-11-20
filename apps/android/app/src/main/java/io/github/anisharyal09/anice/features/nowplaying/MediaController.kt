@@ -520,7 +520,7 @@ class MediaController(
                 val old = playback
                 val recordingChanged = old?.source != next.source || old.title != next.title || old.artist != next.artist ||
                     (old.revision != next.revision && old.actions == next.actions)
-                if (recordingChanged || old == null || !old.hash.contentEquals(next.hash)) clearArtwork()
+                if (recordingChanged || !old.hash.contentEquals(next.hash)) clearArtwork()
                 else if (old.revision != next.revision) {
                     artTimeout?.cancel()
                     artTimeout = null

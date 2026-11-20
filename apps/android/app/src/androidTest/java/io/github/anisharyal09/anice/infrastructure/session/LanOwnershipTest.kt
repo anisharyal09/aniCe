@@ -172,7 +172,7 @@ class LanOwnershipTest {
             withContext(NonCancellable + Dispatchers.Main) {
                 if (descriptor != null) {
                     app.transfer.cancelTransfer(local = false)
-                    app.transfer.retired(descriptor!!)
+                    app.transfer.retired(descriptor)
                     app.transfer.dismiss()
                 }
                 activity?.finish()
@@ -184,19 +184,27 @@ class LanOwnershipTest {
     @Test fun approvedBleLeaseSurvivesScreenOffAndCompanionRelease() = exerciseBlePolicy(picking = false)
     @Test fun blePickerLeaseSurvivesScreenOffAndCompanionRelease() = exerciseBlePolicy(picking = true)
     @Test fun securityInvalidationRetiresBleOwner() = exerciseBlePolicy(picking = false, invalidate = true)
+    @Test fun screenOffRetiresTheFinalBleLeaseBeforeActivityStop() =
+        exerciseBlePolicy(picking = false, remainsForeground = true)
+    @Test fun unlockedFinalBleLeaseRetainsOnlyTheExistingForegroundGrace() =
+        exerciseBlePolicy(picking = false, screenOffEvent = false)
 
-    private fun exerciseBlePolicy(picking: Boolean, invalidate: Boolean = false) = runBlocking {
+    private fun exerciseBlePolicy(picking: Boolean, invalidate: Boolean = false,
+        remainsForeground: Boolean = false, screenOffEvent: Boolean = true) = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
         val policy = withContext(Dispatchers.Main) {
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(app)
         }
         val controller = app.sessionController
+        val screenState = controller.javaClass.getDeclaredField("screenOff").apply { isAccessible = true }
+        val previousScreenOff = withContext(Dispatchers.Main) { screenState.getBoolean(controller) }
         val presentation = Any()
         val companion = Any()
         try {
             withContext(Dispatchers.Main) {
                 policy.suspend()
                 controller.cancel()
+                screenState.setBoolean(controller, false) // The fixture starts unlocked, before its simulated screen event.
                 controller.foreground(presentation)
                 @Suppress("UNCHECKED_CAST")
                 val state = controller.javaClass.getDeclaredField("state\$delegate")
@@ -204,15 +212,32 @@ class LanOwnershipTest {
                 state.value = ConnectionState.SECURED
                 controller.updateWorkLease(!picking, picking)
                 controller.acquireCompanion(companion)
-                controller.background(presentation, false)
+                if (!remainsForeground) controller.background(presentation, false)
                 controller.releaseCompanion(companion)
                 val radio = controller.javaClass.getDeclaredField("radio").apply { isAccessible = true }
                     .get(controller) as android.content.BroadcastReceiver
-                radio.onReceive(app, android.content.Intent(android.content.Intent.ACTION_SCREEN_OFF))
+                radio.onReceive(app, android.content.Intent(if (screenOffEvent)
+                    android.content.Intent.ACTION_SCREEN_OFF else android.content.Intent.ACTION_SCREEN_ON))
                 assertEquals(ConnectionState.SECURED, controller.state)
                 if (invalidate) controller.securityInvalidated() else controller.updateWorkLease(false, false)
+                if (screenOffEvent) {
+                    assertEquals("Lock cannot start a foreground handoff grace after final lease release",
+                        ConnectionState.DISCONNECTED, controller.state)
+                } else {
+                    assertEquals(ConnectionState.SECURED, controller.state)
+                    val grace = controller.javaClass.getDeclaredField("manualGrace").apply { isAccessible = true }
+                        .get(controller) as io.github.anisharyal09.anice.infrastructure.connections.ManualBleGrace
+                    val deadline = requireNotNull(grace.deadline)
+                    assertTrue(deadline > android.os.SystemClock.elapsedRealtime())
+                    assertTrue(deadline <= android.os.SystemClock.elapsedRealtime() + 15_000)
+                    controller.background(presentation, false) // Duplicate stop must not extend the original grace.
+                    assertEquals(deadline, grace.deadline)
+                    controller.foreground(presentation)
+                    assertNull(grace.deadline)
+                    assertEquals("Unlocked foreground return keeps the existing channel", ConnectionState.SECURED, controller.state)
+                }
             }
-            withTimeout(3000) {
+            if (screenOffEvent) withTimeout(3000) {
                 while (withContext(Dispatchers.Main) { controller.state != ConnectionState.DISCONNECTED }) delay(10)
             }
         } finally {
@@ -222,6 +247,7 @@ class LanOwnershipTest {
                 controller.updateWorkLease(false, false)
                 controller.cancel()
                 controller.background(presentation, false)
+                screenState.setBoolean(controller, previousScreenOff)
                 policy.resumeAfterOperation()
             }
         }
@@ -328,6 +354,11 @@ class LanOwnershipTest {
                     val busy = mutableListOf<Boolean>()
                     discovery.beforeStart = { starts++; model.cancelBluetooth() }
                     discovery.onBusyChanged = { busy.add(it) }
+                    val canScan = discovery.missingPermissions().isEmpty() &&
+                        app.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_BLUETOOTH_LE) &&
+                        app.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled == true &&
+                        (android.os.Build.VERSION.SDK_INT > 30 ||
+                            app.getSystemService(android.location.LocationManager::class.java).isLocationEnabled)
                     try {
                         discovery.start() // A stopped presentation cannot acquire radio work.
                         discovery.foreground()
@@ -336,11 +367,16 @@ class LanOwnershipTest {
                         assertEquals(ConnectionState.CONNECTING, controller.state)
                         assertTrue(worker.isActive)
                         discovery.start()
+                        assertEquals(if (canScan) 1 else 0, starts)
+                        if (!canScan) {
+                            assertTrue("An unavailable scanner must expose native recovery",
+                                discovery.state.recovery != io.github.anisharyal09.anice.infrastructure.bluetooth.RecoveryReason.none)
+                        }
                         discovery.cancel()
-                        assertEquals(1, starts)
-                        assertEquals(listOf(true, false), busy)
+                        val expectedBusy = if (canScan) listOf(true, false) else emptyList()
+                        assertEquals(expectedBusy, busy)
                         discovery.cancel()
-                        assertEquals(listOf(true, false), busy)
+                        assertEquals(expectedBusy, busy)
                         assertEquals(ConnectionState.CONNECTING, controller.state)
                         assertTrue(worker.isActive)
                         assertFalse(app.sessionPeers.permits(foreign))
@@ -348,7 +384,12 @@ class LanOwnershipTest {
                     model.cancel()
                 }
                 "security" -> withContext(Dispatchers.Main) { controller.securityInvalidated() }
-                "disconnect" -> withContext(Dispatchers.Main) { controller.disconnect() }
+                "disconnect" -> withContext(Dispatchers.Main) {
+                    controller.disconnect()
+                    assertTrue("Pending Disconnect must cancel its worker before publishing completion", worker.isCancelled)
+                    assertNull(field("watching"))
+                    assertNull(field("worker"))
+                }
                 else -> error("Unknown native owner case: $action")
             }
             withTimeout(3000) {

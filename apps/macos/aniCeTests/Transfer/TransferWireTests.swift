@@ -2,7 +2,6 @@
 // Verifies independent transfer wire fixtures, canonical encoding and strict boundary enforcement.
 import Foundation
 import XCTest
-import CryptoKit
 @testable import aniCe
 
 final class TransferWireTests: XCTestCase {
@@ -15,11 +14,6 @@ final class TransferWireTests: XCTestCase {
     XCTAssertThrowsError(try TransferMessage.decode(encoded, maximumChunkBytes: 262016))
     XCTAssertThrowsError(try TransferMessage.capability(version: 3, maxChunkBytes: 524288, maxWindow: 8).encode(maximumChunkBytes: 524288))
     XCTAssertNoThrow(try TransferMessage.capability(version: 4, maxChunkBytes: 524288, maxWindow: 8).encode(maximumChunkBytes: 524288))
-    let key = Data(0..<32), iv = Data(0..<12), id = Data(32..<64)
-    let plain = Data((0..<524416).map { UInt8($0 % 251) })
-    let record = try SessionRecordCodec.seal(key: key, iv: iv, id: id, direction: 1, kind: .data, sequence: 0, plaintext: plain, profile: .lanTransfer512)
-    XCTAssertEqual(SHA256.hash(data: record).map { String(format: "%02x", $0) }.joined(), "f2a4082a1560c2724d92707557f435e4a81ce5d20350f1cfe91a50507e4fa7ed")
-    XCTAssertThrowsError(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1, expected: 0, record: record, profile: .lanTransfer))
   }
   func testLargeChunksRequireExplicitLanBudget() throws {
     let batch = UUID().uuidString, file = UUID().uuidString

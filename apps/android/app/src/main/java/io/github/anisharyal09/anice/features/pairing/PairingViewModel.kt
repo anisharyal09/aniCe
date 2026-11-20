@@ -35,7 +35,8 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     @Volatile private var generation = 0L
     private var engine: PairingEngine? = null
     private var store: PeerTrustStore? = null
-    private var method by mutableStateOf(PairingMethod.QR)
+    internal var method by mutableStateOf(PairingMethod.QR)
+        private set
     private var invitation: PairingQR? = null
     private var code = ""
     var savingNickname by mutableStateOf(false)

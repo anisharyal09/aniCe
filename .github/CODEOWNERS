@@ -27,3 +27,13 @@
 /scripts/check-structure.py @anisharyal09
 /scripts/check-device-health.py @anisharyal09
 /tools/device-lab/ @anisharyal09
+
+# Shared contracts and authentication foundations require the same security review.
+/protocol/ @anisharyal09
+/core/rust/pairing/ @anisharyal09
+/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/identity/ @anisharyal09
+/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/pairing/ @anisharyal09
+/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/session/ @anisharyal09
+/apps/macos/aniCe/Infrastructure/Identity/ @anisharyal09
+/apps/macos/aniCe/Infrastructure/Pairing/ @anisharyal09
+/apps/macos/aniCe/Infrastructure/Session/ @anisharyal09

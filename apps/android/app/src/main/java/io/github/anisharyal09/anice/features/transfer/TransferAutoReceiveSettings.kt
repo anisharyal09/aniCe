@@ -20,8 +20,8 @@ import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 fun TransferAutoReceiveSettings(
     preferences: TransferAutoReceivePreferences,
     peers: List<PeerTrustRecord>,
-    compact: Boolean = false,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val senders = peers.filter { it.peer.platform == "macos" }
     val peerKeys = senders.joinToString("|") { preferences.key(it.peer) }

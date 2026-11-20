@@ -1,6 +1,6 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust.
+Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes nearby numeric comparison, CameraX/ZXing QR scanning and shared OPAQUE PIN pairing, mutual approval and local peer trust. The nearby profile is provisional and requires independent security review.
 
 ## Requirements and user setup
 
@@ -113,7 +113,7 @@ python3 scripts/verify-suite.py fast --android --vector-python .venv/bin/python
 python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
 ```
 
-`--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator.
+`--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator. Emulator runs use the isolated UI-preview package; physical runs can replace the normal Debug installation, so choose a dedicated test phone and an explicit serial.
 
 The suite parses JUnit reports and rejects failures, missing/truncated results and unexpected skips. Native tests can require device setup or explicit instrumentation arguments.
 

@@ -6,61 +6,47 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Add credential-scoped private nicknames and an explicit Use nickname choice
-  in saved-device details without modifying authenticated peer identity.
-- Sync device-owned names over capable existing BLE/LAN channels, retain revision
-  floors and local aliases separately from trust, and resolve current peer labels
-  across Home, Devices, feature selectors and destination controls.
-
-- Add selected-candidate nearby Pair, a native attempt-bound six-digit comparison
-  sheet, deferred identity verification and trust receipts, fresh foreground
-  connection and a post-connection background setup offer.
-
-- Scan for anonymous nearby Macs on unpaired Home while foreground/unlocked; present qualified signals in a dismissible Material bottom sheet with manual-pair fallback and explicit permission/retry actions.
-
-- Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests.
-
-- Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
-- Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
-- **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
-- Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
-- **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.
-- **Live Mac Power:** Inline Mac battery percentage and charging indicator beside connection status on Home and Devices.
-- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) matching Mac's Appearance row layout.
-- Add **Allow caller ID** for incoming-number access and local contact lookup; discard caller details when ringing ends.
-- Add a separate opt-in for incoming CallStyle alerts, pairing Android's answer/decline PendingIntents and prioritizing them in the Mac alert.
-- Add case-insensitive app search, compact picker switches and use the standard checkbox-style row for incoming-call mirroring.
-- Add Notification Access setup and an empty-by-default app picker; exclude aniCe and the current default SMS app from notification mirroring.
-- Add a revisioned Mac output-device picker beside Desk Deck's output-volume control.
-- Add Do Not Disturb control for Desk Deck v4, with explicit status checks after uncertain Shortcut results.
-- Add a responsive Android Mac Desk Deck with CPU and memory history, memory breakdown, Mac and phone power state, trusted quick actions, Mac-approved app shortcuts, output-volume control, a locally cached stale snapshot and a charging-only keep-awake option.
-- Add bounded v2 subscription renewal and approved-app catalog requests while retaining v1 Mac support; store the selected Mac and per-Mac shortcut pin/order locally.
-- Send files to a connected Mac from Android’s Share sheet.
-- Add Control Mac to Android Features and Favourites, with the normal keyboard, IME-aware text correction, pointer and scroll input, and full-screen trackpad text entry.
-- Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for authenticated BLE text and control events.
-- Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside **Send as clipboard**.
-- Save incoming files to `Downloads/aniCe` by default, with a remembered custom folder and reset action.
-- Add off-by-default automatic-receive consent for each trusted Mac.
-- Review selected files and their recipient before sending; require renewed review when the connected device changes.
-- Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends while a draft is pending.
-- Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
-- Keep full bottom-navigation labels accessible through horizontal scrolling at text sizes of 150% or above.
+- Add credential-scoped private nicknames and an explicit Use nickname choice in
+  saved-device details without modifying authenticated peer identity.
+- Sync device-owned names over capable existing BLE/LAN channels, retain
+  revision floors and local aliases separately from trust, and resolve current
+  peer labels across Home, Devices, feature selectors and destination controls.
+- Add selected-candidate nearby Pair, a native attempt-bound six-digit
+  comparison sheet, deferred identity verification and trust receipts, fresh
+  foreground connection and a post-connection background setup offer.
+- Scan for anonymous nearby Macs on unpaired Home while foreground/unlocked;
+  present qualified signals in a dismissible Material bottom sheet with
+  manual-pair fallback and explicit permission/retry actions.
+- Add a memory-only proximity signal filter with median smoothing, sustained
+  qualification, hysteresis, expiry and deterministic tests.
+- Mirror authenticated Mac pause notices on device surfaces without changing
+  local automatic setup.
+- Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate
+  fresh EDHOC renewal without replacing the socket or active feature channel.
 
 ### Changed
 
+- Use the UI-preview package for emulator instrumentation and bind synthetic
+  comparison fixtures to compiled property references without exposing writable
+  production pairing state.
+- Update Kotlin/Compose to 2.4.20 for the build-cache metadata security fix;
+  consume current LAN profile-4 fixtures and remove redundant notification checks
+  and unused strings.
 - Unify nearby, QR/PIN and Devices Auto connect around one authenticated Mac
-  approval; remove the separate Connection settings activity and broad association
-  chooser. Keep a short reconnection note and resume valid saved setup without
-  asking again.
-- Re-enable saved Auto connect without flashing the setup notice; the inline card
-  appears only when Android must ask again or a retry needs attention.
-- Remove unused device-list text resources and obsolete setup-intent scaffolding;
-  retain approval, lifecycle, credential and presentation regression tests.
+  approval; remove the separate Connection settings activity and broad
+  association chooser. Keep a short reconnection note and resume valid saved
+  setup without asking again.
+- Re-enable saved Auto connect without flashing the setup notice; the inline
+  card appears only when Android must ask again or a retry needs attention.
+- Remove unused device-list text resources and obsolete setup-intent
+  scaffolding; retain approval, lifecycle, credential and presentation
+  regression tests.
 - Explain general device reconnection during native auto-connect setup, keeping
   feature permissions separate from companion approval.
-- Retain already-secured manual Bluetooth through brief Home/Recents and activity
-  handoffs with a fifteen-second monotonic grace, without enabling auto-connect;
-  lock, explicit Disconnect and trust/radio loss still stop access.
+- Retain already-secured manual Bluetooth through brief Home/Recents and
+  activity handoffs with a fifteen-second monotonic grace, without enabling
+  auto-connect; lock, explicit Disconnect and trust/radio loss still stop
+  access.
 - Start discovery with a bounded fast foreground scan, retry pre-auth transport
   failures twice and try three foreground trusted reconnects while preserving
   cancellation, permission and authentication boundaries.
@@ -70,107 +56,279 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
   approval for the authenticated Mac without a connection-settings detour.
 - Long-press Devices names to edit this phone's shared name or a paired Mac's
   private nickname directly, retaining explicit details actions.
-- Ask for Nearby Devices access automatically once on unpaired Home, start discovery
-  on grant and keep an obvious permission/settings action after denial.
+- Ask for Nearby Devices access automatically once on unpaired Home, start
+  discovery on grant and keep an obvious permission/settings action after
+  denial.
 - Reconnect after SAS using a one-use credential-pinned native locator, wait
-  briefly for pairing availability to retire and preserve saved trust on GATT failure.
-
-- Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
-- Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
-- Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.
-- Fence pending Resume lookups on Cancel; restore a retained companion monitor on foreground return without rearming from duplicate presence callbacks.
-- Make Resume one-click, show the armed automatic state and group the existing pause-menu options.
-- Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.
-- Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
-- Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
-- Present update review in a dismissible bottom sheet with scalable native Markdown, rectangular themed actions, sticky progress and secondary actions under More; retain the reviewed version during automatic refreshes.
-- Use the shared checkbox row, matching Connection's padding, and explicit confirmation for beta updates; group available/busy status with a minimal trailing check action and reflow at narrow widths or larger text without an extra divider.
-- Rename the About contact row to Reach out, with the label leading and the name/social actions kept together at the trailing edge, including larger text sizes.
-- Open a user-reviewed GitHub report form with app and OS versions from About.
-- Add Debug-only UI and transfer preview packages with isolated app data; UI previews remain emulator-only and transfer previews verify their package before installing on a selected test phone.
-- Restore Android app entry points, Share/Quick Settings guidance, permission distinctions and background-connection limits in the platform README.
-- **Navigation & Icons:** Outlined icons for inactive bottom destinations and filled icons for the active destination.
-- **Reordering:** Long-press context menu to reorder Features and Favourites.
-- **SMS Composer:** Compacted composer row with reduced send button and SIM selector height.
-- **Settings:** Unified vertically scrollable page with top category shortcut jump navigation.
-- **Incoming Transfers:** Placed file-approval prompts directly below device summary on Home for immediate visibility.
-- **Branding:** Terracotta/coral accent on TopAppBar and About view; streamlined About with updated tagline and understated support link.
-- Regenerate adaptive launcher, app-bar and About artwork from the path-only ribbon master. Preserve launcher foreground size and monochrome artwork; use a near-black graphite glow with a subtle edge highlight for the Night launcher background and a softly warm Light background.
-- Document Mac Desk Deck and DND setup in the README feature guides.
-- Fold parallel dialer alerts into the active SIM ringing alert while preserving missed-call notifications.
-- Clarify call permission status in Settings, retain accessible permission-button touch targets and ignore call callbacks after tracking stops.
-- Detect incoming SIM ringing through Android telephony when the dialer omits a live call alert, and provide revision-bound Answer/Decline through Telecom after the user grants phone-state and call-control permissions.
-- Detect incoming CallStyle alerts from Answer/Decline controls even when Samsung omits call-type metadata, while continuing to skip outgoing calls.
-- Detect persistent system call notifications that expose incoming Answer/Decline controls, and send source icons over LAN only.
-- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
-- Keep notification app choices in the Settings page's existing scroll container to prevent a Compose nested-scroll crash.
-- Resolve and export the local Android SDK for Gradle when using the development launcher, and retain the ignored SDK path in new worktrees.
-- Skip queued notification snapshot entries after removal, replacement or Notification Access revocation.
-- Match the **Notification sync** section's inner spacing to Connection, keep one **Select apps** row, and use compact permission buttons that disappear after access is granted.
-- Show launcher icons alongside notification app choices.
-- Send bounded Android launcher icons with mirrored notifications so Mac can display them alongside alert content.
-- Opt in to Android's background-activity launch rules when forwarding a user-invoked notification PendingIntent from Mac.
-- Explain that Desk Deck can mute only a controllable Mac default input and that its DND action does not sync to the phone.
-- Keep DND sync phone-to-Mac only and remove the Mac-originated phone DND control path.
-- Label the Desk Deck DND macro **DND mode** and use a keyboard icon for Control Mac.
-- Keep Desk Deck inside the regular app bar and bottom navigation like other feature panels.
-- Document the remote-control source layout and remove outdated blanket validation claims.
-- Explain what to review before accepting files and confirm the saved folder after receipt.
-- Remove feature-level Back links that duplicate system navigation.
-- Highlight the selected QR or six-digit code method and clarify the next pairing action.
-- Guide first-launch users to add their Mac from Home with clear QR and six-digit code instructions.
-- Preserve the highest supported Desk Deck action mask while older compatibility capabilities arrive.
-- Keep the Share-to-Mac panel compact and hideable during transfers; show send/receive progress in the ongoing notification, including while the app is open.
-- Clarify File transfer settings with a named receive folder and sender, clearer control order, and tighter spacing.
-- Separate Android player and Mac output volume handling into a focused media controller file while retaining the existing command API.
-- Move Android SMS provider queries into their own implementation file while preserving the bounded store and paging contract.
-- Extract Android SMS thread, history, SIM and search request serving into a focused controller file while retaining channel dispatch and local presentation.
-- Organize the Android transfer engine into controller, sender, receiver, recovery, storage and wire files; keep the view, notification, service and action handling separate.
-- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
-- Replace the app palette and control styling with neutral light/dark colors, compact button faces and native accessible touch targets.
-- Reorganize Home around device status, send actions, playback, transfers and available recent activity.
-- Rework Devices and pairing with direct transport controls, inline security and trust disclosures, QR scanning and code entry.
-- Use compact feature rows, grouped Settings and a responsive About layout.
-- Reorganize playback, file transfer, Messages and Clipboard with contextual controls, chronological message threads, a bottom SMS composer and separate Share/History tabs.
+  briefly for pairing availability to retire and preserve saved trust on GATT
+  failure.
+- Unify transfer and Share actions with Home, wrap long action groups and
+  tighten Settings card/helper spacing with shorter LAN and DND copy.
+- Retain background LAN idle deadlines through replacement, enforce elapsed time
+  on return/unlock, and show the active work retaining LAN.
+- Let new file actions request enabled automatic LAN after transport Disconnect;
+  retain Bluetooth through picker return, bound ingress separately from its
+  active envelope and honor late successful MTU callbacks.
+- Fence pending Resume lookups on Cancel; restore a retained companion monitor
+  on foreground return without rearming from duplicate presence callbacks.
+- Make Resume one-click, show the armed automatic state and group the existing
+  pause-menu options.
+- Reference-count job work under eligible native owners; preserve leases through
+  renewal and restore the configured idle interval after final background/locked
+  work release.
 
 ### Fixed
 
+- Align Home fixtures with current device-detail and unpaired navigation, await
+  coalesced media retirement, and keep the opt-in physical benchmark JUnit method
+  void; retain SDK and native-eligibility gates.
+- Keep unrelated first-launch permission prompts out of emulator presentation
+  fixtures and restore the prior preference without granting native permissions.
+- Retire unowned BLE immediately when the last approved-work/picker lease ends
+  after screen-off, including before Activity stop; do not grant unlocked handoff
+  grace while locked.
+- Cancel pending LAN discovery/authentication synchronously on Disconnect;
+  reserve the best-effort encrypted close only for an already-secured channel.
 - Prepare first post-pair auto-reconnect approval inline on Home instead of
-  opening a second aniCe activity; explain native approval, background reconnection
-  and Pause. Preserve setup capability/request capacity events and give
-  acknowledgment its own bounded wait without replaying submitted messages.
-- Keep first auto-reconnect setup in a stable floating panel without a full-screen
-  launch flash or transient retry controls; retain one native request across
-  rotation and reject late cancelled, expired or process-restored results.
+  opening a second aniCe activity; explain native approval, background
+  reconnection and Pause. Preserve setup capability/request capacity events and
+  give acknowledgment its own bounded wait without replaying submitted messages.
+- Keep first auto-reconnect setup in a stable floating panel without a
+  full-screen launch flash or transient retry controls; retain one native
+  request across rotation and reject late cancelled, expired or process-restored
+  results.
 - Make nearby comparison method observable so the phone opens its prompt from
   idle/QR state; show the same code and attempt-bound actions inside Add device.
 - Show search progress immediately and separate presentation changes from
   explicit comparison dismissal.
-- Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
-- Route automatic setup through the compiled activity class in normal and isolated preview packages.
+- Fence LAN deadline checks to the current cryptographic session during
+  retained-socket renewal.
+- Route automatic setup through the compiled activity class in normal and
+  isolated preview packages.
 - Preserve paused setup and release synthetic work leases in native tests.
 - Correct LAN background-timeout and approved-work diagnostics.
-- Commit identity and trust journals with checked file sync, atomic replacement and directory sync; restore legacy backup-only journals without resetting trust.
-- Bind transfer status waiters to their channel and job epoch; retain verified partial checkpoints and destination grants after publication failure.
-- Resynchronize notifications on capacity restoration, retain bounded capability/action-result retries, and leave incomplete snapshots open rather than dropping current state.
-- Pin NDK r27d to match the native pairing build and import saveable settings state needed for compilation.
-- Compact the six-digit pairing field and align Find Device permission and peer actions with the standard outlined controls.
-- Show sent or received Bluetooth and LAN check feedback in Diagnostics while the transport is secured.
-- Keep connection details and diagnostics collapsed when Home opens a device in Devices.
-- Show v3 app, cache, free and swap readings; keep volume and actions near usage meters and move details into dialogs.
-- Keep Desk Deck shell responsive while subscriptions start; fence timeouts, acknowledgements and slider previews to the live channel generation, stop retry loops after one resubscription, and mark old readings stale before disabling actions.
-- Keep a first sample live when it cancels an in-flight subscription send instead of treating that cancellation as a failed connection.
-- Add actionable SMS permission recovery in Settings and retain it across rotation; use compact permission buttons in both Settings and Messages.
-- Align File transfer padding, keep large-text guidance visible, and handle older background timeout preferences without crashing Settings.
-- Keep opted-in receives active under the companion owner and leave **Send files** available after a terminal result.
+
+## [v0.9.0-beta.3]
+
+Application release v0.9.0-beta.3, build 90023.
+
+### Added
+
+- **In-App Auto-Updates:** Native auto-update manager
+  (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and
+  Atom feed fallback with live streaming progress and PackageInstaller handover.
+- Add persisted, network-constrained update checks at 19:30 Nepal time, overdue
+  retry catch-up and silent once-per-version notifications respecting beta
+  preferences.
+- **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h,
+  6h, custom duration, or until manually resumed, with real-time countdowns on
+  Home and Devices.
+- **Live Mac Power:** Inline Mac battery percentage and charging indicator
+  beside connection status on Home and Devices.
+- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%)
+  matching Mac's Appearance row layout.
+- Add **Allow caller ID** for incoming-number access and local contact lookup;
+  discard caller details when ringing ends.
+- Add a separate opt-in for incoming CallStyle alerts, pairing Android's
+  answer/decline PendingIntents and prioritizing them in the Mac alert.
+- Add case-insensitive app search, compact picker switches and use the standard
+  checkbox-style row for incoming-call mirroring.
+- Add Notification Access setup and an empty-by-default app picker; exclude
+  aniCe and the current default SMS app from notification mirroring.
+- Add a revisioned Mac output-device picker beside Desk Deck's output-volume
+  control.
+- Add Do Not Disturb control for Desk Deck v4, with explicit status checks after
+  uncertain Shortcut results.
+- Add a responsive Android Mac Desk Deck with CPU and memory history, memory
+  breakdown, Mac and phone power state, trusted quick actions, Mac-approved app
+  shortcuts, output-volume control, a locally cached stale snapshot and a
+  charging-only keep-awake option.
+- Add bounded v2 subscription renewal and approved-app catalog requests while
+  retaining v1 Mac support; store the selected Mac and per-Mac shortcut
+  pin/order locally.
+- Send files to a connected Mac from Android’s Share sheet.
+- Add Control Mac to Android Features and Favourites, with the normal keyboard,
+  IME-aware text correction, pointer and scroll input, and full-screen trackpad
+  text entry.
+- Add the Phone-to-Mac input v1 codec, including Mac session-ended notices, for
+  authenticated BLE text and control events.
+- Offer **Open in Mac** for shared HTTP(S) links on compatible Macs, alongside
+  **Send as clipboard**.
+- Save incoming files to `Downloads/aniCe` by default, with a remembered custom
+  folder and reset action.
+- Add off-by-default automatic-receive consent for each trusted Mac.
+- Review selected files and their recipient before sending; require renewed
+  review when the connected device changes.
+- Keep SMS drafts and SIM choices across navigation, and prevent duplicate sends
+  while a draft is pending.
+- Offer feature preferences in place and open This device in a shared sheet from
+  Devices or Settings.
+- Keep full bottom-navigation labels accessible through horizontal scrolling at
+  text sizes of 150% or above.
+
+### Changed
+
+- Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
+- Reuse the opaque near-black Dock background for the default/Dark launcher;
+  retain native adaptive sizing and the explicit system Light tile.
+- Present update review in a dismissible bottom sheet with scalable native
+  Markdown, rectangular themed actions, sticky progress and secondary actions
+  under More; retain the reviewed version during automatic refreshes.
+- Use the shared checkbox row, matching Connection's padding, and explicit
+  confirmation for beta updates; group available/busy status with a minimal
+  trailing check action and reflow at narrow widths or larger text without an
+  extra divider.
+- Rename the About contact row to Reach out, with the label leading and the
+  name/social actions kept together at the trailing edge, including larger text
+  sizes.
+- Open a user-reviewed GitHub report form with app and OS versions from About.
+- Add Debug-only UI and transfer preview packages with isolated app data; UI
+  previews remain emulator-only and transfer previews verify their package
+  before installing on a selected test phone.
+- Restore Android app entry points, Share/Quick Settings guidance, permission
+  distinctions and background-connection limits in the platform README.
+- **Navigation & Icons:** Outlined icons for inactive bottom destinations and
+  filled icons for the active destination.
+- **Reordering:** Long-press context menu to reorder Features and Favourites.
+- **SMS Composer:** Compacted composer row with reduced send button and SIM
+  selector height.
+- **Settings:** Unified vertically scrollable page with top category shortcut
+  jump navigation.
+- **Incoming Transfers:** Placed file-approval prompts directly below device
+  summary on Home for immediate visibility.
+- **Branding:** Terracotta/coral accent on TopAppBar and About view; streamlined
+  About with updated tagline and understated support link.
+- Regenerate adaptive launcher, app-bar and About artwork from the path-only
+  ribbon master. Preserve launcher foreground size and monochrome artwork; use a
+  near-black graphite glow with a subtle edge highlight for the Night launcher
+  background and a softly warm Light background.
+- Document Mac Desk Deck and DND setup in the README feature guides.
+- Fold parallel dialer alerts into the active SIM ringing alert while preserving
+  missed-call notifications.
+- Clarify call permission status in Settings, retain accessible
+  permission-button touch targets and ignore call callbacks after tracking
+  stops.
+- Detect incoming SIM ringing through Android telephony when the dialer omits a
+  live call alert, and provide revision-bound Answer/Decline through Telecom
+  after the user grants phone-state and call-control permissions.
+- Detect incoming CallStyle alerts from Answer/Decline controls even when
+  Samsung omits call-type metadata, while continuing to skip outgoing calls.
+- Detect persistent system call notifications that expose incoming
+  Answer/Decline controls, and send source icons over LAN only.
+- Enable incoming-call mirroring by default while preserving saved choices;
+  Notification Access remains required.
+- Keep notification app choices in the Settings page's existing scroll container
+  to prevent a Compose nested-scroll crash.
+- Resolve and export the local Android SDK for Gradle when using the development
+  launcher, and retain the ignored SDK path in new worktrees.
+- Skip queued notification snapshot entries after removal, replacement or
+  Notification Access revocation.
+- Match the **Notification sync** section's inner spacing to Connection, keep
+  one **Select apps** row, and use compact permission buttons that disappear
+  after access is granted.
+- Show launcher icons alongside notification app choices.
+- Send bounded Android launcher icons with mirrored notifications so Mac can
+  display them alongside alert content.
+- Opt in to Android's background-activity launch rules when forwarding a
+  user-invoked notification PendingIntent from Mac.
+- Explain that Desk Deck can mute only a controllable Mac default input and that
+  its DND action does not sync to the phone.
+- Keep DND sync phone-to-Mac only and remove the Mac-originated phone DND
+  control path.
+- Label the Desk Deck DND macro **DND mode** and use a keyboard icon for Control
+  Mac.
+- Keep Desk Deck inside the regular app bar and bottom navigation like other
+  feature panels.
+- Document the remote-control source layout and remove outdated blanket
+  validation claims.
+- Explain what to review before accepting files and confirm the saved folder
+  after receipt.
+- Remove feature-level Back links that duplicate system navigation.
+- Highlight the selected QR or six-digit code method and clarify the next
+  pairing action.
+- Guide first-launch users to add their Mac from Home with clear QR and
+  six-digit code instructions.
+- Preserve the highest supported Desk Deck action mask while older compatibility
+  capabilities arrive.
+- Keep the Share-to-Mac panel compact and hideable during transfers; show
+  send/receive progress in the ongoing notification, including while the app is
+  open.
+- Clarify File transfer settings with a named receive folder and sender, clearer
+  control order, and tighter spacing.
+- Separate Android player and Mac output volume handling into a focused media
+  controller file while retaining the existing command API.
+- Move Android SMS provider queries into their own implementation file while
+  preserving the bounded store and paging contract.
+- Extract Android SMS thread, history, SIM and search request serving into a
+  focused controller file while retaining channel dispatch and local
+  presentation.
+- Organize the Android transfer engine into controller, sender, receiver,
+  recovery, storage and wire files; keep the view, notification, service and
+  action handling separate.
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with
+  an eight-chunk maximum window; retain legacy Android LAN profiles and
+  standard/BLE bounds.
+- Replace the app palette and control styling with neutral light/dark colors,
+  compact button faces and native accessible touch targets.
+- Reorganize Home around device status, send actions, playback, transfers and
+  available recent activity.
+- Rework Devices and pairing with direct transport controls, inline security and
+  trust disclosures, QR scanning and code entry.
+- Use compact feature rows, grouped Settings and a responsive About layout.
+- Reorganize playback, file transfer, Messages and Clipboard with contextual
+  controls, chronological message threads, a bottom SMS composer and separate
+  Share/History tabs.
+
+### Fixed
+
+- Commit identity and trust journals with checked file sync, atomic replacement
+  and directory sync; restore legacy backup-only journals without resetting
+  trust.
+- Bind transfer status waiters to their channel and job epoch; retain verified
+  partial checkpoints and destination grants after publication failure.
+- Resynchronize notifications on capacity restoration, retain bounded
+  capability/action-result retries, and leave incomplete snapshots open rather
+  than dropping current state.
+- Pin NDK r27d to match the native pairing build and import saveable settings
+  state needed for compilation.
+- Compact the six-digit pairing field and align Find Device permission and peer
+  actions with the standard outlined controls.
+- Show sent or received Bluetooth and LAN check feedback in Diagnostics while
+  the transport is secured.
+- Keep connection details and diagnostics collapsed when Home opens a device in
+  Devices.
+- Show v3 app, cache, free and swap readings; keep volume and actions near usage
+  meters and move details into dialogs.
+- Keep Desk Deck shell responsive while subscriptions start; fence timeouts,
+  acknowledgements and slider previews to the live channel generation, stop
+  retry loops after one resubscription, and mark old readings stale before
+  disabling actions.
+- Keep a first sample live when it cancels an in-flight subscription send
+  instead of treating that cancellation as a failed connection.
+- Add actionable SMS permission recovery in Settings and retain it across
+  rotation; use compact permission buttons in both Settings and Messages.
+- Align File transfer padding, keep large-text guidance visible, and handle
+  older background timeout preferences without crashing Settings.
+- Keep opted-in receives active under the companion owner and leave **Send
+  files** available after a terminal result.
 - Show a numeric percentage and the transfer icon in progress notifications.
 - Show Event Posting setup guidance when macOS rejects a Control Mac start.
-- Keep the Bluetooth link when the Control Mac screen closes, avoid opening the keyboard on Start, and preserve the session when Live typing changes.
-- Discard queued Phone-to-Mac input when the Mac ends a session, and retire failed input channels before allowing another start.
-- Retain uncertain SMS duplicate protection across channel retirement, release the session lock before draining accepted work, defer Find Device native startup, and prepare transfer chunks off main. Write encrypted records directly into their output buffer.
-- Keep artwork only for the current recording, avoid clearing it for control-only revisions, and bound media-notification retirement during a connected transport handoff; preserve uncertain-action feedback and refresh native playback timing when its sample timestamp changes.
-- Keep a same-recording cover through temporary metadata gaps and tolerate an already-retired session during manual LAN disconnect.
-- Retry constrained LAN transfer probes on cadence so slow fallback ACK intervals cannot permanently keep transfers at 64-KiB chunks.
+- Keep the Bluetooth link when the Control Mac screen closes, avoid opening the
+  keyboard on Start, and preserve the session when Live typing changes.
+- Discard queued Phone-to-Mac input when the Mac ends a session, and retire
+  failed input channels before allowing another start.
+- Retain uncertain SMS duplicate protection across channel retirement, release
+  the session lock before draining accepted work, defer Find Device native
+  startup, and prepare transfer chunks off main. Write encrypted records
+  directly into their output buffer.
+- Keep artwork only for the current recording, avoid clearing it for
+  control-only revisions, and bound media-notification retirement during a
+  connected transport handoff; preserve uncertain-action feedback and refresh
+  native playback timing when its sample timestamp changes.
+- Keep a same-recording cover through temporary metadata gaps and tolerate an
+  already-retired session during manual LAN disconnect.
+- Retry constrained LAN transfer probes on cadence so slow fallback ACK
+  intervals cannot permanently keep transfers at 64-KiB chunks.
 
 ## [v0.3.0] — development milestone
 

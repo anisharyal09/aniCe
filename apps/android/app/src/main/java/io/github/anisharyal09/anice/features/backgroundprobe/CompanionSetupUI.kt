@@ -25,6 +25,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.anisharyal09.anice.infrastructure.connections.displayName
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 
+/** Saved relationship metadata only; trustedPeer/arm and fresh EDHOC validate the full credential. */
 internal fun hasConnectionSetup(peer: DeviceIdentity?, selectedId: String?, selectedFingerprint: String?) =
     peer != null && peer.deviceId == selectedId && peer.fingerprint == selectedFingerprint
 

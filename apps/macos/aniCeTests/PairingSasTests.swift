@@ -74,6 +74,49 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     owner.retired(link.descriptor)
     XCTAssertEqual(transitions, [true, false])
   }
+  private actor WindowWait {
+    private var pending: [CheckedContinuation<Void, Never>] = []
+    var count: Int { pending.count }
+    func wait() async { await withCheckedContinuation { pending.append($0) } }
+    func releaseFirst() { if !pending.isEmpty { pending.removeFirst().resume() } }
+    func releaseAll() { while !pending.isEmpty { pending.removeFirst().resume() } }
+  }
+
+  @MainActor func testRetiredExpiryCannotCloseANewerWindowOnTheSameChannel() async throws {
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "test.")
+    let initial = try await identity.publicIdentity()
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: PairingCodec.identityBytes(initial)) as? [String: Any])
+    json["platform"] = "android"
+    let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: json))
+    let link = NamesLink(peer: peer), wait = WindowWait()
+    var transitions: [Bool] = []
+    let owner = MacCompanionSetup(advertising: { transitions.append($0); return true },
+      wait: { await wait.wait() })
+    owner.available(link)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 1).encode(), on: link.descriptor)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    for _ in 0..<100 {
+      if await wait.count == 1 { break }
+      await Task.yield()
+    }
+    let first = await wait.count
+    XCTAssertEqual(first, 1)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 2).encode(), on: link.descriptor)
+    _ = await owner.handle(try CompanionSetupMessage(kind: 2, seconds: 60).encode(), on: link.descriptor)
+    for _ in 0..<100 {
+      if await wait.count == 2 { break }
+      await Task.yield()
+    }
+    let both = await wait.count
+    XCTAssertEqual(both, 2)
+    await wait.releaseFirst() // Simulates an expired wait resuming after its window was retired.
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertEqual(transitions, [true, false, true])
+    owner.retired(link.descriptor)
+    await wait.releaseAll()
+    XCTAssertEqual(transitions, [true, false, true, false])
+  }
+
   @MainActor func testCompanionCapabilityRetainsCapacityEventDuringRefusedSend() async throws {
     let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test", tagPrefix: "test.")
     let peer = try await identity.publicIdentity()
@@ -230,6 +273,9 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(vectors.count, 2)
     for vector in vectors {
       func bytes(_ name: String) throws -> Data { hex(try XCTUnwrap(vector[name + "Hex"] as? String)) }
+      for (name, platform) in [("clientIdentity", "android"), ("serverIdentity", "macos")] {
+        XCTAssertEqual(try DeviceIdentity.decode(bytes(name)).platform, platform)
+      }
       let clientIC = try PairingSas.identityCommitment(role: 1,
         salt: bytes("clientIdentitySalt"), identity: bytes("clientIdentity"))
       let serverIC = try PairingSas.identityCommitment(role: 2,
@@ -549,22 +595,24 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
           preferences.set(scale, forKey: "ui.fontScale")
           let view = MacComparisonCard(model: model, openApp: {}).frame(width: width)
             .environment(\.colorScheme, dark ? .dark : .light).defaultAppStorage(preferences)
-          let host = NSHostingView(rootView: view)
-          let size = host.fittingSize
-          XCTAssertEqual(size.width, width, accuracy: 1)
-          XCTAssertGreaterThan(size.height, 150)
-          XCTAssertLessThan(size.height, 400)
-          host.frame = NSRect(origin: .zero, size: size)
-          host.layoutSubtreeIfNeeded()
-          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-          host.cacheDisplay(in: host.bounds, to: bitmap)
-          let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-          XCTAssertGreaterThan(data.count, 1000)
-          if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
-            let directory = URL(fileURLWithPath: path, isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try data.write(to: directory.appendingPathComponent(
-               "comparison-\(dark ? "dark" : "light")-\(Int(width))-\(Int(scale * 100)).png"))
+          try autoreleasepool {
+            let host = NSHostingView(rootView: view)
+            let size = host.fittingSize
+            XCTAssertEqual(size.width, width, accuracy: 1)
+            XCTAssertGreaterThan(size.height, 150)
+            XCTAssertLessThan(size.height, 400)
+            host.frame = NSRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            XCTAssertGreaterThan(data.count, 1000)
+            if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+              let directory = URL(fileURLWithPath: path, isDirectory: true)
+              try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+              try data.write(to: directory.appendingPathComponent(
+                 "comparison-\(dark ? "dark" : "light")-\(Int(width))-\(Int(scale * 100)).png"))
+            }
           }
           renders += 1
         }

@@ -36,6 +36,10 @@ def require_instrumentation_pass(log):
     result_codes = re.findall(r"^INSTRUMENTATION_CODE: (-?\d+)\s*$", log, re.MULTILINE)
     if (statuses != ["1", "0"] or result_codes != ["-1"]
             or not re.search(r"^OK \(1 test\)\s*$", log, re.MULTILINE)
+            or re.findall(r"^INSTRUMENTATION_STATUS: class=(.*)$", log, re.MULTILINE) != [TEST_CLASS, TEST_CLASS]
+            or re.findall(r"^INSTRUMENTATION_STATUS: test=(.*)$", log, re.MULTILINE) != ["executeInterchange", "executeInterchange"]
+            or re.findall(r"^INSTRUMENTATION_STATUS: numtests=(.*)$", log, re.MULTILINE) != ["1", "1"]
+            or re.findall(r"^INSTRUMENTATION_STATUS: current=(.*)$", log, re.MULTILINE) != ["1", "1"]
             or any(token in log for token in ["FAILURES!!!", "INSTRUMENTATION_FAILED", "shortMsg="])):
         raise RuntimeError("Android interchange test did not pass:\n" + log)
 

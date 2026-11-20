@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 import generate_session_vectors as oracle
+import generate_control_vectors as control
 
 
 class SessionOracleTests(unittest.TestCase):
@@ -51,6 +52,14 @@ class SessionOracleTests(unittest.TestCase):
 
     def test_exact_regeneration(self):
         self.assertEqual(oracle.generate(), json.loads(Path(__file__).with_name("session-vectors.json").read_text()))
+
+    def test_control_oracle_bounds_nested_and_noncanonical_input(self):
+        valid = control.encode(["aniCe control", 1, 1, {"version": 1}])
+        self.assertEqual(control.validate(valid), (1, 1))
+        for raw in (b"\x81" * 32 + b"\x01", valid + b"\x00",
+                    valid[:-1] + b"\x18\x01"):
+            with self.subTest(payload=raw.hex()), self.assertRaises(ValueError):
+                control.validate(raw)
 
 
 if __name__ == "__main__":

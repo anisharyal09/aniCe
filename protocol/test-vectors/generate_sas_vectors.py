@@ -43,7 +43,7 @@ def identity(scalar, platform):
         "deviceId": "01234567-89ab-4cde-8fab-" + f"{scalar:012x}",
         "deviceName": "Synthetic " + platform,
         "platform": platform,
-        "algorithm": "P-256",
+        "algorithm": "ECDSA_P256_SHA256",
         "publicKey": base64.b64encode(point).decode(),
         "fingerprint": digest(point).hex(),
     }, separators=(",", ":"), sort_keys=True).encode()

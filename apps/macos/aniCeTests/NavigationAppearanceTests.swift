@@ -411,6 +411,23 @@ final class PauseMenuTests: XCTestCase {
     XCTAssertEqual(scroll.contentView.bounds.minY, 68, accuracy: 1)
     XCTAssertTrue(scroll.documentVisibleRect.contains(section.frame))
   }
+
+  func testAnimatedScrollCompletesOnTheMainActorAtTheTarget() async {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
+    scroll.documentView = document
+    let target = NSView(frame: NSRect(x: 0, y: 900, width: 450, height: 80))
+    document.addSubview(target)
+    let coordinator = SettingsScrollCoordinator()
+    coordinator.anchors["target"] = target
+    let completed = expectation(description: "main-actor animation completion")
+    coordinator.scroll(to: "target", animated: true) {
+      MainActor.assertIsolated()
+      XCTAssertTrue(scroll.documentVisibleRect.contains(target.frame))
+      completed.fulfill()
+    }
+    await fulfillment(of: [completed], timeout: 5)
+  }
 }
 
 private final class FlippedSettingsDocument: NSView {

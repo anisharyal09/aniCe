@@ -34,6 +34,9 @@ Maximum logical message size: **4,096 bytes**.
 
 #### Outer Protocol Messages
 
+The tables below describe QR/PIN. Method 3 overrides bootstrap field counts and
+adds reveal messages as specified in [SAS](SAS.md); shared framing is unchanged.
+
 | Type | Name | Direction | Fields | Description |
 | :---: | :--- | :--- | :--- | :--- |
 | `1` | `query` | Client $\to$ Server | *(none)* | Probe active invitation state |
@@ -126,7 +129,7 @@ bootstrap messages and identity envelope have method-specific field counts.
 Numeric comparison is not the entered OPAQUE PIN and cannot silently downgrade.
 
 ### Directional Encryption (AEAD)
-All inner messages (types 10–14) are encrypted using AES-256-GCM under directional keys:
+All inner messages (types 10–15, including SAS comparison approval) are encrypted using AES-256-GCM under directional keys:
 - Client to Server: $K_{\text{c2s}} = \text{derive}(K, \text{"client-to-server"}, H)$
 - Server to Client: $K_{\text{s2c}} = \text{derive}(K, \text{"server-to-client"}, H)$
 - Nonce (12 bytes): `0x00000000` (4 zero bytes) $\,\|\,$ `counter` (8-byte big-endian uint64). Counter starts at 0 and increments strictly by 1.
@@ -140,7 +143,10 @@ All inner messages (types 10–14) are encrypted using AES-256-GCM under directi
 1. **Identity Proof:** Proves possession of the long-term P-256 identity key:
    $$\text{ProofBytes} = \text{fields}(\text{"aniCe identity proof v1"}, H, \text{clientIdentityJSON}, \text{serverIdentityJSON}, \text{role}_{1})$$
    Signed with the device's persistent P-256 private key (`SHA256withECDSA`, ASN.1 DER format).
-2. **Mutual Consent:** The verified peer identity requires explicit approval on both devices' physical screens.
+2. **Mutual Consent:** QR/PIN requires explicit peer-identity approval on both
+   screens. SAS requires both six-digit comparison confirmations before identity
+   disclosure, then verifies identity proofs and reuses the trust receipt flow
+   without a second confirmation.
 3. **Signed Storage Receipt:** Confirms the peer identity was committed to local storage:
    $$\text{ReceiptBytes} = \text{fields}(\text{"aniCe trust stored v1"}, \text{SHA256}(\text{ProofBytes without role}), \text{role}_{1})$$
    Signed with the local P-256 private key and transmitted to the peer.
@@ -159,11 +165,17 @@ All inner messages (types 10–14) are encrypted using AES-256-GCM under directi
 | **GATT Teardown** | $\le 2$ seconds | Channel resources cleaned up |
 | **Max Authentication Attempts** | 5 attempts | Invitation permanently invalidates after 5 failures |
 
+These invitation limits apply to QR/PIN. Nearby availability and method-3
+admission, per-phase and overall deadlines are defined in [SAS](SAS.md) and
+[nearby discovery](../bluetooth/PROXIMITY.md).
+
 ---
 
 ## 5. Security & Privacy Rules
 
 1. **No BLE Identity Broadcast:** Device names, identity keys, and Bluetooth hardware addresses are never broadcast in unencrypted BLE advertising.
-2. **Channel Retirement on Malformed Input:** Malformed unauthenticated packets terminate the immediate candidate connection without revoking the parent invitation.
+2. **Channel Retirement on Malformed Input:** Malformed packets retire the
+   immediate candidate. QR/PIN may retain their bounded parent invitation; SAS
+   retires the attempt and never reuses its comparison material.
 3. **Constant-Time Verification:** Authentication MACs and hashes are compared using constant-time equality checks.
 4. **Memory Hygiene:** PIN inputs, ephemeral keys, and PAKE handles are zeroized upon completion or failure.

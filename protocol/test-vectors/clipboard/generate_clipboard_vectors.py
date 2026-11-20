@@ -55,7 +55,8 @@ def generate():
     invalid += [{'name': 'truncated', 'bytesHex': data[:-1].hex()}, {'name': 'trailing', 'bytesHex': (data+b'\0').hex()},
                 {'name': 'nonminimal-version', 'bytesHex': data.hex().replace('640105', '64180105', 1)},
                 {'name': 'invalid-utf8', 'bytesHex': (data[:-1]+b'\xff').hex()}]
-    assert len(good) >= 20 and len(invalid) >= 35
+    if len(good) < 20 or len(invalid) < 35:
+        raise AssertionError("Clipboard fixture inventory shrank")
     return {'valid': good, 'invalid': invalid}
 
 

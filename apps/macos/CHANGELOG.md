@@ -11,49 +11,26 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Add authenticated live/reconnect device-name snapshots, revisioned no-backup
   display storage and shared label resolution for current device/companion and
   feature surfaces without recreating secure sessions.
-
-- Add awake/unlocked first-pair availability, globally bounded request admission,
-  six-digit verification in a non-activating floating or centered native card,
-  deferred identity disclosure, trust receipts and existing session handoff.
-
-- Add first-setup Find nearby/Pause controls on known-empty trust, using deadline-driven anonymous availability without opening pairing writes.
-
-- Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds.
-
-- Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.
-- Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
-- **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
-- **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
-- Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive once-per-version release notifications respecting beta preferences.
-- **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on menu bar companion and main window.
-- **Live Phone Power:** Inline peer battery percentage and charging indicator beside connection status on menu bar companion and main window.
-- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in settings.
-- **File Transfer:** Drag-and-drop file shelf on screen edges and modal file picker on the active display space.
-- Present selected Android app notifications as native Mac alerts with source taps, available actions, text replies and synchronized dismissal.
-- Show opted-in Android incoming-call alerts with Answer and Decline actions in a predictable order.
-- Advertise available Core Audio outputs to Desk Deck and switch the Mac's default output after revalidating the selected device.
-- Add Settings → Desk Deck with a native app picker and independent shortcut approval for each trusted phone; add phone battery and charging status beside connected-device state in Overview and the menu-bar companion.
-- Add Mac v2 memory and battery samples, paged catalogs for up to 32 approved apps, renewable foreground subscriptions and the public Control–Command–Q lock request.
-- Serve foreground Desk Deck samples and trusted-phone Mac lock, app-launch, screenshot, microphone-mute and output-volume commands over the existing authenticated session.
-- Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
-- Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer input, session cleanup, and Mac permission and receiver status controls.
-- Add a draggable floating keyboard control that toggles phone typing, opens full controls on right-click, and restores its saved visibility collapsed and idle.
-- Add a dedicated full-screen trackpad with local Stop and Done controls.
-- Add a saved drag handle below the pointer pad to resize its height in both feature and floating controls; keep keyboard height fixed.
-- Open validated HTTP(S) links shared from Android in the default browser without changing the clipboard.
-- Add Home and File transfer drop targets, an optional right/left/top Edge Drop shelf, and saved receive destinations with per-phone automatic-receive consent.
-- Confirm a verified Edge Drop send in the shelf, and optionally post a background notification when received files finish saving, including automatic receives, with a batch-bound Show in Finder action.
-- Add Keyboard & Trackpad with native keyboard capture, pointer input, two-finger up/down scrolling and left/right pointer dragging, Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps Lock forwarding, compatibility with cached Android keyboard descriptors and lifecycle-safe HID release behavior.
-- Native Back/Forward history with keyboard shortcuts and restoration of device and feature context.
-- Review selected files and their recipient before sending; reject sends when the reviewed device changes.
-- Retain each phone’s SMS draft and selected conversation across navigation and temporary disconnection.
-- Offer feature preferences in place and open This device in a shared sheet from Devices or Settings.
+- Add awake/unlocked first-pair availability, globally bounded request
+  admission, six-digit verification in a non-activating floating or centered
+  native card, deferred identity disclosure, trust receipts and existing session
+  handoff.
+- Add first-setup Find nearby/Pause controls on known-empty trust, using
+  deadline-driven anonymous availability without opening pairing writes.
+- Add opt-in non-expiring anonymous discovery lifetime and next-deadline
+  scheduling support while preserving ordinary discovery bounds.
+- Mirror authenticated phone pause notices in Overview, Devices and the
+  companion without changing local automatic preferences.
+- Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and
+  negotiate fresh EDHOC renewal on the retained LAN socket.
 
 ### Changed
 
-- Use native Liquid Glass for the floating comparison card on macOS 26+,
-  native material on older systems and a solid Reduce Transparency fallback;
-  preserve legible code, same-attempt actions and non-activating focus.
+- Move orphaned playback adapter parsing, selection and scheduling checks into
+  hosted XCTest; consume the current LAN profile-4 resource in the native oracle.
+- Use native Liquid Glass for the floating comparison card on macOS 26+, native
+  material on older systems and a solid Reduce Transparency fallback; preserve
+  legible code, same-attempt actions and non-activating focus.
 - Remove an unused window text-scale mapper; keep actual font-scale behavior.
 - Compact the non-activating comparison card with a native smartphone symbol,
   shorter copy and unchanged same-attempt approval/focus behavior.
@@ -62,105 +39,287 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Advertise the existing generic BLE service for bounded authenticated Android
   companion enrollment without reopening occupied session admission.
 - Fence delayed native unsubscribe callbacks against the current characteristic
-  and live subscription; report profile/read/write outcomes without peer payloads.
-
-- Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
-- Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
-- Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.
-- Explain slower Bluetooth fallback with a LAN action, and keep the active BLE receive envelope separate from queued-envelope accounting.
-- Close unfinished BLE/LAN admission immediately on Pause while retaining secured notice delivery, and emit one Resume notice per explicit paused Connect.
-- Make Resume one-click with a play icon, show the armed automatic state and group the existing native pause-menu options.
-- Keep transfer channels and transport-dependent waits intact across bounded LAN maintenance; retain cryptographic, frame and recovery deadlines.
-- Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers to `90023`.
-- Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.
-- Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.
-- Use a roomier 960 × 640 pt initial window, a content-fitting resizable sidebar and a 27 pt sidebar brand mark.
-- Require confirmation before enabling beta updates and use compact, scalable text across Settings, including embedded feature preferences.
-- Use Reach out for About contacts, keep the name/social actions together at the trailing edge, and open a user-reviewed GitHub report form with app and OS versions.
-- Clarify aniCe trust versus system Bluetooth pairing in Control Android setup and device selection.
-- Add isolated UI and transfer-preview bundles with separate identity/runtime storage and native feature/lifecycle controls; the transfer preview keeps notification permissions realistic without touching production updates.
-- Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
-
-- Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.
-- **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
-- **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.
-- **Apple Silicon Standard:** Standardized native `arm64` as the official macOS architecture across the app, update helper, and Rust pairing libraries.
-- Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar artwork, and inset the appearance-aware Dock tile while preserving the silver mark's size. Give the Dark Dock tile a near-black graphite glow with fine rim and top/bottom highlights.
-- Document Mac Desk Deck and DND setup in the README feature guides.
-- Attach the Android source app icon to mirrored Mac alerts and add aniCe's development mark as the macOS app/sender icon.
-- Keep phone-to-Mac DND sync, remove Mac-to-phone automation, and tuck one-time Shortcut setup under a disclosure.
-- Label the Desk Deck DND toggle as Mac-only with no phone sync.
-- Simplify trusted-phone app approvals and remove internal bundle identifiers from the Desk Deck settings list.
-- Remove duplicate Back buttons from feature panels; retain the sidebar and toolbar history controls.
-- Shorten Mac input permission and connection guidance.
-- Remove feature-level Back links that duplicate titlebar navigation.
-- Use consistent Add device language in the Mac pairing flow.
-- Guide first-launch users to add their Android phone and hide empty file-send shortcuts until a device is trusted.
-- Enable Edge Drop by default at the right edge; keep an explicit opt-out saved.
-- Clarify File transfer settings and Edge Drop placement; enlarge send and result controls.
-- Pin each Mac send to its selected phone, prefer LAN, and require an explicit Bluetooth fallback choice.
-- Compact Keyboard & Trackpad into a shared vertical layout, with inline connection actions, consistent hover feedback and distinct focus and active-input styling in the feature and floating controls.
-- Highlight active typing on the floating keyboard button with the accent fill and a contrasting icon.
-- Remove the rectangular native panel shadow around the floating keyboard controls; retain the rounded content shadow.
-- Simplify expanded floating controls to the selected phone, Open in app, input actions and contextual recovery details.
-- Reduce unused space below the expanded floating controls.
-- Refine Keyboard & Trackpad headers and gesture guidance, preserve keyboard focus across layout changes and saved position after hiding expanded controls, and document the native adapter's aniKey provenance and idle behavior.
-- Keep the floating keyboard button in a stable compact position across expand, collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar companion popup, and remove the confusing keyboard shortcut hint.
-- Make expanded floating controls movable, pass inactive-pad scrolling to the local panel, reduce repeated header details and clarify Bluetooth HID state.
-- Correct default vertical pointer direction, save independent pointer/scroll speeds, and apply scroll speed to both trackpads and mouse wheels.
-- Reduce Keyboard & Trackpad callback scheduling and duplicate modifier reports; use monotonic motion pacing and cancel pending motion timers when capture stops.
-- Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in one compact, responsive action row.
-- Allow Type clipboard during direct control, releasing held input only after validating the text.
-- Automatically connect after linking and reconnect once when Keyboard & Trackpad opens, defaulting to the authenticated BLE-connected phone. Use aniKey's system-paired, authenticated Bluetooth policy; macOS manages encryption without an additional aniCe encryption-status gate.
-- Move SMS stream assembly and live/provider/search row admission into a focused receiving extension while preserving the model's message handling.
-- Organize the Mac transfer engine into coordinator, sender, receiver, recovery, storage and wire files; keep the view and notification handling separate.
-- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; pre-size Mac CBOR output to avoid payload-sized growth copies and retain legacy Android LAN profiles and standard/BLE bounds.
-- Apply neutral light/dark colors, a split window header, compact controls and consistent hover, pressed and focus feedback.
-- Reorganize Overview with device status, send actions, responsive playback/transfer columns and recent activity.
-- Rework Devices and pairing with compact transport rows, security and trust disclosures and native approval sheets.
-- Replace feature launcher tiles with compact rows; group Settings with section shortcuts and center About content at wide sizes.
-- Reorganize playback, file transfer, Messages and Clipboard, including split conversations, a bottom SMS composer and separate Share/History tabs.
-- Rework the menu-bar companion and Quick Paste Tray with compact actions, device context, responsive previews and copy feedback.
+  and live subscription; report profile/read/write outcomes without peer
+  payloads.
+- Keep Overview transfer headings at one size across states and center native
+  send confirmations on the initiating display.
+- Match transfer actions to Overview controls, reflow narrow action groups and
+  remove duplicate navigation and feature settings from Overview panels.
+- Bound LAN loss checks to their socket generation, shorten native TCP detection
+  and allow new file sends to request enabled LAN after transport Disconnect.
+- Explain slower Bluetooth fallback with a LAN action, and keep the active BLE
+  receive envelope separate from queued-envelope accounting.
+- Close unfinished BLE/LAN admission immediately on Pause while retaining
+  secured notice delivery, and emit one Resume notice per explicit paused
+  Connect.
+- Make Resume one-click with a play icon, show the armed automatic state and
+  group the existing native pause-menu options.
+- Keep transfer channels and transport-dependent waits intact across bounded LAN
+  maintenance; retain cryptographic, frame and recovery deadlines.
 
 ### Fixed
 
-- Retain a capacity event arriving during a refused companion capability send
-  so first enrollment does not wait for an unrelated later retry.
+- Prevent a cancelled companion-window expiry from retiring a newer window on
+  the same authenticated channel.
+- Keep Settings animation completion and notification cleanup on the main actor;
+  bound window-render owners and native window/screenshot lifetimes.
+- Use a typed Core Audio UID output pointer, matching the Desk Deck adapter.
+- Retain a capacity event arriving during a refused companion capability send so
+  first enrollment does not wait for an unrelated later retry.
 - Keep floating-card Confirm on the same attempt in normal Devices navigation;
-  avoid competing sheet cancellation shortcuts and verify approval versus dismissal.
+  avoid competing sheet cancellation shortcuts and verify approval versus
+  dismissal.
 - Stop pairing advertising while its slot is occupied or admission is cooling
   down; resume eligible availability at the existing global deadline.
-- Fence LAN deadline checks and renewal triggers to the current cryptographic session.
-- Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
-- Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.
-- Bind transfer status waiters to their issuing channel and job epoch; retain publication checkpoints after a verified file fails to save.
-- Bound notification inventories and removal tombstones, prune unused native action categories, and preserve first-alert presentation through pending revisions.
-- Move ordered playback-helper input writes off MainActor with bounded pending bytes and nonblocking cancellation.
-- Use explicit closures in SMS phone/conversation selection to avoid Swift Release compiler crashes.
-- Relaunch the restored app after an immediate update-launch failure, and persist the failure before relaunch so recovery is reported in its first window. Preserve recovery state if rollback cannot exchange bundles.
-- **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in session and notification views, resolving compiler crashes under Xcode 26.3 Release optimizations (`-O`).
-- **Coordinate Handling:** Translated pause menu popup coordinates into flipped `NSHostingView` space and re-anchored custom pause popover directly to the button.
-- Keep live mirrored alerts active, quietly enrich Bluetooth-first notifications with icons when LAN becomes available, and reject icon records over BLE.
-- Keep distinct actions on a mirrored Android notification available independently while rejecting duplicate callbacks for each action.
-- Use Carbon-compatible event parameter types in the system-wide keyboard and clipboard shortcuts.
-- Show the latest Bluetooth and LAN connection-check feedback beside received counts.
+- Fence LAN deadline checks and renewal triggers to the current cryptographic
+  session.
+
+## [v0.9.0-beta.3]
+
+Application release v0.9.0-beta.3, build 90023.
+
+### Added
+
+- **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey
+  (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion
+  during trackpad gesture momentum.
+- **In-App Auto-Updates:** Native Swift update engine (`MacUpdate*`,
+  `UpdateHelper`) with pinned-certificate verification, detached helper bundle
+  swap and rollback.
+- Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive
+  once-per-version release notifications respecting beta preferences.
+- **Timed Connection Pauses:** Temporarily silence background auto-reconnects
+  for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time
+  countdowns on menu bar companion and main window.
+- **Live Phone Power:** Inline peer battery percentage and charging indicator
+  beside connection status on menu bar companion and main window.
+- **Appearance & Typography:** Fine-grained font scaling slider (80%–120%) in
+  settings.
+- **File Transfer:** Drag-and-drop file shelf on screen edges and modal file
+  picker on the active display space.
+- Present selected Android app notifications as native Mac alerts with source
+  taps, available actions, text replies and synchronized dismissal.
+- Show opted-in Android incoming-call alerts with Answer and Decline actions in
+  a predictable order.
+- Advertise available Core Audio outputs to Desk Deck and switch the Mac's
+  default output after revalidating the selected device.
+- Add Settings → Desk Deck with a native app picker and independent shortcut
+  approval for each trusted phone; add phone battery and charging status beside
+  connected-device state in Overview and the menu-bar companion.
+- Add Mac v2 memory and battery samples, paged catalogs for up to 32 approved
+  apps, renewable foreground subscriptions and the public Control–Command–Q lock
+  request.
+- Serve foreground Desk Deck samples and trusted-phone Mac lock, app-launch,
+  screenshot, microphone-mute and output-volume commands over the existing
+  authenticated session.
+- Add the Phone-to-Mac input v1 codec and shared contract fixture coverage.
+- Add the authenticated Phone-to-Mac receiver, with Unicode, key and pointer
+  input, session cleanup, and Mac permission and receiver status controls.
+- Add a draggable floating keyboard control that toggles phone typing, opens
+  full controls on right-click, and restores its saved visibility collapsed and
+  idle.
+- Add a dedicated full-screen trackpad with local Stop and Done controls.
+- Add a saved drag handle below the pointer pad to resize its height in both
+  feature and floating controls; keep keyboard height fixed.
+- Open validated HTTP(S) links shared from Android in the default browser
+  without changing the clipboard.
+- Add Home and File transfer drop targets, an optional right/left/top Edge Drop
+  shelf, and saved receive destinations with per-phone automatic-receive
+  consent.
+- Confirm a verified Edge Drop send in the shelf, and optionally post a
+  background notification when received files finish saving, including automatic
+  receives, with a batch-bound Show in Finder action.
+- Add Keyboard & Trackpad with native keyboard capture, pointer input,
+  two-finger up/down scrolling and left/right pointer dragging,
+  Back/Home/Recents, address-deduplicated device linking, clipboard typing, Caps
+  Lock forwarding, compatibility with cached Android keyboard descriptors and
+  lifecycle-safe HID release behavior.
+- Native Back/Forward history with keyboard shortcuts and restoration of device
+  and feature context.
+- Review selected files and their recipient before sending; reject sends when
+  the reviewed device changes.
+- Retain each phone’s SMS draft and selected conversation across navigation and
+  temporary disconnection.
+- Offer feature preferences in place and open This device in a shared sheet from
+  Devices or Settings.
+
+### Changed
+
+- Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers
+  to `90023`.
+- Render release notes as native headings, attributed text and list rows with
+  rectangular themed review actions; hide source metadata only for display and
+  retain the reviewed version during automatic refreshes.
+- Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain
+  system Light/Dark Dock variants.
+- Use a roomier 960 × 640 pt initial window, a content-fitting resizable sidebar
+  and a 27 pt sidebar brand mark.
+- Require confirmation before enabling beta updates and use compact, scalable
+  text across Settings, including embedded feature preferences.
+- Use Reach out for About contacts, keep the name/social actions together at the
+  trailing edge, and open a user-reviewed GitHub report form with app and OS
+  versions.
+- Clarify aniCe trust versus system Bluetooth pairing in Control Android setup
+  and device selection.
+- Add isolated UI and transfer-preview bundles with separate identity/runtime
+  storage and native feature/lifecycle controls; the transfer preview keeps
+  notification permissions realistic without touching production updates.
+- Separate Desk Deck wire validation, native system access, Shortcut execution
+  and device-power reporting from its session model without changing behavior.
+- Restore Mac companion, input, clipboard, file-transfer and setup entry points
+  in the platform README, with links to their detailed limits.
+- **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid
+  with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport
+  status.
+- **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm
+  terracotta accent (`#D26458`) for GitHub.
+- **Apple Silicon Standard:** Standardized native `arm64` as the official macOS
+  architecture across the app, update helper, and Rust pairing libraries.
+- Use the path-only SVG master across Mac surfaces, set 21.5 pt menu-bar
+  artwork, and inset the appearance-aware Dock tile while preserving the silver
+  mark's size. Give the Dark Dock tile a near-black graphite glow with fine rim
+  and top/bottom highlights.
+- Document Mac Desk Deck and DND setup in the README feature guides.
+- Attach the Android source app icon to mirrored Mac alerts and add aniCe's
+  development mark as the macOS app/sender icon.
+- Keep phone-to-Mac DND sync, remove Mac-to-phone automation, and tuck one-time
+  Shortcut setup under a disclosure.
+- Label the Desk Deck DND toggle as Mac-only with no phone sync.
+- Simplify trusted-phone app approvals and remove internal bundle identifiers
+  from the Desk Deck settings list.
+- Remove duplicate Back buttons from feature panels; retain the sidebar and
+  toolbar history controls.
+- Shorten Mac input permission and connection guidance.
+- Remove feature-level Back links that duplicate titlebar navigation.
+- Use consistent Add device language in the Mac pairing flow.
+- Guide first-launch users to add their Android phone and hide empty file-send
+  shortcuts until a device is trusted.
+- Enable Edge Drop by default at the right edge; keep an explicit opt-out saved.
+- Clarify File transfer settings and Edge Drop placement; enlarge send and
+  result controls.
+- Pin each Mac send to its selected phone, prefer LAN, and require an explicit
+  Bluetooth fallback choice.
+- Compact Keyboard & Trackpad into a shared vertical layout, with inline
+  connection actions, consistent hover feedback and distinct focus and
+  active-input styling in the feature and floating controls.
+- Highlight active typing on the floating keyboard button with the accent fill
+  and a contrasting icon.
+- Remove the rectangular native panel shadow around the floating keyboard
+  controls; retain the rounded content shadow.
+- Simplify expanded floating controls to the selected phone, Open in app, input
+  actions and contextual recovery details.
+- Reduce unused space below the expanded floating controls.
+- Refine Keyboard & Trackpad headers and gesture guidance, preserve keyboard
+  focus across layout changes and saved position after hiding expanded controls,
+  and document the native adapter's aniKey provenance and idle behavior.
+- Keep the floating keyboard button in a stable compact position across expand,
+  collapse, hide and reopen, add a direct Keyboard toggle to the menu-bar
+  companion popup, and remove the confusing keyboard shortcut hint.
+- Make expanded floating controls movable, pass inactive-pad scrolling to the
+  local panel, reduce repeated header details and clarify Bluetooth HID state.
+- Correct default vertical pointer direction, save independent pointer/scroll
+  speeds, and apply scroll speed to both trackpads and mouse wheels.
+- Reduce Keyboard & Trackpad callback scheduling and duplicate modifier reports;
+  use monotonic motion pacing and cancel pending motion timers when capture
+  stops.
+- Keep keyboard shortcuts, Back/Home/Recents and clipboard typing together in
+  one compact, responsive action row.
+- Allow Type clipboard during direct control, releasing held input only after
+  validating the text.
+- Automatically connect after linking and reconnect once when Keyboard &
+  Trackpad opens, defaulting to the authenticated BLE-connected phone. Use
+  aniKey's system-paired, authenticated Bluetooth policy; macOS manages
+  encryption without an additional aniCe encryption-status gate.
+- Move SMS stream assembly and live/provider/search row admission into a focused
+  receiving extension while preserving the model's message handling.
+- Organize the Mac transfer engine into coordinator, sender, receiver, recovery,
+  storage and wire files; keep the view and notification handling separate.
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with
+  an eight-chunk maximum window; pre-size Mac CBOR output to avoid payload-sized
+  growth copies and retain legacy Android LAN profiles and standard/BLE bounds.
+- Apply neutral light/dark colors, a split window header, compact controls and
+  consistent hover, pressed and focus feedback.
+- Reorganize Overview with device status, send actions, responsive
+  playback/transfer columns and recent activity.
+- Rework Devices and pairing with compact transport rows, security and trust
+  disclosures and native approval sheets.
+- Replace feature launcher tiles with compact rows; group Settings with section
+  shortcuts and center About content at wide sizes.
+- Reorganize playback, file transfer, Messages and Clipboard, including split
+  conversations, a bottom SMS composer and separate Share/History tabs.
+- Rework the menu-bar companion and Quick Paste Tray with compact actions,
+  device context, responsive previews and copy feedback.
+
+### Fixed
+
+- Cancel queued automatic clipboard work when paused without cancelling explicit
+  manual sends or replaying paused copies on resume.
+- Reject oversized SMS sends and preserve full notification replies in the
+  Messages draft instead of truncating them.
+- Bind transfer status waiters to their issuing channel and job epoch; retain
+  publication checkpoints after a verified file fails to save.
+- Bound notification inventories and removal tombstones, prune unused native
+  action categories, and preserve first-alert presentation through pending
+  revisions.
+- Move ordered playback-helper input writes off MainActor with bounded pending
+  bytes and nonblocking cancellation.
+- Use explicit closures in SMS phone/conversation selection to avoid Swift
+  Release compiler crashes.
+- Relaunch the restored app after an immediate update-launch failure, and
+  persist the failure before relaunch so recovery is reported in its first
+  window. Preserve recovery state if rollback cannot exchange bundles.
+- **Swift 6 Isolation:** Isolated `@MainActor` closure thunk synthesis in
+  session and notification views, resolving compiler crashes under Xcode 26.3
+  Release optimizations (`-O`).
+- **Coordinate Handling:** Translated pause menu popup coordinates into flipped
+  `NSHostingView` space and re-anchored custom pause popover directly to the
+  button.
+- Keep live mirrored alerts active, quietly enrich Bluetooth-first notifications
+  with icons when LAN becomes available, and reject icon records over BLE.
+- Keep distinct actions on a mirrored Android notification available
+  independently while rejecting duplicate callbacks for each action.
+- Use Carbon-compatible event parameter types in the system-wide keyboard and
+  clipboard shortcuts.
+- Show the latest Bluetooth and LAN connection-check feedback beside received
+  counts.
 - Route Home device selection to Devices and keep connection details collapsed.
-- Use percent-free branch build folders so the developer launcher avoids ClangStatCache failures on branch names containing slashes.
-- Cancel notification presentation still pending at disconnect, keep reconnect snapshots silent, preserve concurrently registered action categories and reject delayed copies of removed alerts across BLE/LAN.
-- Sample anonymous app memory separately from cache, handle native CPU counter rollover and open the native Screenshot controls.
-- Keep one Mac sampling task per active Deck session, fence cleanup by generation, coalesce pending telemetry to the latest sample and expire v2 subscriptions without renewal.
-- Revalidate approved app bundle identity immediately before launch; move legacy Blender/Terminal launch codes out of v2 requests.
-- Keep development-signing warnings out of Release permission UI and document archive naming, signing and distribution.
-- Reveal the running signed app from blocked input permission settings so stale macOS permission entries can be reauthorized against the correct copy.
+- Use percent-free branch build folders so the developer launcher avoids
+  ClangStatCache failures on branch names containing slashes.
+- Cancel notification presentation still pending at disconnect, keep reconnect
+  snapshots silent, preserve concurrently registered action categories and
+  reject delayed copies of removed alerts across BLE/LAN.
+- Sample anonymous app memory separately from cache, handle native CPU counter
+  rollover and open the native Screenshot controls.
+- Keep one Mac sampling task per active Deck session, fence cleanup by
+  generation, coalesce pending telemetry to the latest sample and expire v2
+  subscriptions without renewal.
+- Revalidate approved app bundle identity immediately before launch; move legacy
+  Blender/Terminal launch codes out of v2 requests.
+- Keep development-signing warnings out of Release permission UI and document
+  archive naming, signing and distribution.
+- Reveal the running signed app from blocked input permission settings so stale
+  macOS permission entries can be reauthorized against the correct copy.
 - Leave **Send files** available after a receive or terminal result.
-- Check Event Posting before accepting a phone start, report denials to Android, and refresh permission status after returning from Settings.
-- Move Mac input permission and receiver status from Features to Settings → Permissions; keep receiving automatic after a phone start.
-- Ignore stale BLE/LAN callbacks from retired channel instances so an old disconnect cannot retire a replacement session or consume playback commands.
-- Prepare transfer chunks in the source-storage actor without a second full-read buffer, and defer native Find Device startup so shared DATA delivery can continue.
-- Retry constrained LAN transfer probes on cadence so slow fallback ACK intervals cannot permanently keep transfers at 64-KiB chunks.
-- Prepare playback thumbnails off the UI thread, keep the current recording’s cover through temporary metadata gaps and suppress repeated unchanged volume snapshots, isolate command confirmation from discovery, retain navigation through a bounded inactive grace and preserve seek previews until confirmation.
-- Confine pointer movement and scrolling to the visible pad, releasing sideways drags that end outside.
-- Preserve fractional pointer and wheel movement, and prevent delayed focus-loss or connection completion callbacks from disarming newly started input.
+- Check Event Posting before accepting a phone start, report denials to Android,
+  and refresh permission status after returning from Settings.
+- Move Mac input permission and receiver status from Features to Settings →
+  Permissions; keep receiving automatic after a phone start.
+- Ignore stale BLE/LAN callbacks from retired channel instances so an old
+  disconnect cannot retire a replacement session or consume playback commands.
+- Prepare transfer chunks in the source-storage actor without a second full-read
+  buffer, and defer native Find Device startup so shared DATA delivery can
+  continue.
+- Retry constrained LAN transfer probes on cadence so slow fallback ACK
+  intervals cannot permanently keep transfers at 64-KiB chunks.
+- Prepare playback thumbnails off the UI thread, keep the current recording’s
+  cover through temporary metadata gaps and suppress repeated unchanged volume
+  snapshots, isolate command confirmation from discovery, retain navigation
+  through a bounded inactive grace and preserve seek previews until
+  confirmation.
+- Confine pointer movement and scrolling to the visible pad, releasing sideways
+  drags that end outside.
+- Preserve fractional pointer and wheel movement, and prevent delayed focus-loss
+  or connection completion callbacks from disarming newly started input.
 
 ## [v0.3.0] — development milestone
 

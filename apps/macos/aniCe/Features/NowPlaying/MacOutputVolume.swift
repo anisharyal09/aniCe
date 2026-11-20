@@ -23,7 +23,10 @@ enum OutputAudio {
   static func read() -> OutputDeviceVolume? {
     let id=device();guard id != 0 else { return nil }
     var uid="" as CFString, size=UInt32(MemoryLayout<CFString>.size), a=address(kAudioDevicePropertyDeviceUID)
-    guard AudioObjectGetPropertyData(id,&a,0,nil,&size,&uid)==noErr else { return nil }
+    let uidStatus = withUnsafeMutablePointer(to: &uid) { pointer in
+      AudioObjectGetPropertyData(id, &a, 0, nil, &size, pointer)
+    }
+    guard uidStatus == noErr else { return nil }
     for selector in [kAudioHardwareServiceDeviceProperty_VirtualMainVolume,kAudioDevicePropertyVolumeScalar] {
       a=address(selector,output:true);var settable: DarwinBoolean=false, scalar: Float32=0;size=4
       guard AudioObjectHasProperty(id,&a),AudioObjectIsPropertySettable(id,&a,&settable)==noErr,settable.boolValue,

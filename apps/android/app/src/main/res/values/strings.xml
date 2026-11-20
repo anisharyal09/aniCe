@@ -3,7 +3,6 @@
 <!-- Defines shared Android action labels, identity copy and connection messages. -->
 <resources>
     <string name="app_name">aniCe</string>
-    <string name="back">Back</string>
     <string name="cancel">Cancel</string>
     <string name="retry">Retry</string>
     <string name="android_platform">Android</string>
@@ -27,7 +26,6 @@
     <string name="find_connected">Connected</string>
     <string name="find_peer_action">Find %1$s</string>
     <string name="find_notification_body">Your paired device %1$s is looking for you.</string>
-    <string name="find_dismiss">Dismiss</string>
     <string name="find_idle">Connect a trusted device to send a notification.</string>
     <string name="find_waiting">Waiting for your paired device…</string>
     <string name="find_submitted">Your paired device submitted the notification. Display and sound depend on its system settings.</string>
@@ -40,14 +38,11 @@
     <string name="find_permission">Allow notifications on this device</string>
     <string name="find_settings">Notification settings</string>
     <string name="find_explanation">Send a notification to a connected trusted device. Sound follows system settings.</string>
-    <string name="find_unsupported">Find Device is unavailable. Connect a device with Find Device support.</string>
     <string name="find_local_allowed">Notifications allowed.</string>
     <string name="find_local_blocked">Notifications are off. Allow them to receive Find Device alerts.</string>
     <string name="find_ringing_title">Your device is being located</string>
     <string name="find_stop_ringing">Stop ringing</string>
-    <string name="find_ring_explanation">This phone rings for up to 60 seconds when a connected trusted device looks for it, even in Silent or Vibrate mode. Ringing uses your alarm volume and respects Do Not Disturb. Stop it here or in its notification.</string>
     <string name="find_pair_first">Pair a device in Devices to use Find Device.</string>
     <string name="find_connect_first">Disconnected. Connect this device in Devices to use Find Device.</string>
     <string name="find_not_advertised">Find Device support has not been advertised by this device.</string>
-    <string name="about_support">Support aniCe</string>
 </resources>
