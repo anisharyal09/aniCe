@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add a saved automatic update-check opt-out under Updates → More options on phone and Mac, keeping manual checks available.
 - Show authenticated peer pause notices before connection teardown without changing the peer's saved automatic policy.
 - Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.

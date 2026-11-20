@@ -18,25 +18,31 @@ import javax.net.ssl.HttpsURLConnection
 
 internal data class ReleaseResponse(val status: Int, val body: String = "", val etag: String? = null)
 internal fun interface ReleaseTransport {
-    fun request(url: String, method: String, etag: String?): ReleaseResponse
+    suspend fun request(url: String, method: String, etag: String?): ReleaseResponse
 }
 
-internal class GithubReleaseTransport : ReleaseTransport {
-    override fun request(url: String, method: String, etag: String?): ReleaseResponse {
+internal class GithubReleaseTransport(
+    private val openConnection: (URL) -> HttpsURLConnection = { it.openConnection() as HttpsURLConnection },
+) : ReleaseTransport {
+    override suspend fun request(url: String, method: String, etag: String?): ReleaseResponse {
         var target = URL(url)
         repeat(6) {
+            currentCoroutineContext().ensureActive()
             require(target.protocol == "https" && target.userInfo == null && (target.port == -1 || target.port == 443) &&
                 target.host.lowercase() in setOf("api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com")) { "Untrusted update URL" }
-            val connection = (target.openConnection() as HttpsURLConnection).apply {
-                requestMethod = method
-                connectTimeout = 10_000
-                readTimeout = 15_000
-                instanceFollowRedirects = false
-                setRequestProperty("Accept", "application/vnd.github+json")
-                if (etag != null) setRequestProperty("If-None-Match", etag)
-            }
+            val connection = openConnection(target)
             try {
+                connection.apply {
+                    requestMethod = method
+                    connectTimeout = 10_000
+                    readTimeout = 15_000
+                    instanceFollowRedirects = false
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    if (etag != null) setRequestProperty("If-None-Match", etag)
+                }
+                currentCoroutineContext().ensureActive()
                 val status = connection.responseCode
+                currentCoroutineContext().ensureActive()
                 if (status in 300..399 && status != HttpURLConnection.HTTP_NOT_MODIFIED) {
                     val location = connection.getHeaderField("Location") ?: error("Missing redirect location")
                     target = URL(target, location)
@@ -47,12 +53,15 @@ internal class GithubReleaseTransport : ReleaseTransport {
                     connection.inputStream.use { input ->
                         val buffer = ByteArray(8192)
                         while (true) {
+                            currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
+                            currentCoroutineContext().ensureActive()
                             if (count < 0) break
                             require(data.size() + count <= 2_097_152) { "Release metadata is too large" }
                             data.write(buffer, 0, count)
                         }
                     }
+                    currentCoroutineContext().ensureActive()
                     return ReleaseResponse(status, data.toString(Charsets.UTF_8.name()), connection.getHeaderField("ETag"))
                 }
             } finally { connection.disconnect() }
@@ -73,6 +82,9 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
     var includeBeta: Boolean
         get() = preferences.getBoolean("include_beta", false)
         set(value) { preferences.edit().putBoolean("include_beta", value).apply() }
+    var automaticChecks: Boolean
+        get() = preferences.getBoolean("automatic_checks", true)
+        set(value) { preferences.edit().putBoolean("automatic_checks", value).apply() }
     fun skip(tag: String) { preferences.edit().putString("skipped_tag", tag).apply() }
 
     fun nextAutomaticCheck(now: Long = System.currentTimeMillis()): Long {
@@ -86,7 +98,7 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
         release.version.tag != preferences.getString("skipped_tag", null) && (includeBeta || !release.version.prerelease)
 
     fun shouldNotify(release: AvailableRelease): Boolean {
-        if (!isEligible(release)) return false
+        if (!automaticChecks || !isEligible(release)) return false
         val previous = UpdateVersion.parse(preferences.getString(notificationKey(release), "").orEmpty())
         return previous == null || release.version > previous
     }
@@ -109,6 +121,8 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
     }
 
     suspend fun check(current: UpdateVersion, force: Boolean = false, now: Long = System.currentTimeMillis()): DiscoveryResult = withContext(Dispatchers.IO) {
+        currentCoroutineContext().ensureActive()
+        if (!force && !automaticChecks) return@withContext DiscoveryResult.Deferred
         val failures = preferences.getInt("failures", 0).coerceIn(0, 7)
         if (!force && now < nextAutomaticCheck(now)) {
             try {
@@ -162,6 +176,7 @@ internal class ReleaseDiscovery(private val preferences: SharedPreferences, priv
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
             preferences.edit().putInt("failures", (failures + 1).coerceAtMost(7)).apply()
             DiscoveryResult.Failed(error.message ?: "Unable to check for updates")
         }

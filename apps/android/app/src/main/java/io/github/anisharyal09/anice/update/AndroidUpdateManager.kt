@@ -32,11 +32,17 @@ internal sealed interface UpdateStatus {
     data class Failed(val message: String) : UpdateStatus
 }
 
-internal class AndroidUpdateManager(context: Context, private val discovery: ReleaseDiscovery = ReleaseDiscovery(context)) {
+internal class AndroidUpdateManager(
+    context: Context,
+    private val discovery: ReleaseDiscovery = ReleaseDiscovery(context),
+    private val automaticLifecycleEnabled: Boolean = context.packageName == "io.github.anisharyal09.anice",
+) {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var checkJob: Job? = null
     private var checkAgain = false
+    private var checkAgainUserInitiated = false
+    private var checkingAutomatically = false
     // Cached reads cannot replace results from newer checks or preference changes.
     private var selectionGeneration = 0L
     private var foregroundActivities = 0
@@ -48,6 +54,9 @@ internal class AndroidUpdateManager(context: Context, private val discovery: Rel
     val available: StateFlow<AvailableRelease?> = _available.asStateFlow()
     private val _includeBeta = MutableStateFlow(discovery.includeBeta)
     val includeBeta: StateFlow<Boolean> = _includeBeta.asStateFlow()
+    private val _automaticChecks = MutableStateFlow(discovery.automaticChecks)
+    val automaticChecks: StateFlow<Boolean> = _automaticChecks.asStateFlow()
+    val automaticSchedulingEnabled: Boolean get() = _automaticChecks.value && automaticLifecycleEnabled
     private val _reviewing = MutableStateFlow(false)
     val reviewing: StateFlow<Boolean> = _reviewing.asStateFlow()
     private val prefs = app.getSharedPreferences("update_preferences", Context.MODE_PRIVATE)
@@ -62,10 +71,10 @@ internal class AndroidUpdateManager(context: Context, private val discovery: Rel
 
     fun foregroundStarted() {
         foregroundActivities++
-        if (app.packageName != "io.github.anisharyal09.anice") return
+        if (!automaticLifecycleEnabled) return
         scope.launch {
             restoreCachedRelease()
-            if (discovery.nextAutomaticCheck() <= System.currentTimeMillis()) check()?.join()
+            if (_automaticChecks.value && discovery.nextAutomaticCheck() <= System.currentTimeMillis()) check()?.join()
             scheduleNextCheck()
         }
     }
@@ -96,26 +105,38 @@ internal class AndroidUpdateManager(context: Context, private val discovery: Rel
     }
 
     fun stopBackgroundCheck(job: Job?) {
-        if (foregroundActivities == 0 && job != null && job === checkJob) { checkAgain = false; job.cancel() }
+        if (foregroundActivities == 0 && checkingAutomatically && job != null && job === checkJob) {
+            // A queued explicit check is independent of the automatic job's lifetime.
+            job.cancel()
+        }
     }
 
     fun scheduleNextCheck() {
-        if (currentVersion == null) return
+        if (!automaticSchedulingEnabled || currentVersion == null) {
+            cancelScheduledUpdateCheck(app)
+            return
+        }
         val now = System.currentTimeMillis()
         val busy = (_reviewing.value && _available.value != null) || downloadJob?.isActive == true || _status.value == UpdateStatus.Installing ||
             _status.value is UpdateStatus.AwaitingConfirmation || _status.value == UpdateStatus.PermissionRequired
         scheduleUpdateCheck(app, if (busy) UpdateSchedule.latestEvening(now) + UpdateSchedule.DAY else discovery.nextAutomaticCheck(now))
     }
 
-    fun check(force: Boolean = false): Job? {
+    fun check(force: Boolean = false, userInitiated: Boolean = force): Job? {
+        if (!userInitiated && !_automaticChecks.value) return null
         checkJob?.takeIf { !it.isCompleted }?.let {
-            if (force) checkAgain = true
+            if (force) {
+                checkAgain = true
+                checkAgainUserInitiated = checkAgainUserInitiated || userInitiated
+            }
             return it
         }
         if ((!force && _reviewing.value && _available.value != null) || downloadJob?.isActive == true || _status.value == UpdateStatus.Installing ||
             _status.value is UpdateStatus.AwaitingConfirmation || _status.value == UpdateStatus.PermissionRequired) return null
         selectionGeneration++
-        checkJob = scope.launch {
+        checkingAutomatically = !userInitiated
+        // Publish ownership before immediate/cached completion or a queued check can replace it.
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val current = currentVersion
                 if (current == null) { _status.value = UpdateStatus.Failed("Installed version is not supported for update checks."); return@launch }
@@ -147,11 +168,39 @@ internal class AndroidUpdateManager(context: Context, private val discovery: Rel
             } finally {
                 if (_status.value == UpdateStatus.Checking) _status.value = UpdateStatus.Idle
                 checkJob = null
-                if (checkAgain) { checkAgain = false; check(force = true) }
+                checkingAutomatically = false
+                if (checkAgain) {
+                    val requestedByUser = checkAgainUserInitiated
+                    checkAgain = false; checkAgainUserInitiated = false
+                    check(force = true, userInitiated = requestedByUser)
+                }
                 else if (foregroundActivities > 0) scheduleNextCheck()
             }
         }
-        return checkJob
+        checkJob = job
+        job.start()
+        return job
+    }
+    fun setAutomaticChecks(value: Boolean) {
+        if (_automaticChecks.value == value) return
+        discovery.automaticChecks = value
+        _automaticChecks.value = value
+        if (!value) {
+            if (checkingAutomatically) {
+                checkJob?.cancel()
+                if (_status.value == UpdateStatus.Checking) _status.value = UpdateStatus.Idle
+            }
+            notification.clear()
+        }
+        scheduleNextCheck()
+        if (value && foregroundActivities > 0 && automaticLifecycleEnabled) {
+            val previous = checkJob
+            scope.launch {
+                previous?.join()
+                if (_automaticChecks.value) check()?.join()
+                scheduleNextCheck()
+            }
+        }
     }
     fun setIncludeBeta(value: Boolean) {
         selectionGeneration++
@@ -161,7 +210,7 @@ internal class AndroidUpdateManager(context: Context, private val discovery: Rel
             _status.value !is UpdateStatus.AwaitingConfirmation) {
             cancel(); _available.value = null; _reviewing.value = false; notification.clear()
         }
-        check(force = true)
+        if (_automaticChecks.value) check(force = true, userInitiated = false)
     }
     fun skip(version: UpdateVersion) {
         if (_available.value?.version != version) return

@@ -14,13 +14,19 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -179,19 +185,24 @@ internal fun downloadSummary(bytes: Long, total: Long?): String {
 @Composable
 internal fun UpdateSettings(manager: AndroidUpdateManager) {
     val beta by manager.includeBeta.collectAsState()
+    val automaticChecks by manager.automaticChecks.collectAsState()
     val status by manager.status.collectAsState()
     val release by manager.available.collectAsState()
-    UpdateSettingsContent(beta, status, release?.version?.tag, manager::setIncludeBeta) { manager.check(force = true) }
+    UpdateSettingsContent(beta, automaticChecks, status, release?.version?.tag,
+        manager::setIncludeBeta, manager::setAutomaticChecks) { manager.check(force = true) }
 }
 
 @Composable
 internal fun UpdateSettingsContent(
     beta: Boolean,
+    automaticChecks: Boolean,
     status: UpdateStatus,
     availableVersion: String?,
     onBetaChange: (Boolean) -> Unit,
+    onAutomaticChecksChange: (Boolean) -> Unit,
     onCheck: () -> Unit,
 ) {
+    var optionsExpanded by rememberSaveable { mutableStateOf(false) }
     BetaUpdatePreference(checked = beta, onCheckedChange = onBetaChange)
     val summary = when (val state = status) {
         UpdateStatus.Checking -> null
@@ -206,36 +217,87 @@ internal fun UpdateSettingsContent(
     val idle = status != UpdateStatus.Checking && status !is UpdateStatus.Downloading &&
         status != UpdateStatus.Installing && status !is UpdateStatus.AwaitingConfirmation &&
         status != UpdateStatus.PermissionRequired
+    if (summary != null) {
+        Text(summary, Modifier.fillMaxWidth().padding(top = 4.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (status is UpdateStatus.Failed) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.4f
-        val summaryColor = if (status is UpdateStatus.Failed) MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurfaceVariant
-        Column(Modifier.fillMaxWidth()) {
-            if (stacked && summary != null) {
-                Text(summary, Modifier.fillMaxWidth().padding(top = 4.dp),
-                    style = MaterialTheme.typography.bodySmall, color = summaryColor)
-            }
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!stacked && summary != null) {
-                    Text(summary, Modifier.weight(1f).padding(end = 12.dp),
-                        style = MaterialTheme.typography.bodySmall, color = summaryColor)
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
-                TextButton(
-                    onClick = onCheck,
-                    enabled = idle,
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) {
-                    if (status == UpdateStatus.Checking) {
-                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Checking…")
-                    } else {
-                        Text("Check for updates")
-                    }
+        val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
+        val optionsWidth = with(density) {
+            textMeasurer.measure("More options", MaterialTheme.typography.labelMedium).size.width.toDp()
+        } + 20.dp // Chevron and the 4 dp label gap.
+        val checkLabel = if (status == UpdateStatus.Checking) "Checking…" else "Check for updates"
+        val checkWidth = with(density) {
+            textMeasurer.measure(checkLabel, MaterialTheme.typography.labelLarge).size.width.toDp()
+        } + if (status == UpdateStatus.Checking) 20.dp else 0.dp
+        if (maxWidth < optionsWidth + checkWidth + 8.dp) {
+            Column(Modifier.fillMaxWidth()) {
+                UpdateOptionsDisclosure(optionsExpanded) { optionsExpanded = !optionsExpanded }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    UpdateCheckAction(status, idle, onCheck)
                 }
             }
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                UpdateOptionsDisclosure(optionsExpanded) { optionsExpanded = !optionsExpanded }
+                UpdateCheckAction(status, idle, onCheck)
+            }
+        }
+    }
+    if (optionsExpanded) {
+        AutomaticConnectionToggle(
+            checked = automaticChecks,
+            enabled = true,
+            onCheckedChange = onAutomaticChecksChange,
+            label = "Check for updates automatically",
+            description = if (automaticChecks) "On launch when due; daily at 7:30 PM NPT."
+                else "Manual checks remain available.",
+            compact = true,
+            descriptionBottomPadding = 0.dp,
+        )
+    } else if (!automaticChecks) {
+        Text("Automatic checks are off.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun UpdateOptionsDisclosure(expanded: Boolean, onClick: () -> Unit) {
+    val layoutDirection = LocalLayoutDirection.current
+    TextButton(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+        contentPadding = PaddingValues(0.dp),
+        modifier = Modifier.heightIn(min = 48.dp)
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
+    ) {
+        Text("More options", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.width(4.dp))
+        Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+            modifier = Modifier.size(16.dp).graphicsLayer(
+                rotationZ = if (!expanded) 0f else if (layoutDirection == LayoutDirection.Ltr) 90f else -90f))
+    }
+}
+
+@Composable
+private fun UpdateCheckAction(status: UpdateStatus, enabled: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        if (status == UpdateStatus.Checking) {
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(6.dp))
+            Text("Checking…")
+        } else {
+            Text("Check for updates")
         }
     }
 }

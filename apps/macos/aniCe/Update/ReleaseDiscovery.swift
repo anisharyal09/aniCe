@@ -82,6 +82,10 @@ enum MacDiscoveryResult: Equatable {
     get { defaults.bool(forKey: "updates.includeBeta") }
     set { defaults.set(newValue, forKey: "updates.includeBeta") }
   }
+  var automaticChecks: Bool {
+    get { defaults.object(forKey: "updates.automaticChecks") as? Bool ?? true }
+    set { defaults.set(newValue, forKey: "updates.automaticChecks") }
+  }
   func skip(_ tag: String) { defaults.set(tag, forKey: "updates.skippedTag") }
 
   func nextAutomaticCheck(now: Date = Date()) -> Date {
@@ -96,7 +100,7 @@ enum MacDiscoveryResult: Equatable {
   }
 
   func shouldNotify(_ release: AvailableMacRelease) -> Bool {
-    guard isEligible(release) else { return false }
+    guard automaticChecks, isEligible(release) else { return false }
     guard let previous = defaults.string(forKey: notificationKey(release)).flatMap(UpdateVersion.parse) else { return true }
     return release.version > previous
   }
@@ -116,6 +120,7 @@ enum MacDiscoveryResult: Equatable {
 
   func check(current: UpdateVersion, force: Bool = false, now: Date = Date()) async -> MacDiscoveryResult {
     guard !Task.isCancelled else { return .deferred }
+    guard force || automaticChecks else { return .deferred }
     guard !checking else { return .deferred }
     checking = true; defer { checking = false }
     let failures = min(max(defaults.integer(forKey: "updates.failures"), 0), 7)
