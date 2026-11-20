@@ -36,8 +36,11 @@ class LanSessionController(private val app: AniCeApplication,
     private var worker: Job? = null
     private var receiver: Job? = null
     private var maintenance: Job? = null
+    private var featureEventsJob: Job? = null
     private var transport: AndroidLanTransport? = null
     @Volatile private var connection: SessionConnection? = null
+    @Volatile private var workerActivityGeneration = -1L
+    @Volatile private var workerActivityAt = 0L
     private var watching: ConnectivityManager.NetworkCallback? = null
     private var ready: CompletableDeferred<Unit>? = null
     private var connectionState by mutableStateOf(ConnectionState.DISCONNECTED)
@@ -589,21 +592,43 @@ class LanSessionController(private val app: AniCeApplication,
                             if (op != generation) throw SessionException(SessionFailure.CANCELLED)
                             val remaining = deadline - SystemClock.elapsedRealtime()
                             if (remaining <= 0) return false
+                            // Assemble/register feature owners on their presentation dispatcher before worker callbacks.
+                            val featureDispatch = app.features
                             val maintenanceEvents = SessionMaintenance()
-                            val tcp = AndroidLanTransport(scope, endpoint.profile) { maintenanceEvents.request(); scope.launch { app.features.capacityAvailable("lan") } }
+                            val featureEvents = SessionMaintenance()
+                            val featureRevision = java.util.concurrent.atomic.AtomicLong(-1)
+                            val workerReceiptAt = java.util.concurrent.atomic.AtomicLong(0)
+                            featureEventsJob?.cancel()
+                            featureEventsJob = scope.launch {
+                                while (isActive && op == generation) {
+                                    featureEvents.await(null, SystemClock::elapsedRealtime)
+                                    if (op == generation) {
+                                        if (workerActivityGeneration == op && elapsedRealtime() - workerActivityAt < 1000)
+                                            authenticatedLanActivity(op)
+                                        if (connection?.isRenewing == true) clearConnectionCheck()
+                                        connection?.let { app.features.maintenance("lan", channelToken, it.maintenanceSnapshot) }
+                                        app.features.capacityAvailable("lan")
+                                    }
+                                }
+                            }
+                            val tcp = AndroidLanTransport(scope, endpoint.profile) {
+                                maintenanceEvents.request(); featureEvents.request()
+                            }
                             transport = tcp
                             try {
                                 withTimeout(remaining) { tcp.connect(endpoint) }
                                 if (networks.getLinkProperties(network)?.linkAddresses?.none {
                                         it.address == tcp.localAddress
                                     } != false) throw java.io.IOException("Wi-Fi address changed during connection. Retry.")
-                            } catch (error: TimeoutCancellationException) {
+                             } catch (error: TimeoutCancellationException) {
+                                 featureEventsJob?.cancel(); featureEventsJob = null
                                 tcp.close()
                                 lastError = error
                                 return false
                             } catch (error: CancellationException) {
                                 throw error
-                            } catch (error: java.io.IOException) {
+                             } catch (error: java.io.IOException) {
+                                 featureEventsJob?.cancel(); featureEventsJob = null
                                 tcp.close()
                                 lastError = error
                                 return false
@@ -636,7 +661,21 @@ class LanSessionController(private val app: AniCeApplication,
                                             throw SessionException(SessionFailure.CANCELLED)
                                         tcp.submit(bytes)
                                     },
-                                     { bytes ->
+                                     deliver@{ bytes ->
+                                         if (op != generation) return@deliver
+                                          val workerResult = featureDispatch.handleOnWorker("lan", channelToken, bytes)
+                                         if (workerResult != DataHandling.UNRECOGNIZED) {
+                                             // Receipt/liveness already passed record authentication. Do not wait for UI work.
+                                             // Any authenticated record confirms transport health even if its feature stream retired.
+                                             workerActivityAt = elapsedRealtime()
+                                             workerActivityGeneration = op
+                                             val time = elapsedRealtime()
+                                             if (time - workerReceiptAt.get() >= 1000) {
+                                                 workerReceiptAt.set(time)
+                                                 featureEvents.request()
+                                             }
+                                             return@deliver
+                                         }
                                          withContext(Dispatchers.Main.immediate) { authenticatedLanActivity(op) }
                                          val isCheck = bytes.contentEquals(SessionController.CHECK) ||
                                             bytes.contentEquals(SessionController.CHECK_REPLY)
@@ -694,13 +733,16 @@ class LanSessionController(private val app: AniCeApplication,
                                     controls = true,
                                     now = { SystemClock.elapsedRealtime() },
                                     renew = true,
-                                     changed = { maintenanceEvents.request(); scope.launch {
-                                         if (op == generation && transport === tcp) {
-                                             if (connection?.isRenewing == true) clearConnectionCheck()
-                                            connection?.let { app.features.maintenance("lan", channelToken, it.maintenanceSnapshot) }
-                                            app.features.capacityAvailable("lan")
-                                        }
-                                    } },
+                                     changed = {
+                                         if (op == generation) connection?.let {
+                                             val snapshot = it.maintenanceSnapshot
+                                             if (featureRevision.getAndSet(snapshot.revision) != snapshot.revision) {
+                                                 featureDispatch.maintenanceOnWorker("lan", channelToken, snapshot)
+                                                 featureEvents.request()
+                                             }
+                                         }
+                                         maintenanceEvents.request()
+                                     },
                                     profile = endpoint.profile,
                                     drain = { withContext(Dispatchers.Main.immediate) {
                                         if (op == generation) app.features.drain("lan", channelToken)
@@ -810,6 +852,7 @@ class LanSessionController(private val app: AniCeApplication,
                             }
                             receiver?.cancel()
                             maintenance?.cancel()
+                            featureEventsJob?.cancel(); featureEventsJob = null
                             tcp.close()
                             engine.retire()
                             withContext(NonCancellable + Dispatchers.IO) { engine.close() }
@@ -1019,6 +1062,7 @@ class LanSessionController(private val app: AniCeApplication,
         receiver = null
         maintenance?.cancel()
         maintenance = null
+        featureEventsJob?.cancel(); featureEventsJob = null
         ready?.cancel()
         ready = null
         watching?.let {

@@ -35,6 +35,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
     var statusAt: Int64 = 0
     var appliedForwarding = true
     var resetCapture = false
+    var activity: NSObjectProtocol?
     init(_ descriptor: ChannelDescriptor, now: Int64, maintenance: Int64) {
       self.descriptor = descriptor
       deadline = now + 5000
@@ -71,6 +72,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   private(set) var alsoPlayThroughMacSpeakers: Bool
   var pacingChanged: (Bool) -> Void = { _ in }
   var transferReady: () -> Bool = { true }
+  var transferHealth: (Bool, Int64, Int64) -> Void = { _, _, _ in }
 
   init(capture: any PrivateListeningCapturing = MacAudioTapEngine(),
     preferences: UserDefaults? = .standard,
@@ -240,6 +242,10 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
             return
           }
           current.ready = true
+          if automaticallyPump {
+            current.activity = ProcessInfo.processInfo.beginActivity(
+              options: [.userInitiated, .latencyCritical], reason: "Stream current Mac audio to headphones")
+          }
           current.readyAt = now()
           current.readyMaintenance = channel?.maintenance?.elapsedMillis ?? 0
           current.activating = false
@@ -261,6 +267,8 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
       guard message.number(1) == 1 else { return .discarded }
       let wasFocusPaused = current.receiverState == 3
       current.receiverState = message.number(2)
+      transferHealth(current.receiverState == 2 && message.number(5) <= 9600,
+        message.number(3), message.number(6))
       if wasFocusPaused && current.receiverState != 3 && current.lastSequence == 0 {
         current.readyAt = now()
         current.readyMaintenance = channel?.maintenance?.elapsedMillis ?? 0
@@ -294,7 +302,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
     terminal = nil
     capturePrepared = false
     state = 0
-    status = message
+    status = message == "Listening stopped. Mac output restored." ? "Restoring Mac audio…" : message
     pacingChanged(false)
     if notify, let old, channel?.descriptor == old.descriptor {
       terminal = PrivateListeningMessage(kind: 4, fields: [.text(old.id), .integer(reason)])
@@ -309,8 +317,15 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
         guard let self else { return }
         await pendingPreparation?.value
         await pendingActivation?.value
-        do { try await capture.stop() }
+        do {
+          try await capture.stop()
+          if status == "Restoring Mac audio…" { status = "Listening stopped. Mac output restored." }
+        }
         catch { status = "Listening ended, but audio cleanup failed: \(error.localizedDescription)" }
+        if let activity = old?.activity {
+          ProcessInfo.processInfo.endActivity(activity)
+          old?.activity = nil
+        }
         cleanup = nil
       }
     }
@@ -330,6 +345,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
     let transitioned = maintenance != current.maintenanceActive
     let completed = !maintenance && total > current.maintenanceTotal
     if transitioned || completed {
+      transferHealth(false, current.lastSequence, 0)
       // Pre-seal cancellation prevents an admission waiter from submitting old audio after maintenance.
       sendTask?.cancel()
       if completed { current.resetCapture = true }

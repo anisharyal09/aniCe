@@ -12,6 +12,23 @@ private final class ListeningRingTestPointer: @unchecked Sendable {
 }
 
 final class PrivateListeningCaptureTests: XCTestCase {
+  func testConversionReusesPreparedWorkerBuffersWithoutOpeningAudio() throws {
+    let input = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000,
+      channels: 2, interleaved: true))
+    let converter = try XCTUnwrap(AVAudioConverter(from: input, to: input))
+    let source = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: input, frameCapacity: 1024))
+    let output = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: input, frameCapacity: 1536))
+    let samples = [Float](repeating: 0.25, count: 1920)
+    for _ in 0..<100 {
+      let converted = try samples.withUnsafeBufferPointer {
+        try MacAudioTapEngine.convert($0, frames: 960, using: converter,
+          inputBuffer: source, outputBuffer: output)
+      }
+      XCTAssertTrue(converted === output)
+      XCTAssertGreaterThan(converted.frameLength, 0)
+    }
+  }
+
   func testConsumerTrimsOldFramesWithoutChangingTheSourceTimelineOrOverwritingNewestSamples() throws {
     let ring = try XCTUnwrap(AniceListeningRingCreate(8))
     defer { AniceListeningRingDestroy(ring) }

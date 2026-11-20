@@ -91,6 +91,10 @@ Mac process taps capture fixed 48-kHz stereo PCM16 for one authenticated Android
 
 Audio workers retain bounded plaintext/native queues. Android owns adaptive Balanced and opt-in Lower delay profiles, platform-aware native startup/write limits and local backlog diagnostics; none synchronizes arbitrary Mac video or changes wire PCM. App assembly switches phone media volume to local output and paces future transfer chunks/credit during listening without changing session framing, crypto validation or Connections feature dependencies. See [feature behavior](docs/features/PRIVATE_LISTENING.md) and [Private Listening v1](protocol/private-listening/README.md).
 
+Android's shared feature dispatcher offers an opt-in synchronous worker-admission hook after record authentication. Private Listening uses it only for fully validated Audio, fenced by the immutable channel and current stream's focus/maintenance gate; other messages and feature presentation remain ordered on Main. A service-owned audio-priority scheduler runs native playback separately from UI and file work. The feature dispatcher adds no audio codec, headphone policy or transport/security stack. Playback health gradually recovers bounded transfer credit inside negotiated limits, with immediate contraction on interruption or stale health.
+
+Transfer also admits authenticated chunk-shaped DATA to its existing bounded FIFO through the worker hook when there is capacity; decoding/storage/ACK progress remains feature-owned. FIFO exhaustion retains the ordinary suspending delivery path, and the same queue precedes resume/drain barriers. No valid file bytes are discarded to schedule listening.
+
 ## Application DATA and source organization
 
 Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android manifest companion activity/service packages retain their original names; only their policy implementation moves. Existing identity, association and appearance persistence keys remain unchanged.

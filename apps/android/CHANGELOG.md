@@ -37,6 +37,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Use a dedicated audio worker and authenticated worker-side PCM admission; lower adaptive buffering floors and avoid repeated silent priming on ordinary audio gaps.
+- Recover listening-mode file credit cautiously from fresh playback health while retaining negotiated chunk-count and delayed-path bounds.
 - Add Balanced/Lower delay adaptive listening profiles, combined-backlog trimming and platform-aware AudioTrack write/startup limits.
 - Route phone media volume locally while listening and pace future file-transfer chunks without replaying or discarding submitted data.
 - Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.

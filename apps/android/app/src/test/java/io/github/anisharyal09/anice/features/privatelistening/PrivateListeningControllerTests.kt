@@ -16,6 +16,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PrivateListeningControllerTests {
+    @Test fun workerAudioFeedsReadyOutputWithoutUiDeliveryAndStopsAtTheSameStreamBoundary() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val output = h.attach()
+        h.clock.now = 1000
+        val packet = PrivateListeningMessage.audio(ID, 1, ByteArray(3840)).encode()
+        assertEquals(DataHandling.HANDLED, h.owner.handleOnWorker(h.channel.descriptor, packet))
+        assertEquals(1, output.audio.size)
+        assertEquals(DataHandling.DISCARDED, h.owner.handleOnWorker(h.channel.descriptor, packet))
+        h.owner.stop()
+        assertEquals(DataHandling.DISCARDED, h.owner.handleOnWorker(h.channel.descriptor,
+            PrivateListeningMessage.audio(ID, 2, ByteArray(3840)).encode()))
+        assertEquals(1, output.audio.size)
+    }
     @Test fun profileIsFrozenForTheCurrentTicketAndRetiredHealthCannotReappear() = runBlocking {
         val h = Harness()
         h.owner.setBufferProfile(ListeningBufferProfile.LOWER_DELAY)

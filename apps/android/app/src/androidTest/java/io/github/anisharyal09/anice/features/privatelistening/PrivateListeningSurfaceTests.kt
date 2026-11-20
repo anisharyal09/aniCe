@@ -61,10 +61,11 @@ class PrivateListeningSurfaceTests {
                     override fun close() { closedOutputs++ }
                 })
                 controller.ready(request)
-                controller.playbackHealth(request, ListeningPlaybackHealth(10, 4800, 3840, 2, false,
-                    targetFrames = 3840, nativeQueuedFrames = 1920, nativeBufferFrames = 11724,
-                    nativeWriteLimitFrames = 1920, droppedPackets = 3,
-                    routeType = android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP))
+                controller.playbackHealth(request, ListeningPlaybackHealth(10, 4800, 1920, 2, false,
+                    targetFrames = 1920, nativeQueuedFrames = 960, nativeBufferFrames = 11724,
+                    nativeWriteLimitFrames = 960, droppedPackets = 3,
+                    routeType = android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                    gapRecoveries = 1, rebufferCount = 1, maximumArrivalGapMillis = 45))
             }
         }
         val channel = object : SecuredChannel {
@@ -127,7 +128,8 @@ class PrivateListeningSurfaceTests {
                     Thread.sleep(25)
                     root = runner.uiAutomation.rootInActiveWindow
                 }
-                assertNotNull("Accessibility must reflect the current fixture", find(root, expectedStatus))
+                assertNotNull("Accessibility must reflect the current fixture; active=$active theme=$dark width=$width scale=$scale package=${root?.packageName} tree=${describe(root)}",
+                    find(root, expectedStatus))
                 assertNotNull(find(root, "Balanced"))
                 assertNotNull(find(root, "Lower delay"))
                 val balanced = radio(find(root, "Balanced"))
@@ -189,5 +191,11 @@ class PrivateListeningSurfaceTests {
             current = current.parent
         }
         return null
+    }
+
+    private fun describe(node: AccessibilityNodeInfo?, depth: Int = 0): String {
+        if (node == null || depth > 12) return ""
+        return "${node.text}:${node.className} " +
+            (0 until node.childCount).joinToString(" ") { describe(node.getChild(it), depth + 1) }
     }
 }

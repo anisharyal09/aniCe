@@ -24,6 +24,7 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
+- Refine local listening buffer targets and healthy-audio transfer pacing; unchanged six-message PCM, cryptographic and session contracts.
 - Clarify local lower-delay buffering profiles and native startup floors for Private Listening; all six wire messages and crypto/session bounds are unchanged.
 - Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
 - Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.

@@ -46,6 +46,7 @@ class PrivateListeningService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var request: PrivateListeningRequest? = null
     private var player: PrivateListeningPlayer? = null
+    private var audioWorker: PrivateListeningAudioWorker? = null
     private var job: Job? = null
     private var powerJob: Job? = null
     private var focus: AudioFocusRequest? = null
@@ -92,6 +93,8 @@ class PrivateListeningService : Service() {
                 handler.post { if (request === ticket) controller.stop(reason = 2, message = "Headphone route lost.") }
             }
             player = output
+            val worker = PrivateListeningAudioWorker()
+            audioWorker = worker
             val binding = object : PrivateListeningOutput {
                 override fun offer(message: PrivateListeningMessage) = output.offer(message)
                 override fun pause() {
@@ -102,7 +105,7 @@ class PrivateListeningService : Service() {
                 override suspend fun resume() {
                     if (!focusGranted) throw CancellationException("Audio focus is not granted")
                     acquirePower()
-                    withContext(Dispatchers.Default) { output.resume() }
+                    withContext(worker.dispatcher) { output.resume() }
                 }
                 override fun close() = output.close()
             }
@@ -157,7 +160,7 @@ class PrivateListeningService : Service() {
             job = scope.launch {
                 try {
                     withTimeout(4000) {
-                        withContext(Dispatchers.Default) { output.prepare() }
+                        withContext(worker.dispatcher) { output.prepare() }
                         while (!app.listeningTransferReady()) delay(20)
                     }
                     if (request !== ticket || controller.request(id, instance) !== ticket) return@launch
@@ -167,7 +170,7 @@ class PrivateListeningService : Service() {
                     }
                     controller.ready(ticket)
                     if (controller.request(id, instance) !== ticket) return@launch
-                    withContext(Dispatchers.Default) {
+                    withContext(worker.dispatcher) {
                         output.pump { health -> scope.launch { controller.playbackHealth(ticket, health) } }
                     }
                 } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
@@ -231,15 +234,17 @@ class PrivateListeningService : Service() {
         if (wifi == null) {
             val mode = if (Build.VERSION.SDK_INT < 34) WifiManager.WIFI_MODE_FULL_HIGH_PERF
                 else WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-            wifi = applicationContext.getSystemService(WifiManager::class.java).createWifiLock(mode,
-                "$packageName:private-listening").apply { setReferenceCounted(false) }
+            try {
+                wifi = applicationContext.getSystemService(WifiManager::class.java).createWifiLock(mode,
+                    "$packageName:private-listening").apply { setReferenceCounted(false) }
+            } catch (_: SecurityException) { /* Radio scheduling is best-effort; CPU/service ownership remains. */ }
         }
-        if (wifi?.isHeld != true) wifi?.acquire()
+        try { if (wifi?.isHeld != true) wifi?.acquire() } catch (_: SecurityException) {}
     }
 
     private fun releasePower() {
-        if (wifi?.isHeld == true) wifi?.release()
-        if (wake?.isHeld == true) wake?.release()
+        try { if (wifi?.isHeld == true) wifi?.release() }
+        finally { if (wake?.isHeld == true) wake?.release() }
     }
 
     override fun onDestroy() {
@@ -249,22 +254,34 @@ class PrivateListeningService : Service() {
         powerJob?.cancel(); powerJob = null
         try { player?.close() }
         finally {
-            player = null
-            if (noisyRegistered) {
-                unregisterReceiver(noisy)
-                noisyRegistered = false
+            try {
+                player = null
+                audioWorker?.close(); audioWorker = null
+                if (noisyRegistered) {
+                    noisyRegistered = false
+                    try { unregisterReceiver(noisy) } catch (_: IllegalArgumentException) {}
+                }
+                if (devicesRegistered) {
+                    devicesRegistered = false
+                    audio.unregisterAudioDeviceCallback(devices)
+                }
+            } finally {
+                try { focus?.let { audio.abandonAudioFocusRequest(it) } }
+                finally {
+                    focus = null; focusGranted = false
+                    try { releasePower() }
+                    finally {
+                        try { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
+                        finally {
+                            try { if (ticket != null) controller.serviceDestroyed(ticket, this) }
+                            finally {
+                                scope.coroutineContext[Job]?.cancel()
+                                super.onDestroy()
+                            }
+                        }
+                    }
+                }
             }
-            if (devicesRegistered) {
-                audio.unregisterAudioDeviceCallback(devices)
-                devicesRegistered = false
-            }
-            focus?.let { audio.abandonAudioFocusRequest(it) }; focus = null
-            focusGranted = false
-            releasePower()
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            if (ticket != null) controller.serviceDestroyed(ticket, this)
-            scope.coroutineContext[Job]?.cancel()
-            super.onDestroy()
         }
     }
 

@@ -40,6 +40,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Isolate Private Listening playback/Audio admission from UI work, reduce local buffer floors and recover transfer credit only with healthy audio.
 - Add opt-in lower-delay Private Listening buffering and local backlog diagnostics while preserving headphone safety and encrypted LAN ownership.
 - Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
 - Document reusable Home action sizing, single-row transfer navigation and compact grouped Settings spacing.

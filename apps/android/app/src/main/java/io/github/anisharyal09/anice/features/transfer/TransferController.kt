@@ -10,7 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
-import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
+import io.github.anisharyal09.anice.infrastructure.connections.WorkerFeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
@@ -113,7 +113,7 @@ class TransferController(
     internal val recoveryIdentity: suspend () -> String = {
         (context as io.github.anisharyal09.anice.AniCeApplication).identityService.getOrCreateIdentity().identity.fingerprint
     }
-) : FeatureHandler {
+) : WorkerFeatureHandler {
 
     var state by mutableStateOf<TransferState>(TransferState.Idle); internal set
     var destinationMessage by mutableStateOf<String?>(null); internal set
@@ -228,6 +228,8 @@ class TransferController(
     internal val scope = CoroutineScope(SupervisorJob() + dispatcher)
     internal var activeChannel by mutableStateOf<SecuredChannel?>(null); internal set
     internal val channels = mutableMapOf<String, SecuredChannel>()
+    private data class WorkerIngress(val descriptor: ChannelDescriptor, val operation: UUID)
+    @Volatile private var workerIngress = emptyMap<String, WorkerIngress>()
     internal val capabilities = mutableMapOf<String, TransferMessage>()
     internal var preparation: Job? = null
     var preparing by mutableStateOf(false); internal set
@@ -246,8 +248,14 @@ class TransferController(
             }
         }
     }
+    @Volatile private var publishedIngress: TransferIngress? = null
     internal var epoch = UUID.randomUUID()
-        set(value) { field = value; ingress.invalidate() }
+        set(value) {
+            workerIngress = emptyMap()
+            field = value
+            ingress.invalidate()
+            workerIngress = channels.mapValues { WorkerIngress(it.value.descriptor, value) }
+        }
     internal var capacityRevision = 0L
     internal var sendingFile: TransferFile? = null
     internal var senderFileIndex = 0
@@ -303,23 +311,60 @@ class TransferController(
     internal var peerMaxWindow: Long = 64L
     internal var sendWindow: TransferSendWindow? = null
     @Volatile private var lowLatencyMedia = false
+    private val listeningPacing = ListeningTransferPacing()
+    @Volatile private var listeningCreditBytes = 131072L
+    private var listeningHealthAt: Long? = null
+    private var listeningHealthJob: Job? = null
+    private var listeningHealthGeneration = 0
     @Volatile internal var mediaPacingRevision = 0
         private set
     private val pacedLan get() = lowLatencyMedia && activeChannel?.descriptor?.transport == "lan"
     internal val senderChunkBytes get() = (sendWindow?.chunkBytes ?: peerMaxChunkBytes).let {
-        if (pacedLan) minOf(it, 65536) else it
+        if (pacedLan) minOf(it, maxOf(65536, listeningCreditBytes / 8)) else it
     }
     internal val sendCreditBytes: Long
         get() = (sendWindow?.creditBytes ?: (peerMaxChunkBytes * peerMaxWindow)).let {
-            if (pacedLan) minOf(it, 131072) else it
+            if (pacedLan) minOf(it, listeningCreditBytes, senderChunkBytes * peerMaxWindow) else it
         }
     internal val lowLatencyBacklogReady get() =
         activeChannel?.descriptor?.transport != "lan" || receiving || sentBytes - acknowledgedBytes <= 131072
     internal fun setLowLatencyMediaActive(active: Boolean) {
         if (lowLatencyMedia == active) return
         lowLatencyMedia = active
+        listeningPacing.reset()
+        listeningCreditBytes = listeningPacing.creditBytes
+        listeningHealthAt = null
+        listeningHealthGeneration++
+        listeningHealthJob?.cancel(); listeningHealthJob = null
         mediaPacingRevision += 1
         resumeCredit()
+    }
+
+    internal fun reportListeningHealth(healthy: Boolean, sequence: Long, underruns: Long) {
+        if (!lowLatencyMedia) return
+        listeningHealthAt = clock()
+        listeningPacing.report(healthy, sequence, underruns, clock())
+        val credit = listeningPacing.creditBytes
+        if (credit == listeningCreditBytes) return
+        listeningCreditBytes = credit
+        mediaPacingRevision++
+        resumeCredit()
+        if (credit > 131072 && listeningHealthJob == null) {
+            val generation = listeningHealthGeneration
+            listeningHealthJob = scope.launch {
+                while (lowLatencyMedia && listeningCreditBytes > 131072) {
+                    delay(1000)
+                    if (generation != listeningHealthGeneration) return@launch
+                    if (listeningHealthAt?.let { clock() - it > 2500 } == true) {
+                        listeningPacing.reset()
+                        listeningCreditBytes = 131072
+                        mediaPacingRevision++
+                        resumeCredit()
+                    }
+                }
+                if (generation == listeningHealthGeneration) listeningHealthJob = null
+            }
+        }
     }
 
     // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
@@ -439,6 +484,8 @@ class TransferController(
             return
         }
         selectPreferredChannel()
+        publishedIngress = ingress
+        workerIngress = workerIngress + (transport to WorkerIngress(channel.descriptor, epoch))
         scope.launch {
             val limit = chunkLimit(channel.descriptor)
             val versions = if (limit > 262016) listOf(2L, 3L, 4L) else if (limit > 131072) listOf(2L, 3L) else listOf(if (limit > 3072) 2L else 1L)
@@ -457,8 +504,10 @@ class TransferController(
 
     override fun retired(descriptor: ChannelDescriptor) {
         if (channels[descriptor.transport]?.descriptor != descriptor) return
-        ingress.invalidate(descriptor)
+        workerIngress = workerIngress - descriptor.transport
+        if (workerIngress.isEmpty()) publishedIngress = null
         channels.remove(descriptor.transport)
+        ingress.invalidate(descriptor)
         capabilities.remove(descriptor.transport)
         if (statusWaiter?.channel == descriptor) abandonStatus()
         clearCapacityWaiters()
@@ -522,6 +571,21 @@ class TransferController(
             operation == epoch && channels[descriptor.transport]?.descriptor == descriptor
         }
         return if (accepted) DataHandling.QUEUED else DataHandling.DISCARDED
+    }
+
+    override fun handleOnWorker(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+        if (descriptor.transport != "lan") return DataHandling.UNRECOGNIZED
+        if (!TransferMessage.hasChunkPrefix(bytes)) return DataHandling.UNRECOGNIZED
+        val route = workerIngress[descriptor.transport] ?: return DataHandling.DISCARDED
+        if (route.descriptor != descriptor) return DataHandling.DISCARDED
+        val chunk = chunkLimit(descriptor)
+        val window = if (chunk > 3072) 8 else 64
+        val accepted = publishedIngress?.tryEnqueue(descriptor, route.operation, bytes,
+            minOf(chunk * window + 65536, 2 * 1024 * 1024), minOf(64, window * 8)) {
+            workerIngress[descriptor.transport] === route
+        } == true
+        // Full ingress follows the existing suspending admission path; valid file data is never dropped.
+        return if (accepted) DataHandling.QUEUED else DataHandling.UNRECOGNIZED
     }
 
     override suspend fun drain(descriptor: ChannelDescriptor) {

@@ -24,4 +24,5 @@
     <string name="listening_bluetooth_delay">Bluetooth adds output delay beyond this app buffer. Wired or USB headphones usually reduce it.</string>
     <string name="listening_native_diagnostics">Native write limit %1$d ms · effective buffer %2$d ms (not measured output delay)</string>
     <string name="listening_headphone_hint">Connect headphones to your phone; its own speaker is not used. Wired/USB headsets need no extra confirmation.</string>
+    <string name="listening_recovery_diagnostics">Gap recoveries %1$d · rebufferings %2$d · largest arrival gap %3$d ms</string>
 </resources>

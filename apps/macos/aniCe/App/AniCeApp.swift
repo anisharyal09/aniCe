@@ -100,6 +100,9 @@ struct AniCeApp: App {
     _privateListening = State(initialValue: privateListening)
     privateListening.pacingChanged = { [weak transfer] active in transfer?.setLowLatencyMediaActive(active) }
     privateListening.transferReady = { [weak transfer] in transfer?.lowLatencyBacklogReady ?? true }
+    privateListening.transferHealth = { [weak transfer] healthy, sequence, underruns in
+      transfer?.reportListeningHealth(healthy, sequence: sequence, underruns: underruns)
+    }
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     transfer.onDemandLanConnection = { [weak lan] in lan?.requestTransferConnection() ?? false }

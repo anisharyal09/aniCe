@@ -70,6 +70,9 @@ fun PrivateListeningView(controller: PrivateListeningController) {
             Text(stringResource(R.string.listening_native_diagnostics,
                 health.nativeWriteLimitFrames / 48, health.nativeBufferFrames / 48),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.listening_recovery_diagnostics,
+                health.gapRecoveries, health.rebufferCount, health.maximumArrivalGapMillis),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (health.routeType == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                 health.routeType == AudioDeviceInfo.TYPE_BLE_HEADSET) {
                 Text(stringResource(R.string.listening_bluetooth_delay), style = MaterialTheme.typography.bodySmall,

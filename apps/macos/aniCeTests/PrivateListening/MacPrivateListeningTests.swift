@@ -125,6 +125,7 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
     let activated = await capture.activated
     XCTAssertEqual(activated, 1)
     model.stop()
+    XCTAssertEqual(model.status, "Restoring Mac audio…")
     try await settle { !model.busy }
     let lateResult = await model.handle(try ready.encode(), on: channel.descriptor)
     XCTAssertEqual(lateResult, .discarded)

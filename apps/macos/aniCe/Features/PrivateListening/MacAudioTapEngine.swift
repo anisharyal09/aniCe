@@ -129,6 +129,8 @@ actor MacAudioTapEngine {
   private var nextConvertedFrame: Int64 = 0
   private var rawOrigin: UInt64 = 0
   private var forwarding = false
+  private var sourceScratch: AVAudioPCMBuffer?
+  private var convertedScratch: AVAudioPCMBuffer?
 
   /// The explicit preparation action can show system-audio consent, but never suppresses Mac output.
   func prepare() throws {
@@ -176,6 +178,10 @@ actor MacAudioTapEngine {
       let memory = try ListeningRingMemory(capacity: capacity)
       owner.memory = memory
       rawSamples = [Float](repeating: 0, count: Int(capacity) * 2)
+      sourceScratch = AVAudioPCMBuffer(pcmFormat: input, frameCapacity: capacity)
+      convertedScratch = AVAudioPCMBuffer(pcmFormat: output,
+        frameCapacity: UInt32(ceil(Double(capacity) * 48000 / format.mSampleRate)) + 512)
+      guard sourceScratch != nil, convertedScratch != nil else { throw MacAudioTapError.unsupportedFormat }
       nextRawFrame = nil
       nextConvertedFrame = 0
       packetizer.reset()
@@ -217,6 +223,7 @@ actor MacAudioTapEngine {
       resources = nil
       sourceFormat = nil
       converter = nil
+      sourceScratch = nil; convertedScratch = nil
       throw error
     }
   }
@@ -304,7 +311,8 @@ actor MacAudioTapEngine {
       }
       nextRawFrame = rawOffset + UInt64(count)
       let output = try rawSamples.withUnsafeBufferPointer {
-        try Self.convert($0, frames: count, using: converter)
+        try Self.convert($0, frames: count, using: converter,
+          inputBuffer: sourceScratch, outputBuffer: convertedScratch)
       }
       if output.frameLength > 0, let data = output.audioBufferList.pointee.mBuffers.mData {
         let samples = UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self),
@@ -320,16 +328,21 @@ actor MacAudioTapEngine {
 
   func stop() throws {
     guard let owner = resources else { return }
+    var restoreError: Error?
+    // Restore tapped-process output before dismantling the reader/aggregate, not after a slow teardown.
+    do { try setMuting(false) } catch { restoreError = error }
     if let memory = owner.memory { AniceListeningRingSetForwarding(memory.pointer, false) }
     let errors = owner.close()
     resources = nil
     sourceFormat = nil
     converter = nil
+    sourceScratch = nil; convertedScratch = nil
     rawSamples.removeAll()
     forwarding = false
     nextRawFrame = nil
     packetizer.reset()
     if let error = errors.first { throw error }
+    if let restoreError { throw restoreError }
   }
 
   private func setDescription(_ value: CATapDescription, owner: ListeningTapResources) throws {
@@ -352,16 +365,20 @@ actor MacAudioTapEngine {
 
   // Conversion is synchronous on the engine worker; input pointers never cross a suspension.
   nonisolated static func convert(_ stereo: UnsafeBufferPointer<Float>, frames: UInt32,
-    using converter: AVAudioConverter) throws -> AVAudioPCMBuffer {
+    using converter: AVAudioConverter, inputBuffer: AVAudioPCMBuffer? = nil,
+    outputBuffer: AVAudioPCMBuffer? = nil) throws -> AVAudioPCMBuffer {
     let format = converter.inputFormat
     guard frames > 0, Int(frames) <= stereo.count / 2, format.channelCount == 2,
       format.isInterleaved, format.commonFormat == .pcmFormatFloat32,
-      let input = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames),
-      let output = AVAudioPCMBuffer(pcmFormat: converter.outputFormat,
+      let input = inputBuffer ?? AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames),
+      let output = outputBuffer ?? AVAudioPCMBuffer(pcmFormat: converter.outputFormat,
         frameCapacity: UInt32(ceil(Double(frames) * converter.outputFormat.sampleRate / format.sampleRate)) + 512),
+      input.frameCapacity >= frames, input.format == format, output.format == converter.outputFormat,
+      output.frameCapacity >= UInt32(ceil(Double(frames) * converter.outputFormat.sampleRate / format.sampleRate)),
       let inputData = input.mutableAudioBufferList.pointee.mBuffers.mData,
       let samples = stereo.baseAddress else { throw MacAudioTapError.unsupportedFormat }
     input.frameLength = frames
+    output.frameLength = 0
     inputData.copyMemory(from: samples, byteCount: Int(frames) * 2 * MemoryLayout<Float>.size)
     var provided = false
     var error: NSError?

@@ -213,15 +213,18 @@ enum TransferEvent: Equatable {
   var peerMaxWindow: Int64 = 64
   var sendWindow: TransferSendWindow?
   private var lowLatencyMedia = false
+  private var listeningPacing = ListeningTransferPacing()
+  private var listeningHealthAt: TimeInterval?
+  @ObservationIgnored nonisolated(unsafe) private var listeningHealthTask: Task<Void, Never>?
   private(set) var mediaPacingRevision = 0
   private var pacedLan: Bool { lowLatencyMedia && activeChannel?.descriptor.transport == "lan" }
   var senderChunkBytes: Int64 {
     let chunk = sendWindow?.chunkBytes ?? peerMaxChunkBytes
-    return pacedLan ? min(chunk, 65536) : chunk
+    return pacedLan ? min(chunk, max(65536, listeningPacing.creditBytes / 8)) : chunk
   }
   var sendCreditBytes: Int64 {
     let credit = sendWindow?.creditBytes ?? (peerMaxChunkBytes * peerMaxWindow)
-    return pacedLan ? min(credit, 131072) : credit
+    return pacedLan ? min(credit, min(listeningPacing.creditBytes, senderChunkBytes * peerMaxWindow)) : credit
   }
   var lowLatencyBacklogReady: Bool {
     activeChannel?.descriptor.transport != "lan" || receiving || sentBytes - acknowledgedBytes <= 131072
@@ -229,10 +232,36 @@ enum TransferEvent: Equatable {
   func setLowLatencyMediaActive(_ active: Bool) {
     guard lowLatencyMedia != active else { return }
     lowLatencyMedia = active
+    listeningPacing = ListeningTransferPacing()
+    listeningHealthAt = nil
+    listeningHealthTask?.cancel(); listeningHealthTask = nil
     mediaPacingRevision += 1
     let resume = creditResume
     creditResume = nil
     resume?()
+  }
+  func reportListeningHealth(_ healthy: Bool, sequence: Int64, underruns: Int64) {
+    guard lowLatencyMedia else { return }
+    listeningHealthAt = ProcessInfo.processInfo.systemUptime
+    let previous = listeningPacing.creditBytes
+    listeningPacing.report(healthy: healthy, sequence: sequence, underruns: underruns,
+      now: ProcessInfo.processInfo.systemUptime)
+    if listeningPacing.creditBytes != previous { mediaPacingRevision += 1; resumeCredit() }
+    if listeningPacing.creditBytes > 131072 && listeningHealthTask == nil {
+      listeningHealthTask = Task { [weak self] in
+        while !Task.isCancelled {
+          do { try await Task.sleep(for: .seconds(1)) } catch { return }
+          guard let self, lowLatencyMedia else { return }
+          if let last = listeningHealthAt, ProcessInfo.processInfo.systemUptime - last > 2.5,
+            listeningPacing.creditBytes > 131072 {
+            listeningPacing = ListeningTransferPacing()
+            mediaPacingRevision += 1
+            resumeCredit()
+          }
+          if listeningPacing.creditBytes == 131072 { listeningHealthTask = nil; return }
+        }
+      }
+    }
   }
   // Cumulative ACKs may end within a chunk; credit must fit the entire next chunk.
   var hasSendCredit: Bool {
@@ -395,6 +424,7 @@ enum TransferEvent: Equatable {
   var lastReceiverUiUpdate: TimeInterval = 0
 
   deinit {
+    listeningHealthTask?.cancel()
     progressTask?.cancel()
     if hasSleepAssertion {
       IOPMAssertionRelease(sleepAssertionID)

@@ -7,7 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
-import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
+import io.github.anisharyal09.anice.infrastructure.connections.WorkerFeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
@@ -62,12 +62,13 @@ class PrivateListeningController internal constructor(
     private val now: () -> Long = { android.os.SystemClock.elapsedRealtime() },
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val automaticTicks: Boolean = true,
-) : FeatureHandler {
+) : WorkerFeatureHandler {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private var channel: SecuredChannel? = null
     private var localFingerprint: String? = null
     private var localLookup: Job? = null
     private var current: PrivateListeningRequest? = null
+    @Volatile private var audioAdmission: PrivateListeningAudioAdmission? = null
     private var stoppingService: PrivateListeningRequest? = null
     private var tickJob: Job? = null
     private var sending: Job? = null
@@ -100,6 +101,7 @@ class PrivateListeningController internal constructor(
     internal var serviceOwnershipChanged: (PrivateListeningRequest, Any, Boolean) -> Unit = { _, _, _ -> }
     internal var ownershipChanged: (Boolean) -> Unit = {}
     internal var transferReady: () -> Boolean = { true }
+    internal var transferHealth: (Boolean, Long, Long) -> Unit = { _, _, _ -> }
 
     fun openWorkspace() { openWorkspaceRequest = true }
     fun workspaceOpened() { openWorkspaceRequest = false }
@@ -185,13 +187,8 @@ class PrivateListeningController internal constructor(
             message.text(0) != request.id) return DataHandling.DISCARDED
         when (message.kind) {
             3L -> {
-                if (!request.ready || message.number(1) <= request.lastSequence) return DataHandling.DISCARDED
-                request.lastSequence = message.number(1)
-                request.firstAudioAt = request.firstAudioAt ?: now()
-                request.peerAt = now()
-                request.peerMaintenance = channel?.maintenance?.elapsedMillis ?: 0
+                if (audioAdmission?.receive(message, now()) != true) return DataHandling.DISCARDED
                 reflectMaintenance()
-                if (!request.focusPaused && !request.maintenanceActive) request.output?.offer(message)
             }
             4L -> stop(message = "Listening ended on the Mac.", notify = false)
             5L -> {
@@ -202,6 +199,28 @@ class PrivateListeningController internal constructor(
             else -> return DataHandling.DISCARDED
         }
         return DataHandling.HANDLED
+    }
+
+    override fun handleOnWorker(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+        if (descriptor.transport != "lan") return DataHandling.UNRECOGNIZED
+        if (!PrivateListeningMessage.hasAudioPrefix(bytes)) return DataHandling.UNRECOGNIZED
+        val admission = audioAdmission ?: return DataHandling.DISCARDED
+        if (admission.descriptor != descriptor) return DataHandling.DISCARDED
+        val message = try { PrivateListeningMessage.decode(bytes) ?: return DataHandling.UNRECOGNIZED }
+        catch (_: Exception) {
+            scope.launch {
+                if (audioAdmission === admission) stop(reason = 5, message = "Invalid listening audio.")
+            }
+            return DataHandling.DISCARDED
+        }
+        return try {
+            if (admission.receive(message, now())) DataHandling.HANDLED else DataHandling.DISCARDED
+        } catch (_: Exception) {
+            scope.launch {
+                if (audioAdmission === admission) stop(reason = 6, message = "Audio admission failed.")
+            }
+            DataHandling.DISCARDED
+        }
     }
 
     private fun receiveStart(message: PrivateListeningMessage, descriptor: ChannelDescriptor) {
@@ -261,6 +280,9 @@ class PrivateListeningController internal constructor(
             failed(request, 9, "The active transfer did not drain in time."); return
         }
         request.ready = true
+        audioAdmission = PrivateListeningAudioAdmission(request.descriptor, request.id,
+            requireNotNull(request.output), channel?.maintenance)
+        if (request.focusPaused || channel?.maintenance?.active == true) audioAdmission?.pause()
         request.readyAt = now()
         request.readyMaintenance = channel?.maintenance?.elapsedMillis ?: 0
         request.peerAt = now()
@@ -289,6 +311,11 @@ class PrivateListeningController internal constructor(
 
     internal fun playbackHealth(request: PrivateListeningRequest, health: ListeningPlaybackHealth) {
         if (current !== request) return
+        reflectMaintenance()
+        if (current !== request) return
+        transferHealth(!health.rebuffering && !request.focusPaused && !request.maintenanceActive &&
+            !request.priming && health.queuedFrames <= health.targetFrames + 960,
+            health.sequence, health.underruns)
         if (!request.focusPaused && !request.maintenanceActive && !request.priming) diagnostics = health
         request.positionFrames = health.positionFrames
         request.queuedFrames = health.queuedFrames
@@ -306,8 +333,11 @@ class PrivateListeningController internal constructor(
             failed(request, 5, "Phone audio focus changed during preparation.")
             return
         }
+        syncAudioReceipt(request)
         request.focusPaused = !granted
         if (!granted) {
+            transferHealth(false, request.lastSequence, request.underruns)
+            audioAdmission?.pause()
             diagnostics = null
             request.pauseAt = request.pauseAt ?: now()
             request.preparationRevision += 1
@@ -334,6 +364,7 @@ class PrivateListeningController internal constructor(
         val revision = ++request.preparationRevision
         state = 5
         output.beginResume()
+        audioAdmission?.resume()
         scope.launch {
             try {
                 output.resume()
@@ -365,11 +396,13 @@ class PrivateListeningController internal constructor(
         request.maintenanceTotal = total
         request.maintenanceActive = active
         if (active && !wasActive || completed) {
+            audioAdmission?.pause()
             request.preparationRevision += 1
             request.priming = false
             request.output?.pause()
         }
         if (active) {
+            transferHealth(false, request.lastSequence, request.underruns)
             diagnostics = null
             state = 4
             status = "Renewing secure LAN…"
@@ -387,6 +420,7 @@ class PrivateListeningController internal constructor(
             stop(reason = 7, message = "Phone audio interruption expired."); return
         }
         val maintenance = channel?.maintenance
+        syncAudioReceipt(request)
         val excludedStart = maxOf(0, (maintenance?.elapsedMillis ?: 0) - request.maintenanceAtStart)
         if (maintenance?.active != true) {
             if (!request.ready && now() - request.startedAt - excludedStart >= 5000) {
@@ -411,8 +445,22 @@ class PrivateListeningController internal constructor(
         pump()
     }
 
+    private fun syncAudioReceipt(request: PrivateListeningRequest) {
+        audioAdmission?.receipt?.let { receipt ->
+            request.lastSequence = receipt.sequence
+            request.firstAudioAt = receipt.firstAudioAt
+            if (receipt.peerAt > request.peerAt) {
+                request.peerAt = receipt.peerAt
+                request.peerMaintenance = receipt.peerMaintenance
+            }
+        }
+    }
+
     fun stop(reason: Long = 0, message: String = "Listening stopped.", notify: Boolean = true) {
         val request = current
+        // Worker admission is fenced first; close/flush remains local and never waits for Stop DATA.
+        audioAdmission?.close()
+        audioAdmission = null
         generation += 1
         current = null
         diagnostics = null

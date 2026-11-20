@@ -30,6 +30,7 @@ class PrivateListeningWireTests {
             val name = row.getString("name")
             val encoded = hex(row.getString("bytesHex"))
             val message = PrivateListeningMessage.decode(encoded)!!
+            assertEquals(name, message.kind == 3L, PrivateListeningMessage.hasAudioPrefix(encoded))
             assertEquals(name, row.getLong("kind"), message.kind)
             assertArrayEquals(name, encoded, message.encode())
             assertTrue(name, encoded.size <= 4000)

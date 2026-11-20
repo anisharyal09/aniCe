@@ -126,6 +126,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Keep explicit capture preparation and Start/Stop on Mac; Android receiving consent remains credential-scoped and headphone confirmation is local.
 - Android buffering choices form one accessible radio group: Balanced by default and opt-in Lower delay, disabled while listening. Keep Stop above diagnostics so setup detail cannot bury it.
 - Label app/native buffer diagnostics as local backlog, with native writes included once. Never label a target or platform buffer as measured video/headphone latency. Explain Bluetooth's additional output delay without promising lip-sync. See [Private Listening](../features/PRIVATE_LISTENING.md).
+- Distinguish gap recovery/rebuffer counts from configured buffer targets; source packet gaps are not evidence of route permission loss. Mac Stop reports audio restoration in progress until native cleanup finishes rather than claiming immediate completion.
 
 ### File transfer
 - Compact entry progressing through file selection, recipient confirmation, transfer progress, and persistent result.

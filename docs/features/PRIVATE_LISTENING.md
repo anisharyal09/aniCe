@@ -26,24 +26,30 @@ Android approves explicitly identified wired headphones/headsets, USB headsets a
 
 **Stop listening** is available in the feature panel, phone notification and active Mac companion row. Terminal cleanup restores normal Mac output. A still-playing source can become audible on Mac; the feature is not a crash-proof mute latch. No audio history, saved recording or offline queue is created.
 
+Mac restores the tap's unmuted output before dismantling native capture and shows **Restoring Mac audio…** until cleanup completes. This does not pause or rewind the source, synchronize the Bluetooth tail with Mac output, or guarantee a gapless switch on every output.
+
 ## Delay and buffering
 
 Choose a buffering mode on Android before starting:
 
-- **Balanced** is the default: initially 200 ms of app-managed audio, adapting within 160–320 ms.
-- **Lower delay** is opt-in: initially 80 ms, adapting within 80–160 ms. A busy connection or scheduler can cause more interruptions.
+- **Balanced** is the default: initially 120 ms of app-managed audio, adapting within 60–240 ms.
+- **Lower delay** is opt-in: initially 40 ms, adapting within 20–160 ms. A busy connection or scheduler can cause more interruptions.
 
-Late packet arrival and new native underruns raise the local target; sustained healthy playback lowers it slowly. The target includes software audio and pending AudioTrack writes once. The worker requests a smaller effective native buffer and startup threshold where Android permits, without assuming that the platform accepted those requests. Older Android versions and some outputs retain a larger native startup floor. Audio memory remains bounded to 800 ms in either mode; this is a ceiling, not a latency goal.
+Late packet arrival and new native underruns raise the local target; sustained healthy playback lowers it slowly. A stream remembers its underrun floor instead of repeatedly retrying an unsustainable lower target. The target includes software audio and pending AudioTrack writes once. The worker requests a smaller effective native buffer and startup threshold where Android permits, without assuming that the platform accepted those requests. Older Android versions and some outputs retain a larger native startup floor. Audio memory remains bounded to 800 ms in either mode; this is a ceiling, not a latency goal.
 
 The panel shows current app backlog, target, pending AudioTrack audio (included in the backlog), skipped packets and native underruns. These are local diagnostics, **not measured end-to-end latency**. Bluetooth encoding, OS mixing and headphone buffering can add substantial delay beyond them; wired/USB headphones usually reduce that contribution. Neither mode guarantees video lip-sync. aniCe cannot remove downstream Bluetooth delay or delay video in an arbitrary Mac browser.
 
 For a useful comparison, replay the same source on the same LAN with Balanced and Lower delay, then compare with wired/USB headphones if available. Note both perceived delay and interruptions; also check screen-off playback and transfer coexistence. Switch modes only after stopping, and keep headphone-route/privacy checks unchanged.
 
+With Bluetooth headphones, especially on Android 34+, leaving the app or switching the screen off can still increase Wi-Fi delivery jitter: the low-latency Wi-Fi lock is restricted by Android and is not a screen-off radio guarantee. The CPU/service lease remains separate. A 20-ms local target is only one PCM packet and offers little jitter reserve; if it underruns the adaptive player increases buffering. Do not interpret a larger native effective buffer or target as measured total headphone delay.
+
 ## Interruptions and renewal
 
 Transient focus loss pauses/flushes phone playback for at most 90 seconds; Mac capture continues reading/discarding with the chosen mute behavior. Focus return silently re-primes and verifies routing before current audio resumes. Permanent focus loss and headphone route loss end listening.
 
-Underflow produces local silence and bounded rebuffering on the same stream. Software queues retain a bounded newest-received window instead of replaying missed seconds. Already-submitted TCP bytes remain ordered; receiver trimming cannot retract them. Listening ownership paces future file-transfer chunks to 64 KiB and outstanding unacknowledged file data to 128 KiB within negotiated credit. Transfer data is never discarded to make room for audio.
+Underflow produces local silence and bounded rebuffering on the same stream. Software queues retain a bounded newest-received window instead of replaying missed seconds. An isolated source gap resets interpolation and ramps the next current packet over 5 ms, without reopening route authorization or repeating silent preparation. Authenticated Audio admission and playback scheduling do not wait for UI rendering. Focus/maintenance recovery still requires silent route verification.
+
+Already-submitted TCP bytes remain ordered; receiver trimming cannot retract them. Listening starts with future transfer chunks up to 64 KiB and 128 KiB of unacknowledged file credit. Fresh advancing playback health with no new underruns gradually permits up to 128-KiB chunks and 1 MiB of credit, always within the peer's negotiated chunk count/window and existing LAN qualification. Buffering, stale health or new underruns return to the initial small budget; already-submitted data drains normally. Transfer data is never discarded to make room for audio. This policy can still reduce file throughput on a congested path; it is not a guarantee of simultaneous maximum transfer speed and low audio latency.
 
 Negotiated LAN renewal uses the existing channel maintenance interval. TCP, the feature-channel descriptor and listening stream remain intact while fresh EDHOC/readiness replace cryptographic keys. Mac keeps reading/discarding; Android keeps native service ownership and rechecks focus/routing afterward. **Renewing secure LAN…** distinguishes that bounded interruption from normal playback. Native phase/security deadlines are not extended.
 

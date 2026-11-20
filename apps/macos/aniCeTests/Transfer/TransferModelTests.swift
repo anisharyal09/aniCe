@@ -31,6 +31,21 @@ final class MockSecuredChannel: SecuredChannel {
 @MainActor
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
+  func testListeningCreditRecoversOnlyWithAdvancingHealthyAudioAndShrinksOnUnderrun() {
+    var pacing = ListeningTransferPacing()
+    for second in 0...8 {
+      pacing.report(healthy: true, sequence: Int64(second + 1), underruns: 0, now: Double(second))
+    }
+    XCTAssertEqual(pacing.creditBytes, 393216)
+    pacing.report(healthy: true, sequence: 10, underruns: 1, now: 9)
+    XCTAssertEqual(pacing.creditBytes, 131072)
+    for second in 10...45 {
+      pacing.report(healthy: true, sequence: Int64(second + 1), underruns: 1, now: Double(second))
+    }
+    XCTAssertEqual(pacing.creditBytes, 1048576)
+    pacing.report(healthy: true, sequence: 46, underruns: 1, now: 46)
+    XCTAssertEqual(pacing.creditBytes, 131072, "Duplicate status cannot preserve an expanded window")
+  }
 
   func testListeningPacingBoundsFutureLanRecordsButDoesNotPretendExistingBytesDrained() {
     let model = MacTransferModel()

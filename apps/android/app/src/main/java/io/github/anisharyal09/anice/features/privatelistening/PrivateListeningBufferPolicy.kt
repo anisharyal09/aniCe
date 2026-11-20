@@ -8,8 +8,8 @@ internal enum class ListeningBufferProfile(
     val minimumFrames: Int,
     val maximumFrames: Int,
 ) {
-    BALANCED("balanced", 9600, 7680, 15360),
-    LOWER_DELAY("lower_delay", 3840, 3840, 7680);
+    BALANCED("balanced", 5760, 2880, 11520),
+    LOWER_DELAY("lower_delay", 1920, 960, 7680);
 
     companion object {
         fun restored(value: String?): ListeningBufferProfile =
@@ -29,18 +29,20 @@ internal class PrivateListeningBufferPolicy(
     private var stableSince: Long? = null
     private var lastIncrease: Long? = null
     private var previousUnderruns: Long? = null
+    private var learnedFloor = profile.minimumFrames
+    private var recoveryUntil = 0L
 
     @Synchronized fun arrived(sequence: Long, now: Long) {
         require(sequence > 0 && now >= 0)
         val previous = previousSequence
         val at = previousArrival
         if (previous != null && sequence <= previous) return
-        if (previous != null && at != null && now >= at) {
+        if (previous != null && at != null && now >= at && now >= recoveryUntil) {
             val expected = (sequence - previous).toDouble() * 20
             val late = (now - at - expected).coerceIn(0.0, 1000.0)
             // React quickly to late bursts, but let old jitter fade rather than retaining a lifetime maximum.
             lateMillis += (late - lateMillis) * if (late > lateMillis) 0.25 else 0.02
-            val jitterTarget = profile.minimumFrames + (lateMillis * 2 * 48).toInt()
+            val jitterTarget = learnedFloor + (lateMillis * 2 * 48).toInt()
             if (jitterTarget > targetFrames) increase(jitterTarget, now)
         }
         previousSequence = sequence
@@ -58,6 +60,8 @@ internal class PrivateListeningBufferPolicy(
         require(now >= 0)
         // One continuous starvation episode must not inflate the target every worker turn.
         if (lastIncrease?.let { now - it < 1000 } == true) return
+        learnedFloor = maxOf(learnedFloor, targetFrames + 960).coerceAtMost(profile.maximumFrames)
+        recoveryUntil = now + 1000 // Do not count catch-up spacing as new arrival jitter.
         increase(targetFrames + 1920, now)
     }
 
@@ -65,9 +69,9 @@ internal class PrivateListeningBufferPolicy(
         require(now >= 0)
         val stable = stableSince
         if (stable == null) { stableSince = now; return }
-        if (now - stable < 10000) return
+        if (now - stable < 15000) return
         stableSince = now
-        val jitterFloor = roundPacket(profile.minimumFrames + (lateMillis * 2 * 48).toInt())
+        val jitterFloor = roundPacket(learnedFloor + (lateMillis * 2 * 48).toInt())
             .coerceAtMost(profile.maximumFrames)
         targetFrames = maxOf(jitterFloor, targetFrames - 960)
     }
@@ -94,9 +98,10 @@ internal class PrivateListeningBufferPolicy(
 /** Memory capacity is not a requirement to keep that much audio pending in AudioTrack. */
 internal object PrivateListeningNativeBufferPolicy {
     const val MAXIMUM_NATIVE_FRAMES = 37400 // Leaves one bounded resampler output under the 800-ms ceiling.
-    fun requestedFrames(targetFrames: Int): Int {
+    fun requestedFrames(targetFrames: Int, profile: ListeningBufferProfile = ListeningBufferProfile.BALANCED): Int {
         require(targetFrames in 960..38400)
-        return maxOf(1920, targetFrames / 2).coerceAtMost(MAXIMUM_NATIVE_FRAMES)
+        val portion = if (profile == ListeningBufferProfile.BALANCED) targetFrames * 3 / 4 else targetFrames / 2
+        return maxOf(960, portion).coerceAtMost(MAXIMUM_NATIVE_FRAMES)
     }
 
     fun writeLimit(requested: Int, effectiveBuffer: Int, startThreshold: Int?): Int {

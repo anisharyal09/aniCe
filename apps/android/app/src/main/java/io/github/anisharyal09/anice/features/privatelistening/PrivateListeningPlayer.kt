@@ -29,6 +29,9 @@ internal data class ListeningPlaybackHealth(
     val droppedPackets: Long = 0,
     val performanceMode: Int = AudioTrack.PERFORMANCE_MODE_NONE,
     val routeType: Int = AudioDeviceInfo.TYPE_UNKNOWN,
+    val gapRecoveries: Long = 0,
+    val rebufferCount: Long = 0,
+    val maximumArrivalGapMillis: Long = 0,
 )
 
 internal class PrivateListeningPlayer(
@@ -47,6 +50,7 @@ internal class PrivateListeningPlayer(
     private val confirmedRoutes = confirmedRoutes
     private val now = now
     private val routeLost = routeLost
+    private val bufferProfile = profile
     private val policy = PrivateListeningBufferPolicy(profile)
     private val queue = PrivateListeningAudioQueue(targetFrames = profile.initialFrames)
     private val resampler = PrivateListeningResampler()
@@ -69,8 +73,14 @@ internal class PrivateListeningPlayer(
     private var configuredBuffer = 0
     private var configuredThreshold: Int? = null
     @Volatile private var hasSubmittedAudio = false
+    private var hasPlayedAudio = false
     private var nativeProgressAt: Long? = null
     private var observedHead = 0L
+    private var gapRecoveries = 0L
+    private var rebufferCount = 0L
+    private var lastArrivalAt = 0L
+    private var maximumArrivalGapMillis = 0L
+    private var fadeNext = false
     var performanceMode = AudioTrack.PERFORMANCE_MODE_NONE
         private set
     private val routing: () -> Unit = {
@@ -106,19 +116,27 @@ internal class PrivateListeningPlayer(
     fun offer(message: PrivateListeningMessage): Boolean {
         if (closed || paused) return false
         // Snapshot native/staging ownership under the same lock as writes before growing the software queue.
-        val accepted = synchronized(nativeLock) {
+        return synchronized(nativeLock) {
             if (closed || paused) false
-            else queue.offer(message, maxOf(nativeFrames, primingReservation) + 1000)
+            else {
+                val offered = queue.offer(message, maxOf(nativeFrames, primingReservation) + 1000)
+                if (offered) {
+                    val time = now()
+                    if (lastArrivalAt != 0L) maximumArrivalGapMillis = maxOf(maximumArrivalGapMillis, time - lastArrivalAt)
+                    lastArrivalAt = time
+                    policy.arrived(message.number(1), time)
+                }
+                offered
+            }
         }
-        if (accepted) policy.arrived(message.number(1), now())
-        return accepted
     }
 
     fun pause() {
         paused = true
         queue.pause(discard = true)
-        policy.interrupted()
         synchronized(nativeLock) {
+            lastArrivalAt = 0
+            policy.interrupted()
             track?.setVolume(0f)
             track?.pause()
             track?.flush()
@@ -199,6 +217,7 @@ internal class PrivateListeningPlayer(
                 }
                 delay(10)
             }
+            if (safeRoute()) throw PrivateListeningPlaybackError(8, "Native headphone playback stopped progressing")
             throw PrivateListeningPlaybackError(6, "Audio is not routed only to approved headphones")
         } finally {
             primingReservation = 0
@@ -227,7 +246,8 @@ internal class PrivateListeningPlayer(
                     synchronized(nativeLock) { track?.underrunCount?.toLong()?.coerceAtLeast(0) ?: 0 },
                     rebuffering, combinedTarget(), nativeFrames, configuredBuffer,
                     nativeWriteLimit, queue.droppedPackets, performanceMode,
-                    synchronized(nativeLock) { track?.routes?.firstOrNull()?.type ?: AudioDeviceInfo.TYPE_UNKNOWN }))
+                    synchronized(nativeLock) { track?.routes?.firstOrNull()?.type ?: AudioDeviceInfo.TYPE_UNKNOWN },
+                    gapRecoveries, rebufferCount, synchronized(nativeLock) { maximumArrivalGapMillis }))
             }
             delay(2)
         }
@@ -253,17 +273,22 @@ internal class PrivateListeningPlayer(
             } else nativeProgressAt = null
             observedHead = head
             if (queue.queuedFrames == 0 && nativeFrames == 0) {
-                if (!rebuffering && hasSubmittedAudio) policy.starved(time)
+                if (!rebuffering && hasSubmittedAudio) { policy.starved(time); rebufferCount++ }
                 rebuffering = true
             }
             if (rebuffering) policy.buffering()
-            val pending = queue.queuedFrames + nativeFrames
+            var pending = queue.queuedFrames + nativeFrames
             if (pending > target + maxOf(1920, target / 2)) {
-                val trimmed = queue.trimToTarget()
-                if (nativeFrames > target || trimmed > 0) {
+                if (nativeFrames > target + 960) {
+                    rebufferCount++
+                    queue.trimToTarget()
                     if (queue.writeGateOpen) prime()
                     return true
                 }
+                // Healthy native output can continue while obsolete software packets are removed.
+                // The next source boundary resets interpolation/ramp; no silent re-priming loop.
+                queue.trimToTarget(nativeFrames)
+                pending = queue.queuedFrames + nativeFrames
             }
             if (rebuffering && pending < target) return true
             if (rebuffering) {
@@ -271,6 +296,7 @@ internal class PrivateListeningPlayer(
                 queue.consumeDiscontinuity()
                 resampler.reset(target)
                 expectedOffset = null
+                fadeNext = hasPlayedAudio
                 rebuffering = false
             }
             if (nativeFrames >= nativeWriteLimit) return rebuffering
@@ -280,11 +306,16 @@ internal class PrivateListeningPlayer(
             if (!queue.permitsWrite(token)) return true
             val discontinuity = queue.consumeDiscontinuity()
             if (discontinuity || (expectedOffset != null && expectedOffset != packet.offset)) {
-                if (queue.permitsWrite(token)) prime()
-                return true
+                // A missing source slot is not lost route authorization. Keep current PCM instead of
+                // dropping it and paying a full native pause/flush/silent preparation on every gap.
+                gapRecoveries++
+                resampler.reset(target)
+                expectedOffset = null
+                fadeNext = true
             }
             resampler.correct(queue.queuedFrames + nativeFrames + 960, target)
             val bytes = resampler.process(packet.pcm, scratch)
+            if (fadeNext) { fadeIn(scratch, bytes); fadeNext = false }
             stagingFrames = bytes / 4
             var offset = 0
             var progressAt = now()
@@ -298,11 +329,8 @@ internal class PrivateListeningPlayer(
                 if (now() - progressAt >= 2000) {
                     throw PrivateListeningPlaybackError(8, "Native headphone playback stopped progressing")
                 }
-                if (queue.queuedFrames + nativeFrames + stagingFrames > target + maxOf(1920, target / 2) &&
-                    queue.trimToTarget() > 0) {
-                    stagingFrames = 0
-                    if (queue.permitsWrite(token)) prime()
-                    return true
+                if (queue.queuedFrames + nativeFrames + stagingFrames > target + maxOf(1920, target / 2)) {
+                    queue.trimToTarget(nativeFrames + stagingFrames)
                 }
                 val available = (nativeWriteLimit - nativeFrames).coerceAtLeast(0)
                 if (available == 0) { delay(2); continue }
@@ -329,6 +357,7 @@ internal class PrivateListeningPlayer(
                 if (submitted) {
                     expectedOffset = packet.offset + 960
                     hasSubmittedAudio = true
+                    hasPlayedAudio = true
                     if (nativeFrames > 0 || queue.queuedFrames > 0) policy.healthy(now())
                 }
             }
@@ -394,8 +423,9 @@ internal class PrivateListeningPlayer(
         val currentThreshold = native.startThresholdInFrames
         if (configuredTarget == target && configuredBuffer == currentBuffer &&
             configuredThreshold == currentThreshold) return@synchronized
-        val requested = PrivateListeningNativeBufferPolicy.requestedFrames(target)
+        val requested = PrivateListeningNativeBufferPolicy.requestedFrames(target, bufferProfile)
         // Android may round or reject the requested size; account for the actual buffer and startup floor.
+        // Buffer reconfiguration is a best-effort latency hint, not a new playback requirement.
         native.setBufferSizeInFrames(requested)
         val actual = native.bufferSizeInFrames
         if (actual !in 1..PrivateListeningNativeBufferPolicy.MAXIMUM_NATIVE_FRAMES) {
@@ -415,11 +445,22 @@ internal class PrivateListeningPlayer(
         if (actual !in 1..PrivateListeningNativeBufferPolicy.MAXIMUM_NATIVE_FRAMES) {
             throw PrivateListeningPlaybackError(3, "Native playback buffer exceeds budget")
         }
-        maxOf(1920, native.startThresholdInFrames?.coerceIn(1, actual) ?: actual)
+        maxOf(960, native.startThresholdInFrames?.coerceIn(1, actual) ?: actual)
     }
 
     private fun combinedTarget(): Int =
         PrivateListeningNativeBufferPolicy.combinedTarget(policy.targetFrames, nativeWriteLimit)
+
+    private fun fadeIn(pcm: ByteArray, bytes: Int) {
+        val frames = minOf(240, bytes / 4) // A 5-ms boundary ramp, with no extra queued audio.
+        for (frame in 0 until frames) for (channel in 0..1) {
+            val offset = frame * 4 + channel * 2
+            val sample = ((pcm[offset].toInt() and 255) or (pcm[offset + 1].toInt() shl 8)).toShort().toInt()
+            val value = sample * frame / frames
+            pcm[offset] = value.toByte()
+            pcm[offset + 1] = (value shr 8).toByte()
+        }
+    }
 
     companion object {
         val ATTRIBUTES: AudioAttributes by lazy {

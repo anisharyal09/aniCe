@@ -67,6 +67,12 @@ data class PrivateListeningMessage(val kind: Long, val fields: List<Cbor>) {
         const val MAX_QUEUED_FRAMES = 48000L
         private val UUID_V4 =
             Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+        private val audioPrefix = SessionCbor.encode(Cbor.Array(listOf(
+            Cbor.Text(TAG), Cbor.Integer(1), Cbor.Integer(3), Cbor.Array(emptyList())))).dropLast(1).toByteArray()
+
+        // Classification only; full canonical shape/timeline validation still precedes admission.
+        internal fun hasAudioPrefix(bytes: ByteArray): Boolean =
+            bytes.size >= audioPrefix.size && audioPrefix.indices.all { bytes[it] == audioPrefix[it] }
 
         fun decode(bytes: ByteArray): PrivateListeningMessage? {
             // Larger unrelated LAN DATA stays with its handler without materializing its byte strings.

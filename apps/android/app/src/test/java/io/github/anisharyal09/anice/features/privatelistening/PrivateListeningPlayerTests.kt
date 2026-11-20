@@ -29,6 +29,8 @@ class PrivateListeningPlayerTests {
         override var playing = false
             private set
         private var started = false
+        var flushes = 0
+            private set
         private var at = now()
         private var pending = 0
         private var head = 0
@@ -58,8 +60,12 @@ class PrivateListeningPlayerTests {
         override fun setRoutingListener(changed: () -> Unit) { this.changed = changed }
         override fun setVolume(volume: Float): Boolean { this.volume = volume; return true }
         override fun pause() { drain(); playing = false }
-        override fun flush() { pending = 0; head = 0; started = false; at = now() }
-        override fun play() { playing = true; at = now() }
+        override fun flush() { flushes++; pending = 0; head = 0; started = false; at = now() }
+        override fun play() {
+            playing = true
+            if (pending >= minOf(threshold, bufferSizeInFrames)) started = true
+            at = now()
+        }
         override fun write(bytes: ByteArray, offset: Int, count: Int): Int {
             check(!released)
             drain()
@@ -108,8 +114,8 @@ class PrivateListeningPlayerTests {
         val pumping = launch { player.pump {} }
         try {
             withTimeout(3000) { while (track.nonzeroFrames < 960) delay(5) }
-            assertTrue("Native writes must not fill allocated capacity", track.maximumAudiblePending <= 1920)
-            assertTrue(track.maximumPending <= 1920)
+            assertTrue("Native writes must not fill allocated capacity", track.maximumAudiblePending <= 960)
+            assertTrue(track.maximumPending <= 960)
         } finally { player.close(); pumping.cancelAndJoin() }
         assertTrue(track.released)
     }
@@ -256,5 +262,30 @@ class PrivateListeningPlayerTests {
         assertEquals(0, losses)
         assertEquals(0, native.nonzeroFrames)
         player.close()
+    }
+
+    @Test fun isolatedSequenceGapPlaysTheCurrentPacketWithoutAnotherSilentPrimingCycle() = runBlocking {
+        val now = clock()
+        val track = Track(now)
+        val player = PrivateListeningPlayer({ track }, emptySet(), ListeningBufferProfile.LOWER_DELAY,
+            now = now) {}
+        player.prepare()
+        val preparedFlushes = track.flushes
+        for (sequence in listOf(1L, 2L)) player.offer(packet(sequence))
+        var health: ListeningPlaybackHealth? = null
+        val pumping = launch { player.pump { health = it } }
+        try {
+            withTimeout(3000) { while (track.nonzeroFrames < 950) delay(2) }
+            for (sequence in listOf(4L, 5L, 6L, 7L)) {
+                player.offer(packet(sequence))
+                delay(20)
+            }
+            withTimeout(4000) {
+                while (track.nonzeroFrames < 3 * 950) delay(2)
+            }
+            assertTrue("Current gap packet must be played, not repeatedly discarded", track.nonzeroFrames >= 2850)
+            assertEquals("A gap must not reopen silent preparation", preparedFlushes, track.flushes)
+            assertFalse(track.released)
+        } finally { player.close(); pumping.cancelAndJoin() }
     }
 }

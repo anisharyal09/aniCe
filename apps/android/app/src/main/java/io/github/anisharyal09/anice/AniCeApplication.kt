@@ -201,6 +201,7 @@ class AniCeApplication : Application() {
                 mediaNotification.listeningOwnershipChanged()
             }
             listening.transferReady = ::listeningTransferReady
+            listening.transferHealth = transfer::reportListeningHealth
         }
     }
     private val listeningWorkLeases = java.util.IdentityHashMap<Any, AutoCloseable>()

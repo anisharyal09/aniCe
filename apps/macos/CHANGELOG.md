@@ -40,6 +40,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Restore tap output before native teardown and report restoration in progress; recover transfer credit from advancing healthy headphone status.
 - Trim stalled Private Listening capture to a newest 60-ms interval and reduce unsealed audio buildup without discarding sealed records.
 - Raise the Mac deployment target to 14.2 for private Core Audio process taps.
 - Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
