@@ -59,6 +59,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Recheck pairing ownership after invitation reads before publishing QR/PIN or
+  starting discovery; cover Stop, sleep and replacement without real radio work.
+- Keep mocked LAN listener regressions independent of live host-network events
+  and wait for endpoint publication instead of assuming a 20-ms callback turn.
 - Prevent a cancelled companion-window expiry from retiring a newer window on
   the same authenticated channel.
 - Keep Settings animation completion and notification cleanup on the main actor;

@@ -99,7 +99,6 @@ DOCUMENTED_ANDROID_SKIPS = {
     "CompanionSetupPresentationTest#unpinnedApprovalIsRejectedWithoutLaunchingIt",
     "CompanionSetupPresentationTest#setupStaysCompactAcrossThemesWidthsAndTextScales",
     "ComparisonPresentationTest#comparisonVisibilitySubscribesEvenWhenTheInitialMethodIsNotSas",
-    "ComparisonPresentationTest#everyPairingMethodHandsOffItsNativeCandidateOnlyOnceAfterTrustIsSaved",
     "ComparisonPresentationTest#globalAndAddDeviceSurfacesRenderTheSameLiveCodeAcrossPhaseChanges",
     "HomeVisualReviewTest#nativePresentationStates",
     "TransferPresentationTest#transferStatesKeepOneOverviewHeadingAndAccessibleActions",

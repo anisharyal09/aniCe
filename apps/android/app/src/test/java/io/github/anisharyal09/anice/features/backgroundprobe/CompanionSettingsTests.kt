@@ -3,6 +3,8 @@
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionSetupTarget
+import io.github.anisharyal09.anice.infrastructure.connections.companionSetupPeerMatches
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -37,5 +39,18 @@ class CompanionSettingsTests {
     assertFalse(hasConnectionSetup(a, null, a.fingerprint))
     assertFalse(hasConnectionSetup(a, a.deviceId, null))
     assertFalse(hasConnectionSetup(a, null, null))
+  }
+
+  @Test fun savedRelationshipPresentationCannotAuthorizeAChangedPublicKey() {
+    val peer = DeviceIdentity("id", "Mac", "macos", "original-key", "fingerprint")
+    val changed = peer.copy(publicKey = "replacement-key")
+    // Deliberately inconsistent metadata tests the boundary, not a valid key rotation.
+    assertTrue(hasConnectionSetup(changed, peer.deviceId, peer.fingerprint))
+    assertFalse(companionSetupPeerMatches(peer, changed))
+    assertFalse(CompanionSetupTarget(peer, "02:00:00:00:00:01", "channel", 60_000)
+      .matches(changed, "channel", 0))
+    val renamed = peer.copy(deviceName = "Renamed Mac")
+    assertTrue(hasConnectionSetup(renamed, peer.deviceId, peer.fingerprint))
+    assertTrue(companionSetupPeerMatches(peer, renamed))
   }
 }

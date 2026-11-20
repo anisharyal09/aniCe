@@ -22,8 +22,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
 import io.github.anisharyal09.anice.ui.PresentationFixture
 import io.github.anisharyal09.anice.infrastructure.pairing.PairingMethod
-import io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate
-import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import org.junit.Assert.*
 import org.junit.Test
@@ -41,18 +39,16 @@ class ComparisonPresentationTest {
             var invalidations = 0
             observer.start()
             try {
-                fixture.present(PairingViewModel::method, PairingMethod.QR)
-                fixture.present(PairingViewModel::phase, "idle")
+                fixture.present { method = PairingMethod.QR; phase = "idle" }
                 Snapshot.sendApplyNotifications()
                 observer.observeReads("comparison", { invalidations++ }) { assertFalse(model.comparingNearby) }
-                fixture.present(PairingViewModel::method, PairingMethod.SAS)
-                fixture.present(PairingViewModel::phase, "preparing")
+                fixture.present { method = PairingMethod.SAS; phase = "preparing" }
                 Snapshot.sendApplyNotifications()
                 assertTrue(invalidations > 0)
                 assertTrue(model.comparingNearby)
                 val beforePhaseChange = invalidations
                 observer.observeReads("comparison", { invalidations++ }) { assertTrue(model.comparingNearby) }
-                fixture.present(PairingViewModel::phase, "idle")
+                fixture.present { phase = "idle" }
                 Snapshot.sendApplyNotifications()
                 assertTrue("Live visibility must observe phase as well as method", invalidations > beforePhaseChange)
                 assertFalse(model.comparingNearby)
@@ -60,31 +56,6 @@ class ComparisonPresentationTest {
                 observer.stop(); observer.clear()
                 fixture.close()
             }
-        }
-    }
-
-    @Test fun everyPairingMethodHandsOffItsNativeCandidateOnlyOnceAfterTrustIsSaved() {
-        PairingPresentationFixture.assumeIsolated()
-        val runner = InstrumentationRegistry.getInstrumentation()
-        runner.runOnMainSync {
-            val fixture = PairingPresentationFixture()
-            val model = fixture.model
-            val peer = DeviceIdentity("fixture", "Verified Mac", "macos", "key", "fingerprint")
-            val candidateField = PairingViewModel::class.java.getDeclaredField("pairedCandidate")
-                .apply { isAccessible = true }
-            try {
-                for (method in listOf(PairingMethod.QR, PairingMethod.PIN, PairingMethod.SAS)) {
-                    fixture.present(PairingViewModel::method, method)
-                    fixture.present(PairingViewModel::completedWithComparison, method == PairingMethod.SAS)
-                    val candidate = PairedBleCandidate(null, peer, SystemClock.elapsedRealtime() + 15_000)
-                    candidateField.set(model, candidate)
-                    fixture.present(PairingViewModel::phase, "saving")
-                    assertNull(model.takePairedCandidate())
-                    fixture.present(PairingViewModel::phase, "paired")
-                    assertSame("All pairing methods must share the fresh Bluetooth handoff", candidate, model.takePairedCandidate())
-                    assertNull(model.takePairedCandidate())
-                }
-            } finally { fixture.close() }
         }
     }
 
@@ -135,19 +106,19 @@ class ComparisonPresentationTest {
                     embedded.value = inline
                     scale.floatValue = fontScale
                     dark.value = night
-                    requireNotNull(presentation).apply {
-                        present(PairingViewModel::method, PairingMethod.SAS)
-                        present(PairingViewModel::phase, "preparing")
-                        present(PairingViewModel::status, "Preparing a nearby comparison…")
-                        present(PairingViewModel::comparisonCode, null)
+                    requireNotNull(presentation).present {
+                        method = PairingMethod.SAS
+                        phase = "preparing"
+                        status = "Preparing a nearby comparison…"
+                        comparisonCode = null
                     }
                 }
                 awaitLabels("Connect your Mac", "Preparing a nearby comparison…")
                 runner.runOnMainSync {
-                    requireNotNull(presentation).apply {
-                        present(PairingViewModel::comparisonAttempt, 42L)
-                        present(PairingViewModel::comparisonCode, "012345")
-                        present(PairingViewModel::phase, "comparison")
+                    requireNotNull(presentation).present {
+                        comparisonAttempt = 42L
+                        comparisonCode = "012345"
+                        phase = "comparison"
                     }
                 }
                 val tree = awaitLabels("012 345", "Confirm", "Dismiss", "Reconnect automatically")
@@ -158,18 +129,18 @@ class ComparisonPresentationTest {
                 confirm.getBoundsInScreen(rectangle)
                 assertTrue(rectangle.height() >= (48 * activity.resources.displayMetrics.density).toInt() - 1)
                 runner.runOnMainSync {
-                    requireNotNull(presentation).apply {
-                        present(PairingViewModel::phase, "waiting")
-                        present(PairingViewModel::status, "Confirmed here. Waiting for your Mac…")
+                    requireNotNull(presentation).present {
+                        phase = "waiting"
+                        status = "Confirmed here. Waiting for your Mac…"
                     }
                 }
                 val waiting = awaitLabels("012 345", "Confirmed here. Waiting for your Mac…")
                 assertFalse(clickable(find(waiting, "Confirm"))!!.isEnabled)
                 runner.runOnMainSync {
-                    requireNotNull(presentation).apply {
-                        present(PairingViewModel::comparisonCode, null)
-                        present(PairingViewModel::phase, "idle")
-                        present(PairingViewModel::method, PairingMethod.QR)
+                    requireNotNull(presentation).present {
+                        comparisonCode = null
+                        phase = "idle"
+                        method = PairingMethod.QR
                     }
                 }
                 runner.waitForIdleSync()

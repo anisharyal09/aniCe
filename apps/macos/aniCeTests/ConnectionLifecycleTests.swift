@@ -1131,7 +1131,8 @@ import Network
     let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
     let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
     let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation,
-      startListener: { _ in }, endpointProvider: { _, _ in endpoint }, store: { fixture.trust })
+      startListener: { _ in }, startPathMonitor: { _ in },
+      endpointProvider: { _, _ in endpoint }, store: { fixture.trust })
     defer { gate.release(); lan.cancel(); fixture.close() }
     fixture.model.setAutomatic(true)
     try await fixture.secureBluetooth()
@@ -1228,7 +1229,8 @@ import Network
     fixture.preferences.set(true, forKey: "lan.automatic")
     var starts = 0
     let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation,
-      preferences: fixture.preferences, startListener: { _ in starts += 1 }, store: { fixture.trust })
+      preferences: fixture.preferences, startListener: { _ in starts += 1 },
+      startPathMonitor: { _ in }, store: { fixture.trust })
     defer { lan.cancel(); fixture.close() }
     let savedTrust = try Data(contentsOf: fixture.trust.location)
     fixture.model.connectDevice(fixture.peer, alongside: lan)

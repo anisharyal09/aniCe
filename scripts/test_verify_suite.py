@@ -155,6 +155,25 @@ class JunitGateTests(unittest.TestCase):
         with self.assertRaisesRegex(suite.GateError, "unknown test outcome"):
             suite.validate_results([suite.TestResult("Test", "unknown", "unknown")], "unknown", 1)
 
+    def test_documented_comparison_fixture_skip_is_visible_and_strict_mode_rejects_it(self):
+        executed = suite.TestResult("io.github.anisharyal09.anice.NativeTest", "runs", "passed")
+        fixture = suite.TestResult(
+            "io.github.anisharyal09.anice.features.pairing.ComparisonPresentationTest",
+            "globalAndAddDeviceSurfacesRenderTheSameLiveCodeAcrossPhaseChanges", "skipped",
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(suite.validate_results(
+                [executed, fixture], "physical", 1, documented=suite.DOCUMENTED_ANDROID_SKIPS
+            ), (1, 1))
+        self.assertIn("documented skip: " + fixture.identifier, output.getvalue())
+        with self.assertRaises(suite.GateError):
+            suite.validate_results([executed, fixture], "strict", 1, documented=())
+        self.assertNotIn(
+            "ComparisonPresentationTest#everyPairingMethodHandsOffItsNativeCandidateOnlyOnceAfterTrustIsSaved",
+            suite.DOCUMENTED_ANDROID_SKIPS,
+        )
+
 
 XCODE_LOG = """\
 Test Case '-[aniCeTests.ExampleTests testRuns]' passed (0.001 seconds).

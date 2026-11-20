@@ -19,6 +19,7 @@ import io.github.anisharyal09.anice.infrastructure.bluetooth.AndroidPairingTrans
 import io.github.anisharyal09.anice.infrastructure.bluetooth.PairingTransportFailure
 import io.github.anisharyal09.anice.infrastructure.bluetooth.PairingTransportRecovery
 import io.github.anisharyal09.anice.infrastructure.bluetooth.NearbyPairingCandidate
+import io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.*
 import java.io.File
@@ -27,7 +28,17 @@ import io.github.anisharyal09.anice.infrastructure.connections.PeerNickname
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 
-class PairingViewModel(application: Application) : AndroidViewModel(application) {
+class PairingViewModel private constructor(
+    application: Application,
+    presentation: PairingPresentationState,
+    private val pairedCandidates: PairingCandidateHandoff<PairedBleCandidate>,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, PairingPresentationState(),
+        PairingCandidateHandoff { it.discard() })
+
+    internal constructor(application: Application, presentation: PairingPresentationState) :
+        this(application, presentation, PairingCandidateHandoff { it.discard() })
+
     private val app = application as AniCeApplication
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
@@ -35,7 +46,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
     @Volatile private var generation = 0L
     private var engine: PairingEngine? = null
     private var store: PeerTrustStore? = null
-    internal var method by mutableStateOf(PairingMethod.QR)
+    internal var method by presentation::method
         private set
     private var invitation: PairingQR? = null
     private var code = ""
@@ -60,30 +71,26 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     private var nearbyCandidate: NearbyPairingCandidate? = null
-    private var pairedCandidate: io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate? = null
-    internal fun takePairedCandidate(): io.github.anisharyal09.anice.infrastructure.bluetooth.PairedBleCandidate? {
-        if (phase != "paired") return null
-        return pairedCandidate.also { pairedCandidate = null }
-    }
+    internal fun takePairedCandidate(): PairedBleCandidate? = pairedCandidates.take(phase)
     var automaticAfterPairing by mutableStateOf(true)
         private set
     fun chooseAutomaticAfterPairing(enabled: Boolean) {
         if (phase == "comparison") automaticAfterPairing = enabled
     }
-    var comparisonCode by mutableStateOf<String?>(null)
+    var comparisonCode by presentation::comparisonCode
         private set
-    var comparisonAttempt by mutableStateOf(0L)
+    var comparisonAttempt by presentation::comparisonAttempt
         private set
-    var completedWithComparison by mutableStateOf(false)
+    var completedWithComparison by presentation::completedWithComparison
         private set
     val comparingNearby get() = method == PairingMethod.SAS && busy
     val nearbyFailure get() = method == PairingMethod.SAS && phase == "failed"
     var nearbyTransportFailure by mutableStateOf(false)
         private set
-    var phase by mutableStateOf("idle")
+    var phase by presentation::phase
         private set
 
-    var status by mutableStateOf("Scan the QR code on your Mac, or enter its six-digit code.")
+    var status by presentation::status
         private set
 
     var rows by mutableStateOf(listOf<Long>())
@@ -511,7 +518,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
                 deadline = SystemClock.elapsedRealtime() + 10000
             }
             "paired" -> {
-                if (p != null) pairedCandidate = transport.pairedCandidate(p)
+                if (p != null) transport.pairedCandidate(p)?.let(pairedCandidates::offer)
                 readyToFinish = true
                 phase = "cleanup"
                 status = "Trust saved. Releasing Bluetooth…"
@@ -593,8 +600,7 @@ class PairingViewModel(application: Application) : AndroidViewModel(application)
         code = ""
         nearbyCandidate?.discard()
         nearbyCandidate = null
-        pairedCandidate?.discard()
-        pairedCandidate = null
+        pairedCandidates.clear()
         comparisonCode = null
         rows = emptyList()
         remaining = 0

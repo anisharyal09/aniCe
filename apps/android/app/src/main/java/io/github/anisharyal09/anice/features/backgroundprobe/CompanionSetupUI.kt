@@ -25,7 +25,11 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.anisharyal09.anice.infrastructure.connections.displayName
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 
-/** Saved relationship metadata only; trustedPeer/arm and fresh EDHOC validate the full credential. */
+/**
+ * Labels saved ID/fingerprint metadata only; never authorizes a native chooser or connection.
+ * DeviceIdentity validation binds that fingerprint to the public key. trustedPeer/arm and
+ * CompanionSetupTarget still compare the full credential before fresh EDHOC or enrollment.
+ */
 internal fun hasConnectionSetup(peer: DeviceIdentity?, selectedId: String?, selectedFingerprint: String?) =
     peer != null && peer.deviceId == selectedId && peer.fingerprint == selectedFingerprint
 

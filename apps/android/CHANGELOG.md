@@ -26,9 +26,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
-- Use the UI-preview package for emulator instrumentation and bind synthetic
-  comparison fixtures to compiled property references without exposing writable
-  production pairing state.
+- Use the UI-preview package for emulator instrumentation and inject typed
+  comparison presentation without reflecting compiler-generated fields or
+  exposing writable live authentication state.
+- Test candidate handoff, changed-key rejection and reported fixture skips
+  without treating emulator layouts as physical native approval.
 - Update Kotlin/Compose to 2.4.20 for the build-cache metadata security fix;
   consume current LAN profile-4 fixtures and remove redundant notification checks
   and unused strings.

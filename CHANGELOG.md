@@ -25,6 +25,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Replace pairing fixture reflection with typed injected presentation and
+  hardware-free handoff regressions; document credential matching and separate
+  visible emulator skips from physical nearby-pairing acceptance.
 - Refresh the host CBOR oracle and Kotlin/Compose build plugin for reviewed
   security fixes; move CodeQL off its discontinued bundled toolchain and extend
   code-owner review to shared contracts and native authentication foundations.
@@ -74,6 +77,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Fence Mac invitation publication and discovery startup after suspended actor
+  reads so Stop, sleep and replacement cannot revive a retired pairing owner.
+- Isolate mocked Mac LAN lifecycle verification from host-network events while
+  preserving production path gates and bounded admission deadlines.
 - Verify all nineteen fixture configurations, including SAS and LAN profile 4,
   and independent crypto-oracle regressions; reject optimized-Python bypasses,
   duplicate/truncated evidence and skip-inflated test floors.

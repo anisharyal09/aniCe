@@ -221,7 +221,8 @@ final class LanTests: XCTestCase {
     // Native callbacks are injected without opening a socket or publishing a physical Bonjour service.
     let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
     let owner = MacLanSessionModel(identity: identity, peers: reservation,
-      startListener: { _ in starts += 1 }, endpointProvider: { _, _ in endpoint }, store: { trust })
+      startListener: { _ in starts += 1 }, startPathMonitor: { _ in },
+      endpointProvider: { _, _ in endpoint }, store: { trust })
     @MainActor final class Channel: SecuredChannel {
       let descriptor: ChannelDescriptor
       var sent = [Data]()
@@ -240,15 +241,25 @@ final class LanTests: XCTestCase {
     XCTAssertEqual(starts, 1)
     let registered = try XCTUnwrap(listener.serviceRegistrationUpdateHandler)
     listener.stateUpdateHandler?(.ready)
-    try await Task.sleep(for: .milliseconds(20))
+    let publicationDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while !ble.sent.contains(where: { (try? LanRendezvousWire.decodeMessage($0))?.endpoint == endpoint }),
+      ContinuousClock.now < publicationDeadline {
+      try await Task.sleep(for: .milliseconds(2))
+    }
     XCTAssertTrue(try ble.sent.contains { try LanRendezvousWire.decodeMessage($0)?.endpoint == endpoint },
       "Direct admission must not wait for a Bonjour registration callback")
-    let admissionDeadline = owner.maintenanceDeadline
-    XCTAssertNotNil(admissionDeadline)
+    let admissionDeadline = try XCTUnwrap(owner.maintenanceDeadline)
+    let registrationProcessed = expectation(description: "Bonjour registration updates owner state")
+    owner.channelStateChanged = { registrationProcessed.fulfill() }
     registered(.add(.service(name: "test", type: "_anice._tcp", domain: "local.", interface: nil)))
-    try await Task.sleep(for: .milliseconds(20))
+    await fulfillment(of: [registrationProcessed], timeout: 2)
+    owner.channelStateChanged = {}
+    let maintenanceDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while owner.maintenanceDeadline == nil, ContinuousClock.now < maintenanceDeadline {
+      try await Task.sleep(for: .milliseconds(2))
+    }
     XCTAssertTrue(owner.allowing); XCTAssertNotNil(reservation.peer)
-    XCTAssertEqual(owner.maintenanceDeadline, admissionDeadline)
+    XCTAssertEqual(try XCTUnwrap(owner.maintenanceDeadline), admissionDeadline)
     owner.retireSession(reason: "injected EOF")
     XCTAssertTrue(owner.listener === listener)
     XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service); XCTAssertNil(reservation.peer)

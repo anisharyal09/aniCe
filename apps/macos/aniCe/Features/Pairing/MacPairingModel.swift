@@ -73,6 +73,7 @@ import OSLog
   private let identity: IdentityService
   private let discovery: MacDiscoveryModel
   private let makeStore: @Sendable () throws -> PeerTrustStore
+  private let readInvitation: @MainActor (PairingEngine) async -> (qr: String?, pin: String?)
   private var store: PeerTrustStore?
   private var engine: PairingEngine?
   private var generation = 0
@@ -85,12 +86,19 @@ import OSLog
   init(
     identity: IdentityService, discovery: MacDiscoveryModel,
     makeStore: @escaping @Sendable () throws -> PeerTrustStore = { try PeerTrustStore() },
-    isScreenLocked: @escaping () -> Bool = MacPairingModel.nativeScreenLocked
+    isScreenLocked: @escaping () -> Bool = MacPairingModel.nativeScreenLocked,
+    readInvitation: @escaping @MainActor (PairingEngine) async -> (qr: String?, pin: String?) = {
+      engine in
+      let qr = await engine.qr?.text
+      let pin = await engine.pin
+      return (qr, pin)
+    }
   ) {
     self.identity = identity
     self.discovery = discovery
     self.makeStore = makeStore
     self.isScreenLocked = isScreenLocked
+    self.readInvitation = readInvitation
     discovery.availabilityFailed = { [weak self] in
       guard let self, self.nearbyEnabled else { return }
       self.fail(self.discovery.session.message)
@@ -179,9 +187,13 @@ import OSLog
         self.store = store
         trustRecoveryNeeded = false
         self.engine = engine
-        qrText = await engine.qr?.text
+        let invitation = await readInvitation(engine)
+        // Actor reads suspend: Stop, sleep or a replacement may already own engine cleanup.
+        // Do not republish secrets or reinstall radio callbacks for that retired startup.
+        guard op == generation, active else { return }
+        qrText = invitation.qr
         qrImage = qrText.flatMap(Self.renderQR)
-        pin = await engine.pin
+        pin = invitation.pin
         discovery.adapter.pairingStopsAdvertisingOnAdmission = method == .sas
         discovery.adapter.pairingAdmitted = { [weak self] in
           guard let self, self.generation == op, self.active else { return false }
@@ -254,6 +266,7 @@ import OSLog
           } else { openNearbyRadio(operation: op) }
         } else {
           discovery.start()
+          guard op == generation, active else { return }
           phase = "starting"
           status = "Starting Bluetooth for this invitation…"
           let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
@@ -262,6 +275,7 @@ import OSLog
           self.timer = timer
           RunLoop.main.add(timer, forMode: .common)
         }
+        guard op == generation, active else { return }
         peers = store.list(localFingerprint: engine.local.fingerprint)
         trustedPeersLoaded = true
       } catch {

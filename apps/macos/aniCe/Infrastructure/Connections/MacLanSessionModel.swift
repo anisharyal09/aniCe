@@ -176,6 +176,7 @@ import OSLog
   private let store: @MainActor () async throws -> PeerTrustStore
   private let peers: SessionPeerReservation
   private let startListener: @MainActor (NWListener) -> Void
+  private let startPathMonitor: @MainActor (NWPathMonitor) -> Void
   private let endpointProvider: @MainActor (NWListener, [Int]) -> LanDirectEndpoint?
   private(set) var listener: NWListener?
   private var transport: LanTcpTransport?
@@ -220,6 +221,7 @@ import OSLog
     preferences: UserDefaults? = nil,
     recoveryDelays: [TimeInterval] = [2, 5],
     startListener: @escaping @MainActor (NWListener) -> Void = { $0.start(queue: DispatchQueue(label: "aniCe LAN listener")) },
+    startPathMonitor: @escaping @MainActor (NWPathMonitor) -> Void = { $0.start(queue: DispatchQueue(label: "aniCe LAN availability")) },
     endpointProvider: @escaping @MainActor (NWListener, [Int]) -> LanDirectEndpoint? = { server, interfaces in
       guard let port = server.port, let ip = LanLocalAddress.ipv4(interfaceIndices: interfaces) else { return nil }
       return try? LanDirectEndpoint(ip: ip, port: port.rawValue, profile: .lanTransfer512)
@@ -229,6 +231,7 @@ import OSLog
     self.preferences = preferences
     self.recoveryDelays = recoveryDelays
     self.startListener = startListener
+    self.startPathMonitor = startPathMonitor
     self.endpointProvider = endpointProvider
     // Absent means the user never chose; an explicit stored false still disables automation.
     self.automatic = preferences.map { ($0.object(forKey: "lan.automatic") as? Bool) ?? true } ?? false
@@ -752,7 +755,7 @@ import OSLog
         self.maintain()
       }
     }
-    monitor.start(queue: DispatchQueue(label: "aniCe LAN availability"))
+    startPathMonitor(monitor)
   }
   func localPathChanged(_ available: Bool) {
     guard localPathAvailable != available else { return }

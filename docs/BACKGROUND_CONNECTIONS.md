@@ -48,6 +48,13 @@ diagnostics removes association and observation without resetting identity or pa
 Saved valid setup resumes without another native prompt. Older peers lacking the
 enrollment capability retain manual connections; no broad chooser bypass is used.
 
+The UI's saved-setup indicator compares device ID and fingerprint metadata; it
+does not authorize enrollment or authenticate a connection. Valid identities bind
+the SHA-256 fingerprint to their canonical public key, so a changed key with the
+old fingerprint is invalid, not a supported rotation. Enrollment, quiet resume
+and fresh EDHOC revalidate active trust and the full credential. Name changes are
+presentation metadata and do not change that credential.
+
 ## Android policy
 
 - Started activities contribute independent foreground tokens. Closing one activity does not release another that remains started.
@@ -160,5 +167,19 @@ Approved transfer work can retain BLE and own bounded recovery independently of 
 Maintenance waits on monotonic deadlines and transport events rather than recurring storage polling. Quiet waits do not read KeyStore/Keychain or trust journals. Authenticated operations retain live native identity, protection and trust checks. Android elapsed realtime includes deep sleep; suspension can therefore leave a deadline expired when execution resumes.
 
 Native teardown and callbacks are generation-scoped. Stale writes, chooser results, capacity events or presence callbacks cannot re-enable a retired operation. Uncertain or already-sealed submissions are never replayed.
+
+## Verification boundaries
+
+Synthetic comparison and companion-approval surfaces run only in the isolated
+Android UI preview on an emulator. They do not approve pairing, create native
+associations or substitute for phone consent. JUnit assumptions run before dispatch
+to the main thread; documented skips remain visible in the verifier, do not count
+toward its passing-test floor, and are rejected with `--strict-skips`.
+
+Host tests exercise credential matching, one-shot locator handoff, packet limits
+and cancellation without hardware. The [physical pairing checklist](PROXIMITY_PAIRING_TESTING.md)
+covers actual Bluetooth discovery, native approval, foreground/background
+handoffs, Mac focus and sleep/lock behavior. Neither a skipped fixture nor
+instrumentation compilation constitutes a physical pass.
 
 See [architecture](../ARCHITECTURE.md), the [session contract](../protocol/session/README.md), [Android development](../apps/android/README.md) and [Mac development](../apps/macos/README.md) for implementation and test commands.
